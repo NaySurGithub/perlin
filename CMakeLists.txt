@@ -1,5 +1,9 @@
 cmake_minimum_required(VERSION 3.28)
 
+if(APPLE)
+    set(CMAKE_OSX_DEPLOYMENT_TARGET "12.0" CACHE STRING "" FORCE)
+endif()
+
 project(Perlin VERSION 1.0.0 LANGUAGES C CXX)
 
 set(CMAKE_POLICY_VERSION_MINIMUM 3.10)
@@ -14,10 +18,6 @@ endif()
 
 if(WIN32)
     set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
-endif()
-
-if(APPLE)
-    set(CMAKE_OSX_DEPLOYMENT_TARGET "13.0" CACHE STRING "")
 endif()
 
 add_compile_definitions(GLM_FORCE_DEPTH_ZERO_TO_ONE)
@@ -40,6 +40,9 @@ if(APPLE AND NOT OPENSSL_ROOT_DIR)
     endforeach()
 endif()
 
+if(APPLE)
+    set(OPENSSL_USE_STATIC_LIBS ON)
+endif()
 find_package(OpenSSL REQUIRED)
 find_package(Threads REQUIRED)
 

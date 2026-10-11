@@ -30,7 +30,7 @@ void main()
     if (nightFactor > 0.001 && elevation > 0.0) {
         vec3 cell = floor(dir * 160.0);
         float star = step(0.9975, hash13(cell)) * nightFactor * 2.0;
-        color += vec3(star);
+        color += vec3(star, star, star);
     }
 
     vec3 sunDir = normalize(u_sunDir.xyz);
