@@ -84,7 +84,7 @@ namespace perlin {
 
         On<ResourcePacksInfoPacket>([this](const ResourcePacksInfoPacket&) {
             std::cout << "[bedrock] ResourcePacksInfo" << std::endl;
-            SendResourcePackResponse(PackStatus::HaveAllPacks);
+            SendResourcePackResponse(PackStatus::Completed);
             state = State::ResourcePacks;
             if (!cacheStatusSent) {
                 SendClientCacheStatus();
@@ -103,7 +103,7 @@ namespace perlin {
 
         On<ResourcePacksReadyForValidationPacket>([this](const ResourcePacksReadyForValidationPacket&) {
             std::cout << "[bedrock] ResourcePacksReadyForValidation" << std::endl;
-            SendResourcePackResponse(PackStatus::HaveAllPacks);
+            SendResourcePackResponse(PackStatus::Completed);
         });
 
         On<PacketViolationWarningPacket>([](const PacketViolationWarningPacket& p) {

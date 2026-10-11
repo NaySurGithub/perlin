@@ -8,11 +8,7 @@
 #include <map>
 
 namespace perlin {
-    namespace {
-        std::string SettingsPath() {
-            return paths::DataDir() + "/options.json";
-        }
-
+    namespace stored {
         struct Stored {
             int maxFps = 0;
             bool vsync = false;
@@ -29,6 +25,14 @@ namespace perlin {
             std::string bedrockSamplesDir;
             std::map<std::string, std::string> keys;
         };
+    }
+
+    using stored::Stored;
+
+    namespace {
+        std::string SettingsPath() {
+            return paths::DataDir() + "/options.json";
+        }
     }
 
     Options Options::Load() {
