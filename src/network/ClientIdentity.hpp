@@ -1,0 +1,46 @@
+#pragma once
+#include <cstdint>
+#include <string>
+#include <vector>
+
+typedef struct ec_key_st EC_KEY;
+
+namespace perlin {
+
+    std::string B64Standard(const uint8_t* data, size_t len);
+    std::string B64Url(const uint8_t* data, size_t len);
+    inline std::string B64Standard(const std::string& s) {
+        return B64Standard(reinterpret_cast<const uint8_t*>(s.data()), s.size());
+    }
+    inline std::string B64Url(const std::string& s) {
+        return B64Url(reinterpret_cast<const uint8_t*>(s.data()), s.size());
+    }
+
+    class ClientIdentity {
+    public:
+        ClientIdentity();
+        ~ClientIdentity();
+
+        ClientIdentity(const ClientIdentity&) = delete;
+        ClientIdentity& operator=(const ClientIdentity&) = delete;
+
+        bool Valid() const { return key != nullptr; }
+
+        std::string PublicKeyB64() const;
+
+        std::string BuildMultiplayerToken(const std::string& playerName, const std::string& uuid);
+        const std::string& MultiplayerToken() const { return mpToken; }
+
+        std::string AssertOffer(const std::string& sdp) const;
+
+        bool Sign(const std::string& signingInput, std::vector<uint8_t>& rawSig) const;
+        EC_KEY* Key() const { return key; }
+
+    private:
+        EC_KEY* key = nullptr;
+        std::string mpToken;
+    };
+
+    std::string RandomUuid();
+
+}

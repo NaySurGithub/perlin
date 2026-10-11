@@ -1,0 +1,118 @@
+#pragma once
+#include "client/renderer/RangeAllocator.hpp"
+#include "client/renderer/RenderContext.hpp"
+#include "client/renderer/Tessellator.hpp"
+#include "client/renderer/shader/ShaderManager.hpp"
+
+#include <bgfx/bgfx.h>
+
+#include <array>
+#include <atomic>
+#include <cstdint>
+#include <memory>
+#include <mutex>
+#include <string>
+#include <unordered_map>
+#include <vector>
+
+namespace perlin {
+    class RenderContext_bgfx : public RenderContext {
+    public:
+        RenderContext_bgfx();
+        ~RenderContext_bgfx() override;
+
+        bool Initialize(AppPlatform& platform, const Options& options) override;
+        void Shutdown() override;
+        void BeginFrame(const FrameParams& params) override;
+        void EndFrame() override;
+        void RequestScreenshot(const std::string& path) override;
+        void UploadAtlas(const uint8_t* rgba, int size) override;
+        void UpdateAtlasRegion(int px, int py, const uint8_t* rgba16) override;
+        void UpdateChunkMesh(int cx, int cz, const Tessellator& tess, uint64_t version) override;
+        void RemoveChunkMesh(int cx, int cz) override;
+        void ClearChunkMeshes() override;
+        void DrawChunkMeshes(const Frustum& frustum, float camX, float camZ) override;
+
+        void SaveScreenshotData(const std::string& path, uint32_t w, uint32_t h, uint32_t pitch,
+                                const uint8_t* bgra, bool yflip);
+
+    private:
+        struct GpuChunk;
+        struct VisibleChunk {
+            float distance;
+            const GpuChunk* chunk;
+            bool fullyInside;
+        };
+        struct Page {
+            bgfx::DynamicVertexBufferHandle vb = BGFX_INVALID_HANDLE;
+            bgfx::DynamicIndexBufferHandle ib = BGFX_INVALID_HANDLE;
+            RangeAllocator vAlloc, iAlloc;
+        };
+        struct GpuSection {
+            float minY, maxY;
+            std::array<uint32_t, kRenderLayerCount> start;
+            std::array<uint32_t, kRenderLayerCount> count;
+        };
+        struct GpuChunk {
+            int page = -1;
+            uint32_t vOff = 0, vCount = 0;
+            uint32_t iOff = 0, iCount = 0;
+            std::array<uint32_t, kRenderLayerCount> layerBase{};
+            std::array<uint32_t, kRenderLayerCount> layerCount{};
+            std::vector<GpuSection> sections;
+            uint64_t version = 0;
+            float minY = 0, maxY = 0;
+            int cx = 0, cz = 0;
+        };
+
+        bool CreatePage(uint32_t vCap, uint32_t iCap);
+        bool AllocMesh(uint32_t v, uint32_t i, GpuChunk& out);
+        void FreeChunk(GpuChunk& g);
+        void DestroyPages();
+        void Resize(int w, int h);
+        uint32_t ResetFlags() const;
+        uint64_t PassState(RenderLayer layer) const;
+        void DrawLayer(RenderLayer layer, ShaderProgram program, const Frustum& frustum,
+                       const std::vector<VisibleChunk>& chunks, bgfx::TextureHandle atlas);
+        void DrawSky();
+        void UploadLightmap(const uint8_t* pixels);
+        static int64_t ChunkKey(int cx, int cz) { return (static_cast<int64_t>(cx) << 32) | (uint32_t)cz; }
+
+        class Callback;
+        std::unique_ptr<Callback> callback;
+
+        AppPlatform* platform = nullptr;
+        bool vsync = true;
+        bool initialized = false;
+
+        bgfx::VertexLayout layout;
+        bgfx::VertexLayout skyLayout;
+        bgfx::VertexBufferHandle skyBuffer = BGFX_INVALID_HANDLE;
+        bgfx::TextureHandle lightmapTex = BGFX_INVALID_HANDLE;
+        ShaderManager shaders;
+        uint32_t lightmapFlags = 0;
+        uint8_t lastLightmap[kLightmapBytes] = {};
+        bool lightmapValid = false;
+        bgfx::TextureHandle atlasTex = BGFX_INVALID_HANDLE;
+        bgfx::TextureHandle whiteTex = BGFX_INVALID_HANDLE;
+        float mvp[16] = {};
+        uint32_t samplerFlags = 0;
+        uint64_t cullState = BGFX_STATE_CULL_CCW;
+        bool homogeneousDepth = false;
+
+        int width = 0, height = 0;
+
+        int atlasSize = 0;
+        std::vector<std::vector<uint8_t>> atlasMips;
+
+        std::vector<VisibleChunk> visible;
+
+        std::vector<Page> pages;
+        std::unordered_map<int64_t, GpuChunk> gpuChunks;
+
+        std::mutex shotMutex;
+        std::atomic<bool> shotPending{false};
+        std::atomic<bool> shotDone{false};
+        bool shotOk = false;
+    };
+}

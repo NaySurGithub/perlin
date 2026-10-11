@@ -1,0 +1,73 @@
+#pragma once
+#include <array>
+#include <cstdint>
+#include <vector>
+
+namespace perlin {
+    enum class RenderLayer : uint8_t { Solid, Cutout, Translucent };
+    constexpr int kRenderLayerCount = 3;
+
+    struct Vertex {
+        float x, y, z;
+        uint32_t rgba;
+        float u, v;
+        uint32_t light;
+    };
+    static_assert(sizeof(Vertex) == 28, "Vertex layout must match the GPU vertex layout");
+
+    struct MeshSection {
+        int sy;
+        std::array<uint32_t, kRenderLayerCount> start;
+        std::array<uint32_t, kRenderLayerCount> count;
+    };
+
+    inline uint32_t PackColor(float r, float g, float b, float a = 1.0f) {
+        auto q = [](float c) -> uint32_t {
+            c = c < 0.0f ? 0.0f : (c > 1.0f ? 1.0f : c);
+            return static_cast<uint32_t>(c * 255.0f + 0.5f);
+        };
+        return q(r) | (q(g) << 8) | (q(b) << 16) | (q(a) << 24);
+    }
+
+    inline uint32_t PackLight(float block, float sky) {
+        auto q = [](float level) -> uint32_t {
+            level = level < 0.0f ? 0.0f : (level > 15.0f ? 15.0f : level);
+            return static_cast<uint32_t>(level * (255.0f / 15.0f) + 0.5f);
+        };
+        return q(block) | (q(sky) << 8);
+    }
+
+    class Tessellator {
+    public:
+        void Begin();
+        void End();
+        void Reserve(size_t quads);
+
+        void SetLayer(RenderLayer value) { layer = value; }
+        void EnterSection(int sy);
+
+        void AddQuad(const float v[4][3], const float c[4][3], const float uv[4][2], bool flip,
+                     const float light[4][2]);
+        void AddQuad(const float v[4][3], const float c[4][3], const float uv[4][2], bool flip, float block,
+                     float sky);
+
+        const std::vector<Vertex>& Vertices() const { return vertices; }
+        const std::vector<uint32_t>& Indices(RenderLayer value) const {
+            return indices[static_cast<size_t>(value)];
+        }
+        const std::vector<MeshSection>& Sections() const { return sections; }
+        bool Empty() const {
+            for (const auto& list : indices)
+                if (!list.empty())
+                    return false;
+            return true;
+        }
+
+    private:
+        std::vector<Vertex> vertices;
+        std::array<std::vector<uint32_t>, kRenderLayerCount> indices;
+        std::vector<MeshSection> sections;
+        RenderLayer layer = RenderLayer::Solid;
+        bool building = false;
+    };
+}
