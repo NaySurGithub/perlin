@@ -36,7 +36,13 @@ namespace perlin {
                 }
             }
             if (n == 0) {
-                d[0] = d[1] = d[2] = d[3] = 0;
+                for (int c = 0; c < 3; c++) {
+                    unsigned total = 0;
+                    for (int k = 0; k < 4; k++)
+                        total += src[idx[k] + c];
+                    d[c] = (uint8_t)((total + 2) / 4);
+                }
+                d[3] = (uint8_t)((na + 2) / 4);
             } else {
                 for (int c = 0; c < 3; c++)
                     d[c] = (uint8_t)((sum[c] + n / 2) / n);
@@ -85,7 +91,6 @@ namespace perlin {
         uint32_t flags = BGFX_RESET_NONE;
         if (vsync)
             flags |= BGFX_RESET_VSYNC;
-        flags |= BGFX_RESET_MAXANISOTROPY;
         const std::string msaa = Env("PERLIN_MSAA");
         if (msaa == "2")
             flags |= BGFX_RESET_MSAA_X2;
@@ -161,11 +166,11 @@ namespace perlin {
         }
 
         samplerFlags = BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP | BGFX_SAMPLER_MAG_POINT |
-                       BGFX_SAMPLER_MIN_ANISOTROPIC;
+                       BGFX_SAMPLER_MIN_POINT;
         std::string filter = Env("PERLIN_FILTER");
-        if (!filter.empty() && (filter[0] == 'p' || filter[0] == 'P'))
+        if (!filter.empty() && (filter[0] == 'a' || filter[0] == 'A'))
             samplerFlags = BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP | BGFX_SAMPLER_MAG_POINT |
-                           BGFX_SAMPLER_MIN_POINT;
+                           BGFX_SAMPLER_MIN_ANISOTROPIC;
         else if (!filter.empty() && (filter[0] == 'l' || filter[0] == 'L'))
             samplerFlags = BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP | BGFX_SAMPLER_MAG_POINT;
 
@@ -307,6 +312,33 @@ namespace perlin {
             for (int y = 0; y < kTileSize; y++)
                 std::memcpy(level.data() + (size_t)y * kTileSize * 4, rgba + (size_t)y * stride,
                             (size_t)kTileSize * 4);
+            std::vector<uint8_t> bled = level;
+            for (int y = 0; y < kTileSize; y++)
+                for (int x = 0; x < kTileSize; x++) {
+                    uint8_t* px = bled.data() + ((size_t)y * kTileSize + x) * 4;
+                    if (level[((size_t)y * kTileSize + x) * 4 + 3] != 0)
+                        continue;
+                    unsigned sum[3] = {0, 0, 0}, n = 0;
+                    for (int dy = -1; dy <= 1; dy++)
+                        for (int dx = -1; dx <= 1; dx++) {
+                            const int nx = x + dx, ny = y + dy;
+                            if (nx < 0 || ny < 0 || nx >= kTileSize || ny >= kTileSize)
+                                continue;
+                            const uint8_t* q = level.data() + ((size_t)ny * kTileSize + nx) * 4;
+                            if (!q[3])
+                                continue;
+                            sum[0] += q[0];
+                            sum[1] += q[1];
+                            sum[2] += q[2];
+                            n++;
+                        }
+                    if (n) {
+                        px[0] = (uint8_t)(sum[0] / n);
+                        px[1] = (uint8_t)(sum[1] / n);
+                        px[2] = (uint8_t)(sum[2] / n);
+                    }
+                }
+            level = std::move(bled);
             for (int l = 0; l < kTileMips; l++) {
                 const int w = kTileSize >> l;
                 bgfx::updateTexture2D(tex, (uint16_t)layer, (uint8_t)l, 0, 0, (uint16_t)w, (uint16_t)w,
