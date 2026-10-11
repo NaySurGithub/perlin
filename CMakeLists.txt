@@ -40,6 +40,10 @@ if(APPLE AND NOT OPENSSL_ROOT_DIR)
     endforeach()
 endif()
 
+if(OPENSSL_ROOT_DIR)
+    file(TO_CMAKE_PATH "${OPENSSL_ROOT_DIR}" OPENSSL_ROOT_DIR)
+endif()
+
 if(APPLE)
     set(OPENSSL_USE_STATIC_LIBS ON)
 endif()
