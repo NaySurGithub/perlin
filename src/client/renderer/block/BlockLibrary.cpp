@@ -7,7 +7,7 @@
 #include <exception>
 #include <fstream>
 #include <iostream>
-#include <nlohmann/json.hpp>
+#include "util/Json.hpp"
 #include <sstream>
 #include "util/Paths.hpp"
 #include "client/Options.hpp"
@@ -38,20 +38,6 @@ namespace perlin {
             return true;
         }
 
-    }
-
-    std::string BlockLibrary::StripComments(const std::string& json) {
-        std::string out;
-        out.reserve(json.size());
-        for (size_t i = 0; i < json.size(); i++) {
-            if (json[i] == '/' && i + 1 < json.size() && json[i + 1] == '/') {
-                while (i < json.size() && json[i] != '\n')
-                    i++;
-            } else {
-                out.push_back(json[i]);
-            }
-        }
-        return out;
     }
 
     int BlockLibrary::FetchTile(const std::string& pngRelPath, const std::string& vanillaRpRoot) {
@@ -219,16 +205,13 @@ namespace perlin {
         if (vanillaBlocks.empty() || terrainTex.empty())
             return false;
 
-        nlohmann::json vBlocks;
-        nlohmann::json vTerrain;
-        try {
-            vBlocks = nlohmann::json::parse(vanillaBlocks);
-            vTerrain = nlohmann::json::parse(StripComments(terrainTex));
-        } catch (...) {
+        const auto blocksDocument = json::Document::Parse(vanillaBlocks, true);
+        const auto terrainDocument = json::Document::Parse(terrainTex, true);
+        if (!blocksDocument || !terrainDocument)
             return false;
-        }
-        const nlohmann::json& texData =
-            vTerrain.contains("texture_data") ? vTerrain["texture_data"] : vTerrain;
+        const json::View vBlocks = blocksDocument->root();
+        const json::View vTerrain = terrainDocument->root();
+        const json::View texData = vTerrain.contains("texture_data") ? vTerrain["texture_data"] : vTerrain;
 
         if (!BlockPalette::Instance().NamesLoaded()) {
             std::string defs = vanillaRpRoot + "/../repo/metadata/vanilladata_modules/mojang-blocks.json";
@@ -241,43 +224,36 @@ namespace perlin {
         std::string blocksPath = perlinPackDir + "/blocks.json";
         if (ReadFile(blocksPath).empty())
             SeedFromExeDir("blocks.json", blocksPath);
-        nlohmann::json blocksJ = nlohmann::json::object();
-        try {
-            std::string txt = ReadFile(blocksPath);
-            if (!txt.empty())
-                blocksJ = nlohmann::json::parse(txt);
-        } catch (...) {
-            std::cout << "[blocks] ignoring unreadable " << blocksPath << std::endl;
+        std::optional<json::Document> blocksDocumentLocal;
+        if (const std::string txt = ReadFile(blocksPath); !txt.empty()) {
+            blocksDocumentLocal = json::Document::Parse(txt, true);
+            if (!blocksDocumentLocal)
+                std::cout << "[blocks] ignoring unreadable " << blocksPath << std::endl;
         }
+        const json::View blocksJ = blocksDocumentLocal ? blocksDocumentLocal->root() : json::View();
 
         std::unordered_map<std::string, std::string> aliases;
         std::unordered_map<std::string, std::array<float, 3>> tints;
-        if (blocksJ.contains("aliases") && blocksJ["aliases"].is_object())
-            for (auto& [k, v] : blocksJ["aliases"].items())
-                aliases[k] = v.get<std::string>();
-        if (blocksJ.contains("tints") && blocksJ["tints"].is_object())
-            for (auto& [k, v] : blocksJ["tints"].items())
-                if (v.is_array() && v.size() >= 3)
-                    tints[k] = {(float)v[0], (float)v[1], (float)v[2]};
-        const nlohmann::json& overrides =
-            (blocksJ.contains("blocks") && blocksJ["blocks"].is_object()) ? blocksJ["blocks"] : blocksJ;
+        for (const auto [k, v] : blocksJ["aliases"].members())
+            aliases[k] = v.str();
+        for (const auto [k, v] : blocksJ["tints"].members())
+            if (v.isArray() && v.size() >= 3)
+                tints[k] = {v[0].real(), v[1].real(), v[2].real()};
+        const json::View overrides = blocksJ["blocks"].isObject() ? blocksJ["blocks"] : blocksJ;
 
         std::vector<std::string> flatContains;
         {
             std::string shapesPath = perlinPackDir + "/shapes.json";
             if (ReadFile(shapesPath).empty())
                 SeedFromExeDir("shapes.json", shapesPath);
-            try {
-                std::string txt = ReadFile(shapesPath);
-                if (!txt.empty()) {
-                    auto sj = nlohmann::json::parse(txt);
-                    if (sj.contains("flat_contains") && sj["flat_contains"].is_array())
-                        for (auto& e : sj["flat_contains"])
-                            if (e.is_string())
-                                flatContains.push_back(e.get<std::string>());
+            if (const std::string txt = ReadFile(shapesPath); !txt.empty()) {
+                if (const auto shapes = json::Document::Parse(txt, true)) {
+                    for (const json::View e : shapes->root()["flat_contains"].items())
+                        if (e.isString())
+                            flatContains.push_back(e.str());
+                } else {
+                    std::cout << "[blocks] ignoring unreadable " << shapesPath << std::endl;
                 }
-            } catch (...) {
-                std::cout << "[blocks] ignoring unreadable " << shapesPath << std::endl;
             }
         }
 
@@ -297,8 +273,7 @@ namespace perlin {
                     all->push_back(t);
                 return t;
             }
-            auto it = texData.find(texName);
-            if (it == texData.end()) {
+            if (!texData.contains(texName)) {
                 int t = FetchTile(texName, vanillaRpRoot);
                 if (t == 0 && texName.find('/') == std::string::npos)
                     t = FetchTile(std::string("textures/blocks/") + texName, vanillaRpRoot);
@@ -306,45 +281,42 @@ namespace perlin {
                     all->push_back(t);
                 return t;
             }
-            const nlohmann::json& entry = *it;
-            if (entry.is_object()) {
-                auto oc = entry.find("tint_color");
-                if (oc != entry.end() && oc->is_string()) {
-                    const std::string& hex = oc->get_ref<const std::string&>();
-                    unsigned r = 255, g = 255, b = 255;
-                    if (hex.size() == 7 && hex[0] == '#' &&
-                        sscanf(hex.c_str() + 1, "%02x%02x%02x", &r, &g, &b) == 3)
-                        baseTints[texName] = {(float)r / 255.0f, (float)g / 255.0f, (float)b / 255.0f};
-                }
+            const json::View entry = texData[texName];
+            if (const json::View tintColor = entry["tint_color"]; tintColor.isString()) {
+                const std::string hex = tintColor.str();
+                unsigned r = 255, g = 255, b = 255;
+                if (hex.size() == 7 && hex[0] == '#' &&
+                    sscanf(hex.c_str() + 1, "%02x%02x%02x", &r, &g, &b) == 3)
+                    baseTints[texName] = {(float)r / 255.0f, (float)g / 255.0f, (float)b / 255.0f};
             }
-            if (entry.is_string()) {
-                int t = FetchTile(entry.get<std::string>(), vanillaRpRoot);
+            if (entry.isString()) {
+                int t = FetchTile(entry.str(), vanillaRpRoot);
                 if (all && t)
                     all->push_back(t);
                 return t;
             }
-            const nlohmann::json* list = nullptr;
-            if (entry.is_object() && entry.contains("textures")) {
-                const nlohmann::json& tx = entry["textures"];
-                if (tx.is_string()) {
-                    int t = FetchTile(tx.get<std::string>(), vanillaRpRoot);
+            json::View list;
+            if (entry.isObject() && entry.contains("textures")) {
+                const json::View tx = entry["textures"];
+                if (tx.isString()) {
+                    int t = FetchTile(tx.str(), vanillaRpRoot);
                     if (all && t)
                         all->push_back(t);
                     return t;
                 }
-                list = &tx;
-            } else if (entry.is_array()) {
-                list = &entry;
+                list = tx;
+            } else if (entry.isArray()) {
+                list = entry;
             }
-            if (!list || list->empty())
+            if (list.size() == 0)
                 return 0;
             int first = 0;
-            for (const nlohmann::json& e : *list) {
+            for (const json::View e : list.items()) {
                 std::string path;
-                if (e.is_string())
-                    path = e.get<std::string>();
-                else if (e.is_object() && e.contains("path") && e["path"].is_string())
-                    path = e["path"].get<std::string>();
+                if (e.isString())
+                    path = e.str();
+                else if (e["path"].isString())
+                    path = e["path"].str();
                 if (path.empty())
                     continue;
                 int tile = FetchTile(path, vanillaRpRoot);
@@ -369,47 +341,42 @@ namespace perlin {
                     bare = bare.substr(10);
                 auto al = aliases.find(bare);
                 std::string vkey = (al == aliases.end()) ? bare : al->second;
-                if (vBlocks.find(vkey) == vBlocks.end()) {
+                if (!vBlocks.contains(vkey)) {
                     std::string rpKey = BlockPalette::Instance().ResourcePackKey(name);
-                    if (!rpKey.empty() && vBlocks.find(rpKey) != vBlocks.end())
+                    if (!rpKey.empty() && vBlocks.contains(rpKey))
                         vkey = rpKey;
                 }
 
                 std::string top, side, bottom;
-                auto getFace = [&](const nlohmann::json& e, const char* face, std::string& out) {
-                    if (e.is_string()) {
-                        out = e.get<std::string>();
+                auto getFace = [&](json::View e, const char* face, std::string& out) {
+                    if (e.isString()) {
+                        out = e.str();
                         return;
                     }
-                    if (e.is_object()) {
-                        auto f = e.find(face);
-                        if (f != e.end() && f->is_string()) {
-                            out = f->get<std::string>();
-                            return;
-                        }
-                        if (!strcmp(face, "side")) {
-                            static const char* kSideKeys[] = {"side", "east", "west", "north", "south"};
-                            for (auto* sk : kSideKeys) {
-                                auto s = e.find(sk);
-                                if (s != e.end() && s->is_string()) {
-                                    out = s->get<std::string>();
-                                    return;
-                                }
-                            }
-                        }
-                        if (!strcmp(face, "up") || !strcmp(face, "top")) {
-                            auto t = e.find("top");
-                            if (t != e.end() && t->is_string()) {
-                                out = t->get<std::string>();
+                    if (!e.isObject())
+                        return;
+                    if (const json::View f = e[face]; f.isString()) {
+                        out = f.str();
+                        return;
+                    }
+                    if (!strcmp(face, "side")) {
+                        static const char* kSideKeys[] = {"side", "east", "west", "north", "south"};
+                        for (auto* sk : kSideKeys) {
+                            if (const json::View s = e[sk]; s.isString()) {
+                                out = s.str();
                                 return;
                             }
                         }
                     }
+                    if (!strcmp(face, "up") || !strcmp(face, "top")) {
+                        if (const json::View t = e["top"]; t.isString())
+                            out = t.str();
+                    }
                 };
-                auto vit = vBlocks.find(vkey);
+                const json::View vit = vBlocks[vkey];
                 bool hasCarried = false, hasIsotropic = false, hasAO = false;
-                if (vit != vBlocks.end() && vit->is_object() && vit->contains("textures")) {
-                    const nlohmann::json& t = (*vit)["textures"];
+                if (vit.isObject() && vit.contains("textures")) {
+                    const json::View t = vit["textures"];
                     getFace(t, "up", top);
                     getFace(t, "down", bottom);
                     getFace(t, "side", side);
@@ -420,23 +387,21 @@ namespace perlin {
                     if (top.empty())
                         top = side;
                 }
-                if (vit != vBlocks.end() && vit->is_object()) {
-                    hasCarried = vit->contains("carried_textures");
-                    hasIsotropic = vit->contains("isotropic");
-                    hasAO = vit->contains("ambient_occlusion_exponent");
+                if (vit.isObject()) {
+                    hasCarried = vit.contains("carried_textures");
+                    hasIsotropic = vit.contains("isotropic");
+                    hasAO = vit.contains("ambient_occlusion_exponent");
                 }
 
                 BlockAppearance app;
-                bool hasOverride = overrides.contains(name) && overrides[name].is_object();
-                const nlohmann::json& ov = hasOverride ? overrides[name] : nlohmann::json();
+                const json::View ov = overrides[name];
+                const bool hasOverride = ov.isObject();
                 auto pick = [&](const char* key, const std::string& vanilla) -> std::string {
-                    if (hasOverride && ov.contains(key) && ov[key].is_string())
-                        return ov[key].get<std::string>();
+                    if (ov[key].isString())
+                        return ov[key].str();
                     return vanilla;
                 };
-                std::string allOv = (hasOverride && ov.contains("texture") && ov["texture"].is_string())
-                                        ? ov["texture"].get<std::string>()
-                                        : std::string();
+                std::string allOv = ov["texture"].str();
                 std::string topName = allOv.empty() ? pick("top", top) : allOv;
                 std::string sideName = allOv.empty() ? pick("side", side.empty() ? top : side) : allOv;
                 std::string botName = allOv.empty() ? pick("bottom", bottom.empty() ? top : bottom) : allOv;
@@ -490,17 +455,16 @@ namespace perlin {
                 app.texTop = topName;
                 app.texSide = sideName;
                 app.texBottom = botName;
-                if (hasOverride && ov.contains("tint_faces") && ov["tint_faces"].is_array()) {
+                if (ov["tint_faces"].isArray()) {
                     auto has = [&](const char* f) {
-                        for (auto& e : ov["tint_faces"])
-                            if (e.is_string() && e.get<std::string>() == f)
+                        for (const json::View e : ov["tint_faces"].items())
+                            if (e.isString() && e.str() == f)
                                 return true;
                         return false;
                     };
                     auto tintFor = [&](const std::string& tex) -> std::array<float, 3> {
-                        if (hasOverride && ov.contains("tint") && ov["tint"].is_array() &&
-                            ov["tint"].size() >= 3)
-                            return {(float)ov["tint"][0], (float)ov["tint"][1], (float)ov["tint"][2]};
+                        if (ov["tint"].isArray() && ov["tint"].size() >= 3)
+                            return {ov["tint"][0].real(), ov["tint"][1].real(), ov["tint"][2].real()};
                         auto oo = baseTints.find(tex);
                         if (oo != baseTints.end())
                             return oo->second;
@@ -518,8 +482,8 @@ namespace perlin {
                         app.tintSide = has("side");
                         app.tintBottom = has("bottom");
                     }
-                    if (ov.contains("cutout") && ov["cutout"].is_boolean())
-                        app.cutout = ov["cutout"].get<bool>();
+                    if (ov["cutout"].isBool())
+                        app.cutout = ov["cutout"].boolean();
                 } else {
                     auto findTint = [&](const std::string& tex) -> const std::array<float, 3>* {
                         auto oo = baseTints.find(tex);
@@ -565,18 +529,14 @@ namespace perlin {
                     }
                     bool hasUpper = BlockPalette::Instance().BlockHasProperty(name, "upper_block_bit");
                     bool hasHalf = BlockPalette::Instance().BlockHasProperty(name, "minecraft:vertical_half");
-                    if (hasCarried && !hasIsotropic && !hasAO && !perFace && vit != vBlocks.end() &&
-                        vit->is_object() && vit->contains("carried_textures")) {
-                        const nlohmann::json& ct = (*vit)["carried_textures"];
-                        if (ct.is_string()) {
-                            app.carriedTex = ct.get<std::string>();
+                    if (hasCarried && !hasIsotropic && !hasAO && !perFace) {
+                        const json::View ct = vit["carried_textures"];
+                        if (ct.isString()) {
+                            app.carriedTex = ct.str();
                             app.useCarriedColor = true;
-                        } else if (ct.is_object()) {
-                            auto s = ct.find("side");
-                            if (s != ct.end() && s->is_string()) {
-                                app.carriedTex = s->get<std::string>();
-                                app.useCarriedColor = true;
-                            }
+                        } else if (ct["side"].isString()) {
+                            app.carriedTex = ct["side"].str();
+                            app.useCarriedColor = true;
                         }
                     }
                     bool hasTile = (app.top | app.side | app.bottom) != 0;
@@ -764,8 +724,8 @@ namespace perlin {
                             app.overlayFrac = 0;
                         }
                     }
-                    if (hasOverride && ov.contains("cutout") && ov["cutout"].is_boolean()) {
-                        if (ov["cutout"].get<bool>()) {
+                    if (ov["cutout"].isBool()) {
+                        if (ov["cutout"].boolean()) {
                             if (app.shape != BlockAppearance::Shape::Flat &&
                                 app.shape != BlockAppearance::Shape::Wall)
                                 app.shape = BlockAppearance::Shape::Cross;
@@ -836,24 +796,16 @@ namespace perlin {
         }
         {
             std::array<float, 3> wc = {0.266f, 0.686f, 0.961f};
-            try {
-                std::string bc = ReadFile(vanillaRpRoot + "/biomes_client.json");
-                nlohmann::json b = nlohmann::json::parse(StripComments(bc));
-                if (b.contains("biomes") && b["biomes"].is_object()) {
-                    const nlohmann::json* pick = nullptr;
-                    if (b["biomes"].contains("default"))
-                        pick = &b["biomes"]["default"];
-                    else if (b["biomes"].contains("minecraft:plains"))
-                        pick = &b["biomes"]["minecraft:plains"];
-                    if (pick && pick->is_object() && pick->contains("water_surface_color")) {
-                        const std::string& hex = (*pick)["water_surface_color"].get<std::string>();
-                        unsigned r = 0, g = 0, bq = 0;
-                        if (sscanf(hex.c_str() + 1, "%02x%02x%02x", &r, &g, &bq) == 3) {
-                            wc = {r / 255.0f, g / 255.0f, bq / 255.0f};
-                        }
-                    }
-                }
-            } catch (...) {}
+            if (const auto biomesDocument =
+                    json::Document::Parse(ReadFile(vanillaRpRoot + "/biomes_client.json"), true)) {
+                const json::View biomes = biomesDocument->root()["biomes"];
+                const json::View pick =
+                    biomes.contains("default") ? biomes["default"] : biomes["minecraft:plains"];
+                const std::string hex = pick["water_surface_color"].str();
+                unsigned r = 0, g = 0, bq = 0;
+                if (hex.size() > 1 && sscanf(hex.c_str() + 1, "%02x%02x%02x", &r, &g, &bq) == 3)
+                    wc = {r / 255.0f, g / 255.0f, bq / 255.0f};
+            }
             for (auto& [name, app] : appearances) {
                 auto isWaterNamed = [](const std::string& t) {
                     return t.find("still_water") != std::string::npos ||

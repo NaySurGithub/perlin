@@ -60,7 +60,6 @@ namespace perlin {
 
     private:
         int FetchTile(const std::string& pngRelPath, const std::string& vanillaRpRoot);
-        static std::string StripComments(const std::string& json);
 
         bool ready = false;
         bool complete = false;

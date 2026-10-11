@@ -1,5 +1,5 @@
 
-#include "network/Packets.hpp"
+#include "protocol/Packets.hpp"
 #include "network/VarInt.hpp"
 #include "world/level/chunk/ChunkCodec.hpp"
 
@@ -7,7 +7,12 @@
 #include <random>
 
 using namespace perlin;
-using namespace perlin::net;
+using namespace perlin::proto;
+
+template <class P> static bool Decode(const uint8_t* data, size_t size, P& packet) {
+    perlin::net::ReadStream stream(data, size);
+    return Read(stream, packet);
+}
 static int fails = 0;
 #define CHECK(c)                                                                                             \
     do {                                                                                                     \
@@ -99,7 +104,7 @@ int main() {
         b.insert(b.end(), payload.begin(), payload.end());
         LevelChunkPacket p;
         CHECK(Decode(b.data(), b.size(), p));
-        CHECK(p.cx == -3 && p.cz == 12 && p.dimension == 0 && p.subChunkCount == 2);
+        CHECK(p.x == -3 && p.z == 12 && p.dimension == 0 && p.subChunkCount == 2);
         CHECK(p.GetMode() == LevelChunkPacket::Mode::Inline && p.RequestSlots(24) == 0);
         CHECK(p.payload == payload && !p.cacheEnabled);
     }
@@ -174,12 +179,12 @@ int main() {
         b.push_back(0);
         SubChunkPacket p;
         CHECK(Decode(b.data(), b.size(), p));
-        CHECK(p.exact && p.baseX == 4 && p.baseZ == -2 && p.entries.size() == 2);
+        CHECK(p.exact && p.x == 4 && p.z == -2 && p.entries.size() == 2);
         CHECK(p.entries[0].dy == 5 && p.entries[0].result == 1 && p.entries[0].payload == sub);
         CHECK(p.entries[1].result == (uint8_t)SubChunkResult::SuccessAllAir);
     }
     {
-        auto req = Encode(SubChunkRequestPacket::ForSlot(0, -3, -4, 7));
+        auto req = perlin::net::Encode(SubChunkRequestPacket::ForSlot(0, -3, -4, 7));
         wire::Reader r(req.data(), req.size());
         int32_t d;
         uint32_t n, x, y, z;

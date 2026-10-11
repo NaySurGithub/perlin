@@ -8,6 +8,10 @@
 #include <unordered_map>
 #include <vector>
 
+namespace perlin::json {
+    class View;
+}
+
 namespace perlin {
     constexpr int kMaxLight = 15;
 
@@ -55,7 +59,7 @@ namespace perlin {
         BlockLightProps Compute(uint16_t id) const;
         int RuleValue(const std::vector<Rule>& rules, const std::unordered_map<std::string, size_t>& exact,
                       const std::string& name, uint16_t id) const;
-        static void ParseRules(const void* section, std::vector<Rule>& rules,
+        static void ParseRules(json::View section, std::vector<Rule>& rules,
                                std::unordered_map<std::string, size_t>& exact);
         static bool Matches(const Rule& rule, const std::string& name);
         static int Evaluate(const Rule& rule, uint16_t id);

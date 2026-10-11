@@ -5,7 +5,7 @@
 #include <fstream>
 #include <iostream>
 #include <map>
-#include <nlohmann/json.hpp>
+#include "util/Json.hpp"
 #include <set>
 
 namespace perlin {
@@ -88,36 +88,39 @@ namespace perlin {
         std::ifstream f(path, std::ios::binary);
         if (!f)
             return false;
-        nlohmann::json j = nlohmann::json::parse(f, nullptr, false);
-        if (j.is_discarded() || !j.contains("block_properties") || !j.contains("data_items")) {
+        const std::string text((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+        const auto document = json::Document::Parse(text);
+        if (!document || !document->root().contains("block_properties") ||
+            !document->root().contains("data_items")) {
             std::cout << "[blocks] " << path << " is not a mojang-blocks.json" << std::endl;
             return false;
         }
+        const json::View j = document->root();
 
         struct Prop {
             StateValue::Kind kind = StateValue::Bool;
             std::vector<StateValue> values;
         };
         std::unordered_map<std::string, Prop> props;
-        for (auto& p : j["block_properties"]) {
+        for (const json::View p : j["block_properties"].items()) {
             Prop pr;
-            std::string type = p.value("type", "");
+            const std::string type = p["type"].str();
             pr.kind = type == "bool"  ? StateValue::Bool
                       : type == "int" ? StateValue::Int
                                       : StateValue::String;
-            for (auto& v : p["values"]) {
+            for (const json::View v : p["values"].items()) {
                 StateValue sv;
                 sv.kind = pr.kind;
-                const auto& val = v["value"];
+                const json::View val = v["value"];
                 if (pr.kind == StateValue::Bool)
-                    sv.i = val.is_boolean() ? (val.get<bool>() ? 1 : 0) : val.get<int>() != 0;
+                    sv.i = val.isBool() ? (val.boolean() ? 1 : 0) : val.integer() != 0;
                 else if (pr.kind == StateValue::Int)
-                    sv.i = val.get<int32_t>();
+                    sv.i = val.integer();
                 else
-                    sv.s = val.get<std::string>();
+                    sv.s = val.str();
                 pr.values.push_back(std::move(sv));
             }
-            props[p["name"].get<std::string>()] = std::move(pr);
+            props[p["name"].str()] = std::move(pr);
         }
 
         std::unordered_map<int32_t, std::string> names;
@@ -125,11 +128,11 @@ namespace perlin {
         std::unordered_map<std::string, std::string> rpKeys;
         std::unordered_map<std::string, std::vector<std::string>> propNames;
         size_t collisions = 0;
-        for (auto& item : j["data_items"]) {
-            std::string name = item.value("name", "");
+        for (const json::View item : j["data_items"].items()) {
+            const std::string name = item["name"].str();
             if (name.empty())
                 continue;
-            std::string sid = item.value("serialization_id", "");
+            std::string sid = item["serialization_id"].str();
             if (sid.rfind("tile.", 0) == 0)
                 sid = sid.substr(5);
             if (!sid.empty())
@@ -138,14 +141,15 @@ namespace perlin {
             std::map<std::string, const Prop*> sorted;
             bool ok = true;
             std::vector<std::string> propKeys;
-            for (auto& pr : item["properties"]) {
-                auto it = props.find(pr["name"].get<std::string>());
+            for (const json::View pr : item["properties"].items()) {
+                const std::string propName = pr["name"].str();
+                auto it = props.find(propName);
                 if (it == props.end() || it->second.values.empty()) {
                     ok = false;
                     break;
                 }
-                sorted[pr["name"].get<std::string>()] = &it->second;
-                propKeys.push_back(pr["name"].get<std::string>());
+                sorted[propName] = &it->second;
+                propKeys.push_back(propName);
             }
             if (!ok)
                 continue;

@@ -49,10 +49,11 @@ if(APPLE)
 endif()
 find_package(OpenSSL REQUIRED)
 find_package(Threads REQUIRED)
+find_package(Python3 REQUIRED COMPONENTS Interpreter)
 
 include(cmake/CPM.cmake)
 
-CPMAddPackage("gh:nlohmann/json@3.11.3")
+CPMAddPackage("gh:stephenberry/glaze@7.1.1")
 CPMAddPackage("gh:cameron314/concurrentqueue@1.0.4")
 CPMAddPackage("gh:g-truc/glm#1.0.1")
 CPMAddPackage(NAME stb GITHUB_REPOSITORY nothings/stb GIT_TAG master DOWNLOAD_ONLY YES)
@@ -166,7 +167,46 @@ foreach(dir dxbc dxil essl glsl spirv metal)
 endforeach()
 file(GENERATE OUTPUT "${PERLIN_SHADER_HEADER}" CONTENT "${PERLIN_SHADER_HEADER_TEXT}")
 
+set(PERLIN_PROTOCOL_OUT "${CMAKE_CURRENT_BINARY_DIR}/generated/protocol")
+set(PERLIN_PROTOCOL_CODEC_COUNT 6)
+set(PERLIN_PROTOCOL_SOURCES)
+foreach(i RANGE 0 5)
+    list(APPEND PERLIN_PROTOCOL_SOURCES "${PERLIN_PROTOCOL_OUT}/Codec${i}.cpp")
+endforeach()
+set(PERLIN_PROTOCOL_HEADERS "${PERLIN_PROTOCOL_OUT}/Types.hpp" "${PERLIN_PROTOCOL_OUT}/Packets.hpp")
+set(PERLIN_PROTOCOL_ROUNDTRIP "${PERLIN_PROTOCOL_OUT}/RoundTrip.cpp")
+
+add_custom_command(
+    OUTPUT ${PERLIN_PROTOCOL_HEADERS} ${PERLIN_PROTOCOL_SOURCES} ${PERLIN_PROTOCOL_ROUNDTRIP}
+    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/protogen/protogen.py"
+            --spec "${CMAKE_CURRENT_SOURCE_DIR}/protocol/bedrock-1.26.51.json"
+            --overrides "${CMAKE_CURRENT_SOURCE_DIR}/protocol/overrides.json"
+            --out "${PERLIN_PROTOCOL_OUT}"
+            --parts ${PERLIN_PROTOCOL_CODEC_COUNT}
+    DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/tools/protogen/protogen.py"
+            "${CMAKE_CURRENT_SOURCE_DIR}/protocol/bedrock-1.26.51.json"
+            "${CMAKE_CURRENT_SOURCE_DIR}/protocol/overrides.json"
+    COMMENT "Generating protocol codecs"
+    VERBATIM)
+
+file(GLOB PERLIN_PROTOCOL_CUSTOM CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/src/network/custom/*.cpp")
+add_library(perlin_protocol STATIC
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/network/Nbt.cpp"
+    ${PERLIN_PROTOCOL_CUSTOM}
+    ${PERLIN_PROTOCOL_SOURCES}
+    ${PERLIN_PROTOCOL_HEADERS})
+target_include_directories(perlin_protocol PUBLIC
+    "${CMAKE_CURRENT_SOURCE_DIR}/src"
+    "${CMAKE_CURRENT_BINARY_DIR}/generated")
+target_compile_features(perlin_protocol PUBLIC cxx_std_23)
+if(MSVC)
+    set_source_files_properties(${PERLIN_PROTOCOL_SOURCES} PROPERTIES COMPILE_OPTIONS "/w;/bigobj")
+else()
+    set_source_files_properties(${PERLIN_PROTOCOL_SOURCES} PROPERTIES COMPILE_OPTIONS "-w")
+endif()
+
 file(GLOB_RECURSE PERLIN_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp")
+list(FILTER PERLIN_SOURCES EXCLUDE REGEX "/src/network/(Nbt\\.cpp|custom/)")
 
 if(WIN32)
     add_executable(Perlin WIN32 ${PERLIN_SOURCES} ${PERLIN_SHADER_OUTPUTS})
@@ -199,7 +239,8 @@ if(WIN32)
 endif()
 
 target_link_libraries(Perlin PRIVATE
-    nlohmann_json::nlohmann_json
+    perlin_protocol
+    glaze::glaze
     miniz
     datachannel-static
     OpenSSL::SSL
@@ -272,14 +313,12 @@ if(PERLIN_BUILD_TESTS)
     enable_testing()
     add_executable(chunk_selftest
         tests/chunk_selftest.cpp
-        src/world/level/chunk/ChunkCodec.cpp
-        src/network/serializer/LevelChunkPacketSerializer.cpp
-        src/network/serializer/SubChunkPacketSerializer.cpp)
-    target_include_directories(chunk_selftest PRIVATE src)
+        src/world/level/chunk/ChunkCodec.cpp)
+    target_link_libraries(chunk_selftest PRIVATE perlin_protocol)
     add_test(NAME chunk_selftest COMMAND chunk_selftest)
 
-    add_executable(packet_selftest tests/packet_selftest.cpp)
-    target_include_directories(packet_selftest PRIVATE src)
+    add_executable(packet_selftest tests/packet_selftest.cpp ${PERLIN_PROTOCOL_ROUNDTRIP})
+    target_link_libraries(packet_selftest PRIVATE perlin_protocol)
     add_test(NAME packet_selftest COMMAND packet_selftest)
 
     add_executable(input_selftest
@@ -295,10 +334,11 @@ if(PERLIN_BUILD_TESTS)
         tests/light_selftest.cpp
         src/world/level/lighting/ChunkLighting.cpp
         src/world/level/lighting/LightRegistry.cpp
+        src/util/Json.cpp
         src/world/level/Level.cpp
         src/world/level/block/BlockPalette.cpp)
     target_include_directories(light_selftest PRIVATE src)
-    target_link_libraries(light_selftest PRIVATE nlohmann_json::nlohmann_json Threads::Threads)
+    target_link_libraries(light_selftest PRIVATE glaze::glaze Threads::Threads)
     target_compile_features(light_selftest PRIVATE cxx_std_23)
     add_test(NAME light_selftest COMMAND light_selftest)
 endif()

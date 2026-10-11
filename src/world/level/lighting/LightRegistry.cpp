@@ -7,7 +7,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
-#include <nlohmann/json.hpp>
+#include "util/Json.hpp"
 
 namespace perlin {
     namespace {
@@ -31,10 +31,10 @@ namespace perlin {
             return std::clamp(v, 0, kMaxLight);
         }
 
-        int FromComponent(const nlohmann::json& v, bool unit) {
-            if (!v.is_number())
+        int FromComponent(json::View v, bool unit) {
+            if (!v.isNumber())
                 return -1;
-            const double d = v.get<double>();
+            const double d = v.number();
             return Clamp(static_cast<int>(unit ? d * kMaxLight + 0.5 : d + 0.5));
         }
     }
@@ -67,12 +67,9 @@ namespace perlin {
         return rulesLoaded;
     }
 
-    void LightRegistry::ParseRules(const void* section, std::vector<Rule>& rules,
+    void LightRegistry::ParseRules(json::View section, std::vector<Rule>& rules,
                                    std::unordered_map<std::string, size_t>& exact) {
-        const auto& obj = *static_cast<const nlohmann::ordered_json*>(section);
-        if (!obj.is_object())
-            return;
-        for (const auto& [key, value] : obj.items()) {
+        for (const auto [key, value] : section.members()) {
             Rule rule;
             std::string pattern = key;
             const bool front = !pattern.empty() && pattern.front() == '*';
@@ -86,19 +83,17 @@ namespace perlin {
                          : front       ? Rule::Match::Suffix
                          : back        ? Rule::Match::Prefix
                                        : Rule::Match::Exact;
-            if (value.is_number()) {
-                rule.value = Clamp(value.get<int>());
-            } else if (value.is_object()) {
-                rule.state = value.value("state", "");
-                rule.linear = value.value("linear", false);
-                rule.fallback = Clamp(value.value("default", 0));
-                if (value.contains("map") && value["map"].is_object())
-                    for (const auto& [k, v] : value["map"].items())
-                        if (v.is_number())
-                            rule.map[k] = Clamp(v.get<int>());
-                if (value.contains("requires") && value["requires"].is_object())
-                    for (const auto& [k, v] : value["requires"].items())
-                        rule.conditions.emplace_back(k, v.is_string() ? v.get<std::string>() : v.dump());
+            if (value.isNumber()) {
+                rule.value = Clamp(value.integer());
+            } else if (value.isObject()) {
+                rule.state = value["state"].str();
+                rule.linear = value["linear"].boolean();
+                rule.fallback = Clamp(value["default"].integer());
+                for (const auto [k, v] : value["map"].members())
+                    if (v.isNumber())
+                        rule.map[k] = Clamp(v.integer());
+                for (const auto [k, v] : value["requires"].members())
+                    rule.conditions.emplace_back(k, v.text());
             } else {
                 continue;
             }
@@ -109,17 +104,16 @@ namespace perlin {
     }
 
     void LightRegistry::LoadRules(const std::string& jsonText) {
-        const auto root = nlohmann::ordered_json::parse(jsonText, nullptr, false);
-        if (root.is_discarded() || !root.is_object()) {
+        const auto document = json::Document::Parse(jsonText, true);
+        if (!document || !document->root().isObject()) {
             std::cout << "[light] light.json is not valid JSON" << std::endl;
             return;
         }
+        const json::View root = document->root();
         std::vector<Rule> emission, opacity;
         std::unordered_map<std::string, size_t> emissionIndex, opacityIndex;
-        if (root.contains("emission"))
-            ParseRules(&root["emission"], emission, emissionIndex);
-        if (root.contains("opacity"))
-            ParseRules(&root["opacity"], opacity, opacityIndex);
+        ParseRules(root["emission"], emission, emissionIndex);
+        ParseRules(root["opacity"], opacity, opacityIndex);
 
         std::unique_lock lock(mutex);
         emissionRules = std::move(emission);
@@ -142,44 +136,31 @@ namespace perlin {
             if (!entry.is_regular_file() || entry.path().extension() != ".json")
                 continue;
             std::ifstream file(entry.path(), std::ios::binary);
-            const auto root = nlohmann::json::parse(file, nullptr, false, true);
-            if (root.is_discarded() || !root.contains("minecraft:block"))
+            const std::string text((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+            const auto document = json::Document::Parse(text, true);
+            if (!document)
                 continue;
-            const auto& block = root["minecraft:block"];
-            if (!block.contains("description") || !block["description"].contains("identifier"))
+            const json::View block = document->root()["minecraft:block"];
+            const json::View identifierNode = block["description"]["identifier"];
+            if (!identifierNode.isString())
                 continue;
-            const std::string identifier = block["description"]["identifier"].get<std::string>();
+            const std::string identifier = identifierNode.str();
 
-            auto read = [&](const nlohmann::json& components) {
-                if (!components.is_object())
+            auto read = [&](json::View components) {
+                if (!components.isObject())
                     return;
-                if (components.contains("minecraft:light_emission")) {
-                    const int v = FromComponent(components["minecraft:light_emission"], false);
-                    if (v >= 0)
-                        emission[identifier] = std::max(emission[identifier], v);
-                }
-                if (components.contains("minecraft:block_light_emission")) {
-                    const int v = FromComponent(components["minecraft:block_light_emission"], true);
-                    if (v >= 0)
-                        emission[identifier] = std::max(emission[identifier], v);
-                }
-                if (components.contains("minecraft:light_dampening")) {
-                    const int v = FromComponent(components["minecraft:light_dampening"], false);
-                    if (v >= 0)
-                        opacity[identifier] = v;
-                }
-                if (components.contains("minecraft:block_light_filter")) {
-                    const int v = FromComponent(components["minecraft:block_light_filter"], false);
-                    if (v >= 0)
-                        opacity[identifier] = v;
-                }
+                if (const int v = FromComponent(components["minecraft:light_emission"], false); v >= 0)
+                    emission[identifier] = std::max(emission[identifier], v);
+                if (const int v = FromComponent(components["minecraft:block_light_emission"], true); v >= 0)
+                    emission[identifier] = std::max(emission[identifier], v);
+                if (const int v = FromComponent(components["minecraft:light_dampening"], false); v >= 0)
+                    opacity[identifier] = v;
+                if (const int v = FromComponent(components["minecraft:block_light_filter"], false); v >= 0)
+                    opacity[identifier] = v;
             };
-            if (block.contains("components"))
-                read(block["components"]);
-            if (block.contains("permutations") && block["permutations"].is_array())
-                for (const auto& permutation : block["permutations"])
-                    if (permutation.contains("components"))
-                        read(permutation["components"]);
+            read(block["components"]);
+            for (const json::View permutation : block["permutations"].items())
+                read(permutation["components"]);
         }
 
         std::unique_lock lock(mutex);

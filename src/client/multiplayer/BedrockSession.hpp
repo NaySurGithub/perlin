@@ -1,7 +1,7 @@
 #pragma once
 #include "world/level/Level.hpp"
 #include "network/PacketDispatcher.hpp"
-#include "network/PacketStream.hpp"
+#include "protocol/Packets.hpp"
 
 #include <atomic>
 #include <chrono>
@@ -51,11 +51,15 @@ namespace perlin {
 
         void Update();
 
-        bool Send(uint32_t packetId, const std::vector<uint8_t>& body);
-        template <class P> bool Send(const P& packet) {
-            return Send(net::PacketTraits<P>::kId, net::Encode(packet));
+        template <class P> bool Send(const P& packet) { return Transmit(P::kId, net::Encode(packet), true); }
+        template <class P> bool SendUnreliable(const P& packet) {
+            return Transmit(P::kId, net::Encode(packet), false);
         }
-        bool SendUnreliable(uint32_t packetId, const std::vector<uint8_t>& body);
+
+        template <class P, class Fn> void On(Fn&& fn) { dispatcher.On<P>(std::forward<Fn>(fn)); }
+        template <class P, class Fn> void OnPartial(Fn&& fn) {
+            dispatcher.OnPartial<P>(std::forward<Fn>(fn));
+        }
 
         struct PlayerPose {
             float x = 0, y = 0, z = 0;
@@ -131,22 +135,17 @@ namespace perlin {
         net::PacketDispatcher dispatcher;
         bool SendRequestNetworkSettings();
         bool SendLogin();
-        bool SendResourcePackResponse(uint8_t status);
+        bool SendResourcePackResponse(proto::ResourcePackClientResponsePacketStatus status);
         bool SendRequestChunkRadius();
         bool SendClientCacheStatus();
         bool SendSetLocalPlayerAsInitialized();
 
-        void HandleLevelChunk(const std::vector<uint8_t>& body);
-        void HandleSubChunk(const std::vector<uint8_t>& body);
+        bool Transmit(uint32_t packetId, const std::vector<uint8_t>& body, bool reliable);
+        void HandleLevelChunk(const proto::LevelChunkPacket& packet);
+        void HandleSubChunk(const proto::SubChunkPacket& packet);
         void QueueSubChunkRequests(int dim, int cx, int cz, int firstSubY, int count);
         bool ApplySubChunk(int cx, int cz, int absSubY, const SubChunkData& sc);
         void ApplyBiomeColumn(int cx, int cz, const std::vector<uint8_t>& payload);
-
-        static std::vector<uint8_t> BuildOfflineLogin(int protocol, const std::string& playerName,
-                                                      const std::string& playerUuid,
-                                                      const std::string& gameVersion,
-                                                      const std::string& serverAddress,
-                                                      ClientIdentity& identity, std::string& error);
 
         std::unique_ptr<NetherNet> net;
         std::unique_ptr<ClientIdentity> identity;

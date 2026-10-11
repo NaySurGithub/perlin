@@ -9,7 +9,7 @@
 #include <chrono>
 #include <cstring>
 #include <iostream>
-#include <nlohmann/json.hpp>
+#include "util/Json.hpp"
 #include <random>
 #include <sstream>
 #include <thread>
@@ -65,18 +65,12 @@ namespace perlin {
             error = "GET /v1/join -> HTTP " + std::to_string(status) + " " + body;
             return false;
         }
-        auto j = nlohmann::json::parse(body, nullptr, false);
-        if (j.is_discarded()) {
+        auto parsed = json::Read<NetherNetServerInfo>(body);
+        if (!parsed) {
             error = "GET /v1/join returned non-JSON: " + body;
             return false;
         }
-        info.name = j.value("name", "");
-        info.protocol = j.value("protocol", 0);
-        info.version = j.value("version", "");
-        info.level = j.value("level", "");
-        info.players = j.value("players", 0);
-        info.maxPlayers = j.value("maxPlayers", 0);
-        info.gameType = j.value("gameType", 0);
+        info = std::move(*parsed);
         return true;
     }
 

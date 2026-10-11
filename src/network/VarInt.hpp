@@ -6,6 +6,15 @@
 
 namespace perlin::wire {
 
+    inline size_t VarUint32Size(uint32_t v) {
+        size_t n = 1;
+        while (v >= 0x80) {
+            v >>= 7;
+            n++;
+        }
+        return n;
+    }
+
     inline void WriteVarUint32(std::vector<uint8_t>& out, uint32_t v) {
         while (v >= 0x80) {
             out.push_back(static_cast<uint8_t>((v & 0x7F) | 0x80));

@@ -4,8 +4,10 @@
 #include "network/ClientIdentity.hpp"
 #include "network/NetherNet.hpp"
 #include "network/VarInt.hpp"
-#include "network/PacketIds.hpp"
-#include "network/Packets.hpp"
+#include "network/LoginClaims.hpp"
+#include "network/Uuid.hpp"
+#include "protocol/Packets.hpp"
+#include "util/Json.hpp"
 #include "world/level/block/BlockPalette.hpp"
 #include "world/level/chunk/ChunkCodec.hpp"
 #include "client/Options.hpp"
@@ -22,7 +24,6 @@
 #include <ctime>
 #include <iostream>
 #include <mutex>
-#include <nlohmann/json.hpp>
 #include <random>
 #include <set>
 #include <streambuf>
@@ -30,12 +31,12 @@
 
 namespace perlin {
 
-    using net::LevelChunkPacket;
-    using net::PlayerAuthInputPacket;
-    using net::SubChunkEntry;
-    using net::SubChunkPacket;
-    using net::SubChunkRequestPacket;
-    using net::SubChunkResult;
+    using proto::LevelChunkPacket;
+    using proto::PlayerAuthInputPacket;
+    using proto::SubChunkEntry;
+    using proto::SubChunkPacket;
+    using proto::SubChunkRequestPacket;
+    using proto::SubChunkResult;
 
     BedrockSession::BedrockSession() {
         RegisterPacketHandlers();
@@ -99,182 +100,75 @@ namespace perlin {
     }
 
     const char* BedrockSession::PacketName(uint32_t id) {
-        switch (id) {
-        case 1:
-            return "Login";
-        case 2:
-            return "PlayStatus";
-        case 3:
-            return "ServerToClientHandshake";
-        case 4:
-            return "ClientToServerHandshake";
-        case 5:
-            return "Disconnect";
-        case 6:
-            return "ResourcePacksInfo";
-        case 7:
-            return "ResourcePackStack";
-        case 8:
-            return "ResourcePackClientResponse";
-        case 9:
-            return "Text";
-        case 10:
-            return "SetTime";
-        case 11:
-            return "StartGame";
-        case 19:
-            return "MovePlayer";
-        case 21:
-            return "UpdateBlock";
-        case 36:
-            return "PlayerAction";
-        case 58:
-            return "LevelChunk";
-        case 69:
-            return "RequestChunkRadius";
-        case 70:
-            return "ChunkRadiusUpdated";
-        case 77:
-            return "CommandRequest";
-        case 79:
-            return "CommandOutput";
-        case 113:
-            return "SetLocalPlayerAsInitialized";
-        case 115:
-            return "NetworkStackLatency";
-        case 121:
-            return "NetworkChunkPublisherUpdate";
-        case 129:
-            return "ClientCacheStatus";
-        case 143:
-            return "NetworkSettings";
-        case 144:
-            return "PlayerAuthInput";
-        case 156:
-            return "PacketViolationWarning";
-        case 174:
-            return "SubChunk";
-        case 175:
-            return "SubChunkRequest";
-        case 193:
-            return "RequestNetworkSettings";
-        case 340:
-            return "ResourcePacksReadyForValidation";
-        default:
-            return "?";
-        }
+        return proto::PacketName(id);
     }
 
-    std::vector<uint8_t> BedrockSession::BuildOfflineLogin(int protocol, const std::string& playerName,
-                                                           const std::string& playerUuid,
-                                                           const std::string& gameVersion,
-                                                           const std::string& serverAddress,
-                                                           ClientIdentity& identity, std::string& error) {
-        if (!identity.Valid() || identity.MultiplayerToken().empty()) {
-            error = "no client identity";
-            return {};
-        }
-        const std::string& mpToken = identity.MultiplayerToken();
-        std::string cpk = identity.PublicKeyB64();
-        if (cpk.empty()) {
-            error = "no identity public key";
-            return {};
-        }
+    namespace {
 
-        std::string chainJson = nlohmann::json({{"chain", nlohmann::json::array({""})}}).dump();
-        std::string identityJson =
-            nlohmann::json({{"Certificate", chainJson}, {"AuthenticationType", 2}, {"Token", mpToken}})
-                .dump();
+        constexpr int32_t kCommandVersion = 52;
 
-        auto signJwt = [&](const nlohmann::json& header, const nlohmann::json& claims) -> std::string {
-            std::string h = B64Url(header.dump());
-            std::string p = B64Url(claims.dump());
-            std::vector<uint8_t> raw;
-            if (!identity.Sign(h + "." + p, raw))
-                return {};
-            return h + "." + p + "." + B64Url(raw.data(), raw.size());
-        };
+        std::optional<proto::LoginPacket> BuildOfflineLogin(int protocol, const std::string& playerName,
+                                                            const std::string& gameVersion,
+                                                            const std::string& serverAddress,
+                                                            ClientIdentity& identity, std::string& error) {
+            if (!identity.Valid() || identity.MultiplayerToken().empty()) {
+                error = "no client identity";
+                return std::nullopt;
+            }
+            const std::string& mpToken = identity.MultiplayerToken();
+            std::string cpk = identity.PublicKeyB64();
+            if (cpk.empty()) {
+                error = "no identity public key";
+                return std::nullopt;
+            }
 
-        std::string skinData(64 * 64 * 4, '\0');
-        std::random_device rd;
-        uint64_t devRand = (static_cast<uint64_t>(rd()) << 32) | rd();
-        char devBuf[37], fabBuf[17];
-        snprintf(devBuf, sizeof(devBuf), "d42334a7-6b87-34fe-a78b-%012llx",
-                 (unsigned long long)(devRand & 0xFFFFFFFFFFFFULL));
-        snprintf(fabBuf, sizeof(fabBuf), "%016llx", (unsigned long long)devRand);
-        for (char& c : fabBuf)
-            c = (char)tolower(c);
-        int64_t nowMs = std::chrono::duration_cast<std::chrono::milliseconds>(
-                            std::chrono::system_clock::now().time_since_epoch())
-                            .count();
-        nlohmann::json skinHeader = {{"alg", "ES384"}, {"x5u", cpk}};
-        nlohmann::json skin = {
-            {"AnimatedImageData", nlohmann::json::array()},
-            {"ArmSize", "wide"},
-            {"CapeData", ""},
-            {"CapeId", ""},
-            {"CapeImageHeight", 0},
-            {"CapeImageWidth", 0},
-            {"ClientEditorConnectionIntent", 0},
-            {"ClientIsEditorCapable", false},
-            {"ClientRandomId", nowMs},
-            {"CompatibleWithClientSideChunkGen", false},
-            {"CurrentInputMode", 1},
-            {"DefaultInputMode", 1},
-            {"DeviceId", devBuf},
-            {"DeviceModel", "Windows"},
-            {"DeviceOS", 12},
-            {"FilterProfanity", false},
-            {"GameVersion", gameVersion},
-            {"GraphicsMode", 1},
-            {"GuiScale", -1},
-            {"IsEditorMode", false},
-            {"LanguageCode", "en_US"},
-            {"MaxViewDistance", 32},
-            {"MemoryTier", 0},
-            {"OverrideSkin", false},
-            {"PersonaPieces", nlohmann::json::array()},
-            {"PersonaSkin", false},
-            {"PieceTintColors", nlohmann::json::array()},
-            {"PlatformOfflineId", ""},
-            {"PlatformOnlineId", ""},
-            {"PlatformType", 0},
-            {"PlayFabId", fabBuf},
-            {"PremiumSkin", false},
-            {"SelfSignedId", devBuf},
-            {"ServerAddress", serverAddress},
-            {"SkinAnimationData", nlohmann::json::array()},
-            {"SkinColor", "#0"},
-            {"SkinData", B64Standard(skinData)},
-            {"SkinGeometryName", "geometry.humanoid.custom"},
-            {"SkinGeometry", ""},
-            {"SkinGeometryDataEngineVersion", ""},
-            {"SkinId", "Standard_Steve"},
-            {"SkinImageHeight", 64},
-            {"SkinImageWidth", 64},
-            {"SkinResourcePatch", "{}"},
-            {"ThirdPartyName", playerName},
-            {"TrustedSkin", false},
-            {"UIProfile", 0},
-            {"ServerAuthoritativeMovement", false},
-            {"ServerAuthoritativeBlockBreaking", false},
-        };
-        std::string skinJwt = signJwt(skinHeader, skin);
-        if (skinJwt.empty()) {
-            error = "skin JWT failed";
-            return {};
+            const std::string identityJson =
+                json::Write(claims::Identity{json::Write(claims::Chain{}), 2, mpToken});
+
+            auto signJwt = [&](const auto& header, const auto& payload) -> std::string {
+                std::string h = B64Url(json::Write(header));
+                std::string p = B64Url(json::Write(payload));
+                std::vector<uint8_t> raw;
+                if (!identity.Sign(h + "." + p, raw))
+                    return {};
+                return h + "." + p + "." + B64Url(raw.data(), raw.size());
+            };
+
+            std::string skinData(64 * 64 * 4, '\0');
+            std::random_device rd;
+            uint64_t devRand = (static_cast<uint64_t>(rd()) << 32) | rd();
+            char devBuf[37], fabBuf[17];
+            snprintf(devBuf, sizeof(devBuf), "d42334a7-6b87-34fe-a78b-%012llx",
+                     (unsigned long long)(devRand & 0xFFFFFFFFFFFFULL));
+            snprintf(fabBuf, sizeof(fabBuf), "%016llx", (unsigned long long)devRand);
+            for (char& c : fabBuf)
+                c = (char)tolower(c);
+            int64_t nowMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+                                std::chrono::system_clock::now().time_since_epoch())
+                                .count();
+            claims::ClientData skin;
+            skin.ClientRandomId = nowMs;
+            skin.DeviceId = devBuf;
+            skin.GameVersion = gameVersion;
+            skin.PlayFabId = fabBuf;
+            skin.SelfSignedId = devBuf;
+            skin.ServerAddress = serverAddress;
+            skin.SkinData = B64Standard(skinData);
+            skin.ThirdPartyName = playerName;
+            const claims::Header skinHeader{.x5u = cpk};
+            std::string skinJwt = signJwt(skinHeader, skin);
+            if (skinJwt.empty()) {
+                error = "skin JWT failed";
+                return std::nullopt;
+            }
+
+            proto::LoginPacket login;
+            login.protocolVersion = protocol;
+            login.tokens.identity = identityJson;
+            login.tokens.client = skinJwt;
+            return login;
         }
 
-        std::vector<uint8_t> inner;
-        wire::WriteLE32(inner, (uint32_t)identityJson.size());
-        inner.insert(inner.end(), identityJson.begin(), identityJson.end());
-        wire::WriteLE32(inner, (uint32_t)skinJwt.size());
-        inner.insert(inner.end(), skinJwt.begin(), skinJwt.end());
-
-        std::vector<uint8_t> body;
-        wire::WriteBE32(body, protocol);
-        wire::WriteString(body, std::string(inner.begin(), inner.end()));
-        return body;
     }
 
     bool BedrockSession::Connect(const std::string& host, uint16_t port) {
@@ -339,16 +233,13 @@ namespace perlin {
         radiusSent = false;
     }
 
-    bool BedrockSession::Send(uint32_t packetId, const std::vector<uint8_t>& body) {
+    bool BedrockSession::Transmit(uint32_t packetId, const std::vector<uint8_t>& body, bool reliable) {
         if (!net || !net->IsConnected())
             return false;
-        std::vector<uint8_t> pkt;
-        wire::WriteVarUint32(pkt, packetId);
-        pkt.insert(pkt.end(), body.begin(), body.end());
-
         std::vector<uint8_t> content;
-        wire::WriteVarUint32(content, (uint32_t)pkt.size());
-        content.insert(content.end(), pkt.begin(), pkt.end());
+        wire::WriteVarUint32(content, static_cast<uint32_t>(body.size() + wire::VarUint32Size(packetId)));
+        wire::WriteVarUint32(content, packetId);
+        content.insert(content.end(), body.begin(), body.end());
 
         std::vector<uint8_t> batch;
         if (!compressEnabled) {
@@ -363,32 +254,7 @@ namespace perlin {
             batch.push_back(0xFF);
             batch.insert(batch.end(), content.begin(), content.end());
         }
-        return net->SendReliable(batch);
-    }
-
-    bool BedrockSession::SendUnreliable(uint32_t packetId, const std::vector<uint8_t>& body) {
-        if (!net || !net->IsConnected())
-            return false;
-        std::vector<uint8_t> pkt;
-        wire::WriteVarUint32(pkt, packetId);
-        pkt.insert(pkt.end(), body.begin(), body.end());
-        std::vector<uint8_t> content;
-        wire::WriteVarUint32(content, (uint32_t)pkt.size());
-        content.insert(content.end(), pkt.begin(), pkt.end());
-        std::vector<uint8_t> batch;
-        if (!compressEnabled) {
-            batch = std::move(content);
-        } else if (content.size() > compressThreshold) {
-            std::vector<uint8_t> deflated;
-            if (!RawDeflate(content, deflated))
-                return false;
-            batch.push_back(0x00);
-            batch.insert(batch.end(), deflated.begin(), deflated.end());
-        } else {
-            batch.push_back(0xFF);
-            batch.insert(batch.end(), content.begin(), content.end());
-        }
-        return net->SendUnreliable(batch);
+        return reliable ? net->SendReliable(batch) : net->SendUnreliable(batch);
     }
 
     void BedrockSession::Update() {
@@ -495,45 +361,37 @@ namespace perlin {
     }
 
     bool BedrockSession::SendRequestNetworkSettings() {
-        net::RequestNetworkSettingsPacket req;
-        req.protocol = serverProtocol;
-        std::vector<uint8_t> body = net::Encode(req);
-        std::vector<uint8_t> pkt;
-        wire::WriteVarUint32(pkt, net::PacketTraits<net::RequestNetworkSettingsPacket>::kId);
-        pkt.insert(pkt.end(), body.begin(), body.end());
-        std::vector<uint8_t> batch;
-        wire::WriteVarUint32(batch, (uint32_t)pkt.size());
-        batch.insert(batch.end(), pkt.begin(), pkt.end());
-        return net->SendReliable(batch);
+        proto::RequestNetworkSettingsPacket request;
+        request.clientProtocol = serverProtocol;
+        return Send(request);
     }
 
     bool BedrockSession::SendLogin() {
         std::string error;
-        std::vector<uint8_t> body = BuildOfflineLogin(serverProtocol, playerName, playerUuid, gameVersion,
-                                                      serverAddress, *identity, error);
-        if (body.empty()) {
+        const auto login =
+            BuildOfflineLogin(serverProtocol, playerName, gameVersion, serverAddress, *identity, error);
+        if (!login) {
             lastError = "login build failed: " + error;
             return false;
         }
-        std::cout << "[bedrock] sending Login (" << body.size() << " bytes, protocol " << serverProtocol
-                  << ")" << std::endl;
-        return Send(1, body);
+        std::cout << "[bedrock] sending Login (protocol " << serverProtocol << ")" << std::endl;
+        return Send(*login);
     }
 
-    bool BedrockSession::SendResourcePackResponse(uint8_t status) {
-        std::cout << "[bedrock] ResourcePackClientResponse " << (int)status << std::endl;
-        net::ResourcePackClientResponsePacket p;
+    bool BedrockSession::SendResourcePackResponse(proto::ResourcePackClientResponsePacketStatus status) {
+        std::cout << "[bedrock] ResourcePackClientResponse " << static_cast<int>(status) << std::endl;
+        proto::ResourcePackClientResponsePacket p;
         p.status = status;
         return Send(p);
     }
 
     bool BedrockSession::SendClientCacheStatus() {
-        return Send(net::ClientCacheStatusPacket{});
+        return Send(proto::ClientCacheStatusPacket{.enabled = false});
     }
 
     bool BedrockSession::SendRequestChunkRadius() {
-        net::RequestChunkRadiusPacket p;
-        p.radius = chunkRadius;
+        proto::RequestChunkRadiusPacket p;
+        p.chunkRadius = chunkRadius;
         p.maxRadius = 8;
         std::cout << "[bedrock] RequestChunkRadius " << chunkRadius << std::endl;
         return Send(p);
@@ -542,8 +400,8 @@ namespace perlin {
     bool BedrockSession::SendSetLocalPlayerAsInitialized() {
         if (runtimeId == 0)
             return false;
-        net::SetLocalPlayerAsInitializedPacket p;
-        p.runtimeId = runtimeId;
+        proto::SetLocalPlayerAsInitializedPacket p;
+        p.runtimeEntityId = runtimeId;
         return Send(p);
     }
 
@@ -569,7 +427,7 @@ namespace perlin {
         constexpr uint32_t kDown = 11;
         constexpr uint32_t kLeft = 12;
         constexpr uint32_t kRight = 13;
-        constexpr uint32_t kPerformBlockActions = kInputFlagPerformBlockActions;
+        constexpr uint32_t kPerformBlockActions = InputFlag::PerformBlockActions;
 
         std::vector<uint32_t> inputFlags;
         inputFlags.reserve(flags.size() + 1);
@@ -581,9 +439,9 @@ namespace perlin {
         }
 
         if (pendingTeleportAck) {
-            if (std::find(inputFlags.begin(), inputFlags.end(), kInputFlagHandledTeleport) ==
+            if (std::find(inputFlags.begin(), inputFlags.end(), InputFlag::HandledTeleport) ==
                 inputFlags.end())
-                inputFlags.push_back(kInputFlagHandledTeleport);
+                inputFlags.push_back(InputFlag::HandledTeleport);
             pendingTeleportAck = false;
         }
 
@@ -653,7 +511,7 @@ namespace perlin {
         f.camZ = cameraZ;
         f.rawX = mx;
         f.rawZ = mz;
-        return SendUnreliable(net::PacketTraits<PlayerAuthInputPacket>::kId, net::Encode(f));
+        return SendUnreliable(f);
     }
 
     bool BedrockSession::SendPlayerAuthInputBlockAction(uint32_t action, int bx, int by, int bz, int face) {
@@ -661,25 +519,27 @@ namespace perlin {
     }
 
     bool BedrockSession::SendChat(const std::string& message) {
-        net::TextPacket p;
-        p.type = net::TextType::Chat;
-        p.source = playerName;
+        proto::TextPacket p;
+        p.category = proto::TextPacketCategory::Authored;
+        p.type = proto::TextPacketType::Chat;
+        p.sourceName = playerName;
         p.message = message;
         std::cout << "[bedrock] chat> " << message << std::endl;
         return Send(p);
     }
 
     bool BedrockSession::SendTickSync(uint64_t timestamp) {
-        net::NetworkStackLatencyPacket p;
+        proto::NetworkStackLatencyPacket p;
         p.timestamp = timestamp;
         return Send(p);
     }
 
     bool BedrockSession::SendCommand(const std::string& command) {
-        net::CommandRequestPacket p;
+        proto::CommandRequestPacket p;
         p.command = command;
-        p.originType = net::CommandOrigin::Player;
-        p.originUuid = net::RandomUuidV4();
+        p.origin.type = proto::CommandOriginType::Player;
+        p.origin.uuid = net::RandomUuidV4();
+        p.version = kCommandVersion;
         std::cout << "[bedrock] command> " << command << std::endl;
         return Send(p);
     }
@@ -700,9 +560,9 @@ namespace perlin {
     }
 
     bool BedrockSession::SendPlayerAction(uint32_t action, int bx, int by, int bz, int face) {
-        net::PlayerActionPacket p;
-        p.runtimeId = runtimeId;
-        p.action = (int32_t)action;
+        proto::PlayerActionPacket p;
+        p.runtimeEntityId = runtimeId;
+        p.action = static_cast<proto::Action>(action);
         p.position = {bx, static_cast<uint32_t>(by), bz};
         p.resultPosition = p.position;
         p.face = face;
@@ -727,18 +587,11 @@ namespace perlin {
         }
     }
 
-    void BedrockSession::HandleLevelChunk(const std::vector<uint8_t>& body) {
-        LevelChunkPacket pkt;
-        std::string err;
-        if (!net::Decode(body, pkt)) {
-            err = "malformed packet";
-            LogHex("LevelChunk", err, body);
-            return;
-        }
+    void BedrockSession::HandleLevelChunk(const LevelChunkPacket& pkt) {
         static int logged = 0;
         if (logged < 4) {
             logged++;
-            std::cout << "[chunk] LevelChunk (" << pkt.cx << "," << pkt.cz << ") dim=" << pkt.dimension
+            std::cout << "[chunk] LevelChunk (" << pkt.x << "," << pkt.z << ") dim=" << pkt.dimension
                       << " subChunkCount=" << (int32_t)pkt.subChunkCount
                       << " requestMode=" << pkt.hasRequestLimit << " limit=" << pkt.requestLimit
                       << " cache=" << pkt.cacheEnabled << " payload=" << pkt.payload.size() << "B"
@@ -764,10 +617,10 @@ namespace perlin {
             return;
         }
         const DimensionInfo& dim = ChunkCodec::Dimension(pkt.dimension);
-        netLevel.EnsureChunk(pkt.cx, pkt.cz);
+        netLevel.EnsureChunk(pkt.x, pkt.z);
         {
             std::lock_guard<std::mutex> lk(reqMutex);
-            seenColumns.insert({pkt.cx, pkt.cz});
+            seenColumns.insert({pkt.x, pkt.z});
         }
         chunksReceived++;
         statLevelChunks++;
@@ -786,11 +639,11 @@ namespace perlin {
                 p += used;
                 left -= used;
                 int absY = sc.hasYIndex ? sc.yIndex : dim.MinSubChunk() + (int)i;
-                ApplySubChunk(pkt.cx, pkt.cz, absY, sc);
+                ApplySubChunk(pkt.x, pkt.z, absY, sc);
             }
         } else {
-            ApplyBiomeColumn(pkt.cx, pkt.cz, pkt.payload);
-            QueueSubChunkRequests(pkt.dimension, pkt.cx, pkt.cz, dim.MinSubChunk(),
+            ApplyBiomeColumn(pkt.x, pkt.z, pkt.payload);
+            QueueSubChunkRequests(pkt.dimension, pkt.x, pkt.z, dim.MinSubChunk(),
                                   pkt.RequestSlots(dim.slots));
         }
     }
@@ -892,16 +745,8 @@ namespace perlin {
         }
     }
 
-    void BedrockSession::HandleSubChunk(const std::vector<uint8_t>& body) {
-        SubChunkPacket pkt;
-        std::string err;
+    void BedrockSession::HandleSubChunk(const SubChunkPacket& pkt) {
         statSubChunkReplies++;
-        if (!net::Decode(body, pkt)) {
-            err = "malformed packet";
-            LogHex("SubChunk", err, body);
-            statSubChunksFailed++;
-            return;
-        }
         {
             static int lastLayout = -2;
             static bool lastExact = true;
@@ -912,7 +757,7 @@ namespace perlin {
                 std::cout << "[chunk] SubChunk entry layout #" << pkt.layout
                           << (pkt.exact ? " matched the whole packet"
                                         : " NOT exact - only the first entry is trusted")
-                          << " (" << pkt.entries.size() << " entries, " << body.size() << "B)" << std::endl;
+                          << " (" << pkt.entries.size() << " entries)" << std::endl;
             }
         }
         if (pkt.dimension != 0)
@@ -920,7 +765,7 @@ namespace perlin {
         const DimensionInfo& dim = ChunkCodec::Dimension(pkt.dimension);
         (void)dim;
         for (const SubChunkEntry& e : pkt.entries) {
-            int cx = pkt.baseX + e.dx, absY = pkt.baseY + e.dy, cz = pkt.baseZ + e.dz;
+            int cx = pkt.x + e.dx, absY = pkt.y + e.dy, cz = pkt.z + e.dz;
             auto result = (SubChunkResult)e.result;
             statResult[e.result < 7 ? e.result : 7]++;
             {
@@ -1113,7 +958,7 @@ namespace perlin {
                     }
                 }
             }
-            auto req = SubChunkRequestPacket::ForColumn(dimension, cx, cz, firstY, count);
+            const auto req = SubChunkRequestPacket::ForColumn(dimension, cx, cz, firstY, count);
             Send(req);
             statRequestsSent += count;
         }

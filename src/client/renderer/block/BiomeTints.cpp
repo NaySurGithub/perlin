@@ -1,11 +1,11 @@
 #include "client/renderer/block/BiomeTints.hpp"
 #include "client/resources/TextureLoader.hpp"
+#include "util/Json.hpp"
 
 #include <cmath>
 #include <cstring>
 #include <fstream>
 #include <iostream>
-#include <nlohmann/json.hpp>
 #include <filesystem>
 
 namespace perlin {
@@ -28,31 +28,19 @@ namespace perlin {
             return true;
         }
 
-        const nlohmann::json* Child(const nlohmann::json& j, const char* key) {
-            if (!j.is_object())
-                return nullptr;
-            auto it = j.find(key);
-            return it == j.end() ? nullptr : &*it;
-        }
-
-        bool ResolveTint(const nlohmann::json& value,
+        bool ResolveTint(json::View value,
                          const std::unordered_map<std::string, std::array<float, 3>>& mapAvg,
                          std::array<float, 3>& out) {
-            if (value.is_string()) {
-                return ParseHex(value.get<std::string>(), out);
-            }
-            if (value.is_object()) {
-                auto cm = value.find("color_map");
-                if (cm != value.end() && cm->is_string()) {
-                    auto it = mapAvg.find(cm->get<std::string>());
-                    if (it != mapAvg.end()) {
-                        out = it->second;
-                        return true;
-                    }
-                    return false;
-                }
-            }
-            return false;
+            if (value.isString())
+                return ParseHex(value.str(), out);
+            const json::View colorMap = value["color_map"];
+            if (!colorMap.isString())
+                return false;
+            const auto it = mapAvg.find(colorMap.str());
+            if (it == mapAvg.end())
+                return false;
+            out = it->second;
+            return true;
         }
 
     }
@@ -72,10 +60,10 @@ namespace perlin {
                                       "evergreen", "swamp_grass", "swamp_foliage", "mangrove_swamp_foliage"};
         bool anyMap = false;
         for (const char* m : kMaps) {
-            std::string full = vanillaRpRoot + "\\textures\\colormap\\" + m + ".png";
+            std::string full = vanillaRpRoot + "/textures/colormap/" + m + ".png";
             Texture tex;
             if (!LoadTexture(full, tex) || tex.width <= 0 || tex.height <= 0) {
-                std::string tga = vanillaRpRoot + "\\textures\\colormap\\" + m + ".tga";
+                std::string tga = vanillaRpRoot + "/textures/colormap/" + m + ".tga";
                 if (!LoadTexture(tga, tex) || tex.width <= 0 || tex.height <= 0)
                     continue;
             }
@@ -114,20 +102,17 @@ namespace perlin {
 
         {
             std::string defs =
-                ReadFile(vanillaRpRoot + "\\..\\repo\\metadata\\vanilladata_modules\\mojang-biomes.json");
-            try {
-                auto j = nlohmann::json::parse(defs);
-                if (j.contains("data_items") && j["data_items"].is_array()) {
-                    for (auto& e : j["data_items"]) {
-                        if (!e.contains("id") || !e.contains("name"))
-                            continue;
-                        int id = e["id"].get<int>();
-                        std::string name = e["name"].get<std::string>();
-                        idToName[id] = name;
-                        nameToId[name] = id;
-                    }
+                ReadFile(vanillaRpRoot + "/../repo/metadata/vanilladata_modules/mojang-biomes.json");
+            if (const auto document = json::Document::Parse(defs)) {
+                for (const json::View e : document->root()["data_items"].items()) {
+                    if (!e["id"].isNumber() || !e["name"].isString())
+                        continue;
+                    const int id = e["id"].integer();
+                    const std::string name = e["name"].str();
+                    idToName[id] = name;
+                    nameToId[name] = id;
                 }
-            } catch (...) {}
+            }
         }
 
         {
@@ -141,22 +126,17 @@ namespace perlin {
                     std::string txt = ReadFile(full);
                     if (txt.empty())
                         continue;
-                    try {
-                        auto root = nlohmann::json::parse(txt);
-                        const auto* biome = Child(root, "minecraft:biome");
-                        const auto* desc = biome ? Child(*biome, "description") : nullptr;
-                        const auto* ident = desc ? Child(*desc, "identifier") : nullptr;
-                        const auto* comps = biome ? Child(*biome, "components") : nullptr;
-                        const auto* cl = comps ? Child(*comps, "minecraft:climate") : nullptr;
-                        if (!ident || !ident->is_string() || !cl || !cl->is_object())
-                            continue;
-                        const auto* tt = Child(*cl, "temperature");
-                        const auto* dd = Child(*cl, "downfall");
-                        if (!tt || !dd || !tt->is_number() || !dd->is_number())
-                            continue;
-                        climate[ident->get<std::string>()] = {(float)tt->get<double>(),
-                                                              (float)dd->get<double>()};
-                    } catch (...) {}
+                    const auto document = json::Document::Parse(txt, true);
+                    if (!document)
+                        continue;
+                    const json::View biome = document->root()["minecraft:biome"];
+                    const json::View ident = biome["description"]["identifier"];
+                    const json::View climateNode = biome["components"]["minecraft:climate"];
+                    const json::View temperature = climateNode["temperature"];
+                    const json::View downfall = climateNode["downfall"];
+                    if (!ident.isString() || !temperature.isNumber() || !downfall.isNumber())
+                        continue;
+                    climate[ident.str()] = {temperature.real(), downfall.real()};
                 }
             }
         }
@@ -171,76 +151,48 @@ namespace perlin {
                     std::string txt = ReadFile(full);
                     if (txt.empty())
                         continue;
-                    try {
-                        auto root = nlohmann::json::parse(txt);
-                        const auto* biome = Child(root, "minecraft:client_biome");
-                        const auto* desc = biome ? Child(*biome, "description") : nullptr;
-                        const auto* ident = desc ? Child(*desc, "identifier") : nullptr;
-                        if (!ident || !ident->is_string())
-                            continue;
-                        std::string name = ident->get<std::string>();
-                        const auto* comp = Child(*biome, "components");
-                        if (!comp)
-                            continue;
-                        BiomeColorRule& rule = rules[name];
-                        std::array<float, 3> c;
-                        auto colorOf = [&](const char* comp1, const char* key) -> const nlohmann::json* {
-                            const auto* a = Child(*comp, comp1);
-                            return a ? Child(*a, key) : nullptr;
-                        };
-                        if (auto* v = colorOf("minecraft:grass_appearance", "color");
-                            v && ResolveTint(*v, mapAvg, c)) {
-                            rule.grass = c;
-                            rule.hasGrass = true;
-                        }
-                        if (auto* v = colorOf("minecraft:foliage_appearance", "color");
-                            v && ResolveTint(*v, mapAvg, c)) {
-                            rule.foliage = c;
-                            rule.hasFoliage = true;
-                        }
-                        if (auto* v = colorOf("minecraft:dry_foliage_color", "color");
-                            v && ResolveTint(*v, mapAvg, c)) {
-                            rule.dryFoliage = c;
-                            rule.hasDry = true;
-                        }
-                        if (auto* v = colorOf("minecraft:water_appearance", "surface_color");
-                            v && v->is_string() && ParseHex(v->get<std::string>(), c)) {
-                            rule.water = c;
-                            rule.hasWater = true;
-                        }
-                    } catch (...) {}
+                    const auto document = json::Document::Parse(txt, true);
+                    if (!document)
+                        continue;
+                    const json::View biome = document->root()["minecraft:client_biome"];
+                    const json::View ident = biome["description"]["identifier"];
+                    const json::View components = biome["components"];
+                    if (!ident.isString() || !components.valid())
+                        continue;
+                    BiomeColorRule& rule = rules[ident.str()];
+                    std::array<float, 3> c;
+                    if (const auto v = components["minecraft:grass_appearance"]["color"];
+                        ResolveTint(v, mapAvg, c)) {
+                        rule.grass = c;
+                        rule.hasGrass = true;
+                    }
+                    if (const auto v = components["minecraft:foliage_appearance"]["color"];
+                        ResolveTint(v, mapAvg, c)) {
+                        rule.foliage = c;
+                        rule.hasFoliage = true;
+                    }
+                    if (const auto v = components["minecraft:dry_foliage_color"]["color"];
+                        ResolveTint(v, mapAvg, c)) {
+                        rule.dryFoliage = c;
+                        rule.hasDry = true;
+                    }
+                    if (const auto v = components["minecraft:water_appearance"]["surface_color"];
+                        v.isString() && ParseHex(v.str(), c)) {
+                        rule.water = c;
+                        rule.hasWater = true;
+                    }
                 }
             }
         }
 
-        {
-            std::string txt = ReadFile(vanillaRpRoot + "/biomes_client.json");
-            std::string noComments;
-            noComments.reserve(txt.size());
-            for (size_t i = 0; i < txt.size(); i++) {
-                if (txt[i] == '/' && i + 1 < txt.size() && txt[i + 1] == '/') {
-                    while (i < txt.size() && txt[i] != '\n')
-                        i++;
-                } else {
-                    noComments.push_back(txt[i]);
-                }
-            }
-            try {
-                auto b = nlohmann::json::parse(noComments);
-                if (b.contains("biomes") && b["biomes"].is_object()) {
-                    const nlohmann::json* pick = nullptr;
-                    if (b["biomes"].contains("default"))
-                        pick = &b["biomes"]["default"];
-                    else if (b["biomes"].contains("minecraft:plains"))
-                        pick = &b["biomes"]["minecraft:plains"];
-                    if (pick && pick->contains("water_surface_color") &&
-                        (*pick)["water_surface_color"].is_string()) {
-                        std::array<float, 3> wc;
-                        if (ParseHex((*pick)["water_surface_color"].get<std::string>(), wc))
-                            defaultWater = wc;
-                    }
-                }
-            } catch (...) {}
+        if (const auto document =
+                json::Document::Parse(ReadFile(vanillaRpRoot + "/biomes_client.json"), true)) {
+            const json::View biomes = document->root()["biomes"];
+            const json::View pick =
+                biomes.contains("default") ? biomes["default"] : biomes["minecraft:plains"];
+            std::array<float, 3> water;
+            if (ParseHex(pick["water_surface_color"].str(), water))
+                defaultWater = water;
         }
 
         auto avg = [&](const char* m, std::array<float, 3> fb) {

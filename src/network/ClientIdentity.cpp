@@ -6,7 +6,8 @@
 #include <openssl/obj_mac.h>
 #include <openssl/x509.h>
 
-#include <nlohmann/json.hpp>
+#include "network/LoginClaims.hpp"
+#include "util/Json.hpp"
 
 #include <cstring>
 #include <cstdio>
@@ -95,10 +96,10 @@ namespace perlin {
         return true;
     }
 
-    static std::string BuildJwt(const ClientIdentity& id, const nlohmann::json& header,
-                                const nlohmann::json& claims) {
-        std::string h = B64Url(header.dump());
-        std::string p = B64Url(claims.dump());
+    template <class Header, class Claims>
+    static std::string BuildJwt(const ClientIdentity& id, const Header& header, const Claims& claims) {
+        std::string h = B64Url(json::Write(header));
+        std::string p = B64Url(json::Write(claims));
         std::vector<uint8_t> raw;
         if (!id.Sign(h + "." + p, raw))
             return {};
@@ -114,14 +115,16 @@ namespace perlin {
         if (cpk.empty())
             return mpToken;
         int64_t now = (int64_t)time(nullptr);
-        nlohmann::json header = {{"alg", "ES384"}, {"x5u", cpk}};
-        nlohmann::json claims = {{"cpk", cpk},          {"xid", "0"},
-                                 {"xname", playerName}, {"identity", uuid},
-                                 {"leguuid", uuid},     {"mid", ""},
-                                 {"iss", "self"},       {"aud", "api://auth-minecraft-services/multiplayer"},
-                                 {"iat", now},          {"nbf", now},
-                                 {"exp", now + 3600}};
-        mpToken = BuildJwt(*this, header, claims);
+        const claims::Header header{.x5u = cpk};
+        claims::Multiplayer payload;
+        payload.cpk = cpk;
+        payload.xname = playerName;
+        payload.identity = uuid;
+        payload.leguuid = uuid;
+        payload.iat = now;
+        payload.nbf = now;
+        payload.exp = now + 3600;
+        mpToken = BuildJwt(*this, header, payload);
         if (mpToken.empty())
             return mpToken;
         return mpToken;
@@ -130,7 +133,7 @@ namespace perlin {
     std::string ClientIdentity::AssertOffer(const std::string& sdp) const {
         if (!key || mpToken.empty())
             return {};
-        nlohmann::json entries = nlohmann::json::array();
+        claims::Fingerprints entries;
         size_t pos = 0;
         const char* kPrefix = "a=fingerprint:";
         while ((pos = sdp.find(kPrefix, pos)) != std::string::npos) {
@@ -138,23 +141,21 @@ namespace perlin {
             std::string line = sdp.substr(pos, eol == std::string::npos ? eol : eol - pos);
             std::string rest = line.substr(strlen(kPrefix));
             size_t sp = rest.find(' ');
-            entries.push_back({{"algorithm", rest.substr(0, sp)},
-                               {"digest", sp == std::string::npos ? "" : rest.substr(sp + 1)}});
+            entries.fingerprint.push_back(
+                {rest.substr(0, sp), sp == std::string::npos ? "" : rest.substr(sp + 1)});
             pos = eol == std::string::npos ? sdp.size() : eol;
         }
-        if (entries.empty())
+        if (entries.fingerprint.empty())
             return {};
-        std::string payloadB64 = B64Url(nlohmann::json({{"fingerprint", entries}}).dump());
-        std::string headerB64 = B64Url(nlohmann::json({{"alg", "ES384"}}).dump());
+        std::string payloadB64 = B64Url(json::Write(entries));
+        std::string headerB64 = B64Url(json::Write(claims::Algorithm{}));
         std::vector<uint8_t> raw;
         if (!Sign(headerB64 + "." + payloadB64, raw))
             return {};
         std::string fps = headerB64 + ".." + B64Url(raw.data(), raw.size());
 
-        std::string assertion = nlohmann::json({{"fingerprints", fps}, {"token", mpToken}}).dump();
-        std::string outer =
-            nlohmann::json({{"assertion", assertion}, {"idp", {{"domain", ""}, {"protocol", "default"}}}})
-                .dump();
+        const std::string assertion = json::Write(claims::Assertion{fps, mpToken});
+        const std::string outer = json::Write(claims::Envelope{assertion, {}});
         std::string env = B64Standard(outer);
 
         size_t mpos = sdp.find("m=");

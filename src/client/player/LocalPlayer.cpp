@@ -1,5 +1,5 @@
 #include "client/player/LocalPlayer.hpp"
-#include "network/Packets.hpp"
+#include "protocol/Packets.hpp"
 #include "world/level/block/BlockPalette.hpp"
 
 #include <algorithm>

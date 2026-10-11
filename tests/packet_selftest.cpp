@@ -1,8 +1,16 @@
-#include "network/Packets.hpp"
+#include "network/PacketDispatcher.hpp"
+#include "network/Uuid.hpp"
+#include "protocol/Packets.hpp"
 
 #include <cstdio>
+#include <string>
 
-using namespace perlin::net;
+namespace perlin::proto {
+    int RoundTripAll(std::string& failures, int& skipped);
+}
+
+using namespace perlin;
+using namespace perlin::proto;
 
 static int failures = 0;
 #define CHECK(c)                                                                                             \
@@ -13,87 +21,135 @@ static int failures = 0;
         }                                                                                                    \
     } while (0)
 
+template <class P> static bool Decode(const std::vector<uint8_t>& body, P& packet) {
+    net::ReadStream stream(body.data(), body.size());
+    return Read(stream, packet);
+}
+
 int main() {
     {
         SetTimePacket p;
         p.time = -5000;
+        const std::vector<uint8_t> body = net::Encode(p);
+        CHECK((body == std::vector<uint8_t>{0x8F, 0x4E}));
         SetTimePacket q;
-        CHECK(Decode(Encode(p), q) && q.time == -5000);
+        CHECK(Decode(body, q) && q.time == -5000);
     }
     {
         CommandRequestPacket p;
         p.command = "/time query daytime";
-        p.originUuid = RandomUuidV4();
-        const std::vector<uint8_t> body = Encode(p);
-        const size_t expected = 1 + p.command.size() + 1 + 16 + 1 + 1 + 1;
-        CHECK(body.size() == expected);
+        p.origin.uuid = net::RandomUuidV4();
+        p.version = 52;
+        const std::vector<uint8_t> body = net::Encode(p);
+        CHECK(body.size() == 1 + p.command.size() + 1 + 16 + 1 + 1 + 1);
         CHECK(body[0] == p.command.size());
-        CHECK(body[1 + p.command.size()] == CommandOrigin::Player);
+        CHECK(body[1 + p.command.size()] == 0);
+        CHECK(body.back() == 104);
         CommandRequestPacket q;
         CHECK(Decode(body, q));
-        CHECK(q.command == p.command && q.originUuid.bytes == p.originUuid.bytes);
-        CHECK(q.version == 52 && !q.isInternal);
+        CHECK(q.command == p.command && q.origin.uuid == p.origin.uuid);
+        CHECK(q.version == 52 && !q.internal && !q.origin.playerId);
 
-        p.originType = CommandOrigin::Test;
-        p.playerId = -9;
+        p.origin.type = CommandOriginType::Test;
+        p.origin.playerId = -9;
         CommandRequestPacket r;
-        CHECK(Decode(Encode(p), r) && r.playerId == -9 && r.originType == CommandOrigin::Test);
+        CHECK(Decode(net::Encode(p), r) && r.origin.playerId == -9 &&
+              r.origin.type == CommandOriginType::Test);
     }
     {
         TextPacket p;
-        p.type = TextType::Chat;
-        p.source = "Steve";
+        p.category = TextPacketCategory::Authored;
+        p.type = TextPacketType::Chat;
+        p.sourceName = "Steve";
         p.message = "hello";
+        const std::vector<uint8_t> body = net::Encode(p);
+        CHECK(body[0] == 0 && body[1] == 1 && body[2] == 1);
         TextPacket q;
-        const std::vector<uint8_t> body = Encode(p);
-        CHECK(body[0] == 0 && body[1] == TextType::Chat);
-        CHECK(Decode(body, q) && q.source == "Steve" && q.message == "hello");
+        CHECK(Decode(body, q) && q.sourceName == "Steve" && q.message == "hello");
 
-        p.type = TextType::Translate;
+        p.category = TextPacketCategory::Parameters;
+        p.type = TextPacketType::Translation;
         p.parameters = {"a", "b"};
         TextPacket r;
-        CHECK(Decode(Encode(p), r) && r.parameters.size() == 2 && r.parameters[1] == "b");
+        CHECK(Decode(net::Encode(p), r) && r.parameters.size() == 2 && r.parameters[1] == "b");
     }
     {
         UpdateAbilitiesPacket p;
-        p.targetPlayerId = 77;
-        AbilityLayer layer;
-        layer.abilities = 1u << 10;
-        layer.values = 1u << 10;
+        p.entityUniqueId = 77;
+        AbilityLayers layer;
+        layer.type = AbilityLayersType::Base;
+        layer.allowed = 1u << 10;
+        layer.enabled = 1u << 10;
         layer.flySpeed = 0.05f;
-        p.layers.push_back(layer);
+        p.abilities.push_back(layer);
         UpdateAbilitiesPacket q;
-        CHECK(Decode(Encode(p), q) && q.targetPlayerId == 77 && q.layers.size() == 1);
-        CHECK(q.layers[0].abilities == (1u << 10) && q.layers[0].flySpeed == 0.05f);
+        CHECK(Decode(net::Encode(p), q) && q.entityUniqueId == 77 && q.abilities.size() == 1);
+        CHECK(q.abilities[0].allowed == (1u << 10) && q.abilities[0].flySpeed == 0.05f);
     }
     {
         PlayerActionPacket p;
-        p.runtimeId = 3;
-        p.position = {10, 64, -20};
+        p.runtimeEntityId = 3;
+        p.position = {10, static_cast<uint32_t>(-64), -20};
         PlayerActionPacket q;
-        CHECK(Decode(Encode(p), q) && q.position.x == 10 && q.position.y == 64 && q.position.z == -20);
+        CHECK(Decode(net::Encode(p), q) && q.position.x == 10 && static_cast<int32_t>(q.position.y) == -64 &&
+              q.position.z == -20);
     }
     {
         MovePlayerPacket p;
-        p.mode = 2;
-        p.teleportCause = 3;
+        p.mode = MovePlayerPacketMode::Teleport;
+        p.teleport = MovePlayerPacketTeleport{3, 0};
         p.tick = 99;
         MovePlayerPacket q;
-        CHECK(Decode(Encode(p), q) && q.teleportCause == 3 && q.tick == 99);
+        CHECK(Decode(net::Encode(p), q) && q.teleport && q.teleport->cause == 3 && q.tick == 99);
+
+        p.mode = MovePlayerPacketMode::Normal;
+        p.teleport.reset();
+        MovePlayerPacket r;
+        CHECK(Decode(net::Encode(p), r) && !r.teleport && r.tick == 99);
     }
     {
         ResourcePackClientResponsePacket p;
-        const std::vector<uint8_t> body = Encode(p);
-        CHECK(body.size() == 3 && body[0] == 4);
+        p.status = ResourcePackClientResponsePacketStatus::Completed;
+        const std::vector<uint8_t> body = net::Encode(p);
+        CHECK((body == std::vector<uint8_t>{4, 0, 0}));
     }
     {
-        std::vector<uint8_t> empty;
-        ResourcePacksInfoPacket info;
-        CHECK(Decode(empty, info));
+        RequestNetworkSettingsPacket p;
+        p.clientProtocol = 2193;
+        CHECK((net::Encode(p) == std::vector<uint8_t>{0, 0, 0x08, 0x91}));
         NetworkSettingsPacket ns;
-        std::vector<uint8_t> raw = {1, 0, 0, 0};
-        CHECK(Decode(raw, ns) && ns.compressionThreshold == 1);
+        CHECK(Decode({1, 0, 0, 0, 0, 0, 0, 0, 0, 0}, ns) && ns.compressionThreshold == 1);
     }
+    {
+        net::PacketDispatcher dispatcher;
+        int calls = 0;
+        int32_t seen = 0;
+        dispatcher.On<SetTimePacket>([&](const SetTimePacket& p) {
+            calls++;
+            seen = p.time;
+        });
+        dispatcher.On<SetTimePacket>([&](const SetTimePacket&) { calls++; });
+        SetTimePacket p;
+        p.time = 12000;
+        const std::vector<uint8_t> body = net::Encode(p);
+        CHECK(dispatcher.Dispatch(SetTimePacket::kId, body.data(), body.size()) ==
+              net::PacketDispatcher::Result::Handled);
+        CHECK(calls == 2 && seen == 12000);
+        CHECK(dispatcher.Dispatch(SetTimePacket::kId, body.data(), 0) ==
+              net::PacketDispatcher::Result::Malformed);
+        CHECK(dispatcher.Dispatch(9999, body.data(), body.size()) ==
+              net::PacketDispatcher::Result::Unhandled);
+        CHECK(calls == 2);
+    }
+    {
+        std::string failed;
+        int skipped = 0;
+        CHECK(RoundTripAll(failed, skipped) == 0);
+        if (!failed.empty())
+            std::printf("round trip failures:\n%s", failed.c_str());
+    }
+    CHECK(std::string(PacketName(SetTimePacket::kId)) == "set_time");
+    CHECK(std::string(PacketName(LevelChunkPacket::kId)) == "level_chunk");
 
     std::printf(failures ? "%d FAILED\n" : "packet self-tests passed\n", failures);
     return failures ? 1 : 0;
