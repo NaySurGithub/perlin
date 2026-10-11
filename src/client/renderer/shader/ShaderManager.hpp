@@ -19,6 +19,7 @@ namespace perlin {
         }
 
         void SetFrame(const FrameParams& params, const float modelViewProjection[16]);
+        void ApplyUniforms() const;
         void Apply(bgfx::TextureHandle atlas, bgfx::TextureHandle lightmap, uint32_t atlasFlags,
                    uint32_t lightmapFlags) const;
 

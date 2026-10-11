@@ -1,4 +1,7 @@
 #include "client/renderer/Tessellator.hpp"
+#include "client/renderer/block/BlockLibrary.hpp"
+
+#include <cmath>
 
 namespace perlin {
     void Tessellator::Begin() {
@@ -20,9 +23,19 @@ namespace perlin {
         if (!building)
             return;
         const uint32_t base = static_cast<uint32_t>(vertices.size());
-        for (int i = 0; i < 4; i++)
-            vertices.push_back({v[i][0], v[i][1], v[i][2], PackColor(c[i][0], c[i][1], c[i][2]), uv[i][0],
-                                uv[i][1], PackLight(light[i][0], light[i][1])});
+        constexpr float kTiles = static_cast<float>(BlockLibrary::kAtlasTiles);
+        constexpr float kInset = 1.0f / (2.0f * BlockLibrary::kTilePx);
+        constexpr float kSpan = 1.0f - 2.0f * kInset;
+        const float centerU = (uv[0][0] + uv[1][0] + uv[2][0] + uv[3][0]) * 0.25f * kTiles;
+        const float centerV = (uv[0][1] + uv[1][1] + uv[2][1] + uv[3][1]) * 0.25f * kTiles;
+        const float column = std::floor(centerU), row = std::floor(centerV);
+        const uint32_t tile = static_cast<uint32_t>(row * kTiles + column) << 16;
+        for (int i = 0; i < 4; i++) {
+            const float u = (uv[i][0] * kTiles - column - kInset) / kSpan;
+            const float w = (uv[i][1] * kTiles - row - kInset) / kSpan;
+            vertices.push_back({v[i][0], v[i][1], v[i][2], PackColor(c[i][0], c[i][1], c[i][2]), u, w,
+                                PackLight(light[i][0], light[i][1]) | tile});
+        }
 
         std::vector<uint32_t>& out = indices[static_cast<size_t>(layer)];
         static constexpr uint32_t kForward[6] = {0, 1, 2, 0, 2, 3};

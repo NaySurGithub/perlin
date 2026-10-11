@@ -148,8 +148,7 @@ namespace perlin {
         values[Time][3] = static_cast<float>(params.frameIndex);
     }
 
-    void ShaderManager::Apply(bgfx::TextureHandle atlas, bgfx::TextureHandle lightmap, uint32_t atlasFlags,
-                              uint32_t lightmapFlags) const {
+    void ShaderManager::ApplyUniforms() const {
         bgfx::setUniform(mvp, modelViewProjection);
         bgfx::setUniform(inverseViewProjection, inverse);
         bgfx::setUniform(camera, values[Camera]);
@@ -159,6 +158,10 @@ namespace perlin {
         bgfx::setUniform(sunDirection, values[SunDirection]);
         bgfx::setUniform(sunrise, values[Sunrise]);
         bgfx::setUniform(time, values[Time]);
+    }
+
+    void ShaderManager::Apply(bgfx::TextureHandle atlas, bgfx::TextureHandle lightmap, uint32_t atlasFlags,
+                              uint32_t lightmapFlags) const {
         bgfx::setTexture(0, atlasSampler, atlas, atlasFlags);
         bgfx::setTexture(1, lightmapSampler, lightmap, lightmapFlags);
     }

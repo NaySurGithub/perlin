@@ -1,10 +1,10 @@
-$input v_color0, v_texcoord0, v_texcoord1, v_fogDistance
+$input v_color0, v_texcoord0, v_texcoord1, v_fogDistance, v_layer
 
 #include "common.sh"
 
 void main()
 {
-    vec4 texel = texture2D(s_atlas, v_texcoord0) * v_color0;
+    vec4 texel = texture2DArray(s_atlas, vec3(v_texcoord0, v_layer)) * v_color0;
     if (texel.a < 0.01)
         discard;
     vec3 color = texel.rgb * lightmapColor(v_texcoord1);

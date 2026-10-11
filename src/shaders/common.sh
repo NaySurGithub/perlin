@@ -1,6 +1,6 @@
 #include <bgfx_shader.sh>
 
-SAMPLER2D(s_atlas, 0);
+SAMPLER2DARRAY(s_atlas, 0);
 SAMPLER2D(s_lightmap, 1);
 
 uniform mat4 u_mvp;

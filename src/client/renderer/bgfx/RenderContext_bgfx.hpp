@@ -26,8 +26,8 @@ namespace perlin {
         void BeginFrame(const FrameParams& params) override;
         void EndFrame() override;
         void RequestScreenshot(const std::string& path) override;
-        void UploadAtlas(const uint8_t* rgba, int size) override;
-        void UpdateAtlasRegion(int px, int py, const uint8_t* rgba16) override;
+        void UploadAtlas(const uint8_t* rgba, int size, int tiles) override;
+        void UpdateAtlasRegion(int tile, const uint8_t* rgba16) override;
         void UpdateChunkMesh(int cx, int cz, const Tessellator& tess, uint64_t version) override;
         void RemoveChunkMesh(int cx, int cz) override;
         void ClearChunkMeshes() override;
@@ -102,8 +102,7 @@ namespace perlin {
 
         int width = 0, height = 0;
 
-        int atlasSize = 0;
-        std::vector<std::vector<uint8_t>> atlasMips;
+        int atlasLayers = 0;
 
         std::vector<VisibleChunk> visible;
 

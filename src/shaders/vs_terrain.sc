@@ -1,5 +1,5 @@
 $input a_position, a_color0, a_texcoord0, a_texcoord1
-$output v_color0, v_texcoord0, v_texcoord1, v_fogDistance
+$output v_color0, v_texcoord0, v_texcoord1, v_fogDistance, v_layer
 
 #include "common.sh"
 
@@ -9,5 +9,6 @@ void main()
     v_color0 = a_color0;
     v_texcoord0 = a_texcoord0;
     v_texcoord1 = a_texcoord1.xy;
+    v_layer = floor(a_texcoord1.z * 255.0 + 0.5) + floor(a_texcoord1.w * 255.0 + 0.5) * 256.0;
     v_fogDistance = cylindricalDistance(a_position - u_camera.xyz);
 }

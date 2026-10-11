@@ -41,8 +41,8 @@ namespace perlin {
         virtual void EndFrame() = 0;
         virtual void RequestScreenshot(const std::string& path) = 0;
 
-        virtual void UploadAtlas(const uint8_t* rgba, int size) = 0;
-        virtual void UpdateAtlasRegion(int px, int py, const uint8_t* rgba16) = 0;
+        virtual void UploadAtlas(const uint8_t* rgba, int size, int tiles) = 0;
+        virtual void UpdateAtlasRegion(int tile, const uint8_t* rgba16) = 0;
 
         virtual void UpdateChunkMesh(int cx, int cz, const Tessellator& tess, uint64_t version) = 0;
         virtual void RemoveChunkMesh(int cx, int cz) = 0;

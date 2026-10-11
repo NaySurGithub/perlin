@@ -85,6 +85,16 @@ namespace perlin {
         uint32_t flags = BGFX_RESET_NONE;
         if (vsync)
             flags |= BGFX_RESET_VSYNC;
+        flags |= BGFX_RESET_MAXANISOTROPY;
+        const std::string msaa = Env("PERLIN_MSAA");
+        if (msaa == "2")
+            flags |= BGFX_RESET_MSAA_X2;
+        else if (msaa == "4")
+            flags |= BGFX_RESET_MSAA_X4;
+        else if (msaa == "8")
+            flags |= BGFX_RESET_MSAA_X8;
+        else if (msaa == "16")
+            flags |= BGFX_RESET_MSAA_X16;
         return flags;
     }
 
@@ -150,13 +160,14 @@ namespace perlin {
             return false;
         }
 
-        samplerFlags = BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP | BGFX_SAMPLER_MAG_POINT;
+        samplerFlags = BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP | BGFX_SAMPLER_MAG_POINT |
+                       BGFX_SAMPLER_MIN_ANISOTROPIC;
         std::string filter = Env("PERLIN_FILTER");
         if (!filter.empty() && (filter[0] == 'p' || filter[0] == 'P'))
-            samplerFlags |= BGFX_SAMPLER_MIN_POINT;
-        else if (!filter.empty() && (filter[0] == 'a' || filter[0] == 'A'))
-            samplerFlags = BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP | BGFX_SAMPLER_MIN_ANISOTROPIC |
-                           BGFX_SAMPLER_MAG_ANISOTROPIC;
+            samplerFlags = BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP | BGFX_SAMPLER_MAG_POINT |
+                           BGFX_SAMPLER_MIN_POINT;
+        else if (!filter.empty() && (filter[0] == 'l' || filter[0] == 'L'))
+            samplerFlags = BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP | BGFX_SAMPLER_MAG_POINT;
 
         std::string cull = Env("PERLIN_CULL");
         if (!cull.empty() && cull[0] == '0')
@@ -165,8 +176,9 @@ namespace perlin {
             cullState = BGFX_STATE_CULL_CW;
 
         const uint32_t white = 0xFFFFFFFFu;
-        whiteTex = bgfx::createTexture2D(1, 1, false, 1, bgfx::TextureFormat::RGBA8, samplerFlags,
-                                         bgfx::copy(&white, sizeof(white)));
+        const uint32_t whiteLayers[2] = {white, white};
+        whiteTex = bgfx::createTexture2D(1, 1, false, 2, bgfx::TextureFormat::RGBA8, samplerFlags,
+                                         bgfx::copy(whiteLayers, sizeof(whiteLayers)));
 
         lightmapFlags = BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP | BGFX_SAMPLER_MIN_POINT |
                         BGFX_SAMPLER_MAG_POINT | BGFX_SAMPLER_MIP_POINT;
@@ -286,99 +298,69 @@ namespace perlin {
         fclose(f);
     }
 
-    void RenderContext_bgfx::UploadAtlas(const uint8_t* rgba, int size) {
-        if (!initialized || !rgba || size <= 0)
-            return;
-        int levels = 1;
-        for (int s = size; s > 1; s >>= 1)
-            levels++;
-        std::vector<std::vector<uint8_t>> mips((size_t)levels);
-        mips[0].assign(rgba, rgba + (size_t)size * size * 4);
-        for (int l = 1; l < levels; l++) {
-            int pw = size >> (l - 1);
-            int w = pw >> 1;
-            mips[(size_t)l].resize((size_t)w * w * 4);
-            const uint8_t* src = mips[(size_t)l - 1].data();
-            uint8_t* dst = mips[(size_t)l].data();
-            for (int y = 0; y < w; y++)
-                for (int x = 0; x < w; x++) {
-                    const size_t idx[4] = {
-                        ((size_t)(y * 2) * pw + x * 2) * 4,
-                        ((size_t)(y * 2) * pw + x * 2 + 1) * 4,
-                        ((size_t)(y * 2 + 1) * pw + x * 2) * 4,
-                        ((size_t)(y * 2 + 1) * pw + x * 2 + 1) * 4,
-                    };
-                    DownsampleAlphaAware(src, idx, dst + ((size_t)y * w + x) * 4);
-                }
-        }
+    namespace {
+        constexpr int kTileSize = 16;
+        constexpr int kTileMips = 5;
 
-        size_t total = 0;
-        for (auto& m : mips)
-            total += m.size();
-        const bgfx::Memory* mem = bgfx::alloc((uint32_t)total);
-        size_t off = 0;
-        for (auto& m : mips) {
-            std::memcpy(mem->data + off, m.data(), m.size());
-            off += m.size();
+        void UploadTile(bgfx::TextureHandle tex, int layer, const uint8_t* rgba, size_t stride) {
+            std::vector<uint8_t> level((size_t)kTileSize * kTileSize * 4);
+            for (int y = 0; y < kTileSize; y++)
+                std::memcpy(level.data() + (size_t)y * kTileSize * 4, rgba + (size_t)y * stride,
+                            (size_t)kTileSize * 4);
+            for (int l = 0; l < kTileMips; l++) {
+                const int w = kTileSize >> l;
+                bgfx::updateTexture2D(tex, (uint16_t)layer, (uint8_t)l, 0, 0, (uint16_t)w, (uint16_t)w,
+                                      bgfx::copy(level.data(), (uint32_t)((size_t)w * w * 4)), (uint16_t)(w * 4));
+                if (l + 1 == kTileMips)
+                    break;
+                const int h = w >> 1;
+                std::vector<uint8_t> next((size_t)h * h * 4);
+                for (int y = 0; y < h; y++)
+                    for (int x = 0; x < h; x++) {
+                        const size_t idx[4] = {
+                            ((size_t)(y * 2) * w + x * 2) * 4,
+                            ((size_t)(y * 2) * w + x * 2 + 1) * 4,
+                            ((size_t)(y * 2 + 1) * w + x * 2) * 4,
+                            ((size_t)(y * 2 + 1) * w + x * 2 + 1) * 4,
+                        };
+                        DownsampleAlphaAware(level.data(), idx, next.data() + ((size_t)y * h + x) * 4);
+                    }
+                level = std::move(next);
+            }
         }
-        bgfx::TextureHandle tex = bgfx::createTexture2D((uint16_t)size, (uint16_t)size, true, 1,
-                                                        bgfx::TextureFormat::RGBA8, samplerFlags, mem);
-        if (!bgfx::isValid(tex)) {
-            std::cout << "[bgfx] atlas upload failed (size " << size << ")" << std::endl;
+    }
+
+    void RenderContext_bgfx::UploadAtlas(const uint8_t* rgba, int size, int tiles) {
+        if (!initialized || !rgba || size <= 0 || tiles <= 0)
             return;
+        const int limit = std::max<int>(1, bgfx::getCaps()->limits.maxTextureLayers);
+        const int layers = std::min(limit, (tiles + 255) / 256 * 256);
+        bgfx::TextureHandle tex = bgfx::createTexture2D(kTileSize, kTileSize, true, (uint16_t)layers,
+                                                        bgfx::TextureFormat::RGBA8, samplerFlags, nullptr);
+        if (!bgfx::isValid(tex)) {
+            std::cout << "[bgfx] atlas upload failed (" << layers << " layers)" << std::endl;
+            return;
+        }
+        const int perRow = size / kTileSize;
+        const size_t stride = (size_t)size * 4;
+        const int count = std::min(tiles, layers);
+        for (int tile = 0; tile < count; tile++) {
+            const uint8_t* origin =
+                rgba + ((size_t)(tile / perRow) * kTileSize * size + (size_t)(tile % perRow) * kTileSize) * 4;
+            UploadTile(tex, tile, origin, stride);
         }
         if (bgfx::isValid(atlasTex))
             bgfx::destroy(atlasTex);
         atlasTex = tex;
-        atlasSize = size;
-        atlasMips = std::move(mips);
+        atlasLayers = layers;
     }
 
-    void RenderContext_bgfx::UpdateAtlasRegion(int px, int py, const uint8_t* rgba16) {
-        if (!initialized || !bgfx::isValid(atlasTex) || !rgba16 || px < 0 || py < 0)
+    void RenderContext_bgfx::UpdateAtlasRegion(int tile, const uint8_t* rgba16) {
+        if (!initialized || !bgfx::isValid(atlasTex) || !rgba16 || tile < 0 || tile >= atlasLayers)
             return;
-        const int size = atlasSize;
-        if (atlasMips.empty() || size <= 0 || px + 16 > size || py + 16 > size)
-            return;
-        bgfx::updateTexture2D(atlasTex, 0, 0, (uint16_t)px, (uint16_t)py, 16, 16,
-                              bgfx::copy(rgba16, 16 * 16 * 4), 16 * 4);
-        for (int y = 0; y < 16; y++)
-            std::memcpy(atlasMips[0].data() + ((size_t)(py + y) * size + px) * 4, rgba16 + (size_t)y * 16 * 4,
-                        16 * 4);
-        const int levels = (int)atlasMips.size();
-        std::vector<uint8_t> tmp;
-        for (int l = 1; l < levels; l++) {
-            int lw = std::max(size >> l, 1);
-            int rx = px >> l, ry = py >> l;
-            int rw = std::max(16 >> l, 1);
-            int rh = rw;
-            if (rx >= lw || ry >= lw)
-                break;
-            rw = std::min(rw, lw - rx);
-            rh = std::min(rh, lw - ry);
-            if (rw <= 0 || rh <= 0)
-                break;
-            tmp.assign((size_t)rw * rh * 4, 0);
-            const uint8_t* src = atlasMips[(size_t)l - 1].data();
-            uint8_t* dstCpu = atlasMips[(size_t)l].data();
-            int pw = std::max(size >> (l - 1), 1);
-            for (int y = 0; y < rh; y++)
-                for (int x = 0; x < rw; x++) {
-                    const size_t idx[4] = {
-                        ((size_t)((ry + y) * 2) * pw + (rx + x) * 2) * 4,
-                        ((size_t)((ry + y) * 2) * pw + (rx + x) * 2 + 1) * 4,
-                        ((size_t)((ry + y) * 2 + 1) * pw + (rx + x) * 2) * 4,
-                        ((size_t)((ry + y) * 2 + 1) * pw + (rx + x) * 2 + 1) * 4,
-                    };
-                    uint8_t* d = tmp.data() + ((size_t)y * rw + x) * 4;
-                    DownsampleAlphaAware(src, idx, d);
-                    std::memcpy(dstCpu + ((size_t)(ry + y) * lw + rx + x) * 4, d, 4);
-                }
-            bgfx::updateTexture2D(atlasTex, 0, (uint8_t)l, (uint16_t)rx, (uint16_t)ry, (uint16_t)rw,
-                                  (uint16_t)rh, bgfx::copy(tmp.data(), (uint32_t)tmp.size()),
-                                  (uint16_t)(rw * 4));
-        }
+        UploadTile(atlasTex, tile, rgba16, (size_t)kTileSize * 4);
     }
+
 
     bool RenderContext_bgfx::CreatePage(uint32_t vCap, uint32_t iCap) {
         Page p;
@@ -524,6 +506,7 @@ namespace perlin {
 
     void RenderContext_bgfx::DrawSky() {
         const uint64_t state = BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A;
+        shaders.ApplyUniforms();
         bgfx::setVertexBuffer(0, skyBuffer);
         bgfx::setState(state);
         shaders.Apply(bgfx::isValid(atlasTex) ? atlasTex : whiteTex, lightmapTex, samplerFlags,
@@ -621,7 +604,6 @@ namespace perlin {
         shaders.Shutdown();
         atlasTex = whiteTex = lightmapTex = BGFX_INVALID_HANDLE;
         skyBuffer = BGFX_INVALID_HANDLE;
-        atlasMips.clear();
         bgfx::shutdown();
         initialized = false;
     }

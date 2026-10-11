@@ -103,7 +103,8 @@ namespace perlin {
 
         tintsWereReady = tintsOk;
         uploadedTiles = blocks.TilesLoaded();
-        context.UploadAtlas(blocks.AtlasPixels().data(), BlockLibrary::kAtlasTiles * BlockLibrary::kTilePx);
+        context.UploadAtlas(blocks.AtlasPixels().data(), BlockLibrary::kAtlasTiles * BlockLibrary::kTilePx,
+                            blocks.TilesLoaded());
         atlasUploaded = true;
         InvalidateMeshes();
     }
@@ -254,9 +255,7 @@ namespace perlin {
         if (!atlasUploaded)
             return;
         blocks.PollAnimation(step, [&](int tile, const uint8_t* rgba) {
-            const int px = (tile % BlockLibrary::kAtlasTiles) * BlockLibrary::kTilePx;
-            const int py = (tile / BlockLibrary::kAtlasTiles) * BlockLibrary::kTilePx;
-            context.UpdateAtlasRegion(px, py, rgba);
+            context.UpdateAtlasRegion(tile, rgba);
         });
     }
 }
