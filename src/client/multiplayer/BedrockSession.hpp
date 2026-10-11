@@ -135,7 +135,7 @@ namespace perlin {
         net::PacketDispatcher dispatcher;
         bool SendRequestNetworkSettings();
         bool SendLogin();
-        bool SendResourcePackResponse(proto::ResourcePackClientResponsePacketStatus status);
+        bool SendResourcePackResponse(proto::ResourcePackClientResponsePacketResponseStatus status);
         bool SendRequestChunkRadius();
         bool SendClientCacheStatus();
         bool SendSetLocalPlayerAsInitialized();

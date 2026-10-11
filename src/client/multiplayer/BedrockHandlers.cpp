@@ -12,7 +12,7 @@ namespace perlin {
     using namespace proto;
 
     namespace {
-        using PackStatus = ResourcePackClientResponsePacketStatus;
+        using PackStatus = ResourcePackClientResponsePacketResponseStatus;
 
         bool SaneWorldPos(float x, float y, float z) {
             return std::isfinite(x) && std::isfinite(y) && std::isfinite(z) && std::fabs(x) < 100000.0f &&

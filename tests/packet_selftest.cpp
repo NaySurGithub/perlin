@@ -109,9 +109,10 @@ int main() {
     }
     {
         ResourcePackClientResponsePacket p;
-        p.status = ResourcePackClientResponsePacketStatus::Completed;
+        p.responseStatus = ResourcePackClientResponsePacketResponseStatus::Completed;
+        p.responseStatusName = "resourcepackstackfinished";
         const std::vector<uint8_t> body = net::Encode(p);
-        CHECK((body == std::vector<uint8_t>{4, 0, 0}));
+        CHECK(body.size() == 27 && body[0] == 3 && body[1] == 25);
     }
     {
         RequestNetworkSettingsPacket p;

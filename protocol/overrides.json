@@ -22,10 +22,6 @@
       {"name": "internal", "type": "bool"},
       {"name": "version", "type": "zigzag32"}
     ]],
-    "packet_resource_pack_client_response": ["container", [
-      {"name": "status", "type": ["mapper", {"type": "u8", "mappings": {"0": "none", "1": "refused", "2": "send_packs", "3": "have_all_packs", "4": "completed"}}]},
-      {"name": "pack_ids", "type": ["array", {"countType": "lu16", "type": "string"}]}
-    ]],
     "packet_move_player": ["container", [
       {"name": "runtime_id", "type": "varint64"},
       {"name": "position", "type": "vec3f"},

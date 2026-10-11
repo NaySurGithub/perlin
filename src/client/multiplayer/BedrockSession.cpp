@@ -378,10 +378,19 @@ namespace perlin {
         return Send(*login);
     }
 
-    bool BedrockSession::SendResourcePackResponse(proto::ResourcePackClientResponsePacketStatus status) {
+    bool BedrockSession::SendResourcePackResponse(proto::ResourcePackClientResponsePacketResponseStatus status) {
+        using Status = proto::ResourcePackClientResponsePacketResponseStatus;
+        const char* name = "resourcepackstackfinished";
+        switch (status) {
+            case Status::Refused: name = "cancel"; break;
+            case Status::SendPacks: name = "downloading"; break;
+            case Status::HaveAllPacks: name = "downloadingfinished"; break;
+            default: break;
+        }
         std::cout << "[bedrock] ResourcePackClientResponse " << static_cast<int>(status) << std::endl;
         proto::ResourcePackClientResponsePacket p;
-        p.status = status;
+        p.responseStatus = status;
+        p.responseStatusName = name;
         return Send(p);
     }
 
