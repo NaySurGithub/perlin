@@ -1,3 +1,5 @@
+#include <unordered_set>
+#include <mutex>
 #include "client/renderer/chunk/ChunkMesher.hpp"
 #include "world/level/Level.hpp"
 #include "client/renderer/block/BiomeTints.hpp"
@@ -245,6 +247,7 @@ namespace perlin {
         std::vector<int8_t> solid = std::vector<int8_t>(65536, -1);
         std::vector<int8_t> water = std::vector<int8_t>(65536, -1);
         std::vector<int8_t> translucent = std::vector<int8_t>(65536, -1);
+        std::vector<int8_t> ao = std::vector<int8_t>(65536, -1);
         std::vector<uint8_t> opacity = std::vector<uint8_t>(65536, 0);
         std::vector<uint8_t> opacityKnown = std::vector<uint8_t>(65536, 0);
         std::vector<uint32_t> stamp = std::vector<uint32_t>(65536, 0);
@@ -259,6 +262,7 @@ namespace perlin {
             solid[id] = -1;
             water[id] = -1;
             translucent[id] = -1;
+            ao[id] = -1;
             opacityKnown[id] = 0;
         }
     };
@@ -306,7 +310,7 @@ namespace perlin {
     int BlockLightOpacity(BlockLibrary& library, uint16_t id) {
         const BlockAppearance& a = library.Look(id);
         if ((a.top | a.side | a.bottom) == 0)
-            return kMaxLight;
+            return 0;
         if (a.shape != BlockAppearance::Shape::Cube)
             return 0;
         const GeomInfo& g = GeomFor(id);
@@ -317,8 +321,8 @@ namespace perlin {
         if (IsWaterTex(a.texTop) || IsWaterTex(a.texSide))
             return 1;
         const int tiles[3] = {a.top, a.side, a.bottom};
-        for (int tile : tiles)
-            if (tile && library.AlphaOf(tile).holes)
+        for (int i = 0; i < 3; i++)
+            if (tiles[i] && library.AlphaOf(tiles[i]).holes && !(i == 1 && a.overlayFrac > 0 && a.overlayTile))
                 return 1;
         return kMaxLight;
     }
@@ -402,7 +406,7 @@ namespace perlin {
                 return true;
             const BlockAppearance& a = *LookupApp(library, id);
             if ((a.top | a.side | a.bottom) == 0)
-                return true;
+                return false;
             if (a.shape != BlockAppearance::Shape::Cube)
                 return false;
             const GeomInfo& g = GeomFor(id);
@@ -411,7 +415,16 @@ namespace perlin {
             BlockLibrary::TileAlpha at = library->AlphaOf(a.top);
             BlockLibrary::TileAlpha as = library->AlphaOf(a.side);
             BlockLibrary::TileAlpha ab = library->AlphaOf(a.bottom);
-            bool holes = (a.top && at.holes) || (a.side && as.holes) || (a.bottom && ab.holes);
+            // The grass-block side tile is synthesised with transparent holes under the grass overlay;
+            // that must not make the whole block count as see-through.
+            // Only opaque cubes occlude: water, ice, glass and other translucent tiles must not cull the
+            // faces of the blocks around them (the terrain next to water was missing faces).
+            if ((a.top && at.translucent) || (a.side && as.translucent) || (a.bottom && ab.translucent))
+                return false;
+            if (IsWaterTex(a.texTop) || IsWaterTex(a.texSide))
+                return false;
+            const bool sideHoles = a.side && as.holes && !(a.overlayFrac > 0 && a.overlayTile);
+            bool holes = (a.top && at.holes) || sideHoles || (a.bottom && ab.holes);
             return !holes;
         }
 
@@ -447,6 +460,29 @@ namespace perlin {
             }
         }
         return weight ? total / static_cast<float>(weight) : 0.0f;
+    }
+
+    // BlockBehaviour.getShadeBrightness: 0.2 for full-collision blocks, 1.0 otherwise (glass, water,
+    // plants, slabs...). Leaves and ice are full collision blocks that Perlin does not mark opaque.
+    static float AoShade(const BlockCache& cache, BlockLibrary* library, int x, int y, int z) {
+        const uint16_t id = cache.Get(x, y, z);
+        if (id == 0)
+            return 1.0f;
+        if (cache.Occ(x, y, z))
+            return 0.2f;
+        IdMemo& m = Memo();
+        m.Touch(id);
+        if (m.ao[id] < 0) {
+            const std::string name = BlockPalette::Instance().Name(id);
+            const BlockAppearance* a = library ? LookupApp(library, id) : nullptr;
+            const bool cube = a && a->shape == BlockAppearance::Shape::Cube && (a->top | a->side | a->bottom) != 0;
+            m.ao[id] = cube && (name.find("leaves") != std::string::npos || name == "minecraft:ice" ||
+                                name == "minecraft:frosted_ice") &&
+                               !IsLiquidId(library, id)
+                           ? 1
+                           : 0;
+        }
+        return m.ao[id] == 1 ? 0.2f : 1.0f;
     }
 
     void BuildChunkMesh(Level& level, const ChunkPos& pos, Tessellator& tess, BlockLibrary* library,
@@ -514,6 +550,18 @@ namespace perlin {
                     const BlockAppearance* app = nullptr;
                     if (textured)
                         app = LookupApp(library, id);
+                    // Blocks without any texture (unknown hashes, barrier, light blocks, structure void...)
+                    // are invisible in Java; drawing them as a stand-in cube produced phantom blocks.
+                    if (app && (app->top | app->side | app->bottom) == 0) {
+                        static std::mutex logMutex;
+                        static std::unordered_set<uint16_t> logged;
+                        std::lock_guard<std::mutex> lk(logMutex);
+                        if (logged.insert(id).second)
+                            printf("[blocks] hidden untextured block id=%u name='%s' at (%d,%d,%d)\n",
+                                   (unsigned)id, BlockPalette::Instance().Name(id).c_str(), baseX + x, y,
+                                   baseZ + z);
+                        continue;
+                    }
                     float bx = (float)(baseX + x), by = (float)y, bz = (float)(baseZ + z);
 
                     const int biomeId = cache.Biome(x, y, z);
@@ -1022,14 +1070,43 @@ namespace perlin {
                         const int center[3] = {x + nx, y + ny, z + nz};
                         const int axis1 = nx != 0 ? 1 : 0;
                         const int axis2 = nz != 0 ? 1 : 2;
-                        const std::array<int, 2> centerLight = sample(center[0], center[1], center[2]);
-                        auto shadeOf = [&](const int p[3]) {
-                            return cache.Occ(p[0], p[1], p[2]) ? kAoSolid : 1.0f;
+                        const int normal[3] = {nx, ny, nz};
+                        // Java BlockModelLighter.AdjacencyInfo corners[0] for this facing (used by its
+                        // "both outer cells block light" fallback, which always reuses that edge).
+                        int first[3] = {0, 0, 0};
+                        if (ny < 0)
+                            first[0] = -1;
+                        else if (ny > 0)
+                            first[0] = 1;
+                        else if (nz < 0)
+                            first[1] = 1;
+                        else if (nz > 0)
+                            first[0] = -1;
+                        else if (nx < 0)
+                            first[1] = 1;
+                        else
+                            first[1] = -1;
+                        struct Packed {
+                            int block, sky;
                         };
-                        auto lightOf = [&](const int p[3]) {
+                        auto coordsAt = [&](const int p[3]) {
                             const std::array<int, 2> l = sample(p[0], p[1], p[2]);
-                            return l[0] == 0 && l[1] == 0 ? centerLight : l;
+                            return Packed{l[0] * 16, l[1] * 16};
                         };
+                        auto smoothBlend = [](Packed n1, Packed n2, Packed n3, Packed c) {
+                            if (c.sky > 2 * 16 - 1 || c.block > 2 * 16 - 1) {
+                                for (Packed* n : {&n1, &n2, &n3}) {
+                                    if (n->block == 0 && n->sky == 0)
+                                        *n = c;
+                                    else if (n->sky == 0)
+                                        n->sky = c.sky;
+                                }
+                            }
+                            return Packed{(n1.block + n2.block + n3.block + c.block) >> 2,
+                                          (n1.sky + n2.sky + n3.sky + c.sky) >> 2};
+                        };
+                        const float shadeCenter = AoShade(cache, library, center[0], center[1], center[2]);
+                        const Packed lightCenter = coordsAt(center);
                         for (int i = 0; i < 4; i++) {
                             if (isWater) {
                                 aoV[i] = 1.0f;
@@ -1045,22 +1122,33 @@ namespace perlin {
                                 e2[axis2] += d2;
                                 corner[axis1] += d1;
                                 corner[axis2] += d2;
-                                const bool blocked1 = cache.Occ(e1[0], e1[1], e1[2]) != 0;
-                                const bool blocked2 = cache.Occ(e2[0], e2[1], e2[2]) != 0;
-                                const float s1 = shadeOf(e1), s2 = shadeOf(e2);
-                                const float sc = blocked1 && blocked2 ? s1 : shadeOf(corner);
-                                aoV[i] = (s1 + s2 + sc + shadeOf(center)) * 0.25f;
-                                const std::array<int, 2> l1 = lightOf(e1), l2 = lightOf(e2);
-                                const std::array<int, 2> lc = blocked1 && blocked2 ? l1 : lightOf(corner);
-                                lt[i][0] = (l1[0] + l2[0] + lc[0] + centerLight[0]) * 0.25f;
-                                lt[i][1] = (l1[1] + l2[1] + lc[1] + centerLight[1]) * 0.25f;
+                                const bool permeable1 = !cache.Occ(e1[0] + normal[0], e1[1] + normal[1], e1[2] + normal[2]);
+                                const bool permeable2 = !cache.Occ(e2[0] + normal[0], e2[1] + normal[1], e2[2] + normal[2]);
+                                const int fb[3] = {center[0] + first[0], center[1] + first[1], center[2] + first[2]};
+                                float sc;
+                                Packed lc;
+                                if (!permeable1 && !permeable2) {
+                                    sc = AoShade(cache, library, fb[0], fb[1], fb[2]);
+                                    lc = coordsAt(fb);
+                                } else {
+                                    sc = AoShade(cache, library, corner[0], corner[1], corner[2]);
+                                    lc = coordsAt(corner);
+                                }
+                                const float s1 = AoShade(cache, library, e1[0], e1[1], e1[2]);
+                                const float s2 = AoShade(cache, library, e2[0], e2[1], e2[2]);
+                                aoV[i] = (s1 + s2 + sc + shadeCenter) * 0.25f;
+                                const Packed blended = smoothBlend(coordsAt(e1), coordsAt(e2), lc, lightCenter);
+                                lt[i][0] = static_cast<float>(blended.block) / 16.0f;
+                                lt[i][1] = static_cast<float>(blended.sky) / 16.0f;
                             }
                             kv[i] = aoV[i] * shade;
                             col[i][0] = base[0] * kv[i];
                             col[i][1] = base[1] * kv[i];
                             col[i][2] = base[2] * kv[i];
                         }
-                        const bool flip = std::fabs(aoV[1] - aoV[3]) < std::fabs(aoV[0] - aoV[2]);
+                        // Java never flips the quad diagonal; its X faces list vertices in the opposite
+                        // winding from ours, so those are the ones that need the other split.
+                        const bool flip = nx != 0;
                         tess.AddQuad(v, col, uv, flip, lt);
                         if (ovTile && ny == 0) {
                             float ou0, ov0, ou1, ov1;

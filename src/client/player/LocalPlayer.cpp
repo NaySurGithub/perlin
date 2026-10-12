@@ -48,7 +48,7 @@ namespace perlin {
             return false;
         const BlockAppearance& look = blocks.Look(static_cast<int32_t>(id));
         if ((look.top | look.side | look.bottom) == 0)
-            return true;
+            return BlockPalette::Instance().Name(id) == "minecraft:barrier";
 
         const BlockPalette& palette = BlockPalette::Instance();
         if (look.shape == BlockAppearance::Shape::Flat)

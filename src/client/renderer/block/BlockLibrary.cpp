@@ -57,8 +57,10 @@ namespace perlin {
             stem.resize(stem.size() - suffix.size());
         const std::string order[2] = {fancy ? stem : stem + suffix, fancy ? stem + suffix : stem};
         for (const std::string& base : order) {
-            tries.push_back(base + ".png");
+            // Bedrock prefers the .tga when both exist; the .png next to it is a legacy copy (for
+            // example tallgrass.png differs from the shipped tallgrass.tga, which is Java's short_grass).
             tries.push_back(base + ".tga");
+            tries.push_back(base + ".png");
         }
         int tile = 0;
         bool ok = false;
