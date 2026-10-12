@@ -4,38 +4,34 @@ SAMPLER2DARRAY(s_atlas, 0);
 SAMPLER2D(s_lightmap, 1);
 
 uniform mat4 u_mvp;
-uniform mat4 u_inverseViewProjection;
 uniform vec4 u_camera;
-uniform vec4 u_fog;
 uniform vec4 u_fogColor;
-uniform vec4 u_skyColor;
-uniform vec4 u_sunDir;
-uniform vec4 u_sunrise;
-uniform vec4 u_time;
-uniform vec4 u_skyObject;
-uniform vec4 u_cloud;
-uniform vec4 u_cloudUv;
+uniform vec4 u_fogEnv;
+uniform vec4 u_fogSky;
+uniform vec4 u_modulator;
+uniform vec4 u_textureInfo;
+uniform vec4 u_chunk;
+uniform vec4 u_cloudOffset;
 uniform vec4 u_cloudColor;
 
-#define LIGHTMAP_SIZE 16.0
-
-vec3 lightmapColor(vec2 blockSky)
+float linearFog(float distance, float fogStart, float fogEnd)
 {
-    vec2 uv = (clamp(blockSky, 0.0, 1.0) * (LIGHTMAP_SIZE - 1.0) + 0.5) / LIGHTMAP_SIZE;
-    return texture2D(s_lightmap, uv).rgb;
+    if (distance <= fogStart)
+        return 0.0;
+    if (distance >= fogEnd)
+        return 1.0;
+    return (distance - fogStart) / (fogEnd - fogStart);
 }
 
-float cylindricalDistance(vec3 relative)
+vec3 applyFog(vec3 color, float spherical, float cylindrical, float envStart, float envEnd, float rdStart,
+              float rdEnd, vec4 fogColor)
 {
-    return max(length(relative.xz), abs(relative.y));
+    float fogValue = max(linearFog(spherical, envStart, envEnd), linearFog(cylindrical, rdStart, rdEnd));
+    return mix(color, fogColor.rgb, fogValue * fogColor.a);
 }
 
-float fogAmount(float distance)
+vec3 sampleLightmap(vec2 lightBytes)
 {
-    return smoothstep(u_fog.x, u_fog.y, distance);
-}
-
-vec3 applyFog(vec3 color, float distance)
-{
-    return mix(color, u_fogColor.rgb, fogAmount(distance));
+    vec2 uv = clamp(lightBytes / 256.0 + vec2_splat(0.5 / 16.0), vec2_splat(0.5 / 16.0), vec2_splat(15.5 / 16.0));
+    return texture2DLod(s_lightmap, uv, 0.0).rgb;
 }

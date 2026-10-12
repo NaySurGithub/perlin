@@ -129,6 +129,27 @@ namespace perlin {
         return h ^ (h >> 16);
     }
 
+    static void PlantOffset(int x, int z, const std::string& tex, bool doublePlant, float& dx, float& dy, float& dz) {
+        dx = dy = dz = 0.0f;
+        static const char* const names[] = {"grass", "fern", "flower", "poppy", "dandelion", "tulip", "orchid",
+                                            "allium", "azure", "daisy", "cornflower", "lily_of", "rose", "peony",
+                                            "lilac", "sunflower", "dead_bush", "deadbush", "double_plant"};
+        bool offset = false;
+        for (const char* name : names)
+            if (tex.find(name) != std::string::npos)
+                offset = true;
+        if (!offset)
+            return;
+        int64_t seed = static_cast<int64_t>(static_cast<int32_t>(static_cast<uint32_t>(x) * 3129871u)) ^
+                       static_cast<int64_t>(z) * 116129781LL;
+        seed = seed * seed * 42317861LL + seed * 11LL;
+        seed >>= 16;
+        dx = std::clamp((static_cast<float>(seed & 15) / 15.0f - 0.5f) * 0.5f, -0.25f, 0.25f);
+        dz = std::clamp((static_cast<float>((seed >> 8) & 15) / 15.0f - 0.5f) * 0.5f, -0.25f, 0.25f);
+        if (!doublePlant && (tex.find("tallgrass") != std::string::npos || tex.find("fern") != std::string::npos))
+            dy = (static_cast<float>((seed >> 4) & 15) / 15.0f - 1.0f) * 0.2f;
+    }
+
     static int PickTile(const std::vector<int>& variants, int fallback, uint32_t h) {
         if (variants.empty())
             return fallback;
@@ -928,10 +949,14 @@ namespace perlin {
                             colC[i][1] = baseRGB[1];
                             colC[i][2] = baseRGB[2];
                         }
+                        float ox, oy, oz;
+                        PlantOffset(baseX + x, baseZ + z, tex, gi.dblPlant, ox, oy, oz);
+                        const float lo = 0.5f - 0.3182f + 0.0f, hi = 0.5f + 0.3182f;
+                        const float px = bx + ox, py = by + oy, pz = bz + oz;
                         float va[4][3] = {
-                            {bx, by, bz + 1}, {bx, by + 1, bz + 1}, {bx + 1, by + 1, bz}, {bx + 1, by, bz}};
+                            {px + lo, py, pz + hi}, {px + lo, py + 1, pz + hi}, {px + hi, py + 1, pz + lo}, {px + hi, py, pz + lo}};
                         float vb[4][3] = {
-                            {bx, by, bz}, {bx, by + 1, bz}, {bx + 1, by + 1, bz + 1}, {bx + 1, by, bz + 1}};
+                            {px + lo, py, pz + lo}, {px + lo, py + 1, pz + lo}, {px + hi, py + 1, pz + hi}, {px + hi, py, pz + hi}};
                         tess.AddQuad(va, colC, uvc, false, cellLight.block, cellLight.sky);
                         tess.AddQuad(vb, colC, uvc, false, cellLight.block, cellLight.sky);
                         continue;

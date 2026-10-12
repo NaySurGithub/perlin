@@ -75,19 +75,6 @@ namespace perlin {
             !LoadTexture(root + "clouds.png", clouds))
             return;
 
-        if (clouds.width != kCloudTexture || clouds.height != kCloudTexture) {
-            Texture resized;
-            resized.width = resized.height = kCloudTexture;
-            resized.pixels.resize(static_cast<size_t>(kCloudTexture) * kCloudTexture * 4);
-            for (int y = 0; y < kCloudTexture; y++)
-                for (int x = 0; x < kCloudTexture; x++) {
-                    const size_t from = (static_cast<size_t>(y * clouds.height / kCloudTexture) * clouds.width +
-                                         x * clouds.width / kCloudTexture) * 4;
-                    std::copy_n(clouds.pixels.data() + from, 4,
-                                resized.pixels.data() + (static_cast<size_t>(y) * kCloudTexture + x) * 4);
-                }
-            clouds = std::move(resized);
-        }
         unsigned char lowest = 255, highest = 0;
         for (size_t i = 3; i < clouds.pixels.size(); i += 4) {
             lowest = std::min(lowest, clouds.pixels[i]);
@@ -97,7 +84,7 @@ namespace perlin {
         for (size_t i = 0; i < clouds.pixels.size(); i += 4) {
             const unsigned char mask = byAlpha ? clouds.pixels[i + 3] : clouds.pixels[i];
             clouds.pixels[i] = clouds.pixels[i + 1] = clouds.pixels[i + 2] = 255;
-            clouds.pixels[i + 3] = mask >= 128 ? 255 : 0;
+            clouds.pixels[i + 3] = mask >= 10 ? 255 : 0;
         }
 
         context.UploadSkyTextures(sun, moon, clouds);

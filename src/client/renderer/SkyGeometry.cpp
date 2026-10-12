@@ -1,19 +1,26 @@
 #include "client/renderer/SkyGeometry.hpp"
 
+#include <glm/glm.hpp>
+
 #include <algorithm>
 #include <cmath>
 
 namespace perlin {
     namespace {
-        class JavaRandom {
-        public:
-            explicit JavaRandom(int64_t value) : state((static_cast<uint64_t>(value) ^ 0x5DEECE66DULL) & kMask) {}
+        constexpr float kPi = 3.14159265358979323846f;
 
-            float NextFloat() { return static_cast<float>(Next(24)) / static_cast<float>(1 << 24); }
+        class SingleThreadedRandom {
+        public:
+            explicit SingleThreadedRandom(int64_t seed) : state((static_cast<uint64_t>(seed) ^ 0x5DEECE66DULL) & kMask) {}
+
+            float NextFloat() {
+                return static_cast<float>(Next(24)) * 5.9604645E-8f;
+            }
 
             double NextDouble() {
-                const int64_t high = static_cast<int64_t>(Next(26)) << 27;
-                return static_cast<double>(high + Next(27)) * (1.0 / static_cast<double>(1LL << 53));
+                const int64_t upper = Next(26);
+                const int64_t lower = Next(27);
+                return static_cast<double>((upper << 27) + lower) * static_cast<double>(1.110223E-16f);
             }
 
         private:
@@ -21,166 +28,236 @@ namespace perlin {
 
             int32_t Next(int bits) {
                 state = (state * 0x5DEECE66DULL + 0xBULL) & kMask;
-                return static_cast<int32_t>(static_cast<int64_t>(state >> (48 - bits)));
+                return static_cast<int32_t>(static_cast<int64_t>(state) >> (48 - bits));
             }
 
             uint64_t state;
         };
 
-        uint32_t Pack(float r, float g, float b, float a) {
-            auto q = [](float c) { return static_cast<uint32_t>(std::clamp(c, 0.0f, 1.0f) * 255.0f + 0.5f); };
-            return q(r) | (q(g) << 8) | (q(b) << 16) | (q(a) << 24);
+        uint32_t PackWhite(float alpha) {
+            const uint32_t a = static_cast<uint32_t>(std::clamp(alpha, 0.0f, 1.0f) * 255.0f + 0.5f);
+            return 0x00FFFFFFu | (a << 24);
         }
 
-        void Quad(std::vector<SkyVertex>& out, const float p[4][3], const float uv[4][2], uint32_t color) {
-            for (int i = 0; i < 4; i++)
-                out.push_back({p[i][0], p[i][1], p[i][2], color, uv[i][0], uv[i][1]});
+        int FloorMod(int a, int b) {
+            const int m = a % b;
+            return m < 0 ? m + b : m;
         }
     }
 
-    std::vector<SkyVertex> BuildStars() {
-        std::vector<SkyVertex> out;
-        JavaRandom random(10842);
-        const uint32_t white = Pack(1, 1, 1, 1);
+    std::vector<PositionVertex> BuildSkyDisc(float y) {
+        const float x = (y > 0.0f ? 1.0f : y < 0.0f ? -1.0f : 0.0f) * 512.0f;
+        std::vector<PositionVertex> out;
+        out.push_back({0.0f, y, 0.0f});
+        for (int i = -180; i <= 180; i += 45) {
+            const float angle = static_cast<float>(i) * (kPi / 180.0f);
+            out.push_back({x * std::cos(angle), y, 512.0f * std::sin(angle)});
+        }
+        return out;
+    }
+
+    std::vector<ColorVertex> BuildSunriseFan() {
+        std::vector<ColorVertex> out;
+        out.push_back({0.0f, 100.0f, 0.0f, PackWhite(1.0f)});
+        for (int i = 0; i <= 16; i++) {
+            const float angle = static_cast<float>(i) * (kPi * 2.0f) / 16.0f;
+            const float s = std::sin(angle);
+            const float c = std::cos(angle);
+            out.push_back({s * 120.0f, c * 120.0f, -c * 40.0f, PackWhite(0.0f)});
+        }
+        return out;
+    }
+
+    std::vector<PositionVertex> BuildStars() {
+        std::vector<PositionVertex> out;
+        SingleThreadedRandom random(10842);
         for (int i = 0; i < 1500; i++) {
-            double x = random.NextFloat() * 2.0f - 1.0f;
-            double y = random.NextFloat() * 2.0f - 1.0f;
-            double z = random.NextFloat() * 2.0f - 1.0f;
-            const double size = 0.15f + random.NextFloat() * 0.1f;
-            double length = x * x + y * y + z * z;
-            if (length >= 1.0 || length <= 0.01)
+            const float x = random.NextFloat() * 2.0f - 1.0f;
+            const float y = random.NextFloat() * 2.0f - 1.0f;
+            const float z = random.NextFloat() * 2.0f - 1.0f;
+            const float size = 0.15f + random.NextFloat() * 0.1f;
+            const float lengthSq = x * x + y * y + z * z;
+            if (lengthSq <= 0.010000001f || lengthSq >= 1.0f)
                 continue;
-            length = 1.0 / std::sqrt(length);
-            x *= length;
-            y *= length;
-            z *= length;
-            const double px = x * 100.0, py = y * 100.0, pz = z * 100.0;
-            const double yaw = std::atan2(x, z);
-            const double sy = std::sin(yaw), cy = std::cos(yaw);
-            const double pitch = std::atan2(std::sqrt(x * x + z * z), y);
-            const double sp = std::sin(pitch), cp = std::cos(pitch);
-            const double spin = random.NextDouble() * 3.141592653589793 * 2.0;
-            const double ss = std::sin(spin), cs = std::cos(spin);
-            for (int j = 0; j < 4; j++) {
-                const double a = ((j & 2) - 1) * size;
-                const double b = (((j + 1) & 2) - 1) * size;
-                const double rx = a * cs - b * ss;
-                const double rz = b * cs + a * ss;
-                const double ty = rx * sp;
-                const double tz = -rx * cp;
-                const double fx = tz * sy - rz * cy;
-                const double fz = rz * sy + tz * cy;
-                out.push_back({static_cast<float>(px + fx), static_cast<float>(py + ty), static_cast<float>(pz + fz),
-                               white, 0.0f, 0.0f});
-            }
+
+            const glm::vec3 center = glm::normalize(glm::vec3(x, y, z)) * 100.0f;
+            const float zRot = static_cast<float>(random.NextDouble() * static_cast<double>(kPi) * 2.0);
+
+            const glm::vec3 direction = glm::normalize(-center);
+            const glm::vec3 up(0.0f, 1.0f, 0.0f);
+            const glm::vec3 left = glm::normalize(glm::cross(up, direction));
+            const glm::vec3 upward = glm::cross(direction, left);
+            const float cs = std::cos(-zRot);
+            const float sn = std::sin(-zRot);
+
+            const auto corner = [&](float cx, float cy) {
+                const float rx = cs * cx - sn * cy;
+                const float ry = sn * cx + cs * cy;
+                const glm::vec3 p = left * rx + upward * ry + center;
+                return PositionVertex{p.x, p.y, p.z};
+            };
+            out.push_back(corner(size, -size));
+            out.push_back(corner(size, size));
+            out.push_back(corner(-size, size));
+            out.push_back(corner(-size, -size));
         }
         return out;
     }
 
-    std::vector<SkyVertex> BuildClouds(bool fancy) {
-        std::vector<SkyVertex> out;
-        constexpr float kTexel = 1.0f / kCloudTexture;
-        constexpr float kEpsilon = 9.765625e-4f;
-        constexpr float kHeight = 4.0f;
-        const float shade[3] = {0.7f, 0.9f, 0.8f};
-        const uint32_t bottom = Pack(shade[0], shade[0], shade[0], 0.8f);
-        const uint32_t top = Pack(1, 1, 1, 0.8f);
-        const uint32_t sideX = Pack(shade[1], shade[1], shade[1], 0.8f);
-        const uint32_t sideZ = Pack(shade[2], shade[2], shade[2], 0.8f);
+    std::vector<TextureVertex> BuildSunQuad() {
+        return {{-1.0f, 0.0f, -1.0f, 0.0f, 0.0f},
+                {1.0f, 0.0f, -1.0f, 1.0f, 0.0f},
+                {1.0f, 0.0f, 1.0f, 1.0f, 1.0f},
+                {-1.0f, 0.0f, 1.0f, 0.0f, 1.0f}};
+    }
 
-        for (int tx = -3; tx <= 4; tx++)
-            for (int tz = -3; tz <= 4; tz++) {
-                const float cx = static_cast<float>(tx * 8), cz = static_cast<float>(tz * 8);
-                if (!fancy) {
-                    const float p[4][3] = {{cx, 0, cz}, {cx + 8, 0, cz}, {cx + 8, 0, cz + 8}, {cx, 0, cz + 8}};
-                    const float uv[4][2] = {{cx * kTexel, cz * kTexel},
-                                            {(cx + 8) * kTexel, cz * kTexel},
-                                            {(cx + 8) * kTexel, (cz + 8) * kTexel},
-                                            {cx * kTexel, (cz + 8) * kTexel}};
-                    Quad(out, p, uv, top);
-                    continue;
-                }
-                {
-                    const float p[4][3] = {{cx, 0, cz + 8}, {cx + 8, 0, cz + 8}, {cx + 8, 0, cz}, {cx, 0, cz}};
-                    const float uv[4][2] = {{cx * kTexel, (cz + 8) * kTexel},
-                                            {(cx + 8) * kTexel, (cz + 8) * kTexel},
-                                            {(cx + 8) * kTexel, cz * kTexel},
-                                            {cx * kTexel, cz * kTexel}};
-                    Quad(out, p, uv, bottom);
-                }
-                {
-                    const float y = kHeight - kEpsilon;
-                    const float p[4][3] = {{cx, y, cz}, {cx + 8, y, cz}, {cx + 8, y, cz + 8}, {cx, y, cz + 8}};
-                    const float uv[4][2] = {{cx * kTexel, cz * kTexel},
-                                            {(cx + 8) * kTexel, cz * kTexel},
-                                            {(cx + 8) * kTexel, (cz + 8) * kTexel},
-                                            {cx * kTexel, (cz + 8) * kTexel}};
-                    Quad(out, p, uv, top);
-                }
-                for (int slice = 0; slice < 8; slice++) {
-                    const float u = (cx + slice + 0.5f) * kTexel;
-                    const float v0 = cz * kTexel, v1 = (cz + 8) * kTexel;
-                    if (tx > -1) {
-                        const float x = cx + slice;
-                        const float p[4][3] = {{x, 0, cz + 8}, {x, kHeight, cz + 8}, {x, kHeight, cz}, {x, 0, cz}};
-                        const float uv[4][2] = {{u, v1}, {u, v1}, {u, v0}, {u, v0}};
-                        Quad(out, p, uv, sideX);
-                    }
-                    if (tx <= 1) {
-                        const float x = cx + slice + 1 - kEpsilon;
-                        const float p[4][3] = {{x, 0, cz + 8}, {x, kHeight, cz + 8}, {x, kHeight, cz}, {x, 0, cz}};
-                        const float uv[4][2] = {{u, v1}, {u, v1}, {u, v0}, {u, v0}};
-                        Quad(out, p, uv, sideX);
-                    }
-                }
-                for (int slice = 0; slice < 8; slice++) {
-                    const float v = (cz + slice + 0.5f) * kTexel;
-                    const float u0 = cx * kTexel, u1 = (cx + 8) * kTexel;
-                    if (tz > -1) {
-                        const float z = cz + slice;
-                        const float p[4][3] = {{cx, kHeight, z}, {cx + 8, kHeight, z}, {cx + 8, 0, z}, {cx, 0, z}};
-                        const float uv[4][2] = {{u0, v}, {u1, v}, {u1, v}, {u0, v}};
-                        Quad(out, p, uv, sideZ);
-                    }
-                    if (tz <= 1) {
-                        const float z = cz + slice + 1 - kEpsilon;
-                        const float p[4][3] = {{cx, kHeight, z}, {cx + 8, kHeight, z}, {cx + 8, 0, z}, {cx, 0, z}};
-                        const float uv[4][2] = {{u0, v}, {u1, v}, {u1, v}, {u0, v}};
-                        Quad(out, p, uv, sideZ);
-                    }
-                }
+    std::vector<TextureVertex> BuildMoonQuads() {
+        std::vector<TextureVertex> out;
+        for (int phase = 0; phase < 8; phase++) {
+            const float u0 = static_cast<float>(phase % 4) / 4.0f;
+            const float v0 = static_cast<float>(phase / 4) / 2.0f;
+            const float u1 = u0 + 0.25f;
+            const float v1 = v0 + 0.5f;
+            out.push_back({-1.0f, 0.0f, -1.0f, u1, v1});
+            out.push_back({1.0f, 0.0f, -1.0f, u0, v1});
+            out.push_back({1.0f, 0.0f, 1.0f, u0, v0});
+            out.push_back({-1.0f, 0.0f, 1.0f, u1, v0});
+        }
+        return out;
+    }
+
+    std::vector<uint16_t> FanIndices(int vertexCount) {
+        std::vector<uint16_t> out;
+        for (int i = 1; i + 1 < vertexCount; i++) {
+            out.push_back(0);
+            out.push_back(static_cast<uint16_t>(i));
+            out.push_back(static_cast<uint16_t>(i + 1));
+        }
+        return out;
+    }
+
+    std::vector<uint16_t> QuadIndices(int quadCount) {
+        std::vector<uint16_t> out;
+        out.reserve(static_cast<size_t>(quadCount) * 6);
+        for (int i = 0; i < quadCount; i++) {
+            const uint16_t b = static_cast<uint16_t>(i * 4);
+            for (uint16_t k : {0, 1, 2, 2, 3, 0})
+                out.push_back(static_cast<uint16_t>(b + k));
+        }
+        return out;
+    }
+
+    CloudFrame ComputeCloudFrame(double cameraX, double cameraY, double cameraZ, float bottomY, double gameTicks,
+                                 const CloudTexture& texture) {
+        CloudFrame frame;
+        if (texture.width <= 0 || texture.height <= 0)
+            return frame;
+
+        const float relativeBottom = static_cast<float>(bottomY - cameraY);
+        const float relativeTop = relativeBottom + kCloudCellHeight;
+        if (relativeTop < 0.0f)
+            frame.position = CloudCameraPos::Above;
+        else if (relativeBottom > 0.0f)
+            frame.position = CloudCameraPos::Below;
+        else
+            frame.position = CloudCameraPos::Inside;
+        frame.relativeBottomY = relativeBottom;
+
+        const double whole = std::floor(gameTicks);
+        const float partial = static_cast<float>(gameTicks - whole);
+        const int64_t period = static_cast<int64_t>(texture.width) * kCloudTicksPerCell;
+        const float cloudOffset = static_cast<float>(static_cast<int64_t>(whole) % period) + partial;
+
+        double cloudX = cameraX + static_cast<double>(cloudOffset * 0.030000001f);
+        double cloudZ = cameraZ + static_cast<double>(3.96f);
+        const double widthBlocks = texture.width * 12.0;
+        const double heightBlocks = texture.height * 12.0;
+        cloudX -= std::floor(cloudX / widthBlocks) * widthBlocks;
+        cloudZ -= std::floor(cloudZ / heightBlocks) * heightBlocks;
+        frame.cellX = static_cast<int>(std::floor(cloudX / 12.0));
+        frame.cellZ = static_cast<int>(std::floor(cloudZ / 12.0));
+        frame.xInCell = static_cast<float>(cloudX - static_cast<double>(frame.cellX * 12.0f));
+        frame.zInCell = static_cast<float>(cloudZ - static_cast<double>(frame.cellZ * 12.0f));
+        return frame;
+    }
+
+    namespace {
+        constexpr int kPackedX = 0xF03CC3;
+        constexpr int kPackedY = 0x6666F0;
+        constexpr int kPackedZ = 0xC3F066;
+        constexpr float kFaceShade[6] = {0.7f, 1.0f, 0.8f, 0.8f, 0.9f, 0.9f};
+        enum Direction { Down, Up, North, South, West, East };
+
+        struct CloudBuilder {
+            const CloudTexture& texture;
+            CloudMesh& mesh;
+
+            bool Empty(int x, int y) const {
+                return !texture.solid[static_cast<size_t>(FloorMod(x, texture.width)) + static_cast<size_t>(FloorMod(y, texture.height)) * texture.width];
             }
-        return out;
+
+            void Face(int cellX, int cellZ, Direction direction, bool inside, bool topColor) {
+                const float shade = topColor ? 1.0f : kFaceShade[direction];
+                const uint32_t base = static_cast<uint32_t>(mesh.vertices.size());
+                for (int q = 0; q < 4; q++) {
+                    const int index = direction * 4 + (inside ? 3 - q : q);
+                    const float fx = static_cast<float>((kPackedX >> index) & 1);
+                    const float fy = static_cast<float>((kPackedY >> index) & 1);
+                    const float fz = static_cast<float>((kPackedZ >> index) & 1);
+                    mesh.vertices.push_back({fx * kCloudCellSize + static_cast<float>(cellX) * kCloudCellSize, fy * kCloudCellHeight,
+                                             fz * kCloudCellSize + static_cast<float>(cellZ) * kCloudCellSize, shade, 0.0f});
+                }
+                for (uint32_t k : {0u, 1u, 2u, 2u, 3u, 0u})
+                    mesh.indices.push_back(base + k);
+            }
+        };
     }
 
-    CloudParams ComputeClouds(float eyeX, float eyeY, float eyeZ, float cloudTicks, float celestialAngle) {
-        CloudParams out;
-        double x = (eyeX + cloudTicks * 0.03) / 12.0;
-        double z = eyeZ / 12.0 + 0.33;
-        x -= std::floor(x / 2048.0) * 2048.0;
-        z -= std::floor(z / 2048.0) * 2048.0;
-        out.offsetX = static_cast<float>(x - std::floor(x));
-        out.offsetZ = static_cast<float>(z - std::floor(z));
-        out.uvX = static_cast<float>(std::floor(x)) / kCloudTexture;
-        out.uvZ = static_cast<float>(std::floor(z)) / kCloudTexture;
-        out.height = kCloudLevel - eyeY + 0.33f;
+    CloudMesh BuildCloudMesh(const CloudTexture& texture, const CloudFrame& frame, bool fancy, int rangeChunks) {
+        CloudMesh mesh;
+        if (texture.width <= 0 || texture.height <= 0 || texture.solid.size() < static_cast<size_t>(texture.width) * texture.height)
+            return mesh;
 
-        const float brightness = std::clamp(std::cos(celestialAngle * 6.2831853f) * 2.0f + 0.5f, 0.0f, 1.0f);
-        out.color[0] = out.color[1] = brightness * 0.9f + 0.1f;
-        out.color[2] = brightness * 0.85f + 0.15f;
-        return out;
-    }
+        CloudBuilder builder{texture, mesh};
+        const int radiusCells = static_cast<int>(std::ceil(static_cast<float>(rangeChunks * 16) / 12.0f));
 
-    void SkyRotation(float celestialAngle, float out[16]) {
-        const float a = celestialAngle * 6.2831853f;
-        const float c = std::cos(a), s = std::sin(a);
-        out[0] = 0;  out[1] = 0;  out[2] = 1;  out[3] = 0;
-        out[4] = -s; out[5] = c;  out[6] = 0;  out[7] = 0;
-        out[8] = -c; out[9] = -s; out[10] = 0; out[11] = 0;
-        out[12] = 0; out[13] = 0; out[14] = 0; out[15] = 1;
-    }
+        const auto tryBuild = [&](int rx, int rz) {
+            const int ix = FloorMod(frame.cellX + rx, texture.width);
+            const int iy = FloorMod(frame.cellZ + rz, texture.height);
+            if (!texture.solid[static_cast<size_t>(ix) + static_cast<size_t>(iy) * texture.width])
+                return;
+            if (!fancy) {
+                builder.Face(rx, rz, Down, false, true);
+                return;
+            }
+            const int cx = frame.cellX + rx;
+            const int cz = frame.cellZ + rz;
+            if (frame.position != CloudCameraPos::Below)
+                builder.Face(rx, rz, Up, false, false);
+            if (frame.position != CloudCameraPos::Above)
+                builder.Face(rx, rz, Down, false, false);
+            if (builder.Empty(cx, cz - 1) && rz > 0)
+                builder.Face(rx, rz, North, false, false);
+            if (builder.Empty(cx, cz + 1) && rz < 0)
+                builder.Face(rx, rz, South, false, false);
+            if (builder.Empty(cx - 1, cz) && rx > 0)
+                builder.Face(rx, rz, West, false, false);
+            if (builder.Empty(cx + 1, cz) && rx < 0)
+                builder.Face(rx, rz, East, false, false);
+            if (std::abs(rx) <= 1 && std::abs(rz) <= 1)
+                for (int d = 0; d < 6; d++)
+                    builder.Face(rx, rz, static_cast<Direction>(d), true, false);
+        };
 
-    int MoonPhase(int64_t day) {
-        return static_cast<int>(((day % 8) + 8) % 8);
+        for (int ring = 0; ring <= 2 * radiusCells; ring++)
+            for (int rx = -ring; rx <= ring; rx++) {
+                const int rz = ring - std::abs(rx);
+                if (rz < 0 || rz > radiusCells || rx * rx + rz * rz > radiusCells * radiusCells)
+                    continue;
+                if (rz != 0)
+                    tryBuild(rx, -rz);
+                tryBuild(rx, rz);
+            }
+        return mesh;
     }
 }

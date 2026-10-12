@@ -82,7 +82,7 @@ namespace perlin {
                 luma += 0.299 * tex.pixels[i] + 0.587 * tex.pixels[i + 1] + 0.114 * tex.pixels[i + 2];
                 count++;
             }
-            const double scale = count && luma > 0 ? 0.92 * 255.0 * count / luma : 1.0;
+            const double scale = count && luma > 0 ? 0.82 * 255.0 * count / luma : 1.0;
             for (size_t i = 0; i < tex.pixels.size(); i += 4) {
                 const double y = 0.299 * tex.pixels[i] + 0.587 * tex.pixels[i + 1] + 0.114 * tex.pixels[i + 2];
                 const unsigned char gray = static_cast<unsigned char>(std::min(255.0, y * scale));

@@ -126,6 +126,9 @@ namespace perlin {
                 haveStartPos = true;
             }
             gotSpawn = true;
+            dimensionId = static_cast<int>(p.dimension);
+            rainTarget = p.rainLevel > 0.0f ? 1.0f : 0.0f;
+            thunderTarget = p.lightningLevel > 0.0f ? 1.0f : 0.0f;
             std::cout << "[bedrock] StartGame spawn=(" << x << "," << y << "," << z
                       << ") runtime=" << runtimeId << " gamerules=" << p.gamerules.size() << std::endl;
             for (const GameRuleI32& rule : p.gamerules) {
@@ -158,6 +161,27 @@ namespace perlin {
         On<SetTimePacket>([this](const SetTimePacket& p) {
             std::cout << "[bedrock] SetTime " << p.time << std::endl;
             NoteTime(p.time);
+        });
+
+        On<ChangeDimensionPacket>([this](const ChangeDimensionPacket& p) { dimensionId = p.dimension; });
+
+        On<LevelEventPacket>([this](const LevelEventPacket& p) {
+            switch (p.event) {
+            case LevelEventPacketEvent::StartRain:
+                rainTarget = 1.0f;
+                break;
+            case LevelEventPacketEvent::StopRain:
+                rainTarget = 0.0f;
+                break;
+            case LevelEventPacketEvent::StartThunder:
+                thunderTarget = 1.0f;
+                break;
+            case LevelEventPacketEvent::StopThunder:
+                thunderTarget = 0.0f;
+                break;
+            default:
+                break;
+            }
         });
 
         On<GameRulesChangedPacket>([this](const GameRulesChangedPacket& p) {

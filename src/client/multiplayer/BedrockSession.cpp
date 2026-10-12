@@ -812,6 +812,13 @@ namespace perlin {
     bool BedrockSession::ApplySubChunk(int cx, int cz, int absSubY, const SubChunkData& sc) {
         if (sc.storages.empty())
             return false;
+        if (sc.hasYIndex && sc.yIndex != absSubY) {
+            static int mismatches = 0;
+            if (mismatches++ < 16)
+                std::cout << "[chunk] sub-chunk (" << cx << "," << cz << ") y mismatch: placed at " << absSubY
+                          << " but payload says " << static_cast<int>(sc.yIndex) << std::endl;
+            absSubY = sc.yIndex;
+        }
         const PaletteStorage& st = sc.storages[0];
         ChunkCodec::CellIndices idx;
         if (!ChunkCodec::ExpandIndices(st, idx)) {
@@ -862,26 +869,9 @@ namespace perlin {
     }
 
     void BedrockSession::NoteTime(int64_t v) {
-        auto now = std::chrono::steady_clock::now();
         std::lock_guard<std::mutex> lk(timeMutex);
-        if (v >= 24000) {
-            timeTotal = v;
-        } else {
-            int64_t tod = ((v % 24000) + 24000) % 24000;
-            if (timeTotal < 0) {
-                timeTotal = tod;
-            } else {
-                int64_t cur = timeTotal;
-                if (dayCycleRunning && timeAt.time_since_epoch().count() != 0)
-                    cur += std::chrono::duration_cast<std::chrono::milliseconds>(now - timeAt).count() / 50;
-                int64_t day = cur / 24000;
-                int64_t curTod = cur % 24000;
-                if (tod + 12000 < curTod)
-                    day++;
-                timeTotal = day * 24000 + tod;
-            }
-        }
-        timeAt = now;
+        timeTotal = v >= 0 ? v : ((v % 24000) + 24000) % 24000;
+        timeAt = std::chrono::steady_clock::now();
     }
 
     void BedrockSession::SetDayCycle(bool running) {

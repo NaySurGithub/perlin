@@ -1,7 +1,8 @@
 #include "client/Perlin.hpp"
 #include "client/platform/AppPlatform.hpp"
 #include "client/renderer/Lightmap.hpp"
-#include "client/renderer/Sky.hpp"
+#include "client/renderer/Environment.hpp"
+#include "client/renderer/Fog.hpp"
 #include "client/resources/BedrockSamples.hpp"
 #include "util/Paths.hpp"
 
@@ -21,6 +22,7 @@ namespace perlin {
         constexpr float kMaxFrameDelta = 0.1f;
         constexpr float kDefaultFrameDelta = 0.016f;
         constexpr float kNoonTick = 6000.0f;
+        constexpr float kHorizonHeight = 63.0f;
         constexpr auto kTitleInterval = std::chrono::milliseconds(500);
         constexpr auto kAnimationStep = std::chrono::milliseconds(200);
 
@@ -40,6 +42,12 @@ namespace perlin {
                 return false;
             }
             return !host.empty();
+        }
+
+        float StepWeather(float level, float target) {
+            if (level < target)
+                return std::min(target, level + 0.01f);
+            return std::max(target, level - 0.01f);
         }
 
         std::string FormatClock(int64_t day, int tickOfDay) {
@@ -145,7 +153,9 @@ namespace perlin {
         levelRenderer = std::make_unique<LevelRenderer>(*renderer, options);
 
         camera.fov = options.fov;
-        camera.farPlane = std::max(256.0f, (options.renderDistance + 2) * 16.0f * 1.5f);
+        camera.nearPlane = 0.05f;
+        camera.farPlane = std::max(static_cast<float>(options.renderDistance * 16 * 4),
+                                   static_cast<float>(GraphicsSettings::From(options).cloudRange * 16));
 
         auto previous = Clock::now();
         const auto startedAt = previous;
@@ -181,47 +191,91 @@ namespace perlin {
             }
             levelRenderer->ReloadAssetsIfNeeded();
 
-            float tickOfDay = kNoonTick;
-            int64_t day = 0;
-            double worldTicks = 0.0;
-            if (live && live->GetWorldTicks(worldTicks)) {
-                const double wrapped = std::fmod(worldTicks, static_cast<double>(kTicksPerDay));
-                tickOfDay = static_cast<float>(wrapped);
-                day = static_cast<int64_t>(worldTicks / kTicksPerDay);
+            double worldTicks = kNoonTick;
+            if (live)
+                live->GetWorldTicks(worldTicks);
+
+            tickDebt += dt * 20.0f;
+            while (tickDebt >= 1.0) {
+                tickDebt -= 1.0;
+                blockLight.Tick();
+                if (live) {
+                    previousRainLevel = rainLevel;
+                    previousThunderLevel = thunderLevel;
+                    rainLevel = StepWeather(rainLevel, live->RainTarget());
+                    thunderLevel = StepWeather(thunderLevel, live->ThunderTarget());
+                }
             }
-            SkyState sky = ComputeSky(SkyProfile::Overworld(), tickOfDay);
-            BlendFogTowardSky(sky, static_cast<float>(options.renderDistance));
-            const FogRange fog = TerrainFog(static_cast<float>(options.renderDistance) * 16.0f);
+            const float partial = static_cast<float>(tickDebt);
+            const float rain = glm::mix(previousRainLevel, rainLevel, partial);
+            const float thunder = glm::mix(previousThunderLevel, thunderLevel, partial) * rain;
+
+            EnvironmentInput input;
+            input.ticks = worldTicks;
+            input.rain = rain;
+            input.thunder = thunder;
+            if (live)
+                input.dimension = static_cast<Dimension>(std::clamp(live->DimensionId(), 0, 2));
+            const Environment env = SampleEnvironment(input);
 
             const glm::mat4 viewProjection = camera.ViewProjection();
-            const glm::mat4 inverseViewProjection = glm::inverse(viewProjection);
             const Frustum frustum = Frustum::FromViewProjection(viewProjection);
             const glm::vec3 eye = camera.EyePosition();
+            const GraphicsSettings graphics = GraphicsSettings::From(options);
+
+            FogInput fogInput;
+            fogInput.renderDistanceChunks = options.renderDistance;
+            fogInput.cloudRangeChunks = graphics.cloudRange;
+            fogInput.forward = camera.Direction();
+            fogInput.cameraY = eye.y;
+            fogInput.rain = rain;
+            fogInput.thunder = thunder;
+            const FogState fog = ComputeFog(env, fogInput);
 
             FrameParams params{};
             std::copy_n(glm::value_ptr(viewProjection), 16, params.viewProjection);
-            std::copy_n(glm::value_ptr(inverseViewProjection), 16, params.inverseViewProjection);
             std::copy_n(glm::value_ptr(camera.SkyViewProjection()), 16, params.skyViewProjection);
             std::copy_n(glm::value_ptr(eye), 3, params.cameraPosition);
-            params.renderDistance = static_cast<float>(options.renderDistance) * 16.0f;
-            std::copy_n(sky.skyColor, 3, params.skyColor);
-            std::copy_n(sky.fogColor, 3, params.fogColor);
-            std::copy_n(sky.sunDirection, 3, params.sunDirection);
-            std::copy_n(sky.sunriseColor, 4, params.sunriseColor);
-            params.fogStart = fog.start;
-            params.fogEnd = fog.end;
-            params.celestialAngle = sky.celestialAngle;
-            params.skyDarken = sky.skyDarken;
-            params.starBrightness = sky.starBrightness;
-            params.moonPhase = MoonPhase(day);
-            params.fancyClouds = options.fancyGraphics;
-            params.cloud = ComputeClouds(eye.x, eye.y, eye.z,
-                                         std::chrono::duration<float>(frameStart - startedAt).count() * 20.0f,
-                                         sky.celestialAngle);
+            std::copy_n(glm::value_ptr(fog.color), 4, params.fogColor);
+            params.environmentalFogStart = fog.environmentalStart;
+            params.environmentalFogEnd = fog.environmentalEnd;
+            params.renderDistanceFogStart = fog.renderDistanceStart;
+            params.renderDistanceFogEnd = fog.renderDistanceEnd;
+            params.skyFogEnd = fog.skyEnd;
+            params.cloudFogEnd = fog.cloudEnd;
+            params.rgss = graphics.rgss;
+
+            params.sky.enabled = input.dimension == Dimension::Overworld;
+            std::copy_n(glm::value_ptr(env.skyColor), 3, params.sky.skyColor);
+            params.sky.sunAngle = env.sunAngle;
+            params.sky.moonAngle = env.moonAngle;
+            params.sky.starAngle = env.starAngle;
+            params.sky.rainBrightness = 1.0f - rain;
+            params.sky.starBrightness = env.starBrightness;
+            std::copy_n(glm::value_ptr(env.sunriseColor), 4, params.sky.sunrise);
+            params.sky.moonPhase = env.moonPhase;
+            params.sky.darkDisc = eye.y < kHorizonHeight;
+
+            const glm::vec4 cloudColor = glm::round(glm::clamp(env.cloudColor, 0.0f, 1.0f) * 255.0f) / 255.0f;
+            params.cloud.enabled = graphics.clouds && cloudColor.w > 0.0f;
+            params.cloud.fancy = graphics.fancyClouds;
+            params.cloud.rangeChunks = graphics.cloudRange;
+            std::copy_n(glm::value_ptr(cloudColor), 4, params.cloud.color);
+            params.cloud.height = env.cloudHeight;
+            params.cloud.gameTicks = std::chrono::duration<double>(frameStart - startedAt).count() * 20.0;
+
             params.timeSeconds = std::chrono::duration<float>(frameStart - startedAt).count();
             params.frameIndex = static_cast<uint32_t>(frameCounter++);
-            BuildLightmap({sky.skyDarken, options.gamma, SkyProfile::Overworld().ambientLight, 0.0f},
-                          params.lightmap);
+
+            LightmapParams lightmap;
+            lightmap.blockFactor = blockLight.Value() + 1.4f;
+            lightmap.skyFactor = env.skyLightFactor;
+            lightmap.skyLightColor = env.skyLightColor;
+            lightmap.ambientColor = env.ambientColor;
+            lightmap.blockLightTint = env.blockLightTint;
+            lightmap.nightVisionColor = env.nightVisionColor;
+            lightmap.brightness = options.gamma;
+            BuildLightmap(lightmap, params.lightmap);
 
             renderer->BeginFrame(params);
             if (live) {

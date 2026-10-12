@@ -1,6 +1,7 @@
 #include "client/input/KeyMapping.hpp"
 #include "client/renderer/Lightmap.hpp"
-#include "client/renderer/Sky.hpp"
+#include "client/renderer/Environment.hpp"
+#include "client/renderer/Fog.hpp"
 
 #include <cstdio>
 #include <initializer_list>
@@ -36,32 +37,70 @@ int main() {
     }
     CHECK(Binding::Parse("").device == Binding::Device::None);
 
-    const SkyProfile& profile = SkyProfile::Overworld();
-    const SkyState noon = ComputeSky(profile, 6000.0f);
-    const SkyState midnight = ComputeSky(profile, 18000.0f);
-    CHECK(noon.skyDarken > 0.99f);
-    CHECK(midnight.skyDarken < 0.21f);
-    CHECK(noon.skyColor[2] > midnight.skyColor[2]);
-    CHECK(midnight.starBrightness > noon.starBrightness);
-    CHECK(noon.sunDirection[1] > 0.99f);
-    CHECK(ComputeSky(profile, 30000.0f).skyDarken == noon.skyDarken);
-    CHECK(ComputeSky(profile, -6000.0f).skyDarken < 0.3f);
-
-    uint8_t day[kLightmapBytes], night[kLightmapBytes];
-    BuildLightmap({1.0f, 0.5f, 0.0f, 0.0f}, day);
-    BuildLightmap({0.2f, 0.5f, 0.0f, 0.0f}, night);
-    auto texel = [](const uint8_t* map, int sky, int block) {
-        return map + (sky * kLightmapSize + block) * 4;
+    const auto near = [](float a, float b, float tolerance = 1.0e-3f) { return std::fabs(a - b) <= tolerance; };
+    const auto at = [](double ticks) {
+        EnvironmentInput input;
+        input.ticks = ticks;
+        return SampleEnvironment(input);
     };
-    CHECK(texel(day, 15, 0)[1] > texel(night, 15, 0)[1]);
-    CHECK(texel(day, 0, 15)[0] == texel(night, 0, 15)[0]);
-    CHECK(texel(day, 15, 15)[0] >= texel(day, 8, 8)[0]);
-    CHECK(texel(day, 0, 0)[0] < texel(day, 1, 0)[0]);
-    for (int level = 0; level < 15; level++)
-        CHECK(texel(day, level, 0)[1] <= texel(day, level + 1, 0)[1]);
+    const float pi = 3.14159265f;
+    const auto angleNear = [&](float a, float b, float tolerance) {
+        const float twoPi = 2.0f * pi;
+        float d = std::fmod(std::fabs(a - b), twoPi);
+        return std::min(d, twoPi - d) <= tolerance;
+    };
 
-    const FogRange fog = TerrainFog(128.0f);
-    CHECK(fog.end == 128.0f && fog.start == 128.0f - 12.8f);
+    CHECK(angleNear(at(6000.5).sunAngle, 0.0f, 1.0e-3f));
+    CHECK(angleNear(at(18000.0).sunAngle, pi, 5.0e-3f));
+    CHECK(angleNear(at(6000.0).moonAngle, pi, 5.0e-3f));
+    CHECK(near(at(6000.0).skyColor.z, 1.0f));
+    CHECK(near(at(18000.0).skyColor.z, 0.0f));
+    CHECK(at(18000.0).starBrightness == 0.5f);
+    CHECK(at(6000.0).starBrightness == 0.0f);
+    CHECK(near(at(6000.0).cloudColor.w, 0.8f));
+    CHECK(near(at(18000.0).skyLightFactor, 0.24f));
+    CHECK(near(at(6000.0).skyLightFactor, 1.0f));
+    CHECK(at(6000.0).sunriseColor.w == 0.0f);
+    CHECK(at(12243.0).sunriseColor.w > 0.6f);
+    CHECK(at(30000.0).skyColor == at(6000.0).skyColor);
+    CHECK(at(-18000.0).skyColor == at(6000.0).skyColor);
+    for (int day = 0; day < 16; day++)
+        CHECK(at(day * 24000.0 + 5000.0).moonPhase == day % 8);
+    CHECK(EaseSunCurve(0.0f) == 0.0f && near(EaseSunCurve(1.0f), 1.0f) && near(EaseSunCurve(0.5f), 0.5f));
+    CHECK(near(at(0.0).sunAngle, 2.0f * pi * EaseSunCurve(0.75f), 5.0e-3f));
+
+    EnvironmentInput raining;
+    raining.ticks = 6000.0;
+    raining.rain = 1.0f;
+    CHECK(SampleEnvironment(raining).skyColor.z < at(6000.0).skyColor.z);
+    CHECK(SampleEnvironment(raining).starBrightness == 0.0f);
+
+    LightmapParams day;
+    day.skyFactor = 1.0f;
+    day.skyLightColor = glm::vec3(1.0f);
+    day.ambientColor = glm::vec3(10.0f / 255.0f);
+    day.blockLightTint = glm::vec3(1.0f, 216.0f / 255.0f, 140.0f / 255.0f);
+    uint8_t map[kLightmapBytes];
+    BuildLightmap(day, map);
+    auto texel = [&](int sky, int block) { return map + (sky * kLightmapSize + block) * 4; };
+    CHECK(texel(15, 0)[0] == 255 && texel(15, 0)[2] == 255);
+    CHECK(texel(0, 0)[0] == 24);
+    CHECK(texel(0, 8)[2] < texel(0, 8)[0]);
+    for (int level = 0; level < 15; level++)
+        CHECK(texel(level, 0)[1] <= texel(level + 1, 0)[1]);
+    day.skyFactor = 0.24f;
+    uint8_t dim[kLightmapBytes];
+    BuildLightmap(day, dim);
+    CHECK(dim[(15 * kLightmapSize) * 4 + 1] < map[(15 * kLightmapSize) * 4 + 1]);
+
+    FogInput fogInput;
+    fogInput.renderDistanceChunks = 8;
+    const FogState fog = ComputeFog(at(6000.0), fogInput);
+    CHECK(near(fog.renderDistanceEnd, 128.0f) && near(fog.renderDistanceStart, 115.2f));
+    CHECK(near(fog.skyEnd, 128.0f) && near(fog.cloudEnd, 2048.0f));
+    CHECK(near(fog.environmentalEnd, 1024.0f));
+    CHECK(fog.color.w == 1.0f);
+    CHECK(ComputeFog(at(18000.0), fogInput).color.z < fog.color.z);
 
     std::printf(failures ? "%d FAILED\n" : "input self-tests passed\n", failures);
     return failures ? 1 : 0;

@@ -19,6 +19,8 @@ namespace perlin {
         std::string resourcePackDir;
         std::string bedrockSamplesDir;
         bool fancyGraphics = true;
+        int cloudRange = 128;
+        bool rgss = false;
         KeyBindings keys = DefaultBindings();
 
         const Binding& GetKey(Action action) const { return keys[static_cast<size_t>(action)]; }
@@ -26,5 +28,32 @@ namespace perlin {
 
         static Options Load();
         void Save() const;
+    };
+
+    struct GraphicsSettings {
+        bool ambientOcclusion = true;
+        int biomeBlendRadius = 2;
+        bool clouds = true;
+        bool fancyClouds = true;
+        int cloudRange = 128;
+        int mipmapLevels = 4;
+        bool cutoutLeaves = true;
+        bool rgss = false;
+
+        static GraphicsSettings From(const Options& options) {
+            GraphicsSettings g;
+            g.cloudRange = options.cloudRange;
+            g.rgss = options.rgss;
+            if (!options.fancyGraphics) {
+                g.ambientOcclusion = false;
+                g.biomeBlendRadius = 1;
+                g.fancyClouds = false;
+                g.cloudRange = 32;
+                g.mipmapLevels = 2;
+                g.cutoutLeaves = false;
+                g.rgss = false;
+            }
+            return g;
+        }
     };
 }

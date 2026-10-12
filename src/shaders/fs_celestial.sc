@@ -1,4 +1,4 @@
-$input v_color0, v_texcoord0, v_fade
+$input v_texcoord0
 
 #include "common.sh"
 
@@ -6,5 +6,8 @@ SAMPLER2D(s_sky, 2);
 
 void main()
 {
-    gl_FragColor = texture2D(s_sky, v_texcoord0) * v_color0 * u_skyObject;
+    vec4 color = texture2D(s_sky, v_texcoord0);
+    if (color.a == 0.0)
+        discard;
+    gl_FragColor = color * u_modulator;
 }

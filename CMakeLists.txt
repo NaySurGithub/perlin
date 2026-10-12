@@ -132,8 +132,8 @@ endforeach()
 set(PERLIN_SHADER_INCLUDES "${bgfx_SOURCE_DIR}/bgfx/src" "${PERLIN_SHADER_DIR}")
 set(PERLIN_SHADER_OUTPUTS)
 set(PERLIN_SHADER_NAMES
-    vs_terrain fs_terrain_solid fs_terrain_cutout fs_terrain_translucent vs_sky fs_sky
-    vs_celestial fs_celestial vs_cloud fs_cloud)
+    vs_terrain fs_terrain_solid fs_terrain_cutout fs_terrain_translucent vs_sky fs_sky vs_star fs_star
+    vs_sunrise fs_sunrise vs_celestial fs_celestial vs_cloud fs_cloud)
 
 function(perlin_compile_shaders type varying)
     set(sources)
@@ -157,8 +157,14 @@ perlin_compile_shaders(VERTEX varying_terrain.def.sc vs_terrain)
 perlin_compile_shaders(FRAGMENT varying_terrain.def.sc fs_terrain_solid fs_terrain_cutout fs_terrain_translucent)
 perlin_compile_shaders(VERTEX varying_sky.def.sc vs_sky)
 perlin_compile_shaders(FRAGMENT varying_sky.def.sc fs_sky)
-perlin_compile_shaders(VERTEX varying_skyobject.def.sc vs_celestial vs_cloud)
-perlin_compile_shaders(FRAGMENT varying_skyobject.def.sc fs_celestial fs_cloud)
+perlin_compile_shaders(VERTEX varying_star.def.sc vs_star)
+perlin_compile_shaders(FRAGMENT varying_star.def.sc fs_star)
+perlin_compile_shaders(VERTEX varying_sunrise.def.sc vs_sunrise)
+perlin_compile_shaders(FRAGMENT varying_sunrise.def.sc fs_sunrise)
+perlin_compile_shaders(VERTEX varying_celestial.def.sc vs_celestial)
+perlin_compile_shaders(FRAGMENT varying_celestial.def.sc fs_celestial)
+perlin_compile_shaders(VERTEX varying_cloud.def.sc vs_cloud)
+perlin_compile_shaders(FRAGMENT varying_cloud.def.sc fs_cloud)
 
 set(PERLIN_SHADER_HEADER "${PERLIN_SHADER_OUT}/perlin_shaders.h")
 set(PERLIN_SHADER_HEADER_TEXT "#pragma once\n")
@@ -328,9 +334,11 @@ if(PERLIN_BUILD_TESTS)
         tests/input_selftest.cpp
         src/client/input/Keys.cpp
         src/client/input/KeyMapping.cpp
-        src/client/renderer/Sky.cpp
-        src/client/renderer/Lightmap.cpp)
-    target_include_directories(input_selftest PRIVATE src)
+        src/client/renderer/Environment.cpp
+        src/client/renderer/Fog.cpp
+        src/client/renderer/Lightmap.cpp
+        src/client/renderer/SkyGeometry.cpp)
+    target_include_directories(input_selftest PRIVATE src "${glm_SOURCE_DIR}")
     add_test(NAME input_selftest COMMAND input_selftest)
 
     add_executable(light_selftest

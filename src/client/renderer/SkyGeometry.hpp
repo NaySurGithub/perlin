@@ -3,25 +3,55 @@
 #include <vector>
 
 namespace perlin {
-    struct SkyVertex {
+    struct PositionVertex {
         float x, y, z;
-        uint32_t rgba;
+    };
+
+    struct ColorVertex {
+        float x, y, z;
+        uint32_t abgr;
+    };
+
+    struct TextureVertex {
+        float x, y, z;
         float u, v;
     };
-    static_assert(sizeof(SkyVertex) == 24);
 
-    struct CloudParams {
-        float offsetX = 0, offsetZ = 0, height = 0;
-        float uvX = 0, uvZ = 0;
-        float color[3] = {1, 1, 1};
+    enum class CloudCameraPos { Above, Inside, Below };
+
+    struct CloudTexture {
+        int width = 0;
+        int height = 0;
+        std::vector<uint8_t> solid;
     };
 
-    constexpr float kCloudLevel = 192.0f;
-    constexpr int kCloudTexture = 256;
+    struct CloudFrame {
+        int cellX = 0;
+        int cellZ = 0;
+        float xInCell = 0.0f;
+        float zInCell = 0.0f;
+        float relativeBottomY = 0.0f;
+        CloudCameraPos position = CloudCameraPos::Inside;
+    };
 
-    std::vector<SkyVertex> BuildStars();
-    std::vector<SkyVertex> BuildClouds(bool fancy = true);
-    CloudParams ComputeClouds(float eyeX, float eyeY, float eyeZ, float cloudTicks, float celestialAngle);
-    void SkyRotation(float celestialAngle, float out[16]);
-    int MoonPhase(int64_t day);
+    struct CloudMesh {
+        std::vector<TextureVertex> vertices;
+        std::vector<uint32_t> indices;
+    };
+
+    constexpr float kCloudCellSize = 12.0f;
+    constexpr float kCloudCellHeight = 4.0f;
+    constexpr int kCloudTicksPerCell = 400;
+
+    std::vector<PositionVertex> BuildSkyDisc(float y);
+    std::vector<ColorVertex> BuildSunriseFan();
+    std::vector<PositionVertex> BuildStars();
+    std::vector<TextureVertex> BuildSunQuad();
+    std::vector<TextureVertex> BuildMoonQuads();
+    std::vector<uint16_t> FanIndices(int vertexCount);
+    std::vector<uint16_t> QuadIndices(int quadCount);
+
+    CloudFrame ComputeCloudFrame(double cameraX, double cameraY, double cameraZ, float bottomY, double gameTicks,
+                                 const CloudTexture& texture);
+    CloudMesh BuildCloudMesh(const CloudTexture& texture, const CloudFrame& frame, bool fancy, int rangeChunks);
 }

@@ -6,6 +6,7 @@
 #include "client/multiplayer/BedrockSession.hpp"
 #include "client/player/LocalPlayer.hpp"
 #include "client/renderer/LevelRenderer.hpp"
+#include "client/renderer/Lightmap.hpp"
 #include "client/renderer/RenderContext.hpp"
 #include "util/ThreadPool.hpp"
 
@@ -52,6 +53,12 @@ namespace perlin {
 
         Camera camera;
         LocalPlayer player;
+        BlockLightFlicker blockLight;
+        double tickDebt = 0.0;
+        float rainLevel = 0.0f;
+        float thunderLevel = 0.0f;
+        float previousRainLevel = 0.0f;
+        float previousThunderLevel = 0.0f;
 
         std::unique_ptr<BedrockSession> session;
         std::atomic<bool> sessionReady{false};

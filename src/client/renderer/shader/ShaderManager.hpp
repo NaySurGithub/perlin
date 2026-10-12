@@ -7,7 +7,17 @@
 #include <string>
 
 namespace perlin {
-    enum class ShaderProgram : uint8_t { TerrainSolid, TerrainCutout, TerrainTranslucent, Sky, Celestial, Cloud, Count };
+    enum class ShaderProgram : uint8_t {
+        TerrainSolid,
+        TerrainCutout,
+        TerrainTranslucent,
+        Sky,
+        Star,
+        Sunrise,
+        Celestial,
+        Cloud,
+        Count
+    };
 
     class ShaderManager {
     public:
@@ -18,10 +28,12 @@ namespace perlin {
             return programs[static_cast<size_t>(program)];
         }
 
-        void SetFrame(const FrameParams& params, const float modelViewProjection[16]);
-        void ApplyUniforms() const;
+        void SetFrame(const FrameParams& params, int tilePixels);
+        void ApplyFrame() const;
         void SetMatrix(const float matrix[16]) const;
-        void SetSkyObject(float alpha) const;
+        void SetModulator(float r, float g, float b, float a) const;
+        void SetChunkVisibility(float visibility) const;
+        void SetCloud(const float offset[3], const float color[4]) const;
         void BindSky(bgfx::TextureHandle texture, uint32_t flags) const;
         void Apply(bgfx::TextureHandle atlas, bgfx::TextureHandle lightmap, uint32_t atlasFlags,
                    uint32_t lightmapFlags) const;
@@ -33,23 +45,22 @@ namespace perlin {
 
         bgfx::UniformHandle atlasSampler = BGFX_INVALID_HANDLE;
         bgfx::UniformHandle lightmapSampler = BGFX_INVALID_HANDLE;
-        bgfx::UniformHandle mvp = BGFX_INVALID_HANDLE;
-        bgfx::UniformHandle inverseViewProjection = BGFX_INVALID_HANDLE;
-        bgfx::UniformHandle camera = BGFX_INVALID_HANDLE;
-        bgfx::UniformHandle fog = BGFX_INVALID_HANDLE;
-        bgfx::UniformHandle fogColor = BGFX_INVALID_HANDLE;
-        bgfx::UniformHandle skyColor = BGFX_INVALID_HANDLE;
-        bgfx::UniformHandle sunDirection = BGFX_INVALID_HANDLE;
-        bgfx::UniformHandle sunrise = BGFX_INVALID_HANDLE;
-        bgfx::UniformHandle time = BGFX_INVALID_HANDLE;
-        bgfx::UniformHandle skyObject = BGFX_INVALID_HANDLE;
-        bgfx::UniformHandle cloud = BGFX_INVALID_HANDLE;
-        bgfx::UniformHandle cloudUv = BGFX_INVALID_HANDLE;
-        bgfx::UniformHandle cloudColor = BGFX_INVALID_HANDLE;
         bgfx::UniformHandle skySampler = BGFX_INVALID_HANDLE;
+        bgfx::UniformHandle mvp = BGFX_INVALID_HANDLE;
+        bgfx::UniformHandle camera = BGFX_INVALID_HANDLE;
+        bgfx::UniformHandle fogColor = BGFX_INVALID_HANDLE;
+        bgfx::UniformHandle fogEnvironment = BGFX_INVALID_HANDLE;
+        bgfx::UniformHandle fogSky = BGFX_INVALID_HANDLE;
+        bgfx::UniformHandle modulator = BGFX_INVALID_HANDLE;
+        bgfx::UniformHandle textureInfo = BGFX_INVALID_HANDLE;
+        bgfx::UniformHandle chunk = BGFX_INVALID_HANDLE;
+        bgfx::UniformHandle cloudOffset = BGFX_INVALID_HANDLE;
+        bgfx::UniformHandle cloudColor = BGFX_INVALID_HANDLE;
 
-        float values[10][4] = {};
-        float modelViewProjection[16] = {};
-        float inverse[16] = {};
+        float cameraValue[4] = {};
+        float fogColorValue[4] = {};
+        float fogEnvironmentValue[4] = {};
+        float fogSkyValue[4] = {};
+        float textureInfoValue[4] = {};
     };
 }

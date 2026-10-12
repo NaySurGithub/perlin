@@ -13,24 +13,42 @@ namespace perlin {
     class Tessellator;
     struct Options;
 
+    struct SkyFrame {
+        bool enabled = false;
+        float skyColor[3] = {};
+        float sunAngle = 0.0f;
+        float moonAngle = 0.0f;
+        float starAngle = 0.0f;
+        float rainBrightness = 1.0f;
+        float starBrightness = 0.0f;
+        float sunrise[4] = {};
+        int moonPhase = 0;
+        bool darkDisc = false;
+    };
+
+    struct CloudDraw {
+        bool enabled = false;
+        bool fancy = true;
+        int rangeChunks = 128;
+        float color[4] = {};
+        float height = 192.33f;
+        double gameTicks = 0.0;
+    };
+
     struct FrameParams {
         float viewProjection[16];
         float skyViewProjection[16];
-        float inverseViewProjection[16];
         float cameraPosition[3];
-        float renderDistance;
-        float skyColor[3];
-        float fogColor[3];
-        float sunDirection[3];
-        float sunriseColor[4];
-        float fogStart;
-        float fogEnd;
-        float celestialAngle;
-        float skyDarken;
-        float starBrightness;
-        int moonPhase;
-        bool fancyClouds;
-        CloudParams cloud;
+        float fogColor[4];
+        float environmentalFogStart;
+        float environmentalFogEnd;
+        float renderDistanceFogStart;
+        float renderDistanceFogEnd;
+        float skyFogEnd;
+        float cloudFogEnd;
+        bool rgss;
+        SkyFrame sky;
+        CloudDraw cloud;
         float timeSeconds;
         uint32_t frameIndex;
         uint8_t lightmap[kLightmapBytes];

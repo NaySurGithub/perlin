@@ -83,6 +83,9 @@ namespace perlin {
         bool GetWorldTime(int64_t& outDay, int& outTicksOfDay) const;
         bool GetWorldTicks(double& outTicks) const;
         void SetDayCycle(bool running);
+        int DimensionId() const { return dimensionId; }
+        float RainTarget() const { return rainTarget; }
+        float ThunderTarget() const { return thunderTarget; }
         void NoteTime(int64_t totalOrTod);
         void GetBlockPos(int out[3]) const {
             out[0] = lastBlockPos[0];
@@ -199,6 +202,9 @@ namespace perlin {
 
         mutable std::mutex timeMutex;
         int64_t timeTotal = -1;
+        std::atomic<int> dimensionId{0};
+        std::atomic<float> rainTarget{0.0f};
+        std::atomic<float> thunderTarget{0.0f};
         std::atomic<bool> dayCycleRunning{true};
         std::atomic<uint64_t> diagPackets{0};
         std::atomic<uint32_t> diagLastId{0};

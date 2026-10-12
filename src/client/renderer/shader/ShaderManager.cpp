@@ -20,6 +20,10 @@ namespace perlin {
             BGFX_EMBEDDED_SHADER(fs_terrain_translucent),
             BGFX_EMBEDDED_SHADER(vs_sky),
             BGFX_EMBEDDED_SHADER(fs_sky),
+            BGFX_EMBEDDED_SHADER(vs_star),
+            BGFX_EMBEDDED_SHADER(fs_star),
+            BGFX_EMBEDDED_SHADER(vs_sunrise),
+            BGFX_EMBEDDED_SHADER(fs_sunrise),
             BGFX_EMBEDDED_SHADER(vs_celestial),
             BGFX_EMBEDDED_SHADER(fs_celestial),
             BGFX_EMBEDDED_SHADER(vs_cloud),
@@ -37,6 +41,8 @@ namespace perlin {
             {"vs_terrain", "fs_terrain_cutout"},
             {"vs_terrain", "fs_terrain_translucent"},
             {"vs_sky", "fs_sky"},
+            {"vs_star", "fs_star"},
+            {"vs_sunrise", "fs_sunrise"},
             {"vs_celestial", "fs_celestial"},
             {"vs_cloud", "fs_cloud"},
         };
@@ -59,7 +65,6 @@ namespace perlin {
             }
         }
 
-        enum Slot { Camera, Fog, FogColor, SkyColor, SunDirection, Sunrise, Time, Cloud, CloudUv, CloudColor };
     }
 
     bgfx::ShaderHandle ShaderManager::Load(const char* name, const std::string& packDirectory) const {
@@ -97,20 +102,17 @@ namespace perlin {
 
         atlasSampler = bgfx::createUniform("s_atlas", bgfx::UniformType::Sampler);
         lightmapSampler = bgfx::createUniform("s_lightmap", bgfx::UniformType::Sampler);
-        mvp = bgfx::createUniform("u_mvp", bgfx::UniformType::Mat4);
-        inverseViewProjection = bgfx::createUniform("u_inverseViewProjection", bgfx::UniformType::Mat4);
-        camera = bgfx::createUniform("u_camera", bgfx::UniformType::Vec4);
-        fog = bgfx::createUniform("u_fog", bgfx::UniformType::Vec4);
-        fogColor = bgfx::createUniform("u_fogColor", bgfx::UniformType::Vec4);
-        skyColor = bgfx::createUniform("u_skyColor", bgfx::UniformType::Vec4);
-        sunDirection = bgfx::createUniform("u_sunDir", bgfx::UniformType::Vec4);
-        sunrise = bgfx::createUniform("u_sunrise", bgfx::UniformType::Vec4);
-        time = bgfx::createUniform("u_time", bgfx::UniformType::Vec4);
-        skyObject = bgfx::createUniform("u_skyObject", bgfx::UniformType::Vec4);
-        cloud = bgfx::createUniform("u_cloud", bgfx::UniformType::Vec4);
-        cloudUv = bgfx::createUniform("u_cloudUv", bgfx::UniformType::Vec4);
-        cloudColor = bgfx::createUniform("u_cloudColor", bgfx::UniformType::Vec4);
         skySampler = bgfx::createUniform("s_sky", bgfx::UniformType::Sampler);
+        mvp = bgfx::createUniform("u_mvp", bgfx::UniformType::Mat4);
+        camera = bgfx::createUniform("u_camera", bgfx::UniformType::Vec4);
+        fogColor = bgfx::createUniform("u_fogColor", bgfx::UniformType::Vec4);
+        fogEnvironment = bgfx::createUniform("u_fogEnv", bgfx::UniformType::Vec4);
+        fogSky = bgfx::createUniform("u_fogSky", bgfx::UniformType::Vec4);
+        modulator = bgfx::createUniform("u_modulator", bgfx::UniformType::Vec4);
+        textureInfo = bgfx::createUniform("u_textureInfo", bgfx::UniformType::Vec4);
+        chunk = bgfx::createUniform("u_chunk", bgfx::UniformType::Vec4);
+        cloudOffset = bgfx::createUniform("u_cloudOffset", bgfx::UniformType::Vec4);
+        cloudColor = bgfx::createUniform("u_cloudColor", bgfx::UniformType::Vec4);
         return true;
     }
 
@@ -120,81 +122,59 @@ namespace perlin {
                 bgfx::destroy(program);
             program = BGFX_INVALID_HANDLE;
         }
-        for (bgfx::UniformHandle* handle :
-             {&atlasSampler, &lightmapSampler, &mvp, &inverseViewProjection, &camera, &fog, &fogColor,
-              &skyColor, &sunDirection, &sunrise, &time, &skyObject, &cloud, &cloudUv, &cloudColor, &skySampler}) {
+        for (bgfx::UniformHandle* handle : {&atlasSampler, &lightmapSampler, &skySampler, &mvp, &camera, &fogColor,
+                                            &fogEnvironment, &fogSky, &modulator, &textureInfo, &chunk, &cloudOffset,
+                                            &cloudColor}) {
             if (bgfx::isValid(*handle))
                 bgfx::destroy(*handle);
             *handle = BGFX_INVALID_HANDLE;
         }
     }
 
-    void ShaderManager::SetFrame(const FrameParams& params, const float matrix[16]) {
-        std::memcpy(modelViewProjection, matrix, sizeof(modelViewProjection));
-        std::memcpy(inverse, params.inverseViewProjection, sizeof(inverse));
+    void ShaderManager::SetFrame(const FrameParams& params, int tilePixels) {
+        std::copy_n(params.cameraPosition, 3, cameraValue);
+        std::copy_n(params.fogColor, 4, fogColorValue);
+        fogEnvironmentValue[0] = params.environmentalFogStart;
+        fogEnvironmentValue[1] = params.environmentalFogEnd;
+        fogEnvironmentValue[2] = params.renderDistanceFogStart;
+        fogEnvironmentValue[3] = params.renderDistanceFogEnd;
+        fogSkyValue[0] = params.skyFogEnd;
+        fogSkyValue[1] = params.cloudFogEnd;
+        textureInfoValue[0] = 1.0f / static_cast<float>(std::max(1, tilePixels));
+        textureInfoValue[1] = params.rgss ? 1.0f : 0.0f;
+    }
 
-        float* c = values[Camera];
-        c[0] = params.cameraPosition[0];
-        c[1] = params.cameraPosition[1];
-        c[2] = params.cameraPosition[2];
-        c[3] = params.renderDistance;
-
-        values[Fog][0] = params.fogStart;
-        values[Fog][1] = params.fogEnd;
-        values[Fog][2] = 0.0f;
-        values[Fog][3] = 0.0f;
-
-        for (int i = 0; i < 3; i++) {
-            values[FogColor][i] = params.fogColor[i];
-            values[SkyColor][i] = params.skyColor[i];
-            values[SunDirection][i] = params.sunDirection[i];
-        }
-        values[FogColor][3] = 1.0f;
-        values[SkyColor][3] = 1.0f;
-        values[SunDirection][3] = params.celestialAngle;
-        std::memcpy(values[Sunrise], params.sunriseColor, sizeof(float) * 4);
-
-        values[Time][0] = params.timeSeconds;
-        values[Time][1] = params.skyDarken;
-        values[Time][2] = params.starBrightness;
-        values[Time][3] = static_cast<float>(params.frameIndex);
-
-        values[Cloud][0] = params.cloud.offsetX;
-        values[Cloud][1] = params.cloud.offsetZ;
-        values[Cloud][2] = params.cloud.height;
-        values[CloudUv][0] = params.cloud.uvX;
-        values[CloudUv][1] = params.cloud.uvZ;
-        std::memcpy(values[CloudColor], params.cloud.color, sizeof(float) * 3);
-        const float chunks = params.renderDistance / 16.0f;
-        values[CloudColor][3] = std::max(256.0f, (chunks + 2.0f) * 24.0f);
+    void ShaderManager::ApplyFrame() const {
+        bgfx::setUniform(camera, cameraValue);
+        bgfx::setUniform(fogColor, fogColorValue);
+        bgfx::setUniform(fogEnvironment, fogEnvironmentValue);
+        bgfx::setUniform(fogSky, fogSkyValue);
+        bgfx::setUniform(textureInfo, textureInfoValue);
+        SetChunkVisibility(1.0f);
     }
 
     void ShaderManager::SetMatrix(const float matrix[16]) const {
         bgfx::setUniform(mvp, matrix);
     }
 
-    void ShaderManager::SetSkyObject(float alpha) const {
-        const float value[4] = {1.0f, 1.0f, 1.0f, alpha};
-        bgfx::setUniform(skyObject, value);
+    void ShaderManager::SetModulator(float r, float g, float b, float a) const {
+        const float value[4] = {r, g, b, a};
+        bgfx::setUniform(modulator, value);
+    }
+
+    void ShaderManager::SetChunkVisibility(float visibility) const {
+        const float value[4] = {visibility, 0.0f, 0.0f, 0.0f};
+        bgfx::setUniform(chunk, value);
+    }
+
+    void ShaderManager::SetCloud(const float offset[3], const float color[4]) const {
+        const float position[4] = {offset[0], offset[1], offset[2], 0.0f};
+        bgfx::setUniform(cloudOffset, position);
+        bgfx::setUniform(cloudColor, color);
     }
 
     void ShaderManager::BindSky(bgfx::TextureHandle texture, uint32_t flags) const {
         bgfx::setTexture(2, skySampler, texture, flags);
-    }
-
-    void ShaderManager::ApplyUniforms() const {
-        bgfx::setUniform(mvp, modelViewProjection);
-        bgfx::setUniform(inverseViewProjection, inverse);
-        bgfx::setUniform(camera, values[Camera]);
-        bgfx::setUniform(fog, values[Fog]);
-        bgfx::setUniform(fogColor, values[FogColor]);
-        bgfx::setUniform(skyColor, values[SkyColor]);
-        bgfx::setUniform(sunDirection, values[SunDirection]);
-        bgfx::setUniform(sunrise, values[Sunrise]);
-        bgfx::setUniform(time, values[Time]);
-        bgfx::setUniform(cloud, values[Cloud]);
-        bgfx::setUniform(cloudUv, values[CloudUv]);
-        bgfx::setUniform(cloudColor, values[CloudColor]);
     }
 
     void ShaderManager::Apply(bgfx::TextureHandle atlas, bgfx::TextureHandle lightmap, uint32_t atlasFlags,
