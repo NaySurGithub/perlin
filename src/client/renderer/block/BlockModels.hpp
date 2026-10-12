@@ -24,6 +24,7 @@ namespace perlin {
 
     struct ModelEntry {
         uint8_t offset = 0; // 0 none, 1 XZ, 2 XYZ, 3 dripstone
+        bool cube = false;  // full opaque cube: keeps the legacy occlusion/light behaviour
         struct Choice {
             uint32_t variant;
             uint8_t weight;

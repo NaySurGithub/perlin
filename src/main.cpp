@@ -17,31 +17,17 @@
 #include <Windows.h>
 #endif
 
+#ifdef _WIN32
+#include <fcntl.h>
+#include <io.h>
+#else
+#include <unistd.h>
+#endif
+#include <chrono>
+#include <ctime>
+#include <thread>
+
 namespace {
-    class TeeBuf : public std::streambuf {
-    public:
-        TeeBuf(std::streambuf* a, std::streambuf* b) : first(a), second(b) {}
-
-    protected:
-        int overflow(int c) override {
-            if (c == EOF)
-                return !EOF;
-            const int r1 = first ? first->sputc(static_cast<char>(c)) : c;
-            const int r2 = second->sputc(static_cast<char>(c));
-            return (r1 == EOF || r2 == EOF) ? EOF : c;
-        }
-
-        int sync() override {
-            if (first)
-                first->pubsync();
-            return second->pubsync();
-        }
-
-    private:
-        std::streambuf* first;
-        std::streambuf* second;
-    };
-
     void AttachParentConsole() {
 #ifdef _WIN32
         HANDLE out = GetStdHandle(STD_OUTPUT_HANDLE);
@@ -55,6 +41,74 @@ namespace {
 #endif
         setvbuf(stdout, nullptr, _IONBF, 0);
     }
+
+
+    // Everything written to stdout/stderr (printf, std::cout, std::cerr, library output) is piped through a
+    // reader thread into perlin.log and still forwarded to the console. Flushed on every write so a crash
+    // never loses the tail of the log.
+    void StartLogCapture(const std::string& path) {
+        FILE* log = std::fopen(path.c_str(), "wb");
+        if (!log)
+            return;
+        std::fflush(stdout);
+        std::fflush(stderr);
+#ifdef _WIN32
+        const int saved = _dup(1);
+        int fds[2];
+        if (_pipe(fds, 1 << 16, _O_BINARY) != 0)
+            return;
+        _dup2(fds[1], 1);
+        _dup2(fds[1], 2);
+        _close(fds[1]);
+        const int readFd = fds[0];
+#else
+        const int saved = dup(1);
+        int fds[2];
+        if (pipe(fds) != 0)
+            return;
+        dup2(fds[1], 1);
+        dup2(fds[1], 2);
+        close(fds[1]);
+        const int readFd = fds[0];
+#endif
+        setvbuf(stdout, nullptr, _IONBF, 0);
+        setvbuf(stderr, nullptr, _IONBF, 0);
+        std::thread([log, saved, readFd] {
+            char buf[8192];
+            for (;;) {
+#ifdef _WIN32
+                const int n = _read(readFd, buf, sizeof(buf));
+#else
+                const ssize_t n = read(readFd, buf, sizeof(buf));
+#endif
+                if (n <= 0)
+                    break;
+                std::fwrite(buf, 1, static_cast<size_t>(n), log);
+                std::fflush(log);
+                if (saved >= 0) {
+#ifdef _WIN32
+                    (void)_write(saved, buf, static_cast<unsigned>(n));
+#else
+                    (void)!write(saved, buf, static_cast<size_t>(n));
+#endif
+                }
+            }
+        }).detach();
+        std::atexit([] {
+            std::fflush(stdout);
+            std::this_thread::sleep_for(std::chrono::milliseconds(80));
+        });
+    }
+
+#ifdef _WIN32
+    LONG WINAPI CrashFilter(EXCEPTION_POINTERS* info) {
+        std::printf("[crash] unhandled exception 0x%08lx at %p\n", info->ExceptionRecord->ExceptionCode,
+                    info->ExceptionRecord->ExceptionAddress);
+        std::fflush(stdout);
+        std::this_thread::sleep_for(std::chrono::milliseconds(200));
+        return EXCEPTION_CONTINUE_SEARCH;
+    }
+#endif
 
     perlin::LaunchArgs ParseArgs(int argc, char** argv) {
         perlin::LaunchArgs args;
@@ -74,10 +128,16 @@ int main(int argc, char** argv) {
 
     const std::string dataDir = perlin::paths::DataDir();
     perlin::paths::EnsureDir(dataDir);
-    static std::ofstream logFile(dataDir + "/perlin.log", std::ios::trunc);
-    static TeeBuf tee(std::cout.rdbuf(), logFile.rdbuf());
-    if (logFile)
-        std::cout.rdbuf(&tee);
+    StartLogCapture(dataDir + "/perlin.log");
+#ifdef _WIN32
+    SetUnhandledExceptionFilter(CrashFilter);
+#endif
+    {
+        const std::time_t now = std::time(nullptr);
+        char stamp[64];
+        std::strftime(stamp, sizeof(stamp), "%Y-%m-%d %H:%M:%S", std::localtime(&now));
+        std::printf("[perlin] starting %s, data dir %s\n", stamp, dataDir.c_str());
+    }
 
     AppPlatform_SDL platform(ParseArgs(argc, argv));
     if (!platform.Initialize())

@@ -161,7 +161,8 @@ bool AppPlatform_SDL::Initialize() {
     if (!game->Initialize(this))
         return false;
     SDL_RaiseWindow(window);
-    SetCursorCaptured(true);
+    if (SDL_GetWindowFlags(window) & SDL_WINDOW_INPUT_FOCUS)
+        SetCursorCaptured(true);
     return true;
 }
 
@@ -189,6 +190,8 @@ void AppPlatform_SDL::HandleEvent(const SDL_Event& e) {
         }
         break;
     case SDL_EVENT_WINDOW_FOCUS_LOST:
+    case SDL_EVENT_WINDOW_MINIMIZED:
+    case SDL_EVENT_WINDOW_HIDDEN:
         if (input)
             input->ReleaseAll();
         SetCursorCaptured(false);
@@ -245,6 +248,10 @@ void AppPlatform_SDL::Run() {
                 titleDirty = false;
             }
         }
+
+        // Never keep the pointer grabbed while the window is not the active one.
+        if (cursorCaptured && !(SDL_GetWindowFlags(window) & SDL_WINDOW_INPUT_FOCUS))
+            SetCursorCaptured(false);
 
         bgfx::renderFrame(8);
     }

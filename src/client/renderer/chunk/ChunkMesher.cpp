@@ -465,7 +465,7 @@ namespace perlin {
         static bool ComputeSolid(BlockLibrary* library, uint16_t id) {
             if (!library)
                 return true;
-            if (ModelFor(library, id))
+            if (const ModelEntry* me = ModelFor(library, id); me && !me->cube)
                 return false;
             const BlockAppearance& a = *LookupApp(library, id);
             if ((a.top | a.side | a.bottom) == 0)

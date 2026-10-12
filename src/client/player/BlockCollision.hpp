@@ -30,6 +30,5 @@ namespace perlin {
 
         const Level& level;
         const BlockLibrary* blocks;
-        mutable std::vector<Info> cache;
     };
 }

@@ -81,12 +81,15 @@ namespace perlin {
     }
 
     const LevelCollision::Info& LevelCollision::Lookup(uint16_t id) const {
+        // Shapes depend only on the block id, so the table outlives the per-frame LevelCollision.
+        static std::vector<Info> cache;
         if (cache.size() <= id)
             cache.resize(std::max<size_t>(static_cast<size_t>(id) + 1, cache.size() * 2 + 64));
         Info& info = cache[id];
         if (!info.ready) {
             info = Classify(id);
-            info.ready = true;
+            // Unknown names (palette not synced yet) are re-classified on the next query.
+            info.ready = id == 0 || !BlockPalette::Instance().Name(id).empty();
         }
         return info;
     }

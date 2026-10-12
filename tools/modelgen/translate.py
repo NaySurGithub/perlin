@@ -448,11 +448,11 @@ def translate(bname, st, jb):
         return jn, props, search
     if n in ("pink_petals", "wildflowers"):
         props["facing"] = st["minecraft:cardinal_direction"]
-        props["flower_amount"] = str(int(st["growth"]) + 1)
+        props["flower_amount"] = str((int(st["growth"]) & 3) + 1)
         return jn, props, search
     if n == "leaf_litter":
         props["facing"] = st["minecraft:cardinal_direction"]
-        props["segment_amount"] = str(int(st["growth"]) + 1)
+        props["segment_amount"] = str((int(st["growth"]) & 3) + 1)
         return jn, props, search
     if n == "turtle_egg":
         props["eggs"] = {"one_egg": "1", "two_egg": "2", "three_egg": "3", "four_egg": "4"}[st["turtle_egg_count"]]

@@ -87,7 +87,7 @@ class Gen:
         """True when this Java block must be rendered through the model path."""
         if jname in self.include_cache:
             return self.include_cache[jname]
-        res = False
+        res = 0
         jb = self.jb.get(jname)
         if jb and jname not in KEEP_LEGACY:
             refs = jb.all_groups()
@@ -99,8 +99,12 @@ class Gen:
                     visible = True
                     if not is_full_cube(m):
                         noncube = True
-            distinct = len({(mid, x, y) for mid, x, y in refs})
-            res = visible and (noncube or distinct > 1)
+            # Pure rotation variants of one cube model (stone, dirt, ...) stay on the legacy cube path.
+            distinct = len({mid for mid, x, y in refs})
+            if visible and noncube:
+                res = 1
+            elif visible and distinct > 1:
+                res = 2  # full cubes whose model differs per state (furnace facing, lit ores...)
         self.include_cache[jname] = res
         return res
 
@@ -228,6 +232,8 @@ class Gen:
     def run(self):
         recs = load_records()
         blocks = []
+        qmax = {}
+        badval = Counter()
         stats = Counter()
         fitlog = Counter()
         poor = []
@@ -249,6 +255,9 @@ class Gen:
                 if p not in jb.values:
                     missing_props[(jname, p)] += 1
                     del props[p]
+            for p, v in props.items():
+                if v not in jb.values[p] and v not in ('false', 'none'):
+                    badval[(jname, p, v)] += 1
             for p in list(search):
                 if p not in jb.values:
                     del search[p]
@@ -265,13 +274,17 @@ class Gen:
                 offset = 2
             elif jname in OFFSET_DRIPSTONE:
                 offset = 3
-            eid = self.entry_for(jname, props, offset)
+            eid = self.entry_for(jname, props, offset | (0x80 if self.include(jname) == 2 else 0))
             if eid is None:
                 stats["empty:" + jname] += 1
                 continue
             blocks.append((rec["hash"], eid))
+            qn = sum(len(self.variants[g[0][0]]) for g in self.entries[eid][1])
+            qmax[rec["name"]] = max(qmax.get(rec["name"], 0), qn)
             stats["emitted"] += 1
+        print('values outside java domain:', dict(badval.most_common(60)))
         self.write(blocks)
+        print('heaviest blocks (quads):', sorted(qmax.items(), key=lambda kv: -kv[1])[:40])
         print("emitted", len(blocks), "block states;", len(self.variants), "variants;", len(self.entries),
               "entries;", len(self.tex_ids), "textures")
         for k, v in sorted(stats.items(), key=lambda kv: -kv[1])[:60]:

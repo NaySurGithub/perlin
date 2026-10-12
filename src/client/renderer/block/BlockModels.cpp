@@ -72,7 +72,9 @@ namespace perlin {
         const uint32_t nEnt = r.Get<uint32_t>();
         entries.resize(r.ok ? nEnt : 0);
         for (uint32_t i = 0; i < nEnt && r.ok; i++) {
-            entries[i].offset = r.Get<uint8_t>();
+            const uint8_t flags = r.Get<uint8_t>();
+            entries[i].offset = flags & 3;
+            entries[i].cube = (flags & 0x80) != 0;
             const uint8_t ng = r.Get<uint8_t>();
             entries[i].groups.resize(ng);
             for (auto& g : entries[i].groups) {
