@@ -561,53 +561,70 @@ namespace perlin {
     }
 
 
-    bool RenderContext_bgfx::CreatePage(uint32_t vCap, uint32_t iCap) {
+    bool RenderContext_bgfx::CreatePage(uint32_t vCap, const std::array<uint32_t, kRenderLayerCount>& iCap) {
         Page p;
+        for (auto& h : p.ib)
+            h = BGFX_INVALID_HANDLE;
         p.vb = bgfx::createDynamicVertexBuffer(vCap, layout, BGFX_BUFFER_NONE);
-        p.ib = bgfx::createDynamicIndexBuffer(iCap, BGFX_BUFFER_INDEX32);
-        if (!bgfx::isValid(p.vb) || !bgfx::isValid(p.ib)) {
+        bool ok = bgfx::isValid(p.vb);
+        for (int l = 0; l < kRenderLayerCount && ok; l++) {
+            p.ib[l] = bgfx::createDynamicIndexBuffer(iCap[l], BGFX_BUFFER_INDEX32);
+            ok = bgfx::isValid(p.ib[l]);
+        }
+        if (!ok) {
             if (bgfx::isValid(p.vb))
                 bgfx::destroy(p.vb);
-            if (bgfx::isValid(p.ib))
-                bgfx::destroy(p.ib);
+            for (auto& h : p.ib)
+                if (bgfx::isValid(h))
+                    bgfx::destroy(h);
             return false;
         }
         p.vAlloc.Reset(vCap);
-        p.iAlloc.Reset(iCap);
+        for (int l = 0; l < kRenderLayerCount; l++)
+            p.iAlloc[l].Reset(iCap[l]);
         pages.push_back(std::move(p));
         return true;
     }
 
-    bool RenderContext_bgfx::AllocMesh(uint32_t v, uint32_t i, GpuChunk& out) {
-        for (size_t pi = 0; pi < pages.size(); pi++) {
-            uint32_t vo = 0, io = 0;
-            if (!pages[pi].vAlloc.Alloc(v, vo))
-                continue;
-            if (!pages[pi].iAlloc.Alloc(i, io)) {
-                pages[pi].vAlloc.Free(vo, v);
-                continue;
+    bool RenderContext_bgfx::AllocMesh(uint32_t v, const std::array<uint32_t, kRenderLayerCount>& need, GpuChunk& out) {
+        auto tryPage = [&](Page& pg, int index) {
+            uint32_t vo = 0;
+            if (!pg.vAlloc.Alloc(v, vo))
+                return false;
+            std::array<uint32_t, kRenderLayerCount> io{};
+            for (int l = 0; l < kRenderLayerCount; l++) {
+                if (need[l] && !pg.iAlloc[l].Alloc(need[l], io[l])) {
+                    for (int k = 0; k < l; k++)
+                        if (need[k])
+                            pg.iAlloc[k].Free(io[k], need[k]);
+                    pg.vAlloc.Free(vo, v);
+                    return false;
+                }
             }
-            out.page = (int)pi;
+            out.page = index;
             out.vOff = vo;
             out.iOff = io;
             return true;
-        }
-        if (!CreatePage(std::max(kPageVerts, v), std::max(kPageIdx, i)))
+        };
+        for (size_t pi = 0; pi < pages.size(); pi++)
+            if (tryPage(pages[pi], (int)pi))
+                return true;
+        // Per-layer capacities: solid terrain dominates; the rest are sized for typical amounts.
+        constexpr uint32_t kBase = kPageIdx;
+        std::array<uint32_t, kRenderLayerCount> caps = {kBase, kBase / 2, kBase / 2, kBase / 4, kBase / 8};
+        for (int l = 0; l < kRenderLayerCount; l++)
+            caps[l] = std::max(caps[l], need[l]);
+        if (!CreatePage(std::max(kPageVerts, v), caps))
             return false;
-        Page& pg = pages.back();
-        uint32_t vo = 0, io = 0;
-        if (!pg.vAlloc.Alloc(v, vo) || !pg.iAlloc.Alloc(i, io))
-            return false;
-        out.page = (int)pages.size() - 1;
-        out.vOff = vo;
-        out.iOff = io;
-        return true;
+        return tryPage(pages.back(), (int)pages.size() - 1);
     }
 
     void RenderContext_bgfx::FreeChunk(GpuChunk& g) {
         if (g.page >= 0 && g.page < (int)pages.size()) {
             pages[g.page].vAlloc.Free(g.vOff, g.vCount);
-            pages[g.page].iAlloc.Free(g.iOff, g.iCount);
+            for (int l = 0; l < kRenderLayerCount; l++)
+                if (g.layerCount[l])
+                    pages[g.page].iAlloc[l].Free(g.iOff[l], g.layerCount[l]);
         }
         g.page = -1;
     }
@@ -616,13 +633,32 @@ namespace perlin {
         for (Page& p : pages) {
             if (bgfx::isValid(p.vb))
                 bgfx::destroy(p.vb);
-            if (bgfx::isValid(p.ib))
-                bgfx::destroy(p.ib);
+            for (auto& h : p.ib)
+                if (bgfx::isValid(h))
+                    bgfx::destroy(h);
         }
         pages.clear();
     }
 
     void RenderContext_bgfx::UpdateChunkMesh(int cx, int cz, const Tessellator& tess, uint64_t version) {
+        UploadMesh(gpuChunks, cx, cz, 16, tess, version);
+    }
+
+    void RenderContext_bgfx::UpdateLodTile(int tx, int tz, int size, const Tessellator& tess, uint64_t version) {
+        UploadMesh(lodChunks, tx, tz, size, tess, version);
+    }
+
+    void RenderContext_bgfx::RemoveLodTile(int tx, int tz) {
+        auto it = lodChunks.find(ChunkKey(tx, tz));
+        if (it == lodChunks.end())
+            return;
+        FreeChunk(it->second);
+        lodChunks.erase(it);
+    }
+
+    void RenderContext_bgfx::UploadMesh(std::unordered_map<int64_t, GpuChunk>& gpuChunks, int cx, int cz, int size,
+                                        const Tessellator& tess, uint64_t version) {
+        const bool lod = &gpuChunks == &lodChunks;
         int64_t key = ChunkKey(cx, cz);
         const auto& verts = tess.Vertices();
         auto it = gpuChunks.find(key);
@@ -630,7 +666,8 @@ namespace perlin {
             if (it != gpuChunks.end()) {
                 FreeChunk(it->second);
                 gpuChunks.erase(it);
-                meshGeneration++;
+                if (!lod)
+                    meshGeneration++;
             }
             return;
         }
@@ -643,25 +680,24 @@ namespace perlin {
 
         GpuChunk g;
         g.vCount = (uint32_t)verts.size();
-        uint32_t total = 0;
-        for (int l = 0; l < kRenderLayerCount; l++) {
-            g.layerBase[l] = total;
+        for (int l = 0; l < kRenderLayerCount; l++)
             g.layerCount[l] = (uint32_t)tess.Indices(static_cast<RenderLayer>(l)).size();
-            total += g.layerCount[l];
-        }
-        g.iCount = total;
-        if (!AllocMesh(g.vCount, g.iCount, g))
+        if (!AllocMesh(g.vCount, g.layerCount, g))
             return;
         Page& pg = pages[g.page];
 
         bgfx::update(pg.vb, g.vOff, bgfx::copy(verts.data(), g.vCount * (uint32_t)sizeof(Vertex)));
-        const bgfx::Memory* im = bgfx::alloc(g.iCount * (uint32_t)sizeof(uint32_t));
         for (int l = 0; l < kRenderLayerCount; l++) {
             const auto& list = tess.Indices(static_cast<RenderLayer>(l));
-            std::memcpy(im->data + (size_t)g.layerBase[l] * sizeof(uint32_t), list.data(),
-                        list.size() * sizeof(uint32_t));
+            if (list.empty())
+                continue;
+            // Absolute indices: the page's whole vertex buffer is bound for every draw.
+            const bgfx::Memory* im = bgfx::alloc((uint32_t)(list.size() * sizeof(uint32_t)));
+            uint32_t* dst = reinterpret_cast<uint32_t*>(im->data);
+            for (size_t i = 0; i < list.size(); i++)
+                dst[i] = list[i] + g.vOff;
+            bgfx::update(pg.ib[l], g.iOff[l], im);
         }
-        bgfx::update(pg.ib, g.iOff, im);
 
         float lo = verts[0].y, hi = verts[0].y;
         for (const Vertex& v : verts) {
@@ -675,7 +711,7 @@ namespace perlin {
         if (secs.empty()) {
             GpuSection whole{lo, hi, 0, {}, {}};
             for (int l = 0; l < kRenderLayerCount; l++) {
-                whole.start[l] = g.layerBase[l];
+                whole.start[l] = 0;
                 whole.count[l] = g.layerCount[l];
             }
             g.sections.push_back(whole);
@@ -684,7 +720,7 @@ namespace perlin {
             for (const MeshSection& ms : secs) {
                 GpuSection section{(float)(ms.sy * 16), (float)(ms.sy * 16 + 16), ms.sy, {}, {}};
                 for (int l = 0; l < kRenderLayerCount; l++) {
-                    section.start[l] = g.layerBase[l] + ms.start[l];
+                    section.start[l] = ms.start[l];
                     section.count[l] = ms.count[l];
                 }
                 g.sections.push_back(section);
@@ -692,6 +728,7 @@ namespace perlin {
         }
         g.cx = cx;
         g.cz = cz;
+        g.size = size;
         g.version = version;
         {
             const auto& vis = tess.Visibility();
@@ -701,7 +738,8 @@ namespace perlin {
                     g.conn.push_back(v.conn);
             }
         }
-        meshGeneration++;
+        if (!lod)
+            meshGeneration++;
         gpuChunks[key] = std::move(g);
     }
 
@@ -1129,8 +1167,8 @@ namespace perlin {
                     primed = true;
                 }
                 const Page& pg = pages[g.page];
-                bgfx::setVertexBuffer(0, pg.vb, g.vOff, g.vCount);
-                bgfx::setIndexBuffer(pg.ib, g.iOff + g.layerBase[slot], g.layerCount[slot]);
+                bgfx::setVertexBuffer(0, pg.vb);
+                bgfx::setIndexBuffer(pg.ib[slot], g.iOff[slot], g.layerCount[slot]);
                 bgfx::submit(1, shaders.Program(pass.program), 0, kKeep);
             }
             if (primed)
@@ -1141,36 +1179,31 @@ namespace perlin {
 
     void RenderContext_bgfx::DrawLayer(RenderLayer layer, ShaderProgram program, const Frustum& frustum,
                                        const std::vector<VisibleChunk>& chunks, bgfx::TextureHandle atlas) {
+        static const bool hideBlend = std::getenv("PERLIN_HIDE_TRANSLUCENT") != nullptr;
+        if (hideBlend && (layer == RenderLayer::Translucent || layer == RenderLayer::TranslucentCull))
+            return;
         const size_t slot = static_cast<size_t>(layer);
-        const uint64_t state = PassState(layer);
-        // State, texture bindings and uniforms are identical for every chunk of a layer: set them once and keep them
-        // across submits (only the buffers are discarded), which removes most of the per-draw CPU work.
-        bool primed = false;
-        constexpr uint8_t kKeep = BGFX_DISCARD_INDEX_BUFFER | BGFX_DISCARD_VERTEX_STREAMS;
+        const bool ordered = layer == RenderLayer::Translucent || layer == RenderLayer::TranslucentCull;
+        // Collect the index ranges to draw. Ranges are absolute within the page's per-layer index buffer, so adjacent
+        // ones (neighbouring chunks, consecutive sections) merge into one submit.
+        struct Run {
+            int page;
+            uint32_t start, count;
+        };
+        static thread_local std::vector<Run> runs;
+        runs.clear();
+        auto push = [&](int page, uint32_t start, uint32_t count) {
+            if (!runs.empty() && runs.back().page == page && runs.back().start + runs.back().count == start)
+                runs.back().count += count;
+            else
+                runs.push_back({page, start, count});
+        };
         for (const VisibleChunk& item : chunks) {
             const GpuChunk& g = *item.chunk;
             if (!g.layerCount[slot])
                 continue;
-            const Page& pg = pages[g.page];
-            const float x0 = g.cx * 16.0f, z0 = g.cz * 16.0f;
-            uint32_t runStart = 0, runCount = 0;
-
-            auto flush = [&]() {
-                if (!runCount)
-                    return;
-                bgfx::setVertexBuffer(0, pg.vb, g.vOff, g.vCount);
-                bgfx::setIndexBuffer(pg.ib, g.iOff + runStart, runCount);
-                if (!primed) {
-                    bgfx::setState(state);
-                    shaders.Apply(atlas, lightmapTex, samplerFlags, lightmapFlags);
-                    if (shadow.active)
-                        shaders.BindShadow(shadow.color);
-                    primed = true;
-                }
-                bgfx::submit(0, shaders.Program(program), 0, kKeep);
-                runCount = 0;
-            };
-
+            const float x0 = g.cx * static_cast<float>(g.size), z0 = g.cz * static_cast<float>(g.size);
+            const float extent = static_cast<float>(g.size);
             for (const GpuSection& sec : g.sections) {
                 const uint32_t count = sec.count[slot];
                 if (!count)
@@ -1180,18 +1213,45 @@ namespace perlin {
                     if (bit >= 0 && bit < 32 && !(g.secVis & (1u << bit)))
                         continue;
                 }
-                if (!item.fullyInside && !frustum.Visible(x0, sec.minY, z0, x0 + 16.0f, sec.maxY, z0 + 16.0f))
+                if (!item.fullyInside && !frustum.Visible(x0, sec.minY, z0, x0 + extent, sec.maxY, z0 + extent))
                     continue;
-                const uint32_t start = sec.start[slot];
-                if (runCount && runStart + runCount == start) {
-                    runCount += count;
-                } else {
-                    flush();
-                    runStart = start;
-                    runCount = count;
-                }
+                push(g.page, g.iOff[slot] + sec.start[slot], count);
             }
-            flush();
+        }
+        if (runs.empty())
+            return;
+        if (!ordered) {
+            std::sort(runs.begin(), runs.end(), [](const Run& a, const Run& b) {
+                return a.page != b.page ? a.page < b.page : a.start < b.start;
+            });
+            size_t out = 0;
+            for (const Run& r : runs) {
+                if (out && runs[out - 1].page == r.page && runs[out - 1].start + runs[out - 1].count == r.start)
+                    runs[out - 1].count += r.count;
+                else
+                    runs[out++] = r;
+            }
+            runs.resize(out);
+        }
+        drawCalls += static_cast<uint32_t>(runs.size());
+
+        const uint64_t state = PassState(layer);
+        // State, texture bindings and uniforms are identical for every run of a layer: set them once and keep them
+        // across submits (only the buffers are discarded).
+        constexpr uint8_t kKeep = BGFX_DISCARD_INDEX_BUFFER | BGFX_DISCARD_VERTEX_STREAMS;
+        bool primed = false;
+        for (const Run& r : runs) {
+            const Page& pg = pages[r.page];
+            bgfx::setVertexBuffer(0, pg.vb);
+            bgfx::setIndexBuffer(pg.ib[slot], r.start, r.count);
+            if (!primed) {
+                bgfx::setState(state);
+                shaders.Apply(atlas, lightmapTex, samplerFlags, lightmapFlags);
+                if (shadow.active)
+                    shaders.BindShadow(shadow.color);
+                primed = true;
+            }
+            bgfx::submit(0, shaders.Program(program), 0, kKeep);
         }
         if (primed)
             bgfx::discard(BGFX_DISCARD_ALL);
@@ -1211,7 +1271,14 @@ namespace perlin {
         DrawSky();
         shaders.ApplyFrame();
         shaders.SetMatrix(mvp);
-        if (gpuChunks.empty()) {
+        if (std::getenv("PERLIN_STATS")) {
+            static uint32_t frames = 0;
+            if (++frames % 240 == 0)
+                std::printf("[draw] %u merged submits last frame, %zu chunks, %zu lod tiles, %zu pages\n", drawCalls,
+                            gpuChunks.size(), lodChunks.size(), pages.size());
+        }
+        drawCalls = 0;
+        if (gpuChunks.empty() && lodChunks.empty()) {
             DrawClouds();
             DrawScreenTint();
             DrawCrosshair();
@@ -1232,8 +1299,18 @@ namespace perlin {
             const float dx = x0 + 8.0f - camX, dz = z0 + 8.0f - camZ;
             visible.push_back({dx * dx + dz * dz, &g, result == Frustum::Result::Inside});
         }
-        std::sort(visible.begin(), visible.end(),
-                  [](const VisibleChunk& a, const VisibleChunk& b) { return a.distance < b.distance; });
+        for (const auto& entry : lodChunks) {
+            const GpuChunk& g = entry.second;
+            if (g.page < 0 || g.sections.empty())
+                continue;
+            const float s = static_cast<float>(g.size);
+            const float x0 = g.cx * s, z0 = g.cz * s;
+            const auto result = frustum.Test(x0, g.minY, z0, x0 + s, g.maxY, z0 + s);
+            if (result == Frustum::Result::Outside)
+                continue;
+            const float dx = x0 + s * 0.5f - camX, dz = z0 + s * 0.5f - camZ;
+            visible.push_back({dx * dx + dz * dz, &g, result == Frustum::Result::Inside});
+        }
 
         const bgfx::TextureHandle atlas = bgfx::isValid(atlasTex) ? atlasTex : whiteTex;
         RenderShadows(frame.cameraPosition[0], frame.cameraPosition[1], frame.cameraPosition[2]);
@@ -1249,7 +1326,9 @@ namespace perlin {
         DrawLayer(RenderLayer::Solid, ShaderProgram::TerrainSolid, frustum, visible, atlas);
         DrawLayer(RenderLayer::Cutout, ShaderProgram::TerrainCutout, frustum, visible, atlas);
         DrawLayer(RenderLayer::CutoutCull, ShaderProgram::TerrainCutout, frustum, visible, atlas);
-        std::reverse(visible.begin(), visible.end());
+        // Only blending needs an order: far to near.
+        std::sort(visible.begin(), visible.end(),
+                  [](const VisibleChunk& a, const VisibleChunk& b) { return a.distance > b.distance; });
         DrawLayer(RenderLayer::Translucent, ShaderProgram::TerrainTranslucent, frustum, visible, atlas);
         DrawLayer(RenderLayer::TranslucentCull, ShaderProgram::TerrainTranslucent, frustum, visible, atlas);
         DrawClouds();
@@ -1260,6 +1339,7 @@ namespace perlin {
     void RenderContext_bgfx::ClearChunkMeshes() {
         meshGeneration++;
         gpuChunks.clear();
+        lodChunks.clear();
         DestroyPages();
     }
 
@@ -1294,6 +1374,7 @@ namespace perlin {
         if (!initialized)
             return;
         gpuChunks.clear();
+        lodChunks.clear();
         DestroyPages();
         DestroyShadows();
         if (bgfx::isValid(atlasTex))

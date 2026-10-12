@@ -81,6 +81,9 @@ namespace perlin {
 
         virtual void UpdateChunkMesh(int cx, int cz, const Tessellator& tess, uint64_t version) = 0;
         virtual void RemoveChunkMesh(int cx, int cz) = 0;
+        // Far-terrain tiles: `size` blocks square, drawn through the same pipeline but never shadowed or cave-culled.
+        virtual void UpdateLodTile(int tx, int tz, int size, const Tessellator& tess, uint64_t version) = 0;
+        virtual void RemoveLodTile(int tx, int tz) = 0;
         virtual void ClearChunkMeshes() = 0;
         virtual void DrawChunkMeshes(const Frustum& frustum, float camX, float camZ) = 0;
     };

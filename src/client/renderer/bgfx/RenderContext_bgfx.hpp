@@ -33,6 +33,8 @@ namespace perlin {
         void UpdateAtlasRegion(int tile, const uint8_t* rgba) override;
         void UpdateChunkMesh(int cx, int cz, const Tessellator& tess, uint64_t version) override;
         void RemoveChunkMesh(int cx, int cz) override;
+        void UpdateLodTile(int tx, int tz, int size, const Tessellator& tess, uint64_t version) override;
+        void RemoveLodTile(int tx, int tz) override;
         void ClearChunkMeshes() override;
         void DrawChunkMeshes(const Frustum& frustum, float camX, float camZ) override;
 
@@ -49,8 +51,11 @@ namespace perlin {
         };
         struct Page {
             bgfx::DynamicVertexBufferHandle vb = BGFX_INVALID_HANDLE;
-            bgfx::DynamicIndexBufferHandle ib = BGFX_INVALID_HANDLE;
-            RangeAllocator vAlloc, iAlloc;
+            // One index buffer per render layer: neighbouring chunks' ranges of the same layer end up adjacent, so the
+            // draw loop can merge them into a single submit. Indices are absolute within the page's vertex buffer.
+            std::array<bgfx::DynamicIndexBufferHandle, kRenderLayerCount> ib;
+            RangeAllocator vAlloc;
+            std::array<RangeAllocator, kRenderLayerCount> iAlloc;
         };
         struct GpuSection {
             float minY, maxY;
@@ -61,13 +66,13 @@ namespace perlin {
         struct GpuChunk {
             int page = -1;
             uint32_t vOff = 0, vCount = 0;
-            uint32_t iOff = 0, iCount = 0;
-            std::array<uint32_t, kRenderLayerCount> layerBase{};
+            std::array<uint32_t, kRenderLayerCount> iOff{}; // offset inside the page's per-layer index buffer
             std::array<uint32_t, kRenderLayerCount> layerCount{};
             std::vector<GpuSection> sections;
             uint64_t version = 0;
             float minY = 0, maxY = 0;
             int cx = 0, cz = 0;
+            int size = 16;               // horizontal extent in blocks (LOD tiles are larger); origin is cx*size
             int visMin = 0;              // section index of conn[0]
             std::vector<uint16_t> conn;  // face-pair connectivity per section
             uint32_t secVis = ~0u;       // bit (sy - visMin): reachable from the camera
@@ -78,8 +83,10 @@ namespace perlin {
         int caveCam[3] = {0, 0, 0};
         bool caveCulling = true;
 
-        bool CreatePage(uint32_t vCap, uint32_t iCap);
-        bool AllocMesh(uint32_t v, uint32_t i, GpuChunk& out);
+        bool CreatePage(uint32_t vCap, const std::array<uint32_t, kRenderLayerCount>& iCap);
+        void UploadMesh(std::unordered_map<int64_t, GpuChunk>& target, int cx, int cz, int size, const Tessellator& tess,
+                        uint64_t version);
+        bool AllocMesh(uint32_t v, const std::array<uint32_t, kRenderLayerCount>& i, GpuChunk& out);
         void FreeChunk(GpuChunk& g);
         void DestroyPages();
         void Resize(int w, int h);
@@ -174,9 +181,11 @@ namespace perlin {
         int crosshairPx = 0; // source size of the crosshair square in texels
 
         std::vector<VisibleChunk> visible;
+        uint32_t drawCalls = 0; // merged submits issued this frame (diagnostic)
 
         std::vector<Page> pages;
         std::unordered_map<int64_t, GpuChunk> gpuChunks;
+        std::unordered_map<int64_t, GpuChunk> lodChunks;
 
         std::mutex shotMutex;
         std::atomic<bool> shotPending{false};

@@ -1,6 +1,7 @@
 #include "world/level/Level.hpp"
 
 #include <algorithm>
+#include <chrono>
 #include <cstring>
 
 namespace perlin {
@@ -98,6 +99,21 @@ namespace perlin {
         }
     }
 
+    void Chunk::CopyRun(int y, int z, int x0, int n, uint16_t* blocks, uint8_t* biomes, uint16_t* liquid) const {
+        if (y < MIN_Y || y >= MIN_Y + HEIGHT)
+            return;
+        const auto& s = sections[(y - MIN_Y) >> 4];
+        if (!s)
+            return;
+        const int local = Local(x0, y, z);
+        if (blocks)
+            std::memcpy(blocks, s->blocks.data() + local, static_cast<size_t>(n) * sizeof(uint16_t));
+        if (biomes)
+            std::memcpy(biomes, s->biomes.data() + local, static_cast<size_t>(n));
+        if (liquid && s->liquid)
+            std::memcpy(liquid, s->liquid->data() + local, static_cast<size_t>(n) * sizeof(uint16_t));
+    }
+
     void Chunk::ReadBlocks(int x, int z, int yLo, int yHi, uint16_t* blocks, size_t stride) const {
         for (int y = yLo; y <= yHi; y++) {
             const auto& s = sections[(y - MIN_Y) >> 4];
@@ -141,6 +157,7 @@ namespace perlin {
         changeCounter++;
         clearCounter++;
         chunks.clear();
+        dirty.clear();
     }
 
     uint16_t Level::GetBlock(int x, int y, int z) const {
@@ -164,10 +181,14 @@ namespace perlin {
 
     void Level::SetLiquid(int x, int y, int z, uint16_t id) {
         std::lock_guard lock(mutex);
+        // Updates for chunks we do not hold would create phantom one-block chunks that nothing ever removes.
+        const auto it = chunks.find({x >> 4, z >> 4});
+        if (it == chunks.end())
+            return;
         changeCounter++;
-        Chunk& chunk = chunks[{x >> 4, z >> 4}];
-        chunk.SetLiquid(x & 15, y, z & 15, id);
-        chunk.version++;
+        it->second.SetLiquid(x & 15, y, z & 15, id);
+        it->second.version++;
+        Touch(it->first, it->second);
     }
 
     uint8_t Level::GetBiome(int x, int y, int z) const {
@@ -191,26 +212,91 @@ namespace perlin {
 
     void Level::SetBlock(int x, int y, int z, uint16_t id) {
         std::lock_guard lock(mutex);
+        const auto it = chunks.find({x >> 4, z >> 4});
+        if (it == chunks.end())
+            return;
         changeCounter++;
-        Chunk& chunk = chunks[{x >> 4, z >> 4}];
-        chunk.Set(x & 15, y, z & 15, id);
-        chunk.version++;
+        it->second.Set(x & 15, y, z & 15, id);
+        it->second.version++;
+        Touch(it->first, it->second);
     }
 
     bool Level::RemoveChunk(int cx, int cz) {
         std::lock_guard lock(mutex);
         if (chunks.erase({cx, cz}) == 0)
             return false;
+        dirty.push_back({cx, cz});
         changeCounter++;
         return true;
     }
 
-    void Level::EnsureChunk(int cx, int cz) {
+    uint64_t Level::NowMs() {
+        return static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(
+                                         std::chrono::steady_clock::now().time_since_epoch())
+                                         .count());
+    }
+
+    void Level::TouchNeighbors(int cx, int cz) {
+        for (int dz = -1; dz <= 1; dz++)
+            for (int dx = -1; dx <= 1; dx++) {
+                const auto it = chunks.find({cx + dx, cz + dz});
+                if (it != chunks.end())
+                    Touch(it->first, it->second);
+            }
+    }
+
+    void Level::MarkAllDirty() {
+        std::lock_guard lock(mutex);
+        for (auto& [pos, chunk] : chunks)
+            Touch(pos, chunk);
+    }
+
+    void Level::DrainDirty(std::vector<DirtyChunk>& out) {
+        std::lock_guard lock(mutex);
+        for (const ChunkPos& pos : dirty) {
+            const auto it = chunks.find(pos);
+            DirtyChunk d;
+            d.pos = pos;
+            if (it != chunks.end()) {
+                it->second.queued = false;
+                d.exists = true;
+                d.version = it->second.version;
+                d.streaming = it->second.streaming;
+                d.firstSeen = it->second.firstSeen;
+                d.readyAt = it->second.readyAt;
+            }
+            out.push_back(d);
+        }
+        dirty.clear();
+    }
+
+    void Level::EnsureChunk(int cx, int cz, bool streaming) {
         std::lock_guard lock(mutex);
         changeCounter++;
         const auto [it, inserted] = chunks.try_emplace({cx, cz});
-        if (inserted)
+        if (inserted) {
             it->second.version++;
+            it->second.streaming = streaming;
+            it->second.firstSeen = NowMs();
+            it->second.readyAt = streaming ? 0 : it->second.firstSeen;
+            Touch(it->first, it->second);
+        }
+    }
+
+    void Level::MarkComplete(int cx, int cz) {
+        std::lock_guard lock(mutex);
+        const auto it = chunks.find({cx, cz});
+        if (it == chunks.end() || !it->second.streaming)
+            return;
+        it->second.streaming = false;
+        it->second.readyAt = NowMs();
+        Touch(it->first, it->second);
+        changeCounter++;
+    }
+
+    bool Level::HasChunk(int cx, int cz) const {
+        std::lock_guard lock(mutex);
+        return chunks.count({cx, cz}) != 0;
     }
 
     void Level::SetSubChunk(int cx, int cz, int absSubY, const uint16_t* cells, const uint16_t* liquidCells) {
@@ -219,17 +305,15 @@ namespace perlin {
             return;
 
         std::lock_guard lock(mutex);
+        // Late replies for a column that was already dropped must not resurrect it as a partial chunk.
+        const auto found = chunks.find({cx, cz});
+        if (found == chunks.end())
+            return;
         changeCounter++;
-        Chunk& chunk = chunks[{cx, cz}];
+        Chunk& chunk = found->second;
         chunk.SetSection((baseY - Chunk::MIN_Y) >> 4, cells, liquidCells);
         chunk.version++;
-
-        static constexpr int kNeighbors[4][2] = {{1, 0}, {-1, 0}, {0, 1}, {0, -1}};
-        for (const auto& n : kNeighbors) {
-            const auto it = chunks.find({cx + n[0], cz + n[1]});
-            if (it != chunks.end())
-                it->second.version++;
-        }
+        Touch(found->first, chunk);
     }
 
     void Level::SetBiomeSubChunk(int cx, int cz, int absSubY, const uint8_t* cells) {
@@ -238,9 +322,13 @@ namespace perlin {
             return;
 
         std::lock_guard lock(mutex);
+        const auto found = chunks.find({cx, cz});
+        if (found == chunks.end())
+            return;
         changeCounter++;
-        Chunk& chunk = chunks[{cx, cz}];
+        Chunk& chunk = found->second;
         chunk.SetBiomeSection((baseY - Chunk::MIN_Y) >> 4, cells);
         chunk.version++;
+        Touch(found->first, chunk);
     }
 }

@@ -94,7 +94,7 @@ namespace perlin {
         o.maxFps = stored.maxFps;
         o.vsync = stored.vsync;
         o.eulaAccepted = stored.eulaAccepted;
-        o.renderDistance = std::clamp(stored.renderDistance, 2, 32);
+        o.renderDistance = std::clamp(stored.renderDistance, 2, 128);
         o.fov = std::clamp(stored.fov, 30.0f, 110.0f);
         o.gamma = std::clamp(stored.gamma, 0.0f, 1.0f);
         o.shaderPack = stored.shaderPack;

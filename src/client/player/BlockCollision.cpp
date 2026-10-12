@@ -197,6 +197,7 @@ namespace perlin {
             const int depth = State(id, "liquid_depth", 0);
             s.fluid = Has(n, "lava") ? 2 : 1;
             s.fluidLevel = depth >= 8 ? 1.0f : static_cast<float>(8 - depth) / 9.0f;
+            s.fluidDepth = static_cast<uint8_t>(depth);
             return info;
         }
         if (n == "kelp" || n == "seagrass" || n == "sea_grass" || n == "bubble_column" || n == "tall_seagrass" ||
@@ -381,6 +382,7 @@ namespace perlin {
                 if (li.shape.fluid != 0) {
                     s.fluid = li.shape.fluid;
                     s.fluidLevel = li.shape.fluidLevel;
+                    s.fluidDepth = li.shape.fluidDepth;
                 }
             }
         }

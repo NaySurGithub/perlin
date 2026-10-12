@@ -228,6 +228,10 @@ namespace perlin {
         std::map<std::tuple<int, int, int, int>, std::chrono::steady_clock::time_point> inflight;
         std::map<std::tuple<int, int, int, int>, int> retries;
         void CompleteRequest(const std::tuple<int, int, int, int>& key, bool retry);
+        // Forget a requested slot for good (reqMutex held); columns that have nothing left owed are appended.
+        void DropSlot(const std::tuple<int, int, int, int>& key, std::vector<std::pair<int, int>>& completed);
+        void FinishColumns(const std::vector<std::pair<int, int>>& columns);
+        std::map<std::pair<int, int>, int> colPending; // outstanding slots per column
 
         std::string playerName = "Perlin";
         std::string playerUuid;

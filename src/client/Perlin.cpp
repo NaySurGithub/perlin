@@ -1,4 +1,5 @@
 #include "client/Perlin.hpp"
+#include "client/renderer/chunk/ChunkMesher.hpp"
 #include "client/platform/AppPlatform.hpp"
 #include "client/renderer/Lightmap.hpp"
 #include "client/renderer/Environment.hpp"
@@ -111,7 +112,7 @@ namespace perlin {
 
         session = std::make_unique<BedrockSession>();
         session->SetPlayerName(options.playerName);
-        session->SetChunkRadius(options.renderDistance);
+        session->SetChunkRadius(std::min(options.renderDistance, 32)); // farther terrain comes from the LOD store
         workers->Submit([this, host, port] {
             if (session->Connect(host, port))
                 sessionReady = true;
@@ -441,6 +442,7 @@ namespace perlin {
                     }
                 } else if (previewShotFrames >= 0 && ++previewShotFrames > 6) {
                     std::cout << "[preview] screenshot saved, meshed chunks " << levelRenderer->MeshedChunks() << std::endl;
+                    MeshProfilePrint();
                     platform->isRunning = false;
                 }
             }

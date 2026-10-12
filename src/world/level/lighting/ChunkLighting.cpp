@@ -77,7 +77,9 @@ namespace perlin {
         grid.sky.assign(cells, 0);
         grid.block.assign(cells, 0);
 
-        int shadowTop = 0;
+        // Highest row below full sky light per column; everything above it is plain open sky.
+        static thread_local std::vector<int16_t> colTop;
+        colTop.assign(kLayer, -1);
         for (int z = 0; z < kSpan; z++)
             for (int x = 0; x < kSpan; x++) {
                 int level = kMaxLight;
@@ -91,20 +93,24 @@ namespace perlin {
                     else
                         level = std::max(0, level - cost);
                     grid.sky[i] = static_cast<uint8_t>(level);
-                    if (level < kMaxLight)
-                        shadowTop = std::max(shadowTop, row);
+                    if (level < kMaxLight && colTop[static_cast<size_t>(z) * kSpan + x] < row)
+                        colTop[static_cast<size_t>(z) * kSpan + x] = static_cast<int16_t>(row);
                 }
             }
 
         std::vector<uint32_t>& queue = scratch.queue;
         queue.clear();
-        const int scanTop = std::min(rows - 1, shadowTop + 1);
-        for (int row = 0; row <= scanTop; row++)
-            for (int z = 0; z < kSpan; z++)
-                for (int x = 0; x < kSpan; x++) {
-                    const uint32_t i =
-                        static_cast<uint32_t>(static_cast<size_t>(row) * kLayer +
-                                              static_cast<size_t>(z) * kSpan + static_cast<size_t>(x));
+        for (int z = 0; z < kSpan; z++)
+            for (int x = 0; x < kSpan; x++) {
+                const size_t c = static_cast<size_t>(z) * kSpan + x;
+                int top = colTop[c];
+                if (x > 0) top = std::max<int>(top, colTop[c - 1]);
+                if (x < kSpan - 1) top = std::max<int>(top, colTop[c + 1]);
+                if (z > 0) top = std::max<int>(top, colTop[c - kSpan]);
+                if (z < kSpan - 1) top = std::max<int>(top, colTop[c + kSpan]);
+                const int scanTop = std::min(rows - 1, top + 1);
+                for (int row = 0; row <= scanTop; row++) {
+                    const uint32_t i = static_cast<uint32_t>(static_cast<size_t>(row) * kLayer + c);
                     const int level = grid.sky[i];
                     if (level <= 1)
                         continue;
@@ -128,6 +134,7 @@ namespace perlin {
                     if (edge)
                         queue.push_back(i);
                 }
+            }
         Flood(grid, grid.sky, queue, rows);
 
         if (emitters.empty())
@@ -187,17 +194,21 @@ namespace perlin {
                 out.packed.assign(static_cast<size_t>(out.rows) * kPadded * kPadded, Result::kSkyOnly);
                 return;
             }
-            grid.yBase = std::max(Chunk::MIN_Y, std::min(lo, yLo) - 1);
+            // Light travels at most 15 cells, so nothing farther than 16 rows below the wanted range can matter.
+            grid.yBase = std::max(std::max(Chunk::MIN_Y, std::min(lo, yLo) - 1), yLo - 16);
             const int top = std::min(Chunk::MIN_Y + Chunk::HEIGHT - 1, std::max(hi, yHi) + 1);
             grid.rows = top - grid.yBase + 1;
             grid.ids.assign(kLayer * static_cast<size_t>(grid.rows), 0);
-            for (int z = 0; z < kSpan; z++)
-                for (int x = 0; x < kSpan; x++) {
-                    const Chunk* src = around[z >> 4][x >> 4];
-                    if (src)
-                        src->ReadBlocks(x & 15, z & 15, grid.yBase, top,
-                                        &grid.ids[grid.Index(x, grid.yBase, z)], kLayer);
-                }
+            for (int row = 0; row < grid.rows; row++) {
+                const int y = grid.yBase + row;
+                for (int z = 0; z < kSpan; z++)
+                    for (int cx = 0; cx < 3; cx++)
+                        if (const Chunk* src = around[z >> 4][cx])
+                            src->CopyRun(y, z & 15, 0, 16,
+                                         &grid.ids[static_cast<size_t>(row) * kLayer + static_cast<size_t>(z) * kSpan +
+                                                   static_cast<size_t>(cx) * 16],
+                                         nullptr, nullptr);
+            }
         }
 
         const LightRegistry& registry = LightRegistry::Instance();

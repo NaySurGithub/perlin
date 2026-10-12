@@ -12,6 +12,8 @@
 #include "client/player/BlockCollision.hpp"
 
 #include <algorithm>
+#include <atomic>
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -302,8 +304,15 @@ namespace perlin {
         std::vector<uint8_t> opacityKnown = std::vector<uint8_t>(65536, 0);
         std::vector<uint32_t> stamp = std::vector<uint32_t>(65536, 0);
         uint32_t epoch = 1;
+        uint32_t seenGlobal = 0;
 
-        void Reset() { epoch++; }
+        // Entries stay valid until the block library changes (MesherInvalidateCaches), not per chunk.
+        void Reset(uint32_t global) {
+            if (seenGlobal != global) {
+                seenGlobal = global;
+                epoch++;
+            }
+        }
         void Touch(uint16_t id) {
             if (stamp[id] == epoch)
                 return;
@@ -318,6 +327,8 @@ namespace perlin {
             opacityKnown[id] = 0;
         }
     };
+    static std::atomic<uint32_t> gMemoGlobal{1};
+    void MesherInvalidateCaches() { gMemoGlobal++; }
     static IdMemo& Memo() {
         static thread_local IdMemo m;
         return m;
@@ -507,15 +518,17 @@ namespace perlin {
                     around[dz][dx] = it == level.chunks.end() ? nullptr : &it->second;
                 }
 
-            constexpr size_t kRowStride = 18 * 18;
-            for (int z = -1; z <= 16; z++)
-                for (int x = -1; x <= 16; x++) {
-                    const Chunk* src = around[z < 0 ? 0 : (z > 15 ? 2 : 1)][x < 0 ? 0 : (x > 15 ? 2 : 1)];
-                    if (!src)
-                        continue;
-                    const size_t base = Idx(x, yLo, z);
-                    src->ReadColumn(x & 15, z & 15, yLo, yHi, &cells[base], &biome[base], kRowStride);
-                    src->ReadLiquid(x & 15, z & 15, yLo, yHi, &liquid[base], kRowStride);
+            for (int y = yLo; y <= yHi; y++)
+                for (int z = -1; z <= 16; z++) {
+                    const Chunk* const* row = around[z < 0 ? 0 : (z > 15 ? 2 : 1)];
+                    const int zz = z & 15;
+                    const size_t base = Idx(0, y, z);
+                    if (row[1])
+                        row[1]->CopyRun(y, zz, 0, 16, &cells[base], &biome[base], &liquid[base]);
+                    if (row[0])
+                        row[0]->CopyRun(y, zz, 15, 1, &cells[base - 1], &biome[base - 1], &liquid[base - 1]);
+                    if (row[2])
+                        row[2]->CopyRun(y, zz, 0, 1, &cells[base + 16], &biome[base + 16], &liquid[base + 16]);
                 }
         }
 
@@ -696,8 +709,27 @@ namespace perlin {
         return conn;
     }
 
+    namespace {
+        std::atomic<uint64_t> gProf[5];
+        std::atomic<uint64_t> gProfChunks{0};
+        uint64_t NowUs() {
+            return (uint64_t)std::chrono::duration_cast<std::chrono::microseconds>(
+                       std::chrono::steady_clock::now().time_since_epoch()).count();
+        }
+    }
+
+    void MeshProfilePrint() {
+        const uint64_t n = gProfChunks.load();
+        if (!n)
+            return;
+        std::printf("[meshprof] %llu chunks: fill+classify %.2f ms, connectivity %.2f ms, lighting %.2f ms, quads %.2f ms, total %.2f ms (avg)\n",
+                    (unsigned long long)n, gProf[0] / 1000.0 / n, gProf[1] / 1000.0 / n, gProf[2] / 1000.0 / n,
+                    gProf[3] / 1000.0 / n, gProf[4] / 1000.0 / n);
+    }
+
     void BuildChunkMesh(Level& level, const ChunkPos& pos, Tessellator& tess, BlockLibrary* library,
                         BiomeTints* tints) {
+        const uint64_t t0 = NowUs();
         bool textured = library && library->Ready();
         bool haveTints = tints && tints->Ready();
 
@@ -714,16 +746,32 @@ namespace perlin {
             int fHi = std::min(yHi + 1, (int)Chunk::MIN_Y + Chunk::HEIGHT - 1);
             cache.FillRaw(level, pos, fLo, fHi);
         }
-        Memo().Reset();
+        Memo().Reset(gMemoGlobal.load());
         if (library)
             cache.Classify(library);
         else
             for (size_t i = 0; i < cache.cells.size(); i++)
                 cache.solid[i] = cache.cells[i] != 0;
+        // Below the lowest open cell of the padded area everything is buried stone: no faces, no light needed.
+        int lowAir = cache.yBase + cache.yRows;
+        {
+            const size_t layer = (size_t)18 * 18;
+            for (int row = 0; row < cache.yRows; row++) {
+                const uint8_t* s = &cache.solid[(size_t)row * layer];
+                bool open = false;
+                for (size_t i = 0; i < layer; i++)
+                    if (!s[i]) { open = true; break; }
+                if (open) { lowAir = cache.yBase + row; break; }
+            }
+        }
+        const int faceLo = std::max(yLo, lowAir - 1);
+        const uint64_t t1 = NowUs();
         for (int sy = yLo >> 4; sy <= (yHi >> 4); sy++)
             tess.AddVisibility(sy, SectionConnectivity(cache, sy));
+        const uint64_t t2 = NowUs();
         static thread_local ChunkLighting::Result lighting;
-        ChunkLighting::Compute(level, pos, cache.yBase, cache.yBase + cache.yRows - 1, lighting);
+        ChunkLighting::Compute(level, pos, std::max(cache.yBase, lowAir - 3), cache.yBase + cache.yRows - 1, lighting);
+        const uint64_t t3 = NowUs();
         const LightRegistry& registry = LightRegistry::Instance();
         auto sample = [&](int lx, int ly, int lz) {
             const uint8_t packed = lighting.At(lx, ly, lz);
@@ -751,12 +799,19 @@ namespace perlin {
         static const std::string kPlainsName = "minecraft:plains";
 
         int baseX = pos.x * 16, baseZ = pos.z * 16;
-        for (int y = yLo; y <= yHi; y++) {
+        for (int y = faceLo; y <= yHi; y++) {
             tess.EnterSection(y >> 4);
             for (int z = 0; z < 16; z++)
                 for (int x = 0; x < 16; x++) {
                   for (int pass = 0; pass < 2; pass++) {
                     uint16_t id = cache.Get(x, y, z);
+                    if (pass == 1 && y > cache.yBase && y < cache.yBase + cache.yRows - 1) {
+                        // A solid block with solid neighbours on all six sides has no visible face.
+                        const size_t c = cache.Idx(x, y, z);
+                        if (cache.solid[c] && cache.solid[c - 1] && cache.solid[c + 1] && cache.solid[c - 18] &&
+                            cache.solid[c + 18] && cache.solid[c - 324] && cache.solid[c + 324])
+                            continue;
+                    }
                     if (pass == 0) {
                         // Waterlogged blocks: the water layer is meshed as a water cell of its own.
                         id = cache.Liquid(x, y, z);
@@ -1721,5 +1776,12 @@ namespace perlin {
                   } // pass
                 }
         }
+        const uint64_t t4 = NowUs();
+        gProf[0] += t1 - t0;
+        gProf[1] += t2 - t1;
+        gProf[2] += t3 - t2;
+        gProf[3] += t4 - t3;
+        gProf[4] += t4 - t0;
+        gProfChunks++;
     }
 }

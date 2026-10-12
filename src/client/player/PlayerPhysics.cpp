@@ -1,3 +1,4 @@
+#include <array>
 #include "client/player/PlayerPhysics.hpp"
 
 #include <algorithm>
@@ -292,6 +293,125 @@ namespace perlin::physics {
             return env;
         }
 
+
+        // Vanilla liquid current (cinnabar sim/world/flow.rs + current.rs). Returns false when unknown.
+        bool SolidMotion(const BlockShape& s) { return !s.Empty() && !s.fluid && !s.climbable && !s.web; }
+
+        struct Cell { int mat = 0; int depth = 0; };
+        Cell LiquidCell(const World& w, int x, int y, int z, bool& unknown) {
+            const BlockShape s = w.Query(x, y, z);
+            if (!s.fluid) return {};
+            if (s.fluidDepth == 255) { unknown = true; return {s.fluid, 0}; }
+            return {s.fluid, s.fluidDepth};
+        }
+        inline int EffDepth(int d) { return d < 8 ? d : 0; }
+
+        void FlowAt(const World& w, int x, int y, int z, int mat, float out[3]) {
+            static const int dirAxis[4] = {2, 0, 2, 0};
+            static const int dirStep[4] = {-1, 1, 1, -1};
+            bool unk = false;
+            const Cell c = LiquidCell(w, x, y, z, unk);
+            const bool same = c.mat == mat;
+            const int depth = same ? EffDepth(c.depth) : -1;
+            float f[3] = {0, 0, 0};
+            for (int d = 0; d < 4; d++) {
+                int n[3] = {x, y, z};
+                n[dirAxis[d]] += dirStep[d];
+                const Cell o = LiquidCell(w, n[0], n[1], n[2], unk);
+                if (o.mat == mat) {
+                    f[dirAxis[d]] += static_cast<float>((EffDepth(o.depth) - depth) * dirStep[d]);
+                    continue;
+                }
+                if (SolidMotion(w.Query(n[0], n[1], n[2])))
+                    continue;
+                const Cell below = LiquidCell(w, n[0], n[1] - 1, n[2], unk);
+                if (below.mat == mat)
+                    f[dirAxis[d]] += static_cast<float>((EffDepth(below.depth) - depth + 8) * dirStep[d]);
+            }
+            if (same && c.depth >= 8) {
+                bool solid = false;
+                for (int d = 0; d < 4 && !solid; d++) {
+                    int n[3] = {x, y, z};
+                    n[dirAxis[d]] += dirStep[d];
+                    const BlockShape a = w.Query(n[0], n[1], n[2]);
+                    const BlockShape b = w.Query(n[0], n[1] + 1, n[2]);
+                    auto full = [](const BlockShape& s) {
+                        return s.count == 1 && s.boxes[0].x0 <= 0 && s.boxes[0].z0 <= 0 && s.boxes[0].x1 >= 1 &&
+                               s.boxes[0].z1 >= 1 && s.boxes[0].y0 <= 0 && s.boxes[0].y1 >= 1;
+                    };
+                    solid = full(a) || full(b);
+                }
+                if (solid) {
+                    float l = std::sqrt(f[0] * f[0] + f[1] * f[1] + f[2] * f[2]);
+                    if (l >= 0.0001f) { f[0] /= l; f[1] /= l; f[2] /= l; } else f[0] = f[1] = f[2] = 0;
+                    f[1] += -6.0f;
+                }
+            }
+            const float l = std::sqrt(f[0] * f[0] + f[1] * f[1] + f[2] * f[2]);
+            if (l >= 0.0001f) { out[0] = f[0] / l; out[1] = f[1] / l; out[2] = f[2] / l; }
+            else out[0] = out[1] = out[2] = 0;
+        }
+
+        // Adds the water/lava current at the start of the tick.
+        void ApplyCurrent(State& s, const World& w, bool sneaking) {
+            const float half = static_cast<float>(kWidth) * 0.5f;
+            const float h = static_cast<float>(sneaking ? kSneakHeight : kStandHeight);
+            const float px = static_cast<float>(s.x), py = static_cast<float>(s.y), pz = static_cast<float>(s.z);
+            for (int mat = 2; mat >= 1; mat--) {
+                const bool water = mat == 1;
+                const float ix = water ? 0.001f : 0.1f, iy = water ? 0.401f : 0.4f;
+                const float mnx = px - half, mxx = px + half, mny = py, mxy = py + h, mnz = pz - half, mxz = pz + half;
+                const float cx = (mnx + mxx) * 0.5f, cy = (mny + mxy) * 0.5f, cz = (mnz + mxz) * 0.5f;
+                const float lx = std::min(mnx + ix, cx), ly = std::min(mny + iy, cy), lz = std::min(mnz + ix, cz);
+                const float hx = std::max(mxx - ix, cx), hy = std::max(mxy - iy, cy), hz = std::max(mxz - ix, cz);
+                const int x0 = static_cast<int>(std::floor(lx)), y0 = static_cast<int>(std::floor(ly)),
+                          z0 = static_cast<int>(std::floor(lz));
+                const int x1 = static_cast<int>(std::floor(hx + 1.0f)), y1 = static_cast<int>(std::floor(hy + 1.0f)),
+                          z1 = static_cast<int>(std::floor(hz + 1.0f));
+                bool unknown = false, any = false;
+                std::vector<std::array<int, 4>> cells;
+                for (int y = y0; y < y1; y++)
+                    for (int z = z0; z < z1; z++)
+                        for (int x = x0; x < x1; x++) {
+                            const Cell c = LiquidCell(w, x, y, z, unknown);
+                            if (c.mat == mat) { any = true; cells.push_back({x, y, z, c.depth}); }
+                        }
+                if (!any) continue;
+                if (unknown) return;
+                bool admitted = false;
+                for (auto& c : cells) if (c[3] > 0) { admitted = true; break; }
+                if (!admitted) {
+                    static const int ax[4] = {2, 0, 2, 0}, st[4] = {-1, 1, 1, -1};
+                    for (auto& c : cells) {
+                        for (int d = 0; d < 4 && !admitted; d++) {
+                            const int edge = ax[d] == 0 ? (st[d] < 0 ? x0 : x1 - 1) : (st[d] < 0 ? z0 : z1 - 1);
+                            if (c[ax[d] == 0 ? 0 : 2] != edge) continue;
+                            int n[3] = {c[0], c[1], c[2]};
+                            n[ax[d]] += st[d];
+                            bool u = false;
+                            const Cell o = LiquidCell(w, n[0], n[1], n[2], u);
+                            if (o.mat == mat && !u && o.depth != 0) admitted = true;
+                        }
+                    }
+                }
+                if (!admitted) return;
+                float sum[3] = {0, 0, 0};
+                for (auto& c : cells) {
+                    float f[3];
+                    FlowAt(w, c[0], c[1], c[2], mat, f);
+                    sum[0] += f[0]; sum[1] += f[1]; sum[2] += f[2];
+                }
+                const float l = std::sqrt(sum[0] * sum[0] + sum[1] * sum[1] + sum[2] * sum[2]);
+                if (l >= 0.0001f) {
+                    const float k = water ? 0.014f : 0.0035f;
+                    s.vx = F(static_cast<float>(s.vx) + sum[0] / l * k);
+                    s.vy = F(static_cast<float>(s.vy) + sum[1] / l * k);
+                    s.vz = F(static_cast<float>(s.vz) + sum[2] / l * k);
+                }
+                return; // lava takes precedence when both touch
+            }
+        }
+
         // Applies the f32 steering products the way the native client does.
         void MoveRelative(State& s, double strafeIn, double forwardIn, double speed) {
             const float strafe = static_cast<float>(strafeIn), forward = static_cast<float>(forwardIn);
@@ -352,6 +472,9 @@ namespace perlin::physics {
         s.vx = F(s.vx); s.vy = F(s.vy); s.vz = F(s.vz);
         if (s.vx * s.vx + s.vy * s.vy + s.vz * s.vz < 1.0e-12)
             s.vx = s.vy = s.vz = 0;
+
+        if (!in.flying)
+            ApplyCurrent(s, world, sneaking);
 
         const bool prevHorizontal = s.horizontalCollision;
         const bool grounded = s.onGround;

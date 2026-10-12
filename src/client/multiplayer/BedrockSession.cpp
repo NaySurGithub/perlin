@@ -274,6 +274,8 @@ namespace perlin {
         std::lock_guard<std::mutex> lk(reqMutex);
         for (const ChunkPos& p : doomed) {
             seenColumns.erase({p.x, p.z});
+            if (colPending.erase({p.x, p.z}) == 0)
+                continue;
             for (auto it = requestedSlots.begin(); it != requestedSlots.end();)
                 it = (std::get<1>(*it) == p.x && std::get<3>(*it) == p.z) ? requestedSlots.erase(it) : std::next(it);
         }
@@ -466,6 +468,7 @@ namespace perlin {
         std::lock_guard<std::mutex> lk(reqMutex);
         seenColumns.clear();
         requestedSlots.clear();
+        colPending.clear();
         reqQueue = {};
         inflight.clear();
         retries.clear();
@@ -761,7 +764,7 @@ namespace perlin {
             return;
         }
         const DimensionInfo& dim = ChunkCodec::Dimension(pkt.dimension);
-        netLevel.EnsureChunk(pkt.x, pkt.z);
+        netLevel.EnsureChunk(pkt.x, pkt.z, true);
         {
             std::lock_guard<std::mutex> lk(reqMutex);
             seenColumns.insert({pkt.x, pkt.z});
@@ -785,6 +788,7 @@ namespace perlin {
                 int absY = sc.hasYIndex ? sc.yIndex : dim.MinSubChunk() + (int)i;
                 ApplySubChunk(pkt.x, pkt.z, absY, sc);
             }
+            netLevel.MarkComplete(pkt.x, pkt.z);
         } else {
             ApplyBiomeColumn(pkt.x, pkt.z, pkt.payload);
             QueueSubChunkRequests(pkt.dimension, pkt.x, pkt.z, dim.MinSubChunk(),
@@ -1010,24 +1014,45 @@ namespace perlin {
     }
 
     void BedrockSession::QueueSubChunkRequests(int dim, int cx, int cz, int firstSubY, int count) {
-        std::lock_guard<std::mutex> lk(reqMutex);
-        for (int i = 0; i < count; i++) {
-            auto key = std::make_tuple(dim, cx, firstSubY + i, cz);
-            if (!requestedSlots.insert(key).second)
-                continue;
-            retries.erase(key);
-            reqQueue.push(key);
+        bool idle = false;
+        {
+            std::lock_guard<std::mutex> lk(reqMutex);
+            for (int i = 0; i < count; i++) {
+                auto key = std::make_tuple(dim, cx, firstSubY + i, cz);
+                if (!requestedSlots.insert(key).second)
+                    continue;
+                colPending[{cx, cz}]++;
+                retries.erase(key);
+                reqQueue.push(key);
+            }
+            idle = colPending.find({cx, cz}) == colPending.end();
         }
+        if (idle)
+            netLevel.MarkComplete(cx, cz);
+    }
+
+    void BedrockSession::DropSlot(const std::tuple<int, int, int, int>& key,
+                                  std::vector<std::pair<int, int>>& completed) {
+        if (requestedSlots.erase(key) == 0)
+            return;
+        const std::pair<int, int> column{std::get<1>(key), std::get<3>(key)};
+        const auto it = colPending.find(column);
+        if (it != colPending.end() && --it->second <= 0) {
+            colPending.erase(it);
+            completed.push_back(column);
+        }
+    }
+
+    void BedrockSession::FinishColumns(const std::vector<std::pair<int, int>>& columns) {
+        for (const auto& column : columns)
+            netLevel.MarkComplete(column.first, column.second);
     }
 
     bool BedrockSession::ColumnSettled(int cx, int cz) const {
         std::lock_guard<std::mutex> lk(const_cast<std::mutex&>(reqMutex));
         if (!seenColumns.count({cx, cz}))
             return false;
-        for (const auto& k : requestedSlots)
-            if (std::get<0>(k) == dimensionId.load() && std::get<1>(k) == cx && std::get<3>(k) == cz)
-                return false;
-        return true;
+        return colPending.find({cx, cz}) == colPending.end();
     }
 
     void BedrockSession::NoteTime(int64_t v) {
@@ -1079,14 +1104,18 @@ namespace perlin {
     }
 
     void BedrockSession::CompleteRequest(const std::tuple<int, int, int, int>& key, bool retry) {
-        std::lock_guard<std::mutex> lk(reqMutex);
-        inflight.erase(key);
-        if (retry && ++retries[key] <= 3) {
-            reqQueue.push(key);
-            return;
+        std::vector<std::pair<int, int>> completed;
+        {
+            std::lock_guard<std::mutex> lk(reqMutex);
+            inflight.erase(key);
+            if (retry && ++retries[key] <= 3) {
+                reqQueue.push(key);
+                return;
+            }
+            retries.erase(key);
+            DropSlot(key, completed);
         }
-        retries.erase(key);
-        requestedSlots.erase(key);
+        FinishColumns(completed);
     }
 
     int BedrockSession::PendingSubChunkRequests() const {
@@ -1095,7 +1124,10 @@ namespace perlin {
     }
 
     void BedrockSession::PumpRequests(int budget) {
+        // One request packet carries a whole vertical run of a column, like the vanilla client.
+        constexpr size_t kMaxBatch = 32;
         auto now = std::chrono::steady_clock::now();
+        std::vector<std::pair<int, int>> completed;
         {
             std::lock_guard<std::mutex> lk(reqMutex);
             for (auto it = inflight.begin(); it != inflight.end();) {
@@ -1109,10 +1141,11 @@ namespace perlin {
                     reqQueue.push(key);
                 } else {
                     retries.erase(key);
-                    requestedSlots.erase(key);
+                    DropSlot(key, completed);
                 }
             }
         }
+        FinishColumns(completed);
         for (int i = 0; i < budget; i++) {
             int dimension = 0, cx = 0, cz = 0, firstY = 0, count = 0;
             {
@@ -1125,7 +1158,7 @@ namespace perlin {
                 firstY = std::get<2>(key);
                 cz = std::get<3>(key);
                 std::vector<int> ys;
-                while (!reqQueue.empty() && ys.size() < 1) {
+                while (!reqQueue.empty() && ys.size() < kMaxBatch) {
                     auto k = reqQueue.front();
                     if (std::get<0>(k) != dimension || std::get<1>(k) != cx || std::get<3>(k) != cz)
                         break;

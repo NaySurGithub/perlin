@@ -3,6 +3,7 @@
 #include "client/renderer/Frustum.hpp"
 #include "client/renderer/RenderContext.hpp"
 #include "client/renderer/Tessellator.hpp"
+#include "client/renderer/chunk/LodStore.hpp"
 #include "client/renderer/block/BiomeTints.hpp"
 #include "client/renderer/block/BlockLibrary.hpp"
 #include "util/ThreadPool.hpp"
@@ -31,13 +32,20 @@ namespace perlin {
 
         const BlockLibrary& Blocks() const { return blocks; }
         const BiomeTints& Tints() const { return biomeTints; }
-        size_t MeshedChunks() const { return meshVersions.size(); }
+        size_t MeshedChunks() const { return meshKey.size(); }
         bool TexturesLoaded() const { return atlasUploaded; }
 
     private:
+        struct ChunkInfo {
+            uint64_t version = 0;
+            bool streaming = false;
+            uint64_t firstSeen = 0;
+            uint64_t readyAt = 0;
+        };
+
         struct MeshResult {
             ChunkPos pos;
-            uint64_t version;
+            uint64_t key;
             uint32_t generation;
             std::unique_ptr<Tessellator> mesh;
         };
@@ -45,22 +53,26 @@ namespace perlin {
         struct Pending {
             float distance;
             ChunkPos pos;
-            uint64_t version;
+            uint64_t key;
         };
 
-        struct Quiet {
-            uint64_t version = 0;
-            int frames = 0;
-        };
+        using PosSet = std::unordered_set<ChunkPos, ChunkPosHash>;
+        template <class T>
+        using PosMap = std::unordered_map<ChunkPos, T, ChunkPosHash>;
 
         void UploadFinishedMeshes();
-        void SnapshotVersions(Level& level);
-        bool idle = false;
-    void CollectPending(float camX, float camZ, const Frustum& frustum);
-        void ScheduleAsync(Level& level, size_t freeSlots);
-        void MeshInline(Level& level);
+        void ResetAll(Level& level);
+        void ApplyDirty(Level& level);
+        void Recompute(const ChunkPos& pos);
+        bool Ready(const ChunkPos& pos, uint64_t now) const;
+        void Schedule(Level& level, float camX, float camZ, const Frustum& frustum);
         void InvalidateMeshes();
+        void ProcessLod(Level& level, float camX, float camZ);
+        void MarkLodTile(const ChunkPos& chunk);
+        void ResetLod();
+        static int64_t TileKey(int tx, int tz) { return (static_cast<int64_t>(tx) << 32) | static_cast<uint32_t>(tz); }
         void ConfigureLighting(const std::string& packDir);
+        void LoadSkyTextures();
 
         RenderContext& context;
         const Options& options;
@@ -68,29 +80,39 @@ namespace perlin {
         BiomeTints biomeTints;
 
         std::unique_ptr<ThreadPool> meshPool;
+        size_t maxInFlight = 8;
         std::atomic<bool> stopping{false};
         std::atomic<uint32_t> generation{0};
 
         std::mutex doneMutex;
         std::vector<MeshResult> done;
-        std::unordered_set<ChunkPos, ChunkPosHash> inFlight;
-        std::unordered_map<ChunkPos, uint64_t, ChunkPosHash> meshVersions;
-        std::unordered_map<ChunkPos, Quiet, ChunkPosHash> quiet;
-
-        std::vector<std::pair<ChunkPos, uint64_t>> snapshot;
+        PosSet inFlight;
+        PosMap<ChunkInfo> info;      // what the level holds
+        PosMap<uint64_t> meshKey;    // key of the mesh that is built or being built
+        PosMap<uint64_t> wantKey;    // chunks whose wanted key differs from meshKey
+        std::vector<DirtyChunk> drained;
         std::vector<Pending> pending;
+
+        // Far-terrain LOD (see LodStore).
+        LodStore lod;
+        PosSet shown;                              // chunks currently drawn at full detail
+        std::unordered_map<int64_t, int> lodTiles; // built tile -> stride
+        std::unordered_set<int64_t> lodDirty;
+        std::vector<ChunkPos> capQueue;
+        PosSet capSet;
+        int lodScanX = 0x7fffffff, lodScanZ = 0;
+        bool lodScanForced = true;
+        uint64_t lodVersion = 0;
+        Tessellator lodScratch;
 
         const Level* lastLevel = nullptr;
         uint64_t lastClear = 0;
-        uint64_t lastChange = ~0ull;
-        bool rescan = true;
 
         bool lightingConfigured = false;
         bool atlasUploaded = false;
         bool skyTexturesLoaded = false;
         bool texturePackResolved = false;
         bool crosshairLoaded = false;
-        void LoadSkyTextures();
         bool tintsWereReady = false;
         int uploadedTiles = 0;
         std::chrono::steady_clock::time_point lastAssetAttempt{};

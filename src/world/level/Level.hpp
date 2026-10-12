@@ -6,6 +6,7 @@
 #include <memory>
 #include <mutex>
 #include <unordered_map>
+#include <vector>
 
 namespace perlin {
     struct ChunkPos {
@@ -40,11 +41,20 @@ namespace perlin {
                         size_t stride) const;
 
         void ReadBlocks(int x, int z, int yLo, int yHi, uint16_t* blocks, size_t stride) const;
+        // Copies `n` cells of the row (y, z) starting at x0. Any destination may be null; nothing is written for
+        // sections that do not exist (the caller pre-zeroes), so this is the fast path for the mesher.
+        void CopyRun(int y, int z, int x0, int n, uint16_t* blocks, uint8_t* biomes, uint16_t* liquid) const;
 
         void SetSection(int section, const uint16_t* cells, const uint16_t* liquidCells = nullptr);
         void SetBiomeSection(int section, const uint8_t* cells);
 
         uint64_t version = 0;
+        // Network chunks stay `streaming` until every sub-chunk the server owes us has arrived; the mesher waits
+        // for that so a column is meshed once instead of after every sub-chunk.
+        bool streaming = false;
+        uint64_t readyAt = 0;   // monotonic ms when streaming ended
+        uint64_t firstSeen = 0; // monotonic ms when the chunk appeared
+        bool queued = false;    // already on the Level dirty list
 
     private:
         struct Section {
@@ -63,8 +73,24 @@ namespace perlin {
         std::array<std::unique_ptr<Section>, SECTION_COUNT> sections;
     };
 
+    // What changed in a chunk since the renderer last looked (see Level::DrainDirty).
+    struct DirtyChunk {
+        ChunkPos pos;
+        bool exists = false;
+        uint64_t version = 0;
+        bool streaming = false;
+        uint64_t firstSeen = 0;
+        uint64_t readyAt = 0;
+    };
+
     class Level {
     public:
+        // Appends every chunk touched (or removed) since the previous call and clears the list.
+        void DrainDirty(std::vector<DirtyChunk>& out);
+        // Queues every chunk, for a consumer that starts watching an already populated level.
+        void MarkAllDirty();
+        static uint64_t NowMs();
+
         uint16_t GetBlock(int x, int y, int z) const;
         // Like GetBlock, but reports whether the chunk exists (unloaded chunks read as air).
         uint16_t GetBlock(int x, int y, int z, bool& loaded) const;
@@ -72,15 +98,30 @@ namespace perlin {
         void SetLiquid(int x, int y, int z, uint16_t id);
         uint8_t GetBiome(int x, int y, int z) const;
         void SetBlock(int x, int y, int z, uint16_t id);
-        void EnsureChunk(int cx, int cz);
+        // `streaming`: the chunk will receive more data (sub-chunk replies) and is not meshed until MarkComplete.
+        void EnsureChunk(int cx, int cz, bool streaming = false);
+        void MarkComplete(int cx, int cz);
+        bool HasChunk(int cx, int cz) const;
         bool RemoveChunk(int cx, int cz);
         void SetSubChunk(int cx, int cz, int absSubY, const uint16_t* cells, const uint16_t* liquidCells = nullptr);
         void SetBiomeSubChunk(int cx, int cz, int absSubY, const uint8_t* cells);
         void Clear();
 
+    private:
+        void Touch(const ChunkPos& pos, Chunk& chunk) {
+            if (!chunk.queued) {
+                chunk.queued = true;
+                dirty.push_back(pos);
+            }
+        }
+        void TouchNeighbors(int cx, int cz);
+
+    public:
+
         int FindBlockBelow(int x, int z, int fromY, const std::function<bool(uint16_t)>& accept) const;
 
         std::unordered_map<ChunkPos, Chunk, ChunkPosHash> chunks;
+        std::vector<ChunkPos> dirty; // guarded by mutex
         mutable std::mutex mutex;
         std::atomic<uint64_t> changeCounter{0};
         std::atomic<uint64_t> clearCounter{0}; // bumped by Clear(): every mesh built from older chunks is stale

@@ -16,6 +16,7 @@
 #define NOMINMAX
 #endif
 #include <Windows.h>
+#include <DbgHelp.h>
 #endif
 
 #ifdef _WIN32
@@ -115,11 +116,61 @@ namespace {
     }
 
 #ifdef _WIN32
+    void PrintFrame(HANDLE process, DWORD64 address) {
+        char symbolBuffer[sizeof(SYMBOL_INFO) + 256] = {};
+        SYMBOL_INFO* symbol = reinterpret_cast<SYMBOL_INFO*>(symbolBuffer);
+        symbol->SizeOfStruct = sizeof(SYMBOL_INFO);
+        symbol->MaxNameLen = 255;
+        DWORD64 displacement = 0;
+        IMAGEHLP_MODULE64 module = {};
+        module.SizeOfStruct = sizeof(module);
+        const bool haveModule = SymGetModuleInfo64(process, address, &module) != FALSE;
+        const unsigned long long rva = haveModule ? address - module.BaseOfImage : address;
+        if (SymFromAddr(process, address, &displacement, symbol)) {
+            IMAGEHLP_LINE64 line = {};
+            line.SizeOfStruct = sizeof(line);
+            DWORD lineDisplacement = 0;
+            if (SymGetLineFromAddr64(process, address, &lineDisplacement, &line))
+                std::printf("[crash]   %s+0x%llx (%s:%lu) [%s+0x%llx]\n", symbol->Name,
+                            static_cast<unsigned long long>(displacement), line.FileName, line.LineNumber,
+                            haveModule ? module.ModuleName : "?", rva);
+            else
+                std::printf("[crash]   %s+0x%llx [%s+0x%llx]\n", symbol->Name,
+                            static_cast<unsigned long long>(displacement), haveModule ? module.ModuleName : "?", rva);
+        } else {
+            std::printf("[crash]   %p [%s+0x%llx]\n", reinterpret_cast<void*>(address),
+                        haveModule ? module.ModuleName : "?", rva);
+        }
+    }
+
     LONG WINAPI CrashFilter(EXCEPTION_POINTERS* info) {
-        std::printf("[crash] unhandled exception 0x%08lx at %p\n", info->ExceptionRecord->ExceptionCode,
-                    info->ExceptionRecord->ExceptionAddress);
+        const EXCEPTION_RECORD* record = info->ExceptionRecord;
+        std::printf("[crash] unhandled exception 0x%08lx at %p (thread %lu)\n", record->ExceptionCode,
+                    record->ExceptionAddress, GetCurrentThreadId());
+        if (record->ExceptionCode == EXCEPTION_ACCESS_VIOLATION && record->NumberParameters >= 2)
+            std::printf("[crash] access violation: %s address %p\n",
+                        record->ExceptionInformation[0] == 0   ? "reading"
+                        : record->ExceptionInformation[0] == 1 ? "writing"
+                                                               : "executing",
+                        reinterpret_cast<void*>(record->ExceptionInformation[1]));
+        const HANDLE process = GetCurrentProcess();
+        SymSetOptions(SYMOPT_LOAD_LINES | SYMOPT_UNDNAME | SYMOPT_DEFERRED_LOADS);
+        SymInitialize(process, nullptr, TRUE);
+        CONTEXT context = *info->ContextRecord;
+        STACKFRAME64 frame = {};
+        frame.AddrPC.Offset = context.Rip;
+        frame.AddrFrame.Offset = context.Rbp;
+        frame.AddrStack.Offset = context.Rsp;
+        frame.AddrPC.Mode = frame.AddrFrame.Mode = frame.AddrStack.Mode = AddrModeFlat;
+        for (int i = 0; i < 40; i++) {
+            PrintFrame(process, frame.AddrPC.Offset);
+            if (!StackWalk64(IMAGE_FILE_MACHINE_AMD64, process, GetCurrentThread(), &frame, &context, nullptr,
+                             SymFunctionTableAccess64, SymGetModuleBase64, nullptr) ||
+                frame.AddrPC.Offset == 0)
+                break;
+        }
         std::fflush(stdout);
-        std::this_thread::sleep_for(std::chrono::milliseconds(200));
+        std::this_thread::sleep_for(std::chrono::milliseconds(300));
         return EXCEPTION_CONTINUE_SEARCH;
     }
 #endif

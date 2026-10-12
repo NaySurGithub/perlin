@@ -42,6 +42,7 @@ namespace perlin::physics {
         uint8_t surface = 0;       // registry surface response: 1 slime, 2 bed, 3 honey, 4 soul sand
         uint8_t fluid = 0;         // 0 none, 1 water, 2 lava
         float fluidLevel = 0.0f;   // surface height inside the cell, 0..1
+        uint8_t fluidDepth = 255;  // liquid_depth state (0 source, 8+ falling); 255 = unknown (kelp, bubbles)
         bool climbable = false;
         bool web = false;
         float speedFactor = 1.0f;  // soul sand, honey

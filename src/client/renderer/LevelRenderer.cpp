@@ -9,17 +9,14 @@
 #include "world/level/lighting/LightRegistry.hpp"
 
 #include <algorithm>
+#include <cmath>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
 
 namespace perlin {
     namespace {
-        constexpr size_t kMaxInFlight = 8;
-        constexpr int kMinQuietFrames = 3;
-        constexpr int kRemeshQuietFrames = 6;
-        constexpr float kOffscreenPenalty = 1e9f;
-        constexpr auto kInlineBudget = std::chrono::milliseconds(6);
         constexpr auto kAssetRetry = std::chrono::seconds(1);
 
         std::string ReadText(const std::string& path) {
@@ -27,17 +24,16 @@ namespace perlin {
             return std::string((std::istreambuf_iterator<char>(file)), {});
         }
 
-        uint64_t Combine(uint64_t hash, uint64_t value) {
-            return (hash ^ value) * 1099511628211ull;
-        }
     }
 
     LevelRenderer::LevelRenderer(RenderContext& context, const Options& options)
         : context(context), options(options) {
         blocks.SetFancy(options.fancyGraphics);
-        const unsigned cores = std::thread::hardware_concurrency();
-        const unsigned threads = std::clamp(cores > 3 ? cores - 2 : 1u, 1u, 3u);
+        const unsigned cores = std::max(1u, std::thread::hardware_concurrency());
+        // The game thread, the render thread and the network thread need a core each; the rest meshes.
+        const unsigned threads = std::clamp(cores > 4 ? cores - 3 : 2u, 2u, 8u);
         meshPool = std::make_unique<ThreadPool>(threads);
+        maxInFlight = threads * 3;
     }
 
     LevelRenderer::~LevelRenderer() {
@@ -110,16 +106,27 @@ namespace perlin {
 
     void LevelRenderer::InvalidateMeshes() {
         LightRegistry::Instance().Invalidate();
-        meshVersions.clear();
+        MesherInvalidateCaches();
+        meshKey.clear();
         inFlight.clear();
-        quiet.clear();
         generation++;
         {
             std::lock_guard lock(doneMutex);
             done.clear();
         }
         context.ClearChunkMeshes();
-        rescan = true;
+        shown.clear();
+        // Everything has to be built again, including the far-terrain colours.
+        lod.InvalidateColours();
+        lodTiles.clear();
+        lodDirty.clear();
+        lodScanForced = true;
+        for (const auto& entry : info)
+            if (!entry.second.streaming && capSet.insert(entry.first).second)
+                capQueue.push_back(entry.first);
+        wantKey.clear();
+        for (const auto& entry : info)
+            Recompute(entry.first);
     }
 
     void LevelRenderer::ReloadAssetsIfNeeded() {
@@ -180,14 +187,17 @@ namespace perlin {
         const auto uploadStart = std::chrono::steady_clock::now();
         size_t consumed = 0;
         for (MeshResult& r : finished) {
-            if (consumed > 0 && std::chrono::steady_clock::now() - uploadStart > std::chrono::milliseconds(3))
+            if (consumed > 0 && std::chrono::steady_clock::now() - uploadStart > std::chrono::milliseconds(4))
                 break;
             consumed++;
             inFlight.erase(r.pos);
-            if (!meshVersions.count(r.pos))
+            if (!meshKey.count(r.pos))
                 continue; // the chunk was unloaded while it was being meshed
-            if (r.generation == current)
-                context.UpdateChunkMesh(r.pos.x, r.pos.z, *r.mesh, r.version);
+            if (r.generation == current) {
+                context.UpdateChunkMesh(r.pos.x, r.pos.z, *r.mesh, r.key);
+                if (shown.insert(r.pos).second)
+                    MarkLodTile(r.pos);
+            }
         }
         if (consumed < finished.size()) {
             std::lock_guard lock(doneMutex);
@@ -196,91 +206,147 @@ namespace perlin {
         }
     }
 
-    void LevelRenderer::SnapshotVersions(Level& level) {
-        snapshot.clear();
-        if (const uint64_t cleared = level.clearCounter.load(); cleared != lastClear) {
-            // The whole world was replaced (dimension change): drop every mesh built from the old one.
-            lastClear = cleared;
-            for (const auto& [pos, version] : meshVersions) {
-                (void)version;
-                context.RemoveChunkMesh(pos.x, pos.z);
-            }
-            meshVersions.clear();
-            quiet.clear();
-        }
-        std::unordered_map<ChunkPos, uint64_t, ChunkPosHash> versions;
+    void LevelRenderer::ResetAll(Level& level) {
+        for (const auto& entry : meshKey)
+            context.RemoveChunkMesh(entry.first.x, entry.first.z);
+        generation++;
         {
-            std::lock_guard lock(level.mutex);
-            versions.reserve(level.chunks.size());
-            for (const auto& [pos, chunk] : level.chunks)
-                versions.emplace(pos, chunk.version + 1);
+            std::lock_guard lock(doneMutex);
+            done.clear();
         }
-        // Chunks the server stopped streaming: drop their meshes.
-        for (auto it = meshVersions.begin(); it != meshVersions.end();) {
-            if (versions.count(it->first)) {
-                ++it;
-                continue;
-            }
-            context.RemoveChunkMesh(it->first.x, it->first.z);
-            quiet.erase(it->first);
-            it = meshVersions.erase(it);
-        }
-        snapshot.reserve(versions.size());
-        for (const auto& [pos, version] : versions) {
-            uint64_t key = 1469598103934665603ull;
-            for (int dz = -1; dz <= 1; dz++)
-                for (int dx = -1; dx <= 1; dx++) {
-                    const auto neighbor = versions.find(ChunkPos{pos.x + dx, pos.z + dz});
-                    key = Combine(key, neighbor == versions.end() ? 0 : neighbor->second);
-                }
-            snapshot.emplace_back(pos, key);
-        }
+        info.clear();
+        meshKey.clear();
+        wantKey.clear();
+        inFlight.clear();
+        ResetLod();
+        level.MarkAllDirty();
     }
 
-    void LevelRenderer::CollectPending(float camX, float camZ, const Frustum& frustum) {
+    // Wanted mesh key of a chunk: its own version plus its eight neighbours', since lighting, ambient occlusion
+    // and face culling read across chunk borders.
+    void LevelRenderer::Recompute(const ChunkPos& pos) {
+        const auto self = info.find(pos);
+        if (self == info.end()) {
+            wantKey.erase(pos);
+            return;
+        }
+        uint64_t key = 1469598103934665603ull;
+        for (int dz = -1; dz <= 1; dz++)
+            for (int dx = -1; dx <= 1; dx++) {
+                const auto n = info.find(ChunkPos{pos.x + dx, pos.z + dz});
+                key = (key ^ (n == info.end() ? 0 : n->second.version + 1)) * 1099511628211ull;
+            }
+        const auto built = meshKey.find(pos);
+        if (built != meshKey.end() && built->second == key)
+            wantKey.erase(pos);
+        else
+            wantKey[pos] = key;
+    }
+
+    void LevelRenderer::ApplyDirty(Level& level) {
+        drained.clear();
+        level.DrainDirty(drained);
+        if (drained.empty())
+            return;
+        PosSet touched;
+        touched.reserve(drained.size() * 3);
+        for (const DirtyChunk& d : drained) {
+            if (d.exists) {
+                info[d.pos] = {d.version, d.streaming, d.firstSeen, d.readyAt};
+                if (!d.streaming && capSet.insert(d.pos).second)
+                    capQueue.push_back(d.pos);
+            } else {
+                info.erase(d.pos);
+                if (meshKey.erase(d.pos))
+                    context.RemoveChunkMesh(d.pos.x, d.pos.z);
+                wantKey.erase(d.pos);
+                // The far-terrain sample is kept: it keeps drawing the chunk once the full mesh is gone.
+                if (shown.erase(d.pos))
+                    MarkLodTile(d.pos);
+            }
+            for (int dz = -1; dz <= 1; dz++)
+                for (int dx = -1; dx <= 1; dx++)
+                    touched.insert(ChunkPos{d.pos.x + dx, d.pos.z + dz});
+        }
+        for (const ChunkPos& pos : touched)
+            Recompute(pos);
+    }
+
+    bool LevelRenderer::Ready(const ChunkPos& pos, uint64_t now) const {
+        const ChunkInfo& self = info.at(pos);
+        if (self.streaming)
+            return now - self.firstSeen > 8000; // a column that never finished must not stay invisible forever
+        for (int dz = -1; dz <= 1; dz++)
+            for (int dx = -1; dx <= 1; dx++) {
+                if (!dx && !dz)
+                    continue;
+                const auto n = info.find(ChunkPos{pos.x + dx, pos.z + dz});
+                if (n == info.end()) {
+                    // Probably the edge of the loaded area; give the neighbour a moment to show up.
+                    if (now - self.readyAt < 500)
+                        return false;
+                } else if (n->second.streaming && now - n->second.firstSeen < 2500) {
+                    return false;
+                }
+            }
+        return true;
+    }
+
+    void LevelRenderer::Schedule(Level& level, float camX, float camZ, const Frustum& frustum) {
+        if (wantKey.empty())
+            return;
+        const bool async = atlasUploaded && blocks.Complete() && biomeTints.Ready();
+        const size_t freeSlots = async ? (maxInFlight > inFlight.size() ? maxInFlight - inFlight.size() : 0) : 64;
+        if (!freeSlots)
+            return;
+
+        const uint64_t now = Level::NowMs();
         pending.clear();
-        for (const auto& [pos, version] : snapshot) {
-            const auto meshed = meshVersions.find(pos);
-            if (meshed != meshVersions.end() && meshed->second == version) {
-                quiet.erase(pos);
+        pending.reserve(wantKey.size());
+        static const int debugNear = std::getenv("PERLIN_LOD_NEAR") ? std::atoi(std::getenv("PERLIN_LOD_NEAR")) : -1;
+        const int camChunkX = static_cast<int>(std::floor(camX / 16.0f)), camChunkZ = static_cast<int>(std::floor(camZ / 16.0f));
+        for (const auto& [pos, key] : wantKey) {
+            if (debugNear >= 0 && std::max(std::abs(pos.x - camChunkX), std::abs(pos.z - camChunkZ)) > debugNear)
+                continue; // developer test: leave far chunks to the LOD tiles
+            if (inFlight.count(pos) || !Ready(pos, now))
                 continue;
-            }
-
-            Quiet& q = quiet[pos];
-            if (q.version != version) {
-                q = {version, 0};
-                continue;
-            }
-            q.frames++;
-            if (meshed != meshVersions.end() && q.frames < kRemeshQuietFrames)
-                continue;
-            if (q.frames < kMinQuietFrames)
-                continue;
-
             const float dx = pos.x * 16.0f + 8.0f - camX;
             const float dz = pos.z * 16.0f + 8.0f - camZ;
             float distance = dx * dx + dz * dz;
             const float x0 = pos.x * 16.0f, z0 = pos.z * 16.0f;
             if (!frustum.Visible(x0, static_cast<float>(Chunk::MIN_Y), z0, x0 + 16.0f,
                                  static_cast<float>(Chunk::MIN_Y + Chunk::HEIGHT), z0 + 16.0f))
-                distance += kOffscreenPenalty;
-            pending.push_back({distance, pos, version});
+                distance += 1e9f;
+            pending.push_back({distance, pos, key});
         }
-    }
-
-    void LevelRenderer::ScheduleAsync(Level& level, size_t freeSlots) {
-        const size_t take = std::min(freeSlots, pending.size());
-        if (!take)
+        if (pending.empty())
             return;
+        const size_t take = std::min(freeSlots, pending.size());
         std::partial_sort(pending.begin(), pending.begin() + take, pending.end(),
                           [](const Pending& a, const Pending& b) { return a.distance < b.distance; });
 
+        if (!async) {
+            // Textures are not ready (or never will be): mesh a few chunks per frame on this thread.
+            const auto start = std::chrono::steady_clock::now();
+            for (size_t i = 0; i < take; i++) {
+                if (std::chrono::steady_clock::now() - start > std::chrono::milliseconds(6))
+                    break;
+                const Pending& job = pending[i];
+                meshKey[job.pos] = job.key;
+                wantKey.erase(job.pos);
+                Tessellator mesh;
+                mesh.Begin();
+                BuildChunkMesh(level, job.pos, mesh, &blocks, &biomeTints);
+                mesh.End();
+                context.UpdateChunkMesh(job.pos.x, job.pos.z, mesh, job.key);
+            }
+            return;
+        }
+
         for (size_t i = 0; i < take; i++) {
             const Pending job = pending[i];
-            if (inFlight.contains(job.pos))
-                continue;
-            meshVersions[job.pos] = job.version;
-            quiet.erase(job.pos);
+            meshKey[job.pos] = job.key;
+            wantKey.erase(job.pos);
             inFlight.insert(job.pos);
 
             const uint32_t gen = generation.load();
@@ -295,29 +361,120 @@ namespace perlin {
                 mesh->End();
                 const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
                                     std::chrono::steady_clock::now() - t0).count();
-                if (ms > 40)
+                if (ms > 60)
                     std::printf("[perf] slow chunk mesh (%d,%d): %lld ms, %zu vertices\n", job.pos.x, job.pos.z,
                                 static_cast<long long>(ms), mesh->Vertices().size());
                 std::lock_guard lock(doneMutex);
-                done.push_back({job.pos, job.version, gen, std::move(mesh)});
+                done.push_back({job.pos, job.key, gen, std::move(mesh)});
             });
         }
     }
 
-    void LevelRenderer::MeshInline(Level& level) {
-        std::sort(pending.begin(), pending.end(),
-                  [](const Pending& a, const Pending& b) { return a.distance < b.distance; });
-        const auto start = std::chrono::steady_clock::now();
-        for (const Pending& job : pending) {
-            if (std::chrono::steady_clock::now() - start > kInlineBudget)
-                break;
-            meshVersions[job.pos] = job.version;
-            quiet.erase(job.pos);
-            Tessellator mesh;
-            mesh.Begin();
-            BuildChunkMesh(level, job.pos, mesh, &blocks, &biomeTints);
-            mesh.End();
-            context.UpdateChunkMesh(job.pos.x, job.pos.z, mesh, job.version);
+    namespace {
+        // 4-block cells near the camera, 8-block cells for tiles more than 64 chunks away.
+        int LodStride(int tx, int tz, int ccx, int ccz) {
+            const int d = std::max(std::abs(tx * LodStore::kTileChunks + 2 - ccx),
+                                   std::abs(tz * LodStore::kTileChunks + 2 - ccz));
+            return d > 64 ? 2 : 1;
+        }
+    }
+
+    void LevelRenderer::ResetLod() {
+        lod.Clear();
+        shown.clear();
+        lodTiles.clear();
+        lodDirty.clear();
+        capQueue.clear();
+        capSet.clear();
+        lodScanForced = true;
+    }
+
+    void LevelRenderer::MarkLodTile(const ChunkPos& chunk) {
+        if (lod.Find(chunk))
+            lodDirty.insert(TileKey(LodStore::TileOf(chunk.x), LodStore::TileOf(chunk.z)));
+    }
+
+    void LevelRenderer::ProcessLod(Level& level, float camX, float camZ) {
+        const bool assets = atlasUploaded && blocks.Complete() && biomeTints.Ready();
+        if (!assets)
+            return;
+        using Clock = std::chrono::steady_clock;
+        const auto start = Clock::now();
+        auto elapsed = [&] { return std::chrono::duration<double, std::milli>(Clock::now() - start).count(); };
+
+        // 1. Sample newly completed chunks.
+        size_t taken = 0;
+        while (taken < capQueue.size() && elapsed() < 2.0) {
+            const ChunkPos pos = capQueue[taken++];
+            capSet.erase(pos);
+            if (lod.Capture(level, pos, blocks, biomeTints))
+                MarkLodTile(pos);
+        }
+        capQueue.erase(capQueue.begin(), capQueue.begin() + static_cast<std::ptrdiff_t>(taken));
+
+        // 2. Re-plan which tiles exist when the camera moved.
+        const int radius = std::max(2, options.renderDistance);
+        const int ccx = static_cast<int>(std::floor(camX / 16.0f)), ccz = static_cast<int>(std::floor(camZ / 16.0f));
+        if (lodScanForced || std::abs(ccx - lodScanX) >= 2 || std::abs(ccz - lodScanZ) >= 2) {
+            lodScanForced = false;
+            lodScanX = ccx;
+            lodScanZ = ccz;
+            std::vector<ChunkPos> evicted;
+            lod.Evict(ccx, ccz, radius + 6, evicted);
+            for (const ChunkPos& p : evicted)
+                lodDirty.insert(TileKey(LodStore::TileOf(p.x), LodStore::TileOf(p.z)));
+            std::unordered_map<int64_t, int> wanted;
+            for (const auto& entry : lod.All()) {
+                const ChunkPos& p = entry.first;
+                const int dist = std::max(std::abs(p.x - ccx), std::abs(p.z - ccz));
+                if (dist > radius + 2)
+                    continue;
+                const int tx = LodStore::TileOf(p.x), tz = LodStore::TileOf(p.z);
+                wanted[TileKey(tx, tz)] = LodStride(tx, tz, ccx, ccz);
+            }
+            for (auto it = lodTiles.begin(); it != lodTiles.end();) {
+                if (!wanted.count(it->first)) {
+                    context.RemoveLodTile(static_cast<int>(it->first >> 32), static_cast<int>(static_cast<uint32_t>(it->first)));
+                    lodDirty.erase(it->first);
+                    it = lodTiles.erase(it);
+                } else {
+                    ++it;
+                }
+            }
+            for (const auto& [key, stride] : wanted) {
+                const auto built = lodTiles.find(key);
+                if (built == lodTiles.end()) {
+                    lodTiles[key] = 0; // placeholder until it is built
+                    lodDirty.insert(key);
+                } else if (built->second != 0 && built->second != stride) {
+                    lodDirty.insert(key);
+                }
+            }
+        }
+
+        // 3. Rebuild changed tiles, nearest first.
+        if (lodDirty.empty())
+            return;
+        std::vector<std::pair<float, int64_t>> order;
+        order.reserve(lodDirty.size());
+        for (int64_t key : lodDirty) {
+            const int tx = static_cast<int>(key >> 32), tz = static_cast<int>(static_cast<uint32_t>(key));
+            const float dx = tx * 64.0f + 32.0f - camX, dz = tz * 64.0f + 32.0f - camZ;
+            order.push_back({dx * dx + dz * dz, key});
+        }
+        const size_t budget = std::min<size_t>(order.size(), 48);
+        std::partial_sort(order.begin(), order.begin() + static_cast<std::ptrdiff_t>(budget), order.end());
+        for (size_t i = 0; i < budget && elapsed() < 4.0; i++) {
+            const int64_t key = order[i].second;
+            lodDirty.erase(key);
+            const int tx = static_cast<int>(key >> 32), tz = static_cast<int>(static_cast<uint32_t>(key));
+            const int stride = LodStride(tx, tz, lodScanX, lodScanZ);
+            lodTiles[key] = stride;
+            const bool drawn = lod.BuildTile(tx, tz, stride, [&](const ChunkPos& p) { return shown.count(p) > 0; }, lodScratch);
+            if (drawn)
+                context.UpdateLodTile(tx, tz, LodStore::kTileChunks * 16, lodScratch, ++lodVersion);
+            else
+                context.RemoveLodTile(tx, tz);
         }
     }
 
@@ -327,29 +484,15 @@ namespace perlin {
 
         UploadFinishedMeshes();
 
-        const uint64_t change = level->changeCounter.load();
-        const bool scan = level != lastLevel || change != lastChange || rescan;
-        if (scan) {
+        if (level != lastLevel || level->clearCounter.load() != lastClear) {
             lastLevel = level;
-            lastChange = change;
-            SnapshotVersions(*level);
+            lastClear = level->clearCounter.load();
+            ResetAll(*level);
+            context.ClearChunkMeshes();
         }
-
-        // Nothing changed and nothing is waiting: skip the per-chunk scan entirely.
-        if (scan || !idle) {
-            CollectPending(camX, camZ, frustum);
-            idle = pending.empty() && quiet.empty() && inFlight.empty();
-        } else {
-            pending.clear();
-        }
-
-        const bool async = atlasUploaded && blocks.Complete() && biomeTints.Ready();
-        if (async)
-            ScheduleAsync(*level, kMaxInFlight > inFlight.size() ? kMaxInFlight - inFlight.size() : 0);
-        else
-            MeshInline(*level);
-
-        rescan = scan && (!pending.empty() || !quiet.empty() || !inFlight.empty());
+        ApplyDirty(*level);
+        Schedule(*level, camX, camZ, frustum);
+        ProcessLod(*level, camX, camZ);
     }
 
     void LevelRenderer::Render(const Frustum& frustum, float camX, float camZ) {
