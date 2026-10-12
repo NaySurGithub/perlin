@@ -874,10 +874,17 @@ namespace perlin {
         timeAt = std::chrono::steady_clock::now();
     }
 
+    void BedrockSession::NoteClock(int64_t time, bool paused) {
+        std::lock_guard<std::mutex> lk(timeMutex);
+        timeTotal = time;
+        clockPaused = paused;
+        timeAt = std::chrono::steady_clock::now();
+    }
+
     void BedrockSession::SetDayCycle(bool running) {
         std::lock_guard<std::mutex> lk(timeMutex);
         const auto now = std::chrono::steady_clock::now();
-        if (timeTotal >= 0 && dayCycleRunning && timeAt.time_since_epoch().count() != 0)
+        if (timeTotal >= 0 && dayCycleRunning && !clockPaused && timeAt.time_since_epoch().count() != 0)
             timeTotal += std::chrono::duration_cast<std::chrono::milliseconds>(now - timeAt).count() / 50;
         timeAt = now;
         dayCycleRunning = running;
@@ -888,7 +895,7 @@ namespace perlin {
         if (timeTotal < 0)
             return false;
         double advance = 0.0;
-        if (dayCycleRunning && timeAt.time_since_epoch().count() != 0)
+        if (dayCycleRunning && !clockPaused && timeAt.time_since_epoch().count() != 0)
             advance = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - timeAt).count() / 50.0;
         outTicks = static_cast<double>(timeTotal) + advance;
         return true;
@@ -898,7 +905,7 @@ namespace perlin {
         std::lock_guard<std::mutex> lk(timeMutex);
         if (timeTotal < 0)
             return false;
-        int64_t adv = dayCycleRunning ? std::chrono::duration_cast<std::chrono::milliseconds>(
+        int64_t adv = dayCycleRunning && !clockPaused ? std::chrono::duration_cast<std::chrono::milliseconds>(
                                             std::chrono::steady_clock::now() - timeAt)
                                                 .count() /
                                             50

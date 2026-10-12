@@ -36,6 +36,11 @@ namespace perlin {
             const json::View colorMap = value["color_map"];
             if (!colorMap.isString())
                 return false;
+            // Temperature/downfall driven maps are sampled per biome climate (like Java's colormaps),
+            // never reduced to an average, which turns grass a washed-out grey-green.
+            const std::string mapName = colorMap.str();
+            if (mapName == "grass" || mapName == "foliage" || mapName == "dry_foliage")
+                return false;
             const auto it = mapAvg.find(colorMap.str());
             if (it == mapAvg.end())
                 return false;

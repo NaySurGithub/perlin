@@ -87,6 +87,7 @@ namespace perlin {
         float RainTarget() const { return rainTarget; }
         float ThunderTarget() const { return thunderTarget; }
         void NoteTime(int64_t totalOrTod);
+        void NoteClock(int64_t time, bool paused);
         void GetBlockPos(int out[3]) const {
             out[0] = lastBlockPos[0];
             out[1] = lastBlockPos[1];
@@ -202,6 +203,8 @@ namespace perlin {
 
         mutable std::mutex timeMutex;
         int64_t timeTotal = -1;
+        bool clockPaused = false;
+        uint64_t overworldClockId = 0x63d7ede73c38f916ULL;
         std::atomic<int> dimensionId{0};
         std::atomic<float> rainTarget{0.0f};
         std::atomic<float> thunderTarget{0.0f};

@@ -32,7 +32,7 @@ namespace perlin {
     inline uint32_t PackLight(float block, float sky) {
         auto q = [](float level) -> uint32_t {
             level = level < 0.0f ? 0.0f : (level > 15.0f ? 15.0f : level);
-            return static_cast<uint32_t>(level * (255.0f / 15.0f) + 0.5f);
+            return static_cast<uint32_t>(level * 16.0f + 0.5f);
         };
         return q(block) | (q(sky) << 8);
     }

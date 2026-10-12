@@ -163,6 +163,28 @@ namespace perlin {
             NoteTime(p.time);
         });
 
+        // Since 1.26 the server drives the level time through named world clocks (this is what /time set
+        // sends); SetTime is only a legacy fallback. The overworld clock has a fixed hashed id.
+        On<SyncWorldClocksPacket>([this](const SyncWorldClocksPacket& p) {
+            constexpr uint64_t kOverworldClockId = 0x63d7ede73c38f916ULL;
+            if (p.payloadType == SyncWorldClocksPacketPayloadType::InitializeRegistry) {
+                for (const WorldClockData& clock : p.clocks)
+                    if (clock.id == kOverworldClockId || clock.name == "minecraft:overworld") {
+                        overworldClockId = clock.id;
+                        std::cout << "[bedrock] clock init " << clock.name << " time=" << clock.time
+                                  << " paused=" << clock.paused << std::endl;
+                        NoteClock(clock.time, clock.paused);
+                    }
+            } else if (p.payloadType == SyncWorldClocksPacketPayloadType::SyncState) {
+                for (const SyncWorldClockStateData& state : p.syncStates)
+                    if (state.clockId == overworldClockId || state.clockId == kOverworldClockId) {
+                        std::cout << "[bedrock] clock sync time=" << state.time << " paused=" << state.paused
+                                  << std::endl;
+                        NoteClock(state.time, state.paused);
+                    }
+            }
+        });
+
         On<ChangeDimensionPacket>([this](const ChangeDimensionPacket& p) { dimensionId = p.dimension; });
 
         On<LevelEventPacket>([this](const LevelEventPacket& p) {
