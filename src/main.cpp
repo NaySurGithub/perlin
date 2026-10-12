@@ -1,3 +1,4 @@
+#include "client/EmbeddedProvider.hpp"
 #include "client/Perlin.hpp"
 #include "client/platform/sdl/AppPlatform_SDL.hpp"
 #include "util/Paths.hpp"
@@ -190,6 +191,7 @@ namespace {
 
 int main(int argc, char** argv) {
     AttachParentConsole();
+    perlin::RegisterEmbeddedResources();
 
     const std::string dataDir = perlin::paths::DataDir();
     perlin::paths::EnsureDir(dataDir);

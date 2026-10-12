@@ -17,6 +17,7 @@ namespace perlin {
         CyclePerspective,
         Screenshot,
         Sprint,
+        Zoom,
         Count
     };
 

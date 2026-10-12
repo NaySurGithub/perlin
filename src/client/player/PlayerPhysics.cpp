@@ -538,7 +538,8 @@ namespace perlin::physics {
             const Box box = BoundingBox(s, false);
             const Motion m = ResolveMotion(world, box, req, grounded, scratch);
             s.x = m.position.x; s.y = m.position.y; s.z = m.position.z;
-            s.onGround = m.stepped || (m.cy && req.y < 0.0) || (grounded && !m.cy && std::fabs(req.y) <= kFloatEps);
+            // Only touching the floor counts; a hover must not keep the grounded flag from the take-off tick.
+            s.onGround = m.cy && req.y < 0.0;
             s.vx = m.resolved.x; s.vy = m.resolved.y; s.vz = m.resolved.z;
             if (m.stepped || m.cy) s.vy = 0;
             if (m.cx) s.vx = 0;

@@ -2,6 +2,7 @@
 
 #include "client/renderer/block/BlockLibrary.hpp"
 #include "util/Paths.hpp"
+#include "util/Resources.hpp"
 #include "world/level/block/BlockPalette.hpp"
 
 #include <algorithm>
@@ -63,18 +64,11 @@ namespace perlin {
         const std::unordered_map<int32_t, PhysRecord>& Registry() {
             static const std::unordered_map<int32_t, PhysRecord> table = [] {
                 std::unordered_map<int32_t, PhysRecord> t;
-                std::vector<std::string> candidates = {paths::ExeDir() + "/resources/block_physics.bin",
-                                                       "resources/block_physics.bin"};
-                for (const std::string& path : candidates) {
-                    FILE* f = std::fopen(path.c_str(), "rb");
-                    if (!f)
+                for (int once = 0; once < 1; once++) {
+                    std::string raw;
+                    if (!resources::Read("block_physics.bin", raw))
                         continue;
-                    std::vector<uint8_t> d;
-                    uint8_t buf[65536];
-                    size_t n;
-                    while ((n = std::fread(buf, 1, sizeof buf, f)) > 0)
-                        d.insert(d.end(), buf, buf + n);
-                    std::fclose(f);
+                    std::vector<uint8_t> d(raw.begin(), raw.end());
                     if (d.size() < 8 || std::memcmp(d.data(), "PHY1", 4) != 0)
                         continue;
                     uint32_t count;
@@ -105,7 +99,7 @@ namespace perlin {
                         }
                         t.emplace(hash, std::move(r));
                     }
-                    std::printf("[physics] block registry: %zu records from %s\n", t.size(), path.c_str());
+                    std::printf("[physics] block registry: %zu records from %s\n", t.size(), "embedded block_physics.bin");
                     break;
                 }
                 if (t.empty())

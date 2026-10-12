@@ -65,7 +65,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ github.workspace }}/vcpkg-archives
-          key: vcpkg-openssl-${{ runner.os }}
+          key: vcpkg-openssl-static-${{ runner.os }}
 
       - name: Install OpenSSL
         if: runner.os == 'Windows'
@@ -74,7 +74,7 @@ jobs:
           VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}/vcpkg-archives
         run: |
           New-Item -ItemType Directory -Force $env:VCPKG_DEFAULT_BINARY_CACHE | Out-Null
-          & "$env:VCPKG_INSTALLATION_ROOT\vcpkg.exe" install openssl:x64-windows
+          & "$env:VCPKG_INSTALLATION_ROOT\vcpkg.exe" install openssl:x64-windows-static
 
       - name: Set up MSVC
         if: runner.os == 'Windows'
@@ -93,7 +93,7 @@ jobs:
         run: >
           cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DPERLIN_BUILD_TESTS=ON
           -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
-          -DOPENSSL_ROOT_DIR="$env:VCPKG_INSTALLATION_ROOT/installed/x64-windows"
+          -DOPENSSL_ROOT_DIR="$env:VCPKG_INSTALLATION_ROOT/installed/x64-windows-static"
 
       - name: Configure (Unix)
         if: runner.os != 'Windows'
@@ -110,6 +110,13 @@ jobs:
 
       - name: Package
         run: cmake --install build --config Release --prefix dist
+
+      - name: Keep debug symbols (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          cp build/Perlin.pdb dist/ 2>/dev/null || true
+          cp build/Perlin.map dist/ 2>/dev/null || true
 
       - name: Upload
         uses: actions/upload-artifact@v4

@@ -225,6 +225,10 @@ void AppPlatform_SDL::HandleEvent(const SDL_Event& e) {
             if (int b = ButtonIndex(e.button.button); b >= 0)
                 input->OnMouseDown(b);
         break;
+    case SDL_EVENT_MOUSE_WHEEL:
+        if (input && cursorCaptured)
+            input->OnMouseWheel(e.wheel.y);
+        break;
     case SDL_EVENT_MOUSE_BUTTON_UP:
         if (input)
             if (int b = ButtonIndex(e.button.button); b >= 0)

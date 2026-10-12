@@ -37,6 +37,7 @@ namespace perlin {
     class BlockModels {
     public:
         bool Load(const std::string& path);
+        bool LoadFromMemory(const std::string& bytes);
         // Replaces / adds a model for a network hash (used by resource-pack geometry).
         bool Loaded() const { return loaded; }
         const std::vector<std::string>& Textures() const { return textures; }

@@ -196,6 +196,10 @@ namespace perlin {
         if (!f)
             return false;
         const std::string text((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+        return LoadServerStatesText(text, path);
+    }
+
+    bool BlockPalette::LoadServerStatesText(const std::string& text, const std::string& path) {
         const auto document = json::Document::Parse(text);
         if (!document)
             return false;

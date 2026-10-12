@@ -1,3 +1,4 @@
+#include "client/Zoom.hpp"
 #include "client/Perlin.hpp"
 #include "client/renderer/chunk/ChunkMesher.hpp"
 #include "client/platform/AppPlatform.hpp"
@@ -170,6 +171,7 @@ namespace perlin {
         camera.farPlane = std::max(static_cast<float>(options.renderDistance * 16 * 4),
                                    static_cast<float>(GraphicsSettings::From(options).cloudRange * 16));
 
+        Zoom zoom(options.zoom);
         auto previous = Clock::now();
         const auto startedAt = previous;
         uint64_t frameCounter = 0;
@@ -211,9 +213,10 @@ namespace perlin {
             inputManager.Poll();
             if (inputManager.Pressed(Action::CyclePerspective))
                 camera.CycleMode();
-            const LookDelta look = inputManager.Look();
+            const LookDelta look = zoom.Update(dt, inputManager.IsDown(Action::Zoom), inputManager.Scroll(),
+                                               inputManager.Look());
             camera.Rotate(look.yaw, look.pitch);
-            camera.fov = options.fov * (options.fovEffects ? player.FovModifier() : 1.0f);
+            camera.fov = zoom.Fov(options.fov * (options.fovEffects ? player.FovModifier() : 1.0f));
             if (sessionReady) {
                 const uint32_t hurts = session->HurtCount();
                 const auto source = session->LatestHurtSource();

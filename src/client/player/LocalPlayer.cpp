@@ -220,7 +220,7 @@ namespace perlin {
             state.vx = state.vy = state.vz = 0;
         }
 
-        if (flying && state.onGround && !in.flyUp && !in.noClip) {
+        if (flying && state.onGround && state.verticalCollision && !in.flyUp && !in.noClip) {
             flying = false;
             sendStopFlying = true;
         }
@@ -356,8 +356,7 @@ namespace perlin {
         if (session.IsFlying() != serverFlying) {
             serverFlying = session.IsFlying();
             if (serverFlying && session.MayFly() && !flying) {
-                flying = true;
-                state.vy = 0;
+                flying = true; // vertical speed carries over and decays, as on the server
             } else if (!serverFlying && flying && !spectator) {
                 flying = false;
             }
@@ -365,7 +364,6 @@ namespace perlin {
         if (session.MayFly() && !spectator && input.Pressed(Action::Jump)) {
             if (now - lastJumpPress <= kDoubleTapWindow) {
                 flying = !flying;
-                state.vy = 0;
                 (flying ? sendStartFlying : sendStopFlying) = true;
                 lastJumpPress = {};
             } else {

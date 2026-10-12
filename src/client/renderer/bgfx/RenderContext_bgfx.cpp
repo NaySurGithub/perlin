@@ -1133,8 +1133,6 @@ namespace perlin {
         bgfx::setViewClear(1, BGFX_CLEAR_COLOR | BGFX_CLEAR_DEPTH, 0xFFFFFFFFu, 1.0f, 0);
         bgfx::touch(1);
 
-        shaders.SetMatrix(shadow.raster);
-        shaders.SetShadow(shadow.sample, shadow.info, true);
         const bgfx::TextureHandle atlas = bgfx::isValid(atlasTex) ? atlasTex : whiteTex;
         const uint64_t state = BGFX_STATE_WRITE_R | BGFX_STATE_WRITE_G | BGFX_STATE_WRITE_B | BGFX_STATE_WRITE_A |
                                BGFX_STATE_WRITE_Z | BGFX_STATE_DEPTH_TEST_LESS;
@@ -1162,6 +1160,9 @@ namespace perlin {
                     std::abs(glm::dot(rel, fwd) - (cz - glm::dot(cam, fwd))) > reachZ + radius)
                     continue;
                 if (!primed) {
+                    // Uniforms are set only where a submit follows (bgfx debug builds assert on double sets).
+                    shaders.SetMatrix(shadow.raster);
+                    shaders.SetShadow(shadow.sample, shadow.info, true);
                     bgfx::setState(state);
                     shaders.Apply(atlas, lightmapTex, samplerFlags, lightmapFlags);
                     primed = true;
@@ -1174,7 +1175,6 @@ namespace perlin {
             if (primed)
                 bgfx::discard(BGFX_DISCARD_ALL);
         }
-        shaders.SetMatrix(mvp);
     }
 
     void RenderContext_bgfx::DrawLayer(RenderLayer layer, ShaderProgram program, const Frustum& frustum,
@@ -1270,7 +1270,7 @@ namespace perlin {
     void RenderContext_bgfx::DrawChunkMeshes(const Frustum& frustum, float camX, float camZ) {
         DrawSky();
         shaders.ApplyFrame();
-        shaders.SetMatrix(mvp);
+        // u_mvp is set exactly once per draw: bgfx debug builds assert on a second setUniform before a submit.
         if (std::getenv("PERLIN_STATS")) {
             static uint32_t frames = 0;
             if (++frames % 240 == 0)

@@ -10,14 +10,15 @@
 #include <regex>
 #include <string>
 
+#include "util/Resources.hpp"
+
 namespace perlin {
     namespace {
         // name + optional state fragment -> palette id, taken from the server state table.
         class Ids {
         public:
             Ids() {
-                std::ifstream in(paths::ExeDir() + "/resources/block_states.json");
-                text.assign(std::istreambuf_iterator<char>(in), {});
+                resources::Read("block_states.json", text);
             }
             uint16_t Get(const std::string& name, const std::string& stateFragment = "") {
                 const std::string key = name + "|" + stateFragment;

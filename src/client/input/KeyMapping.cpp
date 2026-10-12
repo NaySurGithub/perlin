@@ -42,6 +42,8 @@ namespace perlin {
             return "key.screenshot";
         case Action::Sprint:
             return "key.sprint";
+        case Action::Zoom:
+            return "key.zoom";
         default:
             return "";
         }
@@ -60,6 +62,7 @@ namespace perlin {
         set(Action::CyclePerspective, Binding::KeyboardKey(Key::F1 + 4));
         set(Action::Screenshot, Binding::KeyboardKey(Key::F12));
         set(Action::Sprint, Binding::KeyboardKey(Key::Control));
+        set(Action::Zoom, Binding::KeyboardKey('C'));
         return b;
     }
 }

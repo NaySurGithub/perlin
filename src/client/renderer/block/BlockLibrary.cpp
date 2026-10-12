@@ -2,6 +2,7 @@
 #include <algorithm>
 #include "world/level/block/BlockPalette.hpp"
 #include "client/resources/TextureLoader.hpp"
+#include "util/Resources.hpp"
 #include "client/resources/TexturePack.hpp"
 
 #include <cstdio>
@@ -33,9 +34,8 @@ namespace perlin {
         }
 
         bool SeedFromExeDir(const std::string& fileName, const std::string& destPath) {
-            std::string src = paths::ExeDir() + "/resources/" + fileName;
-            std::string content = ReadFile(src);
-            if (content.empty())
+            std::string content;
+            if (!resources::Read(fileName, content) || content.empty())
                 return false;
             WriteFile(destPath, content.c_str());
             return true;
@@ -308,7 +308,7 @@ namespace perlin {
                 std::cout << "[blocks] cannot load " << defs << std::endl;
                 return false;
             }
-            BlockPalette::Instance().LoadServerStates(paths::ExeDir() + "/resources/block_states.json");
+            BlockPalette::Instance().LoadServerStatesText(resources::ReadText("block_states.json"), "block_states.json");
         }
         const std::vector<std::string> allNames = BlockPalette::Instance().AllNames();
         int noTexture = 0;
@@ -858,8 +858,9 @@ namespace perlin {
 
         if (!modelsTried) {
             modelsTried = true;
+            std::string bundled;
             if (!models.Load(perlinPackDir + "/block_models.bin") &&
-                !models.Load(paths::ExeDir() + "/resources/block_models.bin"))
+                !(resources::Read("block_models.bin", bundled) && models.LoadFromMemory(bundled)))
                 std::cout << "[models] block_models.bin not found; using hand-built block shapes" << std::endl;
         }
         if (models.Loaded()) {

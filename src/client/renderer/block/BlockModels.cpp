@@ -29,6 +29,10 @@ namespace perlin {
         if (!f)
             return false;
         std::string data((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+        return LoadFromMemory(data);
+    }
+
+    bool BlockModels::LoadFromMemory(const std::string& data) {
         if (data.size() < 8 || std::memcmp(data.data(), "PBM1", 4) != 0)
             return false;
         Reader r{reinterpret_cast<const unsigned char*>(data.data()) + 4,

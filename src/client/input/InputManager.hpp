@@ -22,6 +22,7 @@ namespace perlin {
         bool Pressed(Action action) const { return pressed.test(static_cast<size_t>(action)); }
         float Axis(Action positive, Action negative) const;
         LookDelta Look() const { return look; }
+        float Scroll() const { return scroll; } // wheel notches this frame (+ = away from the user)
 
         void BeginRebind(Action action) { rebinding = action; }
         bool Rebinding() const { return rebinding.has_value(); }
@@ -35,6 +36,7 @@ namespace perlin {
         std::bitset<kActionCount> pressed;
         std::optional<Action> rebinding;
         LookDelta look;
+        float scroll = 0;
         float lastMouseX = 0, lastMouseY = 0;
         bool haveMouse = false;
     };

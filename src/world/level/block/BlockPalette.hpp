@@ -27,6 +27,7 @@ namespace perlin {
         // Adds the block states of the target server's registry (resources/block_states.json). The vanilla
         // definitions lack states the server adds (stair corners, newer blocks), so those ids stayed unknown.
         bool LoadServerStates(const std::string& path);
+        bool LoadServerStatesText(const std::string& text, const std::string& source);
         bool NamesLoaded() const { return namesLoaded; }
         size_t StateCount() const { return nameByHash.size(); }
 

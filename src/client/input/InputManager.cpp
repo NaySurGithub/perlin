@@ -36,6 +36,7 @@ namespace perlin {
         const float mx = input.MouseX();
         const float my = input.MouseY();
         look = {};
+        scroll = input.TakeWheel();
         float dx = 0, dy = 0;
         input.TakeMouseDelta(dx, dy);
         if (input.Captured()) {

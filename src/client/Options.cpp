@@ -36,6 +36,7 @@ namespace perlin {
             bool shadows = true;
             int heldLight = 0;
             int shadowDistance = 0;
+            ZoomSettings zoom;
             int version = 0;
             std::map<std::string, std::string> keys;
         };
@@ -84,6 +85,7 @@ namespace perlin {
                       o.shadows,
                       o.heldLight,
                       o.shadowDistance,
+                      o.zoom,
                       0,
                       {}};
         auto parsed = json::Read<Stored>(text);
@@ -114,6 +116,14 @@ namespace perlin {
         o.shadows = stored.shadows;
         o.heldLight = std::clamp(stored.heldLight, 0, 15);
         o.shadowDistance = std::clamp(stored.shadowDistance, 0, 256);
+        o.zoom = stored.zoom;
+        o.zoom.inSeconds = std::clamp(o.zoom.inSeconds, 0.0f, 5.0f);
+        o.zoom.outSeconds = std::clamp(o.zoom.outSeconds, 0.0f, 5.0f);
+        o.zoom.minLevel = std::clamp(o.zoom.minLevel, 0.005f, 1.0f);
+        o.zoom.maxLevel = std::clamp(o.zoom.maxLevel, o.zoom.minLevel, 1.0f);
+        o.zoom.level = std::clamp(o.zoom.level, o.zoom.minLevel, o.zoom.maxLevel);
+        o.zoom.scrollStep = std::clamp(o.zoom.scrollStep, 0.0f, 0.9f);
+        o.zoom.smoothing = std::clamp(o.zoom.smoothing, 0.0f, 100.0f);
         if (stored.version < kOptionsVersion) {
             // Options saved by older builds carry the old vsync-on / 60 fps cap defaults; move them to the new ones once.
             o.vsync = Options().vsync;
@@ -156,6 +166,7 @@ namespace perlin {
                       shadows,
                       heldLight,
                       shadowDistance,
+                      zoom,
                       kOptionsVersion,
                       {}};
         for (size_t i = 0; i < kActionCount; i++)

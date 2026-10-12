@@ -4,6 +4,21 @@
 #include <string>
 
 namespace perlin {
+    // Zoom (hold the zoom key). Every value can be changed in options.json under "zoom".
+    struct ZoomSettings {
+        float inSeconds = 0.2f;      // time to zoom in after pressing the key
+        float outSeconds = 0.2f;     // time to ease back out after releasing it
+        std::string easing = "smooth"; // linear | smooth | cubic | quint | sine
+        float level = 0.25f;         // field-of-view scale on a fresh press (0.25 = 4x zoom)
+        float minLevel = 0.02f;      // farthest the wheel can zoom in (0.02 = 50x)
+        float maxLevel = 1.0f;       // farthest the wheel can zoom out
+        float scrollStep = 0.15f;    // zoom change per wheel notch (0.15 = 15%)
+        bool resetOnPress = true;    // false keeps the wheel-adjusted level between presses
+        bool cinematic = true;       // smooth the camera while zoomed
+        float smoothing = 9.0f;      // cinematic glide speed (higher = snappier, 0 = no smoothing)
+        bool scaleSensitivity = true;// slower aiming at higher zoom
+    };
+
     struct Options {
         int maxFps = 0;      // 0 = uncapped (only used with vsync off)
         bool vsync = false;
@@ -27,6 +42,7 @@ namespace perlin {
         bool shadows = true;      // shader packs that provide shadows
         int heldLight = 0;        // dynamic light level of the item in hand (0-15), shader packs only
         int shadowDistance = 0;   // blocks; 0 = the pack's default
+        ZoomSettings zoom;
         std::string texturePack;  // file or folder name inside <data>/texturepacks; empty = default textures
         KeyBindings keys = DefaultBindings();
 

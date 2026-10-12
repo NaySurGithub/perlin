@@ -1,6 +1,7 @@
 #include <cstdio>
 #include "client/renderer/LevelRenderer.hpp"
 #include "client/resources/BedrockSamples.hpp"
+#include "util/Resources.hpp"
 #include "client/resources/TextureLoader.hpp"
 #include "client/resources/TexturePack.hpp"
 #include <iostream>
@@ -51,7 +52,7 @@ namespace perlin {
         const std::string path = packDir + "/light.json";
         std::string rules = ReadText(path);
         if (rules.empty()) {
-            rules = ReadText(paths::ExeDir() + "/resources/light.json");
+            rules = resources::ReadText("light.json");
             if (!rules.empty()) {
                 std::error_code ec;
                 std::filesystem::create_directories(packDir, ec);
