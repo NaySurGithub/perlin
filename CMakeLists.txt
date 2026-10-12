@@ -73,11 +73,10 @@ CPMAddPackage(
     NAME libdatachannel
     GITHUB_REPOSITORY paullouisageneau/libdatachannel
     GIT_TAG v0.23.2
+    EXCLUDE_FROM_ALL YES
     OPTIONS "USE_GNUTLS OFF" "USE_NICE OFF" "NO_TESTS ON" "NO_EXAMPLES ON"
 )
 set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
-# libdatachannel's install rules want its shared target to exist, but only the static one is linked: don't build the shared one.
-set_target_properties(datachannel PROPERTIES EXCLUDE_FROM_ALL ON)
 
 CPMAddPackage(NAME miniz GITHUB_REPOSITORY richgel999/miniz GIT_TAG 3.0.2)
 
