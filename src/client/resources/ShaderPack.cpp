@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -80,6 +81,7 @@ namespace perlin {
         std::unordered_map<std::string, mz_uint> index; // lower-case "<backend>/<shader>.bin" -> entry
         std::set<std::string> backends;
         std::string label;
+        std::string meta; // pack.json text
         mutable std::mutex mutex;
 
         void Reset() {
@@ -92,6 +94,7 @@ namespace perlin {
             index.clear();
             backends.clear();
             label.clear();
+            meta.clear();
         }
     };
 
@@ -211,6 +214,7 @@ namespace perlin {
                 }
             }
         }
+        impl->meta = meta;
         std::string title = JsonString(meta, "name");
         impl->label = title.empty() ? name : title;
         const std::string desc = JsonString(meta, "description");
@@ -219,6 +223,46 @@ namespace perlin {
             std::cout << ' ' << b;
         std::cout << ")" << std::endl;
         return true;
+    }
+
+    namespace {
+        // Value text following `"key":` in a flat scan of the manifest (nested objects are fine: keys are unique).
+        std::string RawValue(const std::string& text, const std::string& key) {
+            const size_t k = text.find("\"" + key + "\"");
+            if (k == std::string::npos)
+                return {};
+            size_t i = text.find(':', k);
+            if (i == std::string::npos)
+                return {};
+            i++;
+            while (i < text.size() && std::isspace(static_cast<unsigned char>(text[i])))
+                i++;
+            size_t j = i;
+            while (j < text.size() && text[j] != ',' && text[j] != '}' && text[j] != '\n' && text[j] != ' ')
+                j++;
+            return text.substr(i, j - i);
+        }
+    }
+
+    bool ShaderPack::Feature(const std::string& name) const {
+        std::lock_guard lock(impl->mutex);
+        return RawValue(impl->meta, name) == "true";
+    }
+
+    bool ShaderPack::Flag(const std::string& name, bool fallback) const {
+        std::lock_guard lock(impl->mutex);
+        const std::string v = RawValue(impl->meta, name);
+        return v == "true" ? true : (v == "false" ? false : fallback);
+    }
+
+    double ShaderPack::Number(const std::string& name, double fallback) const {
+        std::lock_guard lock(impl->mutex);
+        const std::string v = RawValue(impl->meta, name);
+        if (v.empty())
+            return fallback;
+        char* end = nullptr;
+        const double d = std::strtod(v.c_str(), &end);
+        return end == v.c_str() ? fallback : d;
     }
 
     bool ShaderPack::Read(const std::string& backend, const std::string& shader, std::vector<char>& out) const {

@@ -50,7 +50,10 @@ namespace perlin {
             {"vs_celestial", "fs_celestial"},
             {"vs_cloud", "fs_cloud"},
             {"vs_screen", "fs_screen"},
+            {"vs_shadow", "fs_shadow"},
+            {"vs_shadow", "fs_shadow_cutout"},
         };
+        constexpr size_t kPackOnlyFrom = static_cast<size_t>(ShaderProgram::Shadow);
 
         const char* RendererDirectory(bgfx::RendererType::Enum type) {
             switch (type) {
@@ -93,6 +96,9 @@ namespace perlin {
         const bool packActive = ShaderPack::Instance().Active();
         for (size_t i = 0; i < programs.size(); i++) {
             const ProgramSource& source = kSources[i];
+            programs[i] = BGFX_INVALID_HANDLE;
+            if (i >= kPackOnlyFrom && !packActive)
+                continue;
             // A pack overrides a program only when it supplies both of its stages; otherwise the built-in pair is
             // used (the stages share varyings, so mixing them would not link).
             if (packActive) {
@@ -111,6 +117,8 @@ namespace perlin {
                         bgfx::destroy(fragment);
                 }
             }
+            if (i >= kPackOnlyFrom)
+                continue; // no built-in version: the feature is simply off
             bgfx::ShaderHandle vertex = Load(source.vertex, false);
             bgfx::ShaderHandle fragment = Load(source.fragment, false);
             programs[i] = bgfx::createProgram(vertex, fragment, true);
@@ -136,6 +144,12 @@ namespace perlin {
         cloudColor = bgfx::createUniform("u_cloudColor", bgfx::UniformType::Vec4);
         sunDirection = bgfx::createUniform("u_sunDir", bgfx::UniformType::Vec4);
         timeUniform = bgfx::createUniform("u_time", bgfx::UniformType::Vec4);
+        heldLight = bgfx::createUniform("u_heldLight", bgfx::UniformType::Vec4);
+        tiles = bgfx::createUniform("u_tiles", bgfx::UniformType::Vec4);
+        skyParams = bgfx::createUniform("u_skyParams", bgfx::UniformType::Vec4);
+        shadowMatrix = bgfx::createUniform("u_shadowMtx", bgfx::UniformType::Mat4);
+        shadowInfo = bgfx::createUniform("u_shadowInfo", bgfx::UniformType::Vec4);
+        shadowSampler = bgfx::createUniform("s_shadow", bgfx::UniformType::Sampler);
         return true;
     }
 
@@ -147,7 +161,8 @@ namespace perlin {
         }
         for (bgfx::UniformHandle* handle : {&atlasSampler, &lightmapSampler, &skySampler, &mvp, &camera, &fogColor,
                                             &fogEnvironment, &fogSky, &modulator, &textureInfo, &chunk, &cloudOffset,
-                                            &cloudColor, &sunDirection, &timeUniform}) {
+                                            &cloudColor, &sunDirection, &timeUniform, &heldLight, &tiles, &skyParams,
+                                            &shadowMatrix, &shadowInfo, &shadowSampler}) {
             if (bgfx::isValid(*handle))
                 bgfx::destroy(*handle);
             *handle = BGFX_INVALID_HANDLE;
@@ -176,6 +191,14 @@ namespace perlin {
         timeValue[1] = params.sky.rainBrightness;
         timeValue[2] = params.sky.starBrightness;
         timeValue[3] = 0.0f;
+        skyParamsValue[0] = params.cloud.height;
+        skyParamsValue[1] = std::floor(params.sky.moonPhase);
+        skyParamsValue[2] = params.sky.enabled ? 1.0f : 0.0f;
+        skyParamsValue[3] = 0.0f;
+        heldLightValue[0] = params.heldLight;
+        tilesValue[0] = params.waterTile;
+        tilesValue[1] = params.lavaTile;
+        tilesValue[2] = params.waterFlowTile;
     }
 
     void ShaderManager::ApplyFrame() const {
@@ -186,6 +209,9 @@ namespace perlin {
         bgfx::setUniform(textureInfo, textureInfoValue);
         bgfx::setUniform(sunDirection, sunDirectionValue);
         bgfx::setUniform(timeUniform, timeValue);
+        bgfx::setUniform(heldLight, heldLightValue);
+        bgfx::setUniform(tiles, tilesValue);
+        bgfx::setUniform(skyParams, skyParamsValue);
         SetChunkVisibility(1.0f);
     }
 
@@ -211,6 +237,17 @@ namespace perlin {
 
     void ShaderManager::BindSky(bgfx::TextureHandle texture, uint32_t flags) const {
         bgfx::setTexture(2, skySampler, texture, flags);
+    }
+
+    void ShaderManager::SetShadow(const float sample[16], const float info[4], bool enabled) const {
+        bgfx::setUniform(shadowMatrix, sample);
+        const float value[4] = {info[0], info[1], info[2], enabled ? 1.0f : 0.0f};
+        bgfx::setUniform(shadowInfo, value);
+    }
+
+    void ShaderManager::BindShadow(bgfx::TextureHandle texture) const {
+        bgfx::setTexture(2, shadowSampler, texture, BGFX_SAMPLER_MIN_POINT | BGFX_SAMPLER_MAG_POINT |
+                                                       BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP);
     }
 
     void ShaderManager::Apply(bgfx::TextureHandle atlas, bgfx::TextureHandle lightmap, uint32_t atlasFlags,

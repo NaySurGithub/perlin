@@ -5,6 +5,7 @@
 #include "client/renderer/Fog.hpp"
 #include "client/player/BlockCollision.hpp"
 #include "client/player/DamageEffect.hpp"
+#include "client/PreviewWorld.hpp"
 #include "client/resources/BedrockSamples.hpp"
 #include "util/Paths.hpp"
 
@@ -92,7 +93,8 @@ namespace perlin {
 
         workers = std::make_unique<ThreadPool>(2);
         workers->Submit([this] { BedrockSamples::Ensure(options.bedrockSamplesDir); });
-        Connect();
+        if (!std::getenv("PERLIN_PREVIEW"))
+            Connect();
 
         renderRunning = true;
         renderThread = std::thread(&Perlin::RenderThreadMain, this);
@@ -175,6 +177,27 @@ namespace perlin {
         auto titleAt = previous;
         auto animationAt = previous;
         uint64_t animationStep = 0;
+
+        // Developer preview (PERLIN_PREVIEW=1): generated world, fixed camera/time, optional screenshot and exit.
+        const bool preview = std::getenv("PERLIN_PREVIEW") != nullptr;
+        std::unique_ptr<Level> previewLevel;
+        double previewTicks = kNoonTick;
+        std::string previewShot;
+        double previewWait = 15.0;
+        int previewShotFrames = -1;
+        auto previewReadyAt = previous;
+        size_t previewLastMeshed = 0;
+        if (preview) {
+            camera.x = 24.0f; camera.y = 74.0f; camera.z = -22.0f; camera.yaw = 100.0f; camera.pitch = -6.0f;
+            if (const char* c = std::getenv("PERLIN_PREVIEW_CAM"))
+                std::sscanf(c, "%f,%f,%f,%f,%f", &camera.x, &camera.y, &camera.z, &camera.yaw, &camera.pitch);
+            if (const char* t = std::getenv("PERLIN_PREVIEW_TIME"))
+                previewTicks = std::atof(t);
+            if (const char* t = std::getenv("PERLIN_PREVIEW_SHOT"))
+                previewShot = t;
+            if (const char* t = std::getenv("PERLIN_PREVIEW_WAIT"))
+                previewWait = std::atof(t);
+        }
         int frames = 0;
 
         while (renderRunning && platform->isRunning) {
@@ -226,9 +249,25 @@ namespace perlin {
             }
             levelRenderer->ReloadAssetsIfNeeded();
 
-            double worldTicks = kNoonTick;
+            double worldTicks = preview ? previewTicks : kNoonTick;
             if (live)
                 live->GetWorldTicks(worldTicks);
+            if (preview && !previewLevel) {
+                static auto lastNote = frameStart;
+                if (frameStart - lastNote > std::chrono::seconds(3)) {
+                    lastNote = frameStart;
+                    std::cout << "[preview] waiting: ready=" << levelRenderer->Blocks().Ready()
+                              << " complete=" << levelRenderer->Blocks().Complete() << std::endl;
+                }
+            }
+            if (preview && !previewLevel && levelRenderer->Blocks().Ready()) {
+                auto built = std::make_unique<Level>();
+                if (BuildPreviewWorld(*built, 7)) {
+                    previewLevel = std::move(built);
+                    previewReadyAt = frameStart;
+                    std::cout << "[preview] world built" << std::endl;
+                }
+            }
 
             // Camera inside water: fog, colour and water vision follow Java's WaterFogEnvironment.
             bool underwater = false;
@@ -309,6 +348,13 @@ namespace perlin {
             }
             const FogState fog = ComputeFog(env, fogInput);
 
+            if (preview) {
+                static int once = 0;
+                if (once++ == 200)
+                    std::cout << "[preview] fog env " << fog.environmentalStart << ".." << fog.environmentalEnd
+                              << " rd " << fog.renderDistanceStart << ".." << fog.renderDistanceEnd << " sky "
+                              << fog.skyEnd << " rdchunks " << options.renderDistance << " ticks " << worldTicks << std::endl;
+            }
             FrameParams params{};
             std::copy_n(glm::value_ptr(viewProjection), 16, params.viewProjection);
             std::copy_n(glm::value_ptr(camera.SkyViewProjection()), 16, params.skyViewProjection);
@@ -347,6 +393,21 @@ namespace perlin {
             params.screenTint[2] = 0.0f;
             params.screenTint[3] = options.damageTint ? damage.TintAlpha() : 0.0f; // vanilla overlay: constant while hurt
 
+            {
+                static float waterTile = -1, flowTile = -1, lavaTile = -1;
+                static int tileScan = 0;
+                if ((tileScan++ % 120) == 0 && levelRenderer->Blocks().Ready()) {
+                    waterTile = static_cast<float>(levelRenderer->Blocks().TileContaining("water_still"));
+                    flowTile = static_cast<float>(levelRenderer->Blocks().TileContaining("water_flow"));
+                    lavaTile = static_cast<float>(levelRenderer->Blocks().TileContaining("lava_still"));
+                }
+                params.waterTile = waterTile;
+                params.waterFlowTile = flowTile;
+                params.lavaTile = lavaTile;
+                params.heldLight = static_cast<float>(options.heldLight);
+                if (const char* h = std::getenv("PERLIN_HELDLIGHT"))
+                    params.heldLight = static_cast<float>(std::atoi(h));
+            }
             params.timeSeconds = std::chrono::duration<float>(frameStart - startedAt).count();
             params.frameIndex = static_cast<uint32_t>(frameCounter++);
 
@@ -364,6 +425,24 @@ namespace perlin {
             if (live) {
                 levelRenderer->Update(&live->NetLevel(), camera.x, camera.z, frustum);
                 levelRenderer->Render(frustum, camera.x, camera.z);
+            } else if (previewLevel) {
+                levelRenderer->Update(previewLevel.get(), camera.x, camera.z, frustum);
+                levelRenderer->Render(frustum, camera.x, camera.z);
+                if (!previewShot.empty() && previewShotFrames < 0) {
+                    // Wait until meshing has settled, then capture.
+                    const size_t meshed = levelRenderer->MeshedChunks();
+                    if (meshed != previewLastMeshed) {
+                        previewLastMeshed = meshed;
+                        previewReadyAt = frameStart;
+                    }
+                    if (std::chrono::duration<double>(frameStart - previewReadyAt).count() > previewWait) {
+                        renderer->RequestScreenshot(previewShot);
+                        previewShotFrames = 0;
+                    }
+                } else if (previewShotFrames >= 0 && ++previewShotFrames > 6) {
+                    std::cout << "[preview] screenshot saved, meshed chunks " << levelRenderer->MeshedChunks() << std::endl;
+                    platform->isRunning = false;
+                }
             }
             if (inputManager.Pressed(Action::Screenshot))
                 TakeScreenshot();

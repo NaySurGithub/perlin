@@ -53,6 +53,10 @@ namespace perlin {
         bool crosshair = false; // draw the inverting crosshair at the screen centre
         float screenTint[4]; // full-screen colour overlay (damage flash); alpha 0 draws nothing
         uint32_t frameIndex;
+        float heldLight = 0.0f;      // block light level of the item in hand (0 = none), for dynamic lighting
+        float waterTile = -1.0f;     // atlas layer of the water texture, so shader packs can recognise water
+        float lavaTile = -1.0f;
+        float waterFlowTile = -1.0f;
         uint8_t lightmap[kLightmapBytes];
     };
 

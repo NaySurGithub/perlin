@@ -64,6 +64,8 @@ namespace perlin {
         TileAlpha AlphaOf(int tile) const;
         float SaturationOf(int tile) const;
         std::string TilePathOf(int tile) const;
+        // Atlas layer of the first loaded texture whose path contains `part` (-1 when none is loaded).
+        int TileContaining(const std::string& part) const;
         void PollAnimation(uint64_t step, const std::function<void(int tile, const uint8_t* rgba)>& emit);
 
     private:

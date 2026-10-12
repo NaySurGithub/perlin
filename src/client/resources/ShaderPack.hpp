@@ -18,6 +18,10 @@ namespace perlin {
         // Reads <backend>/<shader>.bin. False when the pack does not contain it.
         bool Read(const std::string& backend, const std::string& shader, std::vector<char>& out) const;
         std::string Description() const;
+        // pack.json values: "features": {"shadows": true, ...} and plain numbers such as "shadowMapSize".
+        bool Feature(const std::string& name) const;
+        bool Flag(const std::string& name, bool fallback) const; // true/false in pack.json, `fallback` when absent
+        double Number(const std::string& name, double fallback) const;
 
     private:
         ShaderPack();

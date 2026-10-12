@@ -227,7 +227,10 @@ namespace perlin {
         moonBuffer = upload(BuildMoonQuads(), textureLayout);
         quadIndices = uploadIndices(QuadIndices(1));
 
-        if (!shaders.Initialize()) {
+        const bool shadersOk = shaders.Initialize();
+        if (shadersOk)
+            InitShadows(options);
+        if (!shadersOk) {
             std::cout << "[bgfx] shader program creation failed for "
                       << bgfx::getRendererName(bgfx::getRendererType()) << std::endl;
             return false;
@@ -807,6 +810,8 @@ namespace perlin {
     }
 
     void RenderContext_bgfx::DrawClouds() {
+        if (!ShaderPack::Instance().Flag("vanillaClouds", true))
+            return; // the pack draws its own clouds in the sky shader
         const CloudDraw& clouds = frame.cloud;
         if (!clouds.enabled || cloudTexture.solid.empty())
             return;
@@ -975,6 +980,165 @@ namespace perlin {
         }
     }
 
+    void RenderContext_bgfx::InitShadows(const Options& options) {
+        shadow = ShadowState{};
+        ShaderPack& pack = ShaderPack::Instance();
+        if (!pack.Active() || !pack.Feature("shadows") || !options.shadows || std::getenv("PERLIN_NO_SHADOWS"))
+            return;
+        if (!shaders.Has(ShaderProgram::Shadow) || !shaders.Has(ShaderProgram::ShadowCutout)) {
+            std::cout << "[shadows] the pack asks for shadows but has no shadow shaders for this backend" << std::endl;
+            return;
+        }
+        const bgfx::Caps* caps = bgfx::getCaps();
+        if (!(caps->formats[bgfx::TextureFormat::R32F] & BGFX_CAPS_FORMAT_TEXTURE_FRAMEBUFFER)) {
+            std::cout << "[shadows] float render targets are not supported; shadows off" << std::endl;
+            return;
+        }
+        int size = static_cast<int>(pack.Number("shadowMapSize", 2048));
+        size = std::clamp(size, 512, 4096);
+        shadow.size = size;
+        shadow.distance = options.shadowDistance > 0 ? static_cast<float>(options.shadowDistance)
+                                                     : static_cast<float>(pack.Number("shadowDistance", 80));
+        shadow.distance = std::clamp(shadow.distance, 24.0f, 256.0f);
+        const uint64_t rt = BGFX_TEXTURE_RT | BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP | BGFX_SAMPLER_MIN_POINT |
+                            BGFX_SAMPLER_MAG_POINT;
+        shadow.color = bgfx::createTexture2D(size, size, false, 1, bgfx::TextureFormat::R32F, rt);
+        bgfx::TextureHandle depth = bgfx::createTexture2D(size, size, false, 1, bgfx::TextureFormat::D24S8,
+                                                          BGFX_TEXTURE_RT_WRITE_ONLY);
+        bgfx::TextureHandle attachments[2] = {shadow.color, depth};
+        shadow.fb = bgfx::createFrameBuffer(2, attachments, true);
+        if (!bgfx::isValid(shadow.fb) || !bgfx::isValid(shadow.color)) {
+            DestroyShadows();
+            return;
+        }
+        shadow.enabled = true;
+        std::cout << "[shadows] " << size << "x" << size << " map, " << shadow.distance << " blocks" << std::endl;
+    }
+
+    void RenderContext_bgfx::DestroyShadows() {
+        if (bgfx::isValid(shadow.fb))
+            bgfx::destroy(shadow.fb); // also destroys its textures
+        shadow = ShadowState{};
+    }
+
+    void RenderContext_bgfx::RenderShadows(float camX, float camY, float camZ) {
+        shadow.active = false;
+        if (!shadow.enabled || !frame.sky.enabled)
+            return;
+        const float sunA = frame.sky.sunAngle;
+        glm::vec3 L(-std::sin(sunA), std::cos(sunA), 0.0f); // towards the sun
+        if (L.y < 0.0f)
+            L = -L; // the moon casts the night shadows
+        if (L.y < 0.03f)
+            return; // too grazing: the shader fades shadows out before this
+        // Slightly tilt so the basis is never degenerate when the sun is overhead.
+        const glm::vec3 fwd = -L;
+        const glm::vec3 upRef = std::abs(fwd.y) > 0.99f ? glm::vec3(0, 0, 1) : glm::vec3(0, 1, 0);
+        const glm::vec3 right = glm::normalize(glm::cross(upRef, fwd));
+        const glm::vec3 up = glm::cross(fwd, right);
+
+        const float R = shadow.distance;
+        const float D = R + 80.0f; // depth reaches past the box for tall casters
+        const float texel = 2.0f * R / static_cast<float>(shadow.size);
+        const float step = texel * 32.0f; // re-render only after the camera moved a few blocks
+        const glm::vec3 cam(camX, camY, camZ);
+        const float cx = std::floor(glm::dot(cam, right) / step) * step;
+        const float cy = std::floor(glm::dot(cam, up) / step) * step;
+        const float cz = std::floor(glm::dot(cam, fwd) / step) * step;
+
+        float S[16] = {};
+        auto col = [&](int c, int r) -> float& { return S[c * 4 + r]; };
+        for (int j = 0; j < 3; j++) {
+            col(j, 0) = right[j] / (2.0f * R);
+            col(j, 1) = up[j] / (2.0f * R);
+            col(j, 2) = fwd[j] / (2.0f * D);
+        }
+        col(3, 0) = 0.5f - cx / (2.0f * R);
+        col(3, 1) = 0.5f - cy / (2.0f * R);
+        col(3, 2) = 0.5f - cz / (2.0f * D);
+        col(3, 3) = 1.0f;
+        std::memcpy(shadow.sample, S, sizeof(S));
+
+        // Rasterisation matrix: texture coordinate -> clip space for this backend.
+        const bgfx::Caps* caps = bgfx::getCaps();
+        const float sy = caps->originBottomLeft ? 1.0f : -1.0f;
+        const float sz = caps->homogeneousDepth ? 2.0f : 1.0f;
+        const float tz = caps->homogeneousDepth ? -1.0f : 0.0f;
+        float M[16];
+        for (int c = 0; c < 4; c++) {
+            const float u = shadow.sample[c * 4 + 0], v = shadow.sample[c * 4 + 1], d = shadow.sample[c * 4 + 2],
+                        w = shadow.sample[c * 4 + 3];
+            M[c * 4 + 0] = 2.0f * u - (c == 3 ? 1.0f : 0.0f);
+            M[c * 4 + 1] = sy * (2.0f * v - (c == 3 ? 1.0f : 0.0f));
+            M[c * 4 + 2] = sz * d + (c == 3 ? tz : 0.0f);
+            M[c * 4 + 3] = w;
+        }
+        std::memcpy(shadow.raster, M, sizeof(M));
+        shadow.info[0] = 1.0f / static_cast<float>(shadow.size);
+        shadow.info[1] = 2.0f * R;
+        shadow.info[2] = 2.0f * D;
+        shadow.active = true;
+
+        // Reuse the previous map while nothing relevant changed.
+        const int64_t key[6] = {static_cast<int64_t>(std::llround(cx / step)), static_cast<int64_t>(std::llround(cy / step)),
+                                static_cast<int64_t>(std::llround(cz / step)),
+                                static_cast<int64_t>(std::llround(L.x * 500.0f)),
+                                static_cast<int64_t>(std::llround(L.y * 500.0f)),
+                                static_cast<int64_t>(meshGeneration)};
+        if (std::memcmp(key, shadow.key, sizeof(key)) == 0 && ++shadow.framesSince < 600)
+            return;
+        std::memcpy(shadow.key, key, sizeof(key));
+        shadow.framesSince = 0;
+
+        bgfx::setViewFrameBuffer(1, shadow.fb);
+        bgfx::setViewRect(1, 0, 0, static_cast<uint16_t>(shadow.size), static_cast<uint16_t>(shadow.size));
+        bgfx::setViewClear(1, BGFX_CLEAR_COLOR | BGFX_CLEAR_DEPTH, 0xFFFFFFFFu, 1.0f, 0);
+        bgfx::touch(1);
+
+        shaders.SetMatrix(shadow.raster);
+        shaders.SetShadow(shadow.sample, shadow.info, true);
+        const bgfx::TextureHandle atlas = bgfx::isValid(atlasTex) ? atlasTex : whiteTex;
+        const uint64_t state = BGFX_STATE_WRITE_R | BGFX_STATE_WRITE_G | BGFX_STATE_WRITE_B | BGFX_STATE_WRITE_A |
+                               BGFX_STATE_WRITE_Z | BGFX_STATE_DEPTH_TEST_LESS;
+        constexpr uint8_t kKeep = BGFX_DISCARD_INDEX_BUFFER | BGFX_DISCARD_VERTEX_STREAMS;
+        const float reachXY = R * 1.0f, reachZ = D;
+        struct Pass {
+            RenderLayer layer;
+            ShaderProgram program;
+        };
+        const Pass passes[3] = {{RenderLayer::Solid, ShaderProgram::Shadow},
+                                {RenderLayer::Cutout, ShaderProgram::ShadowCutout},
+                                {RenderLayer::CutoutCull, ShaderProgram::ShadowCutout}};
+        for (const Pass& pass : passes) {
+            const size_t slot = static_cast<size_t>(pass.layer);
+            bool primed = false;
+            for (const auto& entry : gpuChunks) {
+                const GpuChunk& g = entry.second;
+                if (g.page < 0 || !g.layerCount[slot])
+                    continue;
+                const glm::vec3 centre(g.cx * 16.0f + 8.0f, (g.minY + g.maxY) * 0.5f, g.cz * 16.0f + 8.0f);
+                const float radius = std::sqrt(128.0f + 0.25f * (g.maxY - g.minY) * (g.maxY - g.minY));
+                const glm::vec3 rel = centre - cam;
+                if (std::abs(glm::dot(rel, right) - (cx - glm::dot(cam, right))) > reachXY + radius ||
+                    std::abs(glm::dot(rel, up) - (cy - glm::dot(cam, up))) > reachXY + radius ||
+                    std::abs(glm::dot(rel, fwd) - (cz - glm::dot(cam, fwd))) > reachZ + radius)
+                    continue;
+                if (!primed) {
+                    bgfx::setState(state);
+                    shaders.Apply(atlas, lightmapTex, samplerFlags, lightmapFlags);
+                    primed = true;
+                }
+                const Page& pg = pages[g.page];
+                bgfx::setVertexBuffer(0, pg.vb, g.vOff, g.vCount);
+                bgfx::setIndexBuffer(pg.ib, g.iOff + g.layerBase[slot], g.layerCount[slot]);
+                bgfx::submit(1, shaders.Program(pass.program), 0, kKeep);
+            }
+            if (primed)
+                bgfx::discard(BGFX_DISCARD_ALL);
+        }
+        shaders.SetMatrix(mvp);
+    }
+
     void RenderContext_bgfx::DrawLayer(RenderLayer layer, ShaderProgram program, const Frustum& frustum,
                                        const std::vector<VisibleChunk>& chunks, bgfx::TextureHandle atlas) {
         const size_t slot = static_cast<size_t>(layer);
@@ -999,6 +1163,8 @@ namespace perlin {
                 if (!primed) {
                     bgfx::setState(state);
                     shaders.Apply(atlas, lightmapTex, samplerFlags, lightmapFlags);
+                    if (shadow.active)
+                        shaders.BindShadow(shadow.color);
                     primed = true;
                 }
                 bgfx::submit(0, shaders.Program(program), 0, kKeep);
@@ -1070,6 +1236,16 @@ namespace perlin {
                   [](const VisibleChunk& a, const VisibleChunk& b) { return a.distance < b.distance; });
 
         const bgfx::TextureHandle atlas = bgfx::isValid(atlasTex) ? atlasTex : whiteTex;
+        RenderShadows(frame.cameraPosition[0], frame.cameraPosition[1], frame.cameraPosition[2]);
+        {
+            // The shadow view must run before the scene view.
+            const uint16_t order[2] = {1, 0};
+            if (shadow.enabled)
+                bgfx::setViewOrder(0, 2, order);
+            const float off[4] = {0, 0, 0, 0};
+            shaders.SetShadow(shadow.sample, shadow.active ? shadow.info : off, shadow.active);
+            shaders.SetMatrix(mvp);
+        }
         DrawLayer(RenderLayer::Solid, ShaderProgram::TerrainSolid, frustum, visible, atlas);
         DrawLayer(RenderLayer::Cutout, ShaderProgram::TerrainCutout, frustum, visible, atlas);
         DrawLayer(RenderLayer::CutoutCull, ShaderProgram::TerrainCutout, frustum, visible, atlas);
@@ -1119,6 +1295,7 @@ namespace perlin {
             return;
         gpuChunks.clear();
         DestroyPages();
+        DestroyShadows();
         if (bgfx::isValid(atlasTex))
             bgfx::destroy(atlasTex);
         if (bgfx::isValid(whiteTex))

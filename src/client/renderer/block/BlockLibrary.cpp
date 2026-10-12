@@ -119,6 +119,13 @@ namespace perlin {
         }
     }
 
+    int BlockLibrary::TileContaining(const std::string& part) const {
+        for (const auto& [path, tile] : tileByPng)
+            if (path.find(part) != std::string::npos)
+                return tile;
+        return -1;
+    }
+
     int BlockLibrary::FetchTile(const std::string& pngRelPath, const std::string& vanillaRpRoot) {
         auto it = tileByPng.find(pngRelPath);
         if (it != tileByPng.end())
@@ -280,21 +287,27 @@ namespace perlin {
 
         std::string vanillaBlocks = ReadFile(vanillaRpRoot + "/blocks.json");
         std::string terrainTex = ReadFile(vanillaRpRoot + "/textures/terrain_texture.json");
-        if (vanillaBlocks.empty() || terrainTex.empty())
+        if (vanillaBlocks.empty() || terrainTex.empty()) {
+            std::cout << "[blocks] cannot read blocks.json/terrain_texture.json under " << vanillaRpRoot << std::endl;
             return false;
+        }
 
         const auto blocksDocument = json::Document::Parse(vanillaBlocks, true);
         const auto terrainDocument = json::Document::Parse(terrainTex, true);
-        if (!blocksDocument || !terrainDocument)
+        if (!blocksDocument || !terrainDocument) {
+            std::cout << "[blocks] cannot parse vanilla blocks.json/terrain_texture.json" << std::endl;
             return false;
+        }
         const json::View vBlocks = blocksDocument->root();
         const json::View vTerrain = terrainDocument->root();
         const json::View texData = vTerrain.contains("texture_data") ? vTerrain["texture_data"] : vTerrain;
 
         if (!BlockPalette::Instance().NamesLoaded()) {
             std::string defs = vanillaRpRoot + "/../metadata/vanilladata_modules/mojang-blocks.json";
-            if (!BlockPalette::Instance().LoadVanillaDefinitions(defs))
+            if (!BlockPalette::Instance().LoadVanillaDefinitions(defs)) {
+                std::cout << "[blocks] cannot load " << defs << std::endl;
                 return false;
+            }
             BlockPalette::Instance().LoadServerStates(paths::ExeDir() + "/resources/block_states.json");
         }
         const std::vector<std::string> allNames = BlockPalette::Instance().AllNames();

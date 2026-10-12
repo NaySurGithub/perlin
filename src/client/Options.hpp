@@ -24,6 +24,9 @@ namespace perlin {
         bool fovEffects = true; // sprinting/flying/speed change the field of view (Java "FOV Effects")
         int damageTilt = 100;     // hurt camera shake strength: 0 none, 100 vanilla
         bool damageTint = false;  // optional red screen flash; the reference client has none in first person
+        bool shadows = true;      // shader packs that provide shadows
+        int heldLight = 0;        // dynamic light level of the item in hand (0-15), shader packs only
+        int shadowDistance = 0;   // blocks; 0 = the pack's default
         std::string texturePack;  // file or folder name inside <data>/texturepacks; empty = default textures
         KeyBindings keys = DefaultBindings();
 

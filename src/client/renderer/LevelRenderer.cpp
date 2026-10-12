@@ -134,8 +134,11 @@ namespace perlin {
 
         const std::string packDir = options.resourcePackDir + "/Perlin";
         const std::string vanillaDir = options.bedrockSamplesDir + "/repo/resource_pack";
-        if (!BedrockSamples::Available(options.bedrockSamplesDir))
+        if (!BedrockSamples::Available(options.bedrockSamplesDir)) {
+            if (std::getenv("PERLIN_PREVIEW"))
+                std::cout << "[preview] samples not available at " << options.bedrockSamplesDir << std::endl;
             return;
+        }
         if (!texturePackResolved) {
             texturePackResolved = true;
             std::string error;
@@ -147,6 +150,8 @@ namespace perlin {
         LoadSkyTextures();
         const bool blocksOk = blocks.EnsureLoaded(packDir, vanillaDir);
         const bool tintsOk = blocksOk && biomeTints.EnsureLoaded(vanillaDir);
+        if (std::getenv("PERLIN_PREVIEW"))
+            std::cout << "[preview] blocksOk=" << blocksOk << " tintsOk=" << tintsOk << std::endl;
         if (!blocksOk)
             return;
         if (!lightingConfigured)

@@ -33,6 +33,9 @@ namespace perlin {
             int damageTilt = 100;
             bool damageTint = false;
             std::string texturePack;
+            bool shadows = true;
+            int heldLight = 0;
+            int shadowDistance = 0;
             int version = 0;
             std::map<std::string, std::string> keys;
         };
@@ -78,6 +81,9 @@ namespace perlin {
                       o.damageTilt,
                       o.damageTint,
                       o.texturePack,
+                      o.shadows,
+                      o.heldLight,
+                      o.shadowDistance,
                       0,
                       {}};
         auto parsed = json::Read<Stored>(text);
@@ -105,6 +111,9 @@ namespace perlin {
         o.damageTilt = std::clamp(stored.damageTilt, 0, 100);
         o.damageTint = stored.damageTint;
         o.texturePack = stored.texturePack;
+        o.shadows = stored.shadows;
+        o.heldLight = std::clamp(stored.heldLight, 0, 15);
+        o.shadowDistance = std::clamp(stored.shadowDistance, 0, 256);
         if (stored.version < kOptionsVersion) {
             // Options saved by older builds carry the old vsync-on / 60 fps cap defaults; move them to the new ones once.
             o.vsync = Options().vsync;
@@ -144,6 +153,9 @@ namespace perlin {
                       damageTilt,
                       damageTint,
                       texturePack,
+                      shadows,
+                      heldLight,
+                      shadowDistance,
                       kOptionsVersion,
                       {}};
         for (size_t i = 0; i < kActionCount; i++)

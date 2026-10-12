@@ -94,6 +94,25 @@ namespace perlin {
         void UploadLightmap(const uint8_t* pixels);
         static int64_t ChunkKey(int cx, int cz) { return (static_cast<int64_t>(cx) << 32) | (uint32_t)cz; }
 
+        // Shadow mapping (shader packs that ask for it): sun/moon-space orthographic depth map around the camera.
+        struct ShadowState {
+            bgfx::FrameBufferHandle fb = BGFX_INVALID_HANDLE;
+            bgfx::TextureHandle color = BGFX_INVALID_HANDLE;
+            int size = 0;
+            float distance = 80.0f;
+            bool enabled = false;   // resources exist
+            bool active = false;    // valid map this frame (light above the horizon)
+            float sample[16] = {};  // world -> (u, v, depth)
+            float raster[16] = {};  // world -> clip, for rendering the map
+            float info[4] = {};
+            int64_t key[6] = {};    // what the current contents were rendered for
+            uint64_t generation = 0;
+            int framesSince = 0;
+        } shadow;
+        void InitShadows(const Options& options);
+        void DestroyShadows();
+        void RenderShadows(float camX, float camY, float camZ);
+
         class Callback;
         std::unique_ptr<Callback> callback;
 
