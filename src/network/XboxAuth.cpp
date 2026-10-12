@@ -29,6 +29,20 @@
 #endif
 
 namespace perlin::xbox {
+    // Outside the anonymous namespace: glaze's reflection cannot name types with internal linkage on MSVC.
+    namespace persist {
+        struct Cache {
+            std::string refreshToken;
+            std::string proofKeyPem;
+            std::string deviceId;
+            std::string deviceToken;
+            int64_t deviceNotAfter = 0;
+            std::string minecraftDeviceId;
+        };
+
+    }
+    using persist::Cache;
+
     namespace {
         // The Android Bedrock client's identity (same values gophertunnel uses): MSA application id, Xbox title id.
         constexpr const char* kMsaClientId = "0000000048183522";
@@ -281,15 +295,6 @@ namespace perlin::xbox {
             out.xid = user["xid"].str();
             return !out.token.empty();
         }
-
-        struct Cache {
-            std::string refreshToken;
-            std::string proofKeyPem;
-            std::string deviceId;
-            std::string deviceToken;
-            int64_t deviceNotAfter = 0;
-            std::string minecraftDeviceId;
-        };
 
         struct Endpoint {
             std::string protocol, host, hostType, path, relyingParty;

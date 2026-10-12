@@ -182,17 +182,6 @@ foreach(dir dxbc dxil essl glsl spirv metal)
 endforeach()
 file(GENERATE OUTPUT "${PERLIN_SHADER_HEADER}" CONTENT "${PERLIN_SHADER_HEADER_TEXT}")
 
-# Shader packs are not part of the executable: this just builds the bundled Radiance pack into a zip that can be dropped
-# into <data>/shaderpacks/. It never fails the build.
-if(TARGET shaderc)
-    add_custom_target(shaderpacks ALL
-        COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/shaderpacks/build_shaderpack.py" Radiance
-                --shaderc "$<TARGET_FILE:shaderc>" --bgfx-src "${bgfx_SOURCE_DIR}/bgfx/src"
-                --zip "${CMAKE_CURRENT_BINARY_DIR}/shaderpacks" --soft
-        DEPENDS shaderc
-        COMMENT "Building shader packs")
-endif()
-
 set(PERLIN_PROTOCOL_OUT "${CMAKE_CURRENT_BINARY_DIR}/generated/protocol")
 set(PERLIN_PROTOCOL_CODEC_COUNT 6)
 set(PERLIN_PROTOCOL_SOURCES)
