@@ -51,6 +51,8 @@ namespace perlin {
         // Columns farther than this many chunks from the player are fetched only as far-terrain samples (their top
         // sub-chunks, kept just long enough to sample) and promoted to full columns when the player comes closer.
         void SetNearRadius(int r) { nearRadius = r; }
+        // Reported to the server in the login (the highest render distance this client can handle).
+        void SetMaxViewDistance(int r) { maxViewDistance = r; }
 
         bool Connect(const std::string& host, uint16_t port);
         void Disconnect();
@@ -215,6 +217,15 @@ namespace perlin {
         void HandleSubChunk(const proto::SubChunkPacket& packet);
         void QueueSubChunkRequests(int dim, int cx, int cz, int firstSubY, int count, bool far = false);
         void UpdateColumnLod();
+        // client-side-chunk-generation-enabled=true: the server leaves part of the view for clients to generate
+        // themselves. Perlin cannot, so it asks the server for the columns it did not stream.
+        void FillUnstreamedColumns();
+        bool clientGen = false;       // StartGame.client_side_generation
+        int maxViewDistance = 32;
+        std::atomic<int> grantedRadius{0};
+        std::atomic<int64_t> lastColumnMs{0};
+        std::chrono::steady_clock::time_point lastFill{};
+        uint64_t statFilled = 0;
         bool ApplySubChunk(int cx, int cz, int absSubY, const SubChunkData& sc);
         void ApplyBiomeColumn(int cx, int cz, const std::vector<uint8_t>& payload);
 

@@ -130,6 +130,10 @@ namespace perlin {
                 startPos[2] = z;
                 haveStartPos = true;
             }
+            clientGen = p.clientSideGeneration;
+            std::cout << "[bedrock] client_side_generation=" << (clientGen ? "true" : "false")
+                      << " (requested chunk radius " << chunkRadius << ", max view distance " << maxViewDistance
+                      << ")" << std::endl;
             gotSpawn = true;
             serverTick = static_cast<uint64_t>(std::max<int64_t>(p.currentTick, 0));
             authTick = serverTick;
@@ -171,9 +175,16 @@ namespace perlin {
             static int logged = 0;
             if (logged++ < 6)
                 std::cout << "[chunk] publisher centre (" << p.coordinates.x << "," << p.coordinates.y << ","
-                          << p.coordinates.z << ") radius " << p.radius << " blocks" << std::endl;
+                          << p.coordinates.z << ") radius " << p.radius << " blocks, "
+                          << p.savedChunks.size() << " server-built chunks listed" << std::endl;
             if (radius > 0)
                 PruneChunks(cx, cz, radius + 2);
+        });
+
+        On<ChunkRadiusUpdatePacket>([this](const ChunkRadiusUpdatePacket& p) {
+            grantedRadius = p.chunkRadius;
+            std::cout << "[chunk] server granted chunk radius " << p.chunkRadius << " (asked " << chunkRadius << ")"
+                      << std::endl;
         });
 
         On<ItemRegistryPacket>([](const ItemRegistryPacket& p) {

@@ -28,6 +28,9 @@ namespace perlin {
 
     class LodStore {
     public:
+        // Chunks within this distance of the player are always real geometry; LOD only exists beyond it, and only
+        // when the render distance is larger than this.
+        static constexpr int kRealChunks = 32;
         static constexpr int kTileChunks = 4;  // a tile mesh covers 4x4 chunks
 
         static int TileOf(int chunk) { return chunk >= 0 ? chunk / kTileChunks : -((-chunk + kTileChunks - 1) / kTileChunks); }

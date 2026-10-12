@@ -8,6 +8,7 @@
 #include "client/player/BlockCollision.hpp"
 #include "client/player/DamageEffect.hpp"
 #include "client/PreviewWorld.hpp"
+#include "client/renderer/chunk/LodStore.hpp"
 #include "client/resources/BedrockSamples.hpp"
 #include "util/Paths.hpp"
 
@@ -116,7 +117,8 @@ namespace perlin {
         // Ask the server for the whole render distance. Within 32 chunks columns are full (meshed); beyond that only the
         // surface is fetched and sampled into the far-terrain (LOD) store.
         session->SetChunkRadius(options.renderDistance);
-        session->SetNearRadius(std::min(options.renderDistance, 32));
+        session->SetMaxViewDistance(std::max(32, options.renderDistance));
+        session->SetNearRadius(options.renderDistance > LodStore::kRealChunks ? LodStore::kRealChunks : 1 << 20);
         workers->Submit([this, host, port] {
             if (session->Connect(host, port))
                 sessionReady = true;

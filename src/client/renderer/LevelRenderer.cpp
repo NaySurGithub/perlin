@@ -123,7 +123,7 @@ namespace perlin {
         lodDirty.clear();
         lodScanForced = true;
         for (const auto& entry : info)
-            if (!entry.second.streaming && capSet.insert(entry.first).second)
+            if (LodEnabled() && !entry.second.streaming && capSet.insert(entry.first).second)
                 capQueue.push_back(entry.first);
         wantKey.clear();
         for (const auto& entry : info)
@@ -264,13 +264,13 @@ namespace perlin {
         for (const DirtyChunk& d : drained) {
             if (d.exists && d.lodOnly) {
                 // A far column only waits to be sampled for the far-terrain store; it is never meshed.
-                if (!d.streaming && capSet.insert(d.pos).second)
+                if (LodEnabled() && !d.streaming && capSet.insert(d.pos).second)
                     capQueue.push_back(d.pos);
                 continue;
             }
             if (d.exists) {
                 info[d.pos] = {d.version, d.streaming, d.firstSeen, d.readyAt};
-                if (!d.streaming && capSet.insert(d.pos).second)
+                if (LodEnabled() && !d.streaming && capSet.insert(d.pos).second)
                     capQueue.push_back(d.pos);
             } else {
                 info.erase(d.pos);
@@ -418,6 +418,8 @@ namespace perlin {
     }
 
     void LevelRenderer::ProcessLod(Level& level, float camX, float camZ) {
+        if (!LodEnabled())
+            return; // up to 32 chunks everything is real geometry: no LOD at all
         const bool assets = atlasUploaded && blocks.Complete() && biomeTints.Ready();
         if (!assets)
             return;
@@ -461,10 +463,25 @@ namespace perlin {
             for (const auto& entry : lod.All()) {
                 const ChunkPos& p = entry.first;
                 const int dist = std::max(std::abs(p.x - ccx), std::abs(p.z - ccz));
-                if (dist > radius + 2)
-                    continue;
+                if (dist > radius + 2 || dist <= LodStore::kRealChunks)
+                    continue; // inside the real-geometry region there is nothing to draw
                 const int tx = LodStore::TileOf(p.x), tz = LodStore::TileOf(p.z);
                 wanted[TileKey(tx, tz)] = LodStride(tx, tz, ccx, ccz);
+            }
+            // Tiles straddling the real-geometry edge hide their inner chunks relative to where the camera is now.
+            for (const auto& [key, stride] : wanted) {
+                const int tx = static_cast<int>(key >> 32), tz = static_cast<int>(static_cast<uint32_t>(key));
+                auto span = [](int tile, int centre, int& lo, int& hi) {
+                    const int a = tile * LodStore::kTileChunks, b = a + LodStore::kTileChunks - 1;
+                    lo = (centre < a) ? a - centre : (centre > b ? centre - b : 0);
+                    hi = std::max(std::abs(a - centre), std::abs(b - centre));
+                };
+                int xl, xh, zl, zh;
+                span(tx, ccx, xl, xh);
+                span(tz, ccz, zl, zh);
+                if (std::max(xl, zl) <= LodStore::kRealChunks + 3 && std::max(xh, zh) >= LodStore::kRealChunks - 3 &&
+                    lodTiles.count(key) && lodTiles[key] != 0)
+                    lodDirty.insert(key);
             }
             for (auto it = lodTiles.begin(); it != lodTiles.end();) {
                 if (!wanted.count(it->first)) {
@@ -504,7 +521,13 @@ namespace perlin {
             const int tx = static_cast<int>(key >> 32), tz = static_cast<int>(static_cast<uint32_t>(key));
             const int stride = LodStride(tx, tz, lodScanX, lodScanZ);
             lodTiles[key] = stride;
-            const bool drawn = lod.BuildTile(tx, tz, stride, [&](const ChunkPos& p) { return shown.count(p) > 0; }, lodScratch);
+            const bool drawn = lod.BuildTile(
+                tx, tz, stride,
+                [&](const ChunkPos& p) {
+                    return shown.count(p) > 0 ||
+                           std::max(std::abs(p.x - lodScanX), std::abs(p.z - lodScanZ)) <= LodStore::kRealChunks;
+                },
+                lodScratch);
             if (drawn)
                 context.UpdateLodTile(tx, tz, LodStore::kTileChunks * 16, lodScratch, ++lodVersion);
             else

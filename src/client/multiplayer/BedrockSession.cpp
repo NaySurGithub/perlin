@@ -145,7 +145,8 @@ namespace perlin {
         std::optional<proto::LoginPacket> BuildOfflineLogin(int protocol, const std::string& playerName,
                                                             const std::string& gameVersion,
                                                             const std::string& serverAddress,
-                                                            ClientIdentity& identity, std::string& error) {
+                                                            ClientIdentity& identity, int maxViewDistance,
+                                                            std::string& error) {
             if (!identity.Valid() || identity.MultiplayerToken().empty()) {
                 error = "no client identity";
                 return std::nullopt;
@@ -183,6 +184,7 @@ namespace perlin {
                                 .count();
             claims::ClientData skin;
             skin.ClientRandomId = nowMs;
+            skin.MaxViewDistance = maxViewDistance;
             skin.DeviceId = devBuf;
             skin.GameVersion = gameVersion;
             skin.PlayFabId = fabBuf;
@@ -324,8 +326,11 @@ namespace perlin {
     }
 
     void BedrockSession::Update() {
-        if (state == State::InGame)
+        if (state == State::InGame) {
             UpdateColumnLod();
+            if (clientGen)
+                FillUnstreamedColumns();
+        }
         if (startGameSeen && !initializedSent &&
             std::chrono::steady_clock::now() - startGameAt > std::chrono::seconds(8)) {
             // PlayerSpawn never came; finish the handshake anyway rather than staying a ghost.
@@ -461,7 +466,7 @@ namespace perlin {
     bool BedrockSession::SendLogin() {
         std::string error;
         const auto login =
-            BuildOfflineLogin(serverProtocol, playerName, gameVersion, serverAddress, *identity, error);
+            BuildOfflineLogin(serverProtocol, playerName, gameVersion, serverAddress, *identity, maxViewDistance, error);
         if (!login) {
             lastError = "login build failed: " + error;
             return false;
@@ -834,6 +839,7 @@ namespace perlin {
         }
         chunksReceived++;
         statLevelChunks++;
+        lastColumnMs = static_cast<int64_t>(Level::NowMs());
 
         if (pkt.GetMode() == LevelChunkPacket::Mode::Inline) {
             const uint8_t* p = pkt.payload.data();
@@ -1199,6 +1205,64 @@ namespace perlin {
     int BedrockSession::PendingSubChunkRequests() const {
         std::lock_guard<std::mutex> lk(const_cast<std::mutex&>(reqMutex));
         return (int)reqQueue.size(); // far samples never hold the loading screen
+    }
+
+    void BedrockSession::FillUnstreamedColumns() {
+        const auto now = std::chrono::steady_clock::now();
+        if (now - lastFill < std::chrono::milliseconds(750))
+            return;
+        // Let the server's own stream (nearest first) run dry before asking for what it skipped.
+        if (static_cast<int64_t>(Level::NowMs()) - lastColumnMs.load() < 1500 || lastColumnMs.load() == 0)
+            return;
+        lastFill = now;
+        const int cx = viewCenterChunk[0], cz = viewCenterChunk[1];
+        int radius = chunkRadius;
+        if (const int granted = grantedRadius.load(); granted > 0)
+            radius = std::min(radius, granted);
+        if (viewRadiusChunks > 0)
+            radius = std::min(radius, viewRadiusChunks);
+        const DimensionInfo& dim = ChunkCodec::Dimension(dimensionId);
+        constexpr size_t kPerScan = 48;
+        std::vector<ChunkPos> missing;
+        {
+            std::lock_guard<std::mutex> lk(reqMutex);
+            for (int ring = 0; ring <= radius && missing.size() < kPerScan; ring++) {
+                for (int dx = -ring; dx <= ring && missing.size() < kPerScan; dx++) {
+                    for (int dz = -ring; dz <= ring && missing.size() < kPerScan; dz++) {
+                        if (std::max(std::abs(dx), std::abs(dz)) != ring || dx * dx + dz * dz > radius * radius)
+                            continue;
+                        if (!seenColumns.count({cx + dx, cz + dz}))
+                            missing.push_back({cx + dx, cz + dz});
+                    }
+                }
+            }
+        }
+        if (missing.empty())
+            return;
+        for (const ChunkPos& p : missing) {
+            const bool far = std::max(std::abs(p.x - cx), std::abs(p.z - cz)) > nearRadius;
+            netLevel.EnsureChunk(p.x, p.z, true, far);
+            {
+                std::lock_guard<std::mutex> lk(reqMutex);
+                seenColumns.insert({p.x, p.z});
+                ColumnInfo& c = columns[p];
+                c.dim = dimensionId;
+                c.firstSubY = dim.MinSubChunk();
+                c.slots = dim.slots;
+            }
+            if (far) {
+                // Height unknown without a LevelChunk: sample the band where terrain surfaces live.
+                QueueSubChunkRequests(dimensionId, p.x, p.z, dim.MinSubChunk() + 6, 8, true);
+            } else {
+                QueueSubChunkRequests(dimensionId, p.x, p.z, dim.MinSubChunk(), dim.slots, false);
+            }
+        }
+        statFilled += missing.size();
+        static int logged = 0;
+        if (logged++ < 8)
+            std::cout << "[chunk] client-side generation: requesting " << missing.size()
+                      << " columns the server did not stream (" << statFilled << " so far, radius " << radius << ")"
+                      << std::endl;
     }
 
     // Keeps full columns near the player and sample-only columns beyond: promotes far columns the player has come
