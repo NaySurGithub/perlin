@@ -47,6 +47,9 @@ namespace perlin {
 
         void SetPlayerName(const std::string& name) { playerName = name; }
         void SetChunkRadius(int r) { chunkRadius = r; }
+        // Columns farther than this many chunks from the player are fetched only as far-terrain samples (their top
+        // sub-chunks, kept just long enough to sample) and promoted to full columns when the player comes closer.
+        void SetNearRadius(int r) { nearRadius = r; }
 
         bool Connect(const std::string& host, uint16_t port);
         void Disconnect();
@@ -209,7 +212,8 @@ namespace perlin {
         bool Transmit(uint32_t packetId, const std::vector<uint8_t>& body, bool reliable);
         void HandleLevelChunk(const proto::LevelChunkPacket& packet);
         void HandleSubChunk(const proto::SubChunkPacket& packet);
-        void QueueSubChunkRequests(int dim, int cx, int cz, int firstSubY, int count);
+        void QueueSubChunkRequests(int dim, int cx, int cz, int firstSubY, int count, bool far = false);
+        void UpdateColumnLod();
         bool ApplySubChunk(int cx, int cz, int absSubY, const SubChunkData& sc);
         void ApplyBiomeColumn(int cx, int cz, const std::vector<uint8_t>& payload);
 
@@ -224,7 +228,16 @@ namespace perlin {
         std::atomic<int> chunksReceived{0};
         std::mutex reqMutex;
         std::set<std::tuple<int, int, int, int>> requestedSlots;
-        std::queue<std::tuple<int, int, int, int>> reqQueue;
+        std::queue<std::tuple<int, int, int, int>> reqQueue;    // near columns: always served first
+        std::queue<std::tuple<int, int, int, int>> reqQueueFar; // far-terrain samples
+        // What the server announced for every column in range, kept so a far column can be fetched in full later.
+        struct ColumnInfo {
+            int dim = 0, firstSubY = 0, slots = 0;
+            std::vector<uint8_t> biomes;
+        };
+        std::unordered_map<ChunkPos, ColumnInfo, ChunkPosHash> columns; // reqMutex
+        int nearRadius = 32;
+        int lodScanCentre[2] = {INT32_MIN, INT32_MIN};
         std::map<std::tuple<int, int, int, int>, std::chrono::steady_clock::time_point> inflight;
         std::map<std::tuple<int, int, int, int>, int> retries;
         void CompleteRequest(const std::tuple<int, int, int, int>& key, bool retry);

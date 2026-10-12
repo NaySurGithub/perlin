@@ -258,30 +258,39 @@ namespace perlin {
     }
 
     void BedrockSession::PruneChunks(int centerX, int centerZ, int radius) {
-        std::vector<ChunkPos> doomed;
+        auto outside = [&](const ChunkPos& p) {
+            return std::abs(p.x - centerX) > radius || std::abs(p.z - centerZ) > radius;
+        };
+        std::vector<ChunkPos> loaded;
         {
             std::lock_guard<std::mutex> lock(netLevel.mutex);
-            for (const auto& entry : netLevel.chunks) {
-                const ChunkPos& p = entry.first;
-                if (std::abs(p.x - centerX) > radius || std::abs(p.z - centerZ) > radius)
-                    doomed.push_back(p);
-            }
+            for (const auto& entry : netLevel.chunks)
+                if (outside(entry.first))
+                    loaded.push_back(entry.first);
         }
-        if (doomed.empty())
-            return;
-        for (const ChunkPos& p : doomed)
+        for (const ChunkPos& p : loaded)
             netLevel.RemoveChunk(p.x, p.z);
         std::lock_guard<std::mutex> lk(reqMutex);
+        // Columns the renderer already sampled and released are only known here.
+        std::vector<ChunkPos> doomed = std::move(loaded);
+        for (const auto& entry : columns)
+            if (outside(entry.first))
+                doomed.push_back(entry.first);
         for (const ChunkPos& p : doomed) {
+            if (const auto found = columns.find(p); found != columns.end()) {
+                const ColumnInfo& c = found->second;
+                for (int i = 0; i < c.slots; i++)
+                    requestedSlots.erase(std::make_tuple(c.dim, p.x, c.firstSubY + i, p.z));
+                columns.erase(found);
+            }
             seenColumns.erase({p.x, p.z});
-            if (colPending.erase({p.x, p.z}) == 0)
-                continue;
-            for (auto it = requestedSlots.begin(); it != requestedSlots.end();)
-                it = (std::get<1>(*it) == p.x && std::get<3>(*it) == p.z) ? requestedSlots.erase(it) : std::next(it);
+            colPending.erase({p.x, p.z});
         }
     }
 
     void BedrockSession::Update() {
+        if (state == State::InGame)
+            UpdateColumnLod();
         if (startGameSeen && !initializedSent &&
             std::chrono::steady_clock::now() - startGameAt > std::chrono::seconds(8)) {
             // PlayerSpawn never came; finish the handshake anyway rather than staying a ghost.
@@ -470,6 +479,9 @@ namespace perlin {
         requestedSlots.clear();
         colPending.clear();
         reqQueue = {};
+        reqQueueFar = {};
+        columns.clear();
+        lodScanCentre[0] = lodScanCentre[1] = INT32_MIN;
         inflight.clear();
         retries.clear();
     }
@@ -764,7 +776,10 @@ namespace perlin {
             return;
         }
         const DimensionInfo& dim = ChunkCodec::Dimension(pkt.dimension);
-        netLevel.EnsureChunk(pkt.x, pkt.z, true);
+        const bool requestMode = pkt.GetMode() == LevelChunkPacket::Mode::Request;
+        const bool far = requestMode &&
+                         std::max(std::abs(pkt.x - viewCenterChunk[0]), std::abs(pkt.z - viewCenterChunk[1])) > nearRadius;
+        netLevel.EnsureChunk(pkt.x, pkt.z, true, far);
         {
             std::lock_guard<std::mutex> lk(reqMutex);
             seenColumns.insert({pkt.x, pkt.z});
@@ -791,8 +806,23 @@ namespace perlin {
             netLevel.MarkComplete(pkt.x, pkt.z);
         } else {
             ApplyBiomeColumn(pkt.x, pkt.z, pkt.payload);
-            QueueSubChunkRequests(pkt.dimension, pkt.x, pkt.z, dim.MinSubChunk(),
-                                  pkt.RequestSlots(dim.slots));
+            const int slots = pkt.RequestSlots(dim.slots);
+            {
+                std::lock_guard<std::mutex> lk(reqMutex);
+                ColumnInfo& c = columns[ChunkPos{pkt.x, pkt.z}];
+                c.dim = pkt.dimension;
+                c.firstSubY = dim.MinSubChunk();
+                c.slots = slots;
+                c.biomes = pkt.payload;
+            }
+            if (far) {
+                // Only the top sub-chunks hold the surface (the server's limit stops at the highest block).
+                constexpr int kFarSlots = 3;
+                const int take = std::min(slots, kFarSlots);
+                QueueSubChunkRequests(pkt.dimension, pkt.x, pkt.z, dim.MinSubChunk() + slots - take, take, true);
+            } else {
+                QueueSubChunkRequests(pkt.dimension, pkt.x, pkt.z, dim.MinSubChunk(), slots);
+            }
         }
     }
 
@@ -1013,7 +1043,7 @@ namespace perlin {
         return true;
     }
 
-    void BedrockSession::QueueSubChunkRequests(int dim, int cx, int cz, int firstSubY, int count) {
+    void BedrockSession::QueueSubChunkRequests(int dim, int cx, int cz, int firstSubY, int count, bool far) {
         bool idle = false;
         {
             std::lock_guard<std::mutex> lk(reqMutex);
@@ -1023,7 +1053,7 @@ namespace perlin {
                     continue;
                 colPending[{cx, cz}]++;
                 retries.erase(key);
-                reqQueue.push(key);
+                (far ? reqQueueFar : reqQueue).push(key);
             }
             idle = colPending.find({cx, cz}) == colPending.end();
         }
@@ -1120,7 +1150,59 @@ namespace perlin {
 
     int BedrockSession::PendingSubChunkRequests() const {
         std::lock_guard<std::mutex> lk(const_cast<std::mutex&>(reqMutex));
-        return (int)reqQueue.size();
+        return (int)reqQueue.size(); // far samples never hold the loading screen
+    }
+
+    // Keeps full columns near the player and sample-only columns beyond: promotes far columns the player has come
+    // close to, and drops (the data of) near columns he has walked away from; their far-terrain sample stays.
+    void BedrockSession::UpdateColumnLod() {
+        const int cx = viewCenterChunk[0], cz = viewCenterChunk[1];
+        if (cx == lodScanCentre[0] && cz == lodScanCentre[1])
+            return;
+        lodScanCentre[0] = cx;
+        lodScanCentre[1] = cz;
+        std::vector<ChunkPos> candidates, demote;
+        {
+            std::lock_guard<std::mutex> lk(reqMutex);
+            for (const auto& entry : columns)
+                if (std::max(std::abs(entry.first.x - cx), std::abs(entry.first.z - cz)) <= nearRadius)
+                    candidates.push_back(entry.first);
+        }
+        {
+            std::lock_guard<std::mutex> lk(netLevel.mutex);
+            // Candidates that are already full columns need nothing.
+            candidates.erase(std::remove_if(candidates.begin(), candidates.end(),
+                                            [&](const ChunkPos& p) {
+                                                const auto found = netLevel.chunks.find(p);
+                                                return found != netLevel.chunks.end() && !found->second.lodOnly;
+                                            }),
+                             candidates.end());
+            for (const auto& entry : netLevel.chunks) {
+                const ChunkPos& p = entry.first;
+                if (!entry.second.lodOnly && std::max(std::abs(p.x - cx), std::abs(p.z - cz)) > nearRadius + 3)
+                    demote.push_back(p);
+            }
+        }
+        std::vector<std::pair<ChunkPos, ColumnInfo>> promote;
+        {
+            std::lock_guard<std::mutex> lk(reqMutex);
+            for (const ChunkPos& p : candidates)
+                if (const auto found = columns.find(p); found != columns.end())
+                    promote.push_back({p, found->second});
+        }
+        for (const ChunkPos& p : demote)
+            netLevel.RemoveChunk(p.x, p.z);
+        for (const auto& [pos, info] : promote) {
+            if (info.slots <= 0)
+                continue;
+            if (!netLevel.PromoteLodOnly(pos.x, pos.z)) {
+                netLevel.EnsureChunk(pos.x, pos.z, true, false);
+                std::lock_guard<std::mutex> lk(reqMutex);
+                seenColumns.insert({pos.x, pos.z});
+            }
+            ApplyBiomeColumn(pos.x, pos.z, info.biomes);
+            QueueSubChunkRequests(info.dim, pos.x, pos.z, info.firstSubY, info.slots, false);
+        }
     }
 
     void BedrockSession::PumpRequests(int budget) {
@@ -1150,21 +1232,25 @@ namespace perlin {
             int dimension = 0, cx = 0, cz = 0, firstY = 0, count = 0;
             {
                 std::lock_guard<std::mutex> lk(reqMutex);
-                if (reqQueue.empty())
+                // Near columns first; far samples only while few are waiting to be sampled and few are in flight.
+                const bool farOk = netLevel.lodOnlyCount.load() < 1500 && inflight.size() < 1500;
+                std::queue<std::tuple<int, int, int, int>>& queue =
+                    !reqQueue.empty() ? reqQueue : reqQueueFar;
+                if (queue.empty() || (&queue == &reqQueueFar && !farOk))
                     break;
-                auto key = reqQueue.front();
+                auto key = queue.front();
                 dimension = std::get<0>(key);
                 cx = std::get<1>(key);
                 firstY = std::get<2>(key);
                 cz = std::get<3>(key);
                 std::vector<int> ys;
-                while (!reqQueue.empty() && ys.size() < kMaxBatch) {
-                    auto k = reqQueue.front();
+                while (!queue.empty() && ys.size() < kMaxBatch) {
+                    auto k = queue.front();
                     if (std::get<0>(k) != dimension || std::get<1>(k) != cx || std::get<3>(k) != cz)
                         break;
                     ys.push_back(std::get<2>(k));
                     inflight[k] = now;
-                    reqQueue.pop();
+                    queue.pop();
                 }
                 count = (int)ys.size();
                 for (size_t j = 1; j < ys.size(); j++) {
@@ -1172,7 +1258,7 @@ namespace perlin {
                         for (size_t k = j; k < ys.size(); k++) {
                             auto rk = std::make_tuple(dimension, cx, ys[k], cz);
                             inflight.erase(rk);
-                            reqQueue.push(rk);
+                            queue.push(rk);
                         }
                         count = (int)j;
                         break;
@@ -1198,7 +1284,7 @@ namespace perlin {
                   << " failed=" << statSubChunksFailed << " results[0..6,other]=" << statResult[0] << ","
                   << statResult[1] << "," << statResult[2] << "," << statResult[3] << "," << statResult[4]
                   << "," << statResult[5] << "," << statResult[6] << "," << statResult[7]
-                  << " queued=" << reqQueue.size() << " inflight=" << inflight.size()
+                  << " queued=" << reqQueue.size() << "+" << reqQueueFar.size() << " lodOnly=" << netLevel.lodOnlyCount.load() << " inflight=" << inflight.size()
                   << " blocksKnown=" << BlockPalette::Instance().Count() << std::endl;
     }
 

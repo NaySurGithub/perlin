@@ -215,9 +215,9 @@ target_include_directories(perlin_protocol PUBLIC
     "${CMAKE_CURRENT_BINARY_DIR}/generated")
 target_compile_features(perlin_protocol PUBLIC cxx_std_23)
 if(MSVC)
-    set_source_files_properties(${PERLIN_PROTOCOL_SOURCES} PROPERTIES COMPILE_OPTIONS "/w;/bigobj")
+    set_source_files_properties(${PERLIN_PROTOCOL_SOURCES} PROPERTIES COMPILE_OPTIONS "/w;/bigobj;$<$<CONFIG:Debug>:/O1>")
 else()
-    set_source_files_properties(${PERLIN_PROTOCOL_SOURCES} PROPERTIES COMPILE_OPTIONS "-w")
+    set_source_files_properties(${PERLIN_PROTOCOL_SOURCES} PROPERTIES COMPILE_OPTIONS "-w;$<$<CONFIG:Debug>:-O1>")
 endif()
 
 # Embed resources/* into the executable.
@@ -332,6 +332,19 @@ elseif(APPLE)
 else()
     target_link_libraries(Perlin PRIVATE dl)
     target_link_options(Perlin PRIVATE -static-libstdc++ -static-libgcc)
+endif()
+
+# Debug builds stay debuggable but the game itself must still be playable: optimise Perlin's own sources (not the
+# dependencies, so bgfx keeps its debug asserts). Turn off with -DPERLIN_DEBUG_OPT=OFF to step through game code.
+option(PERLIN_DEBUG_OPT "Optimise Perlin's own sources in Debug builds" ON)
+if(PERLIN_DEBUG_OPT)
+    if(MSVC)
+        set_source_files_properties(${PERLIN_SOURCES} PROPERTIES COMPILE_OPTIONS "$<$<CONFIG:Debug>:/O2;/Ob2>")
+        set_source_files_properties(${PERLIN_PROTOCOL_CUSTOM} PROPERTIES COMPILE_OPTIONS "$<$<CONFIG:Debug>:/O2;/Ob2>")
+    else()
+        set_source_files_properties(${PERLIN_SOURCES} PROPERTIES COMPILE_OPTIONS "$<$<CONFIG:Debug>:-O2>")
+        set_source_files_properties(${PERLIN_PROTOCOL_CUSTOM} PROPERTIES COMPILE_OPTIONS "$<$<CONFIG:Debug>:-O2>")
+    endif()
 endif()
 
 if(MSVC)

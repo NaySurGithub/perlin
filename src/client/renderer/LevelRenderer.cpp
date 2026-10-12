@@ -156,8 +156,18 @@ namespace perlin {
             blocks.SetTexturePack(TexturePack::Instance().Active());
         }
         LoadSkyTextures();
+        const auto loadStart = std::chrono::steady_clock::now();
         const bool blocksOk = blocks.EnsureLoaded(packDir, vanillaDir);
+        const auto blocksDone = std::chrono::steady_clock::now();
         const bool tintsOk = blocksOk && biomeTints.EnsureLoaded(vanillaDir);
+        {
+            const auto end = std::chrono::steady_clock::now();
+            std::cout << "[startup] asset pass: blocks "
+                      << std::chrono::duration_cast<std::chrono::milliseconds>(blocksDone - loadStart).count()
+                      << " ms, tints "
+                      << std::chrono::duration_cast<std::chrono::milliseconds>(end - blocksDone).count() << " ms"
+                      << std::endl;
+        }
         if (std::getenv("PERLIN_PREVIEW"))
             std::cout << "[preview] blocksOk=" << blocksOk << " tintsOk=" << tintsOk << std::endl;
         if (!blocksOk)
@@ -252,6 +262,12 @@ namespace perlin {
         PosSet touched;
         touched.reserve(drained.size() * 3);
         for (const DirtyChunk& d : drained) {
+            if (d.exists && d.lodOnly) {
+                // A far column only waits to be sampled for the far-terrain store; it is never meshed.
+                if (!d.streaming && capSet.insert(d.pos).second)
+                    capQueue.push_back(d.pos);
+                continue;
+            }
             if (d.exists) {
                 info[d.pos] = {d.version, d.streaming, d.firstSeen, d.readyAt};
                 if (!d.streaming && capSet.insert(d.pos).second)
@@ -327,7 +343,13 @@ namespace perlin {
                           [](const Pending& a, const Pending& b) { return a.distance < b.distance; });
 
         if (!async) {
-            // Textures are not ready (or never will be): mesh a few chunks per frame on this thread.
+            // Textures are still loading: meshing now would only be thrown away when the atlas arrives, so wait for
+            // them (they finish within moments) and only fall back to untextured meshes if they never do.
+            const auto waitNow = std::chrono::steady_clock::now();
+            if (firstWaitAt.time_since_epoch().count() == 0)
+                firstWaitAt = waitNow;
+            if (waitNow - firstWaitAt < std::chrono::seconds(20))
+                return;
             const auto start = std::chrono::steady_clock::now();
             for (size_t i = 0; i < take; i++) {
                 if (std::chrono::steady_clock::now() - start > std::chrono::milliseconds(6))
@@ -405,11 +427,13 @@ namespace perlin {
 
         // 1. Sample newly completed chunks.
         size_t taken = 0;
-        while (taken < capQueue.size() && elapsed() < 2.0) {
+        const double captureBudget = capQueue.size() > 200 ? 5.0 : 2.0;
+        while (taken < capQueue.size() && elapsed() < captureBudget) {
             const ChunkPos pos = capQueue[taken++];
             capSet.erase(pos);
             if (lod.Capture(level, pos, blocks, biomeTints))
                 MarkLodTile(pos);
+            level.RemoveLodOnly(pos.x, pos.z); // sampled: the full column is not needed any more
         }
         capQueue.erase(capQueue.begin(), capQueue.begin() + static_cast<std::ptrdiff_t>(taken));
 

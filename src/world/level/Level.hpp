@@ -55,6 +55,8 @@ namespace perlin {
         uint64_t readyAt = 0;   // monotonic ms when streaming ended
         uint64_t firstSeen = 0; // monotonic ms when the chunk appeared
         bool queued = false;    // already on the Level dirty list
+        // Far column kept only long enough to sample it for the far-terrain (LOD) store; never meshed.
+        bool lodOnly = false;
 
     private:
         struct Section {
@@ -81,6 +83,7 @@ namespace perlin {
         bool streaming = false;
         uint64_t firstSeen = 0;
         uint64_t readyAt = 0;
+        bool lodOnly = false;
     };
 
     class Level {
@@ -99,7 +102,11 @@ namespace perlin {
         uint8_t GetBiome(int x, int y, int z) const;
         void SetBlock(int x, int y, int z, uint16_t id);
         // `streaming`: the chunk will receive more data (sub-chunk replies) and is not meshed until MarkComplete.
-        void EnsureChunk(int cx, int cz, bool streaming = false);
+        void EnsureChunk(int cx, int cz, bool streaming = false, bool lodOnly = false);
+        // Turns a far (sample-only) column into a normal one; false if it is not loaded.
+        bool PromoteLodOnly(int cx, int cz);
+        // Drops the column if (and only if) it is still sample-only.
+        bool RemoveLodOnly(int cx, int cz);
         void MarkComplete(int cx, int cz);
         bool HasChunk(int cx, int cz) const;
         bool RemoveChunk(int cx, int cz);
@@ -123,6 +130,7 @@ namespace perlin {
         std::unordered_map<ChunkPos, Chunk, ChunkPosHash> chunks;
         std::vector<ChunkPos> dirty; // guarded by mutex
         mutable std::mutex mutex;
+        std::atomic<int> lodOnlyCount{0}; // sample-only columns currently held
         std::atomic<uint64_t> changeCounter{0};
         std::atomic<uint64_t> clearCounter{0}; // bumped by Clear(): every mesh built from older chunks is stale
     };

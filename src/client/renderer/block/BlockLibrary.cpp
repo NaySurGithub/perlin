@@ -885,24 +885,13 @@ namespace perlin {
         }
 
         if (fetchFails > 0) {
-            if (fetchFails != lastFileMisses) {
-                lastFileMisses = fetchFails;
-                stallStreak = 0;
-            } else if (++stallStreak >= 10) {
-                std::cout << "[blocks] accepting partial textures (" << fetchFails << " missing files)"
-                          << std::endl;
-                complete = true;
-                ready = true;
-                return true;
-            } else {
-                ready = false;
-                return false;
-            }
-        } else {
-            lastFileMisses = 0;
-            stallStreak = 0;
+            // The samples are fully downloaded by now, so a missing file stays missing: carry on without it
+            // (waiting and re-running the whole load would only delay the start).
+            std::cout << "[blocks] " << fetchFails << " textures missing; continuing without them" << std::endl;
         }
-        complete = (fetchFails == 0);
+        lastFileMisses = 0;
+        stallStreak = 0;
+        complete = true;
         ready = true;
         for (auto& [name, app] : appearances) {
             if (app.carriedTex.empty())

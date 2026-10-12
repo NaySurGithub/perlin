@@ -67,7 +67,8 @@ namespace perlin {
         bool Ready(const ChunkPos& pos, uint64_t now) const;
         void Schedule(Level& level, float camX, float camZ, const Frustum& frustum);
         void InvalidateMeshes();
-        void ProcessLod(Level& level, float camX, float camZ);
+        std::chrono::steady_clock::time_point firstWaitAt{};
+    void ProcessLod(Level& level, float camX, float camZ);
         void MarkLodTile(const ChunkPos& chunk);
         void ResetLod();
         static int64_t TileKey(int tx, int tz) { return (static_cast<int64_t>(tx) << 32) | static_cast<uint32_t>(tz); }

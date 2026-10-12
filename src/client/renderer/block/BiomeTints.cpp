@@ -215,7 +215,7 @@ namespace perlin {
 
         bool complete = mapRGB.count("grass") && mapRGB.count("foliage") && !climate.empty() &&
                         !rules.empty() && !idToName.empty();
-        if (!complete && attempts < 10)
+        if (!complete && attempts < 2)
             return false;
 
         ready.store(true, std::memory_order_release);

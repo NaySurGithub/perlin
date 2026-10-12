@@ -157,6 +157,7 @@ namespace perlin {
         changeCounter++;
         clearCounter++;
         chunks.clear();
+        lodOnlyCount = 0;
         dirty.clear();
     }
 
@@ -223,8 +224,12 @@ namespace perlin {
 
     bool Level::RemoveChunk(int cx, int cz) {
         std::lock_guard lock(mutex);
-        if (chunks.erase({cx, cz}) == 0)
+        const auto found = chunks.find({cx, cz});
+        if (found == chunks.end())
             return false;
+        if (found->second.lodOnly)
+            lodOnlyCount--;
+        chunks.erase(found);
         dirty.push_back({cx, cz});
         changeCounter++;
         return true;
@@ -264,17 +269,48 @@ namespace perlin {
                 d.streaming = it->second.streaming;
                 d.firstSeen = it->second.firstSeen;
                 d.readyAt = it->second.readyAt;
+                d.lodOnly = it->second.lodOnly;
             }
             out.push_back(d);
         }
         dirty.clear();
     }
 
-    void Level::EnsureChunk(int cx, int cz, bool streaming) {
+    bool Level::PromoteLodOnly(int cx, int cz) {
+        std::lock_guard lock(mutex);
+        const auto it = chunks.find({cx, cz});
+        if (it == chunks.end())
+            return false;
+        if (it->second.lodOnly) {
+            it->second.lodOnly = false;
+            lodOnlyCount--;
+            it->second.version++;
+            Touch(it->first, it->second);
+            changeCounter++;
+        }
+        return true;
+    }
+
+    bool Level::RemoveLodOnly(int cx, int cz) {
+        std::lock_guard lock(mutex);
+        const auto it = chunks.find({cx, cz});
+        if (it == chunks.end() || !it->second.lodOnly)
+            return false;
+        chunks.erase(it);
+        lodOnlyCount--;
+        dirty.push_back({cx, cz});
+        changeCounter++;
+        return true;
+    }
+
+    void Level::EnsureChunk(int cx, int cz, bool streaming, bool lodOnly) {
         std::lock_guard lock(mutex);
         changeCounter++;
         const auto [it, inserted] = chunks.try_emplace({cx, cz});
         if (inserted) {
+            it->second.lodOnly = lodOnly;
+            if (lodOnly)
+                lodOnlyCount++;
             it->second.version++;
             it->second.streaming = streaming;
             it->second.firstSeen = NowMs();

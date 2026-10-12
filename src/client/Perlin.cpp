@@ -113,7 +113,10 @@ namespace perlin {
 
         session = std::make_unique<BedrockSession>();
         session->SetPlayerName(options.playerName);
-        session->SetChunkRadius(std::min(options.renderDistance, 32)); // farther terrain comes from the LOD store
+        // Ask the server for the whole render distance. Within 32 chunks columns are full (meshed); beyond that only the
+        // surface is fetched and sampled into the far-terrain (LOD) store.
+        session->SetChunkRadius(options.renderDistance);
+        session->SetNearRadius(std::min(options.renderDistance, 32));
         workers->Submit([this, host, port] {
             if (session->Connect(host, port))
                 sessionReady = true;
