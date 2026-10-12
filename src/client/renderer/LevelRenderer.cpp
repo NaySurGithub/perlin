@@ -149,6 +149,8 @@ namespace perlin {
         const uint32_t current = generation.load();
         for (MeshResult& r : finished) {
             inFlight.erase(r.pos);
+            if (!meshVersions.count(r.pos))
+                continue; // the chunk was unloaded while it was being meshed
             if (r.generation == current)
                 context.UpdateChunkMesh(r.pos.x, r.pos.z, *r.mesh, r.version);
         }
@@ -162,6 +164,16 @@ namespace perlin {
             versions.reserve(level.chunks.size());
             for (const auto& [pos, chunk] : level.chunks)
                 versions.emplace(pos, chunk.version + 1);
+        }
+        // Chunks the server stopped streaming: drop their meshes.
+        for (auto it = meshVersions.begin(); it != meshVersions.end();) {
+            if (versions.count(it->first)) {
+                ++it;
+                continue;
+            }
+            context.RemoveChunkMesh(it->first.x, it->first.z);
+            quiet.erase(it->first);
+            it = meshVersions.erase(it);
         }
         snapshot.reserve(versions.size());
         for (const auto& [pos, version] : versions) {

@@ -158,7 +158,21 @@ bool AppPlatform_SDL::Initialize() {
     bgfx::renderFrame();
 
     game = std::make_unique<perlin::Perlin>(args);
-    return game->Initialize(this);
+    if (!game->Initialize(this))
+        return false;
+    SDL_RaiseWindow(window);
+    SetCursorCaptured(true);
+    return true;
+}
+
+void AppPlatform_SDL::SetCursorCaptured(bool captured) {
+    if (!window || captured == cursorCaptured)
+        return;
+    if (SDL_SetWindowRelativeMouseMode(window, captured)) {
+        cursorCaptured = captured;
+        if (game)
+            game->GetInput().SetCaptured(captured);
+    }
 }
 
 void AppPlatform_SDL::HandleEvent(const SDL_Event& e) {
@@ -177,8 +191,11 @@ void AppPlatform_SDL::HandleEvent(const SDL_Event& e) {
     case SDL_EVENT_WINDOW_FOCUS_LOST:
         if (input)
             input->ReleaseAll();
+        SetCursorCaptured(false);
         break;
     case SDL_EVENT_KEY_DOWN:
+        if (e.key.scancode == SDL_SCANCODE_ESCAPE && cursorCaptured)
+            SetCursorCaptured(false);
         if (input && !e.key.repeat)
             if (int k = KeyFromScancode(e.key.scancode))
                 input->OnKeyDown(k);
@@ -189,10 +206,18 @@ void AppPlatform_SDL::HandleEvent(const SDL_Event& e) {
                 input->OnKeyUp(k);
         break;
     case SDL_EVENT_MOUSE_MOTION:
-        if (input)
+        if (input) {
+            if (cursorCaptured)
+                input->OnMouseDelta(e.motion.xrel, e.motion.yrel);
             input->OnMouseMove(e.motion.x, e.motion.y);
+        }
         break;
     case SDL_EVENT_MOUSE_BUTTON_DOWN:
+        if (!cursorCaptured) {
+            // The click that grabs the cursor is not forwarded as a game click.
+            SetCursorCaptured(true);
+            break;
+        }
         if (input)
             if (int b = ButtonIndex(e.button.button); b >= 0)
                 input->OnMouseDown(b);

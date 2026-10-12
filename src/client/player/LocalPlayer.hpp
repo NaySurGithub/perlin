@@ -16,9 +16,10 @@ namespace perlin {
                     const BlockLibrary& blocks, float dt);
 
         const physics::State& State() const { return state; }
+        // Java's LocalPlayer.getFieldOfViewModifier, smoothed: flying x1.1, speed attribute (sprint +30%) averaged with 1.
+        float FovModifier() const { return fovModifier; }
 
     private:
-        bool TryPlaceOnTerrain(BedrockSession& session, const Camera& camera);
         void ApplyServerMotion(BedrockSession& session, Camera& camera);
         void Tick(BedrockSession& session, const InputManager& input, const Camera& camera,
                   const physics::World& world);
@@ -28,7 +29,9 @@ namespace perlin {
         bool initialised = false;
         double accumulator = 0.0;
 
+        float fovModifier = 1.0f;
         bool flying = false;
+        bool serverFlying = false;
         bool sprinting = false;
         bool sneaking = false;
         bool jumpHeld = false;

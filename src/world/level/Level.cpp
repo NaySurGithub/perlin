@@ -137,6 +137,14 @@ namespace perlin {
         chunk.version++;
     }
 
+    bool Level::RemoveChunk(int cx, int cz) {
+        std::lock_guard lock(mutex);
+        if (chunks.erase({cx, cz}) == 0)
+            return false;
+        changeCounter++;
+        return true;
+    }
+
     void Level::EnsureChunk(int cx, int cz) {
         std::lock_guard lock(mutex);
         changeCounter++;

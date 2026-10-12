@@ -72,6 +72,7 @@ namespace perlin::physics {
         bool flying = false;
         bool flyUp = false;
         bool flyDown = false;
+        bool noClip = false; // spectator: no collision, no gravity, always flying
     };
 
     struct State {

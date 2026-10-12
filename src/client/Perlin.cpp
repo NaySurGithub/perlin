@@ -177,6 +177,7 @@ namespace perlin {
                 camera.CycleMode();
             const LookDelta look = inputManager.Look();
             camera.Rotate(look.yaw, look.pitch);
+            camera.fov = options.fov * (options.fovEffects ? player.FovModifier() : 1.0f);
 
             int width = 0, height = 0;
             platform->GetFramebufferSize(width, height);

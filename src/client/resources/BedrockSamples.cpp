@@ -33,8 +33,14 @@ namespace perlin {
     bool BedrockSamples::Ensure(const std::string& targetDir) {
         const fs::path root(targetDir);
         const fs::path repo = root / "repo";
-        if (Available(targetDir))
+        if (Available(targetDir)) {
+            // Older checkouts predate the block geometry folder; pull it in on demand (best effort).
+            if (!fs::exists(repo / "resource_pack/models/blocks")) {
+                const std::string path = "\"" + repo.string() + "\"";
+                Run("git -c core.longpaths=true -C " + path + " sparse-checkout add resource_pack/models/blocks");
+            }
             return true;
+        }
 
         std::error_code ec;
         fs::create_directories(root, ec);
@@ -47,7 +53,7 @@ namespace perlin {
                 bool cloned = Run(git + "clone --depth 1 --filter=blob:none --sparse " + kRepository + " " + path) &&
                               Run(git + "-C " + path +
                                   " sparse-checkout set resource_pack/textures metadata/vanilladata_modules "
-                                  "behavior_pack/blocks behavior_pack/biomes");
+                                  "behavior_pack/blocks behavior_pack/biomes resource_pack/models/blocks");
                 if (!cloned) {
                     fs::remove_all(repo, ec);
                     cloned = Run(git + "clone --depth 1 " + kRepository + " " + path);

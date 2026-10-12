@@ -348,6 +348,11 @@ if(PERLIN_BUILD_TESTS)
     target_compile_features(physics_selftest PRIVATE cxx_std_23)
     add_test(NAME physics_selftest COMMAND physics_selftest)
 
+    add_executable(models_selftest tests/models_selftest.cpp src/client/renderer/block/BlockModels.cpp)
+    target_include_directories(models_selftest PRIVATE src)
+    target_compile_features(models_selftest PRIVATE cxx_std_23)
+    add_test(NAME models_selftest COMMAND models_selftest "${CMAKE_CURRENT_SOURCE_DIR}/resources/block_models.bin")
+
     add_executable(light_selftest
         tests/light_selftest.cpp
         src/world/level/lighting/ChunkLighting.cpp

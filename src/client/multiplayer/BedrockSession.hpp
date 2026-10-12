@@ -102,6 +102,10 @@ namespace perlin {
         };
         bool TakeServerMotion(ServerMotion& out);
         float MovementSpeedAttribute() const { return movementSpeed; }
+        // True once the spawn handshake finished (loading screen ended, local player initialised).
+        bool Initialized() const { return initializedSent; }
+        void PruneChunks(int centerChunkX, int centerChunkZ, int radiusChunks);
+        bool SendLoadingScreen(bool start);
         bool SendPlayerAuthInputWithFlags(const std::vector<uint32_t>& flags, float pitchOverride,
                                           float yawOverride, uint32_t action = UINT32_MAX, int bx = 0,
                                           int by = 0, int bz = 0, int face = 1);
@@ -140,6 +144,9 @@ namespace perlin {
         int ServerProtocol() const { return serverProtocol; }
         bool MayFly() const { return mayFly; }
         bool IsFlying() const { return isFlying; }
+        bool Spectator() const { return gameType == 6 || gameType == 3 || gameType == 4 || noClip; }
+        bool NoClip() const { return noClip || gameType == 6; }
+        int GameType() const { return gameType; }
         float FlySpeed() const { return flySpeed > 0 ? flySpeed : 0.05f; }
         float VFlySpeed() const { return vFlySpeed > 0 ? vFlySpeed : 1.0f; }
         float WalkSpeed() const { return walkSpeed > 0 ? walkSpeed : 0.1f; }
@@ -207,6 +214,7 @@ namespace perlin {
         std::string gameVersion;
         PlayerPose pose;
         uint64_t runtimeId = 0;
+        int64_t uniqueId = 0;
         uint64_t authTick = 0;
         uint64_t serverTick = 0;
         float lastAuthPos[3] = {0, 0, 0};
@@ -218,6 +226,13 @@ namespace perlin {
         } pendingBlockAction;
         ServerMotion serverMotion;
         float movementSpeed = 0.1f;
+        bool initializedSent = false;
+        bool startGameSeen = false;
+        std::chrono::steady_clock::time_point startGameAt{};
+        int viewCenterChunk[2] = {0, 0};
+        int viewRadiusChunks = 0;
+        uint64_t movePacketsSent = 0;
+        uint64_t correctionsReceived = 0;
         uint64_t statLevelChunks = 0, statRequestsSent = 0, statSubChunkReplies = 0, statSubChunksApplied = 0,
                  statSubChunksFailed = 0;
         std::chrono::steady_clock::time_point lastStatLog{};
@@ -232,6 +247,8 @@ namespace perlin {
         int serverProtocol = 0;
 
         bool mayFly = false;
+        bool noClip = false;
+        int gameType = 0;
         bool isFlying = false;
         float flySpeed = 0.05f;
         float vFlySpeed = 1.0f;

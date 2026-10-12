@@ -26,6 +26,7 @@ namespace perlin {
             std::string graphics = "fancy";
             int cloudRange = 128;
             bool rgss = false;
+            bool fovEffects = true;
             std::map<std::string, std::string> keys;
         };
     }
@@ -66,6 +67,7 @@ namespace perlin {
                       "fancy",
                       o.cloudRange,
                       o.rgss,
+                      o.fovEffects,
                       {}};
         auto parsed = json::Read<Stored>(text);
         if (!parsed)
@@ -88,6 +90,7 @@ namespace perlin {
         o.fancyGraphics = stored.graphics != "fast";
         o.cloudRange = std::clamp(stored.cloudRange, 2, 128);
         o.rgss = stored.rgss;
+        o.fovEffects = stored.fovEffects;
 
         for (size_t i = 0; i < kActionCount; i++) {
             const auto it = stored.keys.find(ActionId(static_cast<Action>(i)));
@@ -117,6 +120,7 @@ namespace perlin {
                       fancyGraphics ? "fancy" : "fast",
                       cloudRange,
                       rgss,
+                      fovEffects,
                       {}};
         for (size_t i = 0; i < kActionCount; i++)
             stored.keys[ActionId(static_cast<Action>(i))] = keys[i].Serialize();

@@ -66,6 +66,7 @@ namespace perlin {
         uint8_t GetBiome(int x, int y, int z) const;
         void SetBlock(int x, int y, int z, uint16_t id);
         void EnsureChunk(int cx, int cz);
+        bool RemoveChunk(int cx, int cz);
         void SetSubChunk(int cx, int cz, int absSubY, const uint16_t* cells);
         void SetBiomeSubChunk(int cx, int cz, int absSubY, const uint8_t* cells);
         void Clear();

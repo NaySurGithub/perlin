@@ -9,7 +9,6 @@
 
 namespace perlin {
     namespace {
-        constexpr float kFallbackSpawnY = 80.0f;
         constexpr int kMaxTicksPerFrame = 5;
         constexpr auto kDoubleTapWindow = std::chrono::milliseconds(350);
         constexpr auto kSprintTapWindow = std::chrono::milliseconds(300);
@@ -60,27 +59,6 @@ namespace perlin {
             constexpr uint32_t SneakPressedRaw = 63;
             constexpr uint32_t SneakCurrentRaw = 64;
         }
-    }
-
-    bool LocalPlayer::TryPlaceOnTerrain(BedrockSession& session, const Camera& camera) {
-        if (!session.HaveStartPos())
-            return false;
-
-        float start[3];
-        session.GetStartPos(start);
-        const int bx = static_cast<int>(std::floor(start[0]));
-        const int bz = static_cast<int>(std::floor(start[2]));
-        if (!session.ColumnSettled(bx >> 4, bz >> 4))
-            return false;
-
-        Level& level = session.NetLevel();
-        const int top = level.FindBlockBelow(bx, bz, Chunk::MIN_Y + Chunk::HEIGHT - 1,
-                                             [](uint16_t id) { return id != 0; });
-        const float feet = top >= Chunk::MIN_Y ? static_cast<float>(top) + 1.0f : kFallbackSpawnY;
-        session.SetPose(start[0], feet, start[2], BedrockYaw(camera.yaw), BedrockPitch(camera.pitch));
-        std::cout << "[spawn] placed on terrain at (" << start[0] << "," << feet << "," << start[2] << ")"
-                  << std::endl;
-        return true;
     }
 
     void LocalPlayer::ApplyServerMotion(BedrockSession& session, Camera& camera) {
@@ -142,6 +120,7 @@ namespace perlin {
         in.flying = flying;
         in.flyUp = flying && jump;
         in.flyDown = flying && sneakKey;
+        in.noClip = flying && (session.NoClip() || session.Spectator());
 
         physics::Attributes attributes;
         attributes.speed = session.MovementSpeedAttribute();
@@ -155,7 +134,7 @@ namespace perlin {
             state.vx = state.vy = state.vz = 0;
         }
 
-        if (flying && state.onGround && !in.flyUp) {
+        if (flying && state.onGround && !in.flyUp && !in.noClip) {
             flying = false;
             sendStopFlying = true;
         }
@@ -250,8 +229,6 @@ namespace perlin {
     void LocalPlayer::Update(BedrockSession& session, const InputManager& input, Camera& camera,
                              const BlockLibrary& blocks, float dt) {
         BedrockSession::PlayerPose pose = session.GetPose();
-        if (!pose.known && TryPlaceOnTerrain(session, camera))
-            pose = session.GetPose();
         if (!pose.known)
             return;
 
@@ -267,11 +244,27 @@ namespace perlin {
         ApplyServerMotion(session, camera);
 
         const auto now = std::chrono::steady_clock::now();
-        if (flying && !session.MayFly()) {
+        const bool spectator = session.NoClip() || session.Spectator();
+        if (spectator) {
+            if (!flying) {
+                flying = true;
+                sendStartFlying = true;
+            }
+        } else if (flying && !session.MayFly()) {
             flying = false;
             sendStopFlying = true;
         }
-        if (session.MayFly() && input.Pressed(Action::Jump)) {
+        // Follow the server when it toggles flight on its own (e.g. /ability or a creative switch).
+        if (session.IsFlying() != serverFlying) {
+            serverFlying = session.IsFlying();
+            if (serverFlying && session.MayFly() && !flying) {
+                flying = true;
+                state.vy = 0;
+            } else if (!serverFlying && flying && !spectator) {
+                flying = false;
+            }
+        }
+        if (session.MayFly() && !spectator && input.Pressed(Action::Jump)) {
             if (now - lastJumpPress <= kDoubleTapWindow) {
                 flying = !flying;
                 state.vy = 0;
@@ -288,7 +281,13 @@ namespace perlin {
         }
 
         LevelCollision world(session.NetLevel(), &blocks);
-        accumulator += dt;
+        // The server only simulates us once the spawn handshake is done; until then just hold position.
+        if (!session.Initialized()) {
+            accumulator = 0.0;
+            previous = state;
+        } else {
+            accumulator += dt;
+        }
         int ticks = 0;
         while (accumulator >= physics::kTickSeconds) {
             accumulator -= physics::kTickSeconds;
@@ -297,6 +296,18 @@ namespace perlin {
                 break;
             }
             Tick(session, input, camera, world);
+        }
+
+        {
+            float target = 1.0f;
+            if (flying)
+                target *= 1.1f;
+            const float speed = session.MovementSpeedAttribute() * (sprinting ? 1.3f : 1.0f);
+            target *= (speed / 0.1f + 1.0f) / 2.0f;
+            target = std::clamp(target, 0.1f, 1.5f);
+            // Java lerps 0.5 per 20 Hz tick.
+            const float keep = std::pow(0.5f, dt * 20.0f);
+            fovModifier = target + (fovModifier - target) * keep;
         }
 
         // Smooth the camera between the last two simulated ticks.

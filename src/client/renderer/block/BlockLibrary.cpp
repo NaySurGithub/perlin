@@ -6,6 +6,7 @@
 #include <cstdio>
 #include <cstring>
 #include <exception>
+#include <filesystem>
 #include <fstream>
 #include <iostream>
 #include "util/Json.hpp"
@@ -789,6 +790,33 @@ namespace perlin {
             } catch (...) {
                 printf("[blocks] bad entry for %s\n", name.c_str());
             }
+        }
+
+        if (!modelsTried) {
+            modelsTried = true;
+            if (!models.Load(perlinPackDir + "/block_models.bin") &&
+                !models.Load(paths::ExeDir() + "/resources/block_models.bin"))
+                std::cout << "[models] block_models.bin not found; using hand-built block shapes" << std::endl;
+        }
+        if (models.Loaded()) {
+            const auto& names = models.Textures();
+            for (size_t i = 0; i < names.size(); i++)
+                if (models.tiles[i] == 0)
+                    models.tiles[i] = FetchTile(names[i], vanillaRpRoot);
+        }
+
+        if (!geometryTried) {
+            geometryTried = true;
+            const BlockGeometry::FetchFn fetch = [this](const std::string& p, const std::string& root) {
+                return FetchTile(p, root);
+            };
+            geometry.ScanPack(vanillaRpRoot, vanillaRpRoot + "/../behavior_pack/blocks", fetch);
+            std::error_code ec;
+            const std::filesystem::path extra = std::filesystem::path(perlinPackDir) / "packs";
+            if (std::filesystem::is_directory(extra, ec))
+                for (const auto& dir : std::filesystem::directory_iterator(extra, ec))
+                    if (dir.is_directory())
+                        geometry.ScanPack(dir.path().string(), (dir.path() / "blocks").string(), fetch);
         }
 
         if (fetchFails > 0) {

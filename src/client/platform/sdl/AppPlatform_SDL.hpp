@@ -26,6 +26,8 @@ public:
 
 private:
     void HandleEvent(const SDL_Event& event);
+    void SetCursorCaptured(bool captured);
+    bool cursorCaptured = false;
 
     SDL_Window* window = nullptr;
     NativeWindowInfo native;

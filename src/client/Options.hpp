@@ -21,6 +21,7 @@ namespace perlin {
         bool fancyGraphics = true;
         int cloudRange = 128;
         bool rgss = false;
+        bool fovEffects = true; // sprinting/flying/speed change the field of view (Java "FOV Effects")
         KeyBindings keys = DefaultBindings();
 
         const Binding& GetKey(Action action) const { return keys[static_cast<size_t>(action)]; }

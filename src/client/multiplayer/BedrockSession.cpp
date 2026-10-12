@@ -257,7 +257,36 @@ namespace perlin {
         return reliable ? net->SendReliable(batch) : net->SendUnreliable(batch);
     }
 
+    void BedrockSession::PruneChunks(int centerX, int centerZ, int radius) {
+        std::vector<ChunkPos> doomed;
+        {
+            std::lock_guard<std::mutex> lock(netLevel.mutex);
+            for (const auto& entry : netLevel.chunks) {
+                const ChunkPos& p = entry.first;
+                if (std::abs(p.x - centerX) > radius || std::abs(p.z - centerZ) > radius)
+                    doomed.push_back(p);
+            }
+        }
+        if (doomed.empty())
+            return;
+        for (const ChunkPos& p : doomed)
+            netLevel.RemoveChunk(p.x, p.z);
+        std::lock_guard<std::mutex> lk(reqMutex);
+        for (const ChunkPos& p : doomed) {
+            seenColumns.erase({p.x, p.z});
+            for (auto it = requestedSlots.begin(); it != requestedSlots.end();)
+                it = (std::get<1>(*it) == p.x && std::get<3>(*it) == p.z) ? requestedSlots.erase(it) : std::next(it);
+        }
+    }
+
     void BedrockSession::Update() {
+        if (startGameSeen && !initializedSent &&
+            std::chrono::steady_clock::now() - startGameAt > std::chrono::seconds(8)) {
+            // PlayerSpawn never came; finish the handshake anyway rather than staying a ghost.
+            std::cout << "[bedrock] no PlayerSpawn after 8s, initialising anyway" << std::endl;
+            SendLoadingScreen(false);
+            SendSetLocalPlayerAsInitialized();
+        }
         if (net && !net->IsConnected() && !diagLostLogged && state != State::Disconnected) {
             diagLostLogged = true;
             std::cout << "[net] CONNECTION LOST (transport closed) state=" << (int)state.load()
@@ -411,6 +440,14 @@ namespace perlin {
             return false;
         proto::SetLocalPlayerAsInitializedPacket p;
         p.runtimeEntityId = runtimeId;
+        initializedSent = true;
+        std::cout << "[bedrock] SetLocalPlayerAsInitialized" << std::endl;
+        return Send(p);
+    }
+
+    bool BedrockSession::SendLoadingScreen(bool start) {
+        proto::ServerboundLoadingScreenPacket p;
+        p.type = start ? 1 : 2;
         return Send(p);
     }
 
@@ -528,7 +565,14 @@ namespace perlin {
         f.camZ = std::cos(yaw) * cp;
         f.rawX = mx;
         f.rawZ = mz;
-        return SendUnreliable(f);
+        // Sent on the reliable channel: the server only simulates a player when an input arrives, and a
+        // dropped input would be a lost tick of movement.
+        if (movePacketsSent < 3 || movePacketsSent % 200 == 0)
+            std::cout << "[move] input #" << movePacketsSent << " tick=" << f.tick << " eye=(" << f.eyeX << ","
+                      << f.eyeY << "," << f.eyeZ << ") move=(" << f.moveX << "," << f.moveZ << ") flags="
+                      << f.flags.size() << std::endl;
+        movePacketsSent++;
+        return Send(f);
     }
 
     bool BedrockSession::SendPlayerAuthInputBlockAction(uint32_t action, int bx, int by, int bz, int face) {

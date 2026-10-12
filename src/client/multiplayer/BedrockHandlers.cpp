@@ -64,6 +64,8 @@ namespace perlin {
                     state = State::Failed;
                 }
             } else if (p.status == PlayStatusPacketStatus::PlayerSpawn) {
+                // Same order as the vanilla client: end the loading screen, then report ready.
+                SendLoadingScreen(false);
                 SendSetLocalPlayerAsInitialized();
                 state = State::InGame;
                 std::cout << "[bedrock] spawned -> InGame" << std::endl;
@@ -116,6 +118,9 @@ namespace perlin {
         OnPartial<StartGamePacket>([this](const StartGamePacket& p) {
             const float x = p.playerPosition.x, y = p.playerPosition.y, z = p.playerPosition.z;
             runtimeId = p.runtimeEntityId;
+            uniqueId = p.entityId;
+            gameType = static_cast<int>(p.playerGamemode);
+            if (gameType == 1) mayFly = true;
             if (!pose.known && SaneWorldPos(x, y, z))
                 pose = {x, y, z, p.rotation.z, p.rotation.x, p.rotation.z, false, true};
             if (std::isfinite(x) && std::isfinite(z) && std::fabs(x) <= 100000.0f &&
@@ -147,9 +152,28 @@ namespace perlin {
             if (!GetWorldTicks(known) && p.currentTick > 0)
                 NoteTime(p.currentTick);
             SendRequestChunkRadius();
-            SendSetLocalPlayerAsInitialized();
+            SendLoadingScreen(true);
+            startGameSeen = true;
+            startGameAt = std::chrono::steady_clock::now();
             state = State::InGame;
-            std::cout << "[bedrock] spawned -> InGame" << std::endl;
+            std::cout << "[bedrock] StartGame handled -> waiting for PlayerSpawn" << std::endl;
+        });
+
+        // The server tells us which area it is streaming. Drop what fell out of it and remember the
+        // centre so chunks keep loading around the player as they move.
+        On<NetworkChunkPublisherUpdatePacket>([this](const NetworkChunkPublisherUpdatePacket& p) {
+            const int cx = static_cast<int>(std::floor(static_cast<double>(p.coordinates.x) / 16.0));
+            const int cz = static_cast<int>(std::floor(static_cast<double>(p.coordinates.z) / 16.0));
+            const int radius = static_cast<int>((p.radius + 15) / 16);
+            viewCenterChunk[0] = cx;
+            viewCenterChunk[1] = cz;
+            viewRadiusChunks = radius;
+            static int logged = 0;
+            if (logged++ < 6)
+                std::cout << "[chunk] publisher centre (" << p.coordinates.x << "," << p.coordinates.y << ","
+                          << p.coordinates.z << ") radius " << p.radius << " blocks" << std::endl;
+            if (radius > 0)
+                PruneChunks(cx, cz, radius + 2);
         });
 
         On<ItemRegistryPacket>([](const ItemRegistryPacket& p) {
@@ -298,6 +322,10 @@ namespace perlin {
             pose.z = p.position.z;
             pose.onGround = p.onGround;
             haveLastAuthPos = false;
+            if (correctionsReceived++ < 5 || correctionsReceived % 100 == 0)
+                std::cout << "[move] server correction #" << correctionsReceived << " tick=" << p.tick << " pos=("
+                          << p.position.x << "," << p.position.y << "," << p.position.z << ") delta=("
+                          << p.delta.x << "," << p.delta.y << "," << p.delta.z << ")" << std::endl;
             serverMotion.poseChanged = true;
             serverMotion.hasVelocity = true;
             serverMotion.velocity[0] = p.delta.x;
@@ -323,20 +351,32 @@ namespace perlin {
         });
 
         On<UpdateAbilitiesPacket>([this](const UpdateAbilitiesPacket& p) {
-            mayFly = false;
-            isFlying = false;
+            if (runtimeId != 0 && p.entityUniqueId != 0 && uniqueId != 0 && p.entityUniqueId != uniqueId)
+                return;
+            // Later layers override earlier ones for every ability they are allowed to set.
+            bool fly = false, flying = false, clip = false;
             for (const AbilityLayers& layer : p.abilities) {
-                const bool hasMayFly = (layer.allowed & (1u << 10)) != 0;
-                const bool flyingNow = (layer.enabled & (1u << 9)) != 0;
-                const bool canFlyNow = (layer.enabled & (1u << 10)) != 0;
-                if (!hasMayFly || !canFlyNow)
-                    continue;
-                mayFly = true;
-                isFlying = isFlying || flyingNow;
-                flySpeed = layer.flySpeed;
-                vFlySpeed = layer.verticalFlySpeed;
-                walkSpeed = layer.walkSpeed;
+                if (layer.allowed & (1u << 10)) fly = (layer.enabled & (1u << 10)) != 0;
+                if (layer.allowed & (1u << 9)) flying = (layer.enabled & (1u << 9)) != 0;
+                if (layer.allowed & (1u << 17)) clip = (layer.enabled & (1u << 17)) != 0;
+                if (layer.flySpeed > 0) flySpeed = layer.flySpeed;
+                if (layer.verticalFlySpeed > 0) vFlySpeed = layer.verticalFlySpeed;
+                if (layer.walkSpeed > 0) walkSpeed = layer.walkSpeed;
             }
+            mayFly = fly;
+            isFlying = flying;
+            noClip = clip;
+            std::cout << "[bedrock] abilities mayFly=" << mayFly << " flying=" << isFlying
+                      << " noclip=" << noClip << " fly=" << flySpeed << std::endl;
+        });
+
+        On<UpdatePlayerGameTypePacket>([this](const UpdatePlayerGameTypePacket& p) {
+            if (uniqueId != 0 && p.playerUniqueId != uniqueId)
+                return;
+            gameType = static_cast<int>(p.gamemode);
+        });
+        On<SetPlayerGameTypePacket>([this](const SetPlayerGameTypePacket& p) {
+            gameType = static_cast<int>(p.gamemode);
         });
 
         On<NetworkStackLatencyPacket>([this](const NetworkStackLatencyPacket& p) {

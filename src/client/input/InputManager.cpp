@@ -36,7 +36,13 @@ namespace perlin {
         const float mx = input.MouseX();
         const float my = input.MouseY();
         look = {};
-        if (haveMouse && IsDown(Action::Look)) {
+        float dx = 0, dy = 0;
+        input.TakeMouseDelta(dx, dy);
+        if (input.Captured()) {
+            const float sens = options.mouseSensitivity;
+            look.yaw = dx * sens;
+            look.pitch = dy * sens * (options.invertMouse ? 1.0f : -1.0f);
+        } else if (haveMouse && IsDown(Action::Look)) {
             const float sens = options.mouseSensitivity;
             look.yaw = (mx - lastMouseX) * sens;
             look.pitch = (my - lastMouseY) * sens * (options.invertMouse ? 1.0f : -1.0f);

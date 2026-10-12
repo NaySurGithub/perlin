@@ -300,9 +300,20 @@ namespace perlin::physics {
             if (in.flyDown)
                 s.vy -= lift;
             const double keep = s.vy;
-            const double accel = s.onGround ? attr.speed * (0.16277136 / std::pow(SlipperinessBelow(s, world) * 0.91, 3.0))
+            const double accel = (s.onGround && !in.noClip) ? attr.speed * (0.16277136 / std::pow(SlipperinessBelow(s, world) * 0.91, 3.0))
                                             : attr.flySpeed * (in.sprint ? 2.0 : 1.0);
             MoveRelative(s, strafe, forward, accel);
+            if (in.noClip) {
+                s.x += s.vx;
+                s.y += s.vy;
+                s.z += s.vz;
+                s.onGround = false;
+                s.horizontalCollision = s.verticalCollision = false;
+                s.vx *= 0.91;
+                s.vz *= 0.91;
+                s.vy = keep * 0.6;
+                return;
+            }
             MoveEntity(s, {s.vx, s.vy, s.vz}, false, world, scratch, env);
             const double friction = s.onGround ? SlipperinessBelow(s, world) * 0.91 : 0.91;
             s.vx *= friction;

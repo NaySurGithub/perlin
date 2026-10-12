@@ -4,6 +4,7 @@
 #include "world/level/Level.hpp"
 #include "client/renderer/block/BiomeTints.hpp"
 #include "client/renderer/block/BlockLibrary.hpp"
+#include "client/renderer/block/BlockModels.hpp"
 #include "world/level/block/BlockPalette.hpp"
 #include "client/renderer/Tessellator.hpp"
 #include "world/level/lighting/ChunkLighting.hpp"
@@ -242,12 +243,54 @@ namespace perlin {
         }
     }
 
+    // net.minecraft.util.Mth.getSeed(x, y, z)
+    static int64_t JavaPosSeed(int x, int y, int z) {
+        int64_t l = static_cast<int64_t>(static_cast<int32_t>(static_cast<uint32_t>(x) * 3129871u)) ^
+                    (static_cast<int64_t>(z) * 116129781LL) ^ static_cast<int64_t>(y);
+        l = static_cast<int64_t>(static_cast<uint64_t>(l) * static_cast<uint64_t>(l) * 42317861ULL +
+                                 static_cast<uint64_t>(l) * 11ULL);
+        return l >> 16;
+    }
+
+    // java.util.Random (LegacyRandomSource) subset used for weighted model variant selection.
+    struct JavaRandom {
+        int64_t seed;
+        explicit JavaRandom(int64_t s) : seed((s ^ 0x5DEECE66DLL) & ((1LL << 48) - 1)) {}
+        int Next(int bits) {
+            seed = (seed * 0x5DEECE66DLL + 0xBLL) & ((1LL << 48) - 1);
+            return static_cast<int>(seed >> (48 - bits));
+        }
+        int NextInt(int bound) {
+            int r = Next(31);
+            const int m = bound - 1;
+            if ((bound & m) == 0)
+                return static_cast<int>((static_cast<int64_t>(bound) * static_cast<int64_t>(r)) >> 31);
+            for (int u = r; static_cast<int32_t>(static_cast<uint32_t>(u) - static_cast<uint32_t>(r = u % bound) +
+                                                 static_cast<uint32_t>(m)) < 0;
+                 u = Next(31)) {
+            }
+            return r;
+        }
+    };
+
+    static void ModelOffset(int x, int z, int kind, float& dx, float& dy, float& dz) {
+        dx = dy = dz = 0.0f;
+        const int64_t seed = JavaPosSeed(x, 0, z);
+        const float maxH = kind == 3 ? 0.125f : 0.25f;
+        dx = std::clamp((static_cast<float>(seed & 15) / 15.0f - 0.5f) * 0.5f, -maxH, maxH);
+        dz = std::clamp((static_cast<float>((seed >> 8) & 15) / 15.0f - 0.5f) * 0.5f, -maxH, maxH);
+        if (kind == 2)
+            dy = (static_cast<float>((seed >> 4) & 15) / 15.0f - 1.0f) * 0.2f;
+    }
+
     struct IdMemo {
         std::vector<const BlockAppearance*> app = std::vector<const BlockAppearance*>(65536, nullptr);
         std::vector<int8_t> solid = std::vector<int8_t>(65536, -1);
         std::vector<int8_t> water = std::vector<int8_t>(65536, -1);
         std::vector<int8_t> translucent = std::vector<int8_t>(65536, -1);
         std::vector<int8_t> ao = std::vector<int8_t>(65536, -1);
+        std::vector<const ModelEntry*> model = std::vector<const ModelEntry*>(65536, nullptr);
+        std::vector<int8_t> modelKnown = std::vector<int8_t>(65536, 0);
         std::vector<uint8_t> opacity = std::vector<uint8_t>(65536, 0);
         std::vector<uint8_t> opacityKnown = std::vector<uint8_t>(65536, 0);
         std::vector<uint32_t> stamp = std::vector<uint32_t>(65536, 0);
@@ -263,6 +306,8 @@ namespace perlin {
             water[id] = -1;
             translucent[id] = -1;
             ao[id] = -1;
+            modelKnown[id] = 0;
+            model[id] = nullptr;
             opacityKnown[id] = 0;
         }
     };
@@ -277,6 +322,22 @@ namespace perlin {
         if (!slot)
             slot = &library->Look(id);
         return slot;
+    }
+
+    static const ModelEntry* ModelFor(BlockLibrary* library, uint16_t id) {
+        if (!library)
+            return nullptr;
+        IdMemo& m = Memo();
+        m.Touch(id);
+        if (!m.modelKnown[id]) {
+            m.modelKnown[id] = 1;
+            const ModelEntry* geo = library->Geometry().Empty() ? nullptr : library->Geometry().Find(id);
+            m.model[id] = geo ? geo
+                          : library->Models().Loaded()
+                              ? library->Models().Find(BlockPalette::Instance().NetworkId(id))
+                              : nullptr;
+        }
+        return m.model[id];
     }
 
     static bool IsLiquidId(BlockLibrary* library, uint16_t id) {
@@ -404,6 +465,8 @@ namespace perlin {
         static bool ComputeSolid(BlockLibrary* library, uint16_t id) {
             if (!library)
                 return true;
+            if (ModelFor(library, id))
+                return false;
             const BlockAppearance& a = *LookupApp(library, id);
             if ((a.top | a.side | a.bottom) == 0)
                 return false;
@@ -552,7 +615,8 @@ namespace perlin {
                         app = LookupApp(library, id);
                     // Blocks without any texture (unknown hashes, barrier, light blocks, structure void...)
                     // are invisible in Java; drawing them as a stand-in cube produced phantom blocks.
-                    if (app && (app->top | app->side | app->bottom) == 0) {
+                    const ModelEntry* modelEntry = textured ? ModelFor(library, id) : nullptr;
+                    if (app && !modelEntry && (app->top | app->side | app->bottom) == 0) {
                         static std::mutex logMutex;
                         static std::unordered_set<uint16_t> logged;
                         std::lock_guard<std::mutex> lk(logMutex);
@@ -576,7 +640,7 @@ namespace perlin {
                     const GeomInfo& gi = GeomFor(id);
                     uint32_t bhash = PosHash(baseX + x, y, baseZ + z);
 
-                    if (app && (gi.stair || gi.fence || gi.wall || gi.cakeBites >= 0)) {
+                    if (app && !modelEntry && (gi.stair || gi.fence || gi.wall || gi.cakeBites >= 0)) {
                         int ct = PickTile(app->varTop, app->top, bhash);
                         int cs = PickTile(app->varSide, app->side, bhash);
                         int cb = PickTile(app->varBottom, app->bottom, bhash);
@@ -779,6 +843,193 @@ namespace perlin {
                         blendMemo.emplace(blendKey, r);
                         return r;
                     };
+
+                    if (modelEntry) {
+                        const BlockModels& bm = library->Models();
+                        float mox = 0, moy = 0, moz = 0;
+                        if (modelEntry->offset)
+                            ModelOffset(baseX + x, baseZ + z, modelEntry->offset, mox, moy, moz);
+                        static constexpr int kDV[6][3] = {{0, -1, 0}, {0, 1, 0}, {0, 0, -1},
+                                                          {0, 0, 1},  {-1, 0, 0}, {1, 0, 0}};
+                        static constexpr float kDirShade[6] = {0.5f, 1.0f, 0.8f, 0.8f, 0.6f, 0.6f};
+                        struct Packed {
+                            int block, sky;
+                        };
+                        auto coordsAt = [&](const int p[3]) {
+                            const std::array<int, 2> l = sample(p[0], p[1], p[2]);
+                            return Packed{l[0] * 16, l[1] * 16};
+                        };
+                        auto smoothBlend = [](Packed n1, Packed n2, Packed n3, Packed c) {
+                            if (c.sky > 2 * 16 - 1 || c.block > 2 * 16 - 1) {
+                                for (Packed* n : {&n1, &n2, &n3}) {
+                                    if (n->block == 0 && n->sky == 0)
+                                        *n = c;
+                                    else if (n->sky == 0)
+                                        n->sky = c.sky;
+                                }
+                            }
+                            return Packed{(n1.block + n2.block + n3.block + c.block) >> 2,
+                                          (n1.sky + n2.sky + n3.sky + c.sky) >> 2};
+                        };
+                        auto emitQuad = [&](const ModelQuad& q) {
+                            if (!q.tile && (q.tex == 0xFFFF || q.tex >= bm.tiles.size()))
+                                return;
+                            const int tile = q.tile ? q.tile : bm.tiles[q.tex];
+                            if (!tile)
+                                return;
+                            const BlockLibrary::TileAlpha ta = library->AlphaOf(tile);
+                            if (q.cull >= 0) {
+                                const int* nb = kDV[q.cull];
+                                const uint16_t nid = cache.Get(x + nb[0], y + nb[1], z + nb[2]);
+                                if (nid != 0 && cache.Occ(x + nb[0], y + nb[1], z + nb[2]))
+                                    return;
+                                if (nid == id && ta.translucent)
+                                    return;
+                            }
+                            const int dir = q.dir;
+                            const int* nrm = kDV[dir];
+                            const int nAxis = dir < 2 ? 1 : (dir < 4 ? 2 : 0);
+                            const float planeAt = (dir & 1) ? 1.0f : 0.0f;
+                            bool flush = true;
+                            for (int i = 0; i < 4; i++)
+                                if (std::fabs(q.pos[i][nAxis] - planeAt) > 1e-4f)
+                                    flush = false;
+                            const int axis1 = nrm[0] != 0 ? 1 : 0;
+                            const int axis2 = nrm[2] != 0 ? 1 : 2;
+                            int first[3] = {0, 0, 0};
+                            if (nrm[1] < 0)
+                                first[0] = -1;
+                            else if (nrm[1] > 0)
+                                first[0] = 1;
+                            else if (nrm[2] < 0)
+                                first[1] = 1;
+                            else if (nrm[2] > 0)
+                                first[0] = -1;
+                            else if (nrm[0] < 0)
+                                first[1] = 1;
+                            else
+                                first[1] = -1;
+                            const int center[3] = {x + (flush ? nrm[0] : 0), y + (flush ? nrm[1] : 0),
+                                                   z + (flush ? nrm[2] : 0)};
+                            float cAo[2][2];
+                            float cBlock[2][2], cSky[2][2];
+                            const float shadeCenter = AoShade(cache, library, center[0], center[1], center[2]);
+                            const Packed lightCenter = coordsAt(center);
+                            for (int s1 = 0; s1 < 2; s1++)
+                                for (int s2 = 0; s2 < 2; s2++) {
+                                    const int d1 = s1 ? 1 : -1, d2 = s2 ? 1 : -1;
+                                    int e1[3] = {center[0], center[1], center[2]};
+                                    int e2[3] = {center[0], center[1], center[2]};
+                                    int corner[3] = {center[0], center[1], center[2]};
+                                    e1[axis1] += d1;
+                                    e2[axis2] += d2;
+                                    corner[axis1] += d1;
+                                    corner[axis2] += d2;
+                                    const bool perm1 = !cache.Occ(e1[0] + nrm[0], e1[1] + nrm[1], e1[2] + nrm[2]);
+                                    const bool perm2 = !cache.Occ(e2[0] + nrm[0], e2[1] + nrm[1], e2[2] + nrm[2]);
+                                    const int fb[3] = {center[0] + first[0], center[1] + first[1],
+                                                       center[2] + first[2]};
+                                    float sc;
+                                    Packed lc;
+                                    if (!perm1 && !perm2) {
+                                        sc = AoShade(cache, library, fb[0], fb[1], fb[2]);
+                                        lc = coordsAt(fb);
+                                    } else {
+                                        sc = AoShade(cache, library, corner[0], corner[1], corner[2]);
+                                        lc = coordsAt(corner);
+                                    }
+                                    const float a1 = AoShade(cache, library, e1[0], e1[1], e1[2]);
+                                    const float a2 = AoShade(cache, library, e2[0], e2[1], e2[2]);
+                                    cAo[s1][s2] = (a1 + a2 + sc + shadeCenter) * 0.25f;
+                                    const Packed b = smoothBlend(coordsAt(e1), coordsAt(e2), lc, lightCenter);
+                                    cBlock[s1][s2] = static_cast<float>(b.block) / 16.0f;
+                                    cSky[s1][s2] = static_cast<float>(b.sky) / 16.0f;
+                                }
+
+                            float base[3] = {1, 1, 1};
+                            if (q.tint >= 0 && !q.tile) {
+                                std::string tn = bm.Textures()[q.tex];
+                                const auto tc = biomeTintFor(tn, tile, dir == 1);
+                                if (tc[3]) {
+                                    base[0] = tc[0];
+                                    base[1] = tc[1];
+                                    base[2] = tc[2];
+                                } else if (app && (app->tintTop || app->tintSide || app->tintBottom)) {
+                                    base[0] = app->tintR;
+                                    base[1] = app->tintG;
+                                    base[2] = app->tintB;
+                                }
+                            }
+                            float u0, v0uv, u1, v1uv;
+                            BlockLibrary::TileUV(tile, u0, v0uv, u1, v1uv);
+                            const float dirShade = q.shade ? kDirShade[q.shadeDir] : 1.0f;
+                            // Reversed vertex order: Perlin front faces wind opposite to Java's.
+                            static constexpr int kOrder[4] = {0, 3, 2, 1};
+                            float v[4][3], col[4][3], uv[4][2], lt[4][2];
+                            for (int k = 0; k < 4; k++) {
+                                const int i = kOrder[k];
+                                v[k][0] = bx + q.pos[i][0] + mox;
+                                v[k][1] = by + q.pos[i][1] + moy;
+                                v[k][2] = bz + q.pos[i][2] + moz;
+                                const float p1 = std::clamp(q.pos[i][axis1], 0.0f, 1.0f);
+                                const float p2 = std::clamp(q.pos[i][axis2], 0.0f, 1.0f);
+                                float ao = 0, bl = 0, sk = 0;
+                                for (int s1 = 0; s1 < 2; s1++)
+                                    for (int s2 = 0; s2 < 2; s2++) {
+                                        const float w = (s1 ? p1 : 1 - p1) * (s2 ? p2 : 1 - p2);
+                                        ao += w * cAo[s1][s2];
+                                        bl += w * cBlock[s1][s2];
+                                        sk += w * cSky[s1][s2];
+                                    }
+                                if (q.light) {
+                                    bl = std::max(bl, static_cast<float>(q.light));
+                                    sk = std::max(sk, static_cast<float>(q.light));
+                                }
+                                const float kv = ao * dirShade;
+                                col[k][0] = base[0] * kv;
+                                col[k][1] = base[1] * kv;
+                                col[k][2] = base[2] * kv;
+                                lt[k][0] = bl;
+                                lt[k][1] = sk;
+                                uv[k][0] = u0 + (q.uv[i][0] / 16.0f) * (u1 - u0);
+                                uv[k][1] = v0uv + (q.uv[i][1] / 16.0f) * (v1uv - v0uv);
+                            }
+                            tess.SetLayer(ta.translucent ? RenderLayer::Translucent
+                                          : ta.holes     ? RenderLayer::Cutout
+                                                         : RenderLayer::Solid);
+                            tess.AddQuad(v, col, uv, false, lt);
+                        };
+                        if (modelEntry->direct) {
+                            for (const ModelQuad& q : modelEntry->quads)
+                                emitQuad(q);
+                            continue;
+                        }
+                        JavaRandom rng(JavaPosSeed(baseX + x, y, baseZ + z));
+                        for (const auto& group : modelEntry->groups) {
+                            const ModelEntry::Choice* pick = nullptr;
+                            if (group.size() == 1) {
+                                pick = &group[0];
+                            } else if (!group.empty()) {
+                                int total = 0;
+                                for (const auto& ch : group)
+                                    total += ch.weight;
+                                int r = rng.NextInt(total > 0 ? total : 1);
+                                for (const auto& ch : group) {
+                                    r -= ch.weight;
+                                    if (r < 0) {
+                                        pick = &ch;
+                                        break;
+                                    }
+                                }
+                                if (!pick)
+                                    pick = &group[0];
+                            }
+                            if (pick)
+                                for (const ModelQuad& q : bm.Variant(pick->variant))
+                                    emitQuad(q);
+                        }
+                        continue;
+                    }
 
                     if (app && app->shape == BlockAppearance::Shape::Flat) {
                         const std::vector<int>& fv = app->varTop.empty() ? app->varSide : app->varTop;

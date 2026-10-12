@@ -6,6 +6,8 @@
 #include <array>
 #include <unordered_map>
 #include <vector>
+#include "client/renderer/block/BlockGeometry.hpp"
+#include "client/renderer/block/BlockModels.hpp"
 
 namespace perlin {
 
@@ -41,6 +43,8 @@ namespace perlin {
         bool Complete() const { return complete; }
 
         const BlockAppearance& Look(int32_t localId) const;
+        const BlockModels& Models() const { return models; }
+        BlockGeometry& Geometry() const { return geometry; }
 
         const std::vector<uint8_t>& AtlasPixels() const { return atlas; }
         int TilesLoaded() const { return nextTile; }
@@ -62,6 +66,10 @@ namespace perlin {
     private:
         int FetchTile(const std::string& pngRelPath, const std::string& vanillaRpRoot);
 
+        BlockModels models;
+        mutable BlockGeometry geometry;
+        bool modelsTried = false;
+        bool geometryTried = false;
         bool ready = false;
         bool fancy = true;
         bool complete = false;
