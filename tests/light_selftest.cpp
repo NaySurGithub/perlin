@@ -17,7 +17,10 @@ static ChunkLighting::Grid MakeGrid(int rows) {
     ChunkLighting::Grid grid;
     grid.yBase = 0;
     grid.rows = rows;
-    grid.opacity.assign(static_cast<size_t>(rows) * ChunkLighting::kSpan * ChunkLighting::kSpan, 0);
+    const size_t cells = static_cast<size_t>(rows) * ChunkLighting::kSpan * ChunkLighting::kSpan;
+    grid.opacity.assign(cells, 0);
+    grid.shaped.assign(cells, 0);
+    grid.ids.assign(cells, 0);
     return grid;
 }
 
@@ -85,6 +88,39 @@ int main() {
         ChunkLighting::Propagate(grid, {});
         CHECK(grid.sky[grid.Index(24, 5, 24)] == 12);
         CHECK(grid.sky[grid.Index(24, 4, 24)] == 14);
+    }
+
+    // Slabs light by face shape: id 5 is a bottom slab, id 6 a top slab.
+    LightRegistry::Instance().SetOcclusion([](uint16_t id, FaceOcclusion& f) {
+        if (id != 5 && id != 6)
+            return false;
+        const bool bottom = id == 5;
+        for (int bit = 0; bit < 256; bit++) {
+            const int row = bit / 16;
+            f.bits[bottom ? 0 : 1][bit >> 6] |= 1ull << (bit & 63);
+            for (int d = 2; d < 6; d++)
+                if (bottom ? row < 8 : row >= 8)
+                    f.bits[d][bit >> 6] |= 1ull << (bit & 63);
+        }
+        return true;
+    });
+    {
+        ChunkLighting::Grid grid = MakeGrid(8);
+        const size_t slab = grid.Index(24, 4, 24);
+        grid.ids[slab] = 5;
+        grid.shaped[slab] = 1;
+        ChunkLighting::Propagate(grid, {});
+        CHECK(grid.sky[slab] == 15);                 // open top face lets the column in
+        CHECK(grid.sky[grid.Index(24, 3, 24)] == 14); // full bottom face blocks it; light bends in from the side
+    }
+    {
+        ChunkLighting::Grid grid = MakeGrid(8);
+        const size_t slab = grid.Index(24, 4, 24);
+        grid.ids[slab] = 6;
+        grid.shaped[slab] = 1;
+        ChunkLighting::Propagate(grid, {});
+        CHECK(grid.sky[slab] == 14);                 // full top face blocks the column
+        CHECK(grid.sky[grid.Index(24, 3, 24)] == 14);
     }
 
     std::printf(failures ? "%d FAILED\n" : "light self-tests passed\n", failures);

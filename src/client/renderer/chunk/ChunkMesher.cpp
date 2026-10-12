@@ -9,6 +9,7 @@
 #include "client/renderer/Tessellator.hpp"
 #include "world/level/lighting/ChunkLighting.hpp"
 #include "world/level/lighting/LightRegistry.hpp"
+#include "client/player/BlockCollision.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -368,15 +369,75 @@ namespace perlin {
         return slot != 0;
     }
 
+    static bool LightsByShape(uint16_t id) {
+        std::string n = BlockPalette::Instance().Name(id);
+        if (n.rfind("minecraft:", 0) == 0)
+            n.erase(0, 10);
+        auto ends = [&](const char* s) {
+            const size_t l = std::strlen(s);
+            return n.size() >= l && n.compare(n.size() - l, l, s) == 0;
+        };
+        if (n.find("double") != std::string::npos)
+            return false;
+        return ends("_stairs") || ends("_slab") || n == "farmland" || n == "grass_path" || n == "dirt_path" ||
+               n == "snow_layer";
+    }
+
+    bool BlockFaceOcclusion(uint16_t id, FaceOcclusion& out) {
+        if (!LightsByShape(id))
+            return false;
+        const physics::BlockShape& s = LevelCollision::ShapeOf(id);
+        constexpr double eps = 1e-6;
+        for (int dir = 0; dir < 6; dir++) {
+            const int axis = dir < 2 ? 1 : (dir < 4 ? 2 : 0);
+            const bool high = dir & 1;
+            for (int b = 0; b < s.count; b++) {
+                const physics::Box& bx = s.boxes[b];
+                const double lo[3] = {bx.x0, bx.y0, bx.z0}, hi[3] = {bx.x1, bx.y1, bx.z1};
+                if (high ? hi[axis] < 1.0 - eps : lo[axis] > eps)
+                    continue;
+                const int a1 = axis == 0 ? 1 : 0;
+                const int a2 = axis == 2 ? 1 : 2;
+                for (int r = 0; r < 16; r++)
+                    for (int q = 0; q < 16; q++) {
+                        // r runs along a2, q along a1.
+                        if (lo[a1] <= q / 16.0 + eps && hi[a1] >= (q + 1) / 16.0 - eps &&
+                            lo[a2] <= r / 16.0 + eps && hi[a2] >= (r + 1) / 16.0 - eps) {
+                            const int bit = r * 16 + q;
+                            out.bits[dir][bit >> 6] |= 1ull << (bit & 63);
+                        }
+                    }
+            }
+        }
+        return true;
+    }
+
     int BlockLightOpacity(BlockLibrary& library, uint16_t id) {
+        {
+            FaceOcclusion f;
+            if (BlockFaceOcclusion(id, f)) {
+                bool full = true;
+                for (int d = 0; d < 6; d++)
+                    full = full && f.Full(d);
+                return full ? kMaxLight : 0;
+            }
+        }
         const BlockAppearance& a = library.Look(id);
         if ((a.top | a.side | a.bottom) == 0)
             return 0;
         if (a.shape != BlockAppearance::Shape::Cube)
             return 0;
         const GeomInfo& g = GeomFor(id);
-        if (g.stair || g.slab)
+        if (g.stair || g.slab) {
+            FaceOcclusion f;
+            if (BlockFaceOcclusion(id, f)) {
+                bool full = true;
+                for (int d = 0; d < 6; d++)
+                    full = full && f.Full(d);
+                return full ? kMaxLight : 0;
+            }
             return kMaxLight;
+        }
         if (g.fence || g.wall || g.cakeBites >= 0)
             return 0;
         if (IsWaterTex(a.texTop) || IsWaterTex(a.texSide))

@@ -135,7 +135,13 @@ namespace perlin {
     }
 
     void Perlin::UpdateTitle(int fps) {
-        std::string title = "Perlin | " + std::to_string(fps) + " FPS";
+        std::string title = "Perlin";
+        if (renderer && renderReady) {
+            const std::string backend = renderer->RendererName();
+            if (!backend.empty())
+                title += " (" + backend + ")";
+        }
+        title += " | " + std::to_string(fps) + " FPS";
         int64_t day = 0;
         int tick = 0;
         if (sessionReady && session->GetWorldTime(day, tick))
@@ -151,6 +157,7 @@ namespace perlin {
             platform->isRunning = false;
             return;
         }
+        renderReady = true;
         levelRenderer = std::make_unique<LevelRenderer>(*renderer, options);
 
         camera.fov = options.fov;

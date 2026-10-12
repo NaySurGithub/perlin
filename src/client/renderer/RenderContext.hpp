@@ -60,6 +60,8 @@ namespace perlin {
 
         virtual bool Initialize(AppPlatform& platform, const Options& options) = 0;
         virtual void Shutdown() = 0;
+        // Graphics backend in use (for example "Direct3D 11"); empty before Initialize.
+        virtual std::string RendererName() const { return {}; }
 
         virtual void BeginFrame(const FrameParams& params) = 0;
         virtual void EndFrame() = 0;

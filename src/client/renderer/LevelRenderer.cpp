@@ -64,6 +64,7 @@ namespace perlin {
             registry.LoadRules(rules);
         registry.LoadBehaviorPack(options.bedrockSamplesDir + "/repo/behavior_pack/blocks");
         registry.SetDerivedOpacity([this](uint16_t id) { return BlockLightOpacity(blocks, id); });
+        registry.SetOcclusion([](uint16_t id, FaceOcclusion& out) { return BlockFaceOcclusion(id, out); });
         lightingConfigured = true;
     }
 

@@ -38,6 +38,7 @@ namespace perlin {
             int rows = 0;
             std::vector<uint16_t> ids;
             std::vector<uint8_t> opacity;
+            std::vector<uint8_t> shaped; // 1 where the block lights by face shape (stairs, slabs...)
             std::vector<uint8_t> sky;
             std::vector<uint8_t> block;
 

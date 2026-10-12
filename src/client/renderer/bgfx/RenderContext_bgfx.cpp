@@ -144,6 +144,7 @@ namespace perlin {
 
         const bgfx::Caps* caps = bgfx::getCaps();
         homogeneousDepth = caps->homogeneousDepth;
+        rendererName = bgfx::getRendererName(bgfx::getRendererType());
         std::cout << "[bgfx] renderer: " << bgfx::getRendererName(bgfx::getRendererType())
                   << (homogeneousDepth ? " (clip z -1..1)" : " (clip z 0..1)") << std::endl;
 

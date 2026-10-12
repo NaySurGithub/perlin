@@ -5,6 +5,8 @@
 #include "world/level/block/BlockPalette.hpp"
 
 #include <algorithm>
+#include <array>
+#include <atomic>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -146,21 +148,35 @@ namespace perlin {
         }
     }
 
-    const LevelCollision::Info& LevelCollision::Lookup(uint16_t id) const {
-        // Shapes depend only on the block id, so the table outlives the per-frame LevelCollision.
-        static std::vector<Info> cache;
-        if (cache.size() <= id)
-            cache.resize(std::max<size_t>(static_cast<size_t>(id) + 1, cache.size() * 2 + 64));
-        Info& info = cache[id];
-        if (!info.ready) {
-            info = Classify(id);
-            // Unknown names (palette not synced yet) are re-classified on the next query.
-            info.ready = id == 0 || !BlockPalette::Instance().Name(id).empty();
-        }
-        return info;
+    const physics::BlockShape& LevelCollision::ShapeOf(uint16_t id) {
+        return Lookup(id, nullptr).shape;
     }
 
-    LevelCollision::Info LevelCollision::Classify(uint16_t id) const {
+    const LevelCollision::Info& LevelCollision::Lookup(uint16_t id, const BlockLibrary* blocks) {
+        // Shapes depend only on the block id, so the table outlives the per-frame LevelCollision.
+        // Slots are published once and never freed, so the mesher threads and the game thread can share it.
+        static std::array<std::atomic<Info*>, 65536> table{};
+        Info* slot = table[id].load(std::memory_order_acquire);
+        if (slot)
+            return *slot;
+        Info info = Classify(id, blocks);
+        // Unknown names (palette not synced yet) are re-classified on the next query.
+        if (id != 0 && BlockPalette::Instance().Name(id).empty()) {
+            static thread_local Info transient;
+            transient = std::move(info);
+            return transient;
+        }
+        info.ready = true;
+        Info* fresh = new Info(std::move(info));
+        Info* expected = nullptr;
+        if (!table[id].compare_exchange_strong(expected, fresh, std::memory_order_acq_rel)) {
+            delete fresh;
+            return *expected;
+        }
+        return *fresh;
+    }
+
+    LevelCollision::Info LevelCollision::Classify(uint16_t id, const BlockLibrary* blocks) {
         Info info;
         BlockShape& s = info.shape;
         if (id == 0)
@@ -362,7 +378,7 @@ namespace perlin {
             // Waterlogged blocks, seagrass, kelp: the water lives in the second block layer.
             const uint16_t liquid = level.GetLiquid(x, y, z);
             if (liquid != 0) {
-                const Info& li = Lookup(liquid);
+                const Info& li = Lookup(liquid, blocks);
                 if (li.shape.fluid != 0) {
                     s.fluid = li.shape.fluid;
                     s.fluidLevel = li.shape.fluidLevel;
@@ -384,7 +400,7 @@ namespace perlin {
             Add(solid, 0, 0, 0, 1, 1, 1);
             return solid;
         }
-        const Info& info = Lookup(id);
+        const Info& info = Lookup(id, blocks);
         if (info.kind == Kind::Plain)
             return info.shape;
 
@@ -394,7 +410,7 @@ namespace perlin {
             const uint16_t other = level.GetBlock(x + dx, y, z + dz, nl);
             if (!nl || other == 0)
                 return false;
-            const Info& n = Lookup(other);
+            const Info& n = Lookup(other, blocks);
             if (n.kind == info.kind || n.full)
                 return true;
             if (info.kind == Kind::Fence) {

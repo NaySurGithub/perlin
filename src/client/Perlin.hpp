@@ -50,6 +50,7 @@ namespace perlin {
         std::unique_ptr<ThreadPool> workers;
         std::thread renderThread;
         std::atomic<bool> renderRunning{false};
+        std::atomic<bool> renderReady{false};
 
         Camera camera;
         LocalPlayer player;

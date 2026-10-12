@@ -22,6 +22,7 @@ namespace perlin {
         ~RenderContext_bgfx() override;
 
         bool Initialize(AppPlatform& platform, const Options& options) override;
+        std::string RendererName() const override { return rendererName; }
         void Shutdown() override;
         void BeginFrame(const FrameParams& params) override;
         void EndFrame() override;
@@ -38,6 +39,7 @@ namespace perlin {
                                 const uint8_t* bgra, bool yflip);
 
     private:
+        std::string rendererName;
         struct GpuChunk;
         struct VisibleChunk {
             float distance;

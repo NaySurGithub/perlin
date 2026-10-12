@@ -18,8 +18,19 @@ namespace perlin {
             return scratch;
         }
 
-        void Flood(std::vector<uint8_t>& light, const std::vector<uint8_t>& opacity,
-                   std::vector<uint32_t>& queue, int rows) {
+        // Java LightEngine.shapeOccludes for a step from cell `from` in direction `dir`.
+        inline bool Occluded(const ChunkLighting::Grid& grid, uint32_t from, uint32_t to, int dir) {
+            if (grid.shaped.empty() || (!grid.shaped[from] && !grid.shaped[to]))
+                return false;
+            const LightRegistry& registry = LightRegistry::Instance();
+            const FaceOcclusion* a = grid.shaped[from] ? registry.Occlusion(grid.ids[from]) : nullptr;
+            const FaceOcclusion* b = grid.shaped[to] ? registry.Occlusion(grid.ids[to]) : nullptr;
+            return FaceOcclusion::Occludes(a, dir, b);
+        }
+
+        void Flood(const ChunkLighting::Grid& grid, std::vector<uint8_t>& light, std::vector<uint32_t>& queue,
+                   int rows) {
+            const std::vector<uint8_t>& opacity = grid.opacity;
             size_t head = 0;
             while (head < queue.size()) {
                 const uint32_t i = queue[head++];
@@ -30,9 +41,11 @@ namespace perlin {
                 const int z = static_cast<int>((i / kSpan) % kSpan);
                 const int y = static_cast<int>(i / kLayer);
 
-                auto visit = [&](uint32_t n) {
+                auto visit = [&](uint32_t n, int dir) {
                     const int cost = std::max(1, static_cast<int>(opacity[n]));
                     if (opacity[n] >= kMaxLight)
+                        return;
+                    if (Occluded(grid, i, n, dir))
                         return;
                     const int next = level - cost;
                     if (next > light[n]) {
@@ -41,17 +54,17 @@ namespace perlin {
                     }
                 };
                 if (x > 0)
-                    visit(i - 1);
+                    visit(i - 1, 4);
                 if (x < kSpan - 1)
-                    visit(i + 1);
+                    visit(i + 1, 5);
                 if (z > 0)
-                    visit(i - kSpan);
+                    visit(i - kSpan, 2);
                 if (z < kSpan - 1)
-                    visit(i + kSpan);
+                    visit(i + kSpan, 3);
                 if (y > 0)
-                    visit(i - static_cast<uint32_t>(kLayer));
+                    visit(i - static_cast<uint32_t>(kLayer), 0);
                 if (y < rows - 1)
-                    visit(i + static_cast<uint32_t>(kLayer));
+                    visit(i + static_cast<uint32_t>(kLayer), 1);
             }
             queue.clear();
         }
@@ -72,6 +85,8 @@ namespace perlin {
                 for (int row = rows - 1; row >= 0; row--, i -= kLayer) {
                     const int cost = grid.opacity[i];
                     if (cost >= kMaxLight)
+                        level = 0;
+                    else if (row < rows - 1 && Occluded(grid, static_cast<uint32_t>(i + kLayer), static_cast<uint32_t>(i), 0))
                         level = 0;
                     else
                         level = std::max(0, level - cost);
@@ -113,7 +128,7 @@ namespace perlin {
                     if (edge)
                         queue.push_back(i);
                 }
-        Flood(grid.sky, grid.opacity, queue, rows);
+        Flood(grid, grid.sky, queue, rows);
 
         if (emitters.empty())
             return;
@@ -121,7 +136,7 @@ namespace perlin {
             grid.block[emitter.index] = std::max(grid.block[emitter.index], emitter.level);
             queue.push_back(emitter.index);
         }
-        Flood(grid.block, grid.opacity, queue, rows);
+        Flood(grid, grid.block, queue, rows);
     }
 
     void ChunkLighting::Extract(const Grid& grid, int yLo, int yHi, Result& out) {
@@ -188,6 +203,7 @@ namespace perlin {
         const LightRegistry& registry = LightRegistry::Instance();
         const size_t cells = grid.ids.size();
         grid.opacity.resize(cells);
+        grid.shaped.assign(cells, 0);
         scratch.emitters.clear();
         for (size_t i = 0; i < cells; i++) {
             const uint16_t id = grid.ids[i];
@@ -197,6 +213,8 @@ namespace perlin {
             }
             const BlockLightProps props = registry.Resolve(id);
             grid.opacity[i] = props.opacity;
+            if (props.opacity < kMaxLight && registry.Occlusion(id))
+                grid.shaped[i] = 1;
             if (props.emission > 0)
                 scratch.emitters.push_back({static_cast<uint32_t>(i), props.emission});
         }

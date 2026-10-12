@@ -15,6 +15,8 @@ namespace perlin {
         LevelCollision(const Level& level, const BlockLibrary* blocks) : level(level), blocks(blocks) {}
 
         physics::BlockShape Query(int x, int y, int z) const override;
+        // Collision shape of a block id, independent of any level.
+        static const physics::BlockShape& ShapeOf(uint16_t id);
 
     private:
         enum class Kind : uint8_t { Plain, Fence, Wall, Pane };
@@ -26,8 +28,8 @@ namespace perlin {
         };
 
         physics::BlockShape QueryMain(int x, int y, int z) const;
-        const Info& Lookup(uint16_t id) const;
-        Info Classify(uint16_t id) const;
+        static const Info& Lookup(uint16_t id, const BlockLibrary* blocks);
+        static Info Classify(uint16_t id, const BlockLibrary* blocks);
 
         const Level& level;
         const BlockLibrary* blocks;

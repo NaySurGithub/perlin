@@ -47,12 +47,47 @@ namespace perlin {
     LightRegistry::LightRegistry() {
         for (auto& slot : memo)
             slot.store(kUnresolved, std::memory_order_relaxed);
+        for (auto& slot : occlusion)
+            slot.store(0, std::memory_order_relaxed);
+    }
+
+    void LightRegistry::SetOcclusion(OcclusionFn fn) {
+        std::unique_lock lock(mutex);
+        occlusionFn = std::move(fn);
+        // Published shapes are never freed (readers may hold them); they are simply recomputed.
+        for (auto& slot : occlusion)
+            slot.store(0, std::memory_order_relaxed);
+    }
+
+    const FaceOcclusion* LightRegistry::Occlusion(uint16_t id) const {
+        uintptr_t v = occlusion[id].load(std::memory_order_acquire);
+        if (v == 1)
+            return nullptr;
+        if (v > 1)
+            return reinterpret_cast<const FaceOcclusion*>(v);
+        OcclusionFn fn;
+        {
+            std::shared_lock lock(mutex);
+            fn = occlusionFn;
+        }
+        if (!fn || id == 0)
+            return nullptr;
+        auto* fresh = new FaceOcclusion();
+        if (!fn(id, *fresh)) {
+            delete fresh;
+            occlusion[id].store(1, std::memory_order_release);
+            return nullptr;
+        }
+        occlusion[id].store(reinterpret_cast<uintptr_t>(fresh), std::memory_order_release);
+        return fresh;
     }
 
     void LightRegistry::Invalidate() {
         std::unique_lock lock(mutex);
         for (auto& slot : memo)
             slot.store(kUnresolved, std::memory_order_relaxed);
+        for (auto& slot : occlusion)
+            slot.store(0, std::memory_order_relaxed);
     }
 
     void LightRegistry::SetDerivedOpacity(OpacityFn fn) {
