@@ -82,7 +82,6 @@ namespace {
         dup2(fds[1], 2);
         close(fds[1]);
         const int readFd = fds[0];
-#endif
         setvbuf(stdout, nullptr, _IONBF, 0);
         setvbuf(stderr, nullptr, _IONBF, 0);
         std::thread([logs, saved, readFd] {
@@ -112,6 +111,7 @@ namespace {
             std::fflush(stdout);
             std::this_thread::sleep_for(std::chrono::milliseconds(80));
         });
+#endif
     }
 
 #ifdef _WIN32
