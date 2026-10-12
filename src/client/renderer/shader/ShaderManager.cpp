@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "perlin_shaders.h"
+#include "client/resources/ShaderPack.hpp"
 
 namespace perlin {
     namespace {
@@ -71,31 +72,47 @@ namespace perlin {
 
     }
 
-    bgfx::ShaderHandle ShaderManager::Load(const char* name, const std::string& packDirectory) const {
+    bgfx::ShaderHandle ShaderManager::Load(const char* name, bool fromPack) const {
         const bgfx::RendererType::Enum type = bgfx::getRendererType();
-        if (!packDirectory.empty()) {
-            const std::string path = packDirectory + "/" + RendererDirectory(type) + "/" + name + ".bin";
-            std::ifstream file(path, std::ios::binary);
-            if (file) {
-                std::vector<char> bytes((std::istreambuf_iterator<char>(file)), {});
-                if (!bytes.empty()) {
-                    bgfx::ShaderHandle handle = bgfx::createShader(bgfx::copy(bytes.data(), bytes.size()));
-                    if (bgfx::isValid(handle)) {
-                        bgfx::setName(handle, name);
-                        std::cout << "[shader] " << path << std::endl;
-                        return handle;
-                    }
+        if (fromPack) {
+            std::vector<char> bytes;
+            if (ShaderPack::Instance().Read(RendererDirectory(type), name, bytes)) {
+                bgfx::ShaderHandle handle = bgfx::createShader(bgfx::copy(bytes.data(), (uint32_t)bytes.size()));
+                if (bgfx::isValid(handle)) {
+                    bgfx::setName(handle, name);
+                    return handle;
                 }
+                std::cout << "[shader] pack shader rejected by the driver: " << name << std::endl;
             }
+            return BGFX_INVALID_HANDLE;
         }
         return bgfx::createEmbeddedShader(kShaders, type, name);
     }
 
-    bool ShaderManager::Initialize(const std::string& packDirectory) {
+    bool ShaderManager::Initialize() {
+        const bool packActive = ShaderPack::Instance().Active();
         for (size_t i = 0; i < programs.size(); i++) {
             const ProgramSource& source = kSources[i];
-            bgfx::ShaderHandle vertex = Load(source.vertex, packDirectory);
-            bgfx::ShaderHandle fragment = Load(source.fragment, packDirectory);
+            // A pack overrides a program only when it supplies both of its stages; otherwise the built-in pair is
+            // used (the stages share varyings, so mixing them would not link).
+            if (packActive) {
+                bgfx::ShaderHandle vertex = Load(source.vertex, true);
+                bgfx::ShaderHandle fragment = Load(source.fragment, true);
+                if (bgfx::isValid(vertex) && bgfx::isValid(fragment)) {
+                    programs[i] = bgfx::createProgram(vertex, fragment, true);
+                    if (bgfx::isValid(programs[i])) {
+                        std::cout << "[shader] pack: " << source.vertex << " + " << source.fragment << std::endl;
+                        continue;
+                    }
+                } else {
+                    if (bgfx::isValid(vertex))
+                        bgfx::destroy(vertex);
+                    if (bgfx::isValid(fragment))
+                        bgfx::destroy(fragment);
+                }
+            }
+            bgfx::ShaderHandle vertex = Load(source.vertex, false);
+            bgfx::ShaderHandle fragment = Load(source.fragment, false);
             programs[i] = bgfx::createProgram(vertex, fragment, true);
             if (!bgfx::isValid(programs[i])) {
                 std::cout << "[shader] program failed: " << source.vertex << " + " << source.fragment

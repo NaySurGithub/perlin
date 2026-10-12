@@ -143,6 +143,7 @@ int main(int argc, char** argv) {
     const std::string dataDir = perlin::paths::DataDir();
     perlin::paths::EnsureDir(dataDir);
     perlin::paths::EnsureDir(dataDir + "/texturepacks");
+    perlin::paths::EnsureDir(dataDir + "/shaderpacks");
     StartLogCapture({dataDir + "/perlin.log"});
 #ifdef _WIN32
     SetUnhandledExceptionFilter(CrashFilter);

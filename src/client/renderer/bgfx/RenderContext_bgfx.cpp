@@ -3,6 +3,7 @@
 #include "client/platform/AppPlatform.hpp"
 #include "client/renderer/Tessellator.hpp"
 #include "client/Options.hpp"
+#include "client/resources/ShaderPack.hpp"
 #include "util/Paths.hpp"
 
 #include <bx/math.h>
@@ -128,6 +129,29 @@ namespace perlin {
             init.type = bgfx::RendererType::Direct3D12;
         else if (forced == "metal")
             init.type = bgfx::RendererType::Metal;
+
+        // Runtime shader pack: opened before the device exists so a pack that only ships some backends still gets used.
+        ShaderPack& pack = ShaderPack::Instance();
+        if (!options.shaderPack.empty()) {
+            std::string error;
+            if (!pack.Open(paths::DataDir() + "/shaderpacks", options.shaderPack, error))
+                std::cout << "[shaders] " << error << " - using the built-in shaders" << std::endl;
+        }
+        if (pack.Active() && init.type == bgfx::RendererType::Count) {
+#if defined(_WIN32)
+            const bool native = pack.HasBackend("dxbc");
+#elif defined(__APPLE__)
+            const bool native = pack.HasBackend("metal");
+#else
+            const bool native = pack.HasBackend("spirv") && pack.HasBackend("glsl");
+#endif
+            if (!native) {
+                if (pack.HasBackend("spirv"))
+                    init.type = bgfx::RendererType::Vulkan;
+                else if (pack.HasBackend("glsl"))
+                    init.type = bgfx::RendererType::OpenGL;
+            }
+        }
         init.swapChain.nwh = native.window;
         init.swapChain.ndt = native.display;
         if (native.wayland)
@@ -203,10 +227,7 @@ namespace perlin {
         moonBuffer = upload(BuildMoonQuads(), textureLayout);
         quadIndices = uploadIndices(QuadIndices(1));
 
-        std::string shaderDirectory;
-        if (!options.shaderPack.empty())
-            shaderDirectory = paths::DataDir() + "/shaderpacks/" + options.shaderPack;
-        if (!shaders.Initialize(shaderDirectory)) {
+        if (!shaders.Initialize()) {
             std::cout << "[bgfx] shader program creation failed for "
                       << bgfx::getRendererName(bgfx::getRendererType()) << std::endl;
             return false;

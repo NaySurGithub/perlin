@@ -22,7 +22,7 @@ namespace perlin {
 
     class ShaderManager {
     public:
-        bool Initialize(const std::string& packDirectory);
+        bool Initialize();
         void Shutdown();
 
         bgfx::ProgramHandle Program(ShaderProgram program) const {
@@ -40,7 +40,7 @@ namespace perlin {
                    uint32_t lightmapFlags) const;
 
     private:
-        bgfx::ShaderHandle Load(const char* name, const std::string& packDirectory) const;
+        bgfx::ShaderHandle Load(const char* name, bool fromPack) const;
 
         std::array<bgfx::ProgramHandle, static_cast<size_t>(ShaderProgram::Count)> programs{};
 
