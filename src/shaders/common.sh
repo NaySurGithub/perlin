@@ -20,7 +20,7 @@ float linearFog(float distance, float fogStart, float fogEnd)
         return 0.0;
     if (distance >= fogEnd)
         return 1.0;
-    return (distance - fogStart) / (fogEnd - fogStart);
+    return (distance - fogStart) / max(fogEnd - fogStart, 0.00001);
 }
 
 vec3 applyFog(vec3 color, float spherical, float cylindrical, float envStart, float envEnd, float rdStart,
