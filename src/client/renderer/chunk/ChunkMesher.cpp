@@ -871,6 +871,9 @@ namespace perlin {
                             return Packed{(n1.block + n2.block + n3.block + c.block) >> 2,
                                           (n1.sky + n2.sky + n3.sky + c.sky) >> 2};
                         };
+                        // Corner light/AO depends only on the face direction, so quads sharing one reuse it.
+                        bool memoHave[12] = {};
+                        float memoAo[12][2][2], memoBlock[12][2][2], memoSky[12][2][2];
                         auto emitQuad = [&](const ModelQuad& q) {
                             if (!q.tile && (q.tex == 0xFFFF || q.tex >= bm.tiles.size()))
                                 return;
@@ -909,46 +912,52 @@ namespace perlin {
                                 first[1] = 1;
                             else
                                 first[1] = -1;
-                            const int center[3] = {x + (flush ? nrm[0] : 0), y + (flush ? nrm[1] : 0),
-                                                   z + (flush ? nrm[2] : 0)};
-                            float cAo[2][2];
-                            float cBlock[2][2], cSky[2][2];
-                            const float shadeCenter = AoShade(cache, library, center[0], center[1], center[2]);
-                            const Packed lightCenter = coordsAt(center);
-                            for (int s1 = 0; s1 < 2; s1++)
-                                for (int s2 = 0; s2 < 2; s2++) {
-                                    const int d1 = s1 ? 1 : -1, d2 = s2 ? 1 : -1;
-                                    int e1[3] = {center[0], center[1], center[2]};
-                                    int e2[3] = {center[0], center[1], center[2]};
-                                    int corner[3] = {center[0], center[1], center[2]};
-                                    e1[axis1] += d1;
-                                    e2[axis2] += d2;
-                                    corner[axis1] += d1;
-                                    corner[axis2] += d2;
-                                    const bool perm1 = !cache.Occ(e1[0] + nrm[0], e1[1] + nrm[1], e1[2] + nrm[2]);
-                                    const bool perm2 = !cache.Occ(e2[0] + nrm[0], e2[1] + nrm[1], e2[2] + nrm[2]);
-                                    const int fb[3] = {center[0] + first[0], center[1] + first[1],
-                                                       center[2] + first[2]};
-                                    float sc;
-                                    Packed lc;
-                                    if (!perm1 && !perm2) {
-                                        sc = AoShade(cache, library, fb[0], fb[1], fb[2]);
-                                        lc = coordsAt(fb);
-                                    } else {
-                                        sc = AoShade(cache, library, corner[0], corner[1], corner[2]);
-                                        lc = coordsAt(corner);
+                            const int memoKey = dir * 2 + (flush ? 1 : 0);
+                            float (&cAo)[2][2] = memoAo[memoKey];
+                            float (&cBlock)[2][2] = memoBlock[memoKey];
+                            float (&cSky)[2][2] = memoSky[memoKey];
+                            if (!memoHave[memoKey]) {
+                                memoHave[memoKey] = true;
+                                const int center[3] = {x + (flush ? nrm[0] : 0), y + (flush ? nrm[1] : 0),
+                                                       z + (flush ? nrm[2] : 0)};
+                                const float shadeCenter = AoShade(cache, library, center[0], center[1], center[2]);
+                                const Packed lightCenter = coordsAt(center);
+                                for (int s1 = 0; s1 < 2; s1++)
+                                    for (int s2 = 0; s2 < 2; s2++) {
+                                        const int d1 = s1 ? 1 : -1, d2 = s2 ? 1 : -1;
+                                        int e1[3] = {center[0], center[1], center[2]};
+                                        int e2[3] = {center[0], center[1], center[2]};
+                                        int corner[3] = {center[0], center[1], center[2]};
+                                        e1[axis1] += d1;
+                                        e2[axis2] += d2;
+                                        corner[axis1] += d1;
+                                        corner[axis2] += d2;
+                                        const bool perm1 = !cache.Occ(e1[0] + nrm[0], e1[1] + nrm[1], e1[2] + nrm[2]);
+                                        const bool perm2 = !cache.Occ(e2[0] + nrm[0], e2[1] + nrm[1], e2[2] + nrm[2]);
+                                        const int fb[3] = {center[0] + first[0], center[1] + first[1],
+                                                           center[2] + first[2]};
+                                        float sc;
+                                        Packed lc;
+                                        if (!perm1 && !perm2) {
+                                            sc = AoShade(cache, library, fb[0], fb[1], fb[2]);
+                                            lc = coordsAt(fb);
+                                        } else {
+                                            sc = AoShade(cache, library, corner[0], corner[1], corner[2]);
+                                            lc = coordsAt(corner);
+                                        }
+                                        const float a1 = AoShade(cache, library, e1[0], e1[1], e1[2]);
+                                        const float a2 = AoShade(cache, library, e2[0], e2[1], e2[2]);
+                                        cAo[s1][s2] = (a1 + a2 + sc + shadeCenter) * 0.25f;
+                                        const Packed b = smoothBlend(coordsAt(e1), coordsAt(e2), lc, lightCenter);
+                                        cBlock[s1][s2] = static_cast<float>(b.block) / 16.0f;
+                                        cSky[s1][s2] = static_cast<float>(b.sky) / 16.0f;
                                     }
-                                    const float a1 = AoShade(cache, library, e1[0], e1[1], e1[2]);
-                                    const float a2 = AoShade(cache, library, e2[0], e2[1], e2[2]);
-                                    cAo[s1][s2] = (a1 + a2 + sc + shadeCenter) * 0.25f;
-                                    const Packed b = smoothBlend(coordsAt(e1), coordsAt(e2), lc, lightCenter);
-                                    cBlock[s1][s2] = static_cast<float>(b.block) / 16.0f;
-                                    cSky[s1][s2] = static_cast<float>(b.sky) / 16.0f;
-                                }
+
+                            }
 
                             float base[3] = {1, 1, 1};
                             if (q.tint >= 0 && !q.tile) {
-                                std::string tn = bm.Textures()[q.tex];
+                                const std::string& tn = bm.Textures()[q.tex];
                                 const auto tc = biomeTintFor(tn, tile, dir == 1);
                                 if (tc[3]) {
                                     base[0] = tc[0];

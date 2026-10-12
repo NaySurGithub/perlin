@@ -65,19 +65,77 @@ namespace perlin {
         BedrockSession::ServerMotion motion;
         if (!session.TakeServerMotion(motion))
             return;
-        if (motion.poseChanged) {
+        bool handled = false;
+        if (motion.correction) {
+            while (!history.empty() && history.front().tick < motion.tick)
+                history.pop_front();
+            if (!history.empty() && history.front().tick == motion.tick) {
+                Record& r = history.front();
+                const double dx = r.after.x - motion.pos[0], dy = r.after.y - motion.pos[1],
+                             dz = r.after.z - motion.pos[2];
+                const double ex = (r.after.x - r.before.x) - motion.velocity[0];
+                const double ey = (r.after.y - r.before.y) - motion.velocity[1];
+                const double ez = (r.after.z - r.before.z) - motion.velocity[2];
+                const double posErr = dx * dx + dy * dy + dz * dz;
+                const double velErr = ex * ex + ey * ey + ez * ez;
+                if (posErr > 1e-5 || velErr > 1e-5) {
+                    const physics::State shown = state;
+                    r.after.x = motion.pos[0];
+                    r.after.y = motion.pos[1];
+                    r.after.z = motion.pos[2];
+                    r.after.vx = motion.velocity[0];
+                    r.after.vy = motion.velocity[1];
+                    r.after.vz = motion.velocity[2];
+                    r.after.onGround = motion.onGround;
+                    physics::State s = r.after;
+                    LevelCollision world(session.NetLevel(), blocksPtr);
+                    for (size_t i = 1; i < history.size(); i++) {
+                        Record& q = history[i];
+                        q.before = s;
+                        s.yaw = q.yaw;
+                        physics::Step(s, q.input, q.attributes, world);
+                        q.after = s;
+                    }
+                    state = s;
+                    const double ox = shown.x - state.x, oy = shown.y - state.y, oz = shown.z - state.z;
+                    if (ox * ox + oy * oy + oz * oz < 4.0) {
+                        smoothOffset[0] += ox;
+                        smoothOffset[1] += oy;
+                        smoothOffset[2] += oz;
+                    }
+                    previous = state;
+                    if (!history.empty())
+                        previous = history.back().before;
+                    session.SetPose(static_cast<float>(state.x), static_cast<float>(state.y),
+                                    static_cast<float>(state.z), state.yaw, session.GetPose().pitch);
+                    correctionReplays++;
+                    if (correctionReplays <= 5 || correctionReplays % 100 == 0)
+                        std::cout << "[move] replayed correction tick=" << motion.tick << " posErr=" << std::sqrt(posErr)
+                                  << " velErr=" << std::sqrt(velErr) << " replayed=" << (history.size() - 1)
+                                  << std::endl;
+                }
+                history.pop_front();
+                handled = true;
+                // The correction's velocity was folded into the replay; do not apply it again below.
+                motion.hasVelocity = false;
+            }
+        }
+        if (motion.poseChanged && !handled) {
             const BedrockSession::PlayerPose pose = session.GetPose();
             state.x = pose.x;
             state.y = pose.y;
             state.z = pose.z;
             previous = state;
             accumulator = 0.0;
+            history.clear();
             if (motion.teleport) {
                 state.vx = state.vy = state.vz = 0;
                 state.onGround = false;
+                smoothOffset[0] = smoothOffset[1] = smoothOffset[2] = 0;
             }
         }
         if (motion.hasVelocity) {
+            history.clear();
             state.vx = motion.velocity[0];
             state.vy = motion.velocity[1];
             state.vz = motion.velocity[2];
@@ -121,6 +179,7 @@ namespace perlin {
         in.flyUp = flying && jump;
         in.flyDown = flying && sneakKey;
         in.noClip = flying && (session.NoClip() || session.Spectator());
+        in.creativeFlight = session.GameType() == 1;
 
         physics::Attributes attributes;
         attributes.speed = session.MovementSpeedAttribute();
@@ -128,6 +187,11 @@ namespace perlin {
         attributes.verticalFlySpeed = session.VFlySpeed();
 
         state.yaw = BedrockYaw(camera.yaw);
+        Record rec;
+        rec.input = in;
+        rec.attributes = attributes;
+        rec.yaw = state.yaw;
+        rec.before = state;
         if (column) {
             physics::Step(state, in, attributes, world);
         } else {
@@ -223,7 +287,13 @@ namespace perlin {
         packet.hasDelta = true;
 
         session.SetPose(packet.position[0], packet.position[1], packet.position[2], packet.yaw, packet.pitch);
-        session.SendMoveInput(packet);
+        if (session.SendMoveInput(packet)) {
+            rec.tick = session.LastAuthTick();
+            rec.after = state;
+            history.push_back(rec);
+            while (history.size() > 200)
+                history.pop_front();
+        }
     }
 
     void LocalPlayer::Update(BedrockSession& session, const InputManager& input, Camera& camera,
@@ -241,6 +311,7 @@ namespace perlin {
             initialised = true;
             flying = session.IsFlying();
         }
+        blocksPtr = &blocks;
         ApplyServerMotion(session, camera);
 
         const auto now = std::chrono::steady_clock::now();
@@ -317,8 +388,11 @@ namespace perlin {
         const double z = previous.z + (state.z - previous.z) * t;
         const float targetEye = sneaking ? static_cast<float>(physics::kSneakEye) : static_cast<float>(physics::kStandEye);
         eyeOffset += (targetEye - eyeOffset) * (1.0f - std::exp(-dt * 20.0f));
-        camera.x = static_cast<float>(x);
-        camera.y = static_cast<float>(y) + eyeOffset;
-        camera.z = static_cast<float>(z);
+        const double decay = std::exp(-dt * 12.0);
+        for (double& o : smoothOffset)
+            o = std::fabs(o) < 1e-4 ? 0.0 : o * decay;
+        camera.x = static_cast<float>(x + smoothOffset[0]);
+        camera.y = static_cast<float>(y + smoothOffset[1]) + eyeOffset;
+        camera.z = static_cast<float>(z + smoothOffset[2]);
     }
 }

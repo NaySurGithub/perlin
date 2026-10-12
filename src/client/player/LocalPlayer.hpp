@@ -6,6 +6,7 @@
 #include "client/renderer/block/BlockLibrary.hpp"
 
 #include <chrono>
+#include <deque>
 
 namespace perlin {
     // Runs the local player's movement prediction at 20 Hz and reports every tick to the server
@@ -24,6 +25,20 @@ namespace perlin {
         void Tick(BedrockSession& session, const InputManager& input, const Camera& camera,
                   const physics::World& world);
 
+        // One predicted tick, kept until the server confirms it (cinnabar PredictionHistory).
+        struct Record {
+            uint64_t tick = 0;
+            physics::Input input;
+            physics::Attributes attributes;
+            float yaw = 0;
+            physics::State before; // state the tick started from
+            physics::State after;  // state the tick produced
+        };
+        std::deque<Record> history;
+        double smoothOffset[3] = {0, 0, 0}; // render offset that hides small corrections
+
+        const BlockLibrary* blocksPtr = nullptr;
+        int correctionReplays = 0;
         physics::State state;
         physics::State previous;
         bool initialised = false;

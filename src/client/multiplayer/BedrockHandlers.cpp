@@ -327,6 +327,12 @@ namespace perlin {
                           << p.position.x << "," << p.position.y << "," << p.position.z << ") delta=("
                           << p.delta.x << "," << p.delta.y << "," << p.delta.z << ")" << std::endl;
             serverMotion.poseChanged = true;
+            serverMotion.correction = true;
+            serverMotion.tick = p.tick;
+            serverMotion.onGround = p.onGround;
+            serverMotion.pos[0] = pose.x;
+            serverMotion.pos[1] = pose.y;
+            serverMotion.pos[2] = pose.z;
             serverMotion.hasVelocity = true;
             serverMotion.velocity[0] = p.delta.x;
             serverMotion.velocity[1] = p.delta.y;

@@ -43,6 +43,7 @@ namespace perlin::physics {
         int count = 0;
         Box boxes[kMaxShapeBoxes];
         float friction = 0.6f;
+        uint8_t surface = 0;       // registry surface response: 1 slime, 2 bed, 3 honey, 4 soul sand
         uint8_t fluid = 0;         // 0 none, 1 water, 2 lava
         float fluidLevel = 0.0f;   // surface height inside the cell, 0..1
         bool climbable = false;
@@ -73,6 +74,7 @@ namespace perlin::physics {
         bool flyUp = false;
         bool flyDown = false;
         bool noClip = false; // spectator: no collision, no gravity, always flying
+        bool creativeFlight = false; // creative-mode flight (hover damping differs from ability flight)
     };
 
     struct State {
@@ -80,7 +82,7 @@ namespace perlin::physics {
         double vx = 0, vy = 0, vz = 0; // blocks per tick
         float yaw = 0;                 // Bedrock yaw in degrees: 0 faces +Z, 90 faces -X
         bool onGround = false;
-        bool horizontalCollision = false;
+        bool horizontalCollision = false; // x or z collision of the previous tick (Bedrock reads it one tick late)
         bool verticalCollision = false;
         bool inWater = false;
         bool inLava = false;

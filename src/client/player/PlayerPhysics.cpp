@@ -4,17 +4,23 @@
 #include <cmath>
 #include <vector>
 
+// Bedrock player movement, ported tick-for-tick from the bedsim reference as implemented in cinnabar's
+// `sim` crate: f32 velocity pipeline, Y->X->Z axis order, Bedrock step-up, ladder/water/flight rules.
 namespace perlin::physics {
     namespace {
         constexpr double kEps = 1.0e-7;
-        constexpr double kNegligible = 0.003;
         constexpr double kPi = 3.14159265358979323846;
+        constexpr float kFloatEps = 1.1920929e-7f;
+        constexpr double kClimbSpeed = 0.2;
 
         struct Vec3 {
             double x = 0, y = 0, z = 0;
+            double& operator[](int i) { return i == 0 ? x : (i == 1 ? y : z); }
+            double operator[](int i) const { return i == 0 ? x : (i == 1 ? y : z); }
         };
 
         double HorizontalSq(const Vec3& v) { return v.x * v.x + v.z * v.z; }
+        double F(double v) { return static_cast<double>(static_cast<float>(v)); }
 
         void Gather(const World& world, const Box& region, std::vector<Box>& out) {
             out.clear();
@@ -38,35 +44,6 @@ namespace perlin::physics {
                     }
         }
 
-        // Java Entity.collideBoundingBox: Y first, then the larger horizontal axis.
-        Vec3 CollideBox(const World& world, Box box, Vec3 move, std::vector<Box>& scratch) {
-            if (move.x == 0 && move.y == 0 && move.z == 0)
-                return move;
-            Gather(world, box.Expand(move.x, move.y, move.z), scratch);
-            Vec3 out = move;
-            if (out.y != 0) {
-                for (const Box& b : scratch)
-                    out.y = b.ClipY(box, out.y);
-                box = box.Offset(0, out.y, 0);
-            }
-            const bool zFirst = std::fabs(move.x) < std::fabs(move.z);
-            for (int pass = 0; pass < 2; pass++) {
-                const bool doZ = (pass == 0) == zFirst;
-                if (doZ) {
-                    if (out.z != 0) {
-                        for (const Box& b : scratch)
-                            out.z = b.ClipZ(box, out.z);
-                        box = box.Offset(0, 0, out.z);
-                    }
-                } else if (out.x != 0) {
-                    for (const Box& b : scratch)
-                        out.x = b.ClipX(box, out.x);
-                    box = box.Offset(out.x, 0, 0);
-                }
-            }
-            return out;
-        }
-
         bool NoCollision(const World& world, const Box& box, std::vector<Box>& scratch) {
             Gather(world, box, scratch);
             for (const Box& b : scratch)
@@ -75,29 +52,129 @@ namespace perlin::physics {
             return true;
         }
 
-        // Java Entity.collide, including step-up.
-        Vec3 Collide(const World& world, const Box& box, Vec3 move, bool onGround, double stepHeight,
-                     std::vector<Box>& scratch) {
-            Vec3 collided = CollideBox(world, box, move, scratch);
-            const bool xCollision = move.x != collided.x;
-            const bool yCollision = move.y != collided.y;
-            const bool zCollision = move.z != collided.z;
-            const bool landed = yCollision && move.y < 0.0;
-            if (stepHeight > 0 && (onGround || landed) && (xCollision || zCollision)) {
-                Vec3 up = CollideBox(world, box, {move.x, stepHeight, move.z}, scratch);
-                const Vec3 lift = CollideBox(world, box.Expand(move.x, 0, move.z), {0, stepHeight, 0}, scratch);
-                if (lift.y < stepHeight) {
-                    Vec3 over = CollideBox(world, box.Offset(0, lift.y, 0), {move.x, 0, move.z}, scratch);
-                    over.y += lift.y;
-                    if (HorizontalSq(over) > HorizontalSq(up))
-                        up = over;
-                }
-                if (HorizontalSq(up) > HorizontalSq(collided)) {
-                    const Vec3 down = CollideBox(world, box.Offset(up.x, up.y, up.z), {0, -up.y + move.y, 0}, scratch);
-                    return {up.x + down.x, up.y + down.y, up.z + down.z};
+        double ClipAxis(const std::vector<Box>& colliders, const Box& cur, int axis, double v) {
+            for (const Box& b : colliders)
+                v = axis == 0 ? b.ClipX(cur, v) : (axis == 1 ? b.ClipY(cur, v) : b.ClipZ(cur, v));
+            return v;
+        }
+
+        Box Translate(const Box& b, int axis, double d) {
+            return axis == 0 ? b.Offset(d, 0, 0) : (axis == 1 ? b.Offset(0, d, 0) : b.Offset(0, 0, d));
+        }
+
+        double ClampTowardZero(double value, double limit) {
+            return limit >= 0 ? std::clamp(value, 0.0, limit) : std::clamp(value, limit, 0.0);
+        }
+
+        // Bedrock resolves Y, then X, then Z; horizontal axes can only be shortened.
+        void ResolveAxes(const Box& start, const Vec3& v, const std::vector<Box>& colliders, Box& outBox, Vec3& moved) {
+            Box cur = start;
+            moved = {};
+            for (const int axis : {1, 0, 2}) {
+                double m = ClipAxis(colliders, cur, axis, v[axis]);
+                if (axis != 1)
+                    m = ClampTowardZero(m, v[axis]);
+                cur = Translate(cur, axis, m);
+                moved[axis] = m;
+            }
+            outBox = cur;
+        }
+
+        void ResolveStep(const Box& start, const Vec3& v, const std::vector<Box>& colliders, Box& outBox, Vec3& moved) {
+            Box cur = start;
+            const double up = ClipAxis(colliders, cur, 1, kStepHeight);
+            cur = cur.Offset(0, up, 0);
+            Vec3 horizontal;
+            for (const int axis : {0, 2}) {
+                const double m = ClipAxis(colliders, cur, axis, v[axis]);
+                cur = Translate(cur, axis, m);
+                horizontal[axis] = m;
+            }
+            const double down = ClipAxis(colliders, cur, 1, -up);
+            cur = cur.Offset(0, down, 0);
+            outBox = cur;
+            moved = {horizontal.x, up + down, horizontal.z};
+        }
+
+        struct Motion {
+            Box box;
+            Vec3 resolved;
+            Vec3 position;
+            bool cx = false, cy = false, cz = false;
+            bool stepped = false;
+        };
+
+        Motion ResolveMotion(const World& world, const Box& start, const Vec3& v, bool wasOnGround,
+                             std::vector<Box>& scratch) {
+            Motion m;
+            std::vector<Box>& colliders = scratch;
+            Gather(world, start.Expand(v.x, v.y, v.z), colliders);
+            Box normalBox;
+            Vec3 normal;
+            ResolveAxes(start, v, colliders, normalBox, normal);
+            const bool normalHorizontal = normal.x != v.x || normal.z != v.z;
+            const bool normalY = normal.y != v.y;
+            const bool onGround = wasOnGround || (normalY && v.y < 0.0);
+            Box box = normalBox;
+            Vec3 resolved = normal;
+            if (onGround && normalHorizontal) {
+                std::vector<Box> envelope;
+                Gather(world, start.Expand(v.x, kStepHeight, v.z), envelope);
+                Box stepBox;
+                Vec3 step;
+                ResolveStep(start, v, envelope, stepBox, step);
+                bool blocked = false;
+                for (const Box& b : envelope)
+                    if (b.Intersects(stepBox)) {
+                        blocked = true;
+                        break;
+                    }
+                if (!blocked && HorizontalSq(step) > HorizontalSq(normal)) {
+                    box = stepBox;
+                    resolved = step;
+                    m.stepped = true;
                 }
             }
-            return collided;
+            m.box = box;
+            m.resolved = resolved;
+            m.position = {F((static_cast<float>(box.x0) + static_cast<float>(box.x1)) * 0.5f), box.y0,
+                          F((static_cast<float>(box.z0) + static_cast<float>(box.z1)) * 0.5f)};
+            m.cx = std::fabs(static_cast<float>(v.x) - static_cast<float>(resolved.x)) > kFloatEps;
+            m.cy = std::fabs(static_cast<float>(v.y) - static_cast<float>(resolved.y)) > kFloatEps;
+            m.cz = std::fabs(static_cast<float>(v.z) - static_cast<float>(resolved.z)) > kFloatEps;
+            return m;
+        }
+
+        double ReduceTowardZero(double value, double offset) {
+            if (std::fabs(value) <= offset)
+                return 0.0;
+            return F(static_cast<float>(value) - (value < 0 ? -1.0f : 1.0f) * static_cast<float>(offset));
+        }
+
+        // Sneaking keeps the player on the edge: shortens the request until support stays within a step.
+        Vec3 ClipSneakEdge(const World& world, const State& s, bool sneaking, Vec3 v, std::vector<Box>& scratch) {
+            constexpr double kOffset = static_cast<double>(0.05f);
+            const Box full = BoundingBox(s, sneaking);
+            const Box player{F(static_cast<float>(full.x0) + 0.025f), full.y0, F(static_cast<float>(full.z0) + 0.025f),
+                             F(static_cast<float>(full.x1) - 0.025f), full.y1, F(static_cast<float>(full.z1) - 0.025f)};
+            const double drop = -kStepHeight * 1.01;
+            Vec3 clipped = v;
+            for (const int axis : {0, 2}) {
+                while (clipped[axis] != 0.0) {
+                    Vec3 probe{0, drop, 0};
+                    probe[axis] = clipped[axis];
+                    if (!NoCollision(world, player.Offset(probe.x, probe.y, probe.z), scratch))
+                        break;
+                    clipped[axis] = ReduceTowardZero(clipped[axis], kOffset);
+                }
+            }
+            while (clipped.x != 0.0 || clipped.z != 0.0) {
+                if (!NoCollision(world, player.Offset(clipped.x, drop, clipped.z), scratch))
+                    break;
+                clipped.x = ReduceTowardZero(clipped.x, kOffset);
+                clipped.z = ReduceTowardZero(clipped.z, kOffset);
+            }
+            return clipped;
         }
 
         struct CellRange {
@@ -111,10 +188,10 @@ namespace perlin::physics {
         }
 
         struct Environment {
-            bool water = false, lava = false, web = false, climbable = false;
+            bool water = false, lava = false, web = false;
         };
 
-        // Scans the cells touching `box` (deflated like Java's fluid/inside-block checks).
+        // Scans the cells touching `box` (deflated like the vanilla fluid / inside-block checks).
         Environment Scan(const World& world, const Box& box) {
             Environment env;
             const Box shrunk = box.Inflate(-0.001);
@@ -130,89 +207,34 @@ namespace perlin::physics {
                                 env.lava = true;
                         }
                         env.web = env.web || s.web;
-                        env.climbable = env.climbable || s.climbable;
                     }
             return env;
         }
 
-        void MoveRelative(State& s, double strafe, double forward, double scale) {
-            double length = strafe * strafe + forward * forward;
-            if (length < 1.0e-7)
+        // Applies the f32 steering products the way the native client does.
+        void MoveRelative(State& s, double strafeIn, double forwardIn, double speed) {
+            const float strafe = static_cast<float>(strafeIn), forward = static_cast<float>(forwardIn);
+            const float forceSq = forward * forward + strafe * strafe;
+            if (forceSq < 1.0e-4f)
                 return;
-            length = std::sqrt(length);
-            if (length < 1.0)
-                length = 1.0;
-            const double k = scale / length;
-            strafe *= k;
-            forward *= k;
-            const double yaw = s.yaw * kPi / 180.0;
-            const double sn = std::sin(yaw), cs = std::cos(yaw);
-            s.vx += -strafe * cs - forward * sn;
-            s.vz += -strafe * sn + forward * cs;
+            const float force = static_cast<float>(speed) / std::max(std::sqrt(forceSq), 1.0f);
+            const float yaw = static_cast<float>(s.yaw) * static_cast<float>(kPi / 180.0);
+            const float sn = std::sin(yaw), cs = std::cos(yaw);
+            // Bedrock strafe is left-positive; Perlin's input is right-positive.
+            s.vx = F((-strafe * force * cs - sn * forward * force) + static_cast<float>(s.vx));
+            s.vz = F((-strafe * force * sn + forward * force * cs) + static_cast<float>(s.vz));
         }
 
-        // Java Entity.move: applies web slow-down, sneak edge protection and collisions.
-        void MoveEntity(State& s, Vec3 move, bool sneaking, const World& world, std::vector<Box>& scratch,
-                        const Environment& env) {
-            if (env.web) {
-                move.x *= 0.25;
-                move.y *= 0.05;
-                move.z *= 0.25;
-                s.vx = s.vy = s.vz = 0;
-            }
-
-            const Box box = BoundingBox(s, sneaking);
-            if (sneaking && s.onGround && s.vy <= 0.0) {
-                auto free = [&](double dx, double dz) {
-                    return NoCollision(world, box.Offset(dx, -kStepHeight, dz), scratch);
-                };
-                const double step = 0.05;
-                auto shrink = [&](double v) { return (v < step && v >= -step) ? 0.0 : (v > 0 ? v - step : v + step); };
-                while (move.x != 0 && free(move.x, 0))
-                    move.x = shrink(move.x);
-                while (move.z != 0 && free(0, move.z))
-                    move.z = shrink(move.z);
-                while (move.x != 0 && move.z != 0 && free(move.x, move.z)) {
-                    move.x = shrink(move.x);
-                    move.z = shrink(move.z);
-                }
-            }
-
-            const Vec3 got = Collide(world, box, move, s.onGround, kStepHeight, scratch);
-            s.x += got.x;
-            s.y += got.y;
-            s.z += got.z;
-
-            const bool xBlocked = std::fabs(move.x - got.x) > 1.0e-9;
-            const bool zBlocked = std::fabs(move.z - got.z) > 1.0e-9;
-            const bool yBlocked = std::fabs(move.y - got.y) > 1.0e-9;
-            s.horizontalCollision = xBlocked || zBlocked;
-            s.verticalCollision = yBlocked;
-            s.onGround = yBlocked && move.y < 0.0;
-            if (xBlocked)
-                s.vx = 0;
-            if (zBlocked)
-                s.vz = 0;
-            if (yBlocked)
-                s.vy = 0;
+        double DampHorizontal(double value, float retention) {
+            const float v = static_cast<float>(value);
+            return std::fabs(v) <= kFloatEps ? 0.0 : static_cast<double>(v * retention);
         }
 
-        float SlipperinessBelow(const State& s, const World& world) {
-            const int bx = static_cast<int>(std::floor(s.x));
-            const int by = static_cast<int>(std::floor(s.y - 0.500001));
-            const int bz = static_cast<int>(std::floor(s.z));
-            return world.Query(bx, by, bz).friction;
-        }
-
-        double BlockSpeedFactor(const State& s, const World& world) {
-            const int bx = static_cast<int>(std::floor(s.x));
-            const int bz = static_cast<int>(std::floor(s.z));
-            const BlockShape here = world.Query(bx, static_cast<int>(std::floor(s.y)), bz);
-            if (here.fluid)
-                return 1.0;
-            if (here.speedFactor != 1.0f)
-                return here.speedFactor;
-            return world.Query(bx, static_cast<int>(std::floor(s.y - 0.500001)), bz).speedFactor;
+        const BlockShape& Below(const World& world, const State& s, BlockShape& storage) {
+            // Friction probe: the cell 0.1 below the feet (air keeps the default).
+            storage = world.Query(static_cast<int>(std::floor(s.x)), static_cast<int>(std::floor(s.y - 0.1f)),
+                                  static_cast<int>(std::floor(s.z)));
+            return storage;
         }
     }
 
@@ -268,136 +290,233 @@ namespace perlin::physics {
         thread_local std::vector<Box> scratch;
         const bool sneaking = in.sneak && !in.flying;
 
-        // Tiny velocities are zeroed first, as Java does.
-        if (std::fabs(s.vx) < kNegligible)
-            s.vx = 0;
-        if (std::fabs(s.vy) < kNegligible)
-            s.vy = 0;
-        if (std::fabs(s.vz) < kNegligible)
-            s.vz = 0;
+        // Native simulation precision.
+        s.x = F(s.x); s.y = F(s.y); s.z = F(s.z);
+        s.vx = F(s.vx); s.vy = F(s.vy); s.vz = F(s.vz);
+        if (s.vx * s.vx + s.vy * s.vy + s.vz * s.vz < 1.0e-12)
+            s.vx = s.vy = s.vz = 0;
+
+        const bool prevHorizontal = s.horizontalCollision;
+        const bool grounded = s.onGround;
+        if (!in.jump)
+            s.jumpDelay = 0;
 
         const Environment env = Scan(world, BoundingBox(s, sneaking));
         s.inWater = env.water;
         s.inLava = env.lava && !env.water;
-        s.onClimbable = env.climbable;
+        const BlockShape feet = world.Query(static_cast<int>(std::floor(s.x)), static_cast<int>(std::floor(s.y)),
+                                            static_cast<int>(std::floor(s.z)));
+        s.onClimbable = feet.climbable;
 
-        double forward = in.forward * 0.98;
-        double strafe = in.strafe * 0.98;
-        if (sneaking) {
-            forward *= 0.3;
-            strafe *= 0.3;
-        }
+        BlockShape frictionStorage;
+        const BlockShape& under = Below(world, s, frictionStorage);
+        const float blockFriction = under.Empty() && !under.fluid && under.friction <= 0 ? 0.6f : under.friction;
 
-        if (s.jumpDelay > 0)
-            s.jumpDelay--;
+        // Pose-adjusted input axes (sneak scales the request, the native 0.98 impulse follows).
+        const float slow = sneaking ? 0.3f : 1.0f;
+        const double forward = static_cast<float>(std::clamp<double>(in.forward, -slow, slow)) * 0.98f;
+        const double strafe = static_cast<float>(std::clamp<double>(in.strafe, -slow, slow)) * 0.98f;
 
-        const bool fluid = (s.inWater || s.inLava) && !in.flying;
+        // ---- spectator / ability flight -------------------------------------------------------------------
         if (in.flying) {
-            // Creative flight: vertical input accelerates, vertical speed decays by 0.6.
-            const double lift = attr.flySpeed * 3.0 * attr.verticalFlySpeed;
-            if (in.flyUp)
-                s.vy += lift;
-            if (in.flyDown)
-                s.vy -= lift;
-            const double keep = s.vy;
-            const double accel = (s.onGround && !in.noClip) ? attr.speed * (0.16277136 / std::pow(SlipperinessBelow(s, world) * 0.91, 3.0))
-                                            : attr.flySpeed * (in.sprint ? 2.0 : 1.0);
-            MoveRelative(s, strafe, forward, accel);
+            const bool hovering = std::max(std::fabs(forward), std::fabs(strafe)) < 0.01f * 0.98f + 1e-9;
+            const float hoverMod = hovering ? (in.creativeFlight ? 0.375f : 0.75f) : 1.0f;
+            // Sneak descends instead of slowing the walk.
+            const double fwd = static_cast<float>(in.forward) * 0.98f, str = static_cast<float>(in.strafe) * 0.98f;
+            const bool hover = std::max(std::fabs(in.forward), std::fabs(in.strafe)) < 0.01f;
+            (void)hoverMod;
+            MoveRelative(s, str, fwd, static_cast<double>(attr.flySpeed) * (in.sprint ? 2.0 : 1.0));
+            // vertical control
+            if (in.flyUp && in.flyDown) {
+                s.vy = 0;
+            } else {
+                float prev = static_cast<float>(s.vy);
+                if (hover && in.creativeFlight && !in.flyUp && !in.flyDown)
+                    prev *= 0.375f;
+                const float accel = in.flyUp ? 0.15f : (in.flyDown ? -0.22f : 0.0f);
+                s.vy = F(accel * attr.verticalFlySpeed + prev);
+            }
+            const float hMod = hover ? (in.creativeFlight ? 0.375f : 0.75f) : 1.0f;
             if (in.noClip) {
-                s.x += s.vx;
-                s.y += s.vy;
-                s.z += s.vz;
+                s.x = F(s.x + s.vx);
+                s.y = F(s.y + s.vy);
+                s.z = F(s.z + s.vz);
                 s.onGround = false;
                 s.horizontalCollision = s.verticalCollision = false;
-                s.vx *= 0.91;
-                s.vz *= 0.91;
-                s.vy = keep * 0.6;
+                s.jumpDelay = 0;
+                const float h = 1.0f * hMod * 0.91f;
+                s.vx = DampHorizontal(s.vx, h);
+                s.vz = DampHorizontal(s.vz, h);
+                s.vy = F(static_cast<float>(s.vy) * 0.6f);
                 return;
             }
-            MoveEntity(s, {s.vx, s.vy, s.vz}, false, world, scratch, env);
-            const double friction = s.onGround ? SlipperinessBelow(s, world) * 0.91 : 0.91;
-            s.vx *= friction;
-            s.vz *= friction;
-            s.vy = keep * 0.6;
-            if (s.verticalCollision)
-                s.vy = 0;
-            return;
-        }
-
-        if (in.jump) {
-            if (fluid) {
-                s.vy += 0.04;
-            } else if (s.onGround && s.jumpDelay == 0) {
-                s.vy = kJumpVelocity;
-                if (in.sprint) {
-                    const double yaw = s.yaw * kPi / 180.0;
-                    s.vx -= std::sin(yaw) * kSprintJumpBoost;
-                    s.vz += std::cos(yaw) * kSprintJumpBoost;
-                }
-                s.jumpDelay = 10;
+            const double groundFriction = grounded ? blockFriction : 1.0;
+            Vec3 req{s.vx, s.vy, s.vz};
+            if (env.web && !in.creativeFlight) {
+                req.x *= 0.25; req.y *= 0.05; req.z *= 0.25;
             }
-        } else {
-            s.jumpDelay = 0;
-        }
-
-        if (fluid) {
-            const double startY = s.y;
-            if (s.inWater) {
-                const double inertia = in.sprint ? 0.9 : 0.8;
-                MoveRelative(s, strafe, forward, 0.02);
-                MoveEntity(s, {s.vx, s.vy, s.vz}, false, world, scratch, env);
-                if (s.onClimbable && s.horizontalCollision)
-                    s.vy = 0.2;
-                s.vx *= inertia;
-                s.vy *= 0.8;
-                s.vz *= inertia;
-                if (!in.sprint)
-                    s.vy -= kGravity / 16.0;
-            } else {
-                MoveRelative(s, strafe, forward, 0.02);
-                MoveEntity(s, {s.vx, s.vy, s.vz}, false, world, scratch, env);
-                s.vx *= 0.5;
-                s.vy *= 0.5;
-                s.vz *= 0.5;
-                s.vy -= kGravity / 4.0;
-            }
-            // Hop out of the water when pushing against a ledge.
-            if (s.horizontalCollision) {
-                const Box probe = BoundingBox(s, false).Offset(s.vx, s.vy + 0.6 - s.y + startY, s.vz);
-                if (NoCollision(world, probe, scratch) && !Scan(world, probe).water)
-                    s.vy = 0.3;
+            const Box box = BoundingBox(s, false);
+            const Motion m = ResolveMotion(world, box, req, grounded, scratch);
+            s.x = m.position.x; s.y = m.position.y; s.z = m.position.z;
+            s.onGround = m.stepped || (m.cy && req.y < 0.0) || (grounded && !m.cy && std::fabs(req.y) <= kFloatEps);
+            s.vx = m.resolved.x; s.vy = m.resolved.y; s.vz = m.resolved.z;
+            if (m.stepped || m.cy) s.vy = 0;
+            if (m.cx) s.vx = 0;
+            if (m.cz) s.vz = 0;
+            s.horizontalCollision = m.cx || m.cz;
+            s.verticalCollision = m.cy;
+            const float h = static_cast<float>(groundFriction) * hMod * 0.91f;
+            s.vx = DampHorizontal(s.vx, h);
+            s.vz = DampHorizontal(s.vz, h);
+            s.vy = F(static_cast<float>(s.vy) * 0.6f);
+            if (s.onGround && s.verticalCollision && in.flyDown == false && m.cy && req.y < 0) {
+                // landing ends flight in the caller
             }
             return;
         }
 
-        const double slip = s.onGround ? SlipperinessBelow(s, world) : 1.0;
-        const double friction = s.onGround ? slip * 0.91 : 0.91;
-        double accel;
-        if (s.onGround) {
-            const double speed = attr.speed * (in.sprint ? 1.3 : 1.0);
-            accel = speed * (0.16277136 / (friction * friction * friction));
+        // ---- walking, swimming-in-place, climbing ------------------------------------------------------------
+        const bool water = s.inWater, lava = s.inLava;
+        const float friction = grounded ? 0.91f * blockFriction : 0.91f;
+        double relSpeed;
+        if (water) {
+            relSpeed = 0.02;
+        } else if (lava) {
+            relSpeed = 0.02;
+        } else if (grounded) {
+            const float speed = attr.speed * (in.sprint ? 1.3f : 1.0f);
+            float accFriction = blockFriction;
+            if (under.surface == 4)
+                accFriction *= 1.225f;
+            const float drag = accFriction * 0.91f;
+            const float ratio = drag == 0.0f ? 1.0f : 0.54600006f / drag;
+            relSpeed = speed * ratio * ratio * ratio;
         } else {
-            accel = in.sprint ? 0.026 : 0.02;
+            relSpeed = in.sprint ? 0.026 : 0.02;
         }
-        MoveRelative(s, strafe, forward, accel);
+
+        // A held jump in a liquid swims up before the move.
+        if (in.jump && (water || lava))
+            s.vy = F(static_cast<float>(s.vy) + 0.04f);
+
+        MoveRelative(s, strafe, forward, relSpeed);
+
+        const bool climbJump = in.jump && s.onClimbable;
+        const bool jumpInitiated = in.jump && !climbJump && s.onGround && s.jumpDelay == 0 && !water && !lava;
+        if (jumpInitiated) {
+            s.vy = F(std::max(static_cast<float>(s.vy), 0.42f));
+            s.jumpDelay = 10;
+            if (in.sprint) {
+                const float yaw = static_cast<float>(s.yaw) * static_cast<float>(kPi / 180.0);
+                s.vx = F(static_cast<float>(s.vx) - std::sin(yaw) * 0.2f);
+                s.vz = F(static_cast<float>(s.vz) + std::cos(yaw) * 0.2f);
+            }
+        }
 
         if (s.onClimbable) {
-            s.vx = std::clamp(s.vx, -0.15, 0.15);
-            s.vz = std::clamp(s.vz, -0.15, 0.15);
-            if (s.vy < -0.15)
-                s.vy = -0.15;
-            if (sneaking && s.vy < 0)
+            s.vy = std::max(s.vy, -kClimbSpeed);
+            if (climbJump || prevHorizontal)
+                s.vy = kClimbSpeed;
+            else if (sneaking && s.vy < 0)
                 s.vy = 0;
         }
+        if (water && sneaking)
+            s.vy = F(static_cast<float>(s.vy) - 0.04f);
 
-        MoveEntity(s, {s.vx, s.vy, s.vz}, sneaking, world, scratch, env);
+        Vec3 req{s.vx, s.vy, s.vz};
+        const bool stuck = env.web;
+        if (stuck) {
+            req.x = F(static_cast<float>(req.x) * 0.25f);
+            req.y = F(static_cast<float>(req.y) * 0.05f);
+            req.z = F(static_cast<float>(req.z) * 0.25f);
+        }
+        Vec3 edgeVel = req;
+        bool hasEdge = false;
+        if (sneaking && grounded) {
+            const Vec3 clipped = ClipSneakEdge(world, s, true, req, scratch);
+            for (const int axis : {0, 2})
+                if (std::fabs(static_cast<float>(clipped[axis])) <= kFloatEps)
+                    edgeVel[axis] = 0;
+            hasEdge = true;
+            req = clipped;
+        }
+        const Vec3 pre = req;
+        const Box box = BoundingBox(s, sneaking);
+        const Motion m = ResolveMotion(world, box, req, grounded, scratch);
+        s.x = m.position.x; s.y = m.position.y; s.z = m.position.z;
+        s.onGround = m.cy ? (pre.y < 0.0) : (grounded && pre.y == 0.0);
+        Vec3 v = m.resolved;
+        if (hasEdge) {
+            v.x = edgeVel.x;
+            v.z = edgeVel.z;
+        }
+        if (m.stepped) v.y = 0;
+        if (m.cx) v.x = 0;
+        if (m.cy) {
+            // Slime / bed rebound.
+            const BlockShape support = world.Query(static_cast<int>(std::floor(s.x)),
+                                                   static_cast<int>(std::floor(s.y - 0.2f)),
+                                                   static_cast<int>(std::floor(s.z)));
+            const bool bounces = !sneaking && static_cast<float>(pre.y) <= -0.08000012f;
+            if (pre.y < 0 && support.surface == 1 && bounces)
+                v.y = -pre.y;
+            else if (pre.y < 0 && support.surface == 2 && bounces)
+                v.y = F(-0.75f * static_cast<float>(pre.y));
+            else
+                v.y = 0;
+        }
+        if (m.cz) v.z = 0;
+        if (stuck)
+            v = {};
+        s.horizontalCollision = m.cx || m.cz;
+        s.verticalCollision = m.cy;
 
-        if (s.onClimbable && (s.horizontalCollision || in.jump))
-            s.vy = 0.2;
+        const bool autoClimb =
+            !water && !lava && (m.cx || m.cz) &&
+            world.Query(static_cast<int>(std::floor(s.x)), static_cast<int>(std::floor(s.y)),
+                        static_cast<int>(std::floor(s.z)))
+                .climbable;
+        if (autoClimb)
+            v.y = kClimbSpeed;
 
-        const double factor = BlockSpeedFactor(s, world);
-        s.vy = (s.vy - kGravity) * kAirDrag;
-        s.vx *= friction * factor;
-        s.vz *= friction * factor;
+        if (water || lava) {
+            if (water) {
+                const float base = in.sprint ? 0.9f : 0.8f;
+                v.x = F(static_cast<float>(v.x) * base);
+                v.y = F(static_cast<float>(v.y) * 0.8f);
+                v.z = F(static_cast<float>(v.z) * base);
+            } else {
+                v.x = F(static_cast<float>(v.x) * 0.5f);
+                v.y = F(static_cast<float>(v.y) * 0.5f);
+                v.z = F(static_cast<float>(v.z) * 0.5f);
+            }
+            v.y = F(static_cast<float>(v.y) - (water ? 0.005f : 0.02f));
+        } else {
+            if (!autoClimb)
+                v.y = F((static_cast<float>(v.y) - 0.08f) * 0.98f);
+            v.x = DampHorizontal(v.x, friction);
+            v.z = DampHorizontal(v.z, friction);
+        }
+
+        // Hop out of liquid when pushing against a ledge.
+        if ((water || lava) && (m.cx || m.cz)) {
+            const double startY = box.y0;
+            const Box probe = BoundingBox(s, false).Offset(v.x, (startY - s.y) + 0.6 + v.y, v.z);
+            if (NoCollision(world, probe, scratch) && !Scan(world, probe).water && !Scan(world, probe).lava)
+                v.y = 0.3;
+        }
+        if (s.onGround && !sneaking && static_cast<float>(v.y) < 0.1f) {
+            const BlockShape stand = world.Query(static_cast<int>(std::floor(s.x)),
+                                                 static_cast<int>(std::floor(s.y - 0.5)),
+                                                 static_cast<int>(std::floor(s.z)));
+            if (stand.surface == 1 || stand.surface == 3) {
+                const float factor = std::fabs(static_cast<float>(v.y)) * 0.2f + 0.4f;
+                v.x = F(static_cast<float>(v.x) * factor);
+                v.z = F(static_cast<float>(v.z) * factor);
+            }
+        }
+        s.vx = v.x; s.vy = v.y; s.vz = v.z;
+        if (s.jumpDelay > 0)
+            s.jumpDelay--;
     }
 }

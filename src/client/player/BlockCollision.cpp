@@ -1,11 +1,14 @@
 #include "client/player/BlockCollision.hpp"
 
 #include "client/renderer/block/BlockLibrary.hpp"
+#include "util/Paths.hpp"
 #include "world/level/block/BlockPalette.hpp"
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <cstring>
+#include <unordered_map>
 #include <string>
 
 namespace perlin {
@@ -45,6 +48,69 @@ namespace perlin {
         bool HasAnyState(uint16_t id, const char* key) {
             const BlockPalette& palette = BlockPalette::Instance();
             return palette.HasState(id, key) || palette.HasState(id, std::string("minecraft:") + key);
+        }
+
+
+        // Bedrock block physics registry (resources/block_physics.bin, generated from the BDS registry):
+        // exact collision boxes, friction, surface response and flags per network hash.
+        struct PhysRecord {
+            uint8_t flags = 0, surface = 0;
+            float friction = 0.6f;
+            std::vector<Box> boxes;
+        };
+        const std::unordered_map<int32_t, PhysRecord>& Registry() {
+            static const std::unordered_map<int32_t, PhysRecord> table = [] {
+                std::unordered_map<int32_t, PhysRecord> t;
+                std::vector<std::string> candidates = {paths::ExeDir() + "/resources/block_physics.bin",
+                                                       "resources/block_physics.bin"};
+                for (const std::string& path : candidates) {
+                    FILE* f = std::fopen(path.c_str(), "rb");
+                    if (!f)
+                        continue;
+                    std::vector<uint8_t> d;
+                    uint8_t buf[65536];
+                    size_t n;
+                    while ((n = std::fread(buf, 1, sizeof buf, f)) > 0)
+                        d.insert(d.end(), buf, buf + n);
+                    std::fclose(f);
+                    if (d.size() < 8 || std::memcmp(d.data(), "PHY1", 4) != 0)
+                        continue;
+                    uint32_t count;
+                    std::memcpy(&count, d.data() + 4, 4);
+                    size_t p = 8;
+                    auto have = [&](size_t k) { return p + k <= d.size(); };
+                    for (uint32_t i = 0; i < count && have(22); i++) {
+                        int32_t hash;
+                        PhysRecord r;
+                        float hs, vs, fh;
+                        std::memcpy(&hash, &d[p], 4);
+                        r.flags = d[p + 4];
+                        r.surface = d[p + 5];
+                        std::memcpy(&r.friction, &d[p + 6], 4);
+                        std::memcpy(&hs, &d[p + 10], 4);
+                        std::memcpy(&vs, &d[p + 14], 4);
+                        std::memcpy(&fh, &d[p + 18], 4);
+                        p += 22;
+                        if (!have(1))
+                            break;
+                        const int nb = d[p++];
+                        if (!have(static_cast<size_t>(nb) * 24))
+                            break;
+                        for (int b = 0; b < nb; b++, p += 24) {
+                            float v[6];
+                            std::memcpy(v, &d[p], 24);
+                            r.boxes.push_back({v[0], v[1], v[2], v[3], v[4], v[5]});
+                        }
+                        t.emplace(hash, std::move(r));
+                    }
+                    std::printf("[physics] block registry: %zu records from %s\n", t.size(), path.c_str());
+                    break;
+                }
+                if (t.empty())
+                    std::printf("[physics] block_physics.bin not found; using heuristic collision shapes\n");
+                return t;
+            }();
+            return table;
         }
 
         // Plants and decorations the player walks through.
@@ -131,6 +197,23 @@ namespace perlin {
             n == "cave_vines" || n == "cave_vines_body_with_berries" || n == "cave_vines_head_with_berries") {
             s.climbable = true;
             return info;
+        }
+        if (!(Ends(n, "_fence") || n == "fence" || n == "nether_brick_fence" || (Ends(n, "_wall") && !Has(n, "_wall_")) ||
+              Ends(n, "glass_pane") || n == "iron_bars" || n == "stained_glass_pane" || Ends(n, "_bars"))) {
+            const auto& reg = Registry();
+            const auto it = reg.find(BlockPalette::Instance().NetworkId(id));
+            if (it != reg.end()) {
+                const PhysRecord& r = it->second;
+                for (const Box& b : r.boxes)
+                    Add(s, b.x0, b.y0, b.z0, b.x1, b.y1, b.z1);
+                s.friction = r.friction;
+                s.surface = r.surface;
+                s.climbable = (r.flags & 1) != 0;
+                s.web = (r.flags & 8) != 0;
+                info.full = r.boxes.size() == 1 && r.boxes[0].x0 <= 0 && r.boxes[0].y0 <= 0 && r.boxes[0].z0 <= 0 &&
+                            r.boxes[0].x1 >= 1 && r.boxes[0].y1 >= 1 && r.boxes[0].z1 >= 1;
+                return info;
+            }
         }
         if (Passable(n))
             return info;

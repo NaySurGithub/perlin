@@ -67,7 +67,7 @@ int main() {
             y += vy;
             vy = (vy - 0.08) * 0.98;
         }
-        CHECK(Near(s.y, y, 1e-9));
+        CHECK(Near(s.y, y, 1e-3)); // f32 rounding like BDS
     }
 
     // Walking speed settles at 4.317 blocks/s; sprinting at 5.612.

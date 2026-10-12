@@ -99,7 +99,13 @@ namespace perlin {
             bool hasRotation = false;
             float velocity[3] = {0, 0, 0};
             float yaw = 0, pitch = 0;   // Bedrock convention
+            // CorrectPlayerMovePrediction: the server's state for input tick `tick` (feet position + tick delta).
+            bool correction = false;
+            uint64_t tick = 0;
+            bool onGround = false;
+            double pos[3] = {0, 0, 0};
         };
+        uint64_t LastAuthTick() const { return authTick; }
         bool TakeServerMotion(ServerMotion& out);
         float MovementSpeedAttribute() const { return movementSpeed; }
         // True once the spawn handshake finished (loading screen ended, local player initialised).

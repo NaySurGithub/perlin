@@ -1,3 +1,4 @@
+#include <cstdio>
 #include "client/renderer/LevelRenderer.hpp"
 #include "client/resources/BedrockSamples.hpp"
 #include "client/resources/TextureLoader.hpp"
@@ -147,12 +148,23 @@ namespace perlin {
             finished.swap(done);
         }
         const uint32_t current = generation.load();
+        // GPU uploads are budgeted per frame so a burst of finished chunks cannot stall a frame.
+        const auto uploadStart = std::chrono::steady_clock::now();
+        size_t consumed = 0;
         for (MeshResult& r : finished) {
+            if (consumed > 0 && std::chrono::steady_clock::now() - uploadStart > std::chrono::milliseconds(3))
+                break;
+            consumed++;
             inFlight.erase(r.pos);
             if (!meshVersions.count(r.pos))
                 continue; // the chunk was unloaded while it was being meshed
             if (r.generation == current)
                 context.UpdateChunkMesh(r.pos.x, r.pos.z, *r.mesh, r.version);
+        }
+        if (consumed < finished.size()) {
+            std::lock_guard lock(doneMutex);
+            done.insert(done.begin(), std::make_move_iterator(finished.begin() + consumed),
+                        std::make_move_iterator(finished.end()));
         }
     }
 
@@ -239,9 +251,15 @@ namespace perlin {
                 if (stopping)
                     return;
                 auto mesh = std::make_unique<Tessellator>();
+                const auto t0 = std::chrono::steady_clock::now();
                 mesh->Begin();
                 BuildChunkMesh(*target, job.pos, *mesh, &blocks, &biomeTints);
                 mesh->End();
+                const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                                    std::chrono::steady_clock::now() - t0).count();
+                if (ms > 40)
+                    std::printf("[perf] slow chunk mesh (%d,%d): %lld ms, %zu vertices\n", job.pos.x, job.pos.z,
+                                static_cast<long long>(ms), mesh->Vertices().size());
                 std::lock_guard lock(doneMutex);
                 done.push_back({job.pos, job.version, gen, std::move(mesh)});
             });
