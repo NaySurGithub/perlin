@@ -999,7 +999,8 @@ namespace perlin {
                         }
                         float ox, oy, oz;
                         PlantOffset(baseX + x, baseZ + z, tex, gi.dblPlant, ox, oy, oz);
-                        const float lo = 0.5f - 0.3182f + 0.0f, hi = 0.5f + 0.3182f;
+                        // Java tinted_cross uses rescale:true, so the 45-degree planes span 0.05..0.95 on both axes.
+                        const float lo = 0.05f, hi = 0.95f;
                         const float px = bx + ox, py = by + oy, pz = bz + oz;
                         float va[4][3] = {
                             {px + lo, py, pz + hi}, {px + lo, py + 1, pz + hi}, {px + hi, py + 1, pz + lo}, {px + hi, py, pz + lo}};

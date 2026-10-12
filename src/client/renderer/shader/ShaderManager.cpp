@@ -3,6 +3,7 @@
 #include <bgfx/embedded_shader.h>
 
 #include <algorithm>
+#include <cmath>
 #include <cstring>
 #include <fstream>
 #include <iostream>
@@ -113,6 +114,8 @@ namespace perlin {
         chunk = bgfx::createUniform("u_chunk", bgfx::UniformType::Vec4);
         cloudOffset = bgfx::createUniform("u_cloudOffset", bgfx::UniformType::Vec4);
         cloudColor = bgfx::createUniform("u_cloudColor", bgfx::UniformType::Vec4);
+        sunDirection = bgfx::createUniform("u_sunDir", bgfx::UniformType::Vec4);
+        timeUniform = bgfx::createUniform("u_time", bgfx::UniformType::Vec4);
         return true;
     }
 
@@ -124,7 +127,7 @@ namespace perlin {
         }
         for (bgfx::UniformHandle* handle : {&atlasSampler, &lightmapSampler, &skySampler, &mvp, &camera, &fogColor,
                                             &fogEnvironment, &fogSky, &modulator, &textureInfo, &chunk, &cloudOffset,
-                                            &cloudColor}) {
+                                            &cloudColor, &sunDirection, &timeUniform}) {
             if (bgfx::isValid(*handle))
                 bgfx::destroy(*handle);
             *handle = BGFX_INVALID_HANDLE;
@@ -142,6 +145,17 @@ namespace perlin {
         fogSkyValue[1] = params.cloudFogEnd;
         textureInfoValue[0] = 1.0f / static_cast<float>(std::max(1, tilePixels));
         textureInfoValue[1] = params.rgss ? 1.0f : 0.0f;
+
+        // Sun pose is Ry(-90) * Rx(angle) * (0, 1, 0); the moon sits opposite.
+        const float sunY = std::cos(params.sky.sunAngle);
+        sunDirectionValue[0] = -std::sin(params.sky.sunAngle);
+        sunDirectionValue[1] = sunY;
+        sunDirectionValue[2] = 0.0f;
+        sunDirectionValue[3] = std::clamp((sunY + 0.1f) / 0.35f, 0.0f, 1.0f);
+        timeValue[0] = params.timeSeconds;
+        timeValue[1] = params.sky.rainBrightness;
+        timeValue[2] = params.sky.starBrightness;
+        timeValue[3] = 0.0f;
     }
 
     void ShaderManager::ApplyFrame() const {
@@ -150,6 +164,8 @@ namespace perlin {
         bgfx::setUniform(fogEnvironment, fogEnvironmentValue);
         bgfx::setUniform(fogSky, fogSkyValue);
         bgfx::setUniform(textureInfo, textureInfoValue);
+        bgfx::setUniform(sunDirection, sunDirectionValue);
+        bgfx::setUniform(timeUniform, timeValue);
         SetChunkVisibility(1.0f);
     }
 

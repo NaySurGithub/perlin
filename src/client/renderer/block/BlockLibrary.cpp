@@ -692,11 +692,8 @@ namespace perlin {
                                         const uint8_t* sp =
                                             atlas.data() + (sb + (size_t)yy * atlasW + xx) * 4;
                                         uint8_t* o = atlas.data() + (cb + (size_t)yy * atlasW + xx) * 4;
-                                        if (grassPx[yy][xx]) {
-                                            o[0] = o[1] = o[2] = 0;
-                                            o[3] = 0;
-                                            continue;
-                                        }
+                                        if (grassPx[yy][xx])
+                                            continue; // filled with dirt below; the overlay quad covers it
                                         if (dirtTile) {
                                             const uint8_t* dp =
                                                 atlas.data() + (db + (size_t)yy * atlasW + xx) * 4;
@@ -724,9 +721,34 @@ namespace perlin {
                                             }
                                         }
                                     }
+                                // The base is solid dirt under the grass overlay (as in Java). Leaving holes here let
+                                // sky show through wherever filtered samples of the two quads fell below the cutoff.
+                                for (int xx = 0; xx < kTilePx; xx++)
+                                    for (int yy = 0; yy < kTilePx; yy++) {
+                                        if (!grassPx[yy][xx])
+                                            continue;
+                                        uint8_t* o = atlas.data() + (cb + (size_t)yy * atlasW + xx) * 4;
+                                        const uint8_t* from = nullptr;
+                                        if (dirtTile) {
+                                            from = atlas.data() + (db + (size_t)yy * atlasW + xx) * 4;
+                                        } else {
+                                            for (int y2 = yy + 1; y2 < kTilePx && !from; y2++)
+                                                if (!grassPx[y2][xx])
+                                                    from = atlas.data() + (cb + (size_t)y2 * atlasW + xx) * 4;
+                                        }
+                                        if (from) {
+                                            o[0] = from[0];
+                                            o[1] = from[1];
+                                            o[2] = from[2];
+                                        } else {
+                                            o[0] = 80;
+                                            o[1] = 55;
+                                            o[2] = 36;
+                                        }
+                                        o[3] = 255;
+                                    }
                                 TileAlpha ta;
-                                ta.holes = true;
-                                ta.holeFrac = (float)kept / (float)(kTilePx * kTilePx);
+                                ta.holes = false;
                                 alphaByTile[ct] = ta;
                                 pathByTile[ct] = std::string("__grass_base_") + std::to_string(dirtTile);
                                 return ct;

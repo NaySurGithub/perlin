@@ -206,7 +206,8 @@ namespace perlin {
             return false;
         }
 
-        samplerFlags = BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP;
+        // Java samples the block atlas NEAREST within a mip level and linearly between levels.
+        samplerFlags = BGFX_SAMPLER_MIN_POINT | BGFX_SAMPLER_MAG_POINT | BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP;
 
         std::string cull = Env("PERLIN_CULL");
         if (!cull.empty() && cull[0] == '0')

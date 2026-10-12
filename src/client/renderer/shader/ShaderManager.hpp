@@ -56,11 +56,15 @@ namespace perlin {
         bgfx::UniformHandle chunk = BGFX_INVALID_HANDLE;
         bgfx::UniformHandle cloudOffset = BGFX_INVALID_HANDLE;
         bgfx::UniformHandle cloudColor = BGFX_INVALID_HANDLE;
+        bgfx::UniformHandle sunDirection = BGFX_INVALID_HANDLE;
+        bgfx::UniformHandle timeUniform = BGFX_INVALID_HANDLE;
 
         float cameraValue[4] = {};
         float fogColorValue[4] = {};
         float fogEnvironmentValue[4] = {};
         float fogSkyValue[4] = {};
         float textureInfoValue[4] = {};
+        float sunDirectionValue[4] = {};
+        float timeValue[4] = {};
     };
 }
