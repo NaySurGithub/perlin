@@ -17,7 +17,6 @@
 #include <iostream>
 
 namespace perlin {
-    constexpr int kTileSize = 16;
     namespace {
         constexpr uint32_t kPageVerts = 1u << 20;
         constexpr uint32_t kPageIdx = (kPageVerts / 4) * 6;
@@ -178,6 +177,10 @@ namespace perlin {
         const std::vector<PositionVertex> topSky = BuildSkyDisc(16.0f);
         topSkyBuffer = upload(topSky, positionLayout);
         bottomSkyBuffer = upload(BuildSkyDisc(-16.0f), positionLayout);
+        {
+            const std::vector<PositionVertex> screen = {{-1.0f, -1.0f, 0.0f}, {3.0f, -1.0f, 0.0f}, {-1.0f, 3.0f, 0.0f}};
+            screenBuffer = upload(screen, positionLayout);
+        }
         const std::vector<uint16_t> skyFan = FanIndices(static_cast<int>(topSky.size()));
         skyFanIndexCount = static_cast<uint32_t>(skyFan.size());
         skyFanIndices = uploadIndices(skyFan);
@@ -298,7 +301,7 @@ namespace perlin {
             for (int c = 0; c < 4; c++)
                 mvp[c * 4 + 2] = 2.0f * params.viewProjection[c * 4 + 2] - params.viewProjection[c * 4 + 3];
         }
-        shaders.SetFrame(params, kTileSize);
+        shaders.SetFrame(params, tileSize);
         UploadLightmap(params.lightmap);
         frame = params;
         ConvertDepth(params.skyViewProjection, skyMvp);
@@ -337,6 +340,60 @@ namespace perlin {
             for (size_t i = 0; i < cloudTexture.solid.size(); i++)
                 cloudTexture.solid[i] = clouds.pixels[i * 4 + 3] >= 10 ? 1 : 0;
         cloudBuilt = false;
+    }
+
+    void RenderContext_bgfx::UploadCrosshair(const Texture& icons) {
+        if (!initialized || icons.width < 16 || icons.height < 16)
+            return;
+        // The sheet is 256 wide in vanilla; resource packs scale it, so the crosshair square scales with it.
+        const int size = std::max(1, icons.width * 15 / 256);
+        std::vector<uint8_t> crop((size_t)size * size * 4);
+        for (int y = 0; y < size; y++)
+            std::memcpy(crop.data() + (size_t)y * size * 4, icons.pixels.data() + (size_t)y * icons.width * 4,
+                        (size_t)size * 4);
+        if (bgfx::isValid(crosshairTexture))
+            bgfx::destroy(crosshairTexture);
+        const uint64_t clamp = BGFX_SAMPLER_MIN_POINT | BGFX_SAMPLER_MAG_POINT | BGFX_SAMPLER_U_CLAMP |
+                               BGFX_SAMPLER_V_CLAMP;
+        crosshairTexture = bgfx::createTexture2D((uint16_t)size, (uint16_t)size, false, 1,
+                                                 bgfx::TextureFormat::RGBA8, clamp,
+                                                 bgfx::copy(crop.data(), (uint32_t)crop.size()));
+        crosshairPx = size;
+    }
+
+    void RenderContext_bgfx::DrawCrosshair() {
+        if (!frame.crosshair || !bgfx::isValid(crosshairTexture) || width <= 0 || height <= 0)
+            return;
+        // Java: 15 GUI pixels centred on the screen, GUI scale = largest integer that keeps 320x240 visible.
+        const int guiScale = std::max(1, std::min(width / 320, height / 240));
+        const float halfW = 7.5f * guiScale / (float)width * 2.0f * 0.5f;
+        const float halfH = 7.5f * guiScale / (float)height * 2.0f * 0.5f;
+        // Snap the quad to whole pixels so the 1-texel lines stay crisp.
+        const float px = 2.0f / (float)width, py = 2.0f / (float)height;
+        const float cx = std::round(0.0f), cy = std::round(0.0f);
+        const float w = std::round(halfW / px * 2.0f) * 0.5f * px;
+        const float h = std::round(halfH / py * 2.0f) * 0.5f * py;
+        if (bgfx::getAvailTransientVertexBuffer(4, textureLayout) < 4)
+            return;
+        bgfx::TransientVertexBuffer tvb;
+        bgfx::allocTransientVertexBuffer(&tvb, 4, textureLayout);
+        auto* v = reinterpret_cast<TextureVertex*>(tvb.data);
+        v[0] = {cx - w, cy + h, 0.0f, 0.0f, 0.0f};
+        v[1] = {cx + w, cy + h, 0.0f, 1.0f, 0.0f};
+        v[2] = {cx + w, cy - h, 0.0f, 1.0f, 1.0f};
+        v[3] = {cx - w, cy - h, 0.0f, 0.0f, 1.0f};
+        static const float identity[16] = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+        shaders.SetMatrix(identity);
+        shaders.SetModulator(1.0f, 1.0f, 1.0f, 1.0f);
+        shaders.BindSky(crosshairTexture, BGFX_SAMPLER_MIN_POINT | BGFX_SAMPLER_MAG_POINT | BGFX_SAMPLER_U_CLAMP |
+                                              BGFX_SAMPLER_V_CLAMP);
+        bgfx::setVertexBuffer(0, &tvb);
+        bgfx::setIndexBuffer(quadIndices);
+        // Java's crosshair blend: result = src * (1 - dst) + dst * (1 - src), so it inverts whatever is underneath.
+        bgfx::setState(BGFX_STATE_WRITE_RGB |
+                       BGFX_STATE_BLEND_FUNC_SEPARATE(BGFX_STATE_BLEND_INV_DST_COLOR, BGFX_STATE_BLEND_INV_SRC_COLOR,
+                                                      BGFX_STATE_BLEND_ONE, BGFX_STATE_BLEND_ZERO));
+        bgfx::submit(0, shaders.Program(ShaderProgram::Celestial));
     }
 
     void RenderContext_bgfx::EndFrame() {
@@ -385,9 +442,15 @@ namespace perlin {
     }
 
     namespace {
-        constexpr int kTileMips = 5;
+        int MipCount(int size) {
+            int n = 1;
+            while ((size >> n) > 0)
+                n++;
+            return n;
+        }
 
-        void UploadTile(bgfx::TextureHandle tex, int layer, const uint8_t* rgba, size_t stride) {
+        void UploadTile(bgfx::TextureHandle tex, int kTileSize, int layer, const uint8_t* rgba, size_t stride) {
+            const int kTileMips = MipCount(kTileSize);
             std::vector<uint8_t> level((size_t)kTileSize * kTileSize * 4);
             for (int y = 0; y < kTileSize; y++)
                 std::memcpy(level.data() + (size_t)y * kTileSize * 4, rgba + (size_t)y * stride,
@@ -420,12 +483,12 @@ namespace perlin {
                 }
             level = std::move(bled);
             for (int l = 0; l < kTileMips; l++) {
-                const int w = kTileSize >> l;
+                const int w = std::max(1, kTileSize >> l);
                 bgfx::updateTexture2D(tex, (uint16_t)layer, (uint8_t)l, 0, 0, (uint16_t)w, (uint16_t)w,
                                       bgfx::copy(level.data(), (uint32_t)((size_t)w * w * 4)), (uint16_t)(w * 4));
                 if (l + 1 == kTileMips)
                     break;
-                const int h = w >> 1;
+                const int h = std::max(1, w >> 1);
                 std::vector<uint8_t> next((size_t)h * h * 4);
                 for (int y = 0; y < h; y++)
                     for (int x = 0; x < h; x++) {
@@ -442,35 +505,33 @@ namespace perlin {
         }
     }
 
-    void RenderContext_bgfx::UploadAtlas(const uint8_t* rgba, int size, int tiles) {
-        if (!initialized || !rgba || size <= 0 || tiles <= 0)
+    void RenderContext_bgfx::UploadAtlas(const uint8_t* rgba, int tilePx, int tiles) {
+        if (!initialized || !rgba || tilePx <= 0 || tiles <= 0)
             return;
         const int limit = std::max<int>(1, bgfx::getCaps()->limits.maxTextureLayers);
         const int layers = std::min(limit, (tiles + 255) / 256 * 256);
-        bgfx::TextureHandle tex = bgfx::createTexture2D(kTileSize, kTileSize, true, (uint16_t)layers,
+        bgfx::TextureHandle tex = bgfx::createTexture2D((uint16_t)tilePx, (uint16_t)tilePx, true, (uint16_t)layers,
                                                         bgfx::TextureFormat::RGBA8, samplerFlags, nullptr);
         if (!bgfx::isValid(tex)) {
-            std::cout << "[bgfx] atlas upload failed (" << layers << " layers)" << std::endl;
+            std::cout << "[bgfx] atlas upload failed (" << layers << " layers of " << tilePx << "px)" << std::endl;
             return;
         }
-        const int perRow = size / kTileSize;
-        const size_t stride = (size_t)size * 4;
+        const size_t stride = (size_t)tilePx * 4;
+        const size_t tileBytes = (size_t)tilePx * tilePx * 4;
         const int count = std::min(tiles, layers);
-        for (int tile = 0; tile < count; tile++) {
-            const uint8_t* origin =
-                rgba + ((size_t)(tile / perRow) * kTileSize * size + (size_t)(tile % perRow) * kTileSize) * 4;
-            UploadTile(tex, tile, origin, stride);
-        }
+        for (int tile = 0; tile < count; tile++)
+            UploadTile(tex, tilePx, tile, rgba + tileBytes * (size_t)tile, stride);
         if (bgfx::isValid(atlasTex))
             bgfx::destroy(atlasTex);
         atlasTex = tex;
         atlasLayers = layers;
+        tileSize = tilePx;
     }
 
-    void RenderContext_bgfx::UpdateAtlasRegion(int tile, const uint8_t* rgba16) {
-        if (!initialized || !bgfx::isValid(atlasTex) || !rgba16 || tile < 0 || tile >= atlasLayers)
+    void RenderContext_bgfx::UpdateAtlasRegion(int tile, const uint8_t* rgba) {
+        if (!initialized || !bgfx::isValid(atlasTex) || !rgba || tile < 0 || tile >= atlasLayers)
             return;
-        UploadTile(atlasTex, tile, rgba16, (size_t)kTileSize * 4);
+        UploadTile(atlasTex, tileSize, tile, rgba, (size_t)tileSize * 4);
     }
 
 
@@ -806,12 +867,24 @@ namespace perlin {
         }
     }
 
+    void RenderContext_bgfx::DrawScreenTint() {
+        const float* t = frame.screenTint;
+        if (t[3] <= 0.001f || !bgfx::isValid(screenBuffer))
+            return;
+        shaders.SetModulator(t[0], t[1], t[2], t[3]);
+        bgfx::setVertexBuffer(0, screenBuffer);
+        bgfx::setState(BGFX_STATE_WRITE_RGB | kTranslucentBlend);
+        bgfx::submit(0, shaders.Program(ShaderProgram::Screen));
+    }
+
     void RenderContext_bgfx::DrawChunkMeshes(const Frustum& frustum, float camX, float camZ) {
         DrawSky();
         shaders.ApplyFrame();
         shaders.SetMatrix(mvp);
         if (gpuChunks.empty()) {
             DrawClouds();
+            DrawScreenTint();
+            DrawCrosshair();
             return;
         }
 
@@ -838,6 +911,8 @@ namespace perlin {
         DrawLayer(RenderLayer::Translucent, ShaderProgram::TerrainTranslucent, frustum, visible, atlas);
         DrawLayer(RenderLayer::TranslucentCull, ShaderProgram::TerrainTranslucent, frustum, visible, atlas);
         DrawClouds();
+        DrawScreenTint();
+        DrawCrosshair();
     }
 
     void RenderContext_bgfx::ClearChunkMeshes() {
@@ -847,7 +922,7 @@ namespace perlin {
 
     void RenderContext_bgfx::DestroySkyResources() {
         for (bgfx::VertexBufferHandle* handle :
-             {&topSkyBuffer, &bottomSkyBuffer, &starBuffer, &sunriseBuffer, &sunBuffer, &moonBuffer})
+             {&topSkyBuffer, &bottomSkyBuffer, &screenBuffer, &starBuffer, &sunriseBuffer, &sunBuffer, &moonBuffer})
             if (bgfx::isValid(*handle)) {
                 bgfx::destroy(*handle);
                 *handle = BGFX_INVALID_HANDLE;

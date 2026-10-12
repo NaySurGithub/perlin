@@ -2,6 +2,8 @@
 #include "client/renderer/LevelRenderer.hpp"
 #include "client/resources/BedrockSamples.hpp"
 #include "client/resources/TextureLoader.hpp"
+#include "client/resources/TexturePack.hpp"
+#include <iostream>
 #include "client/renderer/chunk/ChunkMesher.hpp"
 #include "util/Paths.hpp"
 #include "world/level/lighting/LightRegistry.hpp"
@@ -73,8 +75,23 @@ namespace perlin {
             return;
         const std::string root = options.bedrockSamplesDir + "/repo/resource_pack/textures/environment/";
         Texture sun, moon, clouds;
-        if (!LoadTexture(root + "sun.png", sun) || !LoadTexture(root + "moon_phases.png", moon) ||
-            !LoadTexture(root + "clouds.png", clouds))
+        auto load = [&](const char* file, Texture& out) {
+            if (!texturePackRoot.empty() &&
+                LoadTexture(texturePackRoot + "/textures/environment/" + file, out) && out.width > 0)
+                return true;
+            return LoadTexture(root + file, out);
+        };
+        if (!crosshairLoaded) {
+            Texture icons;
+            const std::string guiRoot = options.bedrockSamplesDir + "/repo/resource_pack/textures/gui/";
+            if ((!texturePackRoot.empty() && LoadTexture(texturePackRoot + "/textures/gui/icons.png", icons) &&
+                 icons.width >= 16) ||
+                LoadTexture(guiRoot + "icons.png", icons)) {
+                context.UploadCrosshair(icons);
+                crosshairLoaded = true;
+            }
+        }
+        if (!load("sun.png", sun) || !load("moon_phases.png", moon) || !load("clouds.png", clouds))
             return;
 
         unsigned char lowest = 255, highest = 0;
@@ -121,6 +138,16 @@ namespace perlin {
         const std::string vanillaDir = options.bedrockSamplesDir + "/repo/resource_pack";
         if (!BedrockSamples::Available(options.bedrockSamplesDir))
             return;
+        if (!texturePackResolved) {
+            texturePackResolved = true;
+            std::string error;
+            const std::string root =
+                ResolveTexturePack(paths::DataDir() + "/texturepacks", options.texturePack, error);
+            if (!error.empty())
+                std::cout << "[textures] " << error << " (using default textures)" << std::endl;
+            blocks.SetTexturePack(root);
+            texturePackRoot = root;
+        }
         LoadSkyTextures();
         const bool blocksOk = blocks.EnsureLoaded(packDir, vanillaDir);
         const bool tintsOk = blocksOk && biomeTints.EnsureLoaded(vanillaDir);
@@ -136,8 +163,7 @@ namespace perlin {
 
         tintsWereReady = tintsOk;
         uploadedTiles = blocks.TilesLoaded();
-        context.UploadAtlas(blocks.AtlasPixels().data(), BlockLibrary::kAtlasTiles * BlockLibrary::kTilePx,
-                            blocks.TilesLoaded());
+        context.UploadAtlas(blocks.AtlasPixels().data(), BlockLibrary::TilePx(), blocks.TilesLoaded());
         atlasUploaded = true;
         InvalidateMeshes();
     }
@@ -171,6 +197,16 @@ namespace perlin {
 
     void LevelRenderer::SnapshotVersions(Level& level) {
         snapshot.clear();
+        if (const uint64_t cleared = level.clearCounter.load(); cleared != lastClear) {
+            // The whole world was replaced (dimension change): drop every mesh built from the old one.
+            lastClear = cleared;
+            for (const auto& [pos, version] : meshVersions) {
+                (void)version;
+                context.RemoveChunkMesh(pos.x, pos.z);
+            }
+            meshVersions.clear();
+            quiet.clear();
+        }
         std::unordered_map<ChunkPos, uint64_t, ChunkPosHash> versions;
         {
             std::lock_guard lock(level.mutex);

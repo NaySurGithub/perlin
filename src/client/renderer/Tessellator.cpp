@@ -24,8 +24,8 @@ namespace perlin {
             return;
         const uint32_t base = static_cast<uint32_t>(vertices.size());
         constexpr float kTiles = static_cast<float>(BlockLibrary::kAtlasTiles);
-        constexpr float kInset = 1.0f / (2.0f * BlockLibrary::kTilePx);
-        constexpr float kSpan = 1.0f - 2.0f * kInset;
+        const float kInset = 1.0f / (2.0f * BlockLibrary::TilePx());
+        const float kSpan = 1.0f - 2.0f * kInset;
         const float centerU = (uv[0][0] + uv[1][0] + uv[2][0] + uv[3][0]) * 0.25f * kTiles;
         const float centerV = (uv[0][1] + uv[1][1] + uv[2][1] + uv[3][1]) * 0.25f * kTiles;
         const float column = std::floor(centerU), row = std::floor(centerV);

@@ -16,6 +16,7 @@ namespace perlin {
         Sunrise,
         Celestial,
         Cloud,
+        Screen,
         Count
     };
 

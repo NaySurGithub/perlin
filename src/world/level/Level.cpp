@@ -139,6 +139,7 @@ namespace perlin {
     void Level::Clear() {
         std::lock_guard lock(mutex);
         changeCounter++;
+        clearCounter++;
         chunks.clear();
     }
 

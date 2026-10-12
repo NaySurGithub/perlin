@@ -9,6 +9,7 @@
 #include <iostream>
 #include <memory>
 #include <string>
+#include <vector>
 
 #ifdef _WIN32
 #ifndef NOMINMAX
@@ -46,9 +47,16 @@ namespace {
     // Everything written to stdout/stderr (printf, std::cout, std::cerr, library output) is piped through a
     // reader thread into perlin.log and still forwarded to the console. Flushed on every write so a crash
     // never loses the tail of the log.
-    void StartLogCapture(const std::string& path) {
-        FILE* log = std::fopen(path.c_str(), "wb");
-        if (!log)
+    void StartLogCapture(const std::vector<std::string>& paths) {
+        // The log goes to every path that can be opened (the data directory and next to the executable).
+        std::vector<FILE*> logs;
+        for (const std::string& path : paths)
+            if (FILE* f = std::fopen(path.c_str(), "wb")) {
+                std::fputs("[perlin] log opened\n", f);
+                std::fflush(f);
+                logs.push_back(f);
+            }
+        if (logs.empty())
             return;
         std::fflush(stdout);
         std::fflush(stderr);
@@ -61,6 +69,12 @@ namespace {
         _dup2(fds[1], 2);
         _close(fds[1]);
         const int readFd = fds[0];
+        // A GUI-subsystem process starts without console handles, so the CRT's stdout/stderr streams are not
+        // attached to fds 1 and 2. Re-attach them or printf/std::cout would still go nowhere.
+        if (FILE* out = _fdopen(1, "wb"))
+            *stdout = *out;
+        if (FILE* err = _fdopen(2, "wb"))
+            *stderr = *err;
 #else
         const int saved = dup(1);
         int fds[2];
@@ -73,7 +87,7 @@ namespace {
 #endif
         setvbuf(stdout, nullptr, _IONBF, 0);
         setvbuf(stderr, nullptr, _IONBF, 0);
-        std::thread([log, saved, readFd] {
+        std::thread([logs, saved, readFd] {
             char buf[8192];
             for (;;) {
 #ifdef _WIN32
@@ -83,8 +97,10 @@ namespace {
 #endif
                 if (n <= 0)
                     break;
-                std::fwrite(buf, 1, static_cast<size_t>(n), log);
-                std::fflush(log);
+                for (FILE* log : logs) {
+                    std::fwrite(buf, 1, static_cast<size_t>(n), log);
+                    std::fflush(log);
+                }
                 if (saved >= 0) {
 #ifdef _WIN32
                     (void)_write(saved, buf, static_cast<unsigned>(n));
@@ -128,7 +144,8 @@ int main(int argc, char** argv) {
 
     const std::string dataDir = perlin::paths::DataDir();
     perlin::paths::EnsureDir(dataDir);
-    StartLogCapture(dataDir + "/perlin.log");
+    perlin::paths::EnsureDir(dataDir + "/texturepacks");
+    StartLogCapture({dataDir + "/perlin.log", perlin::paths::ExeDir() + "/perlin.log"});
 #ifdef _WIN32
     SetUnhandledExceptionFilter(CrashFilter);
 #endif
@@ -136,7 +153,7 @@ int main(int argc, char** argv) {
         const std::time_t now = std::time(nullptr);
         char stamp[64];
         std::strftime(stamp, sizeof(stamp), "%Y-%m-%d %H:%M:%S", std::localtime(&now));
-        std::printf("[perlin] starting %s, data dir %s\n", stamp, dataDir.c_str());
+        std::printf("[perlin] starting %s, data dir %s, log %s/perlin.log\n", stamp, dataDir.c_str(), dataDir.c_str());
     }
 
     AppPlatform_SDL platform(ParseArgs(argc, argv));

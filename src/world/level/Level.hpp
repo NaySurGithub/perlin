@@ -83,5 +83,6 @@ namespace perlin {
         std::unordered_map<ChunkPos, Chunk, ChunkPosHash> chunks;
         mutable std::mutex mutex;
         std::atomic<uint64_t> changeCounter{0};
+        std::atomic<uint64_t> clearCounter{0}; // bumped by Clear(): every mesh built from older chunks is stale
     };
 }

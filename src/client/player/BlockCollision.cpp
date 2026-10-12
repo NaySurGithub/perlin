@@ -214,8 +214,7 @@ namespace perlin {
             s.climbable = true;
             return info;
         }
-        if (!(Ends(n, "_fence") || n == "fence" || n == "nether_brick_fence" || (Ends(n, "_wall") && !Has(n, "_wall_")) ||
-              Ends(n, "glass_pane") || n == "iron_bars" || n == "stained_glass_pane" || Ends(n, "_bars"))) {
+        {
             const auto& reg = Registry();
             const auto it = reg.find(BlockPalette::Instance().NetworkId(id));
             if (it != reg.end()) {

@@ -29,6 +29,8 @@ namespace perlin {
             BGFX_EMBEDDED_SHADER(fs_celestial),
             BGFX_EMBEDDED_SHADER(vs_cloud),
             BGFX_EMBEDDED_SHADER(fs_cloud),
+            BGFX_EMBEDDED_SHADER(vs_screen),
+            BGFX_EMBEDDED_SHADER(fs_screen),
             BGFX_EMBEDDED_SHADER_END(),
         };
 
@@ -46,6 +48,7 @@ namespace perlin {
             {"vs_sunrise", "fs_sunrise"},
             {"vs_celestial", "fs_celestial"},
             {"vs_cloud", "fs_cloud"},
+            {"vs_screen", "fs_screen"},
         };
 
         const char* RendererDirectory(bgfx::RendererType::Enum type) {

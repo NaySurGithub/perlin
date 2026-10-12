@@ -287,6 +287,15 @@ namespace perlin {
             SendLoadingScreen(false);
             SendSetLocalPlayerAsInitialized();
         }
+        if (dimAckPending) {
+            size_t columns;
+            {
+                std::lock_guard<std::mutex> lk(reqMutex);
+                columns = seenColumns.size();
+            }
+            if (columns >= 9 || std::chrono::steady_clock::now() - dimAckSince > std::chrono::seconds(4))
+                FinishDimensionChange();
+        }
         if (net && !net->IsConnected() && !diagLostLogged && state != State::Disconnected) {
             diagLostLogged = true;
             std::cout << "[net] CONNECTION LOST (transport closed) state=" << (int)state.load()
@@ -445,10 +454,34 @@ namespace perlin {
         return Send(p);
     }
 
-    bool BedrockSession::SendLoadingScreen(bool start) {
+    bool BedrockSession::SendLoadingScreen(bool start, std::optional<uint32_t> id) {
         proto::ServerboundLoadingScreenPacket p;
         p.type = start ? 1 : 2;
+        p.loadingScreenId = id;
         return Send(p);
+    }
+
+    void BedrockSession::ResetWorldForDimension() {
+        netLevel.Clear();
+        std::lock_guard<std::mutex> lk(reqMutex);
+        seenColumns.clear();
+        requestedSlots.clear();
+        reqQueue = {};
+        inflight.clear();
+        retries.clear();
+    }
+
+    void BedrockSession::NoteHurt() {
+        hurtCounter++;
+        lastHurtAt = std::chrono::steady_clock::now();
+    }
+
+    void BedrockSession::FinishDimensionChange() {
+        if (!dimAckPending.exchange(false))
+            return;
+        std::cout << "[bedrock] dimension " << dimensionId.load() << " loaded, acknowledging" << std::endl;
+        SendPlayerAction(static_cast<uint32_t>(proto::Action::DimensionChangeAck), 0, 0, 0, 0);
+        SendLoadingScreen(false, dimLoadingId);
     }
 
     bool BedrockSession::SendPlayerAuthInput() {
@@ -690,13 +723,12 @@ namespace perlin {
             }
             return;
         }
-        if (pkt.dimension != 0) {
-            static bool once = false;
-            if (!once) {
-                once = true;
-                std::cout << "[chunk] dimension " << pkt.dimension
-                          << " chunks ignored (Level is overworld-only)" << std::endl;
-            }
+        if (pkt.dimension != dimensionId) {
+            // Late packets from the dimension we just left.
+            static int staleLogged = 0;
+            if (staleLogged++ < 4)
+                std::cout << "[chunk] ignoring chunk for dimension " << pkt.dimension << " (in " << dimensionId.load()
+                          << ")" << std::endl;
             return;
         }
         const DimensionInfo& dim = ChunkCodec::Dimension(pkt.dimension);
@@ -732,7 +764,7 @@ namespace perlin {
     }
 
     void BedrockSession::ApplyBiomeColumn(int cx, int cz, const std::vector<uint8_t>& payload) {
-        const DimensionInfo& dim = ChunkCodec::Dimension(0);
+        const DimensionInfo& dim = ChunkCodec::Dimension(dimensionId);
         size_t off = 0;
         int parsed = 0;
         for (int i = 0; i < dim.slots; i++) {
@@ -843,7 +875,7 @@ namespace perlin {
                           << " (" << pkt.entries.size() << " entries)" << std::endl;
             }
         }
-        if (pkt.dimension != 0)
+        if (pkt.dimension != dimensionId)
             return;
         const DimensionInfo& dim = ChunkCodec::Dimension(pkt.dimension);
         (void)dim;
@@ -904,8 +936,16 @@ namespace perlin {
             return false;
         }
         std::vector<uint16_t> local(st.palette.size());
-        for (size_t i = 0; i < local.size(); i++)
+        for (size_t i = 0; i < local.size(); i++) {
             local[i] = BlockPalette::Instance().Intern(st.palette[i]);
+            static int unknownLogged = 0;
+            if (unknownLogged < 20 && BlockPalette::Instance().NamesLoaded() &&
+                BlockPalette::Instance().Name(local[i]).empty()) {
+                unknownLogged++;
+                std::cout << "[chunk] unknown block state hash " << st.palette[i] << " in sub-chunk (" << cx << ","
+                          << absSubY << "," << cz << ")" << std::endl;
+            }
+        }
         std::array<uint16_t, ChunkCodec::kCells> cells;
         for (int i = 0; i < ChunkCodec::kCells; i++)
             cells[(size_t)i] = local[idx[(size_t)i]];
@@ -956,7 +996,7 @@ namespace perlin {
         if (!seenColumns.count({cx, cz}))
             return false;
         for (const auto& k : requestedSlots)
-            if (std::get<0>(k) == 0 && std::get<1>(k) == cx && std::get<3>(k) == cz)
+            if (std::get<0>(k) == dimensionId.load() && std::get<1>(k) == cx && std::get<3>(k) == cz)
                 return false;
         return true;
     }

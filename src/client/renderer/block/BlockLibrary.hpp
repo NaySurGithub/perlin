@@ -34,9 +34,12 @@ namespace perlin {
 
     class BlockLibrary {
     public:
-        static constexpr int kTilePx = 16;
+        static int TilePx() { return tilePxValue; }
         static constexpr int kAtlasTiles = 128;
 
+        // `texturePackRoot` (optional) is an extracted resource pack whose textures replace the vanilla ones.
+        // Every tile is resampled to one square size (a power of two chosen from the pack, 16 for vanilla).
+        void SetTexturePack(const std::string& root);
         bool EnsureLoaded(const std::string& perlinPackDir, const std::string& vanillaRpRoot);
         bool Ready() const { return ready; }
         void SetFancy(bool value) { fancy = value; }
@@ -61,7 +64,7 @@ namespace perlin {
         TileAlpha AlphaOf(int tile) const;
         float SaturationOf(int tile) const;
         std::string TilePathOf(int tile) const;
-        void PollAnimation(uint64_t step, const std::function<void(int tile, const uint8_t* rgba16)>& emit);
+        void PollAnimation(uint64_t step, const std::function<void(int tile, const uint8_t* rgba)>& emit);
 
     private:
         int FetchTile(const std::string& pngRelPath, const std::string& vanillaRpRoot);
@@ -83,11 +86,13 @@ namespace perlin {
         std::unordered_map<int, TileAlpha> alphaByTile;
         std::unordered_map<int, std::string> pathByTile;
         struct AnimSrc {
-            std::vector<uint8_t> pixels;
-            int w = 0, h = 0;
+            std::vector<uint8_t> pixels; // frames stacked vertically, each already resampled to tilePx
+            int frames = 0;
         };
         std::unordered_map<int, AnimSrc> animByTile;
-        std::vector<uint8_t> animScratch = std::vector<uint8_t>(16 * 16 * 4, 0);
+        std::string packRoot;
+        int NewTile();
+        inline static int tilePxValue = 16;
         std::unordered_map<std::string, std::array<float, 3>> baseTints;
         mutable std::unordered_map<int32_t, bool> unknownLogged;
         mutable std::vector<const BlockAppearance*> localLook;

@@ -27,6 +27,9 @@ namespace perlin {
             int cloudRange = 128;
             bool rgss = false;
             bool fovEffects = true;
+            int damageTilt = 100;
+            bool damageTint = true;
+            std::string texturePack;
             std::map<std::string, std::string> keys;
         };
     }
@@ -68,6 +71,9 @@ namespace perlin {
                       o.cloudRange,
                       o.rgss,
                       o.fovEffects,
+                      o.damageTilt,
+                      o.damageTint,
+                      o.texturePack,
                       {}};
         auto parsed = json::Read<Stored>(text);
         if (!parsed)
@@ -91,6 +97,9 @@ namespace perlin {
         o.cloudRange = std::clamp(stored.cloudRange, 2, 128);
         o.rgss = stored.rgss;
         o.fovEffects = stored.fovEffects;
+        o.damageTilt = std::clamp(stored.damageTilt, 0, 100);
+        o.damageTint = stored.damageTint;
+        o.texturePack = stored.texturePack;
 
         for (size_t i = 0; i < kActionCount; i++) {
             const auto it = stored.keys.find(ActionId(static_cast<Action>(i)));
@@ -121,6 +130,9 @@ namespace perlin {
                       cloudRange,
                       rgss,
                       fovEffects,
+                      damageTilt,
+                      damageTint,
+                      texturePack,
                       {}};
         for (size_t i = 0; i < kActionCount; i++)
             stored.keys[ActionId(static_cast<Action>(i))] = keys[i].Serialize();

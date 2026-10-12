@@ -191,6 +191,52 @@ namespace perlin {
         return true;
     }
 
+    bool BlockPalette::LoadServerStates(const std::string& path) {
+        std::ifstream f(path, std::ios::binary);
+        if (!f)
+            return false;
+        const std::string text((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+        const auto document = json::Document::Parse(text);
+        if (!document)
+            return false;
+        size_t added = 0, replaced = 0;
+        for (const json::View rec : document->root().items()) {
+            if (rec.size() < 3)
+                continue;
+            const int32_t hash = static_cast<int32_t>(rec[size_t{0}].integer());
+            const std::string name = rec[size_t{1}].str();
+            std::vector<std::pair<std::string, StateValue>> st;
+            for (const auto [key, value] : rec[size_t{2}].members()) {
+                StateValue sv;
+                const std::string kind = value[size_t{0}].str();
+                sv.kind = kind == "b" ? StateValue::Bool : kind == "i" ? StateValue::Int : StateValue::String;
+                if (sv.kind == StateValue::String)
+                    sv.s = value[size_t{1}].str();
+                else
+                    sv.i = static_cast<int32_t>(value[size_t{1}].integer());
+                st.emplace_back(key, std::move(sv));
+            }
+            std::sort(st.begin(), st.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
+            auto it = nameByHash.find(hash);
+            if (it == nameByHash.end())
+                added++;
+            else if (it->second != name)
+                replaced++;
+            nameByHash[hash] = name;
+            statesByHash[hash] = std::move(st);
+            auto& props = propsByName[name];
+            for (const auto& [k, v] : statesByHash[hash]) {
+                (void)v;
+                if (std::find(props.begin(), props.end(), k) == props.end())
+                    props.push_back(k);
+            }
+        }
+        namesLoaded = namesLoaded || !nameByHash.empty();
+        std::cout << "[blocks] server registry: " << added << " ids added, " << replaced << " renamed from " << path
+                  << std::endl;
+        return added + replaced > 0 || !nameByHash.empty();
+    }
+
     uint16_t BlockPalette::Intern(int32_t networkId) {
         std::lock_guard<std::mutex> lk(mutex);
         auto it = localByNet.find(networkId);

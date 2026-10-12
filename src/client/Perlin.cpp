@@ -4,6 +4,7 @@
 #include "client/renderer/Environment.hpp"
 #include "client/renderer/Fog.hpp"
 #include "client/player/BlockCollision.hpp"
+#include "client/player/DamageEffect.hpp"
 #include "client/resources/BedrockSamples.hpp"
 #include "util/Paths.hpp"
 
@@ -13,6 +14,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cstdio>
+#include <cstdlib>
 #include <ctime>
 #include <iostream>
 
@@ -168,6 +170,7 @@ namespace perlin {
         auto previous = Clock::now();
         const auto startedAt = previous;
         uint64_t frameCounter = 0;
+        DamageEffect damage;
         auto titleAt = previous;
         auto animationAt = previous;
         uint64_t animationStep = 0;
@@ -186,6 +189,13 @@ namespace perlin {
             const LookDelta look = inputManager.Look();
             camera.Rotate(look.yaw, look.pitch);
             camera.fov = options.fov * (options.fovEffects ? player.FovModifier() : 1.0f);
+            if (sessionReady) {
+                // Each hit rolls the camera to a random side, like Java's random hurt direction.
+                damage.Update(session->HurtCount(), dt, static_cast<float>(std::rand()) / static_cast<float>(RAND_MAX));
+                camera.roll = damage.Roll(options.damageTilt);
+            } else {
+                camera.roll = 0.0f;
+            }
 
             int width = 0, height = 0;
             platform->GetFramebufferSize(width, height);
@@ -312,6 +322,12 @@ namespace perlin {
             std::copy_n(glm::value_ptr(cloudColor), 4, params.cloud.color);
             params.cloud.height = env.cloudHeight;
             params.cloud.gameTicks = std::chrono::duration<double>(frameStart - startedAt).count() * 20.0;
+
+            params.crosshair = true;
+            params.screenTint[0] = 0.8f;
+            params.screenTint[1] = 0.0f;
+            params.screenTint[2] = 0.0f;
+            params.screenTint[3] = options.damageTint ? damage.TintAlpha() : 0.0f;
 
             params.timeSeconds = std::chrono::duration<float>(frameStart - startedAt).count();
             params.frameIndex = static_cast<uint32_t>(frameCounter++);

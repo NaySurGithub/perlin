@@ -81,6 +81,58 @@ class Gen:
         self.unresolved_tex = Counter()
         self.include_cache = {}
         self.vox_cache = {}
+        self.register_special_models()
+
+    # ---- block-entity shapes Java draws with entity renderers (no block model) ---------------------------
+    CHEST_SETS = {
+        "chest": ("chest_front", "chest_side", "chest_top"),
+        "trapped_chest": ("trapped_chest_front", "chest_side", "chest_top"),
+        "ender_chest": ("ender_chest_front", "ender_chest_side", "ender_chest_top"),
+        "copper_chest": ("copper_chest_inventory_front", "copper_chest_inventory_side", "copper_chest_inventory_top"),
+        "exposed_copper_chest": ("exposed_copper_chest_inventory_front", "exposed_copper_chest_inventory_side",
+                                 "exposed_copper_chest_inventory_top"),
+        "weathered_copper_chest": ("weathered_copper_chest_inventory_front", "weathered_copper_chest_inventory_side",
+                                   "weathered_copper_chest_inventory_top"),
+        "oxidized_copper_chest": ("oxidized_copper_chest_inventory_front", "oxidized_copper_chest_inventory_side",
+                                  "oxidized_copper_chest_inventory_top"),
+    }
+
+    def register_special_models(self):
+        def face(tex, uv=(0, 0, 16, 16)):
+            return {"texture": "#" + tex, "uv": list(uv)}
+        for base, (front, side, top) in self.CHEST_SETS.items():
+            for t, f in (("front", front), ("side", side), ("top", top)):
+                self.alias["special/%s_%s" % (base, t)] = "textures/blocks/" + f
+            self.models.raw["special/" + base] = {"textures": {
+                "front": "special/%s_front" % base, "side": "special/%s_side" % base, "top": "special/%s_top" % base},
+                "elements": [{"from": [1, 0, 1], "to": [15, 14, 15], "faces": {
+                    "north": face("front"), "south": face("side"), "east": face("side"), "west": face("side"),
+                    "up": face("top"), "down": face("top")}}]}
+        for t, f in (("side", "bell_side"), ("top", "bell_top"), ("bottom", "bell_bottom")):
+            self.alias["special/bell_" + t] = "textures/blocks/" + f
+        bell_tex = {"side": "special/bell_side", "top": "special/bell_top", "bottom": "special/bell_bottom"}
+        self.models.raw["special/bell_body"] = {"textures": bell_tex, "elements": [
+            # body (6x7x6) with the wider lip (8x2x8) under it, hanging from the beam like BellRenderer's model
+            {"from": [5, 6, 5], "to": [11, 13, 11], "faces": {
+                "north": face("side"), "south": face("side"), "east": face("side"), "west": face("side"),
+                "up": face("top")}},
+            {"from": [4, 4, 4], "to": [12, 6, 12], "faces": {
+                "north": face("side"), "south": face("side"), "east": face("side"), "west": face("side"),
+                "up": face("top"), "down": face("bottom")}}]}
+
+    def special_entry(self, rec):
+        n = rec["name"].replace("minecraft:", "")
+        base = n[6:] if n.startswith("waxed_") else n
+        if base not in self.CHEST_SETS:
+            return None
+        facing = rec["state"].get("minecraft:cardinal_direction", "north")
+        ry = {"north": 0, "east": 90, "south": 180, "west": 270}.get(facing, 0)
+        vid = self.bake_variant("special/" + base, 0, ry, False)
+        key = (0, (((vid, 1),),))
+        if key not in self.entry_ids:
+            self.entry_ids[key] = len(self.entries)
+            self.entries.append(key)
+        return self.entry_ids[key]
 
     # ----------------------------------------------------------------------------------------------
     def include(self, jname):
@@ -209,11 +261,12 @@ class Gen:
         return bestp, bests
 
     # ---- emission ----------------------------------------------------------------------------------
-    def entry_for(self, jname, props, offset):
+    def entry_for(self, jname, props, offset, extra=()):
         jb = self.jb[jname]
         groups = jb.select(props)
         if groups is None:
             return None
+        groups = list(groups) + [[(mid, x, y, False, 1)] for (mid, x, y) in extra]
         gl = []
         total = 0
         for g in groups:
@@ -241,6 +294,11 @@ class Gen:
         poor = []
         missing_props = Counter()
         for rec in recs:
+            sid = self.special_entry(rec)
+            if sid is not None:
+                blocks.append((rec["hash"], sid))
+                stats["special"] += 1
+                continue
             tr = translate(rec["name"], rec["state"], self.jb)
             if tr is None:
                 stats["no-translation"] += 1
@@ -276,7 +334,8 @@ class Gen:
                 offset = 2
             elif jname in OFFSET_DRIPSTONE:
                 offset = 3
-            eid = self.entry_for(jname, props, offset | (0x80 if self.include(jname) == 2 else 0))
+            extra = [("special/bell_body", 0, 0)] if jname == "bell" else ()
+            eid = self.entry_for(jname, props, offset | (0x80 if self.include(jname) == 2 else 0), extra)
             if eid is None:
                 stats["empty:" + jname] += 1
                 continue

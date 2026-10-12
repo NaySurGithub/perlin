@@ -133,7 +133,7 @@ set(PERLIN_SHADER_INCLUDES "${bgfx_SOURCE_DIR}/bgfx/src" "${PERLIN_SHADER_DIR}")
 set(PERLIN_SHADER_OUTPUTS)
 set(PERLIN_SHADER_NAMES
     vs_terrain fs_terrain_solid fs_terrain_cutout fs_terrain_translucent vs_sky fs_sky vs_star fs_star
-    vs_sunrise fs_sunrise vs_celestial fs_celestial vs_cloud fs_cloud)
+    vs_sunrise fs_sunrise vs_celestial fs_celestial vs_cloud fs_cloud vs_screen fs_screen)
 
 function(perlin_compile_shaders type varying)
     set(sources)
@@ -165,6 +165,8 @@ perlin_compile_shaders(VERTEX varying_celestial.def.sc vs_celestial)
 perlin_compile_shaders(FRAGMENT varying_celestial.def.sc fs_celestial)
 perlin_compile_shaders(VERTEX varying_cloud.def.sc vs_cloud)
 perlin_compile_shaders(FRAGMENT varying_cloud.def.sc fs_cloud)
+perlin_compile_shaders(VERTEX varying_screen.def.sc vs_screen)
+perlin_compile_shaders(FRAGMENT varying_screen.def.sc fs_screen)
 
 set(PERLIN_SHADER_HEADER "${PERLIN_SHADER_OUT}/perlin_shaders.h")
 set(PERLIN_SHADER_HEADER_TEXT "#pragma once\n")
@@ -355,10 +357,29 @@ if(PERLIN_BUILD_TESTS)
     target_compile_features(bedsim_trace_selftest PRIVATE cxx_std_23)
     add_test(NAME bedsim_trace_selftest COMMAND bedsim_trace_selftest "${CMAKE_CURRENT_SOURCE_DIR}/tests/data/bedsim_traces.txt")
 
+    add_executable(damage_selftest tests/damage_selftest.cpp)
+    target_include_directories(damage_selftest PRIVATE src)
+    target_compile_features(damage_selftest PRIVATE cxx_std_23)
+    add_test(NAME damage_selftest COMMAND damage_selftest)
+
     add_executable(models_selftest tests/models_selftest.cpp src/client/renderer/block/BlockModels.cpp)
     target_include_directories(models_selftest PRIVATE src)
     target_compile_features(models_selftest PRIVATE cxx_std_23)
     add_test(NAME models_selftest COMMAND models_selftest "${CMAKE_CURRENT_SOURCE_DIR}/resources/block_models.bin")
+
+    file(GLOB TEXTURE_TEST_SOURCES CONFIGURE_DEPENDS
+        src/client/renderer/block/*.cpp src/client/resources/TextureLoader.cpp src/client/resources/TexturePack.cpp)
+    add_executable(texture_selftest
+        tests/texture_selftest.cpp ${TEXTURE_TEST_SOURCES}
+        src/client/Options.cpp src/client/input/KeyMapping.cpp
+        src/util/Json.cpp src/util/Paths.cpp
+        src/world/level/block/BlockPalette.cpp)
+    target_include_directories(texture_selftest PRIVATE src "${stb_SOURCE_DIR}")
+    target_link_libraries(texture_selftest PRIVATE glaze::glaze miniz Threads::Threads)
+    target_compile_features(texture_selftest PRIVATE cxx_std_23)
+    if(PERLIN_TEXTURE_TEST_ASSETS)
+        add_test(NAME texture_selftest COMMAND texture_selftest "${PERLIN_TEXTURE_TEST_ASSETS}")
+    endif()
 
     add_executable(light_selftest
         tests/light_selftest.cpp

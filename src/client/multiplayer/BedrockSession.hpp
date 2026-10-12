@@ -4,6 +4,7 @@
 #include "protocol/Packets.hpp"
 
 #include <deque>
+#include <optional>
 #include <atomic>
 #include <chrono>
 #include <cstdint>
@@ -113,7 +114,7 @@ namespace perlin {
         // True once the spawn handshake finished (loading screen ended, local player initialised).
         bool Initialized() const { return initializedSent; }
         void PruneChunks(int centerChunkX, int centerChunkZ, int radiusChunks);
-        bool SendLoadingScreen(bool start);
+        bool SendLoadingScreen(bool start, std::optional<uint32_t> id = std::nullopt);
         bool SendPlayerAuthInputWithFlags(const std::vector<uint32_t>& flags, float pitchOverride,
                                           float yawOverride, uint32_t action = UINT32_MAX, int bx = 0,
                                           int by = 0, int bz = 0, int face = 1);
@@ -127,6 +128,8 @@ namespace perlin {
         bool GetWorldTicks(double& outTicks) const;
         void SetDayCycle(bool running);
         int DimensionId() const { return dimensionId; }
+        // Increments every time the local player takes damage (drives the red flash and camera shake).
+        uint32_t HurtCount() const { return hurtCounter.load(); }
         float RainTarget() const { return rainTarget; }
         float ThunderTarget() const { return thunderTarget; }
         void NoteTime(int64_t totalOrTod);
@@ -267,6 +270,16 @@ namespace perlin {
         bool clockPaused = false;
         uint64_t overworldClockId = 0x63d7ede73c38f916ULL;
         std::atomic<int> dimensionId{0};
+        std::atomic<uint32_t> hurtCounter{0};
+        float lastHealth = -1.0f;
+        std::chrono::steady_clock::time_point lastHurtAt{};
+        void NoteHurt();
+        // A ChangeDimension was received: the world was cleared and the server waits for our acknowledgement.
+        std::atomic<bool> dimAckPending{false};
+        std::chrono::steady_clock::time_point dimAckSince{};
+        std::optional<uint32_t> dimLoadingId;
+        void ResetWorldForDimension();
+        void FinishDimensionChange();
         std::atomic<float> rainTarget{0.0f};
         std::atomic<float> thunderTarget{0.0f};
         std::atomic<bool> dayCycleRunning{true};

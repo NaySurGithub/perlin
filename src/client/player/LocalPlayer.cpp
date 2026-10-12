@@ -2,6 +2,7 @@
 
 #include "client/player/BlockCollision.hpp"
 #include "protocol/Packets.hpp"
+#include "world/level/block/BlockPalette.hpp"
 #include "network/custom/PlayerAuthInput.hpp"
 
 #include <algorithm>
@@ -74,13 +75,32 @@ namespace perlin {
                 Record& r = history.front();
                 const double dx = r.after.x - motion.pos[0], dy = r.after.y - motion.pos[1],
                              dz = r.after.z - motion.pos[2];
-                const double ex = (r.after.x - r.before.x) - motion.velocity[0];
-                const double ey = (r.after.y - r.before.y) - motion.velocity[1];
-                const double ez = (r.after.z - r.before.z) - motion.velocity[2];
+                // delta is the end-of-tick velocity, the same quantity this client sends.
+                const double ex = r.after.vx - motion.velocity[0];
+                const double ey = r.after.vy - motion.velocity[1];
+                const double ez = r.after.vz - motion.velocity[2];
                 const double posErr = dx * dx + dy * dy + dz * dz;
                 const double velErr = ex * ex + ey * ey + ez * ez;
                 if (posErr > 1e-5 || velErr > 1e-5) {
                     const physics::State shown = state;
+                    if (correctionReplays < 40 || correctionReplays % 100 == 0) {
+                        // Which blocks the sim stood in when the server disagreed (names, not ids).
+                        const Level& lv = session.NetLevel();
+                        auto name = [&](int bx, int by, int bz) { return BlockPalette::Instance().Name(lv.GetBlock(bx, by, bz)); };
+                        const int fx = static_cast<int>(std::floor(r.before.x)), fz = static_cast<int>(std::floor(r.before.z));
+                        const int fy = static_cast<int>(std::floor(r.before.y - 0.001));
+                        std::cout << "[move] mismatch tick=" << motion.tick << " ours=(" << r.after.x << "," << r.after.y << ","
+                                  << r.after.z << ") server=(" << motion.pos[0] << "," << motion.pos[1] << ","
+                                  << motion.pos[2] << ") vel ours=(" << r.after.vx << "," << r.after.vy << "," << r.after.vz
+                                  << ") server=(" << motion.velocity[0] << "," << motion.velocity[1] << ","
+                                  << motion.velocity[2] << ") ground ours=" << r.after.onGround
+                                  << " server=" << motion.onGround << " fwd=" << r.input.forward << " strafe="
+                                  << r.input.strafe << " jump=" << r.input.jump << " sprint=" << r.input.sprint
+                                  << " sneak=" << r.input.sneak << " feet=" << name(fx, fy + 1, fz) << " under="
+                                  << name(fx, fy, fz) << " east=" << name(fx + 1, fy + 1, fz) << " west="
+                                  << name(fx - 1, fy + 1, fz) << " north=" << name(fx, fy + 1, fz - 1)
+                                  << " south=" << name(fx, fy + 1, fz + 1) << std::endl;
+                    }
                     r.after.x = motion.pos[0];
                     r.after.y = motion.pos[1];
                     r.after.z = motion.pos[2];

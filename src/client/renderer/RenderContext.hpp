@@ -50,6 +50,8 @@ namespace perlin {
         SkyFrame sky;
         CloudDraw cloud;
         float timeSeconds;
+        bool crosshair = false; // draw the inverting crosshair at the screen centre
+        float screenTint[4]; // full-screen colour overlay (damage flash); alpha 0 draws nothing
         uint32_t frameIndex;
         uint8_t lightmap[kLightmapBytes];
     };
@@ -67,9 +69,11 @@ namespace perlin {
         virtual void EndFrame() = 0;
         virtual void RequestScreenshot(const std::string& path) = 0;
 
+        // `icons` is the GUI sheet (textures/gui/icons.png); the crosshair is its top-left 15/256 square.
+        virtual void UploadCrosshair(const Texture& icons) = 0;
         virtual void UploadSkyTextures(const Texture& sun, const Texture& moon, const Texture& clouds) = 0;
-        virtual void UploadAtlas(const uint8_t* rgba, int size, int tiles) = 0;
-        virtual void UpdateAtlasRegion(int tile, const uint8_t* rgba16) = 0;
+        virtual void UploadAtlas(const uint8_t* rgba, int tilePx, int tiles) = 0;
+        virtual void UpdateAtlasRegion(int tile, const uint8_t* rgba) = 0;
 
         virtual void UpdateChunkMesh(int cx, int cz, const Tessellator& tess, uint64_t version) = 0;
         virtual void RemoveChunkMesh(int cx, int cz) = 0;

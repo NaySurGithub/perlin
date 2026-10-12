@@ -42,13 +42,90 @@ namespace perlin {
 
     }
 
+    int BlockLibrary::NewTile() {
+        const int t = nextTile++;
+        atlas.resize((size_t)nextTile * tilePxValue * tilePxValue * 4, 0);
+        return t;
+    }
+
+    void BlockLibrary::SetTexturePack(const std::string& root) {
+        packRoot = root;
+        // The tile size is the widest of a few reference block textures in the pack, rounded up to a power of
+        // two (like Java, where the atlas follows the largest sprite). Vanilla stays 16.
+        int widest = 16;
+        if (!root.empty()) {
+            static const char* const kProbe[] = {"stone", "dirt", "cobblestone", "planks_oak", "sand", "grass_side",
+                                                 "log_oak", "bedrock", "gravel", "iron_block"};
+            for (const char* name : kProbe) {
+                Texture t;
+                for (const char* ext : {".png", ".tga"})
+                    if (LoadTexture(root + "/textures/blocks/" + name + ext, t) && t.width > 0) {
+                        widest = std::max(widest, t.width);
+                        break;
+                    }
+            }
+        }
+        int size = 16;
+        while (size < widest && size < 512)
+            size <<= 1;
+        tilePxValue = size;
+        std::cout << "[textures] pack=" << (root.empty() ? "<vanilla>" : root) << " tile=" << size << "px"
+                  << std::endl;
+    }
+
+    namespace {
+        // Resamples one w x h frame (rows `stride` pixels apart) to a size x size tile. Equal size copies; shrinking
+        // box-filters weighted by alpha; growing repeats pixels so low-resolution textures stay crisp.
+        void ResampleFrame(const unsigned char* data, int w, int h, size_t stride, int size, uint8_t* out) {
+            for (int y = 0; y < size; y++) {
+                for (int x = 0; x < size; x++) {
+                    unsigned char avg[4];
+                    const unsigned char* src = avg;
+                    if (w <= size || h <= size) {
+                        const int sx = std::min(w - 1, (int)((int64_t)x * w / size));
+                        const int sy = std::min(h - 1, (int)((int64_t)y * h / size));
+                        src = data + ((size_t)sy * stride + sx) * 4;
+                    } else {
+                        const int x0 = (int)((int64_t)x * w / size), x1 = std::max(x0 + 1, (int)((int64_t)(x + 1) * w / size));
+                        const int y0 = (int)((int64_t)y * h / size), y1 = std::max(y0 + 1, (int)((int64_t)(y + 1) * h / size));
+                        double r = 0, g = 0, b = 0, a = 0;
+                        int n = 0;
+                        for (int yy = y0; yy < y1 && yy < h; yy++)
+                            for (int xx = x0; xx < x1 && xx < w; xx++) {
+                                const unsigned char* p = data + ((size_t)yy * stride + xx) * 4;
+                                r += p[0] * p[3];
+                                g += p[1] * p[3];
+                                b += p[2] * p[3];
+                                a += p[3];
+                                n++;
+                            }
+                        if (a > 0) {
+                            avg[0] = (unsigned char)(r / a + 0.5);
+                            avg[1] = (unsigned char)(g / a + 0.5);
+                            avg[2] = (unsigned char)(b / a + 0.5);
+                        } else {
+                            avg[0] = avg[1] = avg[2] = 0;
+                        }
+                        avg[3] = n ? (unsigned char)(a / n + 0.5) : 0;
+                    }
+                    uint8_t* d = out + ((size_t)y * size + x) * 4;
+                    d[0] = src[0];
+                    d[1] = src[1];
+                    d[2] = src[2];
+                    d[3] = src[3];
+                }
+            }
+        }
+    }
+
     int BlockLibrary::FetchTile(const std::string& pngRelPath, const std::string& vanillaRpRoot) {
         auto it = tileByPng.find(pngRelPath);
         if (it != tileByPng.end())
             return it->second;
         if (nextTile >= kAtlasTiles * kAtlasTiles)
             return 0;
-        std::string full = vanillaRpRoot + "/" + pngRelPath + ".png";
+        const int kTilePx = tilePxValue;
+        std::string full;
         int w = 0, h = 0;
         Texture tex;
         std::vector<std::string> tries;
@@ -65,14 +142,22 @@ namespace perlin {
         }
         int tile = 0;
         bool ok = false;
-        for (auto& t : tries) {
-            full = vanillaRpRoot + "/" + t;
-            if (LoadTexture(full, tex) && tex.width > 0 && tex.height > 0) {
-                w = tex.width;
-                h = tex.height;
-                ok = true;
-                break;
+        // A texture pack wins over the vanilla resources, file by file.
+        const std::string* const roots[2] = {&packRoot, &vanillaRpRoot};
+        for (const std::string* root : roots) {
+            if (root->empty())
+                continue;
+            for (auto& t : tries) {
+                full = *root + "/" + t;
+                if (LoadTexture(full, tex) && tex.width > 0 && tex.height > 0) {
+                    w = tex.width;
+                    h = tex.height;
+                    ok = true;
+                    break;
+                }
             }
+            if (ok)
+                break;
         }
         if (!ok) {
             fetchFails++;
@@ -94,9 +179,12 @@ namespace perlin {
             }
         }
         const unsigned char* data = tex.pixels.data();
-        // Vertical strips are flipbook animations; larger square textures (32x32 shelves...) are resampled to a tile.
-        bool framed = (w % kTilePx == 0) && (h % kTilePx == 0) && (w == kTilePx || h > w);
-        tile = nextTile++;
+        // A texture taller than wide whose height is a multiple of its width is a flipbook strip of w x w frames
+        // (at any resolution). Anything else is one frame, resampled to the tile size.
+        const bool strip = h > w && h % w == 0;
+        const int fw = w, fh = strip ? w : h;
+        const int frames = strip ? h / w : 1;
+        tile = NewTile();
         tileByPng[pngRelPath] = tile;
         TileAlpha alpha;
         double satSum = 0;
@@ -104,46 +192,11 @@ namespace perlin {
         int frameOpaque = 0;
         int opaqueAll = 0;
         int partialAlpha = 0;
-        size_t atlasW = (size_t)kAtlasTiles * kTilePx;
-        size_t base =
-            ((size_t)(tile / kAtlasTiles) * kTilePx) * atlasW + (size_t)(tile % kAtlasTiles) * kTilePx;
+        uint8_t* tilePixels = atlas.data() + (size_t)tile * kTilePx * kTilePx * 4;
+        ResampleFrame(data, fw, fh, (size_t)w, kTilePx, tilePixels);
         for (int y = 0; y < kTilePx; y++) {
             for (int x = 0; x < kTilePx; x++) {
-                unsigned char avg[4];
-                const unsigned char* src = avg;
-                if (framed || w < kTilePx || h < kTilePx) {
-                    int sx = framed ? x : std::min(w - 1, x * w / kTilePx);
-                    int sy = framed ? y : std::min(h - 1, y * h / kTilePx);
-                    src = data + ((size_t)sy * w + sx) * 4;
-                } else {
-                    // Box filter (alpha weighted) from the larger texture down to one atlas tile.
-                    const int x0 = x * w / kTilePx, x1 = std::max(x0 + 1, (x + 1) * w / kTilePx);
-                    const int y0 = y * h / kTilePx, y1 = std::max(y0 + 1, (y + 1) * h / kTilePx);
-                    double r = 0, g = 0, b = 0, a = 0;
-                    int n = 0;
-                    for (int yy = y0; yy < y1 && yy < h; yy++)
-                        for (int xx = x0; xx < x1 && xx < w; xx++) {
-                            const unsigned char* p = data + ((size_t)yy * w + xx) * 4;
-                            r += p[0] * p[3];
-                            g += p[1] * p[3];
-                            b += p[2] * p[3];
-                            a += p[3];
-                            n++;
-                        }
-                    if (a > 0) {
-                        avg[0] = (unsigned char)(r / a + 0.5);
-                        avg[1] = (unsigned char)(g / a + 0.5);
-                        avg[2] = (unsigned char)(b / a + 0.5);
-                    } else {
-                        avg[0] = avg[1] = avg[2] = 0;
-                    }
-                    avg[3] = n ? (unsigned char)(a / n + 0.5) : 0;
-                }
-                uint8_t* d = atlas.data() + (base + (size_t)y * atlasW + x) * 4;
-                d[0] = src[0];
-                d[1] = src[1];
-                d[2] = src[2];
-                d[3] = src[3];
+                const uint8_t* src = tilePixels + ((size_t)y * kTilePx + x) * 4;
                 if (src[3] > 20 && src[3] < 235)
                     partialAlpha++;
                 if (src[3] < 128) {
@@ -165,31 +218,23 @@ namespace perlin {
                 }
             }
         }
-        {
-            int cx = w / 2, cy = h / 2;
-            if (framed) {
-                cx = kTilePx / 2;
-                cy = kTilePx / 2;
-            }
-            if (cx < 0)
-                cx = 0;
-            if (cx >= w)
-                cx = w - 1;
-            if (cy < 0)
-                cy = 0;
-            if (cy >= h)
-                cy = h - 1;
-            alpha.centerHollow = data[((size_t)cy * w + cx) * 4 + 3] < 128;
-        }
+        alpha.centerHollow = tilePixels[((size_t)(kTilePx / 2) * kTilePx + kTilePx / 2) * 4 + 3] < 128;
         alpha.translucent = partialAlpha >= kTilePx * kTilePx / 2;
         alphaByTile[tile] = alpha;
-        if (alphaByTile.find(tile) != alphaByTile.end() && satN > 0)
+        if (satN > 0)
             alphaByTile[tile].saturation = (float)(satSum / satN);
         alphaByTile[tile].frame = (float)frameOpaque / (float)(4 * (kTilePx - 1));
         alphaByTile[tile].holeFrac = 1.0f - (float)opaqueAll / (float)(kTilePx * kTilePx);
         pathByTile[tile] = pngRelPath;
-        if (framed && (w > kTilePx || h > kTilePx) && h >= kTilePx)
-            animByTile[tile] = AnimSrc{tex.pixels, w, h};
+        if (frames > 1) {
+            AnimSrc anim;
+            anim.frames = frames;
+            anim.pixels.resize((size_t)frames * kTilePx * kTilePx * 4);
+            for (int f = 0; f < frames; f++)
+                ResampleFrame(data + (size_t)f * fh * w * 4, fw, fh, (size_t)w, kTilePx,
+                              anim.pixels.data() + (size_t)f * kTilePx * kTilePx * 4);
+            animByTile[tile] = std::move(anim);
+        }
         return tile;
     }
 
@@ -213,20 +258,14 @@ namespace perlin {
     }
 
     void BlockLibrary::PollAnimation(uint64_t step,
-                                     const std::function<void(int tile, const uint8_t* rgba16)>& emit) {
+                                     const std::function<void(int tile, const uint8_t* rgba)>& emit) {
         if (!ready || animByTile.empty())
             return;
+        const size_t frameBytes = (size_t)tilePxValue * tilePxValue * 4;
         for (auto& [tile, src] : animByTile) {
-            int frames = src.h / kTilePx;
-            if (frames <= 1)
+            if (src.frames <= 1)
                 continue;
-            int f = (int)(step % (uint64_t)frames);
-            for (int y = 0; y < kTilePx; y++) {
-                const uint8_t* s = src.pixels.data() + ((size_t)(f * kTilePx + y) * src.w) * 4;
-                uint8_t* d = animScratch.data() + (size_t)y * kTilePx * 4;
-                memcpy(d, s, (size_t)kTilePx * 4);
-            }
-            emit(tile, animScratch.data());
+            emit(tile, src.pixels.data() + frameBytes * (size_t)(step % (uint64_t)src.frames));
         }
     }
 
@@ -252,6 +291,7 @@ namespace perlin {
             std::string defs = vanillaRpRoot + "/../metadata/vanilladata_modules/mojang-blocks.json";
             if (!BlockPalette::Instance().LoadVanillaDefinitions(defs))
                 return false;
+            BlockPalette::Instance().LoadServerStates(paths::ExeDir() + "/resources/block_states.json");
         }
         const std::vector<std::string> allNames = BlockPalette::Instance().AllNames();
         int noTexture = 0;
@@ -292,13 +332,10 @@ namespace perlin {
             }
         }
 
-        size_t atlasPx = (size_t)kAtlasTiles * kTilePx;
-        atlas.assign(atlasPx * atlasPx * 4, 0);
-        for (int i = 0; i < kTilePx * kTilePx; i++) {
-            atlas[(size_t)i * 4 + 0] = 255;
-            atlas[(size_t)i * 4 + 1] = 255;
-            atlas[(size_t)i * 4 + 2] = 255;
-            atlas[(size_t)i * 4 + 3] = 255;
+        const int kTilePx = tilePxValue;
+        if (atlas.empty()) {
+            nextTile = 1;
+            atlas.assign((size_t)kTilePx * kTilePx * 4, 255); // tile 0 is solid white
         }
 
         auto resolveTexture = [&](const std::string& texName, std::vector<int>* all = nullptr) -> int {
@@ -609,9 +646,8 @@ namespace perlin {
                     if (app.top && app.side && app.top != app.side) {
                         TileAlpha atop = AlphaOf(app.top);
                         if (!atop.holes) {
-                            size_t atlasW = (size_t)kAtlasTiles * kTilePx;
-                            size_t sbase = ((size_t)(app.side / kAtlasTiles) * kTilePx) * atlasW +
-                                           (size_t)(app.side % kAtlasTiles) * kTilePx;
+                            const size_t atlasW = (size_t)kTilePx;
+                            size_t sbase = (size_t)app.side * kTilePx * kTilePx;
                             int rows = 0;
                             for (int yy = 0; yy < kTilePx; yy++) {
                                 int opq = 0;
@@ -640,13 +676,13 @@ namespace perlin {
                     }
                     if (app.overlayFrac > 0 && app.side && nextTile < kAtlasTiles * kAtlasTiles) {
                         const int overlaySrc = app.side;
-                        size_t atlasW = (size_t)kAtlasTiles * kTilePx;
+                        const size_t atlasW = (size_t)kTilePx;
                         auto tileBase = [&](int t) {
-                            return ((size_t)(t / kAtlasTiles) * kTilePx) * atlasW +
-                                   (size_t)(t % kAtlasTiles) * kTilePx;
+                            return (size_t)t * kTilePx * kTilePx;
                         };
                         size_t sb = tileBase(overlaySrc);
-                        bool grassPx[kTilePx][kTilePx] = {};
+                        std::vector<char> grassMask((size_t)kTilePx * kTilePx, 0);
+                        auto grassPx = [&](int y, int x) -> char& { return grassMask[(size_t)y * kTilePx + x]; };
                         int kept = 0;
                         const int maxDepth = (kTilePx * 3) / 4;
                         for (int xx = 0; xx < kTilePx; xx++) {
@@ -661,23 +697,23 @@ namespace perlin {
                                 double sat = mx > 0 ? (double)(mx - mn) / mx : 0.0;
                                 if (sat > 0.3)
                                     break;
-                                grassPx[yy][xx] = true;
+                                grassPx(yy, xx) = true;
                                 kept++;
                             }
                         }
                         int deepest = 0;
                         for (int yy = 0; yy < kTilePx; yy++)
                             for (int xx = 0; xx < kTilePx; xx++)
-                                if (grassPx[yy][xx])
+                                if (grassPx(yy, xx))
                                     deepest = yy;
                         if (kept > 0) {
-                            int mt = nextTile++;
+                            int mt = NewTile();
                             size_t mb = tileBase(mt);
                             for (int yy = 0; yy < kTilePx; yy++)
                                 for (int xx = 0; xx < kTilePx; xx++) {
                                     const uint8_t* d = atlas.data() + (sb + (size_t)yy * atlasW + xx) * 4;
                                     uint8_t* o = atlas.data() + (mb + (size_t)yy * atlasW + xx) * 4;
-                                    if (grassPx[yy][xx]) {
+                                    if (grassPx(yy, xx)) {
                                         int lum = (int)(0.299 * d[0] + 0.587 * d[1] + 0.114 * d[2] + 0.5);
                                         o[0] = o[1] = o[2] = (uint8_t)lum;
                                         o[3] = 255;
@@ -696,7 +732,7 @@ namespace perlin {
                             auto makeBase = [&](int dirtTile) -> int {
                                 if (nextTile >= kAtlasTiles * kAtlasTiles)
                                     return overlaySrc;
-                                int ct = nextTile++;
+                                int ct = NewTile();
                                 size_t cb = tileBase(ct);
                                 size_t db = dirtTile ? tileBase(dirtTile) : 0;
                                 for (int yy = 0; yy < kTilePx; yy++)
@@ -704,7 +740,7 @@ namespace perlin {
                                         const uint8_t* sp =
                                             atlas.data() + (sb + (size_t)yy * atlasW + xx) * 4;
                                         uint8_t* o = atlas.data() + (cb + (size_t)yy * atlasW + xx) * 4;
-                                        if (grassPx[yy][xx])
+                                        if (grassPx(yy, xx))
                                             continue; // filled with dirt below; the overlay quad covers it
                                         if (dirtTile) {
                                             const uint8_t* dp =
@@ -737,7 +773,7 @@ namespace perlin {
                                 // sky show through wherever filtered samples of the two quads fell below the cutoff.
                                 for (int xx = 0; xx < kTilePx; xx++)
                                     for (int yy = 0; yy < kTilePx; yy++) {
-                                        if (!grassPx[yy][xx])
+                                        if (!grassPx(yy, xx))
                                             continue;
                                         uint8_t* o = atlas.data() + (cb + (size_t)yy * atlasW + xx) * 4;
                                         const uint8_t* from = nullptr;
@@ -745,7 +781,7 @@ namespace perlin {
                                             from = atlas.data() + (db + (size_t)yy * atlasW + xx) * 4;
                                         } else {
                                             for (int y2 = yy + 1; y2 < kTilePx && !from; y2++)
-                                                if (!grassPx[y2][xx])
+                                                if (!grassPx(y2, xx))
                                                     from = atlas.data() + (cb + (size_t)y2 * atlasW + xx) * 4;
                                         }
                                         if (from) {
@@ -856,9 +892,8 @@ namespace perlin {
             int tile = resolveTexture(app.carriedTex);
             if (tile <= 0)
                 continue;
-            size_t atlasW = (size_t)kAtlasTiles * kTilePx;
-            size_t base =
-                ((size_t)(tile / kAtlasTiles) * kTilePx) * atlasW + (size_t)(tile % kAtlasTiles) * kTilePx;
+            const size_t atlasW = (size_t)kTilePx;
+            size_t base = (size_t)tile * kTilePx * kTilePx;
             double sr = 0, sg = 0, sb = 0;
             int n = 0;
             for (int y = 0; y < kTilePx; y++)
@@ -975,13 +1010,14 @@ namespace perlin {
     }
 
     void BlockLibrary::TileUV(int tile, float& u0, float& v0, float& u1, float& v1) {
-        int tx = tile % kAtlasTiles, ty = tile / kAtlasTiles;
-        float inv = 1.0f / (kAtlasTiles * kTilePx);
-        const float half = 0.5f * inv;
-        u0 = tx * kTilePx * inv + half;
-        v0 = ty * kTilePx * inv + half;
-        u1 = (tx * kTilePx + kTilePx) * inv - half;
-        v1 = (ty * kTilePx + kTilePx) * inv - half;
+        // The virtual atlas is kAtlasTiles x kAtlasTiles tiles; only ratios matter, the GPU holds one layer per tile.
+        const int tx = tile % kAtlasTiles, ty = tile / kAtlasTiles;
+        const float inv = 1.0f / (float)kAtlasTiles;
+        const float half = 0.5f * inv / (float)tilePxValue;
+        u0 = tx * inv + half;
+        v0 = ty * inv + half;
+        u1 = (tx + 1) * inv - half;
+        v1 = (ty + 1) * inv - half;
     }
 
 }

@@ -211,7 +211,27 @@ namespace perlin {
             }
         });
 
-        On<ChangeDimensionPacket>([this](const ChangeDimensionPacket& p) { dimensionId = p.dimension; });
+        // Nether / End / back: the old world is gone, chunks of the new dimension follow, and the server waits
+        // for DimensionChangeAck (sent from Update once the area around us has arrived).
+        On<ChangeDimensionPacket>([this](const ChangeDimensionPacket& p) {
+            std::cout << "[bedrock] ChangeDimension " << dimensionId.load() << " -> " << p.dimension << " pos=("
+                      << p.position.x << "," << p.position.y << "," << p.position.z << ")" << std::endl;
+            dimensionId = p.dimension;
+            ResetWorldForDimension();
+            if (SaneWorldPos(p.position.x, p.position.y, p.position.z)) {
+                pose = {p.position.x, p.position.y - kPlayerEyeHeight, p.position.z, pose.yaw, pose.pitch,
+                        pose.headYaw, false, true};
+                haveLastAuthPos = false;
+                serverMotion.poseChanged = true;
+                serverMotion.teleport = true;
+                serverMotion.hasVelocity = true;
+                serverMotion.velocity[0] = serverMotion.velocity[1] = serverMotion.velocity[2] = 0;
+            }
+            dimLoadingId = p.loadingScreenId;
+            dimAckSince = std::chrono::steady_clock::now();
+            dimAckPending = true;
+            SendLoadingScreen(true, p.loadingScreenId);
+        });
 
         On<LevelEventPacket>([this](const LevelEventPacket& p) {
             switch (p.event) {
@@ -354,9 +374,22 @@ namespace perlin {
         On<UpdateAttributesPacket>([this](const UpdateAttributesPacket& p) {
             if (runtimeId != 0 && p.runtimeEntityId != runtimeId)
                 return;
-            for (const PlayerAttributesEntry& a : p.attributes)
+            for (const PlayerAttributesEntry& a : p.attributes) {
                 if (a.name == "minecraft:movement" && a.current > 0.0f && a.current < 5.0f)
                     movementSpeed = a.current;
+                if (a.name == "minecraft:health") {
+                    // A drop without a hurt event (the server sends one for most damage) still counts.
+                    const bool recent = std::chrono::steady_clock::now() - lastHurtAt < std::chrono::milliseconds(250);
+                    if (lastHealth >= 0.0f && a.current < lastHealth - 0.01f && a.current > 0.0f && !recent)
+                        NoteHurt();
+                    lastHealth = a.current;
+                }
+            }
+        });
+
+        On<EntityEventPacket>([this](const EntityEventPacket& p) {
+            if (runtimeId != 0 && p.runtimeEntityId == runtimeId && p.eventId == EntityEventPacketEventId::HurtAnimation)
+                NoteHurt();
         });
 
         On<UpdateAbilitiesPacket>([this](const UpdateAbilitiesPacket& p) {

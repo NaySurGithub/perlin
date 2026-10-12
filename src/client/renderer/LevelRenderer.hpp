@@ -80,12 +80,16 @@ namespace perlin {
         std::vector<Pending> pending;
 
         const Level* lastLevel = nullptr;
+        uint64_t lastClear = 0;
         uint64_t lastChange = ~0ull;
         bool rescan = true;
 
         bool lightingConfigured = false;
         bool atlasUploaded = false;
         bool skyTexturesLoaded = false;
+        bool texturePackResolved = false;
+        bool crosshairLoaded = false;
+        std::string texturePackRoot;
         void LoadSkyTextures();
         bool tintsWereReady = false;
         int uploadedTiles = 0;

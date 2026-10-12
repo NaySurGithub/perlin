@@ -28,8 +28,9 @@ namespace perlin {
         void EndFrame() override;
         void RequestScreenshot(const std::string& path) override;
         void UploadSkyTextures(const Texture& sun, const Texture& moon, const Texture& clouds) override;
-        void UploadAtlas(const uint8_t* rgba, int size, int tiles) override;
-        void UpdateAtlasRegion(int tile, const uint8_t* rgba16) override;
+        void UploadCrosshair(const Texture& icons) override;
+        void UploadAtlas(const uint8_t* rgba, int tilePx, int tiles) override;
+        void UpdateAtlasRegion(int tile, const uint8_t* rgba) override;
         void UpdateChunkMesh(int cx, int cz, const Tessellator& tess, uint64_t version) override;
         void RemoveChunkMesh(int cx, int cz) override;
         void ClearChunkMeshes() override;
@@ -97,6 +98,9 @@ namespace perlin {
         bgfx::VertexLayout textureLayout;
         bgfx::VertexBufferHandle topSkyBuffer = BGFX_INVALID_HANDLE;
         bgfx::VertexBufferHandle bottomSkyBuffer = BGFX_INVALID_HANDLE;
+        bgfx::VertexBufferHandle screenBuffer = BGFX_INVALID_HANDLE;
+        void DrawScreenTint();
+        void DrawCrosshair();
         bgfx::VertexBufferHandle starBuffer = BGFX_INVALID_HANDLE;
         bgfx::VertexBufferHandle sunriseBuffer = BGFX_INVALID_HANDLE;
         bgfx::VertexBufferHandle sunBuffer = BGFX_INVALID_HANDLE;
@@ -137,6 +141,9 @@ namespace perlin {
         int width = 0, height = 0;
 
         int atlasLayers = 0;
+        int tileSize = 16;
+        bgfx::TextureHandle crosshairTexture = BGFX_INVALID_HANDLE;
+        int crosshairPx = 0; // source size of the crosshair square in texels
 
         std::vector<VisibleChunk> visible;
 
