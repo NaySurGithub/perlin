@@ -16,6 +16,7 @@ namespace perlin {
         Look,
         CyclePerspective,
         Screenshot,
+        Sprint,
         Count
     };
 

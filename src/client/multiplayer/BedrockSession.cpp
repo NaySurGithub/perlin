@@ -423,108 +423,133 @@ namespace perlin {
                                                       int bz, int face) {
         if (!pose.known)
             return false;
+        MoveInput in;
+        in.flags = flags;
+        in.yaw = yawOverride;
+        in.pitch = pitchOverride;
+        in.position[0] = pose.x;
+        in.position[1] = pose.y;
+        in.position[2] = pose.z;
+        auto has = [&](uint32_t id) { return std::find(flags.begin(), flags.end(), id) != flags.end(); };
+        in.moveX = (has(InputFlag::Left) ? 1.0f : 0.0f) - (has(InputFlag::Right) ? 1.0f : 0.0f);
+        in.moveZ = (has(InputFlag::Up) ? 1.0f : 0.0f) - (has(InputFlag::Down) ? 1.0f : 0.0f);
+        if (haveLastAuthPos) {
+            in.delta[0] = pose.x - lastAuthPos[0];
+            in.delta[1] = pose.y - lastAuthPos[1];
+            in.delta[2] = pose.z - lastAuthPos[2];
+        }
+        in.hasDelta = true;
+        if (action != UINT32_MAX) {
+            in.hasBlockAction = true;
+            in.blockAction = {action, bx, by, bz, face};
+        }
+        return SendMoveInput(in);
+    }
 
+    bool BedrockSession::SendMoveInput(const MoveInput& input) {
         auto finite = [](float v) { return std::isfinite(v); };
-        if (!finite(pose.x) || !finite(pose.y) || !finite(pose.z) || !finite(pitchOverride) ||
-            !finite(yawOverride))
+        for (float v : {input.position[0], input.position[1], input.position[2], input.yaw, input.pitch,
+                        input.eyeHeight, input.moveX, input.moveZ})
+            if (!finite(v))
+                return false;
+        if (std::fabs(input.position[0]) > 100000.0f || std::fabs(input.position[1]) > 10000.0f ||
+            std::fabs(input.position[2]) > 100000.0f)
             return false;
-
-        if (std::fabs(pose.x) > 100000.0f || std::fabs(pose.y) > 10000.0f || std::fabs(pose.z) > 100000.0f)
-            return false;
-
-        constexpr uint32_t kUp = 10;
-        constexpr uint32_t kDown = 11;
-        constexpr uint32_t kLeft = 12;
-        constexpr uint32_t kRight = 13;
-        constexpr uint32_t kPerformBlockActions = InputFlag::PerformBlockActions;
 
         std::vector<uint32_t> inputFlags;
-        inputFlags.reserve(flags.size() + 1);
-        for (uint32_t id : flags) {
-            if (id > 65)
-                continue;
+        inputFlags.reserve(input.flags.size() + 3);
+        auto add = [&](uint32_t id) {
             if (std::find(inputFlags.begin(), inputFlags.end(), id) == inputFlags.end())
                 inputFlags.push_back(id);
-        }
+        };
+        for (uint32_t id : input.flags)
+            if (id <= 65)
+                add(id);
 
         if (pendingTeleportAck) {
-            if (std::find(inputFlags.begin(), inputFlags.end(), InputFlag::HandledTeleport) ==
-                inputFlags.end())
-                inputFlags.push_back(InputFlag::HandledTeleport);
+            add(InputFlag::HandledTeleport);
             pendingTeleportAck = false;
         }
 
-        const bool hasAction = action != UINT32_MAX;
-        if (hasAction &&
-            std::find(inputFlags.begin(), inputFlags.end(), kPerformBlockActions) == inputFlags.end()) {
-            inputFlags.push_back(kPerformBlockActions);
+        // A block action rides along with the next movement tick instead of costing a tick of its own.
+        bool hasAction = input.hasBlockAction;
+        BlockActionData action = input.blockAction;
+        if (!hasAction && pendingBlockAction.valid) {
+            hasAction = true;
+            action = pendingBlockAction.data;
+            pendingBlockAction.valid = false;
         }
+        if (hasAction)
+            add(InputFlag::PerformBlockActions);
 
-        auto has = [&](uint32_t id) {
-            return std::find(inputFlags.begin(), inputFlags.end(), id) != inputFlags.end();
-        };
-
-        float mx = (has(kLeft) ? 1.0f : 0.0f) - (has(kRight) ? 1.0f : 0.0f);
-        float mz = (has(kUp) ? 1.0f : 0.0f) - (has(kDown) ? 1.0f : 0.0f);
-        float mlen = std::sqrt(mx * mx + mz * mz);
+        float mx = input.moveX, mz = input.moveZ;
+        const float mlen = std::sqrt(mx * mx + mz * mz);
         if (mlen > 1.0f) {
             mx /= mlen;
             mz /= mlen;
         }
 
-        float dx = 0, dy = 0, dz = 0;
-        if (haveLastAuthPos) {
-            dx = pose.x - lastAuthPos[0];
-            dy = pose.y - lastAuthPos[1];
-            dz = pose.z - lastAuthPos[2];
-        }
-        lastAuthPos[0] = pose.x;
-        lastAuthPos[1] = pose.y;
-        lastAuthPos[2] = pose.z;
+        constexpr float kPi = 3.14159265358979323846f;
+        const float yaw = input.yaw * (kPi / 180.0f);
+        const float pitch = input.pitch * (kPi / 180.0f);
+        const float cp = std::cos(pitch);
+
+        lastAuthPos[0] = input.position[0];
+        lastAuthPos[1] = input.position[1];
+        lastAuthPos[2] = input.position[2];
         haveLastAuthPos = true;
 
-        constexpr float kPi = 3.14159265358979323846f;
-        float yaw = yawOverride * (kPi / 180.0f);
-        float pitch = pitchOverride * (kPi / 180.0f);
-        float cp = std::cos(pitch);
-        float cameraX = -std::sin(yaw) * cp;
-        float cameraY = -std::sin(pitch);
-        float cameraZ = std::cos(yaw) * cp;
-
         PlayerAuthInputPacket f;
-        f.pitch = pitchOverride;
-        f.yaw = yawOverride;
-        f.eyeX = pose.x;
-        f.eyeY = pose.y + kPlayerEyeHeight;
-        f.eyeZ = pose.z;
+        f.pitch = input.pitch;
+        f.yaw = input.yaw;
+        f.eyeX = input.position[0];
+        f.eyeY = input.position[1] + input.eyeHeight;
+        f.eyeZ = input.position[2];
         f.moveX = mx;
         f.moveZ = mz;
-        f.headYaw = yawOverride;
+        f.headYaw = input.yaw;
         f.flags = inputFlags;
-        f.interactPitch = pitchOverride;
-        f.interactYaw = yawOverride;
+        f.interactPitch = input.pitch;
+        f.interactYaw = input.yaw;
         f.tick = ++authTick;
-        f.deltaX = dx;
-        f.deltaY = dy;
-        f.deltaZ = dz;
+        f.deltaX = input.delta[0];
+        f.deltaY = input.delta[1];
+        f.deltaZ = input.delta[2];
         f.hasBlockAction = hasAction;
-        f.blockActionType = static_cast<int32_t>(action);
-        f.blockX = bx;
-        f.blockY = by;
-        f.blockZ = bz;
-        f.blockFace = face;
+        f.blockActionType = static_cast<int32_t>(action.action);
+        f.blockX = action.x;
+        f.blockY = action.y;
+        f.blockZ = action.z;
+        f.blockFace = action.face;
         f.analogX = mx;
         f.analogZ = mz;
-        f.camX = cameraX;
-        f.camY = cameraY;
-        f.camZ = cameraZ;
+        f.camX = -std::sin(yaw) * cp;
+        f.camY = -std::sin(pitch);
+        f.camZ = std::cos(yaw) * cp;
         f.rawX = mx;
         f.rawZ = mz;
         return SendUnreliable(f);
     }
 
     bool BedrockSession::SendPlayerAuthInputBlockAction(uint32_t action, int bx, int by, int bz, int face) {
-        return SendPlayerAuthInputWithFlags({}, pose.pitch, pose.yaw, action, bx, by, bz, face);
+        if (pendingBlockAction.valid) {
+            // Two actions in one tick: flush the older one on its own packet.
+            const BlockActionData older = pendingBlockAction.data;
+            pendingBlockAction.valid = false;
+            SendPlayerAuthInputWithFlags({}, pose.pitch, pose.yaw, older.action, older.x, older.y, older.z,
+                                         older.face);
+        }
+        pendingBlockAction.valid = true;
+        pendingBlockAction.data = {action, bx, by, bz, face};
+        return true;
+    }
+
+    bool BedrockSession::TakeServerMotion(ServerMotion& out) {
+        if (!serverMotion.poseChanged && !serverMotion.hasVelocity)
+            return false;
+        out = serverMotion;
+        serverMotion = {};
+        return true;
     }
 
     bool BedrockSession::SendChat(const std::string& message) {

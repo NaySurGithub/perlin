@@ -71,6 +71,37 @@ namespace perlin {
         uint64_t GetRuntimeId() const { return runtimeId; }
         bool SendPlayerAuthInput();
         bool SendPlayerAuthInputBlockAction(uint32_t action, int bx, int by, int bz, int face);
+
+        struct BlockActionData {
+            uint32_t action = 0;
+            int x = 0, y = 0, z = 0, face = 0;
+        };
+        // One movement tick as the server-authoritative protocol wants it: feet position, the velocity
+        // of the tick, the held inputs and the look direction (Bedrock yaw: 0 faces +Z).
+        struct MoveInput {
+            std::vector<uint32_t> flags;
+            float moveX = 0, moveZ = 0; // +X is left, +Z is forward
+            float yaw = 0, pitch = 0;
+            float eyeHeight = 1.62f;
+            float position[3] = {0, 0, 0};
+            float delta[3] = {0, 0, 0};
+            bool hasDelta = false;
+            bool hasBlockAction = false;
+            BlockActionData blockAction;
+        };
+        bool SendMoveInput(const MoveInput& input);
+
+        // Changes the server forced on us since the last call: teleports, corrections, knockback.
+        struct ServerMotion {
+            bool poseChanged = false;   // position was replaced
+            bool teleport = false;      // MovePlayer teleport/reset or respawn
+            bool hasVelocity = false;   // velocity (blocks per tick) was replaced
+            bool hasRotation = false;
+            float velocity[3] = {0, 0, 0};
+            float yaw = 0, pitch = 0;   // Bedrock convention
+        };
+        bool TakeServerMotion(ServerMotion& out);
+        float MovementSpeedAttribute() const { return movementSpeed; }
         bool SendPlayerAuthInputWithFlags(const std::vector<uint32_t>& flags, float pitchOverride,
                                           float yawOverride, uint32_t action = UINT32_MAX, int bx = 0,
                                           int by = 0, int bz = 0, int face = 1);
@@ -112,6 +143,7 @@ namespace perlin {
         float FlySpeed() const { return flySpeed > 0 ? flySpeed : 0.05f; }
         float VFlySpeed() const { return vFlySpeed > 0 ? vFlySpeed : 1.0f; }
         float WalkSpeed() const { return walkSpeed > 0 ? walkSpeed : 0.1f; }
+        uint64_t CurrentServerTick() const { return serverTick; }
         bool HaveStartPos() const { return haveStartPos; }
         void GetStartPos(float out[3]) const {
             out[0] = startPos[0];
@@ -176,9 +208,16 @@ namespace perlin {
         PlayerPose pose;
         uint64_t runtimeId = 0;
         uint64_t authTick = 0;
+        uint64_t serverTick = 0;
         float lastAuthPos[3] = {0, 0, 0};
         bool haveLastAuthPos = false;
         bool pendingTeleportAck = false;
+        struct PendingBlockAction {
+            bool valid = false;
+            BlockActionData data;
+        } pendingBlockAction;
+        ServerMotion serverMotion;
+        float movementSpeed = 0.1f;
         uint64_t statLevelChunks = 0, statRequestsSent = 0, statSubChunkReplies = 0, statSubChunksApplied = 0,
                  statSubChunksFailed = 0;
         std::chrono::steady_clock::time_point lastStatLog{};

@@ -1,6 +1,7 @@
 #include "client/player/LocalPlayer.hpp"
+
+#include "client/player/BlockCollision.hpp"
 #include "protocol/Packets.hpp"
-#include "world/level/block/BlockPalette.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -8,61 +9,57 @@
 
 namespace perlin {
     namespace {
-        constexpr float kGravity = 20.0f;
-        constexpr float kJumpVelocity = 8.0f;
-        constexpr float kWalkSpeedScale = 4.3f / 0.1f;
-        constexpr float kFlySpeedScale = 5.0f / 0.05f;
-        constexpr float kVerticalFlyScale = 10.0f;
         constexpr float kFallbackSpawnY = 80.0f;
-        constexpr auto kAuthInterval = std::chrono::milliseconds(50);
+        constexpr int kMaxTicksPerFrame = 5;
         constexpr auto kDoubleTapWindow = std::chrono::milliseconds(350);
+        constexpr auto kSprintTapWindow = std::chrono::milliseconds(300);
 
-        void Advance(BedrockSession::PlayerPose& pose, float yawDegrees, float forward, float strafe) {
-            const float yaw = yawDegrees * 0.01745329252f;
-            pose.x += forward * std::cos(yaw) - strafe * std::sin(yaw);
-            pose.z += forward * std::sin(yaw) + strafe * std::cos(yaw);
+        // Camera yaw has 0 along +X; Bedrock yaw has 0 along +Z and grows toward -X.
+        float BedrockYaw(float cameraYaw) {
+            float yaw = std::fmod(cameraYaw - 90.0f, 360.0f);
+            if (yaw >= 180.0f)
+                yaw -= 360.0f;
+            if (yaw < -180.0f)
+                yaw += 360.0f;
+            return yaw;
         }
 
-        void Normalize(float& forward, float& strafe, float speed) {
-            const float length = std::sqrt(forward * forward + strafe * strafe);
-            if (length > 0.0001f) {
-                forward = forward / length * speed;
-                strafe = strafe / length * speed;
-            }
+        float CameraYaw(float bedrockYaw) {
+            return bedrockYaw + 90.0f;
         }
 
-        void AddDirectionFlags(std::vector<uint32_t>& flags, const InputManager& input) {
-            if (input.IsDown(Action::Forward))
-                flags.push_back(InputFlag::Up);
-            if (input.IsDown(Action::Back))
-                flags.push_back(InputFlag::Down);
-            if (input.IsDown(Action::Left))
-                flags.push_back(InputFlag::Left);
-            if (input.IsDown(Action::Right))
-                flags.push_back(InputFlag::Right);
+        // Bedrock pitch grows downward; the camera pitch grows upward.
+        float BedrockPitch(float cameraPitch) {
+            return -cameraPitch;
         }
-    }
 
-    bool LocalPlayer::IsStandable(const BlockLibrary& blocks, uint16_t id) const {
-        if (id == 0)
-            return false;
-        const BlockAppearance& look = blocks.Look(static_cast<int32_t>(id));
-        if ((look.top | look.side | look.bottom) == 0)
-            return BlockPalette::Instance().Name(id) == "minecraft:barrier";
-
-        const BlockPalette& palette = BlockPalette::Instance();
-        if (look.shape == BlockAppearance::Shape::Flat)
-            return palette.HasState(id, "height");
-        if (look.shape == BlockAppearance::Shape::Cross || look.shape == BlockAppearance::Shape::Wall)
-            return false;
-        return !palette.HasState(id, "liquid_depth");
-    }
-
-    float LocalPlayer::GroundTop(Level& level, const BlockLibrary& blocks, float x, float y, float z) const {
-        const int found = level.FindBlockBelow(
-            static_cast<int>(std::floor(x)), static_cast<int>(std::floor(z)), static_cast<int>(std::floor(y)),
-            [&](uint16_t id) { return IsStandable(blocks, id); });
-        return found < Chunk::MIN_Y ? static_cast<float>(Chunk::MIN_Y) : static_cast<float>(found) + 1.0f;
+        namespace Flag {
+            constexpr uint32_t JumpDown = 3;
+            constexpr uint32_t SprintDown = 4;
+            constexpr uint32_t Jumping = 6;
+            constexpr uint32_t Sneaking = 8;
+            constexpr uint32_t SneakDown = 9;
+            constexpr uint32_t UpLeft = 14;
+            constexpr uint32_t UpRight = 15;
+            constexpr uint32_t WantUp = 16;
+            constexpr uint32_t WantDown = 17;
+            constexpr uint32_t Sprinting = 20;
+            constexpr uint32_t StartSprinting = 25;
+            constexpr uint32_t StopSprinting = 26;
+            constexpr uint32_t StartSneaking = 27;
+            constexpr uint32_t StopSneaking = 28;
+            constexpr uint32_t StartJumping = 31;
+            constexpr uint32_t HorizontalCollision = 49;
+            constexpr uint32_t VerticalCollision = 50;
+            constexpr uint32_t DownLeft = 51;
+            constexpr uint32_t DownRight = 52;
+            constexpr uint32_t JumpReleasedRaw = 59;
+            constexpr uint32_t JumpPressedRaw = 60;
+            constexpr uint32_t JumpCurrentRaw = 61;
+            constexpr uint32_t SneakReleasedRaw = 62;
+            constexpr uint32_t SneakPressedRaw = 63;
+            constexpr uint32_t SneakCurrentRaw = 64;
+        }
     }
 
     bool LocalPlayer::TryPlaceOnTerrain(BedrockSession& session, const Camera& camera) {
@@ -80,97 +77,174 @@ namespace perlin {
         const int top = level.FindBlockBelow(bx, bz, Chunk::MIN_Y + Chunk::HEIGHT - 1,
                                              [](uint16_t id) { return id != 0; });
         const float feet = top >= Chunk::MIN_Y ? static_cast<float>(top) + 1.0f : kFallbackSpawnY;
-        session.SetPose(start[0], feet, start[2], camera.yaw, camera.pitch);
-        verticalVelocity = 0;
+        session.SetPose(start[0], feet, start[2], BedrockYaw(camera.yaw), BedrockPitch(camera.pitch));
         std::cout << "[spawn] placed on terrain at (" << start[0] << "," << feet << "," << start[2] << ")"
                   << std::endl;
         return true;
     }
 
-    void LocalPlayer::Fly(BedrockSession& session, const InputManager& input, Camera& camera,
-                          const BlockLibrary& blocks, BedrockSession::PlayerPose& pose, float dt,
-                          bool sendInput) {
-        const float speed = session.FlySpeed() * kFlySpeedScale;
-        const float vertical = session.VFlySpeed() * kVerticalFlyScale * dt;
-
-        float forward = input.Axis(Action::Forward, Action::Back);
-        float strafe = input.Axis(Action::Right, Action::Left);
-        Normalize(forward, strafe, speed * dt);
-        Advance(pose, camera.yaw, forward, strafe);
-
-        const bool up = input.IsDown(Action::Jump);
-        const bool down = input.IsDown(Action::Sneak);
-        if (up)
-            pose.y += vertical;
-        if (down)
-            pose.y -= vertical;
-
-        std::vector<uint32_t> flags;
-        AddDirectionFlags(flags, input);
-        if (up)
-            flags.push_back(InputFlag::WantUp);
-        if (down)
-            flags.push_back(InputFlag::WantDown);
-        flags.push_back(InputFlag::StartFlying);
-
-        const bool loaded = session.ColumnSettled(static_cast<int>(std::floor(pose.x)) >> 4,
-                                                  static_cast<int>(std::floor(pose.z)) >> 4);
-        if (loaded && down) {
-            const float ground = GroundTop(session.NetLevel(), blocks, pose.x, pose.y, pose.z);
-            if (pose.y <= ground + 0.001f) {
-                pose.y = ground;
-                flying = false;
-                verticalVelocity = 0;
-                onGround = true;
-                flags.push_back(InputFlag::StopFlying);
+    void LocalPlayer::ApplyServerMotion(BedrockSession& session, Camera& camera) {
+        BedrockSession::ServerMotion motion;
+        if (!session.TakeServerMotion(motion))
+            return;
+        if (motion.poseChanged) {
+            const BedrockSession::PlayerPose pose = session.GetPose();
+            state.x = pose.x;
+            state.y = pose.y;
+            state.z = pose.z;
+            previous = state;
+            accumulator = 0.0;
+            if (motion.teleport) {
+                state.vx = state.vy = state.vz = 0;
+                state.onGround = false;
             }
         }
-
-        session.SetPose(pose.x, pose.y, pose.z, camera.yaw, camera.pitch);
-        if (sendInput)
-            session.SendPlayerAuthInputWithFlags(flags, camera.pitch, camera.yaw);
+        if (motion.hasVelocity) {
+            state.vx = motion.velocity[0];
+            state.vy = motion.velocity[1];
+            state.vz = motion.velocity[2];
+        }
+        if (motion.hasRotation) {
+            camera.yaw = CameraYaw(motion.yaw);
+            camera.pitch = std::clamp(BedrockPitch(motion.pitch), -89.0f, 89.0f);
+        }
     }
 
-    void LocalPlayer::Walk(BedrockSession& session, const InputManager& input, Camera& camera,
-                           const BlockLibrary& blocks, BedrockSession::PlayerPose& pose, float dt,
-                           bool sendInput) {
-        float forward = input.Axis(Action::Forward, Action::Back);
-        float strafe = input.Axis(Action::Right, Action::Left);
-        Normalize(forward, strafe, session.WalkSpeed() * kWalkSpeedScale * dt);
-        Advance(pose, camera.yaw, forward, strafe);
+    void LocalPlayer::Tick(BedrockSession& session, const InputManager& input, const Camera& camera,
+                           const physics::World& world) {
+        previous = state;
 
-        const bool loaded = session.ColumnSettled(static_cast<int>(std::floor(pose.x)) >> 4,
-                                                  static_cast<int>(std::floor(pose.z)) >> 4);
-        if (loaded) {
-            verticalVelocity -= kGravity * dt;
-            pose.y += verticalVelocity * dt;
+        const float forward = input.Axis(Action::Forward, Action::Back);
+        const float strafe = input.Axis(Action::Right, Action::Left); // +1 right
+        const bool jump = input.IsDown(Action::Jump);
+        const bool sneakKey = input.IsDown(Action::Sneak);
+        const bool sprintKey = input.IsDown(Action::Sprint);
+
+        // Sprint: hold the sprint key (or double-tap forward) while moving forward and not sneaking.
+        const bool wasSprinting = sprinting;
+        if (forward <= 0.0f || sneakKey || state.horizontalCollision)
+            sprinting = false;
+        else if (sprintKey)
+            sprinting = true;
+
+        const bool wasSneaking = sneaking;
+        sneaking = sneakKey && !flying;
+
+        const bool column = session.ColumnSettled(static_cast<int>(std::floor(state.x)) >> 4,
+                                                  static_cast<int>(std::floor(state.z)) >> 4);
+
+        physics::Input in;
+        in.forward = forward;
+        in.strafe = strafe;
+        in.jump = jump;
+        in.sneak = sneakKey;
+        in.sprint = sprinting;
+        in.flying = flying;
+        in.flyUp = flying && jump;
+        in.flyDown = flying && sneakKey;
+
+        physics::Attributes attributes;
+        attributes.speed = session.MovementSpeedAttribute();
+        attributes.flySpeed = session.FlySpeed();
+        attributes.verticalFlySpeed = session.VFlySpeed();
+
+        state.yaw = BedrockYaw(camera.yaw);
+        if (column) {
+            physics::Step(state, in, attributes, world);
         } else {
-            verticalVelocity = 0;
+            state.vx = state.vy = state.vz = 0;
         }
 
-        const float ground = loaded ? GroundTop(session.NetLevel(), blocks, pose.x, pose.y, pose.z) : pose.y;
-        if (!loaded || (pose.y <= ground + 0.001f && verticalVelocity <= 0)) {
-            pose.y = ground;
-            verticalVelocity = 0;
-            onGround = true;
-        } else {
-            onGround = false;
+        if (flying && state.onGround && !in.flyUp) {
+            flying = false;
+            sendStopFlying = true;
         }
 
-        const bool jumping = onGround && input.IsDown(Action::Jump);
-        if (jumping) {
-            verticalVelocity = kJumpVelocity;
-            onGround = false;
+        // Report the tick.
+        BedrockSession::MoveInput packet;
+        std::vector<uint32_t>& f = packet.flags;
+        const bool goLeft = strafe < 0.0f, goRight = strafe > 0.0f;
+        const bool goForward = forward > 0.0f, goBack = forward < 0.0f;
+        if (goForward) f.push_back(InputFlag::Up);
+        if (goBack) f.push_back(InputFlag::Down);
+        if (goLeft) f.push_back(InputFlag::Left);
+        if (goRight) f.push_back(InputFlag::Right);
+        if (goForward && goLeft) f.push_back(Flag::UpLeft);
+        if (goForward && goRight) f.push_back(Flag::UpRight);
+        if (goBack && goLeft) f.push_back(Flag::DownLeft);
+        if (goBack && goRight) f.push_back(Flag::DownRight);
+
+        if (jump) {
+            f.push_back(Flag::JumpDown);
+            f.push_back(Flag::Jumping);
+            f.push_back(Flag::JumpCurrentRaw);
+        }
+        if (jump && !jumpHeld) {
+            f.push_back(Flag::StartJumping);
+            f.push_back(Flag::JumpPressedRaw);
+        }
+        if (!jump && jumpHeld)
+            f.push_back(Flag::JumpReleasedRaw);
+        jumpHeld = jump;
+
+        if (sneaking) {
+            f.push_back(Flag::Sneaking);
+        }
+        if (sneakKey) {
+            f.push_back(Flag::SneakDown);
+            f.push_back(Flag::SneakCurrentRaw);
+        }
+        if (sneaking && !wasSneaking) {
+            f.push_back(Flag::StartSneaking);
+            f.push_back(Flag::SneakPressedRaw);
+        }
+        if (!sneaking && wasSneaking) {
+            f.push_back(Flag::StopSneaking);
+            f.push_back(Flag::SneakReleasedRaw);
         }
 
-        std::vector<uint32_t> flags;
-        AddDirectionFlags(flags, input);
-        if (jumping)
-            flags.push_back(InputFlag::Jumping);
+        if (sprintKey || sprinting)
+            f.push_back(Flag::SprintDown);
+        if (sprinting)
+            f.push_back(Flag::Sprinting);
+        if (sprinting && !wasSprinting)
+            f.push_back(Flag::StartSprinting);
+        if (!sprinting && wasSprinting)
+            f.push_back(Flag::StopSprinting);
+        sprintHeld = sprintKey;
 
-        session.SetPose(pose.x, pose.y, pose.z, camera.yaw, camera.pitch);
-        if (sendInput)
-            session.SendPlayerAuthInputWithFlags(flags, camera.pitch, camera.yaw);
+        if (flying && jump)
+            f.push_back(Flag::WantUp);
+        if (flying && sneakKey)
+            f.push_back(Flag::WantDown);
+        if (sendStartFlying) {
+            f.push_back(InputFlag::StartFlying);
+            sendStartFlying = false;
+        }
+        if (sendStopFlying) {
+            f.push_back(InputFlag::StopFlying);
+            sendStopFlying = false;
+        }
+        if (state.horizontalCollision)
+            f.push_back(Flag::HorizontalCollision);
+        if (state.verticalCollision)
+            f.push_back(Flag::VerticalCollision);
+
+        packet.moveX = -strafe; // Bedrock: +X is left
+        packet.moveZ = forward;
+        packet.yaw = BedrockYaw(camera.yaw);
+        packet.pitch = BedrockPitch(camera.pitch);
+        packet.eyeHeight = sneaking ? static_cast<float>(physics::kSneakEye) : static_cast<float>(physics::kStandEye);
+        packet.position[0] = static_cast<float>(state.x);
+        packet.position[1] = static_cast<float>(state.y);
+        packet.position[2] = static_cast<float>(state.z);
+        packet.delta[0] = static_cast<float>(state.x - previous.x);
+        packet.delta[1] = static_cast<float>(state.y - previous.y);
+        packet.delta[2] = static_cast<float>(state.z - previous.z);
+        packet.hasDelta = true;
+
+        session.SetPose(packet.position[0], packet.position[1], packet.position[2], packet.yaw, packet.pitch);
+        session.SendMoveInput(packet);
     }
 
     void LocalPlayer::Update(BedrockSession& session, const InputManager& input, Camera& camera,
@@ -181,36 +255,59 @@ namespace perlin {
         if (!pose.known)
             return;
 
+        if (!initialised) {
+            state = {};
+            state.x = pose.x;
+            state.y = pose.y;
+            state.z = pose.z;
+            previous = state;
+            initialised = true;
+            flying = session.IsFlying();
+        }
+        ApplyServerMotion(session, camera);
+
         const auto now = std::chrono::steady_clock::now();
-        const bool mayFly = session.MayFly();
-        if (flying && !mayFly)
+        if (flying && !session.MayFly()) {
             flying = false;
-        if (mayFly && input.Pressed(Action::Jump)) {
+            sendStopFlying = true;
+        }
+        if (session.MayFly() && input.Pressed(Action::Jump)) {
             if (now - lastJumpPress <= kDoubleTapWindow) {
                 flying = !flying;
-                verticalVelocity = 0;
+                state.vy = 0;
+                (flying ? sendStartFlying : sendStopFlying) = true;
                 lastJumpPress = {};
-                session.SendPlayerAuthInputWithFlags(
-                    {flying ? InputFlag::StartFlying : InputFlag::StopFlying}, pose.pitch, pose.yaw);
             } else {
                 lastJumpPress = now;
             }
         }
-
-        const bool sendInput = now - lastAuthInput >= kAuthInterval;
-        if (sendInput)
-            lastAuthInput = now;
-
-        if (flying)
-            Fly(session, input, camera, blocks, pose, dt, sendInput);
-        else
-            Walk(session, input, camera, blocks, pose, dt, sendInput);
-
-        const BedrockSession::PlayerPose updated = session.GetPose();
-        if (updated.known) {
-            camera.x = updated.x;
-            camera.y = updated.y + kPlayerEyeHeight;
-            camera.z = updated.z;
+        if (input.Pressed(Action::Forward)) {
+            if (now - lastForwardPress <= kSprintTapWindow && !sneaking)
+                sprinting = true;
+            lastForwardPress = now;
         }
+
+        LevelCollision world(session.NetLevel(), &blocks);
+        accumulator += dt;
+        int ticks = 0;
+        while (accumulator >= physics::kTickSeconds) {
+            accumulator -= physics::kTickSeconds;
+            if (++ticks > kMaxTicksPerFrame) {
+                accumulator = 0.0;
+                break;
+            }
+            Tick(session, input, camera, world);
+        }
+
+        // Smooth the camera between the last two simulated ticks.
+        const double t = std::clamp(accumulator / physics::kTickSeconds, 0.0, 1.0);
+        const double x = previous.x + (state.x - previous.x) * t;
+        const double y = previous.y + (state.y - previous.y) * t;
+        const double z = previous.z + (state.z - previous.z) * t;
+        const float targetEye = sneaking ? static_cast<float>(physics::kSneakEye) : static_cast<float>(physics::kStandEye);
+        eyeOffset += (targetEye - eyeOffset) * (1.0f - std::exp(-dt * 20.0f));
+        camera.x = static_cast<float>(x);
+        camera.y = static_cast<float>(y) + eyeOffset;
+        camera.z = static_cast<float>(z);
     }
 }

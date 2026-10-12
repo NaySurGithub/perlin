@@ -126,6 +126,8 @@ namespace perlin {
                 haveStartPos = true;
             }
             gotSpawn = true;
+            serverTick = static_cast<uint64_t>(std::max<int64_t>(p.currentTick, 0));
+            authTick = serverTick;
             dimensionId = static_cast<int>(p.dimension);
             rainTarget = p.rainLevel > 0.0f ? 1.0f : 0.0f;
             thunderTarget = p.lightningLevel > 0.0f ? 1.0f : 0.0f;
@@ -248,8 +250,17 @@ namespace perlin {
             pose = {eye.x, eye.y - kPlayerEyeHeight, eye.z, p.yaw, p.pitch, p.headYaw, p.onGround, true};
             haveLastAuthPos = false;
             gotSpawn = true;
-            if (p.mode == MovePlayerPacketMode::Teleport)
+            const bool forced = p.mode == MovePlayerPacketMode::Teleport || p.mode == MovePlayerPacketMode::Reset;
+            if (forced) {
                 pendingTeleportAck = true;
+                serverMotion.poseChanged = true;
+                serverMotion.teleport = true;
+                serverMotion.hasRotation = true;
+                serverMotion.yaw = p.yaw;
+                serverMotion.pitch = p.pitch;
+                serverMotion.hasVelocity = true;
+                serverMotion.velocity[0] = serverMotion.velocity[1] = serverMotion.velocity[2] = 0;
+            }
         });
 
         On<RespawnPacket>([this](const RespawnPacket& p) {
@@ -263,6 +274,11 @@ namespace perlin {
                         pose.pitch,   pose.headYaw,
                         false,        true};
                 gotSpawn = true;
+                haveLastAuthPos = false;
+                serverMotion.poseChanged = true;
+                serverMotion.teleport = true;
+                serverMotion.hasVelocity = true;
+                serverMotion.velocity[0] = serverMotion.velocity[1] = serverMotion.velocity[2] = 0;
             }
             RespawnPacket reply;
             reply.position = p.position;
@@ -271,6 +287,7 @@ namespace perlin {
             Send(reply);
         });
 
+        // The server disagreed with our prediction: adopt its position and velocity.
         On<CorrectPlayerMovePredictionPacket>([this](const CorrectPlayerMovePredictionPacket& p) {
             if (p.predictionType != CorrectPlayerMovePredictionPacketPredictionType::Player)
                 return;
@@ -279,7 +296,30 @@ namespace perlin {
             pose.x = p.position.x;
             pose.y = p.position.y - kPlayerEyeHeight;
             pose.z = p.position.z;
+            pose.onGround = p.onGround;
             haveLastAuthPos = false;
+            serverMotion.poseChanged = true;
+            serverMotion.hasVelocity = true;
+            serverMotion.velocity[0] = p.delta.x;
+            serverMotion.velocity[1] = p.delta.y;
+            serverMotion.velocity[2] = p.delta.z;
+        });
+
+        On<SetEntityMotionPacket>([this](const SetEntityMotionPacket& p) {
+            if (runtimeId == 0 || p.runtimeEntityId != runtimeId)
+                return;
+            serverMotion.hasVelocity = true;
+            serverMotion.velocity[0] = p.velocity.x;
+            serverMotion.velocity[1] = p.velocity.y;
+            serverMotion.velocity[2] = p.velocity.z;
+        });
+
+        On<UpdateAttributesPacket>([this](const UpdateAttributesPacket& p) {
+            if (runtimeId != 0 && p.runtimeEntityId != runtimeId)
+                return;
+            for (const PlayerAttributesEntry& a : p.attributes)
+                if (a.name == "minecraft:movement" && a.current > 0.0f && a.current < 5.0f)
+                    movementSpeed = a.current;
         });
 
         On<UpdateAbilitiesPacket>([this](const UpdateAbilitiesPacket& p) {

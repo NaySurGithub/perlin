@@ -341,6 +341,13 @@ if(PERLIN_BUILD_TESTS)
     target_include_directories(input_selftest PRIVATE src "${glm_SOURCE_DIR}")
     add_test(NAME input_selftest COMMAND input_selftest)
 
+    add_executable(physics_selftest
+        tests/physics_selftest.cpp
+        src/client/player/PlayerPhysics.cpp)
+    target_include_directories(physics_selftest PRIVATE src)
+    target_compile_features(physics_selftest PRIVATE cxx_std_23)
+    add_test(NAME physics_selftest COMMAND physics_selftest)
+
     add_executable(light_selftest
         tests/light_selftest.cpp
         src/world/level/lighting/ChunkLighting.cpp

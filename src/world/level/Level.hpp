@@ -61,6 +61,8 @@ namespace perlin {
     class Level {
     public:
         uint16_t GetBlock(int x, int y, int z) const;
+        // Like GetBlock, but reports whether the chunk exists (unloaded chunks read as air).
+        uint16_t GetBlock(int x, int y, int z, bool& loaded) const;
         uint8_t GetBiome(int x, int y, int z) const;
         void SetBlock(int x, int y, int z, uint16_t id);
         void EnsureChunk(int cx, int cz);

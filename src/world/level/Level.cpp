@@ -103,6 +103,13 @@ namespace perlin {
         return it == chunks.end() ? 0 : it->second.Get(x & 15, y, z & 15);
     }
 
+    uint16_t Level::GetBlock(int x, int y, int z, bool& loaded) const {
+        std::lock_guard lock(mutex);
+        const auto it = chunks.find({x >> 4, z >> 4});
+        loaded = it != chunks.end();
+        return loaded ? it->second.Get(x & 15, y, z & 15) : 0;
+    }
+
     uint8_t Level::GetBiome(int x, int y, int z) const {
         std::lock_guard lock(mutex);
         const auto it = chunks.find({x >> 4, z >> 4});

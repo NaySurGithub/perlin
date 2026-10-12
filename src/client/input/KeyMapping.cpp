@@ -40,6 +40,8 @@ namespace perlin {
             return "key.togglePerspective";
         case Action::Screenshot:
             return "key.screenshot";
+        case Action::Sprint:
+            return "key.sprint";
         default:
             return "";
         }
@@ -57,6 +59,7 @@ namespace perlin {
         set(Action::Look, Binding::MouseButton(Mouse::Left));
         set(Action::CyclePerspective, Binding::KeyboardKey(Key::F1 + 4));
         set(Action::Screenshot, Binding::KeyboardKey(Key::F12));
+        set(Action::Sprint, Binding::KeyboardKey(Key::Control));
         return b;
     }
 }
