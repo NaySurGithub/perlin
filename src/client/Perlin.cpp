@@ -214,6 +214,7 @@ namespace perlin {
             params.skyDarken = sky.skyDarken;
             params.starBrightness = sky.starBrightness;
             params.moonPhase = MoonPhase(day);
+            params.fancyClouds = options.fancyGraphics;
             params.cloud = ComputeClouds(eye.x, eye.y, eye.z,
                                          std::chrono::duration<float>(frameStart - startedAt).count() * 20.0f,
                                          sky.celestialAngle);

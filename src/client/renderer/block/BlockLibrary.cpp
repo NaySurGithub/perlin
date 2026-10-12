@@ -1,4 +1,5 @@
 #include "client/renderer/block/BlockLibrary.hpp"
+#include <algorithm>
 #include "world/level/block/BlockPalette.hpp"
 #include "client/resources/TextureLoader.hpp"
 
@@ -50,7 +51,12 @@ namespace perlin {
         int w = 0, h = 0;
         Texture tex;
         std::vector<std::string> tries;
-        for (auto& base : {pngRelPath, pngRelPath + "_opaque"}) {
+        std::string stem = pngRelPath;
+        const std::string suffix = "_opaque";
+        if (stem.size() > suffix.size() && stem.compare(stem.size() - suffix.size(), suffix.size(), suffix) == 0)
+            stem.resize(stem.size() - suffix.size());
+        const std::string order[2] = {fancy ? stem : stem + suffix, fancy ? stem + suffix : stem};
+        for (const std::string& base : order) {
             tries.push_back(base + ".png");
             tries.push_back(base + ".tga");
         }
@@ -68,6 +74,21 @@ namespace perlin {
         if (!ok) {
             fetchFails++;
             return 0;
+        }
+        if (stem.find("water_") != std::string::npos && stem.find("lava") == std::string::npos) {
+            double luma = 0;
+            size_t count = 0;
+            for (size_t i = 0; i < tex.pixels.size(); i += 4) {
+                luma += 0.299 * tex.pixels[i] + 0.587 * tex.pixels[i + 1] + 0.114 * tex.pixels[i + 2];
+                count++;
+            }
+            const double scale = count && luma > 0 ? 0.92 * 255.0 * count / luma : 1.0;
+            for (size_t i = 0; i < tex.pixels.size(); i += 4) {
+                const double y = 0.299 * tex.pixels[i] + 0.587 * tex.pixels[i + 1] + 0.114 * tex.pixels[i + 2];
+                const unsigned char gray = static_cast<unsigned char>(std::min(255.0, y * scale));
+                tex.pixels[i] = tex.pixels[i + 1] = tex.pixels[i + 2] = gray;
+                tex.pixels[i + 3] = 178;
+            }
         }
         const unsigned char* data = tex.pixels.data();
         bool framed = (w % kTilePx == 0) && (h % kTilePx == 0);

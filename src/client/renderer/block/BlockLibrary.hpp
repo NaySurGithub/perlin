@@ -37,6 +37,7 @@ namespace perlin {
 
         bool EnsureLoaded(const std::string& perlinPackDir, const std::string& vanillaRpRoot);
         bool Ready() const { return ready; }
+        void SetFancy(bool value) { fancy = value; }
         bool Complete() const { return complete; }
 
         const BlockAppearance& Look(int32_t localId) const;
@@ -62,6 +63,7 @@ namespace perlin {
         int FetchTile(const std::string& pngRelPath, const std::string& vanillaRpRoot);
 
         bool ready = false;
+        bool fancy = true;
         bool complete = false;
         int fetchFails = 0;
         int lastFileMisses = -1;

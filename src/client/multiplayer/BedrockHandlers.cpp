@@ -136,6 +136,11 @@ namespace perlin {
                     std::cout << "[bedrock] doDaylightCycle=" << *enabled << std::endl;
                 }
             }
+            std::cout << "[bedrock] time: dayCycleStopTime=" << p.dayCycleStopTime
+                      << " currentTick=" << p.currentTick << std::endl;
+            double known = 0.0;
+            if (!GetWorldTicks(known) && p.currentTick > 0)
+                NoteTime(p.currentTick);
             SendRequestChunkRadius();
             SendSetLocalPlayerAsInitialized();
             state = State::InGame;
@@ -151,9 +156,7 @@ namespace perlin {
         });
 
         On<SetTimePacket>([this](const SetTimePacket& p) {
-            static int logged = 0;
-            if (logged++ < 5)
-                std::cout << "[bedrock] SetTime " << p.time << std::endl;
+            std::cout << "[bedrock] SetTime " << p.time << std::endl;
             NoteTime(p.time);
         });
 

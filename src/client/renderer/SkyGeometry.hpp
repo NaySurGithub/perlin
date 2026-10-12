@@ -20,7 +20,7 @@ namespace perlin {
     constexpr int kCloudTexture = 256;
 
     std::vector<SkyVertex> BuildStars();
-    std::vector<SkyVertex> BuildClouds();
+    std::vector<SkyVertex> BuildClouds(bool fancy = true);
     CloudParams ComputeClouds(float eyeX, float eyeY, float eyeZ, float cloudTicks, float celestialAngle);
     void SkyRotation(float celestialAngle, float out[16]);
     int MoonPhase(int64_t day);

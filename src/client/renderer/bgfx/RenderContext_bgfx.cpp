@@ -170,6 +170,9 @@ namespace perlin {
         const std::vector<SkyVertex> clouds = BuildClouds();
         starBuffer = upload(stars);
         cloudBuffer = upload(clouds);
+        const std::vector<SkyVertex> flat = BuildClouds(false);
+        flatCloudBuffer = upload(flat);
+        flatCloudQuads = static_cast<uint32_t>(flat.size() / 4);
         starQuads = static_cast<uint32_t>(stars.size() / 4);
         cloudQuads = static_cast<uint32_t>(clouds.size() / 4);
 
@@ -189,7 +192,7 @@ namespace perlin {
         sunBuffer = upload(sun);
         moonBuffer = upload(moon);
 
-        const uint32_t indexQuads = std::max(starQuads, cloudQuads);
+        const uint32_t indexQuads = std::max({starQuads, cloudQuads, flatCloudQuads});
         std::vector<uint16_t> quad;
         quad.reserve(static_cast<size_t>(indexQuads) * 6);
         for (uint32_t i = 0; i < indexQuads; i++) {
@@ -675,11 +678,12 @@ namespace perlin {
         if (!bgfx::isValid(cloudTexture) || !bgfx::isValid(cloudBuffer))
             return;
         const uint64_t repeat = BGFX_SAMPLER_MIN_POINT | BGFX_SAMPLER_MAG_POINT;
-        for (int pass = 0; pass < 2; pass++) {
+        const bool fancy = frame.fancyClouds;
+        for (int pass = fancy ? 0 : 1; pass < 2; pass++) {
             shaders.SetMatrix(skyMvp);
             shaders.BindSky(cloudTexture, repeat);
-            bgfx::setVertexBuffer(0, cloudBuffer);
-            bgfx::setIndexBuffer(quadIndices, 0, cloudQuads * 6);
+            bgfx::setVertexBuffer(0, fancy ? cloudBuffer : flatCloudBuffer);
+            bgfx::setIndexBuffer(quadIndices, 0, (fancy ? cloudQuads : flatCloudQuads) * 6);
             if (pass == 0)
                 bgfx::setState(BGFX_STATE_WRITE_Z | BGFX_STATE_DEPTH_TEST_LESS);
             else
@@ -778,7 +782,7 @@ namespace perlin {
             bgfx::destroy(lightmapTex);
         if (bgfx::isValid(skyBuffer))
             bgfx::destroy(skyBuffer);
-        for (bgfx::VertexBufferHandle* handle : {&starBuffer, &sunBuffer, &moonBuffer, &cloudBuffer})
+        for (bgfx::VertexBufferHandle* handle : {&starBuffer, &sunBuffer, &moonBuffer, &cloudBuffer, &flatCloudBuffer})
             if (bgfx::isValid(*handle)) {
                 bgfx::destroy(*handle);
                 *handle = BGFX_INVALID_HANDLE;

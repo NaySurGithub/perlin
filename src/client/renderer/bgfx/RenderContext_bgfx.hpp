@@ -96,12 +96,14 @@ namespace perlin {
         bgfx::VertexBufferHandle sunBuffer = BGFX_INVALID_HANDLE;
         bgfx::VertexBufferHandle moonBuffer = BGFX_INVALID_HANDLE;
         bgfx::VertexBufferHandle cloudBuffer = BGFX_INVALID_HANDLE;
+        bgfx::VertexBufferHandle flatCloudBuffer = BGFX_INVALID_HANDLE;
         bgfx::IndexBufferHandle quadIndices = BGFX_INVALID_HANDLE;
         bgfx::TextureHandle sunTexture = BGFX_INVALID_HANDLE;
         bgfx::TextureHandle moonTexture = BGFX_INVALID_HANDLE;
         bgfx::TextureHandle cloudTexture = BGFX_INVALID_HANDLE;
         uint32_t starQuads = 0;
         uint32_t cloudQuads = 0;
+        uint32_t flatCloudQuads = 0;
         float skyMvp[16] = {};
         FrameParams frame{};
         bgfx::TextureHandle lightmapTex = BGFX_INVALID_HANDLE;

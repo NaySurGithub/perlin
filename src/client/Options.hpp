@@ -18,6 +18,7 @@ namespace perlin {
         std::string playerName = "Perlin";
         std::string resourcePackDir;
         std::string bedrockSamplesDir;
+        bool fancyGraphics = true;
         KeyBindings keys = DefaultBindings();
 
         const Binding& GetKey(Action action) const { return keys[static_cast<size_t>(action)]; }

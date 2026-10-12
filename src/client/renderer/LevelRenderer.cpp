@@ -31,6 +31,7 @@ namespace perlin {
 
     LevelRenderer::LevelRenderer(RenderContext& context, const Options& options)
         : context(context), options(options) {
+        blocks.SetFancy(options.fancyGraphics);
         const unsigned cores = std::thread::hardware_concurrency();
         const unsigned threads = std::clamp(cores > 3 ? cores - 2 : 1u, 1u, 3u);
         meshPool = std::make_unique<ThreadPool>(threads);
@@ -92,11 +93,12 @@ namespace perlin {
             lowest = std::min(lowest, clouds.pixels[i]);
             highest = std::max(highest, clouds.pixels[i]);
         }
-        if (lowest == highest)
-            for (size_t i = 0; i < clouds.pixels.size(); i += 4) {
-                clouds.pixels[i + 3] = clouds.pixels[i];
-                clouds.pixels[i] = clouds.pixels[i + 1] = clouds.pixels[i + 2] = 255;
-            }
+        const bool byAlpha = lowest != highest;
+        for (size_t i = 0; i < clouds.pixels.size(); i += 4) {
+            const unsigned char mask = byAlpha ? clouds.pixels[i + 3] : clouds.pixels[i];
+            clouds.pixels[i] = clouds.pixels[i + 1] = clouds.pixels[i + 2] = 255;
+            clouds.pixels[i + 3] = mask >= 128 ? 255 : 0;
+        }
 
         context.UploadSkyTextures(sun, moon, clouds);
         skyTexturesLoaded = true;

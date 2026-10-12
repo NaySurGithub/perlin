@@ -23,6 +23,7 @@ namespace perlin {
             std::string playerName;
             std::string resourcePackDir;
             std::string bedrockSamplesDir;
+            std::string graphics = "fancy";
             std::map<std::string, std::string> keys;
         };
     }
@@ -60,6 +61,7 @@ namespace perlin {
                       o.playerName,
                       o.resourcePackDir,
                       o.bedrockSamplesDir,
+                      "fancy",
                       {}};
         auto parsed = json::Read<Stored>(text);
         if (!parsed)
@@ -79,6 +81,7 @@ namespace perlin {
         o.playerName = stored.playerName;
         o.resourcePackDir = stored.resourcePackDir;
         o.bedrockSamplesDir = stored.bedrockSamplesDir;
+        o.fancyGraphics = stored.graphics != "fast";
 
         for (size_t i = 0; i < kActionCount; i++) {
             const auto it = stored.keys.find(ActionId(static_cast<Action>(i)));
@@ -105,6 +108,7 @@ namespace perlin {
                       playerName,
                       resourcePackDir,
                       bedrockSamplesDir,
+                      fancyGraphics ? "fancy" : "fast",
                       {}};
         for (size_t i = 0; i < kActionCount; i++)
             stored.keys[ActionId(static_cast<Action>(i))] = keys[i].Serialize();

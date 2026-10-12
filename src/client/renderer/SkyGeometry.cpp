@@ -77,7 +77,7 @@ namespace perlin {
         return out;
     }
 
-    std::vector<SkyVertex> BuildClouds() {
+    std::vector<SkyVertex> BuildClouds(bool fancy) {
         std::vector<SkyVertex> out;
         constexpr float kTexel = 1.0f / kCloudTexture;
         constexpr float kEpsilon = 9.765625e-4f;
@@ -91,6 +91,15 @@ namespace perlin {
         for (int tx = -3; tx <= 4; tx++)
             for (int tz = -3; tz <= 4; tz++) {
                 const float cx = static_cast<float>(tx * 8), cz = static_cast<float>(tz * 8);
+                if (!fancy) {
+                    const float p[4][3] = {{cx, 0, cz}, {cx + 8, 0, cz}, {cx + 8, 0, cz + 8}, {cx, 0, cz + 8}};
+                    const float uv[4][2] = {{cx * kTexel, cz * kTexel},
+                                            {(cx + 8) * kTexel, cz * kTexel},
+                                            {(cx + 8) * kTexel, (cz + 8) * kTexel},
+                                            {cx * kTexel, (cz + 8) * kTexel}};
+                    Quad(out, p, uv, top);
+                    continue;
+                }
                 {
                     const float p[4][3] = {{cx, 0, cz + 8}, {cx + 8, 0, cz + 8}, {cx + 8, 0, cz}, {cx, 0, cz}};
                     const float uv[4][2] = {{cx * kTexel, (cz + 8) * kTexel},

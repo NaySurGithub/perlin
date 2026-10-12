@@ -29,6 +29,7 @@ namespace perlin {
         float skyDarken;
         float starBrightness;
         int moonPhase;
+        bool fancyClouds;
         CloudParams cloud;
         float timeSeconds;
         uint32_t frameIndex;

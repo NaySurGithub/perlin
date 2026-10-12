@@ -403,18 +403,29 @@ namespace perlin {
         }
     };
 
-    static float WaterSurfAt(const BlockCache& cache, BlockLibrary* library, float by, int y, int lx,
-                             int lz) {
-        uint16_t nid = cache.Get(lx, y, lz);
-        if (nid == 0 || !library)
-            return -1;
-        const BlockAppearance* na = &library->Look(nid);
-        if (!(na && (IsWaterTex(na->texTop) || IsWaterTex(na->texSide))))
-            return -1;
-        const GeomInfo& ng = GeomFor(nid);
-        int nl = ng.liquidDepth >= 0 ? (ng.liquidDepth & 7) : 0;
-        float nt = by + 0.875f - nl * 0.0625f;
-        return nt < by + 0.125f ? by + 0.125f : nt;
+    static float WaterCornerHeight(const BlockCache& cache, BlockLibrary* library, int y, int cx, int cz) {
+        float total = 0.0f;
+        int weight = 0;
+        for (int i = 0; i < 4; i++) {
+            const int px = cx - 1 + (i & 1), pz = cz - 1 + (i >> 1);
+            if (IsLiquidId(library, cache.Get(px, y + 1, pz)))
+                return 1.0f;
+            const uint16_t id = cache.Get(px, y, pz);
+            if (id != 0 && IsLiquidId(library, id)) {
+                const int depth = GeomFor(id).liquidDepth;
+                const float height = static_cast<float>(8 - (depth >= 0 ? (depth & 7) : 0)) / 9.0f;
+                if (height >= 0.8f) {
+                    total += height * 10.0f;
+                    weight += 10;
+                } else {
+                    total += height;
+                    weight++;
+                }
+            } else if (!cache.Occ(px, y, pz)) {
+                weight++;
+            }
+        }
+        return weight ? total / static_cast<float>(weight) : 0.0f;
     }
 
     void BuildChunkMesh(Level& level, const ChunkPos& pos, Tessellator& tess, BlockLibrary* library,
@@ -466,6 +477,7 @@ namespace perlin {
 
         std::vector<std::string> biomeNames(256);
         std::unordered_map<TintKey, std::array<float, 4>, TintKeyHash> tintMemo;
+        std::unordered_map<TintKey, std::array<float, 4>, TintKeyHash> blendMemo;
         static const std::string kPlainsName = "minecraft:plains";
 
         int baseX = pos.x * 16, baseZ = pos.z * 16;
@@ -600,7 +612,7 @@ namespace perlin {
                         continue;
                     }
 
-                    auto biomeTintForRaw = [&](const std::string& tex, int tile,
+                    auto biomeTintForRaw = [&](const std::string& biomeName, const std::string& tex, int tile,
                                                bool isTop) -> std::array<float, 4> {
                         (void)isTop;
                         if (app) {
@@ -668,12 +680,34 @@ namespace perlin {
                     };
                     auto biomeTintFor = [&](const std::string& tex, int tile,
                                             bool isTop) -> std::array<float, 4> {
-                        TintKey k{app, tile, std::hash<std::string>()(tex), biomeId};
-                        auto mit = tintMemo.find(k);
-                        if (mit != tintMemo.end())
-                            return mit->second;
-                        std::array<float, 4> r = biomeTintForRaw(tex, tile, isTop);
-                        tintMemo.emplace(k, r);
+                        const size_t texHash = std::hash<std::string>()(tex);
+                        TintKey blendKey{app, tile, texHash, (x & 31) | ((z & 31) << 5) | (((y - cache.yBase) & 1023) << 10)};
+                        auto bit = blendMemo.find(blendKey);
+                        if (bit != blendMemo.end())
+                            return bit->second;
+                        std::array<float, 4> sum{0, 0, 0, 0};
+                        std::array<float, 4> own{0, 0, 0, 0};
+                        int count = 0;
+                        for (int dz = -2; dz <= 2; dz++)
+                            for (int dx = -2; dx <= 2; dx++) {
+                                const int sx = std::clamp(x + dx, -1, 16), sz = std::clamp(z + dz, -1, 16);
+                                const int sample = cache.Biome(sx, y, sz);
+                                TintKey k{app, tile, texHash, sample};
+                                auto mit = tintMemo.find(k);
+                                if (mit == tintMemo.end()) {
+                                    std::string& bn = biomeNames[(size_t)sample & 255];
+                                    if (bn.empty() && haveTints)
+                                        bn = tints->NameForId(sample);
+                                    mit = tintMemo.emplace(k, biomeTintForRaw(haveTints ? bn : kPlainsName, tex, tile, isTop)).first;
+                                }
+                                for (int c = 0; c < 3; c++)
+                                    sum[c] += mit->second[c];
+                                if (dx == 0 && dz == 0)
+                                    own = mit->second;
+                                count++;
+                            }
+                        std::array<float, 4> r = {sum[0] / count, sum[1] / count, sum[2] / count, own[3]};
+                        blendMemo.emplace(blendKey, r);
                         return r;
                     };
 
@@ -1024,35 +1058,12 @@ namespace perlin {
                     float yBot = by, yTop = by + 1.0f;
                     float h00 = -1, h10 = -1, h01 = -1, h11 = -1;
                     if (isWater) {
-                        int level = gi.liquidDepth >= 0 ? (gi.liquidDepth & 7) : 0;
-                        yTop = by + 0.875f - level * 0.0625f;
-                        if (yTop < by + 0.125f)
-                            yTop = by + 0.125f;
-                        h00 = yTop;
-                        h10 = yTop;
-                        h01 = yTop;
-                        h11 = yTop;
-                        float eE = WaterSurfAt(cache, library, by, y, x + 1, z);
-                        float eS = WaterSurfAt(cache, library, by, y, x, z + 1);
-                        float eW = WaterSurfAt(cache, library, by, y, x - 1, z);
-                        float eN = WaterSurfAt(cache, library, by, y, x, z - 1);
-                        if (eE >= 0 && eE < h10)
-                            h10 = eE;
-                        if (eW >= 0 && eW < h00)
-                            h00 = eW;
-                        if (eS >= 0 && eS < h01)
-                            h01 = eS;
-                        if (eN >= 0 && eN < h00)
-                            h00 = eN;
-                        float dSE = WaterSurfAt(cache, library, by, y, x + 1, z + 1);
-                        float want = yTop;
-                        if (eE >= 0 && eE < want)
-                            want = eE;
-                        if (eS >= 0 && eS < want)
-                            want = eS;
-                        if (dSE >= 0 && dSE < want)
-                            want = dSE;
-                        h11 = want;
+                        constexpr float kLift = 0.001f;
+                        h00 = by + WaterCornerHeight(cache, library, y, x, z) - kLift;
+                        h10 = by + WaterCornerHeight(cache, library, y, x + 1, z) - kLift;
+                        h01 = by + WaterCornerHeight(cache, library, y, x, z + 1) - kLift;
+                        h11 = by + WaterCornerHeight(cache, library, y, x + 1, z + 1) - kLift;
+                        yTop = std::max(std::max(h00, h10), std::max(h01, h11));
                     } else if (gi.slab) {
                         if (gi.slabTop)
                             yBot = by + 0.5f;

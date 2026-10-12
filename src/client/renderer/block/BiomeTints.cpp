@@ -286,10 +286,22 @@ namespace perlin {
     }
 
     std::array<float, 3> BiomeTints::Water(const std::string& biomeName) const {
-        auto it = rules.find(biomeName);
-        if (it != rules.end() && it->second.hasWater)
-            return it->second.water;
-        return defaultWater;
+        struct Entry {
+            const char* name;
+            uint32_t color;
+        };
+        static constexpr Entry kJava[] = {
+            {"mangrove_swamp", 0x3A7A6A}, {"swamp", 0x617B64},        {"meadow", 0x0E4ECF},
+            {"cherry_grove", 0x5DB7EF},   {"warm_ocean", 0x43D5EE},   {"lukewarm_ocean", 0x45ADF2},
+            {"frozen_ocean", 0x3938C9},   {"frozen_river", 0x3938C9}, {"cold_ocean", 0x3D57D6},
+            {"snowy_", 0x3D57D6},         {"ice_spikes", 0x3D57D6},   {"grove", 0x3D57D6},
+            {"frozen_peaks", 0x3D57D6},   {"jagged_peaks", 0x3D57D6},
+        };
+        for (const Entry& entry : kJava)
+            if (biomeName.find(entry.name) != std::string::npos)
+                return {((entry.color >> 16) & 255) / 255.0f, ((entry.color >> 8) & 255) / 255.0f,
+                        (entry.color & 255) / 255.0f};
+        return {0x3F / 255.0f, 0x76 / 255.0f, 0xE4 / 255.0f};
     }
 
     std::string BiomeTints::NameForId(int id) const {
