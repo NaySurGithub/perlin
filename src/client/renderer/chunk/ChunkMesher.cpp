@@ -1165,7 +1165,9 @@ namespace perlin {
                                 col2[i][1] = ovG * kv[i];
                                 col2[i][2] = ovB * kv[i];
                             }
+                            tess.SetLayer(RenderLayer::Cutout);
                             tess.AddQuad(v, col2, uv2, flip, lt);
+                            tess.SetLayer(translucent ? RenderLayer::Translucent : RenderLayer::Solid);
                         }
                     };
 

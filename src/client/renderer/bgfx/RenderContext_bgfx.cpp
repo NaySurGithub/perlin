@@ -235,6 +235,8 @@ namespace perlin {
             state |= BGFX_STATE_WRITE_A | cullState;
             break;
         case RenderLayer::Cutout:
+            // LEQUAL like Java: grass overlays are coplanar with the dirt quad drawn in the solid pass.
+            state = (state & ~BGFX_STATE_DEPTH_TEST_MASK) | BGFX_STATE_DEPTH_TEST_LEQUAL;
             state |= BGFX_STATE_WRITE_A;
             break;
         case RenderLayer::Translucent:
