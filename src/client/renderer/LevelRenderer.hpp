@@ -55,7 +55,8 @@ namespace perlin {
 
         void UploadFinishedMeshes();
         void SnapshotVersions(Level& level);
-        void CollectPending(float camX, float camZ, const Frustum& frustum);
+        bool idle = false;
+    void CollectPending(float camX, float camZ, const Frustum& frustum);
         void ScheduleAsync(Level& level, size_t freeSlots);
         void MeshInline(Level& level);
         void InvalidateMeshes();

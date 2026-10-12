@@ -958,6 +958,10 @@ namespace perlin {
                                        const std::vector<VisibleChunk>& chunks, bgfx::TextureHandle atlas) {
         const size_t slot = static_cast<size_t>(layer);
         const uint64_t state = PassState(layer);
+        // State, texture bindings and uniforms are identical for every chunk of a layer: set them once and keep them
+        // across submits (only the buffers are discarded), which removes most of the per-draw CPU work.
+        bool primed = false;
+        constexpr uint8_t kKeep = BGFX_DISCARD_INDEX_BUFFER | BGFX_DISCARD_VERTEX_STREAMS;
         for (const VisibleChunk& item : chunks) {
             const GpuChunk& g = *item.chunk;
             if (!g.layerCount[slot])
@@ -971,9 +975,12 @@ namespace perlin {
                     return;
                 bgfx::setVertexBuffer(0, pg.vb, g.vOff, g.vCount);
                 bgfx::setIndexBuffer(pg.ib, g.iOff + runStart, runCount);
-                bgfx::setState(state);
-                shaders.Apply(atlas, lightmapTex, samplerFlags, lightmapFlags);
-                bgfx::submit(0, shaders.Program(program));
+                if (!primed) {
+                    bgfx::setState(state);
+                    shaders.Apply(atlas, lightmapTex, samplerFlags, lightmapFlags);
+                    primed = true;
+                }
+                bgfx::submit(0, shaders.Program(program), 0, kKeep);
                 runCount = 0;
             };
 
@@ -999,6 +1006,8 @@ namespace perlin {
             }
             flush();
         }
+        if (primed)
+            bgfx::discard(BGFX_DISCARD_ALL);
     }
 
     void RenderContext_bgfx::DrawScreenTint() {

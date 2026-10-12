@@ -23,7 +23,7 @@ namespace perlin {
         bool rgss = false;
         bool fovEffects = true; // sprinting/flying/speed change the field of view (Java "FOV Effects")
         int damageTilt = 100;     // hurt camera shake strength: 0 none, 100 vanilla
-        bool damageTint = true;   // red screen flash when hurt
+        bool damageTint = false;  // optional red screen flash; the reference client has none in first person
         std::string texturePack;  // file or folder name inside <data>/texturepacks; empty = default textures
         KeyBindings keys = DefaultBindings();
 

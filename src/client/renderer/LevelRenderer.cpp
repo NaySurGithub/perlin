@@ -330,7 +330,13 @@ namespace perlin {
             SnapshotVersions(*level);
         }
 
-        CollectPending(camX, camZ, frustum);
+        // Nothing changed and nothing is waiting: skip the per-chunk scan entirely.
+        if (scan || !idle) {
+            CollectPending(camX, camZ, frustum);
+            idle = pending.empty() && quiet.empty() && inFlight.empty();
+        } else {
+            pending.clear();
+        }
 
         const bool async = atlasUploaded && blocks.Complete() && biomeTints.Ready();
         if (async)

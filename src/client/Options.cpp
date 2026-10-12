@@ -9,7 +9,7 @@
 
 namespace perlin {
     namespace {
-        constexpr int kOptionsVersion = 2;
+        constexpr int kOptionsVersion = 3;
     }
     namespace stored {
         struct Stored {
@@ -31,7 +31,7 @@ namespace perlin {
             bool rgss = false;
             bool fovEffects = true;
             int damageTilt = 100;
-            bool damageTint = true;
+            bool damageTint = false;
             std::string texturePack;
             int version = 0;
             std::map<std::string, std::string> keys;
@@ -109,6 +109,7 @@ namespace perlin {
             // Options saved by older builds carry the old vsync-on / 60 fps cap defaults; move them to the new ones once.
             o.vsync = Options().vsync;
             o.maxFps = Options().maxFps;
+            o.damageTint = Options().damageTint;
         }
 
         for (size_t i = 0; i < kActionCount; i++) {
