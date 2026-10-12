@@ -2,6 +2,8 @@
 #include "world/level/Level.hpp"
 #include "network/PacketDispatcher.hpp"
 #include "protocol/Packets.hpp"
+#include "client/multiplayer/SkinLoader.hpp"
+#include "network/XboxAuth.hpp"
 
 #include <condition_variable>
 #include <deque>
@@ -47,6 +49,9 @@ namespace perlin {
         BedrockSession& operator=(const BedrockSession&) = delete;
 
         void SetPlayerName(const std::string& name) { playerName = name; }
+        void SetSkin(LoadedSkin loaded) { skin = std::move(loaded); }
+        // Signs in with this Microsoft/Xbox account instead of an offline name (the name becomes the gamertag).
+        void SetAccount(std::shared_ptr<xbox::Account> a) { account = std::move(a); }
         void SetChunkRadius(int r) { chunkRadius = r; }
         // Columns farther than this many chunks from the player are fetched only as far-terrain samples (their top
         // sub-chunks, kept just long enough to sample) and promoted to full columns when the player comes closer.
@@ -271,6 +276,9 @@ namespace perlin {
         std::map<std::pair<int, int>, int> colPending; // outstanding slots per column
 
         std::string playerName = "Perlin";
+        LoadedSkin skin;
+        std::shared_ptr<xbox::Account> account;
+        xbox::Credentials onlineCreds;
         std::string playerUuid;
         std::string serverAddress;
         std::string gameVersion;

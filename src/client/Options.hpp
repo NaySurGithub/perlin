@@ -31,6 +31,10 @@ namespace perlin {
         bool invertMouse = false;
         std::string server = "127.0.0.1:19132";
         std::string playerName = "Perlin";
+        std::string skin;          // path to a skin png (64x32, 64x64 or 128x128); empty = blank skin
+        std::string cape;          // path to a cape png (64x32); empty = no cape
+        bool slimArms = false;     // "Alex" arms
+        bool onlineLogin = false;  // sign in with a Microsoft/Xbox account (saved after the first sign-in)
         std::string resourcePackDir;
         std::string bedrockSamplesDir;
         bool fancyGraphics = true;

@@ -1,6 +1,8 @@
 #include "network/Http.hpp"
 #include <httplib.h>
 
+#include <cctype>
+
 namespace perlin::http {
     Response Request(const std::string& host, uint16_t port, bool tls, const std::string& method,
                      const std::string& path, const std::string& body, const std::string& contentType,
@@ -17,7 +19,14 @@ namespace perlin::http {
                 method == "GET" ? cli.Get(path, headers) : cli.Post(path, headers, body, contentType.c_str());
             if (!res)
                 return {};
-            return {res->status, res->body};
+            Response out{res->status, res->body, {}};
+            for (auto& [k, v] : res->headers) {
+                std::string key = k;
+                for (char& c : key)
+                    c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+                out.headers.emplace(std::move(key), v);
+            }
+            return out;
         };
         if (tls) {
             httplib::SSLClient cli(host, port);

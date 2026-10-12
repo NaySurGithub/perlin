@@ -5,6 +5,7 @@
 #include "network/NetherNet.hpp"
 #include "network/VarInt.hpp"
 #include "network/LoginClaims.hpp"
+#include "network/LoginBuilder.hpp"
 #include "network/Uuid.hpp"
 #include "protocol/Packets.hpp"
 #include "util/Json.hpp"
@@ -146,20 +147,17 @@ namespace perlin {
                                                             const std::string& gameVersion,
                                                             const std::string& serverAddress,
                                                             ClientIdentity& identity, int maxViewDistance,
-                                                            std::string& error) {
+                                                            const LoadedSkin& loadedSkin,
+                                                            const xbox::Credentials* online, std::string& error) {
             if (!identity.Valid() || identity.MultiplayerToken().empty()) {
                 error = "no client identity";
                 return std::nullopt;
             }
-            const std::string& mpToken = identity.MultiplayerToken();
             std::string cpk = identity.PublicKeyB64();
             if (cpk.empty()) {
                 error = "no identity public key";
                 return std::nullopt;
             }
-
-            const std::string identityJson =
-                json::Write(claims::Identity{json::Write(claims::Chain{}), 2, mpToken});
 
             auto signJwt = [&](const auto& header, const auto& payload) -> std::string {
                 std::string h = B64Url(json::Write(header));
@@ -170,7 +168,14 @@ namespace perlin {
                 return h + "." + p + "." + B64Url(raw.data(), raw.size());
             };
 
-            std::string skinData(64 * 64 * 4, '\0');
+            const std::string identityJson = BuildIdentityJson(identity, online ? &online->chainJson : nullptr, error);
+            if (identityJson.empty())
+                return std::nullopt;
+
+            // Without --skin the skin is a blank 64x64 image.
+            const std::string skinData = loadedSkin.hasSkin()
+                                             ? std::string(loadedSkin.skinRgba.begin(), loadedSkin.skinRgba.end())
+                                             : std::string(64 * 64 * 4, '\0');
             std::random_device rd;
             uint64_t devRand = (static_cast<uint64_t>(rd()) << 32) | rd();
             char devBuf[37], fabBuf[17];
@@ -192,6 +197,28 @@ namespace perlin {
             skin.ServerAddress = serverAddress;
             skin.SkinData = B64Standard(skinData);
             skin.ThirdPartyName = playerName;
+            if (loadedSkin.hasSkin()) {
+                skin.SkinImageWidth = loadedSkin.skinWidth;
+                skin.SkinImageHeight = loadedSkin.skinHeight;
+                skin.SkinId = loadedSkin.skinId;
+                skin.OverrideSkin = true;
+            }
+            const char* geometry = loadedSkin.slimArms ? "geometry.humanoid.customSlim" : "geometry.humanoid.custom";
+            skin.ArmSize = loadedSkin.slimArms ? "slim" : "wide";
+            skin.SkinGeometryName = geometry;
+            skin.SkinResourcePatch = B64Standard(std::string("{\"geometry\":{\"default\":\"") + geometry + "\"}}");
+            if (loadedSkin.hasCape()) {
+                skin.CapeData = B64Standard(std::string(loadedSkin.capeRgba.begin(), loadedSkin.capeRgba.end()));
+                skin.CapeImageWidth = loadedSkin.capeWidth;
+                skin.CapeImageHeight = loadedSkin.capeHeight;
+                skin.CapeId = loadedSkin.capeId;
+                skin.CapeOnClassicSkin = true;
+            }
+            if (online) {
+                // Online accounts log in as an Android device (the title id in the chain is Android's).
+                skin.DeviceOS = 1;
+                skin.DeviceModel = "Perlin";
+            }
             const claims::Header skinHeader{.x5u = cpk};
             std::string skinJwt = signJwt(skinHeader, skin);
             if (skinJwt.empty()) {
@@ -221,7 +248,19 @@ namespace perlin {
             return false;
         }
         playerUuid = RandomUuid();
-        if (identity->BuildMultiplayerToken(playerName, playerUuid).empty()) {
+        if (account) {
+            // The version the services are asked about; BDS reports its own after the transport connects.
+            constexpr const char* kServiceGameVersion = "1.26.52";
+            std::string authError;
+            if (!account->LoginMinecraft(identity->PublicKeyB64(), kServiceGameVersion, onlineCreds, authError)) {
+                lastError = "online login failed: " + authError;
+                state = State::Failed;
+                return false;
+            }
+            identity->SetMultiplayerToken(onlineCreds.multiplayerToken);
+            if (!onlineCreds.gamertag.empty())
+                playerName = onlineCreds.gamertag;
+        } else if (identity->BuildMultiplayerToken(playerName, playerUuid).empty()) {
             lastError = "multiplayer token build failed";
             state = State::Failed;
             return false;
@@ -466,7 +505,8 @@ namespace perlin {
     bool BedrockSession::SendLogin() {
         std::string error;
         const auto login =
-            BuildOfflineLogin(serverProtocol, playerName, gameVersion, serverAddress, *identity, maxViewDistance, error);
+            BuildOfflineLogin(serverProtocol, playerName, gameVersion, serverAddress, *identity, maxViewDistance, skin,
+                              account ? &onlineCreds : nullptr, error);
         if (!login) {
             lastError = "login build failed: " + error;
             return false;

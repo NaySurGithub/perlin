@@ -182,6 +182,17 @@ foreach(dir dxbc dxil essl glsl spirv metal)
 endforeach()
 file(GENERATE OUTPUT "${PERLIN_SHADER_HEADER}" CONTENT "${PERLIN_SHADER_HEADER_TEXT}")
 
+# Shader packs are not part of the executable: this just builds the bundled Radiance pack into a zip that can be dropped
+# into <data>/shaderpacks/. It never fails the build.
+if(TARGET shaderc)
+    add_custom_target(shaderpacks ALL
+        COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/shaderpacks/build_shaderpack.py" Radiance
+                --shaderc "$<TARGET_FILE:shaderc>" --bgfx-src "${bgfx_SOURCE_DIR}/bgfx/src"
+                --zip "${CMAKE_CURRENT_BINARY_DIR}/shaderpacks" --soft
+        DEPENDS shaderc
+        COMMENT "Building shader packs")
+endif()
+
 set(PERLIN_PROTOCOL_OUT "${CMAKE_CURRENT_BINARY_DIR}/generated/protocol")
 set(PERLIN_PROTOCOL_CODEC_COUNT 6)
 set(PERLIN_PROTOCOL_SOURCES)
@@ -436,6 +447,19 @@ if(PERLIN_BUILD_TESTS)
     if(PERLIN_TEXTURE_TEST_ASSETS)
         add_test(NAME texture_selftest COMMAND texture_selftest "${PERLIN_TEXTURE_TEST_ASSETS}")
     endif()
+
+    add_executable(auth_selftest
+        tests/auth_selftest.cpp
+        src/network/XboxAuth.cpp src/network/LoginBuilder.cpp src/network/ClientIdentity.cpp src/network/Http.cpp
+        src/client/multiplayer/SkinLoader.cpp src/client/resources/TextureLoader.cpp src/util/Json.cpp)
+    target_include_directories(auth_selftest PRIVATE src "${stb_SOURCE_DIR}" "${httplib_SOURCE_DIR}")
+    target_compile_definitions(auth_selftest PRIVATE CPPHTTPLIB_OPENSSL_SUPPORT OPENSSL_SUPPRESS_DEPRECATED)
+    target_link_libraries(auth_selftest PRIVATE glaze::glaze miniz OpenSSL::SSL OpenSSL::Crypto Threads::Threads)
+    if(WIN32)
+        target_link_libraries(auth_selftest PRIVATE ws2_32 crypt32)
+    endif()
+    target_compile_features(auth_selftest PRIVATE cxx_std_23)
+    add_test(NAME auth_selftest COMMAND auth_selftest)
 
     add_executable(shaderpack_selftest tests/shaderpack_selftest.cpp src/client/resources/ShaderPack.cpp)
     target_include_directories(shaderpack_selftest PRIVATE src)

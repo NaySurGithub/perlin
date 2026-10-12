@@ -1,5 +1,7 @@
 #include "client/Zoom.hpp"
 #include "client/Perlin.hpp"
+#include "client/multiplayer/SkinLoader.hpp"
+#include "network/XboxAuth.hpp"
 #include "client/renderer/chunk/ChunkMesher.hpp"
 #include "client/platform/AppPlatform.hpp"
 #include "client/renderer/Lightmap.hpp"
@@ -86,6 +88,14 @@ namespace perlin {
             options.server = args.server;
         if (!args.playerName.empty())
             options.playerName = args.playerName;
+        if (args.logout) {
+            xbox::Account::SignOut(paths::DataDir() + "/auth.json");
+            options.onlineLogin = false;
+            std::cout << "[auth] saved Microsoft login removed" << std::endl;
+        }
+        if (args.login)
+            options.onlineLogin = true; // remembered: the next start signs in again without the flag
+        onlineThisRun = options.onlineLogin && !args.offline;
 
         if (!AcceptEula())
             return false;
@@ -119,16 +129,66 @@ namespace perlin {
         session->SetChunkRadius(options.renderDistance);
         session->SetMaxViewDistance(std::max(32, options.renderDistance));
         session->SetNearRadius(options.renderDistance > LodStore::kRealChunks ? LodStore::kRealChunks : 1 << 20);
+
+        // --skin / --cape / --slim override options.json for this run only.
+        SkinConfig skinConfig;
+        skinConfig.skinPath = args.skin.empty() ? options.skin : args.skin;
+        skinConfig.capePath = args.cape.empty() ? options.cape : args.cape;
+        skinConfig.slimArms = args.slimArms || options.slimArms;
+        LoadedSkin loadedSkin;
+        std::string skinError;
+        if (!LoadSkinConfig(skinConfig, loadedSkin, skinError)) {
+            std::cout << "[perlin] skin: " << skinError << " - using the default skin" << std::endl;
+            SetStatusHint("Skin not loaded: " + skinError);
+            skinConfig.skinPath.clear();
+            skinConfig.capePath.clear();
+            LoadSkinConfig(skinConfig, loadedSkin, skinError);
+        } else if (loadedSkin.hasSkin() || loadedSkin.hasCape()) {
+            std::cout << "[perlin] skin " << (loadedSkin.hasSkin() ? skinConfig.skinPath : std::string("(default)"))
+                      << (loadedSkin.hasCape() ? ", cape " + skinConfig.capePath : std::string())
+                      << (loadedSkin.slimArms ? ", slim arms" : "") << std::endl;
+        }
+        session->SetSkin(std::move(loadedSkin));
+
+        if (onlineThisRun) {
+            account = std::make_shared<xbox::Account>(paths::DataDir() + "/auth.json");
+            session->SetAccount(account);
+        }
         workers->Submit([this, host, port] {
+            if (account) {
+                std::string error;
+                const bool signedIn = account->SignIn(
+                    [this](const std::string& url, const std::string& code) {
+                        std::cout << "[auth] To sign in, open " << url << " and enter the code " << code << std::endl;
+                        platform->ShowSignInCode(url, code);
+                        SetStatusHint("Sign in at " + url + " with code " + code + " (copied to the clipboard)");
+                    },
+                    error);
+                if (!signedIn) {
+                    std::cout << "[auth] sign-in failed: " << error << std::endl;
+                    SetStatusHint("Sign-in failed: " + error);
+                    return;
+                }
+                SetStatusHint({});
+            }
             if (session->Connect(host, port))
                 sessionReady = true;
+            else if (account)
+                SetStatusHint("Login failed: " + session->LastError());
         });
+    }
+
+    void Perlin::SetStatusHint(const std::string& text) {
+        std::lock_guard lock(statusMutex);
+        statusHint = text;
     }
 
     void Perlin::Shutdown() {
         renderRunning = false;
         if (renderThread.joinable())
             renderThread.join();
+        if (account)
+            account->Cancel(); // a pending sign-in would otherwise keep the worker busy for minutes
         if (session)
             session->Disconnect();
         if (workers)
@@ -159,6 +219,11 @@ namespace perlin {
             title += " | " + FormatClock(day, tick);
         if (levelRenderer)
             title += " | " + std::to_string(levelRenderer->MeshedChunks()) + " chunks";
+        {
+            std::lock_guard lock(statusMutex);
+            if (!statusHint.empty())
+                title += " | " + statusHint;
+        }
         platform->SetTitle(title);
     }
 

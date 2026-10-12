@@ -12,6 +12,7 @@
 
 #include <atomic>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <thread>
 
@@ -21,6 +22,12 @@ namespace perlin {
     struct LaunchArgs {
         std::string server;
         std::string playerName;
+        std::string skin;       // --skin <png>
+        std::string cape;       // --cape <png>
+        bool slimArms = false;  // --slim
+        bool login = false;     // --login: sign in with a Microsoft/Xbox account
+        bool offline = false;   // --offline: ignore a saved online login for this run
+        bool logout = false;    // --logout: forget the saved Microsoft login, then continue
     };
 
     class Perlin {
@@ -62,6 +69,11 @@ namespace perlin {
         float previousThunderLevel = 0.0f;
 
         std::unique_ptr<BedrockSession> session;
+        std::shared_ptr<xbox::Account> account;
+        std::mutex statusMutex;
+        std::string statusHint; // shown in the window title: pending sign-in code, login or skin errors
+        void SetStatusHint(const std::string& text);
+        bool onlineThisRun = false;
         std::atomic<bool> sessionReady{false};
     };
 }

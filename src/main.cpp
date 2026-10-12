@@ -184,6 +184,29 @@ namespace {
                 args.server = argv[++i];
             else if (arg == "--name" && i + 1 < argc)
                 args.playerName = argv[++i];
+            else if (arg == "--skin" && i + 1 < argc)
+                args.skin = argv[++i];
+            else if (arg == "--cape" && i + 1 < argc)
+                args.cape = argv[++i];
+            else if (arg == "--slim")
+                args.slimArms = true;
+            else if (arg == "--login")
+                args.login = true;
+            else if (arg == "--offline")
+                args.offline = true;
+            else if (arg == "--logout")
+                args.logout = true;
+            else if (arg == "--help" || arg == "-h")
+                std::printf(
+                    "Perlin options:\n"
+                    "  --join <host:port>   server to join\n"
+                    "  --name <name>        offline player name\n"
+                    "  --skin <png>         skin image (64x32, 64x64 or 128x128)\n"
+                    "  --cape <png>         cape image (64x32)\n"
+                    "  --slim               slim (Alex) arms for the skin\n"
+                    "  --login              sign in with a Microsoft/Xbox account (remembered afterwards)\n"
+                    "  --offline            skip the saved Microsoft login for this run\n"
+                    "  --logout             forget the saved Microsoft login\n");
         }
         return args;
     }

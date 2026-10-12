@@ -56,6 +56,15 @@ namespace perlin::claims {
         std::vector<std::string> chain{""};
     };
 
+    // First link of the online certificate chain: signed by the client key, vouching for the key that signed the
+    // chain Mojang's service returned.
+    struct ChainLink {
+        int64_t exp = 0;
+        int64_t nbf = 0;
+        std::string identityPublicKey;
+        bool certificateAuthority = true;
+    };
+
     struct Identity {
         std::string Certificate;
         int AuthenticationType = 2;
@@ -67,6 +76,7 @@ namespace perlin::claims {
         std::string ArmSize = "wide";
         std::string CapeData;
         std::string CapeId;
+        bool CapeOnClassicSkin = false;
         int CapeImageHeight = 0;
         int CapeImageWidth = 0;
         int ClientEditorConnectionIntent = 0;

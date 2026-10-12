@@ -21,6 +21,7 @@ public:
     NativeWindowInfo GetNativeWindowInfo() override;
     void GetFramebufferSize(int& width, int& height) override;
     void SetTitle(const std::string& title) override;
+    void ShowSignInCode(const std::string& url, const std::string& code) override;
     bool ConfirmDialog(const std::string& title, const std::string& message) override;
     std::unique_ptr<perlin::RenderContext> CreateRenderContext() override;
 

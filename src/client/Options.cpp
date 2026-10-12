@@ -39,6 +39,10 @@ namespace perlin {
             ZoomSettings zoom;
             int version = 0;
             std::map<std::string, std::string> keys;
+            std::string skin;
+            std::string cape;
+            bool slimArms = false;
+            bool onlineLogin = false;
         };
     }
 
@@ -87,7 +91,11 @@ namespace perlin {
                       o.shadowDistance,
                       o.zoom,
                       0,
-                      {}};
+                      {},
+                      o.skin,
+                      o.cape,
+                      o.slimArms,
+                      o.onlineLogin};
         auto parsed = json::Read<Stored>(text);
         if (!parsed)
             return o;
@@ -104,6 +112,10 @@ namespace perlin {
         o.invertMouse = stored.invertMouse;
         o.server = stored.server;
         o.playerName = stored.playerName;
+        o.skin = stored.skin;
+        o.cape = stored.cape;
+        o.slimArms = stored.slimArms;
+        o.onlineLogin = stored.onlineLogin;
         o.resourcePackDir = stored.resourcePackDir;
         o.bedrockSamplesDir = stored.bedrockSamplesDir;
         o.fancyGraphics = stored.graphics != "fast";
@@ -168,7 +180,11 @@ namespace perlin {
                       shadowDistance,
                       zoom,
                       kOptionsVersion,
-                      {}};
+                      {},
+                      skin,
+                      cape,
+                      slimArms,
+                      onlineLogin};
         for (size_t i = 0; i < kActionCount; i++)
             stored.keys[ActionId(static_cast<Action>(i))] = keys[i].Serialize();
 

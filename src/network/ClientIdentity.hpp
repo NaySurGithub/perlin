@@ -9,6 +9,7 @@ namespace perlin {
 
     std::string B64Standard(const uint8_t* data, size_t len);
     std::string B64Url(const uint8_t* data, size_t len);
+    std::string B64UrlDecode(const std::string& s);
     inline std::string B64Standard(const std::string& s) {
         return B64Standard(reinterpret_cast<const uint8_t*>(s.data()), s.size());
     }
@@ -30,6 +31,8 @@ namespace perlin {
 
         std::string BuildMultiplayerToken(const std::string& playerName, const std::string& uuid);
         const std::string& MultiplayerToken() const { return mpToken; }
+        // Online accounts: use the token issued by the Minecraft authorization service instead of a self-signed one.
+        void SetMultiplayerToken(std::string token) { mpToken = std::move(token); }
 
         std::string AssertOffer(const std::string& sdp) const;
 

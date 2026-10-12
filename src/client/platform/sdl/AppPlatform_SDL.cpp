@@ -6,6 +6,7 @@
 #include <bgfx/bgfx.h>
 
 #include <atomic>
+#include <memory>
 #include <iostream>
 #include <thread>
 
@@ -84,6 +85,20 @@ void AppPlatform_SDL::SetTitle(const std::string& title) {
     std::lock_guard lock(titleMutex);
     pendingTitle = title;
     titleDirty = true;
+}
+
+void AppPlatform_SDL::ShowSignInCode(const std::string& url, const std::string& code) {
+    struct Job {
+        std::string url, code;
+    };
+    // Browser and clipboard calls belong on the main thread.
+    SDL_RunOnMainThread(
+        [](void* data) {
+            std::unique_ptr<Job> job(static_cast<Job*>(data));
+            SDL_SetClipboardText(job->code.c_str());
+            SDL_OpenURL(job->url.c_str());
+        },
+        new Job{url, code}, false);
 }
 
 bool AppPlatform_SDL::ConfirmDialog(const std::string& title, const std::string& message) {

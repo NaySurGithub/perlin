@@ -38,6 +38,28 @@ namespace perlin {
         return s;
     }
 
+    std::string B64UrlDecode(const std::string& in) {
+        std::string s = in;
+        for (char& c : s) {
+            if (c == '-')
+                c = '+';
+            else if (c == '_')
+                c = '/';
+        }
+        while (s.size() % 4)
+            s += '=';
+        std::string out(s.size() / 4 * 3, '\0');
+        const int n = EVP_DecodeBlock(reinterpret_cast<unsigned char*>(out.data()),
+                                      reinterpret_cast<const unsigned char*>(s.data()), static_cast<int>(s.size()));
+        if (n < 0)
+            return {};
+        size_t pad = 0;
+        while (pad < s.size() && s[s.size() - 1 - pad] == '=')
+            pad++;
+        out.resize(static_cast<size_t>(n) - pad);
+        return out;
+    }
+
     std::string RandomUuid() {
         std::random_device rd;
         std::mt19937_64 rng((static_cast<uint64_t>(rd()) << 32) | rd());
