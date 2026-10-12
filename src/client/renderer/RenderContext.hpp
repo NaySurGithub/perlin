@@ -1,6 +1,8 @@
 #pragma once
 #include "client/renderer/Frustum.hpp"
 #include "client/renderer/Lightmap.hpp"
+#include "client/renderer/SkyGeometry.hpp"
+#include "client/resources/TextureLoader.hpp"
 
 #include <cstdint>
 #include <string>
@@ -13,6 +15,7 @@ namespace perlin {
 
     struct FrameParams {
         float viewProjection[16];
+        float skyViewProjection[16];
         float inverseViewProjection[16];
         float cameraPosition[3];
         float renderDistance;
@@ -25,6 +28,8 @@ namespace perlin {
         float celestialAngle;
         float skyDarken;
         float starBrightness;
+        int moonPhase;
+        CloudParams cloud;
         float timeSeconds;
         uint32_t frameIndex;
         uint8_t lightmap[kLightmapBytes];
@@ -41,6 +46,7 @@ namespace perlin {
         virtual void EndFrame() = 0;
         virtual void RequestScreenshot(const std::string& path) = 0;
 
+        virtual void UploadSkyTextures(const Texture& sun, const Texture& moon, const Texture& clouds) = 0;
         virtual void UploadAtlas(const uint8_t* rgba, int size, int tiles) = 0;
         virtual void UpdateAtlasRegion(int tile, const uint8_t* rgba16) = 0;
 

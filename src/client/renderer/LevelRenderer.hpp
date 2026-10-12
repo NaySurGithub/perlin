@@ -84,6 +84,8 @@ namespace perlin {
 
         bool lightingConfigured = false;
         bool atlasUploaded = false;
+        bool skyTexturesLoaded = false;
+        void LoadSkyTextures();
         bool tintsWereReady = false;
         int uploadedTiles = 0;
         std::chrono::steady_clock::time_point lastAssetAttempt{};

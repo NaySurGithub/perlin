@@ -132,7 +132,8 @@ endforeach()
 set(PERLIN_SHADER_INCLUDES "${bgfx_SOURCE_DIR}/bgfx/src" "${PERLIN_SHADER_DIR}")
 set(PERLIN_SHADER_OUTPUTS)
 set(PERLIN_SHADER_NAMES
-    vs_terrain fs_terrain_solid fs_terrain_cutout fs_terrain_translucent vs_sky fs_sky)
+    vs_terrain fs_terrain_solid fs_terrain_cutout fs_terrain_translucent vs_sky fs_sky
+    vs_celestial fs_celestial vs_cloud fs_cloud)
 
 function(perlin_compile_shaders type varying)
     set(sources)
@@ -156,6 +157,8 @@ perlin_compile_shaders(VERTEX varying_terrain.def.sc vs_terrain)
 perlin_compile_shaders(FRAGMENT varying_terrain.def.sc fs_terrain_solid fs_terrain_cutout fs_terrain_translucent)
 perlin_compile_shaders(VERTEX varying_sky.def.sc vs_sky)
 perlin_compile_shaders(FRAGMENT varying_sky.def.sc fs_sky)
+perlin_compile_shaders(VERTEX varying_skyobject.def.sc vs_celestial vs_cloud)
+perlin_compile_shaders(FRAGMENT varying_skyobject.def.sc fs_celestial fs_cloud)
 
 set(PERLIN_SHADER_HEADER "${PERLIN_SHADER_OUT}/perlin_shaders.h")
 set(PERLIN_SHADER_HEADER_TEXT "#pragma once\n")

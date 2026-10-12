@@ -7,7 +7,7 @@
 #include <string>
 
 namespace perlin {
-    enum class ShaderProgram : uint8_t { TerrainSolid, TerrainCutout, TerrainTranslucent, Sky, Count };
+    enum class ShaderProgram : uint8_t { TerrainSolid, TerrainCutout, TerrainTranslucent, Sky, Celestial, Cloud, Count };
 
     class ShaderManager {
     public:
@@ -20,6 +20,9 @@ namespace perlin {
 
         void SetFrame(const FrameParams& params, const float modelViewProjection[16]);
         void ApplyUniforms() const;
+        void SetMatrix(const float matrix[16]) const;
+        void SetSkyObject(float alpha) const;
+        void BindSky(bgfx::TextureHandle texture, uint32_t flags) const;
         void Apply(bgfx::TextureHandle atlas, bgfx::TextureHandle lightmap, uint32_t atlasFlags,
                    uint32_t lightmapFlags) const;
 
@@ -39,8 +42,13 @@ namespace perlin {
         bgfx::UniformHandle sunDirection = BGFX_INVALID_HANDLE;
         bgfx::UniformHandle sunrise = BGFX_INVALID_HANDLE;
         bgfx::UniformHandle time = BGFX_INVALID_HANDLE;
+        bgfx::UniformHandle skyObject = BGFX_INVALID_HANDLE;
+        bgfx::UniformHandle cloud = BGFX_INVALID_HANDLE;
+        bgfx::UniformHandle cloudUv = BGFX_INVALID_HANDLE;
+        bgfx::UniformHandle cloudColor = BGFX_INVALID_HANDLE;
+        bgfx::UniformHandle skySampler = BGFX_INVALID_HANDLE;
 
-        float values[7][4] = {};
+        float values[10][4] = {};
         float modelViewProjection[16] = {};
         float inverse[16] = {};
     };

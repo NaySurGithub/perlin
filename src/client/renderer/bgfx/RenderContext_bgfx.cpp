@@ -156,6 +156,50 @@ namespace perlin {
         static const float kSkyTriangle[] = {-1.0f, -1.0f, 3.0f, -1.0f, -1.0f, 3.0f};
         skyBuffer = bgfx::createVertexBuffer(bgfx::makeRef(kSkyTriangle, sizeof(kSkyTriangle)), skyLayout);
 
+        skyObjectLayout.begin()
+            .add(bgfx::Attrib::Position, 3, bgfx::AttribType::Float)
+            .add(bgfx::Attrib::Color0, 4, bgfx::AttribType::Uint8, true)
+            .add(bgfx::Attrib::TexCoord0, 2, bgfx::AttribType::Float)
+            .end();
+        auto upload = [&](const std::vector<SkyVertex>& vertices) {
+            return bgfx::createVertexBuffer(
+                bgfx::copy(vertices.data(), static_cast<uint32_t>(vertices.size() * sizeof(SkyVertex))),
+                skyObjectLayout);
+        };
+        const std::vector<SkyVertex> stars = BuildStars();
+        const std::vector<SkyVertex> clouds = BuildClouds();
+        starBuffer = upload(stars);
+        cloudBuffer = upload(clouds);
+        starQuads = static_cast<uint32_t>(stars.size() / 4);
+        cloudQuads = static_cast<uint32_t>(clouds.size() / 4);
+
+        std::vector<SkyVertex> sun, moon;
+        const uint32_t spriteWhite = 0xFFFFFFFFu;
+        const float s = 30.0f;
+        sun = {{-s, 100, -s, spriteWhite, 0, 0}, {s, 100, -s, spriteWhite, 1, 0}, {s, 100, s, spriteWhite, 1, 1}, {-s, 100, s, spriteWhite, 0, 1}};
+        const float m = 20.0f;
+        for (int phase = 0; phase < 8; phase++) {
+            const float u0 = static_cast<float>(phase % 4) / 4.0f, v0 = static_cast<float>(phase / 4 % 2) / 2.0f;
+            const float u1 = u0 + 0.25f, v1 = v0 + 0.5f;
+            moon.push_back({-m, -100, m, spriteWhite, u1, v1});
+            moon.push_back({m, -100, m, spriteWhite, u0, v1});
+            moon.push_back({m, -100, -m, spriteWhite, u0, v0});
+            moon.push_back({-m, -100, -m, spriteWhite, u1, v0});
+        }
+        sunBuffer = upload(sun);
+        moonBuffer = upload(moon);
+
+        const uint32_t indexQuads = std::max(starQuads, cloudQuads);
+        std::vector<uint16_t> quad;
+        quad.reserve(static_cast<size_t>(indexQuads) * 6);
+        for (uint32_t i = 0; i < indexQuads; i++) {
+            const uint16_t b = static_cast<uint16_t>(i * 4);
+            for (uint16_t k : {0, 1, 2, 0, 2, 3})
+                quad.push_back(static_cast<uint16_t>(b + k));
+        }
+        quadIndices = bgfx::createIndexBuffer(
+            bgfx::copy(quad.data(), static_cast<uint32_t>(quad.size() * sizeof(uint16_t))));
+
         std::string shaderDirectory;
         if (!options.shaderPack.empty())
             shaderDirectory = paths::DataDir() + "/shaderpacks/" + options.shaderPack;
@@ -256,6 +300,38 @@ namespace perlin {
         }
         shaders.SetFrame(params, mvp);
         UploadLightmap(params.lightmap);
+        frame = params;
+        ConvertDepth(params.skyViewProjection, skyMvp);
+    }
+
+    void RenderContext_bgfx::ConvertDepth(const float in[16], float out[16]) const {
+        std::memcpy(out, in, sizeof(float) * 16);
+        if (homogeneousDepth)
+            for (int c = 0; c < 4; c++)
+                out[c * 4 + 2] = 2.0f * in[c * 4 + 2] - in[c * 4 + 3];
+    }
+
+    void RenderContext_bgfx::UploadSkyTextures(const Texture& sun, const Texture& moon, const Texture& clouds) {
+        if (!initialized)
+            return;
+        auto create = [](const Texture& texture, uint64_t flags) {
+            if (texture.width <= 0 || texture.height <= 0)
+                return bgfx::TextureHandle(BGFX_INVALID_HANDLE);
+            return bgfx::createTexture2D(static_cast<uint16_t>(texture.width), static_cast<uint16_t>(texture.height),
+                                         false, 1, bgfx::TextureFormat::RGBA8, flags,
+                                         bgfx::copy(texture.pixels.data(), static_cast<uint32_t>(texture.pixels.size())));
+        };
+        const uint64_t clamp = BGFX_SAMPLER_MIN_POINT | BGFX_SAMPLER_MAG_POINT | BGFX_SAMPLER_U_CLAMP |
+                               BGFX_SAMPLER_V_CLAMP;
+        const uint64_t repeat = BGFX_SAMPLER_MIN_POINT | BGFX_SAMPLER_MAG_POINT;
+        for (bgfx::TextureHandle* handle : {&sunTexture, &moonTexture, &cloudTexture})
+            if (bgfx::isValid(*handle)) {
+                bgfx::destroy(*handle);
+                *handle = BGFX_INVALID_HANDLE;
+            }
+        sunTexture = create(sun, clamp);
+        moonTexture = create(moon, clamp);
+        cloudTexture = create(clouds, repeat);
     }
 
     void RenderContext_bgfx::EndFrame() {
@@ -544,6 +620,74 @@ namespace perlin {
         shaders.Apply(bgfx::isValid(atlasTex) ? atlasTex : whiteTex, lightmapTex, samplerFlags,
                       lightmapFlags);
         bgfx::submit(0, shaders.Program(ShaderProgram::Sky));
+
+        float rotation[16];
+        SkyRotation(frame.celestialAngle, rotation);
+        float model[16];
+        for (int c = 0; c < 4; c++)
+            for (int r = 0; r < 4; r++) {
+                float sum = 0.0f;
+                for (int k = 0; k < 4; k++)
+                    sum += frame.skyViewProjection[k * 4 + r] * rotation[c * 4 + k];
+                model[c * 4 + r] = sum;
+            }
+        float celestial[16];
+        ConvertDepth(model, celestial);
+
+        const uint64_t overlay = BGFX_STATE_WRITE_RGB;
+        const bgfx::TextureHandle white = whiteTex;
+        const uint64_t spriteFlags = BGFX_SAMPLER_MIN_POINT | BGFX_SAMPLER_MAG_POINT | BGFX_SAMPLER_U_CLAMP |
+                                     BGFX_SAMPLER_V_CLAMP;
+
+        if (frame.starBrightness > 0.001f && bgfx::isValid(starBuffer)) {
+            shaders.SetMatrix(celestial);
+            shaders.SetSkyObject(frame.starBrightness);
+            shaders.BindSky(white, spriteFlags);
+            bgfx::setVertexBuffer(0, starBuffer);
+            bgfx::setIndexBuffer(quadIndices, 0, starQuads * 6);
+            bgfx::setState(overlay | BGFX_STATE_BLEND_FUNC(BGFX_STATE_BLEND_SRC_ALPHA, BGFX_STATE_BLEND_INV_SRC_ALPHA));
+            bgfx::submit(0, shaders.Program(ShaderProgram::Celestial));
+        }
+
+        const uint64_t additive = overlay | BGFX_STATE_BLEND_FUNC(BGFX_STATE_BLEND_SRC_ALPHA, BGFX_STATE_BLEND_ONE);
+        if (bgfx::isValid(sunTexture)) {
+            shaders.SetMatrix(celestial);
+            shaders.SetSkyObject(1.0f);
+            shaders.BindSky(sunTexture, spriteFlags);
+            bgfx::setVertexBuffer(0, sunBuffer);
+            bgfx::setIndexBuffer(quadIndices, 0, 6);
+            bgfx::setState(additive);
+            bgfx::submit(0, shaders.Program(ShaderProgram::Celestial));
+        }
+        if (bgfx::isValid(moonTexture)) {
+            shaders.SetMatrix(celestial);
+            shaders.SetSkyObject(1.0f);
+            shaders.BindSky(moonTexture, spriteFlags);
+            bgfx::setVertexBuffer(0, moonBuffer, static_cast<uint32_t>(frame.moonPhase) * 4, 4);
+            bgfx::setIndexBuffer(quadIndices, 0, 6);
+            bgfx::setState(additive);
+            bgfx::submit(0, shaders.Program(ShaderProgram::Celestial));
+        }
+        shaders.ApplyUniforms();
+    }
+
+    void RenderContext_bgfx::DrawClouds() {
+        if (!bgfx::isValid(cloudTexture) || !bgfx::isValid(cloudBuffer))
+            return;
+        const uint64_t repeat = BGFX_SAMPLER_MIN_POINT | BGFX_SAMPLER_MAG_POINT;
+        for (int pass = 0; pass < 2; pass++) {
+            shaders.SetMatrix(skyMvp);
+            shaders.BindSky(cloudTexture, repeat);
+            bgfx::setVertexBuffer(0, cloudBuffer);
+            bgfx::setIndexBuffer(quadIndices, 0, cloudQuads * 6);
+            if (pass == 0)
+                bgfx::setState(BGFX_STATE_WRITE_Z | BGFX_STATE_DEPTH_TEST_LESS);
+            else
+                bgfx::setState(BGFX_STATE_WRITE_RGB | BGFX_STATE_DEPTH_TEST_LEQUAL |
+                               BGFX_STATE_BLEND_FUNC(BGFX_STATE_BLEND_SRC_ALPHA, BGFX_STATE_BLEND_INV_SRC_ALPHA));
+            bgfx::submit(0, shaders.Program(ShaderProgram::Cloud));
+        }
+        shaders.ApplyUniforms();
     }
 
     void RenderContext_bgfx::DrawLayer(RenderLayer layer, ShaderProgram program, const Frustum& frustum,
@@ -613,6 +757,7 @@ namespace perlin {
         DrawLayer(RenderLayer::Cutout, ShaderProgram::TerrainCutout, frustum, visible, atlas);
         std::reverse(visible.begin(), visible.end());
         DrawLayer(RenderLayer::Translucent, ShaderProgram::TerrainTranslucent, frustum, visible, atlas);
+        DrawClouds();
     }
 
     void RenderContext_bgfx::ClearChunkMeshes() {
@@ -633,6 +778,19 @@ namespace perlin {
             bgfx::destroy(lightmapTex);
         if (bgfx::isValid(skyBuffer))
             bgfx::destroy(skyBuffer);
+        for (bgfx::VertexBufferHandle* handle : {&starBuffer, &sunBuffer, &moonBuffer, &cloudBuffer})
+            if (bgfx::isValid(*handle)) {
+                bgfx::destroy(*handle);
+                *handle = BGFX_INVALID_HANDLE;
+            }
+        if (bgfx::isValid(quadIndices))
+            bgfx::destroy(quadIndices);
+        quadIndices = BGFX_INVALID_HANDLE;
+        for (bgfx::TextureHandle* handle : {&sunTexture, &moonTexture, &cloudTexture})
+            if (bgfx::isValid(*handle)) {
+                bgfx::destroy(*handle);
+                *handle = BGFX_INVALID_HANDLE;
+            }
         shaders.Shutdown();
         atlasTex = whiteTex = lightmapTex = BGFX_INVALID_HANDLE;
         skyBuffer = BGFX_INVALID_HANDLE;

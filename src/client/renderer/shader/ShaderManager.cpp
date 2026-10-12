@@ -2,6 +2,7 @@
 
 #include <bgfx/embedded_shader.h>
 
+#include <algorithm>
 #include <cstring>
 #include <fstream>
 #include <iostream>
@@ -19,6 +20,10 @@ namespace perlin {
             BGFX_EMBEDDED_SHADER(fs_terrain_translucent),
             BGFX_EMBEDDED_SHADER(vs_sky),
             BGFX_EMBEDDED_SHADER(fs_sky),
+            BGFX_EMBEDDED_SHADER(vs_celestial),
+            BGFX_EMBEDDED_SHADER(fs_celestial),
+            BGFX_EMBEDDED_SHADER(vs_cloud),
+            BGFX_EMBEDDED_SHADER(fs_cloud),
             BGFX_EMBEDDED_SHADER_END(),
         };
 
@@ -32,6 +37,8 @@ namespace perlin {
             {"vs_terrain", "fs_terrain_cutout"},
             {"vs_terrain", "fs_terrain_translucent"},
             {"vs_sky", "fs_sky"},
+            {"vs_celestial", "fs_celestial"},
+            {"vs_cloud", "fs_cloud"},
         };
 
         const char* RendererDirectory(bgfx::RendererType::Enum type) {
@@ -52,7 +59,7 @@ namespace perlin {
             }
         }
 
-        enum Slot { Camera, Fog, FogColor, SkyColor, SunDirection, Sunrise, Time };
+        enum Slot { Camera, Fog, FogColor, SkyColor, SunDirection, Sunrise, Time, Cloud, CloudUv, CloudColor };
     }
 
     bgfx::ShaderHandle ShaderManager::Load(const char* name, const std::string& packDirectory) const {
@@ -99,6 +106,11 @@ namespace perlin {
         sunDirection = bgfx::createUniform("u_sunDir", bgfx::UniformType::Vec4);
         sunrise = bgfx::createUniform("u_sunrise", bgfx::UniformType::Vec4);
         time = bgfx::createUniform("u_time", bgfx::UniformType::Vec4);
+        skyObject = bgfx::createUniform("u_skyObject", bgfx::UniformType::Vec4);
+        cloud = bgfx::createUniform("u_cloud", bgfx::UniformType::Vec4);
+        cloudUv = bgfx::createUniform("u_cloudUv", bgfx::UniformType::Vec4);
+        cloudColor = bgfx::createUniform("u_cloudColor", bgfx::UniformType::Vec4);
+        skySampler = bgfx::createUniform("s_sky", bgfx::UniformType::Sampler);
         return true;
     }
 
@@ -110,7 +122,7 @@ namespace perlin {
         }
         for (bgfx::UniformHandle* handle :
              {&atlasSampler, &lightmapSampler, &mvp, &inverseViewProjection, &camera, &fog, &fogColor,
-              &skyColor, &sunDirection, &sunrise, &time}) {
+              &skyColor, &sunDirection, &sunrise, &time, &skyObject, &cloud, &cloudUv, &cloudColor, &skySampler}) {
             if (bgfx::isValid(*handle))
                 bgfx::destroy(*handle);
             *handle = BGFX_INVALID_HANDLE;
@@ -146,6 +158,28 @@ namespace perlin {
         values[Time][1] = params.skyDarken;
         values[Time][2] = params.starBrightness;
         values[Time][3] = static_cast<float>(params.frameIndex);
+
+        values[Cloud][0] = params.cloud.offsetX;
+        values[Cloud][1] = params.cloud.offsetZ;
+        values[Cloud][2] = params.cloud.height;
+        values[CloudUv][0] = params.cloud.uvX;
+        values[CloudUv][1] = params.cloud.uvZ;
+        std::memcpy(values[CloudColor], params.cloud.color, sizeof(float) * 3);
+        const float chunks = params.renderDistance / 16.0f;
+        values[CloudColor][3] = std::max(256.0f, (chunks + 2.0f) * 24.0f);
+    }
+
+    void ShaderManager::SetMatrix(const float matrix[16]) const {
+        bgfx::setUniform(mvp, matrix);
+    }
+
+    void ShaderManager::SetSkyObject(float alpha) const {
+        const float value[4] = {1.0f, 1.0f, 1.0f, alpha};
+        bgfx::setUniform(skyObject, value);
+    }
+
+    void ShaderManager::BindSky(bgfx::TextureHandle texture, uint32_t flags) const {
+        bgfx::setTexture(2, skySampler, texture, flags);
     }
 
     void ShaderManager::ApplyUniforms() const {
@@ -158,6 +192,9 @@ namespace perlin {
         bgfx::setUniform(sunDirection, values[SunDirection]);
         bgfx::setUniform(sunrise, values[Sunrise]);
         bgfx::setUniform(time, values[Time]);
+        bgfx::setUniform(cloud, values[Cloud]);
+        bgfx::setUniform(cloudUv, values[CloudUv]);
+        bgfx::setUniform(cloudColor, values[CloudColor]);
     }
 
     void ShaderManager::Apply(bgfx::TextureHandle atlas, bgfx::TextureHandle lightmap, uint32_t atlasFlags,

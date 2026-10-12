@@ -102,7 +102,7 @@ namespace perlin {
 
         {
             std::string defs =
-                ReadFile(vanillaRpRoot + "/../repo/metadata/vanilladata_modules/mojang-biomes.json");
+                ReadFile(vanillaRpRoot + "/../metadata/vanilladata_modules/mojang-biomes.json");
             if (const auto document = json::Document::Parse(defs)) {
                 for (const json::View e : document->root()["data_items"].items()) {
                     if (!e["id"].isNumber() || !e["name"].isString())
@@ -118,7 +118,7 @@ namespace perlin {
         {
             std::error_code dirEc;
             for (const auto& dirEntry : std::filesystem::directory_iterator(
-                     vanillaRpRoot + "/../repo/behavior_pack/biomes", dirEc)) {
+                     vanillaRpRoot + "/../behavior_pack/biomes", dirEc)) {
                 if (!dirEntry.path().filename().string().ends_with(".biome.json"))
                     continue;
                 {

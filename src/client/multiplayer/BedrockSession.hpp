@@ -81,6 +81,8 @@ namespace perlin {
         void SetPose(float x, float y, float z, float yaw, float pitch);
         bool HaveBlockPos() const { return haveBlockPos; }
         bool GetWorldTime(int64_t& outDay, int& outTicksOfDay) const;
+        bool GetWorldTicks(double& outTicks) const;
+        void SetDayCycle(bool running);
         void NoteTime(int64_t totalOrTod);
         void GetBlockPos(int out[3]) const {
             out[0] = lastBlockPos[0];

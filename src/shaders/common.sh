@@ -12,6 +12,10 @@ uniform vec4 u_skyColor;
 uniform vec4 u_sunDir;
 uniform vec4 u_sunrise;
 uniform vec4 u_time;
+uniform vec4 u_skyObject;
+uniform vec4 u_cloud;
+uniform vec4 u_cloudUv;
+uniform vec4 u_cloudColor;
 
 #define LIGHTMAP_SIZE 16.0
 

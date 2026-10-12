@@ -4,6 +4,7 @@
 namespace perlin {
     class BedrockSamples {
     public:
-        static std::string Ensure(const std::string& targetDir);
+        static bool Ensure(const std::string& targetDir);
+        static bool Available(const std::string& targetDir);
     };
 }

@@ -132,7 +132,7 @@ namespace perlin {
                 if (!EqualsIgnoreCase(rule.name, "dodaylightcycle"))
                     continue;
                 if (const bool* enabled = std::get_if<bool>(&rule.value)) {
-                    dayCycleRunning = *enabled;
+                    SetDayCycle(*enabled);
                     std::cout << "[bedrock] doDaylightCycle=" << *enabled << std::endl;
                 }
             }
@@ -155,6 +155,13 @@ namespace perlin {
             if (logged++ < 5)
                 std::cout << "[bedrock] SetTime " << p.time << std::endl;
             NoteTime(p.time);
+        });
+
+        On<GameRulesChangedPacket>([this](const GameRulesChangedPacket& p) {
+            for (const GameRuleI32& rule : p.rules)
+                if (EqualsIgnoreCase(rule.name, "dodaylightcycle"))
+                    if (const bool* enabled = std::get_if<bool>(&rule.value))
+                        SetDayCycle(*enabled);
         });
 
         On<SetSpawnPositionPacket>([this](const SetSpawnPositionPacket& p) {

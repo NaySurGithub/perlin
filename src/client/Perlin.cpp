@@ -183,9 +183,12 @@ namespace perlin {
 
             float tickOfDay = kNoonTick;
             int64_t day = 0;
-            int tick = 0;
-            if (live && live->GetWorldTime(day, tick))
-                tickOfDay = static_cast<float>(tick);
+            double worldTicks = 0.0;
+            if (live && live->GetWorldTicks(worldTicks)) {
+                const double wrapped = std::fmod(worldTicks, static_cast<double>(kTicksPerDay));
+                tickOfDay = static_cast<float>(wrapped);
+                day = static_cast<int64_t>(worldTicks / kTicksPerDay);
+            }
             SkyState sky = ComputeSky(SkyProfile::Overworld(), tickOfDay);
             BlendFogTowardSky(sky, static_cast<float>(options.renderDistance));
             const FogRange fog = TerrainFog(static_cast<float>(options.renderDistance) * 16.0f);
@@ -198,6 +201,7 @@ namespace perlin {
             FrameParams params{};
             std::copy_n(glm::value_ptr(viewProjection), 16, params.viewProjection);
             std::copy_n(glm::value_ptr(inverseViewProjection), 16, params.inverseViewProjection);
+            std::copy_n(glm::value_ptr(camera.SkyViewProjection()), 16, params.skyViewProjection);
             std::copy_n(glm::value_ptr(eye), 3, params.cameraPosition);
             params.renderDistance = static_cast<float>(options.renderDistance) * 16.0f;
             std::copy_n(sky.skyColor, 3, params.skyColor);
@@ -209,6 +213,10 @@ namespace perlin {
             params.celestialAngle = sky.celestialAngle;
             params.skyDarken = sky.skyDarken;
             params.starBrightness = sky.starBrightness;
+            params.moonPhase = MoonPhase(day);
+            params.cloud = ComputeClouds(eye.x, eye.y, eye.z,
+                                         std::chrono::duration<float>(frameStart - startedAt).count() * 20.0f,
+                                         sky.celestialAngle);
             params.timeSeconds = std::chrono::duration<float>(frameStart - startedAt).count();
             params.frameIndex = static_cast<uint32_t>(frameCounter++);
             BuildLightmap({sky.skyDarken, options.gamma, SkyProfile::Overworld().ambientLight, 0.0f},

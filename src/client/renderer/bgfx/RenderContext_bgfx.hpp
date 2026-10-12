@@ -26,6 +26,7 @@ namespace perlin {
         void BeginFrame(const FrameParams& params) override;
         void EndFrame() override;
         void RequestScreenshot(const std::string& path) override;
+        void UploadSkyTextures(const Texture& sun, const Texture& moon, const Texture& clouds) override;
         void UploadAtlas(const uint8_t* rgba, int size, int tiles) override;
         void UpdateAtlasRegion(int tile, const uint8_t* rgba16) override;
         void UpdateChunkMesh(int cx, int cz, const Tessellator& tess, uint64_t version) override;
@@ -75,6 +76,8 @@ namespace perlin {
         void DrawLayer(RenderLayer layer, ShaderProgram program, const Frustum& frustum,
                        const std::vector<VisibleChunk>& chunks, bgfx::TextureHandle atlas);
         void DrawSky();
+        void DrawClouds();
+        void ConvertDepth(const float in[16], float out[16]) const;
         void UploadLightmap(const uint8_t* pixels);
         static int64_t ChunkKey(int cx, int cz) { return (static_cast<int64_t>(cx) << 32) | (uint32_t)cz; }
 
@@ -88,6 +91,19 @@ namespace perlin {
         bgfx::VertexLayout layout;
         bgfx::VertexLayout skyLayout;
         bgfx::VertexBufferHandle skyBuffer = BGFX_INVALID_HANDLE;
+        bgfx::VertexLayout skyObjectLayout;
+        bgfx::VertexBufferHandle starBuffer = BGFX_INVALID_HANDLE;
+        bgfx::VertexBufferHandle sunBuffer = BGFX_INVALID_HANDLE;
+        bgfx::VertexBufferHandle moonBuffer = BGFX_INVALID_HANDLE;
+        bgfx::VertexBufferHandle cloudBuffer = BGFX_INVALID_HANDLE;
+        bgfx::IndexBufferHandle quadIndices = BGFX_INVALID_HANDLE;
+        bgfx::TextureHandle sunTexture = BGFX_INVALID_HANDLE;
+        bgfx::TextureHandle moonTexture = BGFX_INVALID_HANDLE;
+        bgfx::TextureHandle cloudTexture = BGFX_INVALID_HANDLE;
+        uint32_t starQuads = 0;
+        uint32_t cloudQuads = 0;
+        float skyMvp[16] = {};
+        FrameParams frame{};
         bgfx::TextureHandle lightmapTex = BGFX_INVALID_HANDLE;
         ShaderManager shaders;
         uint32_t lightmapFlags = 0;

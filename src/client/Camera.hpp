@@ -39,6 +39,12 @@ namespace perlin {
             return eye;
         }
 
+        glm::mat4 SkyViewProjection() const {
+            const glm::vec3 dir = Direction();
+            const glm::mat4 view = glm::mat4(glm::mat3(glm::lookAt(glm::vec3(0.0f), dir, glm::vec3(0, 1, 0))));
+            return glm::perspective(glm::radians(fov), aspect, nearPlane, farPlane) * view;
+        }
+
         glm::mat4 ViewProjection() const {
             const glm::vec3 dir = Direction();
             const glm::vec3 eye = EyePosition();

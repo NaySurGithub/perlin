@@ -214,7 +214,7 @@ namespace perlin {
         const json::View texData = vTerrain.contains("texture_data") ? vTerrain["texture_data"] : vTerrain;
 
         if (!BlockPalette::Instance().NamesLoaded()) {
-            std::string defs = vanillaRpRoot + "/../repo/metadata/vanilladata_modules/mojang-blocks.json";
+            std::string defs = vanillaRpRoot + "/../metadata/vanilladata_modules/mojang-blocks.json";
             if (!BlockPalette::Instance().LoadVanillaDefinitions(defs))
                 return false;
         }

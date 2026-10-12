@@ -872,7 +872,7 @@ namespace perlin {
                 timeTotal = tod;
             } else {
                 int64_t cur = timeTotal;
-                if (timeAt.time_since_epoch().count() != 0)
+                if (dayCycleRunning && timeAt.time_since_epoch().count() != 0)
                     cur += std::chrono::duration_cast<std::chrono::milliseconds>(now - timeAt).count() / 50;
                 int64_t day = cur / 24000;
                 int64_t curTod = cur % 24000;
@@ -882,6 +882,26 @@ namespace perlin {
             }
         }
         timeAt = now;
+    }
+
+    void BedrockSession::SetDayCycle(bool running) {
+        std::lock_guard<std::mutex> lk(timeMutex);
+        const auto now = std::chrono::steady_clock::now();
+        if (timeTotal >= 0 && dayCycleRunning && timeAt.time_since_epoch().count() != 0)
+            timeTotal += std::chrono::duration_cast<std::chrono::milliseconds>(now - timeAt).count() / 50;
+        timeAt = now;
+        dayCycleRunning = running;
+    }
+
+    bool BedrockSession::GetWorldTicks(double& outTicks) const {
+        std::lock_guard<std::mutex> lk(timeMutex);
+        if (timeTotal < 0)
+            return false;
+        double advance = 0.0;
+        if (dayCycleRunning && timeAt.time_since_epoch().count() != 0)
+            advance = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - timeAt).count() / 50.0;
+        outTicks = static_cast<double>(timeTotal) + advance;
+        return true;
     }
 
     bool BedrockSession::GetWorldTime(int64_t& outDay, int& outTicksOfDay) const {
