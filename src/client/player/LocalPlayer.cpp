@@ -2,6 +2,7 @@
 
 #include "client/player/BlockCollision.hpp"
 #include "protocol/Packets.hpp"
+#include "network/custom/PlayerAuthInput.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -149,6 +150,7 @@ namespace perlin {
     void LocalPlayer::Tick(BedrockSession& session, const InputManager& input, const Camera& camera,
                            const physics::World& world) {
         previous = state;
+        const physics::State before = state;
 
         const float forward = input.Axis(Action::Forward, Action::Back);
         const float strafe = input.Axis(Action::Right, Action::Left); // +1 right
@@ -217,49 +219,49 @@ namespace perlin {
         if (goBack && goLeft) f.push_back(Flag::DownLeft);
         if (goBack && goRight) f.push_back(Flag::DownRight);
 
+        // Flag semantics follow the native client (cinnabar encoding::input_flags): the Jump*/Sneak*/Sprint*
+        // flags mirror the held keys, the Start*/Stop* edges mirror the processed state.
+        const bool jumpInitiated = !flying && before.jumpDelay == 0 && state.jumpDelay == 9;
         if (jump) {
             f.push_back(Flag::JumpDown);
             f.push_back(Flag::Jumping);
             f.push_back(Flag::JumpCurrentRaw);
+            f.push_back(Flag::WantUp);
         }
-        if (jump && !jumpHeld) {
+        if (jumpInitiated)
             f.push_back(Flag::StartJumping);
+        if (jump && !jumpHeld)
             f.push_back(Flag::JumpPressedRaw);
-        }
         if (!jump && jumpHeld)
             f.push_back(Flag::JumpReleasedRaw);
         jumpHeld = jump;
 
-        if (sneaking) {
-            f.push_back(Flag::Sneaking);
-        }
         if (sneakKey) {
+            f.push_back(Flag::Sneaking);
             f.push_back(Flag::SneakDown);
             f.push_back(Flag::SneakCurrentRaw);
+            f.push_back(Flag::WantDown);
         }
-        if (sneaking && !wasSneaking) {
+        if (sneaking && !wasSneaking)
             f.push_back(Flag::StartSneaking);
-            f.push_back(Flag::SneakPressedRaw);
-        }
-        if (!sneaking && wasSneaking) {
+        if (!sneaking && wasSneaking)
             f.push_back(Flag::StopSneaking);
+        if (sneakKey && !sneakHeld)
+            f.push_back(Flag::SneakPressedRaw);
+        if (!sneakKey && sneakHeld)
             f.push_back(Flag::SneakReleasedRaw);
-        }
+        sneakHeld = sneakKey;
 
-        if (sprintKey || sprinting)
+        if (sprintKey || sprinting) {
             f.push_back(Flag::SprintDown);
-        if (sprinting)
             f.push_back(Flag::Sprinting);
+        }
         if (sprinting && !wasSprinting)
             f.push_back(Flag::StartSprinting);
         if (!sprinting && wasSprinting)
             f.push_back(Flag::StopSprinting);
         sprintHeld = sprintKey;
 
-        if (flying && jump)
-            f.push_back(Flag::WantUp);
-        if (flying && sneakKey)
-            f.push_back(Flag::WantDown);
         if (sendStartFlying) {
             f.push_back(InputFlag::StartFlying);
             sendStartFlying = false;
@@ -273,17 +275,22 @@ namespace perlin {
         if (state.verticalCollision)
             f.push_back(Flag::VerticalCollision);
 
-        packet.moveX = -strafe; // Bedrock: +X is left
-        packet.moveZ = forward;
+        // move vector: pose-processed (sneak scales the request) and normalised; raw: the keys as pressed.
+        const float slowFactor = sneaking ? 0.3f : 1.0f;
+        packet.moveX = -std::clamp(strafe, -slowFactor, slowFactor); // Bedrock: +X is left
+        packet.moveZ = std::clamp(forward, -slowFactor, slowFactor);
+        packet.rawX = -strafe;
+        packet.rawZ = forward;
         packet.yaw = BedrockYaw(camera.yaw);
         packet.pitch = BedrockPitch(camera.pitch);
-        packet.eyeHeight = sneaking ? static_cast<float>(physics::kSneakEye) : static_cast<float>(physics::kStandEye);
+        packet.eyeHeight = kPlayerEyeHeight; // the network position is always feet + 1.62001
         packet.position[0] = static_cast<float>(state.x);
         packet.position[1] = static_cast<float>(state.y);
         packet.position[2] = static_cast<float>(state.z);
-        packet.delta[0] = static_cast<float>(state.x - previous.x);
-        packet.delta[1] = static_cast<float>(state.y - previous.y);
-        packet.delta[2] = static_cast<float>(state.z - previous.z);
+        // Vanilla sends the end-of-tick velocity as the position delta.
+        packet.delta[0] = static_cast<float>(state.vx);
+        packet.delta[1] = static_cast<float>(state.vy);
+        packet.delta[2] = static_cast<float>(state.vz);
         packet.hasDelta = true;
 
         session.SetPose(packet.position[0], packet.position[1], packet.position[2], packet.yaw, packet.pitch);

@@ -12,6 +12,11 @@ namespace perlin {
         float rain = 0.0f;
         float thunder = 0.0f;
         float rainFogMultiplier = 0.0f;
+        // Camera inside water (Java WaterFogEnvironment).
+        bool underwater = false;
+        float waterVision = 0.0f;                    // LocalPlayer.getWaterVision()
+        glm::vec3 waterFogColor{0.0196f, 0.0196f, 0.2f}; // 0x050533 unless the biome overrides it
+        float waterFogEndScale = 1.0f;               // swamp: x0.85
     };
 
     struct FogState {

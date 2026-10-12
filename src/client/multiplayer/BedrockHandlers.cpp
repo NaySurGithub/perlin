@@ -262,6 +262,9 @@ namespace perlin {
             if (p.layer == 0)
                 netLevel.SetBlock(lastBlockPos[0], lastBlockPos[1], lastBlockPos[2],
                                   BlockPalette::Instance().Intern(static_cast<int32_t>(p.blockRuntimeId)));
+            else if (p.layer == 1)
+                netLevel.SetLiquid(lastBlockPos[0], lastBlockPos[1], lastBlockPos[2],
+                                   BlockPalette::Instance().Intern(static_cast<int32_t>(p.blockRuntimeId)));
         });
 
         On<MovePlayerPacket>([this](const MovePlayerPacket& p) {

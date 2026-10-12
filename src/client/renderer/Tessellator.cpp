@@ -76,6 +76,6 @@ namespace perlin {
                 sections[i].count[l] = end - sections[i].start[l];
             }
         std::erase_if(sections,
-                      [](const MeshSection& s) { return !s.count[0] && !s.count[1] && !s.count[2]; });
+                      [](const MeshSection& s) { return !s.count[0] && !s.count[1] && !s.count[2] && !s.count[3] && !s.count[4]; });
     }
 }

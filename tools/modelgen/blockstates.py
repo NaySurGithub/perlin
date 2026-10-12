@@ -65,7 +65,7 @@ class JavaBlock:
         (model, x, y, uvlock, weight).  Unknown properties fall back to defaults."""
         full = dict(props)
         for p, vals in self.values.items():
-            if p not in full or full[p] not in vals:
+            if p not in full or (self.kind == "variants" and full[p] not in vals):
                 full[p] = default_value(p, vals)
         if self.kind == "variants":
             for k, group in self.variants:

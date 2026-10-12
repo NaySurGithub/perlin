@@ -3,6 +3,7 @@
 #include "client/renderer/Lightmap.hpp"
 #include "client/renderer/Environment.hpp"
 #include "client/renderer/Fog.hpp"
+#include "client/player/BlockCollision.hpp"
 #include "client/resources/BedrockSamples.hpp"
 #include "util/Paths.hpp"
 
@@ -196,10 +197,29 @@ namespace perlin {
             if (live)
                 live->GetWorldTicks(worldTicks);
 
+            // Camera inside water: fog, colour and water vision follow Java's WaterFogEnvironment.
+            bool underwater = false;
+            std::string eyeBiome = "minecraft:plains";
+            if (live) {
+                const glm::vec3 e = camera.EyePosition();
+                const int bx = static_cast<int>(std::floor(e.x)), by = static_cast<int>(std::floor(e.y)),
+                          bz = static_cast<int>(std::floor(e.z));
+                const LevelCollision col(live->NetLevel(), &levelRenderer->Blocks());
+                const physics::BlockShape cell = col.Query(bx, by, bz);
+                if (cell.fluid == 1) {
+                    const float top = col.Query(bx, by + 1, bz).fluid == 1 ? 1.0f : cell.fluidLevel;
+                    underwater = e.y < static_cast<float>(by) + top;
+                }
+                if (underwater)
+                    eyeBiome = levelRenderer->Tints().NameForId(live->NetLevel().GetBiome(bx, by, bz));
+            }
+            static int waterVisionTime = 0;
+
             tickDebt += dt * 20.0f;
             while (tickDebt >= 1.0) {
                 tickDebt -= 1.0;
                 blockLight.Tick();
+                waterVisionTime = underwater ? std::min(600, waterVisionTime + 1) : std::max(0, waterVisionTime - 10);
                 if (live) {
                     previousRainLevel = rainLevel;
                     previousThunderLevel = thunderLevel;
@@ -231,6 +251,27 @@ namespace perlin {
             fogInput.cameraY = eye.y;
             fogInput.rain = rain;
             fogInput.thunder = thunder;
+            fogInput.underwater = underwater;
+            if (underwater) {
+                const float t = static_cast<float>(waterVisionTime);
+                fogInput.waterVision = waterVisionTime >= 600
+                                           ? 1.0f
+                                           : std::clamp(t / 100.0f, 0.0f, 1.0f) * 0.6f +
+                                                 std::clamp((t - 100.0f) / 500.0f, 0.0f, 1.0f) * 0.39999998f;
+                struct WaterFog { const char* biome; uint32_t rgb; };
+                static const WaterFog kWaterFog[] = {
+                    {"cherry_grove", 0x5db7ef}, {"dappled_forest", 0x375154}, {"deep_lukewarm_ocean", 0x041633},
+                    {"lukewarm_ocean", 0x041633}, {"mangrove_swamp", 0x4d7a60}, {"pale_garden", 0x556980},
+                    {"sulfur_caves", 0x17543c}, {"swamp", 0x232317}, {"warm_ocean", 0x041f33}};
+                uint32_t rgb = 0x050533;
+                std::string shortName = eyeBiome.rfind("minecraft:", 0) == 0 ? eyeBiome.substr(10) : eyeBiome;
+                for (const WaterFog& w : kWaterFog)
+                    if (shortName == w.biome)
+                        rgb = w.rgb;
+                fogInput.waterFogColor = {((rgb >> 16) & 255) / 255.0f, ((rgb >> 8) & 255) / 255.0f, (rgb & 255) / 255.0f};
+                if (shortName == "swamp")
+                    fogInput.waterFogEndScale = 0.85f;
+            }
             const FogState fog = ComputeFog(env, fogInput);
 
             FrameParams params{};

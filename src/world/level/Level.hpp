@@ -29,6 +29,10 @@ namespace perlin {
 
         uint16_t Get(int x, int y, int z) const;
         void Set(int x, int y, int z, uint16_t id);
+        // Second block layer (Bedrock liquid layer): the water inside waterlogged blocks, seagrass, kelp...
+        uint16_t GetLiquid(int x, int y, int z) const;
+        void SetLiquid(int x, int y, int z, uint16_t id);
+        void ReadLiquid(int x, int z, int yLo, int yHi, uint16_t* out, size_t stride) const;
         uint8_t GetBiome(int x, int y, int z) const;
 
         bool YRange(int& lo, int& hi) const;
@@ -37,7 +41,7 @@ namespace perlin {
 
         void ReadBlocks(int x, int z, int yLo, int yHi, uint16_t* blocks, size_t stride) const;
 
-        void SetSection(int section, const uint16_t* cells);
+        void SetSection(int section, const uint16_t* cells, const uint16_t* liquidCells = nullptr);
         void SetBiomeSection(int section, const uint8_t* cells);
 
         uint64_t version = 0;
@@ -45,6 +49,7 @@ namespace perlin {
     private:
         struct Section {
             std::array<uint16_t, 4096> blocks{};
+            std::unique_ptr<std::array<uint16_t, 4096>> liquid; // allocated only when the section has any
             std::array<uint8_t, 4096> biomes;
             Section() { biomes.fill(DEFAULT_BIOME); }
         };
@@ -63,11 +68,13 @@ namespace perlin {
         uint16_t GetBlock(int x, int y, int z) const;
         // Like GetBlock, but reports whether the chunk exists (unloaded chunks read as air).
         uint16_t GetBlock(int x, int y, int z, bool& loaded) const;
+        uint16_t GetLiquid(int x, int y, int z) const;
+        void SetLiquid(int x, int y, int z, uint16_t id);
         uint8_t GetBiome(int x, int y, int z) const;
         void SetBlock(int x, int y, int z, uint16_t id);
         void EnsureChunk(int cx, int cz);
         bool RemoveChunk(int cx, int cz);
-        void SetSubChunk(int cx, int cz, int absSubY, const uint16_t* cells);
+        void SetSubChunk(int cx, int cz, int absSubY, const uint16_t* cells, const uint16_t* liquidCells = nullptr);
         void SetBiomeSubChunk(int cx, int cz, int absSubY, const uint8_t* cells);
         void Clear();
 

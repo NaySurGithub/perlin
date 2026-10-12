@@ -357,6 +357,22 @@ namespace perlin {
     }
 
     physics::BlockShape LevelCollision::Query(int x, int y, int z) const {
+        BlockShape s = QueryMain(x, y, z);
+        if (s.fluid == 0 && y >= Chunk::MIN_Y && y < Chunk::MIN_Y + Chunk::HEIGHT) {
+            // Waterlogged blocks, seagrass, kelp: the water lives in the second block layer.
+            const uint16_t liquid = level.GetLiquid(x, y, z);
+            if (liquid != 0) {
+                const Info& li = Lookup(liquid);
+                if (li.shape.fluid != 0) {
+                    s.fluid = li.shape.fluid;
+                    s.fluidLevel = li.shape.fluidLevel;
+                }
+            }
+        }
+        return s;
+    }
+
+    physics::BlockShape LevelCollision::QueryMain(int x, int y, int z) const {
         if (y < Chunk::MIN_Y)
             return {};
         if (y >= Chunk::MIN_Y + Chunk::HEIGHT)

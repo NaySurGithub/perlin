@@ -511,10 +511,10 @@ namespace perlin {
         // A block action rides along with the next movement tick instead of costing a tick of its own.
         bool hasAction = input.hasBlockAction;
         BlockActionData action = input.blockAction;
-        if (!hasAction && pendingBlockAction.valid) {
+        if (!hasAction && !pendingBlockActions.empty()) {
             hasAction = true;
-            action = pendingBlockAction.data;
-            pendingBlockAction.valid = false;
+            action = pendingBlockActions.front();
+            pendingBlockActions.pop_front();
         }
         if (hasAction)
             add(InputFlag::PerformBlockActions);
@@ -558,13 +558,23 @@ namespace perlin {
         f.blockY = action.y;
         f.blockZ = action.z;
         f.blockFace = action.face;
-        f.analogX = mx;
-        f.analogZ = mz;
+        // Keyboard input has no analogue vector; the raw vector is the normalised unprocessed key vector.
+        f.analogX = 0;
+        f.analogZ = 0;
         f.camX = -std::sin(yaw) * cp;
         f.camY = -std::sin(pitch);
         f.camZ = std::cos(yaw) * cp;
-        f.rawX = mx;
-        f.rawZ = mz;
+        {
+            float rx = input.rawX, rz = input.rawZ;
+            const float rl = rx * rx + rz * rz;
+            if (rl > 1.0f) {
+                const float inv = 1.0f / std::sqrt(rl);
+                rx *= inv;
+                rz *= inv;
+            }
+            f.rawX = rx;
+            f.rawZ = rz;
+        }
         // Sent on the reliable channel: the server only simulates a player when an input arrives, and a
         // dropped input would be a lost tick of movement.
         if (movePacketsSent < 3 || movePacketsSent % 200 == 0)
@@ -576,15 +586,10 @@ namespace perlin {
     }
 
     bool BedrockSession::SendPlayerAuthInputBlockAction(uint32_t action, int bx, int by, int bz, int face) {
-        if (pendingBlockAction.valid) {
-            // Two actions in one tick: flush the older one on its own packet.
-            const BlockActionData older = pendingBlockAction.data;
-            pendingBlockAction.valid = false;
-            SendPlayerAuthInputWithFlags({}, pose.pitch, pose.yaw, older.action, older.x, older.y, older.z,
-                                         older.face);
-        }
-        pendingBlockAction.valid = true;
-        pendingBlockAction.data = {action, bx, by, bz, face};
+        // Every PlayerAuthInput is one simulated tick, so actions queue up and ride on successive real ticks
+        // instead of costing ticks of their own (an extra input would desync the server simulation).
+        if (pendingBlockActions.size() < 64)
+            pendingBlockActions.push_back({action, bx, by, bz, face});
         return true;
     }
 
@@ -904,7 +909,26 @@ namespace perlin {
         std::array<uint16_t, ChunkCodec::kCells> cells;
         for (int i = 0; i < ChunkCodec::kCells; i++)
             cells[(size_t)i] = local[idx[(size_t)i]];
-        netLevel.SetSubChunk(cx, cz, absSubY, cells.data());
+        // Layer 1 holds the water inside waterlogged blocks (and seagrass/kelp/coral).
+        std::array<uint16_t, ChunkCodec::kCells> liquid{};
+        const uint16_t* liquidPtr = nullptr;
+        if (sc.storages.size() > 1) {
+            const PaletteStorage& ls = sc.storages[1];
+            ChunkCodec::CellIndices lidx;
+            if (ChunkCodec::ExpandIndices(ls, lidx)) {
+                std::vector<uint16_t> llocal(ls.palette.size());
+                for (size_t i = 0; i < llocal.size(); i++)
+                    llocal[i] = BlockPalette::Instance().Intern(ls.palette[i]);
+                bool any = false;
+                for (int i = 0; i < ChunkCodec::kCells; i++) {
+                    liquid[(size_t)i] = llocal[lidx[(size_t)i]];
+                    any = any || liquid[(size_t)i] != 0;
+                }
+                if (any)
+                    liquidPtr = liquid.data();
+            }
+        }
+        netLevel.SetSubChunk(cx, cz, absSubY, cells.data(), liquidPtr);
         statSubChunksApplied++;
         {
             static int shown = 0;

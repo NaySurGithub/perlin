@@ -35,13 +35,18 @@ namespace perlin {
 
     FogState ComputeFog(const Environment& env, const FogInput& in) {
         FogState fog;
-        glm::vec3 color = BaseColor(env, in);
+        glm::vec3 color = in.underwater ? in.waterFogColor : BaseColor(env, in);
 
         const float darkness =
             std::clamp((in.voidDarknessOnsetRange + in.minY - in.cameraY) / in.voidDarknessOnsetRange, 0.0f, 1.0f);
         if (darkness > 0.0f) {
             const float brightness = (1.0f - darkness) * (1.0f - darkness);
             color *= brightness;
+        }
+        if (in.underwater && color.x != 0.0f && color.y != 0.0f && color.z != 0.0f) {
+            // Water vision brightens the fog colour towards its full-brightness version.
+            const float scale = 1.0f / std::max(color.x, std::max(color.y, color.z));
+            color = glm::mix(color, color * scale, in.waterVision);
         }
         fog.color = glm::vec4(color, 1.0f);
 
@@ -51,6 +56,13 @@ namespace perlin {
         fog.environmentalEnd = std::max(minRainFogEnd, env.fogEnd + -256.0f * in.rainFogMultiplier);
         fog.skyEnd = std::min(renderDistance, env.skyFogEnd);
         fog.cloudEnd = std::min(static_cast<float>(in.cloudRangeChunks * 16), env.cloudFogEnd);
+
+        if (in.underwater) {
+            fog.environmentalStart = -8.0f;
+            fog.environmentalEnd = 96.0f * in.waterFogEndScale * std::max(0.25f, in.waterVision);
+            fog.skyEnd = fog.environmentalEnd;
+            fog.cloudEnd = fog.environmentalEnd;
+        }
 
         const float span = std::clamp(renderDistance / 10.0f, 4.0f, 64.0f);
         fog.renderDistanceStart = renderDistance - span;

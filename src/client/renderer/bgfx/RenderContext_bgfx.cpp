@@ -239,6 +239,13 @@ namespace perlin {
             state = (state & ~BGFX_STATE_DEPTH_TEST_MASK) | BGFX_STATE_DEPTH_TEST_LEQUAL;
             state |= BGFX_STATE_WRITE_A;
             break;
+        case RenderLayer::CutoutCull:
+            state = (state & ~BGFX_STATE_DEPTH_TEST_MASK) | BGFX_STATE_DEPTH_TEST_LEQUAL;
+            state |= BGFX_STATE_WRITE_A | cullState;
+            break;
+        case RenderLayer::TranslucentCull:
+            state |= cullState;
+            [[fallthrough]];
         case RenderLayer::Translucent:
             state |=
                 BGFX_STATE_BLEND_FUNC_SEPARATE(BGFX_STATE_BLEND_SRC_ALPHA, BGFX_STATE_BLEND_INV_SRC_ALPHA,
@@ -825,8 +832,10 @@ namespace perlin {
         const bgfx::TextureHandle atlas = bgfx::isValid(atlasTex) ? atlasTex : whiteTex;
         DrawLayer(RenderLayer::Solid, ShaderProgram::TerrainSolid, frustum, visible, atlas);
         DrawLayer(RenderLayer::Cutout, ShaderProgram::TerrainCutout, frustum, visible, atlas);
+        DrawLayer(RenderLayer::CutoutCull, ShaderProgram::TerrainCutout, frustum, visible, atlas);
         std::reverse(visible.begin(), visible.end());
         DrawLayer(RenderLayer::Translucent, ShaderProgram::TerrainTranslucent, frustum, visible, atlas);
+        DrawLayer(RenderLayer::TranslucentCull, ShaderProgram::TerrainTranslucent, frustum, visible, atlas);
         DrawClouds();
     }
 

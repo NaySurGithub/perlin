@@ -30,6 +30,7 @@ namespace perlin {
         void TickAnimation(uint64_t step);
 
         const BlockLibrary& Blocks() const { return blocks; }
+        const BiomeTints& Tints() const { return biomeTints; }
         size_t MeshedChunks() const { return meshVersions.size(); }
         bool TexturesLoaded() const { return atlasUploaded; }
 

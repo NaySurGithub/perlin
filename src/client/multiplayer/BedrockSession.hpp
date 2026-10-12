@@ -3,6 +3,7 @@
 #include "network/PacketDispatcher.hpp"
 #include "protocol/Packets.hpp"
 
+#include <deque>
 #include <atomic>
 #include <chrono>
 #include <cstdint>
@@ -82,7 +83,8 @@ namespace perlin {
             std::vector<uint32_t> flags;
             float moveX = 0, moveZ = 0; // +X is left, +Z is forward
             float yaw = 0, pitch = 0;
-            float eyeHeight = 1.62f;
+            float eyeHeight = 1.62001f;
+            float rawX = 0, rawZ = 0; // unprocessed key vector (left-positive)
             float position[3] = {0, 0, 0};
             float delta[3] = {0, 0, 0};
             bool hasDelta = false;
@@ -226,10 +228,7 @@ namespace perlin {
         float lastAuthPos[3] = {0, 0, 0};
         bool haveLastAuthPos = false;
         bool pendingTeleportAck = false;
-        struct PendingBlockAction {
-            bool valid = false;
-            BlockActionData data;
-        } pendingBlockAction;
+        std::deque<BlockActionData> pendingBlockActions;
         ServerMotion serverMotion;
         float movementSpeed = 0.1f;
         bool initializedSent = false;

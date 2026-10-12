@@ -25,6 +25,7 @@ namespace perlin {
             physics::BlockShape shape;
         };
 
+        physics::BlockShape QueryMain(int x, int y, int z) const;
         const Info& Lookup(uint16_t id) const;
         Info Classify(uint16_t id) const;
 

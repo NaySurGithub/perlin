@@ -411,6 +411,8 @@ namespace perlin {
         std::vector<uint16_t> cells;
         std::vector<uint8_t> solid;
         std::vector<uint8_t> biome;
+        std::vector<uint16_t> liquid; // second layer: water inside waterlogged blocks (usually all zero)
+        bool anyLiquid = false;
         int yBase = 0, yRows = 0;
 
         size_t Idx(int x, int y, int z) const {
@@ -425,6 +427,8 @@ namespace perlin {
             yRows = yHi - yLo + 1;
             const size_t n = (size_t)18 * (size_t)yRows * 18;
             cells.assign(n, 0);
+            liquid.assign(n, 0);
+            anyLiquid = false;
             solid.assign(n, 0);
             biome.assign(n, 1);
             const Chunk* around[3][3];
@@ -442,6 +446,7 @@ namespace perlin {
                         continue;
                     const size_t base = Idx(x, yLo, z);
                     src->ReadColumn(x & 15, z & 15, yLo, yHi, &cells[base], &biome[base], kRowStride);
+                    src->ReadLiquid(x & 15, z & 15, yLo, yHi, &liquid[base], kRowStride);
                 }
         }
 
@@ -494,21 +499,31 @@ namespace perlin {
         uint16_t Get(int x, int y, int z) const {
             return InRange(x, y, z) ? cells[Idx(x, y, z)] : (uint16_t)0;
         }
+        uint16_t Liquid(int x, int y, int z) const { return InRange(x, y, z) ? liquid[Idx(x, y, z)] : (uint16_t)0; }
         uint8_t Occ(int x, int y, int z) const { return InRange(x, y, z) ? solid[Idx(x, y, z)] : (uint8_t)0; }
         uint8_t Biome(int x, int y, int z) const {
             return InRange(x, y, z) ? biome[Idx(x, y, z)] : (uint8_t)1;
         }
     };
 
+    // The liquid occupying a cell: a water block itself, or the water layer of a waterlogged block.
+    static uint16_t EffLiquid(const BlockCache& cache, BlockLibrary* library, int x, int y, int z) {
+        const uint16_t id = cache.Get(x, y, z);
+        if (id != 0 && IsLiquidId(library, id))
+            return id;
+        const uint16_t l = cache.Liquid(x, y, z);
+        return l != 0 && IsLiquidId(library, l) ? l : 0;
+    }
+
     static float WaterCornerHeight(const BlockCache& cache, BlockLibrary* library, int y, int cx, int cz) {
         float total = 0.0f;
         int weight = 0;
         for (int i = 0; i < 4; i++) {
             const int px = cx - 1 + (i & 1), pz = cz - 1 + (i >> 1);
-            if (IsLiquidId(library, cache.Get(px, y + 1, pz)))
+            if (EffLiquid(cache, library, px, y + 1, pz))
                 return 1.0f;
-            const uint16_t id = cache.Get(px, y, pz);
-            if (id != 0 && IsLiquidId(library, id)) {
+            const uint16_t id = EffLiquid(cache, library, px, y, pz);
+            if (id != 0) {
                 const int depth = GeomFor(id).liquidDepth;
                 const float height = static_cast<float>(8 - (depth >= 0 ? (depth & 7) : 0)) / 9.0f;
                 if (height >= 0.8f) {
@@ -605,7 +620,15 @@ namespace perlin {
             tess.EnterSection(y >> 4);
             for (int z = 0; z < 16; z++)
                 for (int x = 0; x < 16; x++) {
+                  for (int pass = 0; pass < 2; pass++) {
                     uint16_t id = cache.Get(x, y, z);
+                    if (pass == 0) {
+                        // Waterlogged blocks: the water layer is meshed as a water cell of its own.
+                        id = cache.Liquid(x, y, z);
+                        if (id == 0 || !library || !IsLiquidId(library, id) ||
+                            IsLiquidId(library, cache.Get(x, y, z)))
+                            continue;
+                    }
                     if (id == 0)
                         continue;
                     tess.SetLayer(RenderLayer::Cutout);
@@ -782,6 +805,10 @@ namespace perlin {
                         }
                         if (IsLavaTex(tex))
                             return {1, 1, 1, 1};
+                        if (TexHas(tex, "leaf_litter")) {
+                            const auto c = tints->DryFoliage(biomeName);
+                            return {c[0], c[1], c[2], 1};
+                        }
                         if (library && library->SaturationOf(tile) > 0.25f)
                             return {1, 1, 1, 1};
                         if (TexHas(tex, "leaves") || TexHas(tex, "leaf")) {
@@ -1003,8 +1030,8 @@ namespace perlin {
                                 uv[k][0] = u0 + (q.uv[i][0] / 16.0f) * (u1 - u0);
                                 uv[k][1] = v0uv + (q.uv[i][1] / 16.0f) * (v1uv - v0uv);
                             }
-                            tess.SetLayer(ta.translucent ? RenderLayer::Translucent
-                                          : ta.holes     ? RenderLayer::Cutout
+                            tess.SetLayer(ta.translucent ? RenderLayer::TranslucentCull
+                                          : ta.holes     ? RenderLayer::CutoutCull
                                                          : RenderLayer::Solid);
                             tess.AddQuad(v, col, uv, false, lt);
                         };
@@ -1282,7 +1309,9 @@ namespace perlin {
                         if (neighborId != 0 && cache.Occ(x + nx, y + ny, z + nz))
                             return;
                         if (neighborId != 0 && translucent &&
-                            (neighborId == id || (isWater && IsLiquidId(library, neighborId))))
+                            (neighborId == id || (isWater && EffLiquid(cache, library, x + nx, y + ny, z + nz))))
+                            return;
+                        if (isWater && neighborId != 0 && EffLiquid(cache, library, x + nx, y + ny, z + nz))
                             return;
                         float u0, v0uv, u1, v1uv;
                         BlockLibrary::TileUV(tile, u0, v0uv, u1, v1uv);
@@ -1549,6 +1578,7 @@ namespace perlin {
                         face(0, 0, -1, tSide, trS, tgS, tbS, fS, known, kShadeZ, cNz, nz);
                         ovTile = 0;
                     }
+                  } // pass
                 }
         }
     }

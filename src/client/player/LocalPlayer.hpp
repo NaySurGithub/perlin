@@ -51,6 +51,7 @@ namespace perlin {
         bool sneaking = false;
         bool jumpHeld = false;
         bool sprintHeld = false;
+        bool sneakHeld = false;
         bool sendStartFlying = false;
         bool sendStopFlying = false;
         float eyeOffset = static_cast<float>(physics::kStandEye);

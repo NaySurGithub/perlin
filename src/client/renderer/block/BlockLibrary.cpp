@@ -94,7 +94,8 @@ namespace perlin {
             }
         }
         const unsigned char* data = tex.pixels.data();
-        bool framed = (w % kTilePx == 0) && (h % kTilePx == 0);
+        // Vertical strips are flipbook animations; larger square textures (32x32 shelves...) are resampled to a tile.
+        bool framed = (w % kTilePx == 0) && (h % kTilePx == 0) && (w == kTilePx || h > w);
         tile = nextTile++;
         tileByPng[pngRelPath] = tile;
         TileAlpha alpha;
@@ -108,26 +109,36 @@ namespace perlin {
             ((size_t)(tile / kAtlasTiles) * kTilePx) * atlasW + (size_t)(tile % kAtlasTiles) * kTilePx;
         for (int y = 0; y < kTilePx; y++) {
             for (int x = 0; x < kTilePx; x++) {
-                int sx, sy;
-                if (framed) {
-                    sx = x;
-                    sy = y;
-                } else if (w == kTilePx && h > kTilePx) {
-                    sx = x;
-                    sy = y;
+                unsigned char avg[4];
+                const unsigned char* src = avg;
+                if (framed || w < kTilePx || h < kTilePx) {
+                    int sx = framed ? x : std::min(w - 1, x * w / kTilePx);
+                    int sy = framed ? y : std::min(h - 1, y * h / kTilePx);
+                    src = data + ((size_t)sy * w + sx) * 4;
                 } else {
-                    sx = (x * w / kTilePx);
-                    sy = (y * h / kTilePx);
+                    // Box filter (alpha weighted) from the larger texture down to one atlas tile.
+                    const int x0 = x * w / kTilePx, x1 = std::max(x0 + 1, (x + 1) * w / kTilePx);
+                    const int y0 = y * h / kTilePx, y1 = std::max(y0 + 1, (y + 1) * h / kTilePx);
+                    double r = 0, g = 0, b = 0, a = 0;
+                    int n = 0;
+                    for (int yy = y0; yy < y1 && yy < h; yy++)
+                        for (int xx = x0; xx < x1 && xx < w; xx++) {
+                            const unsigned char* p = data + ((size_t)yy * w + xx) * 4;
+                            r += p[0] * p[3];
+                            g += p[1] * p[3];
+                            b += p[2] * p[3];
+                            a += p[3];
+                            n++;
+                        }
+                    if (a > 0) {
+                        avg[0] = (unsigned char)(r / a + 0.5);
+                        avg[1] = (unsigned char)(g / a + 0.5);
+                        avg[2] = (unsigned char)(b / a + 0.5);
+                    } else {
+                        avg[0] = avg[1] = avg[2] = 0;
+                    }
+                    avg[3] = n ? (unsigned char)(a / n + 0.5) : 0;
                 }
-                if (sx < 0)
-                    sx = 0;
-                if (sx >= w)
-                    sx = w - 1;
-                if (sy < 0)
-                    sy = 0;
-                if (sy >= h)
-                    sy = h - 1;
-                const unsigned char* src = data + ((size_t)sy * w + sx) * 4;
                 uint8_t* d = atlas.data() + (base + (size_t)y * atlasW + x) * 4;
                 d[0] = src[0];
                 d[1] = src[1];

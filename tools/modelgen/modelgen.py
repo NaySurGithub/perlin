@@ -139,19 +139,8 @@ class Gen:
                 continue
             out.append((DIR_INDEX[q["dir"]], DIR_INDEX[q["shade_dir"]], DIR_INDEX[q["cull"]] if q["cull"] else -1,
                         q["tint"], 1 if q["shade"] else 0, min(15, int(q.get("light", 0))), t, q["pos"], q["uv"]))
-        # Zero-thickness elements (leaf litter, carpets of petals...) bake an up and a down face on the same
-        # plane; with no back-face culling in the cutout pass they z-fight. Keep one (the up/south/east one).
-        seen = {}
-        for i, q in enumerate(out):
-            seen.setdefault(frozenset(tuple(round(c, 4) for c in p) for p in q[7]), []).append(i)
-        drop = set()
-        for idxs in seen.values():
-            if len(idxs) > 1:
-                for i in idxs:
-                    if out[i][0] in (0, 2, 4) and any(out[j][0] == out[i][0] ^ 1 for j in idxs):
-                        drop.add(i)
-        if drop:
-            out = [q for i, q in enumerate(out) if i not in drop]
+        # Faces are back-face culled at draw time (CutoutCull/TranslucentCull), so coplanar up/down twins
+        # of zero-thickness elements (leaf litter) never z-fight and both sides stay visible like Java.
         vid = len(self.variants)
         self.variants.append(out)
         self.variant_ids[key] = vid

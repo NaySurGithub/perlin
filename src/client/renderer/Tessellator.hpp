@@ -4,8 +4,9 @@
 #include <vector>
 
 namespace perlin {
-    enum class RenderLayer : uint8_t { Solid, Cutout, Translucent };
-    constexpr int kRenderLayerCount = 3;
+    // *Cull layers are drawn with back-face culling (Java baked models); the plain layers are double sided.
+    enum class RenderLayer : uint8_t { Solid, Cutout, Translucent, CutoutCull, TranslucentCull };
+    constexpr int kRenderLayerCount = 5;
 
     struct Vertex {
         float x, y, z;
