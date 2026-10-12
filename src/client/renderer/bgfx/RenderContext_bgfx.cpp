@@ -1245,6 +1245,12 @@ namespace perlin {
             bgfx::setVertexBuffer(0, pg.vb);
             bgfx::setIndexBuffer(pg.ib[slot], r.start, r.count);
             if (!primed) {
+                // Every uniform is set here, right before the submit that consumes it: bgfx debug builds assert when
+                // a uniform is set twice with no submit in between (a layer with nothing visible used to leave
+                // u_mvp pending, and the cloud pass then set it again).
+                const float off[4] = {0, 0, 0, 0};
+                shaders.SetShadow(shadow.sample, shadow.active ? shadow.info : off, shadow.active);
+                shaders.SetMatrix(mvp);
                 bgfx::setState(state);
                 shaders.Apply(atlas, lightmapTex, samplerFlags, lightmapFlags);
                 if (shadow.active)
@@ -1268,8 +1274,7 @@ namespace perlin {
     }
 
     void RenderContext_bgfx::DrawChunkMeshes(const Frustum& frustum, float camX, float camZ) {
-        DrawSky();
-        shaders.ApplyFrame();
+        DrawSky(); // applies the per-frame uniforms
         // u_mvp is set exactly once per draw: bgfx debug builds assert on a second setUniform before a submit.
         if (std::getenv("PERLIN_STATS")) {
             static uint32_t frames = 0;
@@ -1319,9 +1324,6 @@ namespace perlin {
             const uint16_t order[2] = {1, 0};
             if (shadow.enabled)
                 bgfx::setViewOrder(0, 2, order);
-            const float off[4] = {0, 0, 0, 0};
-            shaders.SetShadow(shadow.sample, shadow.active ? shadow.info : off, shadow.active);
-            shaders.SetMatrix(mvp);
         }
         DrawLayer(RenderLayer::Solid, ShaderProgram::TerrainSolid, frustum, visible, atlas);
         DrawLayer(RenderLayer::Cutout, ShaderProgram::TerrainCutout, frustum, visible, atlas);

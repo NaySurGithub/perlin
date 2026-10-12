@@ -251,7 +251,7 @@ namespace perlin {
             BedrockSession* live = sessionReady ? session.get() : nullptr;
             if (live) {
                 live->Update();
-                live->PumpRequests(64);
+                live->PumpRequests(256);
                 player.Update(*live, inputManager, camera, levelRenderer->Blocks(), dt);
             }
             levelRenderer->ReloadAssetsIfNeeded();

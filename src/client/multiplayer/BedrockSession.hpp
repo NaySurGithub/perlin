@@ -3,6 +3,7 @@
 #include "network/PacketDispatcher.hpp"
 #include "protocol/Packets.hpp"
 
+#include <condition_variable>
 #include <deque>
 #include <optional>
 #include <atomic>
@@ -217,6 +218,18 @@ namespace perlin {
         bool ApplySubChunk(int cx, int cz, int absSubY, const SubChunkData& sc);
         void ApplyBiomeColumn(int cx, int cz, const std::vector<uint8_t>& payload);
 
+        // Chunk packets (LevelChunk / SubChunk) are inflated-batch payloads that are expensive to decode; they go to
+        // one worker, in order, so a burst of chunk data never stalls a frame.
+        void ChunkWorkerMain();
+        void StartChunkWorker();
+        void StopChunkWorker();
+        std::thread chunkThread;
+        std::mutex chunkMutex;
+        std::condition_variable chunkCv;
+        std::deque<std::pair<uint32_t, std::vector<uint8_t>>> chunkIn;
+        bool chunkStop = false;
+        bool chunkBusy = false;
+
         std::unique_ptr<NetherNet> net;
         std::unique_ptr<ClientIdentity> identity;
         std::atomic<State> state{State::Disconnected};
@@ -264,7 +277,7 @@ namespace perlin {
         bool initializedSent = false;
         bool startGameSeen = false;
         std::chrono::steady_clock::time_point startGameAt{};
-        int viewCenterChunk[2] = {0, 0};
+        std::atomic<int> viewCenterChunk[2] = {0, 0};
         int viewRadiusChunks = 0;
         uint64_t movePacketsSent = 0;
         uint64_t correctionsReceived = 0;

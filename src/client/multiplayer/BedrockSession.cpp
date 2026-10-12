@@ -40,9 +40,44 @@ namespace perlin {
 
     BedrockSession::BedrockSession() {
         RegisterPacketHandlers();
+        StartChunkWorker();
     }
     BedrockSession::~BedrockSession() {
         Disconnect();
+        StopChunkWorker();
+    }
+
+    void BedrockSession::StartChunkWorker() {
+        chunkStop = false;
+        chunkThread = std::thread([this] { ChunkWorkerMain(); });
+    }
+
+    void BedrockSession::StopChunkWorker() {
+        {
+            std::lock_guard<std::mutex> lk(chunkMutex);
+            chunkStop = true;
+        }
+        chunkCv.notify_all();
+        if (chunkThread.joinable())
+            chunkThread.join();
+    }
+
+    void BedrockSession::ChunkWorkerMain() {
+        std::deque<std::pair<uint32_t, std::vector<uint8_t>>> batch;
+        for (;;) {
+            {
+                std::unique_lock<std::mutex> lk(chunkMutex);
+                chunkBusy = false;
+                chunkCv.wait(lk, [&] { return chunkStop || !chunkIn.empty(); });
+                if (chunkStop)
+                    return;
+                batch.swap(chunkIn);
+                chunkBusy = true;
+            }
+            for (auto& [id, body] : batch)
+                dispatcher.Dispatch(id, body.data(), body.size());
+            batch.clear();
+        }
     }
 
     namespace {
@@ -406,6 +441,14 @@ namespace perlin {
                           << " bytes)" << std::endl;
         }
 
+        if (id == LevelChunkPacket::kId || id == SubChunkPacket::kId) {
+            {
+                std::lock_guard<std::mutex> lk(chunkMutex);
+                chunkIn.emplace_back(id, body);
+            }
+            chunkCv.notify_one();
+            return;
+        }
         dispatcher.Dispatch(id, body.data(), body.size());
     }
 
@@ -473,6 +516,11 @@ namespace perlin {
     }
 
     void BedrockSession::ResetWorldForDimension() {
+        {
+            // Chunk data still queued belongs to the world we are leaving.
+            std::lock_guard<std::mutex> lk(chunkMutex);
+            chunkIn.clear();
+        }
         netLevel.Clear();
         std::lock_guard<std::mutex> lk(reqMutex);
         seenColumns.clear();
@@ -1233,7 +1281,7 @@ namespace perlin {
             {
                 std::lock_guard<std::mutex> lk(reqMutex);
                 // Near columns first; far samples only while few are waiting to be sampled and few are in flight.
-                const bool farOk = netLevel.lodOnlyCount.load() < 1500 && inflight.size() < 1500;
+                const bool farOk = netLevel.lodOnlyCount.load() < 1500 && inflight.size() < 3000;
                 std::queue<std::tuple<int, int, int, int>>& queue =
                     !reqQueue.empty() ? reqQueue : reqQueueFar;
                 if (queue.empty() || (&queue == &reqQueueFar && !farOk))

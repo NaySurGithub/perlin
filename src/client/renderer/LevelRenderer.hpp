@@ -68,6 +68,8 @@ namespace perlin {
         void Schedule(Level& level, float camX, float camZ, const Frustum& frustum);
         void InvalidateMeshes();
         std::chrono::steady_clock::time_point firstWaitAt{};
+    size_t captured = 0;
+    double captureMs = 0;
     void ProcessLod(Level& level, float camX, float camZ);
         void MarkLodTile(const ChunkPos& chunk);
         void ResetLod();

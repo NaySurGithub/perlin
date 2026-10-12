@@ -431,11 +431,20 @@ namespace perlin {
         while (taken < capQueue.size() && elapsed() < captureBudget) {
             const ChunkPos pos = capQueue[taken++];
             capSet.erase(pos);
+            captured++;
             if (lod.Capture(level, pos, blocks, biomeTints))
                 MarkLodTile(pos);
             level.RemoveLodOnly(pos.x, pos.z); // sampled: the full column is not needed any more
         }
         capQueue.erase(capQueue.begin(), capQueue.begin() + static_cast<std::ptrdiff_t>(taken));
+        if (taken && std::getenv("PERLIN_STATS")) {
+            captureMs += elapsed();
+            if (captured >= 100) {
+                std::printf("[lod] %zu captures, %.3f ms each\n", captured, captureMs / static_cast<double>(captured));
+                captured = 0;
+                captureMs = 0;
+            }
+        }
 
         // 2. Re-plan which tiles exist when the camera moved.
         const int radius = std::max(2, options.renderDistance);
