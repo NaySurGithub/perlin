@@ -22,23 +22,23 @@ namespace perlin::physics {
         double HorizontalSq(const Vec3& v) { return v.x * v.x + v.z * v.z; }
         double F(double v) { return static_cast<double>(static_cast<float>(v)); }
 
+        // Every cell that can own a shape touching `region` (shapes reach one cell up from below: fences, walls),
+        // filtered with the reference's strict f32 intersection so touching boxes are not colliders.
         void Gather(const World& world, const Box& region, std::vector<Box>& out) {
             out.clear();
-            // Only shapes taller than their cell (fences, walls) reach upwards from the cell below.
-            const int x0 = static_cast<int>(std::floor(region.x0 - kEps));
-            const int y0 = static_cast<int>(std::floor(region.y0 - kEps)) - 1;
-            const int z0 = static_cast<int>(std::floor(region.z0 - kEps));
-            const int x1 = static_cast<int>(std::floor(region.x1 + kEps));
-            const int y1 = static_cast<int>(std::floor(region.y1 + kEps));
-            const int z1 = static_cast<int>(std::floor(region.z1 + kEps));
-            const Box test = region.Inflate(kEps);
-            for (int y = y0; y <= y1; y++)
-                for (int x = x0; x <= x1; x++)
-                    for (int z = z0; z <= z1; z++) {
+            const int x0 = static_cast<int>(std::floor(region.x0)) - 1;
+            const int y0 = static_cast<int>(std::floor(region.y0)) - 1;
+            const int z0 = static_cast<int>(std::floor(region.z0)) - 1;
+            const int x1 = static_cast<int>(std::floor(region.x1)) + 1;
+            const int y1 = static_cast<int>(std::floor(region.y1)) + 1;
+            const int z1 = static_cast<int>(std::floor(region.z1)) + 1;
+            for (int x = x0; x <= x1; x++)
+                for (int z = z0; z <= z1; z++)
+                    for (int y = y0; y <= y1; y++) {
                         const BlockShape shape = world.Query(x, y, z);
                         for (int i = 0; i < shape.count; i++) {
                             const Box b = shape.boxes[i].Offset(x, y, z);
-                            if (b.Intersects(test))
+                            if (b.Intersects(region))
                                 out.push_back(b);
                         }
                     }
@@ -52,10 +52,84 @@ namespace perlin::physics {
             return true;
         }
 
-        double ClipAxis(const std::vector<Box>& colliders, const Box& cur, int axis, double v) {
-            for (const Box& b : colliders)
-                v = axis == 0 ? b.ClipX(cur, v) : (axis == 1 ? b.ClipY(cur, v) : b.ClipZ(cur, v));
-            return v;
+        bool ZeroVolume(const Box& b) { return b.x0 == b.x1 && b.y0 == b.y1 && b.z0 == b.z1; }
+
+        double Lo(const Box& b, int a) { return a == 0 ? b.x0 : (a == 1 ? b.y0 : b.z0); }
+        double Hi(const Box& b, int a) { return a == 0 ? b.x1 : (a == 1 ? b.y1 : b.z1); }
+
+        // bedsim / Oomph swept-AABB clip of a moving box against one stationary box (cinnabar `Aabb::clip_against`),
+        // evaluated in f32 with the 1e-7 contact snap so resting contact never counts as penetration.
+        Vec3 ClipAgainst(const Box& self, const Box& stationary, Vec3 velocity) {
+            if (ZeroVolume(stationary))
+                return velocity;
+            float axisPen[3] = {0, 0, 0}, signedPen[3] = {0, 0, 0}, normal[3] = {0, 0, 0};
+            int separating = 0, separatingAxis = 0;
+            for (int axis = 0; axis < 3; axis++) {
+                float minPen = static_cast<float>(Hi(self, axis)) - static_cast<float>(Lo(stationary, axis));
+                float maxPen = static_cast<float>(Hi(stationary, axis)) - static_cast<float>(Lo(self, axis));
+                if (std::fabs(minPen) <= 1.0e-7f)
+                    minPen = 0.0f;
+                if (std::fabs(maxPen) <= 1.0e-7f)
+                    maxPen = 0.0f;
+                const float minPos = std::max(minPen, 0.0f), maxPos = std::max(maxPen, 0.0f);
+                if (minPos == 0.0f) {
+                    axisPen[axis] = 0.0f;
+                    signedPen[axis] = minPen;
+                    normal[axis] = -1.0f;
+                    separating++;
+                    separatingAxis = axis;
+                } else if (maxPos == 0.0f) {
+                    axisPen[axis] = 0.0f;
+                    signedPen[axis] = maxPen;
+                    normal[axis] = 1.0f;
+                    separating++;
+                    separatingAxis = axis;
+                } else if (minPos < maxPos) {
+                    axisPen[axis] = minPos;
+                    signedPen[axis] = minPos;
+                    normal[axis] = -1.0f;
+                } else {
+                    axisPen[axis] = maxPos;
+                    signedPen[axis] = maxPos;
+                    normal[axis] = 1.0f;
+                }
+                if (separating > 1)
+                    return velocity;
+            }
+            if (separating == 0) {
+                int best = 0;
+                for (int axis = 1; axis < 3; axis++)
+                    if (axisPen[axis] < axisPen[best])
+                        best = axis;
+                const float desired = axisPen[best] * normal[best];
+                Vec3 out = velocity;
+                const float v = static_cast<float>(velocity[best]);
+                out[best] = static_cast<double>(desired > 0.0f ? std::max(desired, v) : std::min(desired, v));
+                return out;
+            }
+            const float swept = signedPen[separatingAxis] - normal[separatingAxis] * static_cast<float>(velocity[separatingAxis]);
+            if (swept <= 0.0f)
+                return velocity;
+            Vec3 out = velocity;
+            out[separatingAxis] = static_cast<double>(signedPen[separatingAxis] * normal[separatingAxis]);
+            return out;
+        }
+
+        Vec3 Add(Vec3 a, Vec3 b) { return {a.x + b.x, a.y + b.y, a.z + b.z}; }
+        Box TranslateBy(const Box& b, Vec3 d) { return b.Offset(d.x, d.y, d.z); }
+
+        // Single-axis request, clipped against every collider in reference order (reverse for the plain move).
+        double ClipAxis(const std::vector<Box>& colliders, const Box& cur, int axis, double v, bool reverse = false) {
+            Vec3 vel;
+            vel[axis] = v;
+            if (reverse) {
+                for (auto it = colliders.rbegin(); it != colliders.rend(); ++it)
+                    vel = ClipAgainst(cur, *it, vel);
+            } else {
+                for (const Box& b : colliders)
+                    vel = ClipAgainst(cur, b, vel);
+            }
+            return vel[axis];
         }
 
         Box Translate(const Box& b, int axis, double d) {
@@ -71,7 +145,7 @@ namespace perlin::physics {
             Box cur = start;
             moved = {};
             for (const int axis : {1, 0, 2}) {
-                double m = ClipAxis(colliders, cur, axis, v[axis]);
+                double m = ClipAxis(colliders, cur, axis, v[axis], true);
                 if (axis != 1)
                     m = ClampTowardZero(m, v[axis]);
                 cur = Translate(cur, axis, m);
@@ -82,18 +156,25 @@ namespace perlin::physics {
 
         void ResolveStep(const Box& start, const Vec3& v, const std::vector<Box>& colliders, Box& outBox, Vec3& moved) {
             Box cur = start;
-            const double up = ClipAxis(colliders, cur, 1, kStepHeight);
-            cur = cur.Offset(0, up, 0);
+            Vec3 up{0, kStepHeight, 0};
+            for (const Box& b : colliders)
+                up = ClipAgainst(cur, b, up);
+            cur = TranslateBy(cur, up);
             Vec3 horizontal;
             for (const int axis : {0, 2}) {
-                const double m = ClipAxis(colliders, cur, axis, v[axis]);
-                cur = Translate(cur, axis, m);
-                horizontal[axis] = m;
+                Vec3 vel;
+                vel[axis] = v[axis];
+                for (const Box& b : colliders)
+                    vel = ClipAgainst(cur, b, vel);
+                cur = TranslateBy(cur, vel);
+                horizontal = Add(horizontal, vel);
             }
-            const double down = ClipAxis(colliders, cur, 1, -up);
-            cur = cur.Offset(0, down, 0);
+            Vec3 down{-up.x, -up.y, -up.z};
+            for (const Box& b : colliders)
+                down = ClipAgainst(cur, b, down);
+            cur = TranslateBy(cur, down);
             outBox = cur;
-            moved = {horizontal.x, up + down, horizontal.z};
+            moved = Add(Add(horizontal, up), down);
         }
 
         struct Motion {
@@ -246,44 +327,20 @@ namespace perlin::physics {
         return b;
     }
 
+    // Strict f32 comparison, as the reference's `Aabb::intersects`.
     bool Box::Intersects(const Box& o) const {
-        return x0 < o.x1 - kEps && x1 > o.x0 + kEps && y0 < o.y1 - kEps && y1 > o.y0 + kEps && z0 < o.z1 - kEps &&
-               z1 > o.z0 + kEps;
-    }
-
-    double Box::ClipX(const Box& m, double dx) const {
-        if (m.y1 <= y0 + kEps || m.y0 >= y1 - kEps || m.z1 <= z0 + kEps || m.z0 >= z1 - kEps)
-            return dx;
-        if (dx > 0 && m.x1 <= x0 + kEps)
-            return std::min(dx, x0 - m.x1);
-        if (dx < 0 && m.x0 >= x1 - kEps)
-            return std::max(dx, x1 - m.x0);
-        return dx;
-    }
-
-    double Box::ClipY(const Box& m, double dy) const {
-        if (m.x1 <= x0 + kEps || m.x0 >= x1 - kEps || m.z1 <= z0 + kEps || m.z0 >= z1 - kEps)
-            return dy;
-        if (dy > 0 && m.y1 <= y0 + kEps)
-            return std::min(dy, y0 - m.y1);
-        if (dy < 0 && m.y0 >= y1 - kEps)
-            return std::max(dy, y1 - m.y0);
-        return dy;
-    }
-
-    double Box::ClipZ(const Box& m, double dz) const {
-        if (m.x1 <= x0 + kEps || m.x0 >= x1 - kEps || m.y1 <= y0 + kEps || m.y0 >= y1 - kEps)
-            return dz;
-        if (dz > 0 && m.z1 <= z0 + kEps)
-            return std::min(dz, z0 - m.z1);
-        if (dz < 0 && m.z0 >= z1 - kEps)
-            return std::max(dz, z1 - m.z0);
-        return dz;
+        return static_cast<float>(x1) > static_cast<float>(o.x0) && static_cast<float>(x0) < static_cast<float>(o.x1) &&
+               static_cast<float>(y1) > static_cast<float>(o.y0) && static_cast<float>(y0) < static_cast<float>(o.y1) &&
+               static_cast<float>(z1) > static_cast<float>(o.z0) && static_cast<float>(z0) < static_cast<float>(o.z1);
     }
 
     Box BoundingBox(const State& s, bool sneaking) {
-        const double h = sneaking ? kSneakHeight : kStandHeight;
-        return {s.x - kWidth / 2, s.y, s.z - kWidth / 2, s.x + kWidth / 2, s.y + h, s.z + kWidth / 2};
+        // Vanilla builds the box in f32 from the f32 position.
+        const float half = static_cast<float>(kWidth) * 0.5f;
+        const float x = static_cast<float>(s.x), y = static_cast<float>(s.y), z = static_cast<float>(s.z);
+        const float h = static_cast<float>(sneaking ? kSneakHeight : kStandHeight);
+        return {static_cast<double>(x - half), static_cast<double>(y), static_cast<double>(z - half),
+                static_cast<double>(x + half), static_cast<double>(y + h), static_cast<double>(z + half)};
     }
 
     void Step(State& s, const Input& in, const Attributes& attr, const World& world) {

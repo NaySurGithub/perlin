@@ -2,6 +2,7 @@
 #include <algorithm>
 #include "world/level/block/BlockPalette.hpp"
 #include "client/resources/TextureLoader.hpp"
+#include "client/resources/TexturePack.hpp"
 
 #include <cstdio>
 #include <cstring>
@@ -48,18 +49,18 @@ namespace perlin {
         return t;
     }
 
-    void BlockLibrary::SetTexturePack(const std::string& root) {
-        packRoot = root;
+    void BlockLibrary::SetTexturePack(bool active) {
         // The tile size is the widest of a few reference block textures in the pack, rounded up to a power of
         // two (like Java, where the atlas follows the largest sprite). Vanilla stays 16.
         int widest = 16;
-        if (!root.empty()) {
+        if (active) {
             static const char* const kProbe[] = {"stone", "dirt", "cobblestone", "planks_oak", "sand", "grass_side",
                                                  "log_oak", "bedrock", "gravel", "iron_block"};
+            TexturePack& pack = TexturePack::Instance();
             for (const char* name : kProbe) {
                 Texture t;
                 for (const char* ext : {".png", ".tga"})
-                    if (LoadTexture(root + "/textures/blocks/" + name + ext, t) && t.width > 0) {
+                    if (pack.Load(std::string("textures/blocks/") + name + ext, t)) {
                         widest = std::max(widest, t.width);
                         break;
                     }
@@ -69,8 +70,8 @@ namespace perlin {
         while (size < widest && size < 512)
             size <<= 1;
         tilePxValue = size;
-        std::cout << "[textures] pack=" << (root.empty() ? "<vanilla>" : root) << " tile=" << size << "px"
-                  << std::endl;
+        std::cout << "[textures] pack=" << (active ? TexturePack::Instance().Description() : "<vanilla>")
+                  << " tile=" << size << "px" << std::endl;
     }
 
     namespace {
@@ -143,12 +144,18 @@ namespace perlin {
         int tile = 0;
         bool ok = false;
         // A texture pack wins over the vanilla resources, file by file.
-        const std::string* const roots[2] = {&packRoot, &vanillaRpRoot};
-        for (const std::string* root : roots) {
-            if (root->empty())
-                continue;
+        TexturePack& pack = TexturePack::Instance();
+        if (pack.Active())
+            for (auto& t : tries)
+                if (pack.Load(t, tex)) {
+                    w = tex.width;
+                    h = tex.height;
+                    ok = true;
+                    break;
+                }
+        if (!ok)
             for (auto& t : tries) {
-                full = *root + "/" + t;
+                full = vanillaRpRoot + "/" + t;
                 if (LoadTexture(full, tex) && tex.width > 0 && tex.height > 0) {
                     w = tex.width;
                     h = tex.height;
@@ -156,9 +163,6 @@ namespace perlin {
                     break;
                 }
             }
-            if (ok)
-                break;
-        }
         if (!ok) {
             fetchFails++;
             return 0;

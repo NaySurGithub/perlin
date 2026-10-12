@@ -82,6 +82,7 @@ class Gen:
         self.include_cache = {}
         self.vox_cache = {}
         self.register_special_models()
+        self.register_sign_models()
 
     # ---- block-entity shapes Java draws with entity renderers (no block model) ---------------------------
     CHEST_SETS = {
@@ -120,11 +121,129 @@ class Gen:
                 "north": face("side"), "south": face("side"), "east": face("side"), "west": face("side"),
                 "up": face("top"), "down": face("bottom")}}]}
 
+    PLANKS = {"oak": "planks_oak", "spruce": "planks_spruce", "birch": "planks_birch", "jungle": "planks_jungle",
+              "acacia": "planks_acacia", "darkoak": "planks_big_oak", "dark_oak": "planks_big_oak",
+              "mangrove": "mangrove_planks", "cherry": "cherry_planks", "bamboo": "bamboo_planks",
+              "crimson": "crimson_planks", "warped": "warped_planks", "pale_oak": "pale_oak_planks",
+              "poplar": "poplar_planks"}
+
+    def register_sign_models(self):
+        def f(tex, uv=(0, 0, 16, 16), rot=0):
+            d = {"texture": "#" + tex, "uv": list(uv)}
+            if rot:
+                d["rotation"] = rot
+            return d
+
+        def box(frm, to, tex="w", rot=None):
+            faces = {k: f(tex) for k in ("north", "south", "east", "west", "up", "down")}
+            el = {"from": frm, "to": to, "faces": faces}
+            if rot:
+                el["rotation"] = {"origin": [8, 8, 8], "axis": "y", "angle": rot}
+            return el
+
+        for wood, plank in self.PLANKS.items():
+            self.alias["special/sign_" + wood] = "textures/blocks/" + plank
+            tex = {"w": "special/sign_" + wood}
+            for r in (-2, -1, 0, 1, 2):
+                a = r * 22.5
+                # standing sign: post + board, the board's front faces +Z (south) before the block rotation
+                self.models.raw["special/standing_sign_%s_%d" % (wood, r)] = {"textures": tex, "elements": [
+                    box([7.33, 0, 7.33], [8.67, 9, 8.67], "w", a if a else None),
+                    box([0, 9, 7.33], [16, 17, 8.67], "w", a if a else None)]}
+                # hanging sign hung from a ceiling (two chains)
+                self.models.raw["special/hanging_sign_%s_%d" % (wood, r)] = {"textures": tex, "elements": [
+                    box([2, 12, 7.5], [3, 16, 8.5], "w", a if a else None),
+                    box([13, 12, 7.5], [14, 16, 8.5], "w", a if a else None),
+                    box([1, 2, 7], [15, 12, 9], "w", a if a else None)]}
+            self.models.raw["special/wall_sign_" + wood] = {"textures": tex, "elements": [
+                box([0, 4.5, 0], [16, 12.5, 1.5], "w")]}
+            # wall-mounted hanging sign: horizontal arm along the wall plane and the board below it
+            self.models.raw["special/arm_sign_" + wood] = {"textures": tex, "elements": [
+                box([0, 14, 6.5], [16, 16, 9.5], "w"),
+                box([1, 2, 7], [15, 12, 9], "w")]}
+        self.alias["special/banner_cloth"] = "textures/blocks/wool_colored_white"
+        self.alias["special/banner_pole"] = "textures/blocks/planks_oak"
+        self.models.raw["special/standing_banner"] = {"textures": {"c": "special/banner_cloth", "p": "special/banner_pole"}, "elements": [
+            box([7.5, 0, 7.5], [8.5, 16, 8.5], "p"), box([1, 0, 7.5], [15, 16, 8.5], "c")]}
+        self.models.raw["special/wall_banner"] = {"textures": {"c": "special/banner_cloth", "p": "special/banner_pole"}, "elements": [
+            box([0, 14, 0], [16, 16, 2], "p"), box([1, 0, 0.5], [15, 14, 1.5], "c")]}
+        # beds: head piece has its pillow end at +Z (direction south), foot piece its foot end at -Z
+        for t, f_ in (("head_top", "bed_head_top"), ("head_side", "bed_head_side"), ("head_end", "bed_head_end"),
+                      ("feet_top", "bed_feet_top"), ("feet_side", "bed_feet_side"), ("feet_end", "bed_feet_end")):
+            self.alias["special/bed_" + t] = "textures/blocks/" + f_
+        self.alias["special/bed_leg"] = "textures/blocks/planks_oak"
+        bt = {k: "special/bed_" + k for k in ("head_top", "head_side", "head_end", "feet_top", "feet_side", "feet_end")}
+        bt["leg"] = "special/bed_leg"
+
+        def leg(x, z):
+            return box([x, 0, z], [x + 3, 3, z + 3], "leg")
+        self.models.raw["special/bed_head"] = {"textures": bt, "elements": [
+            {"from": [0, 3, 0], "to": [16, 9, 16], "faces": {
+                "up": f("head_top", rot=90), "south": f("head_end"), "west": f("head_side"),
+                "east": f("head_side", uv=(16, 0, 0, 16)), "down": f("head_top")}},
+            leg(0, 13), leg(13, 13)]}
+        self.models.raw["special/bed_foot"] = {"textures": bt, "elements": [
+            {"from": [0, 3, 0], "to": [16, 9, 16], "faces": {
+                "up": f("feet_top", rot=90), "north": f("feet_end"), "west": f("feet_side"),
+                "east": f("feet_side", uv=(16, 0, 0, 16)), "down": f("feet_top")}},
+            leg(0, 0), leg(13, 0)]}
+
+    def entry_of_variants(self, vids):
+        key = (0, tuple(((v, 1),) for v in vids))
+        if key not in self.entry_ids:
+            self.entry_ids[key] = len(self.entries)
+            self.entries.append(key)
+        return self.entry_ids[key]
+
+    def special_sign_entry(self, rec):
+        n = rec["name"].replace("minecraft:", "")
+        st = rec["state"]
+        for suffix, kind in (("_standing_sign", "standing"), ("_wall_sign", "wall"), ("_hanging_sign", "hanging"),
+                             ("standing_banner", "standing_banner"), ("wall_banner", "wall_banner")):
+            if n.endswith(suffix) or n == suffix.lstrip("_"):
+                break
+        else:
+            if n == "bed":
+                head = int(st.get("head_piece_bit", 0))
+                d = {0: 0, 1: 270, 2: 180, 3: 90}[int(st.get("direction", 0))]  # rotation from the south-facing model
+                vid = self.bake_variant("special/bed_head" if head else "special/bed_foot", 0, d, False)
+                return self.entry_of_variants([vid])
+            return None
+        wood = n[: -len(suffix)] if n != suffix.lstrip("_") else "oak"
+        if kind in ("standing_banner", "wall_banner"):
+            wood = "oak"
+        wood = wood.rstrip("_") or "oak"
+        if wood not in self.PLANKS:
+            wood = "oak"
+        FD_RY = {2: 180, 3: 0, 4: 90, 5: 270}  # facing_direction -> block rotation of a south-facing model
+        if kind == "standing" or (kind == "hanging" and int(st.get("hanging", 0))):
+            if kind == "hanging" and not int(st.get("attached_bit", 0)):
+                k = {2: 8, 3: 0, 4: 4, 5: 12}.get(int(st.get("facing_direction", 2)), 0)  # axis-aligned, no 22.5deg
+            else:
+                k = int(st.get("ground_sign_direction", 0)) % 16
+            m = round(k / 4)
+            r = k - 4 * m
+            ry = (m * 90) % 360
+            model = ("special/standing_sign_%s_%d" if kind == "standing" else "special/hanging_sign_%s_%d") % (wood, r)
+            return self.entry_of_variants([self.bake_variant(model, 0, ry, False)])
+        if kind == "hanging":
+            ry = FD_RY.get(int(st.get("facing_direction", 2)), 0)
+            return self.entry_of_variants([self.bake_variant("special/arm_sign_" + wood, 0, ry, False)])
+        if kind == "wall":
+            ry = FD_RY.get(int(st.get("facing_direction", 2)), 0)
+            return self.entry_of_variants([self.bake_variant("special/wall_sign_" + wood, 0, ry, False)])
+        if kind == "standing_banner":
+            k = int(st.get("ground_sign_direction", 0)) % 16
+            ry = (round(k / 4) * 90) % 360
+            return self.entry_of_variants([self.bake_variant("special/standing_banner", 0, ry, False)])
+        ry = FD_RY.get(int(st.get("facing_direction", 2)), 0)
+        return self.entry_of_variants([self.bake_variant("special/wall_banner", 0, ry, False)])
+
     def special_entry(self, rec):
         n = rec["name"].replace("minecraft:", "")
         base = n[6:] if n.startswith("waxed_") else n
         if base not in self.CHEST_SETS:
-            return None
+            return self.special_sign_entry(rec)
         facing = rec["state"].get("minecraft:cardinal_direction", "north")
         ry = {"north": 0, "east": 90, "south": 180, "west": 270}.get(facing, 0)
         vid = self.bake_variant("special/" + base, 0, ry, False)

@@ -472,8 +472,37 @@ namespace perlin {
     }
 
     void BedrockSession::NoteHurt() {
+        const auto now = std::chrono::steady_clock::now();
+        {
+            std::lock_guard lock(hurtMutex);
+            lastHurtAt = now;
+            // The source is opposite the push we just got; with no recent push the direction stays unknown (Java
+            // then picks hurtDir at random).
+            const bool recentKnock = knockAt.time_since_epoch().count() != 0 && now - knockAt < std::chrono::seconds(1);
+            hurtSource.known = recentKnock;
+            hurtSource.dx = recentKnock ? -knockX : 0.0f;
+            hurtSource.dz = recentKnock ? -knockZ : 0.0f;
+            hurtSource.serial++;
+        }
         hurtCounter++;
-        lastHurtAt = std::chrono::steady_clock::now();
+    }
+
+    void BedrockSession::NoteKnockback(float vx, float vz) {
+        if (std::hypot(vx, vz) <= 1.0e-6f)
+            return;
+        const auto now = std::chrono::steady_clock::now();
+        std::lock_guard lock(hurtMutex);
+        knockX = vx;
+        knockZ = vz;
+        knockAt = now;
+        // Knockback that lands right after the hurt event tells us where it came from.
+        if (!hurtSource.known && lastHurtAt.time_since_epoch().count() != 0 &&
+            now - lastHurtAt < std::chrono::milliseconds(150)) {
+            hurtSource.known = true;
+            hurtSource.dx = -vx;
+            hurtSource.dz = -vz;
+            hurtSource.serial++;
+        }
     }
 
     void BedrockSession::FinishDimensionChange() {

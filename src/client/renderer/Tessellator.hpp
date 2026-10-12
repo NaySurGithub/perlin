@@ -22,6 +22,12 @@ namespace perlin {
         std::array<uint32_t, kRenderLayerCount> count;
     };
 
+    // Per 16^3 section: which pairs of faces can see each other through non-opaque cells (15 bits).
+    struct SectionVis {
+        int sy;
+        uint16_t conn;
+    };
+
     inline uint32_t PackColor(float r, float g, float b, float a = 1.0f) {
         auto q = [](float c) -> uint32_t {
             c = c < 0.0f ? 0.0f : (c > 1.0f ? 1.0f : c);
@@ -46,6 +52,8 @@ namespace perlin {
 
         void SetLayer(RenderLayer value) { layer = value; }
         void EnterSection(int sy);
+        void AddVisibility(int sy, uint16_t conn) { visibility.push_back({sy, conn}); }
+        const std::vector<SectionVis>& Visibility() const { return visibility; }
 
         void AddQuad(const float v[4][3], const float c[4][3], const float uv[4][2], bool flip,
                      const float light[4][2]);
@@ -68,6 +76,7 @@ namespace perlin {
         std::vector<Vertex> vertices;
         std::array<std::vector<uint32_t>, kRenderLayerCount> indices;
         std::vector<MeshSection> sections;
+        std::vector<SectionVis> visibility;
         RenderLayer layer = RenderLayer::Solid;
         bool building = false;
     };

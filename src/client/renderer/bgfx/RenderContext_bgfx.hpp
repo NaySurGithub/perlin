@@ -54,6 +54,7 @@ namespace perlin {
         };
         struct GpuSection {
             float minY, maxY;
+            int sy = 0;
             std::array<uint32_t, kRenderLayerCount> start;
             std::array<uint32_t, kRenderLayerCount> count;
         };
@@ -67,7 +68,15 @@ namespace perlin {
             uint64_t version = 0;
             float minY = 0, maxY = 0;
             int cx = 0, cz = 0;
+            int visMin = 0;              // section index of conn[0]
+            std::vector<uint16_t> conn;  // face-pair connectivity per section
+            uint32_t secVis = ~0u;       // bit (sy - visMin): reachable from the camera
         };
+        void UpdateCaveVisibility(float camX, float camY, float camZ);
+        uint64_t meshGeneration = 1;
+        uint64_t caveGeneration = 0;
+        int caveCam[3] = {0, 0, 0};
+        bool caveCulling = true;
 
         bool CreatePage(uint32_t vCap, uint32_t iCap);
         bool AllocMesh(uint32_t v, uint32_t i, GpuChunk& out);

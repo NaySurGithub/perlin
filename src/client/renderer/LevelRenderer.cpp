@@ -76,16 +76,14 @@ namespace perlin {
         const std::string root = options.bedrockSamplesDir + "/repo/resource_pack/textures/environment/";
         Texture sun, moon, clouds;
         auto load = [&](const char* file, Texture& out) {
-            if (!texturePackRoot.empty() &&
-                LoadTexture(texturePackRoot + "/textures/environment/" + file, out) && out.width > 0)
+            if (TexturePack::Instance().Load(std::string("textures/environment/") + file, out))
                 return true;
             return LoadTexture(root + file, out);
         };
         if (!crosshairLoaded) {
             Texture icons;
             const std::string guiRoot = options.bedrockSamplesDir + "/repo/resource_pack/textures/gui/";
-            if ((!texturePackRoot.empty() && LoadTexture(texturePackRoot + "/textures/gui/icons.png", icons) &&
-                 icons.width >= 16) ||
+            if ((TexturePack::Instance().Load("textures/gui/icons.png", icons) && icons.width >= 16) ||
                 LoadTexture(guiRoot + "icons.png", icons)) {
                 context.UploadCrosshair(icons);
                 crosshairLoaded = true;
@@ -141,12 +139,10 @@ namespace perlin {
         if (!texturePackResolved) {
             texturePackResolved = true;
             std::string error;
-            const std::string root =
-                ResolveTexturePack(paths::DataDir() + "/texturepacks", options.texturePack, error);
+            TexturePack::Instance().Open(paths::DataDir() + "/texturepacks", options.texturePack, error);
             if (!error.empty())
                 std::cout << "[textures] " << error << " (using default textures)" << std::endl;
-            blocks.SetTexturePack(root);
-            texturePackRoot = root;
+            blocks.SetTexturePack(TexturePack::Instance().Active());
         }
         LoadSkyTextures();
         const bool blocksOk = blocks.EnsureLoaded(packDir, vanillaDir);

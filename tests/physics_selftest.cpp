@@ -43,6 +43,47 @@ int main() {
     TestWorld flat;
     flat.fn = [](int, int y, int) { return y < 0 ? Full() : BlockShape{}; };
 
+    // Pressing into a wall never pushes the player into it, at any coordinate or heading (float rounding of the
+    // position used to leave the box a few 1e-6 inside, after which the clip stopped working and you slid through).
+    {
+        const double starts[] = {3.3, 100.7, 1234.567, -987.654, 20000.1, -300000.3};
+        const float yaws[] = {0, 33.3f, 90, 135.5f, 180, -90, -45.7f};
+        for (double ox : starts)
+            for (float yaw : yaws) {
+                TestWorld wall;
+                const int wx = static_cast<int>(std::floor(ox)) + 3, wz = static_cast<int>(std::floor(ox)) + 3;
+                wall.fn = [&](int x, int y, int z) {
+                    if (y < 0)
+                        return Full();
+                    return (x >= wx && y < 4) || (z >= wz && y < 4) ? Full() : BlockShape{};
+                };
+                State s;
+                s.x = ox;
+                s.z = ox;
+                s.yaw = yaw;
+                Input in;
+                in.forward = 1;
+                in.sprint = true;
+                bool inside = false;
+                for (int i = 0; i < 160; i++) {
+                    if (i % 17 == 5)
+                        in.jump = !in.jump;
+                    Step(s, in, attr, wall);
+                    const Box b = BoundingBox(s, false);
+                    TestWorld& w = wall;
+                    for (int x = wx - 1; x <= wx + 1; x++)
+                        for (int z = wz - 1; z <= wz + 1; z++)
+                            for (int y = 0; y < 4; y++) {
+                                const BlockShape sh = w.Query(x, y, z);
+                                for (int k = 0; k < sh.count; k++)
+                                    if (sh.boxes[k].Offset(x, y, z).Intersects(b))
+                                        inside = true;
+                            }
+                }
+                CHECK(!inside);
+            }
+    }
+
     // Falling lands on the floor; after 40 ticks the player rests on it.
     {
         State s;

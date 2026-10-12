@@ -29,10 +29,6 @@ namespace perlin::physics {
         Box Expand(double dx, double dy, double dz) const;
         Box Inflate(double d) const { return {x0 - d, y0 - d, z0 - d, x1 + d, y1 + d, z1 + d}; }
         bool Intersects(const Box& o) const;
-        // Distance `moving` may travel along one axis before hitting this box.
-        double ClipX(const Box& moving, double dx) const;
-        double ClipY(const Box& moving, double dy) const;
-        double ClipZ(const Box& moving, double dz) const;
     };
 
     constexpr int kMaxShapeBoxes = 8;

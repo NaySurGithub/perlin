@@ -9,6 +9,7 @@ namespace perlin {
         for (auto& list : indices)
             list.clear();
         sections.clear();
+        visibility.clear();
         layer = RenderLayer::Solid;
         building = true;
     }

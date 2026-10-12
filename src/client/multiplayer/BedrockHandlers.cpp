@@ -369,6 +369,7 @@ namespace perlin {
             serverMotion.velocity[0] = p.velocity.x;
             serverMotion.velocity[1] = p.velocity.y;
             serverMotion.velocity[2] = p.velocity.z;
+            NoteKnockback(p.velocity.x, p.velocity.z);
         });
 
         On<UpdateAttributesPacket>([this](const UpdateAttributesPacket& p) {

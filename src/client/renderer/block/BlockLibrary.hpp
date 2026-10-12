@@ -37,9 +37,9 @@ namespace perlin {
         static int TilePx() { return tilePxValue; }
         static constexpr int kAtlasTiles = 128;
 
-        // `texturePackRoot` (optional) is an extracted resource pack whose textures replace the vanilla ones.
-        // Every tile is resampled to one square size (a power of two chosen from the pack, 16 for vanilla).
-        void SetTexturePack(const std::string& root);
+        // Picks the tile size from the active TexturePack (a power of two from its block textures; 16 for vanilla).
+        // Every texture is resampled to that one square size.
+        void SetTexturePack(bool active);
         bool EnsureLoaded(const std::string& perlinPackDir, const std::string& vanillaRpRoot);
         bool Ready() const { return ready; }
         void SetFancy(bool value) { fancy = value; }
@@ -90,7 +90,6 @@ namespace perlin {
             int frames = 0;
         };
         std::unordered_map<int, AnimSrc> animByTile;
-        std::string packRoot;
         int NewTile();
         inline static int tilePxValue = 16;
         std::unordered_map<std::string, std::array<float, 3>> baseTints;

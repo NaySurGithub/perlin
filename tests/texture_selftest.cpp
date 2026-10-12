@@ -73,15 +73,21 @@ int main(int argc, char** argv) {
         mz_zip_writer_end(&zip);
     }
     std::string error;
-    const std::string folderRoot = ResolveTexturePack((tmp / "packs").string(), "Fake 64x", error);
-    CHECK(!folderRoot.empty());
-    const std::string zipRoot = ResolveTexturePack((tmp / "packs").string(), "Zipped.mcpack", error);
-    CHECK(!zipRoot.empty());
-    CHECK(zipRoot.find("Top Folder") != std::string::npos);
-    CHECK(ResolveTexturePack((tmp / "packs").string(), "missing", error).empty() && !error.empty());
+    TexturePack& pack = TexturePack::Instance();
+    CHECK(pack.Open((tmp / "packs").string(), "Fake 64x", error));
+    CHECK(pack.Active());
+    Texture probe;
+    CHECK(pack.Load("textures/blocks/stone.png", probe) && probe.width == 64);
+    CHECK(!pack.Load("textures/blocks/nope.png", probe));
+    CHECK(pack.Open((tmp / "packs").string(), "Zipped.mcpack", error)); // read in place, nothing is extracted
+    CHECK(!fs::exists(tmp / "packs/.cache"));
+    CHECK(pack.Load("textures/blocks/dirt.png", probe) && probe.width == 64);
+    CHECK(pack.Load("Textures/Blocks/DIRT.png", probe)); // case-insensitive like Windows paths
+    CHECK(!pack.Open((tmp / "packs").string(), "missing", error) && !error.empty());
+    CHECK(pack.Open((tmp / "packs").string(), "Zipped.mcpack", error));
 
     BlockLibrary lib;
-    lib.SetTexturePack(zipRoot);
+    lib.SetTexturePack(true);
     CHECK(BlockLibrary::TilePx() == 64);
     const std::string vanilla = argv[1];
     for (int attempt = 0; attempt < 12 && !lib.EnsureLoaded((tmp / "perlin").string(), vanilla); attempt++) {

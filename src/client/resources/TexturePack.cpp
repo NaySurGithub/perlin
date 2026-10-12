@@ -3,99 +3,179 @@
 #include <miniz.h>
 
 #include <algorithm>
+#include <cctype>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <mutex>
+#include <unordered_map>
 
 namespace perlin {
     namespace fs = std::filesystem;
 
+    struct TexturePack::Impl {
+        bool zipMode = false;
+        std::string folder; // folder mode: directory containing textures/
+        mz_zip_archive zip{};
+        bool zipOpen = false;
+        std::unordered_map<std::string, mz_uint> index; // lower-case pack-relative path -> zip entry
+        std::string label;
+        mutable std::mutex mutex;
+
+        void Reset() {
+            if (zipOpen)
+                mz_zip_reader_end(&zip);
+            zip = {};
+            zipOpen = false;
+            zipMode = false;
+            folder.clear();
+            index.clear();
+            label.clear();
+        }
+    };
+
+    TexturePack::TexturePack() : impl(std::make_unique<Impl>()) {}
+    TexturePack::~TexturePack() { impl->Reset(); }
+
+    TexturePack& TexturePack::Instance() {
+        static TexturePack pack;
+        return pack;
+    }
+
     namespace {
+        std::string Lower(std::string s) {
+            std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) { return std::tolower(c); });
+            return s;
+        }
+
         bool HasTextures(const fs::path& dir) {
             std::error_code ec;
-            return fs::is_directory(dir / "textures" / "blocks", ec);
+            return fs::is_directory(dir / "textures", ec);
         }
 
-        // The pack root is the folder holding textures/ - archives often nest it one level down.
-        std::string FindRoot(const fs::path& dir) {
+        // The folder that holds textures/ - downloaded packs are often nested one or two levels down.
+        std::string FindFolderRoot(const fs::path& dir) {
             std::error_code ec;
             if (HasTextures(dir))
-                return dir.string();
+                return dir.generic_string();
             for (const auto& entry : fs::directory_iterator(dir, ec))
-                if (entry.is_directory(ec) && HasTextures(entry.path()))
-                    return entry.path().string();
-            for (const auto& entry : fs::directory_iterator(dir, ec))
-                if (entry.is_directory(ec))
+                if (entry.is_directory(ec)) {
+                    if (HasTextures(entry.path()))
+                        return entry.path().generic_string();
                     for (const auto& inner : fs::directory_iterator(entry.path(), ec))
                         if (inner.is_directory(ec) && HasTextures(inner.path()))
-                            return inner.path().string();
-            return {};
-        }
-
-        bool Extract(const fs::path& archive, const fs::path& dest, std::string& error) {
-            mz_zip_archive zip{};
-            if (!mz_zip_reader_init_file(&zip, archive.string().c_str(), 0)) {
-                error = "not a readable zip archive";
-                return false;
-            }
-            const fs::path base = fs::weakly_canonical(dest);
-            const mz_uint count = mz_zip_reader_get_num_files(&zip);
-            bool ok = true;
-            for (mz_uint i = 0; i < count && ok; i++) {
-                mz_zip_archive_file_stat st;
-                if (!mz_zip_reader_file_stat(&zip, i, &st))
-                    continue;
-                std::string name = st.m_filename;
-                std::replace(name.begin(), name.end(), '\\', '/');
-                if (name.empty() || name.back() == '/')
-                    continue;
-                const fs::path out = fs::weakly_canonical(base / name);
-                // Zip-slip guard: never write outside the cache folder.
-                if (out.string().compare(0, base.string().size(), base.string()) != 0)
-                    continue;
-                std::error_code ec;
-                fs::create_directories(out.parent_path(), ec);
-                if (!mz_zip_reader_extract_to_file(&zip, i, out.string().c_str(), 0)) {
-                    error = "failed to extract " + name;
-                    ok = false;
+                            return inner.path().generic_string();
                 }
-            }
-            mz_zip_reader_end(&zip);
-            return ok;
+            return {};
         }
     }
 
-    std::string ResolveTexturePack(const std::string& packsDir, const std::string& name, std::string& error) {
+    void TexturePack::Close() {
+        std::lock_guard lock(impl->mutex);
+        impl->Reset();
+    }
+
+    bool TexturePack::Active() const {
+        std::lock_guard lock(impl->mutex);
+        return impl->zipMode ? impl->zipOpen : !impl->folder.empty();
+    }
+
+    std::string TexturePack::Description() const {
+        std::lock_guard lock(impl->mutex);
+        return impl->label;
+    }
+
+    bool TexturePack::Open(const std::string& packsDir, const std::string& name, std::string& error) {
+        std::lock_guard lock(impl->mutex);
+        impl->Reset();
         error.clear();
         if (name.empty())
-            return {};
+            return false;
         std::error_code ec;
         const fs::path source = fs::path(packsDir) / name;
         if (!fs::exists(source, ec)) {
-            error = "no such texture pack: " + source.string();
-            return {};
+            error = "no such texture pack: " + source.generic_string();
+            return false;
         }
         if (fs::is_directory(source, ec)) {
-            const std::string root = FindRoot(source);
-            if (root.empty())
-                error = "no textures/blocks folder inside " + source.string();
-            return root;
+            impl->folder = FindFolderRoot(source);
+            if (impl->folder.empty()) {
+                error = "no textures folder inside " + source.generic_string();
+                return false;
+            }
+            impl->label = name;
+            return true;
         }
-        const fs::path cache = fs::path(packsDir) / ".cache" / source.filename();
-        const fs::path stamp = cache / ".extracted";
-        const auto archiveTime = fs::last_write_time(source, ec);
-        bool fresh = fs::exists(stamp, ec) && fs::last_write_time(stamp, ec) >= archiveTime;
-        if (!fresh) {
-            fs::remove_all(cache, ec);
-            fs::create_directories(cache, ec);
-            std::cout << "[textures] unpacking " << source.string() << std::endl;
-            if (!Extract(source, cache, error))
-                return {};
-            std::ofstream(stamp) << "ok";
+        if (!mz_zip_reader_init_file(&impl->zip, source.string().c_str(), 0)) {
+            error = "not a readable zip/mcpack archive: " + source.generic_string();
+            impl->zip = {};
+            return false;
         }
-        const std::string root = FindRoot(cache);
-        if (root.empty())
-            error = "no textures/blocks folder inside " + source.string();
-        return root;
+        impl->zipOpen = true;
+        impl->zipMode = true;
+        // Index every texture entry; the pack root is whatever precedes "textures/" (empty, or a top folder).
+        std::string prefix;
+        bool prefixFound = false;
+        const mz_uint count = mz_zip_reader_get_num_files(&impl->zip);
+        std::vector<std::pair<std::string, mz_uint>> entries;
+        entries.reserve(count);
+        for (mz_uint i = 0; i < count; i++) {
+            mz_zip_archive_file_stat st;
+            if (!mz_zip_reader_file_stat(&impl->zip, i, &st) || mz_zip_reader_is_file_a_directory(&impl->zip, i))
+                continue;
+            std::string path = st.m_filename;
+            std::replace(path.begin(), path.end(), '\\', '/');
+            const std::string lower = Lower(path);
+            if (!prefixFound) {
+                const size_t at = lower.find("textures/");
+                if (at != std::string::npos && (at == 0 || lower[at - 1] == '/')) {
+                    prefix = lower.substr(0, at);
+                    prefixFound = true;
+                }
+            }
+            entries.emplace_back(lower, i);
+        }
+        if (!prefixFound) {
+            error = "no textures folder inside " + source.generic_string();
+            impl->Reset();
+            return false;
+        }
+        for (auto& [path, idx] : entries)
+            if (path.compare(0, prefix.size(), prefix) == 0)
+                impl->index.emplace(path.substr(prefix.size()), idx);
+        impl->label = name;
+        std::cout << "[textures] opened " << name << " (" << impl->index.size() << " files)" << std::endl;
+        return true;
+    }
+
+    bool TexturePack::Has(const std::string& rel) const {
+        std::lock_guard lock(impl->mutex);
+        if (impl->zipMode)
+            return impl->zipOpen && impl->index.count(Lower(rel));
+        if (impl->folder.empty())
+            return false;
+        std::error_code ec;
+        return fs::exists(fs::path(impl->folder) / rel, ec);
+    }
+
+    bool TexturePack::Load(const std::string& rel, Texture& out) const {
+        std::lock_guard lock(impl->mutex);
+        if (impl->zipMode) {
+            if (!impl->zipOpen)
+                return false;
+            const auto it = impl->index.find(Lower(rel));
+            if (it == impl->index.end())
+                return false;
+            size_t size = 0;
+            void* data = mz_zip_reader_extract_to_heap(&impl->zip, it->second, &size, 0);
+            if (!data)
+                return false;
+            const bool ok = LoadTextureMemory(static_cast<const unsigned char*>(data), size, out);
+            mz_free(data);
+            return ok && out.width > 0 && out.height > 0;
+        }
+        if (impl->folder.empty())
+            return false;
+        return LoadTexture(impl->folder + "/" + rel, out) && out.width > 0 && out.height > 0;
     }
 }

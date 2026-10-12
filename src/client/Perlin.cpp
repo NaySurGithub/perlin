@@ -171,6 +171,7 @@ namespace perlin {
         const auto startedAt = previous;
         uint64_t frameCounter = 0;
         DamageEffect damage;
+        uint32_t lastHurtCount = 0, lastHurtSerial = 0;
         auto titleAt = previous;
         auto animationAt = previous;
         uint64_t animationStep = 0;
@@ -190,11 +191,26 @@ namespace perlin {
             camera.Rotate(look.yaw, look.pitch);
             camera.fov = options.fov * (options.fovEffects ? player.FovModifier() : 1.0f);
             if (sessionReady) {
-                // Each hit rolls the camera to a random side, like Java's random hurt direction.
-                damage.Update(session->HurtCount(), dt, static_cast<float>(std::rand()) / static_cast<float>(RAND_MAX));
-                camera.roll = damage.Roll(options.damageTilt);
+                const uint32_t hurts = session->HurtCount();
+                const auto source = session->LatestHurtSource();
+                // Java: hurtDir = bearing to the damage source - the player's yaw (random 0/180 with no source).
+                const auto bearing = [&] {
+                    if (!source.known)
+                        return static_cast<float>(std::rand() % 2) * 180.0f;
+                    const float javaYaw = camera.yaw - 90.0f; // Perlin yaw 90 looks +Z, Java yaw 0 does
+                    return static_cast<float>(std::atan2(source.dz, source.dx) * 57.29577951308232) - javaYaw;
+                };
+                if (hurts != lastHurtCount) {
+                    lastHurtCount = hurts;
+                    lastHurtSerial = source.serial;
+                    damage.Hurt(bearing());
+                } else if (source.serial != lastHurtSerial) {
+                    lastHurtSerial = source.serial;
+                    if (source.known)
+                        damage.Redirect(bearing());
+                }
             } else {
-                camera.roll = 0.0f;
+                damage = DamageEffect();
             }
 
             int width = 0, height = 0;
@@ -236,6 +252,7 @@ namespace perlin {
             while (tickDebt >= 1.0) {
                 tickDebt -= 1.0;
                 blockLight.Tick();
+                damage.Tick();
                 waterVisionTime = underwater ? std::min(600, waterVisionTime + 1) : std::max(0, waterVisionTime - 10);
                 if (live) {
                     previousRainLevel = rainLevel;
@@ -256,6 +273,7 @@ namespace perlin {
                 input.dimension = static_cast<Dimension>(std::clamp(live->DimensionId(), 0, 2));
             const Environment env = SampleEnvironment(input);
 
+            camera.viewEffect = sessionReady ? damage.ViewMatrix(partial, options.damageTilt) : glm::mat4(1.0f);
             const glm::mat4 viewProjection = camera.ViewProjection();
             const Frustum frustum = Frustum::FromViewProjection(viewProjection);
             const glm::vec3 eye = camera.EyePosition();
@@ -324,10 +342,10 @@ namespace perlin {
             params.cloud.gameTicks = std::chrono::duration<double>(frameStart - startedAt).count() * 20.0;
 
             params.crosshair = true;
-            params.screenTint[0] = 0.8f;
+            params.screenTint[0] = 1.0f;
             params.screenTint[1] = 0.0f;
             params.screenTint[2] = 0.0f;
-            params.screenTint[3] = options.damageTint ? damage.TintAlpha() : 0.0f;
+            params.screenTint[3] = options.damageTint ? damage.TintAlpha() : 0.0f; // vanilla overlay: constant while hurt
 
             params.timeSeconds = std::chrono::duration<float>(frameStart - startedAt).count();
             params.frameIndex = static_cast<uint32_t>(frameCounter++);

@@ -61,20 +61,18 @@ namespace {
         std::fflush(stdout);
         std::fflush(stderr);
 #ifdef _WIN32
-        const int saved = _dup(1);
-        int fds[2];
-        if (_pipe(fds, 1 << 16, _O_BINARY) != 0)
+        // A GUI-subsystem process has no console and its CRT streams are not attached to fds 1/2, so pipes and fd
+        // juggling silently log nothing. Reopen the CRT's own stdout/stderr onto the log file instead: printf,
+        // std::cout (synced with stdio) and std::cerr then all land in it, unbuffered.
+        for (FILE* f : logs)
+            std::fclose(f);
+        const std::string& primary = paths.front();
+        if (!std::freopen(primary.c_str(), "ab", stdout) || !std::freopen(primary.c_str(), "ab", stderr))
             return;
-        _dup2(fds[1], 1);
-        _dup2(fds[1], 2);
-        _close(fds[1]);
-        const int readFd = fds[0];
-        // A GUI-subsystem process starts without console handles, so the CRT's stdout/stderr streams are not
-        // attached to fds 1 and 2. Re-attach them or printf/std::cout would still go nowhere.
-        if (FILE* out = _fdopen(1, "wb"))
-            *stdout = *out;
-        if (FILE* err = _fdopen(2, "wb"))
-            *stderr = *err;
+        setvbuf(stdout, nullptr, _IONBF, 0);
+        setvbuf(stderr, nullptr, _IONBF, 0);
+        std::ios::sync_with_stdio(true);
+        return;
 #else
         const int saved = dup(1);
         int fds[2];
@@ -145,7 +143,7 @@ int main(int argc, char** argv) {
     const std::string dataDir = perlin::paths::DataDir();
     perlin::paths::EnsureDir(dataDir);
     perlin::paths::EnsureDir(dataDir + "/texturepacks");
-    StartLogCapture({dataDir + "/perlin.log", perlin::paths::ExeDir() + "/perlin.log"});
+    StartLogCapture({dataDir + "/perlin.log"});
 #ifdef _WIN32
     SetUnhandledExceptionFilter(CrashFilter);
 #endif

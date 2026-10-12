@@ -89,7 +89,6 @@ namespace perlin {
         bool skyTexturesLoaded = false;
         bool texturePackResolved = false;
         bool crosshairLoaded = false;
-        std::string texturePackRoot;
         void LoadSkyTextures();
         bool tintsWereReady = false;
         int uploadedTiles = 0;

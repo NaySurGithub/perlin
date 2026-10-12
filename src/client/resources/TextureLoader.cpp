@@ -15,4 +15,16 @@ namespace perlin {
         stbi_image_free(data);
         return true;
     }
+
+    bool LoadTextureMemory(const unsigned char* data, size_t size, Texture& out) {
+        int w = 0, h = 0, channels = 0;
+        stbi_uc* pixels = stbi_load_from_memory(data, static_cast<int>(size), &w, &h, &channels, 4);
+        if (!pixels)
+            return false;
+        out.width = w;
+        out.height = h;
+        out.pixels.assign(pixels, pixels + static_cast<size_t>(w) * h * 4);
+        stbi_image_free(pixels);
+        return true;
+    }
 }

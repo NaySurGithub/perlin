@@ -358,7 +358,7 @@ if(PERLIN_BUILD_TESTS)
     add_test(NAME bedsim_trace_selftest COMMAND bedsim_trace_selftest "${CMAKE_CURRENT_SOURCE_DIR}/tests/data/bedsim_traces.txt")
 
     add_executable(damage_selftest tests/damage_selftest.cpp)
-    target_include_directories(damage_selftest PRIVATE src)
+    target_include_directories(damage_selftest PRIVATE src "${glm_SOURCE_DIR}")
     target_compile_features(damage_selftest PRIVATE cxx_std_23)
     add_test(NAME damage_selftest COMMAND damage_selftest)
 

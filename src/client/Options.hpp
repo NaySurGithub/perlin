@@ -5,8 +5,8 @@
 
 namespace perlin {
     struct Options {
-        int maxFps = 60;
-        bool vsync = true;
+        int maxFps = 0;      // 0 = uncapped (only used with vsync off)
+        bool vsync = false;
         bool eulaAccepted = false;
         int renderDistance = 8;
         float fov = 70.0f;

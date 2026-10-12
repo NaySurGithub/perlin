@@ -8,6 +8,9 @@
 #include <map>
 
 namespace perlin {
+    namespace {
+        constexpr int kOptionsVersion = 2;
+    }
     namespace stored {
         struct Stored {
             int maxFps = 0;
@@ -30,6 +33,7 @@ namespace perlin {
             int damageTilt = 100;
             bool damageTint = true;
             std::string texturePack;
+            int version = 0;
             std::map<std::string, std::string> keys;
         };
     }
@@ -74,6 +78,7 @@ namespace perlin {
                       o.damageTilt,
                       o.damageTint,
                       o.texturePack,
+                      0,
                       {}};
         auto parsed = json::Read<Stored>(text);
         if (!parsed)
@@ -100,6 +105,11 @@ namespace perlin {
         o.damageTilt = std::clamp(stored.damageTilt, 0, 100);
         o.damageTint = stored.damageTint;
         o.texturePack = stored.texturePack;
+        if (stored.version < kOptionsVersion) {
+            // Options saved by older builds carry the old vsync-on / 60 fps cap defaults; move them to the new ones once.
+            o.vsync = Options().vsync;
+            o.maxFps = Options().maxFps;
+        }
 
         for (size_t i = 0; i < kActionCount; i++) {
             const auto it = stored.keys.find(ActionId(static_cast<Action>(i)));
@@ -133,6 +143,7 @@ namespace perlin {
                       damageTilt,
                       damageTint,
                       texturePack,
+                      kOptionsVersion,
                       {}};
         for (size_t i = 0; i < kActionCount; i++)
             stored.keys[ActionId(static_cast<Action>(i))] = keys[i].Serialize();

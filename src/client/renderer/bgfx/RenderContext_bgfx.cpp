@@ -11,6 +11,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <climits>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -140,6 +141,7 @@ namespace perlin {
             return false;
         }
         initialized = true;
+        caveCulling = !std::getenv("PERLIN_NO_CAVECULL");
 
         const bgfx::Caps* caps = bgfx::getCaps();
         homogeneousDepth = caps->homogeneousDepth;
@@ -604,6 +606,7 @@ namespace perlin {
             if (it != gpuChunks.end()) {
                 FreeChunk(it->second);
                 gpuChunks.erase(it);
+                meshGeneration++;
             }
             return;
         }
@@ -646,7 +649,7 @@ namespace perlin {
 
         const auto& secs = tess.Sections();
         if (secs.empty()) {
-            GpuSection whole{lo, hi, {}, {}};
+            GpuSection whole{lo, hi, 0, {}, {}};
             for (int l = 0; l < kRenderLayerCount; l++) {
                 whole.start[l] = g.layerBase[l];
                 whole.count[l] = g.layerCount[l];
@@ -655,7 +658,7 @@ namespace perlin {
         } else {
             g.sections.reserve(secs.size());
             for (const MeshSection& ms : secs) {
-                GpuSection section{(float)(ms.sy * 16), (float)(ms.sy * 16 + 16), {}, {}};
+                GpuSection section{(float)(ms.sy * 16), (float)(ms.sy * 16 + 16), ms.sy, {}, {}};
                 for (int l = 0; l < kRenderLayerCount; l++) {
                     section.start[l] = g.layerBase[l] + ms.start[l];
                     section.count[l] = ms.count[l];
@@ -666,6 +669,15 @@ namespace perlin {
         g.cx = cx;
         g.cz = cz;
         g.version = version;
+        {
+            const auto& vis = tess.Visibility();
+            if (!vis.empty() && vis.size() <= 32) {
+                g.visMin = vis.front().sy;
+                for (const SectionVis& v : vis)
+                    g.conn.push_back(v.conn);
+            }
+        }
+        meshGeneration++;
         gpuChunks[key] = std::move(g);
     }
 
@@ -675,6 +687,7 @@ namespace perlin {
             return;
         FreeChunk(it->second);
         gpuChunks.erase(it);
+        meshGeneration++;
     }
 
     namespace {
@@ -825,6 +838,122 @@ namespace perlin {
         bgfx::submit(0, shaders.Program(ShaderProgram::Cloud));
     }
 
+    // Tommo-style cave culling: flood outwards from the camera's section, never turning back on a direction
+    // already travelled and only passing through a section between faces its interior connects. Chunks with
+    // no mesh (air or not loaded) count as open space inside the loaded area.
+    void RenderContext_bgfx::UpdateCaveVisibility(float camX, float camY, float camZ) {
+        const int ccx = (int)std::floor(camX / 16.0f), ccz = (int)std::floor(camZ / 16.0f);
+        int csy = (int)std::floor(camY / 16.0f);
+        if (caveGeneration == meshGeneration && caveCam[0] == ccx && caveCam[1] == csy && caveCam[2] == ccz)
+            return;
+
+        int minX = INT_MAX, maxX = INT_MIN, minZ = INT_MAX, maxZ = INT_MIN, minS = INT_MAX, maxS = INT_MIN;
+        bool allData = true;
+        for (auto& entry : gpuChunks) {
+            GpuChunk& g = entry.second;
+            g.secVis = ~0u;
+            if (g.conn.empty()) {
+                allData = false;
+                continue;
+            }
+            minX = std::min(minX, g.cx);
+            maxX = std::max(maxX, g.cx);
+            minZ = std::min(minZ, g.cz);
+            maxZ = std::max(maxZ, g.cz);
+            minS = std::min(minS, g.visMin);
+            maxS = std::max(maxS, g.visMin + (int)g.conn.size() - 1);
+        }
+        caveGeneration = meshGeneration;
+        caveCam[0] = ccx;
+        caveCam[1] = csy;
+        caveCam[2] = ccz;
+        if (!allData || minX > maxX || minS > maxS)
+            return;
+        // Camera outside the loaded area: nothing sensible to flood from.
+        minS = std::min(minS, csy);
+        maxS = std::max(maxS, csy);
+        if (ccx < minX || ccx > maxX || ccz < minZ || ccz > maxZ)
+            return;
+        const int W = maxX - minX + 1, D = maxZ - minZ + 1, H = maxS - minS + 1;
+        if (H > 32)
+            return;
+
+        static std::vector<GpuChunk*> grid;
+        static std::vector<uint8_t> entered;      // per node: bit per entry face already processed
+        static std::vector<uint32_t> reached;     // per column: reached section bits (relative to minS)
+        grid.assign((size_t)W * D, nullptr);
+        entered.assign((size_t)W * D * H, 0);
+        reached.assign((size_t)W * D, 0);
+        for (auto& entry : gpuChunks)
+            grid[(size_t)(entry.second.cz - minZ) * W + (entry.second.cx - minX)] = &entry.second;
+
+        static const int kDx[6] = {0, 0, 0, 0, -1, 1};
+        static const int kDy[6] = {-1, 1, 0, 0, 0, 0};
+        static const int kDz[6] = {0, 0, -1, 1, 0, 0};
+
+        auto connected = [&](int x, int z, int s, int a, int b) {
+            if (a == b)
+                return false;
+            if (a > b)
+                std::swap(a, b);
+            const GpuChunk* g = grid[(size_t)z * W + x];
+            if (!g)
+                return true;
+            const int i = (s + minS) - g->visMin;
+            if (i < 0 || i >= (int)g->conn.size())
+                return true;
+            return ((g->conn[i] >> (a * (11 - a) / 2 + (b - a - 1))) & 1) != 0;
+        };
+
+        const int sx = ccx - minX, sz = ccz - minZ, ss = csy - minS;
+        reached[(size_t)sz * W + sx] |= 1u << ss;
+        struct Move {
+            int x, z, s;
+            uint8_t dir, dirs;
+        };
+        static std::vector<Move> moves;
+        moves.clear();
+        for (int d = 0; d < 6; d++)
+            moves.push_back({sx, sz, ss, (uint8_t)d, (uint8_t)(1u << d)});
+        size_t head = 0;
+        while (head < moves.size()) {
+            const Move m = moves[head++];
+            const int nx = m.x + kDx[m.dir], nz = m.z + kDz[m.dir], ns = m.s + kDy[m.dir];
+            if (nx < 0 || nx >= W || nz < 0 || nz >= D || ns < 0 || ns >= H)
+                continue;
+            const int entry = m.dir ^ 1;
+            uint8_t& done = entered[((size_t)nz * W + nx) * H + ns];
+            if (done & (1u << entry))
+                continue;
+            done |= (uint8_t)(1u << entry);
+            reached[(size_t)nz * W + nx] |= 1u << ns;
+            for (int d = 0; d < 6; d++) {
+                if (m.dirs & (1u << (d ^ 1)))
+                    continue;  // would turn back
+                if (!connected(nx, nz, ns, entry, d))
+                    continue;
+                moves.push_back({nx, nz, ns, (uint8_t)d, (uint8_t)(m.dirs | (1u << d))});
+            }
+        }
+        // Always keep the neighbourhood of the camera: protects against fast turns at section borders.
+        for (int dz = -1; dz <= 1; dz++)
+            for (int dx = -1; dx <= 1; dx++) {
+                const int x = sx + dx, z = sz + dz;
+                if (x < 0 || x >= W || z < 0 || z >= D)
+                    continue;
+                for (int ds = -1; ds <= 1; ds++)
+                    if (ss + ds >= 0 && ss + ds < H)
+                        reached[(size_t)z * W + x] |= 1u << (ss + ds);
+            }
+        for (auto& entry : gpuChunks) {
+            GpuChunk& g = entry.second;
+            const uint32_t col = reached[(size_t)(g.cz - minZ) * W + (g.cx - minX)];
+            // column bits are relative to minS; chunk bits relative to visMin
+            const int shift = g.visMin - minS;
+            g.secVis = shift >= 0 ? (col >> shift) : (col << -shift);
+        }
+    }
+
     void RenderContext_bgfx::DrawLayer(RenderLayer layer, ShaderProgram program, const Frustum& frustum,
                                        const std::vector<VisibleChunk>& chunks, bgfx::TextureHandle atlas) {
         const size_t slot = static_cast<size_t>(layer);
@@ -852,6 +981,11 @@ namespace perlin {
                 const uint32_t count = sec.count[slot];
                 if (!count)
                     continue;
+                if (g.secVis != ~0u) {
+                    const int bit = sec.sy - g.visMin;
+                    if (bit >= 0 && bit < 32 && !(g.secVis & (1u << bit)))
+                        continue;
+                }
                 if (!item.fullyInside && !frustum.Visible(x0, sec.minY, z0, x0 + 16.0f, sec.maxY, z0 + 16.0f))
                     continue;
                 const uint32_t start = sec.start[slot];
@@ -888,6 +1022,8 @@ namespace perlin {
             return;
         }
 
+        if (caveCulling)
+            UpdateCaveVisibility(frame.cameraPosition[0], frame.cameraPosition[1], frame.cameraPosition[2]);
         visible.clear();
         for (const auto& entry : gpuChunks) {
             const GpuChunk& g = entry.second;
@@ -916,6 +1052,7 @@ namespace perlin {
     }
 
     void RenderContext_bgfx::ClearChunkMeshes() {
+        meshGeneration++;
         gpuChunks.clear();
         DestroyPages();
     }

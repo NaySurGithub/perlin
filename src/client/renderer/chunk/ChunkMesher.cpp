@@ -37,6 +37,12 @@ namespace perlin {
         return TexHas(t, "lava_") || TexHas(t, "lava");
     }
 
+    // Lava is a liquid like water: it has depth-based surface heights and does not occlude neighbouring faces.
+    static bool IsLavaName(uint16_t id) {
+        const std::string name = BlockPalette::Instance().Name(id);
+        return name == "minecraft:lava" || name == "minecraft:flowing_lava";
+    }
+
     struct GeomInfo {
         bool slab = false;
         bool slabTop = false;
@@ -341,16 +347,18 @@ namespace perlin {
         return m.model[id];
     }
 
-    static bool IsLiquidId(BlockLibrary* library, uint16_t id) {
+    // 0 none, 1 water, 2 lava.
+    static int LiquidKind(BlockLibrary* library, uint16_t id) {
         IdMemo& m = Memo();
         m.Touch(id);
         int8_t& slot = m.water[id];
         if (slot < 0) {
             const BlockAppearance* a = library ? LookupApp(library, id) : nullptr;
-            slot = a && (IsWaterTex(a->texTop) || IsWaterTex(a->texSide)) ? 1 : 0;
+            slot = a && (IsWaterTex(a->texTop) || IsWaterTex(a->texSide)) ? 1 : (a && IsLavaName(id) ? 2 : 0);
         }
-        return slot != 0;
+        return slot;
     }
+    static bool IsLiquidId(BlockLibrary* library, uint16_t id) { return LiquidKind(library, id) != 0; }
 
     static bool IsTranslucentId(BlockLibrary* library, uint16_t id) {
         IdMemo& m = Memo();
@@ -440,7 +448,7 @@ namespace perlin {
         }
         if (g.fence || g.wall || g.cakeBites >= 0)
             return 0;
-        if (IsWaterTex(a.texTop) || IsWaterTex(a.texSide))
+        if (IsWaterTex(a.texTop) || IsWaterTex(a.texSide) || IsLavaName(id))
             return 1;
         const int tiles[3] = {a.top, a.side, a.bottom};
         for (int i = 0; i < 3; i++)
@@ -550,7 +558,7 @@ namespace perlin {
             // faces of the blocks around them (the terrain next to water was missing faces).
             if ((a.top && at.translucent) || (a.side && as.translucent) || (a.bottom && ab.translucent))
                 return false;
-            if (IsWaterTex(a.texTop) || IsWaterTex(a.texSide))
+            if (IsWaterTex(a.texTop) || IsWaterTex(a.texSide) || IsLavaName(id))
                 return false;
             const bool sideHoles = a.side && as.holes && !(a.overlayFrac > 0 && a.overlayTile);
             bool holes = (a.top && at.holes) || sideHoles || (a.bottom && ab.holes);
@@ -576,14 +584,17 @@ namespace perlin {
         return l != 0 && IsLiquidId(library, l) ? l : 0;
     }
 
-    static float WaterCornerHeight(const BlockCache& cache, BlockLibrary* library, int y, int cx, int cz) {
+    static float WaterCornerHeight(const BlockCache& cache, BlockLibrary* library, int kind, int y, int cx, int cz) {
         float total = 0.0f;
         int weight = 0;
         for (int i = 0; i < 4; i++) {
             const int px = cx - 1 + (i & 1), pz = cz - 1 + (i >> 1);
-            if (EffLiquid(cache, library, px, y + 1, pz))
+            const uint16_t above = EffLiquid(cache, library, px, y + 1, pz);
+            if (above && LiquidKind(library, above) == kind)
                 return 1.0f;
-            const uint16_t id = EffLiquid(cache, library, px, y, pz);
+            uint16_t id = EffLiquid(cache, library, px, y, pz);
+            if (id != 0 && LiquidKind(library, id) != kind)
+                id = 0;
             if (id != 0) {
                 const int depth = GeomFor(id).liquidDepth;
                 const float height = static_cast<float>(8 - (depth >= 0 ? (depth & 7) : 0)) / 9.0f;
@@ -624,6 +635,67 @@ namespace perlin {
         return m.ao[id] == 1 ? 0.2f : 1.0f;
     }
 
+    // Face-pair connectivity of one 16^3 section: flood fill the non-opaque cells; every component links all the
+    // section faces it touches. Faces: 0 down, 1 up, 2 north(-z), 3 south(+z), 4 west(-x), 5 east(+x).
+    static uint16_t SectionConnectivity(const BlockCache& cache, int sy) {
+        const int y0 = sy * 16;
+        static thread_local std::vector<uint8_t> seen;
+        static thread_local std::vector<uint16_t> stack;
+        seen.assign(4096, 0);
+        int opaque = 0;
+        for (int i = 0; i < 4096; i++) {
+            const int x = i & 15, z = (i >> 4) & 15, y = i >> 8;
+            if (cache.Occ(x, y0 + y, z)) {
+                seen[i] = 1;
+                opaque++;
+            }
+        }
+        if (opaque == 0)
+            return 0x7FFF;
+        if (opaque == 4096)
+            return 0;
+        uint16_t conn = 0;
+        for (int start = 0; start < 4096; start++) {
+            if (seen[start])
+                continue;
+            int mask = 0;
+            stack.clear();
+            stack.push_back((uint16_t)start);
+            seen[start] = 1;
+            while (!stack.empty()) {
+                const int i = stack.back();
+                stack.pop_back();
+                const int x = i & 15, z = (i >> 4) & 15, y = i >> 8;
+                if (y == 0) mask |= 1;
+                if (y == 15) mask |= 2;
+                if (z == 0) mask |= 4;
+                if (z == 15) mask |= 8;
+                if (x == 0) mask |= 16;
+                if (x == 15) mask |= 32;
+                auto push = [&](int ni) {
+                    if (!seen[ni]) {
+                        seen[ni] = 1;
+                        stack.push_back((uint16_t)ni);
+                    }
+                };
+                if (x > 0) push(i - 1);
+                if (x < 15) push(i + 1);
+                if (z > 0) push(i - 16);
+                if (z < 15) push(i + 16);
+                if (y > 0) push(i - 256);
+                if (y < 15) push(i + 256);
+            }
+            for (int a = 0; a < 6; a++)
+                if (mask & (1 << a))
+                    for (int b = a + 1; b < 6; b++)
+                        if (mask & (1 << b))
+                            conn |= (uint16_t)(1u << (a * (11 - a) / 2 + (b - a - 1)));
+            if (conn == 0x7FFF)
+                break;
+        }
+        return conn;
+    }
+
     void BuildChunkMesh(Level& level, const ChunkPos& pos, Tessellator& tess, BlockLibrary* library,
                         BiomeTints* tints) {
         bool textured = library && library->Ready();
@@ -648,6 +720,8 @@ namespace perlin {
         else
             for (size_t i = 0; i < cache.cells.size(); i++)
                 cache.solid[i] = cache.cells[i] != 0;
+        for (int sy = yLo >> 4; sy <= (yHi >> 4); sy++)
+            tess.AddVisibility(sy, SectionConnectivity(cache, sy));
         static thread_local ChunkLighting::Result lighting;
         ChunkLighting::Compute(level, pos, cache.yBase, cache.yBase + cache.yRows - 1, lighting);
         const LightRegistry& registry = LightRegistry::Instance();
@@ -1359,8 +1433,9 @@ namespace perlin {
                         continue;
                     }
 
-                    const bool isWater = app && (IsWaterTex(app->texTop) || IsWaterTex(app->texSide));
-                    const bool translucent = isWater || (textured && IsTranslucentId(library, id));
+                    const int liquidKind = app ? LiquidKind(library, id) : 0;
+                    const bool isWater = liquidKind != 0; // any liquid (water or lava) uses the surface-height path
+                    const bool translucent = liquidKind == 1 || (liquidKind == 0 && textured && IsTranslucentId(library, id));
                     int ovTile = 0;
                     float ovR = 1, ovG = 1, ovB = 1;
                     auto face = [&](int nx, int ny, int nz, int tile, float tintR, float tintG, float tintB,
@@ -1369,11 +1444,14 @@ namespace perlin {
                         const uint16_t neighborId = cache.Get(x + nx, y + ny, z + nz);
                         if (neighborId != 0 && cache.Occ(x + nx, y + ny, z + nz))
                             return;
-                        if (neighborId != 0 && translucent &&
-                            (neighborId == id || (isWater && EffLiquid(cache, library, x + nx, y + ny, z + nz))))
+                        if (neighborId != 0 && translucent && neighborId == id)
                             return;
-                        if (isWater && neighborId != 0 && EffLiquid(cache, library, x + nx, y + ny, z + nz))
-                            return;
+                        if (isWater) {
+                            // Faces between two cells of the same liquid are never visible.
+                            const uint16_t other = EffLiquid(cache, library, x + nx, y + ny, z + nz);
+                            if (other != 0 && LiquidKind(library, other) == liquidKind)
+                                return;
+                        }
                         float u0, v0uv, u1, v1uv;
                         BlockLibrary::TileUV(tile, u0, v0uv, u1, v1uv);
                         float uv[4][2];
@@ -1525,10 +1603,10 @@ namespace perlin {
                     float h00 = -1, h10 = -1, h01 = -1, h11 = -1;
                     if (isWater) {
                         constexpr float kLift = 0.001f;
-                        h00 = by + WaterCornerHeight(cache, library, y, x, z) - kLift;
-                        h10 = by + WaterCornerHeight(cache, library, y, x + 1, z) - kLift;
-                        h01 = by + WaterCornerHeight(cache, library, y, x, z + 1) - kLift;
-                        h11 = by + WaterCornerHeight(cache, library, y, x + 1, z + 1) - kLift;
+                        h00 = by + WaterCornerHeight(cache, library, liquidKind, y, x, z) - kLift;
+                        h10 = by + WaterCornerHeight(cache, library, liquidKind, y, x + 1, z) - kLift;
+                        h01 = by + WaterCornerHeight(cache, library, liquidKind, y, x, z + 1) - kLift;
+                        h11 = by + WaterCornerHeight(cache, library, liquidKind, y, x + 1, z + 1) - kLift;
                         yTop = std::max(std::max(h00, h10), std::max(h01, h11));
                     } else if (gi.slab) {
                         if (gi.slabTop)
@@ -1620,6 +1698,7 @@ namespace perlin {
                     tess.SetLayer(translucent ? RenderLayer::Translucent : RenderLayer::Solid);
                     if (isWater) {
                         face(0, 1, 0, tTop, trT, tgT, tbT, true, known, kShadeTop, cTop, top);
+                        face(0, -1, 0, tBottom ? tBottom : tTop, trB, tgB, tbB, true, known, kShadeBottom, cBottom, bottom);
                         face(1, 0, 0, tSide, trS, tgS, tbS, true, known, kShadeX, cPx, px);
                         face(-1, 0, 0, tSide, trS, tgS, tbS, true, known, kShadeX, cNx, nx);
                         face(0, 0, 1, tSide, trS, tgS, tbS, true, known, kShadeZ, cPz, pz);

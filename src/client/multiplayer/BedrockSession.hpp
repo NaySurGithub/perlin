@@ -130,6 +130,16 @@ namespace perlin {
         int DimensionId() const { return dimensionId; }
         // Increments every time the local player takes damage (drives the red flash and camera shake).
         uint32_t HurtCount() const { return hurtCounter.load(); }
+        // Where the latest hit came from: horizontal vector from us toward the source (opposite the knockback).
+        struct HurtSource {
+            bool known = false;
+            float dx = 0, dz = 0;
+            uint32_t serial = 0; // bumps when the direction is learned or changes
+        };
+        HurtSource LatestHurtSource() const {
+            std::lock_guard lock(hurtMutex);
+            return hurtSource;
+        }
         float RainTarget() const { return rainTarget; }
         float ThunderTarget() const { return thunderTarget; }
         void NoteTime(int64_t totalOrTod);
@@ -274,6 +284,11 @@ namespace perlin {
         float lastHealth = -1.0f;
         std::chrono::steady_clock::time_point lastHurtAt{};
         void NoteHurt();
+        void NoteKnockback(float vx, float vz);
+        mutable std::mutex hurtMutex;
+        HurtSource hurtSource;
+        float knockX = 0, knockZ = 0;
+        std::chrono::steady_clock::time_point knockAt{};
         // A ChangeDimension was received: the world was cleared and the server waits for our acknowledgement.
         std::atomic<bool> dimAckPending{false};
         std::chrono::steady_clock::time_point dimAckSince{};
