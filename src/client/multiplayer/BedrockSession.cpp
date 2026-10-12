@@ -3,6 +3,7 @@
 
 #include "network/ClientIdentity.hpp"
 #include "network/NetherNet.hpp"
+#include "network/RakNet.hpp"
 #include "network/VarInt.hpp"
 #include "network/LoginClaims.hpp"
 #include "network/LoginBuilder.hpp"
@@ -240,7 +241,8 @@ namespace perlin {
         lastError.clear();
         state = State::Connecting;
 
-        net = std::make_unique<NetherNet>();
+        cipher.reset();
+        net.reset();
         identity = std::make_unique<ClientIdentity>();
         if (!identity->Valid()) {
             lastError = "identity keygen failed";
@@ -265,10 +267,32 @@ namespace perlin {
             state = State::Failed;
             return false;
         }
-        if (!net->Connect(host, port, *identity)) {
-            lastError = "transport: " + net->LastError();
-            state = State::Failed;
-            return false;
+        // Pick the transport. Vanilla BDS can offer NetherNet (HTTP signalling + WebRTC); public servers such as
+        // Lifeboat and The Hive only speak RakNet over UDP.
+        bool useRak = transportMode == "raknet";
+        if (transportMode == "auto") {
+            NetherNetServerInfo probe;
+            std::string probeError;
+            useRak = !NetherNet::Probe(host, port, probe, probeError, 4);
+            std::cout << "[perlin] transport: " << (useRak ? "raknet (no NetherNet endpoint found)" : "nethernet")
+                      << std::endl;
+        }
+        if (useRak) {
+            auto rak = std::make_unique<RakNet>();
+            if (!rak->Connect(host, port)) {
+                lastError = "transport: " + rak->LastError();
+                state = State::Failed;
+                return false;
+            }
+            net = std::move(rak);
+        } else {
+            auto nether = std::make_unique<NetherNet>();
+            if (!nether->Connect(host, port, *identity)) {
+                lastError = "transport: " + nether->LastError();
+                state = State::Failed;
+                return false;
+            }
+            net = std::move(nether);
         }
         serverProtocol = net->Info().protocol;
         if (serverProtocol <= 0) {
@@ -330,6 +354,10 @@ namespace perlin {
             batch.push_back(0xFF);
             batch.insert(batch.end(), content.begin(), content.end());
         }
+        // Encryption counters must follow the order packets leave in.
+        std::lock_guard<std::mutex> txLock(txMutex);
+        if (cipher && cipher->Active())
+            batch = cipher->Encrypt(batch);
         return reliable ? net->SendReliable(batch) : net->SendUnreliable(batch);
     }
 
@@ -420,7 +448,16 @@ namespace perlin {
         }
     }
 
-    void BedrockSession::HandleBatch(const std::vector<uint8_t>& msg) {
+    void BedrockSession::HandleBatch(const std::vector<uint8_t>& received) {
+        std::vector<uint8_t> decrypted;
+        if (cipher && cipher->Active()) {
+            if (!cipher->Decrypt(received, decrypted)) {
+                lastError = "packet checksum mismatch (encryption out of step)";
+                state = State::Failed;
+                return;
+            }
+        }
+        const std::vector<uint8_t>& msg = decrypted.empty() && !(cipher && cipher->Active()) ? received : decrypted;
         const uint8_t* data = msg.data();
         size_t size = msg.size();
         std::vector<uint8_t> decompressed;

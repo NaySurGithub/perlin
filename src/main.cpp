@@ -194,6 +194,10 @@ namespace {
                 args.login = true;
             else if (arg == "--offline")
                 args.offline = true;
+            else if (arg == "--raknet")
+                args.transport = "raknet";
+            else if (arg == "--nethernet")
+                args.transport = "nethernet";
             else if (arg == "--logout")
                 args.logout = true;
             else if (arg == "--help" || arg == "-h")
@@ -206,7 +210,9 @@ namespace {
                     "  --slim               slim (Alex) arms for the skin\n"
                     "  --login              sign in with a Microsoft/Xbox account (remembered afterwards)\n"
                     "  --offline            skip the saved Microsoft login for this run\n"
-                    "  --logout             forget the saved Microsoft login\n");
+                    "  --logout             forget the saved Microsoft login\n"
+                    "  --raknet             connect over RakNet (Lifeboat, The Hive, any public server)\n"
+                    "  --nethernet          connect over NetherNet (BDS with the nethernet transport)\n");
         }
         return args;
     }

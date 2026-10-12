@@ -439,7 +439,7 @@ if(PERLIN_BUILD_TESTS)
 
     add_executable(auth_selftest
         tests/auth_selftest.cpp
-        src/network/XboxAuth.cpp src/network/LoginBuilder.cpp src/network/ClientIdentity.cpp src/network/Http.cpp
+        src/network/XboxAuth.cpp src/network/LoginBuilder.cpp src/network/ClientIdentity.cpp src/network/Http.cpp src/network/PacketCipher.cpp
         src/client/multiplayer/SkinLoader.cpp src/client/resources/TextureLoader.cpp src/util/Json.cpp)
     target_include_directories(auth_selftest PRIVATE src "${stb_SOURCE_DIR}" "${httplib_SOURCE_DIR}")
     target_compile_definitions(auth_selftest PRIVATE CPPHTTPLIB_OPENSSL_SUPPORT OPENSSL_SUPPRESS_DEPRECATED)
@@ -449,6 +449,15 @@ if(PERLIN_BUILD_TESTS)
     endif()
     target_compile_features(auth_selftest PRIVATE cxx_std_23)
     add_test(NAME auth_selftest COMMAND auth_selftest)
+
+    # Needs the go-raknet harness in tests/rak running, so it is not part of ctest (see tests/rak/README.md).
+    add_executable(rak_selftest tests/rak_selftest.cpp src/network/RakNet.cpp)
+    target_include_directories(rak_selftest PRIVATE src "${concurrentqueue_SOURCE_DIR}")
+    target_link_libraries(rak_selftest PRIVATE Threads::Threads)
+    if(WIN32)
+        target_link_libraries(rak_selftest PRIVATE ws2_32)
+    endif()
+    target_compile_features(rak_selftest PRIVATE cxx_std_23)
 
     add_executable(shaderpack_selftest tests/shaderpack_selftest.cpp src/client/resources/ShaderPack.cpp)
     target_include_directories(shaderpack_selftest PRIVATE src)

@@ -34,6 +34,7 @@ namespace perlin {
         std::string skin;          // path to a skin png (64x32, 64x64 or 128x128); empty = blank skin
         std::string cape;          // path to a cape png (64x32); empty = no cape
         bool slimArms = false;     // "Alex" arms
+        std::string transport = "auto"; // auto | raknet | nethernet
         bool onlineLogin = false;  // sign in with a Microsoft/Xbox account (saved after the first sign-in)
         std::string resourcePackDir;
         std::string bedrockSamplesDir;

@@ -4,6 +4,8 @@
 #include "protocol/Packets.hpp"
 #include "client/multiplayer/SkinLoader.hpp"
 #include "network/XboxAuth.hpp"
+#include "network/Transport.hpp"
+#include "network/PacketCipher.hpp"
 
 #include <condition_variable>
 #include <deque>
@@ -24,7 +26,6 @@
 
 namespace perlin {
 
-    class NetherNet;
     struct SubChunkData;
     class ClientIdentity;
 
@@ -49,6 +50,8 @@ namespace perlin {
         BedrockSession& operator=(const BedrockSession&) = delete;
 
         void SetPlayerName(const std::string& name) { playerName = name; }
+        // "nethernet", "raknet" or "auto" (NetherNet if the server answers its HTTP probe, otherwise RakNet).
+        void SetTransport(const std::string& mode) { transportMode = mode; }
         void SetSkin(LoadedSkin loaded) { skin = std::move(loaded); }
         // Signs in with this Microsoft/Xbox account instead of an offline name (the name becomes the gamertag).
         void SetAccount(std::shared_ptr<xbox::Account> a) { account = std::move(a); }
@@ -246,7 +249,10 @@ namespace perlin {
         bool chunkStop = false;
         bool chunkBusy = false;
 
-        std::unique_ptr<NetherNet> net;
+        std::unique_ptr<Transport> net;
+        std::unique_ptr<PacketCipher> cipher; // set once the server's handshake switched encryption on
+        std::mutex txMutex;                   // keeps encryption counters in step with send order
+        std::string transportMode = "auto";
         std::unique_ptr<ClientIdentity> identity;
         std::atomic<State> state{State::Disconnected};
         std::string lastError;

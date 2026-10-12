@@ -43,6 +43,7 @@ namespace perlin {
             std::string cape;
             bool slimArms = false;
             bool onlineLogin = false;
+            std::string transport = "auto";
         };
     }
 
@@ -95,7 +96,8 @@ namespace perlin {
                       o.skin,
                       o.cape,
                       o.slimArms,
-                      o.onlineLogin};
+                      o.onlineLogin,
+                      o.transport};
         auto parsed = json::Read<Stored>(text);
         if (!parsed)
             return o;
@@ -116,6 +118,7 @@ namespace perlin {
         o.cape = stored.cape;
         o.slimArms = stored.slimArms;
         o.onlineLogin = stored.onlineLogin;
+        o.transport = stored.transport == "raknet" || stored.transport == "nethernet" ? stored.transport : "auto";
         o.resourcePackDir = stored.resourcePackDir;
         o.bedrockSamplesDir = stored.bedrockSamplesDir;
         o.fancyGraphics = stored.graphics != "fast";
@@ -184,7 +187,8 @@ namespace perlin {
                       skin,
                       cape,
                       slimArms,
-                      onlineLogin};
+                      onlineLogin,
+                      transport};
         for (size_t i = 0; i < kActionCount; i++)
             stored.keys[ActionId(static_cast<Action>(i))] = keys[i].Serialize();
 

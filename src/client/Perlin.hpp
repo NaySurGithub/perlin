@@ -27,6 +27,7 @@ namespace perlin {
         bool slimArms = false;  // --slim
         bool login = false;     // --login: sign in with a Microsoft/Xbox account
         bool offline = false;   // --offline: ignore a saved online login for this run
+        std::string transport;  // --raknet / --nethernet; empty = options.json (default auto)
         bool logout = false;    // --logout: forget the saved Microsoft login, then continue
     };
 

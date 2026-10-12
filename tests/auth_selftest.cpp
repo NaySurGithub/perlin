@@ -5,6 +5,7 @@
 #include "network/ClientIdentity.hpp"
 #include "network/Http.hpp"
 #include "network/LoginBuilder.hpp"
+#include "network/PacketCipher.hpp"
 #include "network/XboxAuth.hpp"
 #include "util/Json.hpp"
 
@@ -504,7 +505,64 @@ static void TestFlow() {
     fs::remove_all(dir);
 }
 
+static std::vector<uint8_t> Bytes(const std::string& s) { return std::vector<uint8_t>(s.begin(), s.end()); }
+
+static void TestCipher() {
+    // Known answers produced by gophertunnel's packet encrypt (same key schedule, checksum and counters).
+    uint8_t key[32];
+    for (int i = 0; i < 32; i++)
+        key[i] = uint8_t(i * 3);
+    PacketCipher c;
+    CHECK(c.InitWithKey(key));
+    const auto c1 = c.Encrypt(Bytes(std::string(1, '\0') + "hello batch one"));
+    const auto c2 = c.Encrypt(Bytes(std::string(1, '\xff') + "second, a bit longer batch payload 0123456789"));
+    auto hex = [](const std::vector<uint8_t>& v) { return Hex(std::string(v.begin(), v.end())); };
+    CHECK(hex(c1) == "25a37bff9dee666daffeaccc2c7e64266bbb1932258d960a");
+    CHECK(hex(c2) == "1af35bde0ebdaf1b7a7ee4e3a170dd667f3d8ce6ff53da4f8b55e345df65c4ae2805f4af9394dddfab0d101ab1fd445ecdadd4d09d94");
+    PacketCipher d;
+    CHECK(d.InitWithKey(key));
+    std::vector<uint8_t> plain;
+    CHECK(d.Decrypt(c1, plain) && plain.size() == 16 && plain[0] == 0);
+    CHECK(d.Decrypt(c2, plain) && plain.size() == 46 && plain[0] == 0xff);
+    auto tampered = c1;
+    tampered[3] ^= 1;
+    PacketCipher e;
+    CHECK(e.InitWithKey(key));
+    CHECK(!e.Decrypt(tampered, plain));
+
+    // Full handshake: a fake server derives the same key from its side of the ECDH exchange.
+    ClientIdentity client, server;
+    const std::string salt = "0123456789abcdef";
+    const std::string token = Jwt("{\"alg\":\"ES384\",\"x5u\":\"" + server.PublicKeyB64() + "\"}",
+                                  "{\"salt\":\"" + B64Standard(salt) + "\"}");
+    PacketCipher mine;
+    std::string err;
+    CHECK(mine.InitFromHandshake(client, token, err));
+
+    const std::string clientDer = StdB64Decode(client.PublicKeyB64());
+    const unsigned char* p = reinterpret_cast<const unsigned char*>(clientDer.data());
+    EVP_PKEY* pk = d2i_PUBKEY(nullptr, &p, static_cast<long>(clientDer.size()));
+    EC_KEY* clientPub = EVP_PKEY_get1_EC_KEY(pk);
+    unsigned char secret[64];
+    const int n = ECDH_compute_key(secret, sizeof(secret), EC_KEY_get0_public_key(clientPub), server.Key(), nullptr);
+    CHECK(n == 48);
+    std::string input = salt + std::string(reinterpret_cast<char*>(secret), size_t(n));
+    uint8_t derived[32];
+    EVP_Digest(input.data(), input.size(), derived, nullptr, EVP_sha256(), nullptr);
+    PacketCipher theirs;
+    CHECK(theirs.InitWithKey(derived));
+    const auto wire = mine.Encrypt(Bytes("batch from the client"));
+    CHECK(theirs.Decrypt(wire, plain) && std::string(plain.begin(), plain.end()) == "batch from the client");
+    const auto back = theirs.Encrypt(Bytes("batch from the server"));
+    CHECK(mine.Decrypt(back, plain) && std::string(plain.begin(), plain.end()) == "batch from the server");
+    EC_KEY_free(clientPub);
+    EVP_PKEY_free(pk);
+
+    CHECK(!PacketCipher().InitFromHandshake(client, "not.a.token", err));
+}
+
 int main() {
+    TestCipher();
     TestSignatures();
     TestTime();
     TestSkins();

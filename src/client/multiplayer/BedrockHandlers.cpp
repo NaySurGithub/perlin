@@ -1,4 +1,5 @@
 #include "client/multiplayer/BedrockSession.hpp"
+#include "network/ClientIdentity.hpp"
 #include "network/PacketDump.hpp"
 #include "world/level/block/BlockPalette.hpp"
 
@@ -60,7 +61,11 @@ namespace perlin {
             std::cout << "[bedrock] PlayStatus " << static_cast<int>(p.status) << std::endl;
             if (state == State::WaitingPlayStatus) {
                 if (p.status != PlayStatusPacketStatus::LoginSuccess) {
-                    lastError = "login rejected, PlayStatus=" + std::to_string(static_cast<int>(p.status));
+                    const int code = static_cast<int>(p.status);
+                    lastError = "login rejected, PlayStatus=" + std::to_string(code);
+                    if (code == 1 || code == 2)
+                        lastError += " (the server runs a different Minecraft version than Perlin's " +
+                                     std::string(kBedrockVersion) + ")";
                     state = State::Failed;
                 }
             } else if (p.status == PlayStatusPacketStatus::PlayerSpawn) {
@@ -79,8 +84,20 @@ namespace perlin {
             state = State::Failed;
         });
 
-        On<ServerToClientHandshakePacket>([this](const ServerToClientHandshakePacket&) {
-            std::cout << "[bedrock] ServerToClientHandshake -> replying (no encryption)" << std::endl;
+        On<ServerToClientHandshakePacket>([this](const ServerToClientHandshakePacket& p) {
+            auto fresh = std::make_unique<PacketCipher>();
+            std::string error;
+            if (!fresh->InitFromHandshake(*identity, p.token, error)) {
+                lastError = "encryption handshake failed: " + error;
+                state = State::Failed;
+                return;
+            }
+            std::cout << "[bedrock] ServerToClientHandshake -> encryption on" << std::endl;
+            {
+                // Everything after the reply is encrypted, the reply itself included.
+                std::lock_guard<std::mutex> lock(txMutex);
+                cipher = std::move(fresh);
+            }
             Send(ClientToServerHandshakePacket{});
         });
 

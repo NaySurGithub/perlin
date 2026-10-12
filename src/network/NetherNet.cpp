@@ -20,8 +20,9 @@ namespace perlin {
 
         std::pair<int, std::string> HttpRequest(const std::string& host, uint16_t port,
                                                 const std::string& verb, const std::string& path,
-                                                const std::string& body, const std::string& contentType) {
-            http::Response r = http::Request(host, port, false, verb, path, body, contentType);
+                                                const std::string& body, const std::string& contentType,
+                                                int timeoutSecs = 15) {
+            http::Response r = http::Request(host, port, false, verb, path, body, contentType, {}, timeoutSecs);
             return {r.status, std::move(r.body)};
         }
 
@@ -55,8 +56,8 @@ namespace perlin {
     }
 
     bool NetherNet::Probe(const std::string& host, uint16_t port, NetherNetServerInfo& info,
-                          std::string& error) {
-        auto [status, body] = HttpRequest(host, port, "GET", "/v1/join", "", "");
+                          std::string& error, int timeoutSecs) {
+        auto [status, body] = HttpRequest(host, port, "GET", "/v1/join", "", "", timeoutSecs);
         if (status == 0) {
             error = "HTTP connect failed (is the server running with transport=nethernet?)";
             return false;
