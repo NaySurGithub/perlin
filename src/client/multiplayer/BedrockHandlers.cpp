@@ -99,6 +99,14 @@ namespace perlin {
         });
 
         On<ServerToClientHandshakePacket>([this](const ServerToClientHandshakePacket& p) {
+            if (!usedRak) {
+                // NetherNet (DTLS) already encrypts the link, and the game protocol must not add its own layer on
+                // top: answer the handshake in the clear and keep everything else unencrypted.
+                std::cout << "[bedrock] ServerToClientHandshake over NetherNet -> replying without encryption"
+                          << std::endl;
+                Send(ClientToServerHandshakePacket{});
+                return;
+            }
             auto fresh = std::make_unique<PacketCipher>();
             std::string error;
             if (!fresh->InitFromHandshake(*identity, p.token, error)) {
@@ -138,6 +146,13 @@ namespace perlin {
                 SendRequestChunkRadius();
                 radiusSent = true;
             }
+        });
+
+        // Chat and system messages: shown in the log so a waiting room or kick reason is not a mystery.
+        OnPartial<TextPacket>([](const TextPacket& t) {
+            static int logged = 0;
+            if (logged++ < 60)
+                std::cout << "[chat] " << (t.sourceName.empty() ? "" : t.sourceName + ": ") << t.message << std::endl;
         });
 
         On<ResourcePackDataInfoPacket>([this](const ResourcePackDataInfoPacket& info) {

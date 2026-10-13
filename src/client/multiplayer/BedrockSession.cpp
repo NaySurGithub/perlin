@@ -1226,16 +1226,15 @@ namespace perlin {
         }
         std::vector<uint16_t> local(st.palette.size());
         for (size_t i = 0; i < local.size(); i++) {
-            local[i] = BlockPalette::Instance().Intern(st.palette[i]);
-            if (BlockPalette::Instance().NamesLoaded() && BlockPalette::Instance().Name(local[i]).empty()) {
-                static const int32_t stoneHash = BlockPalette::HashState("minecraft:stone", {});
-                static int unknownLogged = 0;
-                if (unknownLogged < 20) {
-                    unknownLogged++;
-                    std::cout << "[chunk] unknown block state hash " << st.palette[i] << " in sub-chunk (" << cx
-                              << "," << absSubY << "," << cz << "), drawing it as stone" << std::endl;
-                }
-                local[i] = BlockPalette::Instance().Intern(stoneHash);
+            // Hash 0 is no real block state (the spawn point of at least one public server sits inside such cells),
+            // so it is treated as empty space rather than a solid unknown block.
+            local[i] = st.palette[i] == 0 ? uint16_t(0) : BlockPalette::Instance().Intern(st.palette[i]);
+            static int unknownLogged = 0;
+            if (local[i] != 0 && unknownLogged < 20 && BlockPalette::Instance().NamesLoaded() &&
+                BlockPalette::Instance().Name(local[i]).empty()) {
+                unknownLogged++;
+                std::cout << "[chunk] unknown block state hash " << st.palette[i] << " in sub-chunk (" << cx << ","
+                          << absSubY << "," << cz << ")" << std::endl;
             }
         }
         std::array<uint16_t, ChunkCodec::kCells> cells;
