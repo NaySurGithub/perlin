@@ -1,32 +1,65 @@
 #include "client/Zoom.hpp"
 #include "client/Perlin.hpp"
+#include "client/i18n/Lang.hpp"
 #include "client/multiplayer/SkinLoader.hpp"
 #include "network/XboxAuth.hpp"
 #include "client/renderer/chunk/ChunkMesher.hpp"
 #include "client/platform/AppPlatform.hpp"
 #include "client/renderer/Lightmap.hpp"
+#include "client/renderer/DynamicLights.hpp"
+#include "client/input/Keys.hpp"
 #include "client/renderer/Environment.hpp"
 #include "client/renderer/Fog.hpp"
 #include "client/player/BlockCollision.hpp"
+#include "client/player/BlockDestroy.hpp"
+#include "client/player/BlockUse.hpp"
+#include "client/ui/DeathScreen.hpp"
 #include "client/player/DamageEffect.hpp"
 #include "client/PreviewWorld.hpp"
 #include "client/renderer/chunk/LodStore.hpp"
 #include "client/resources/BedrockSamples.hpp"
+#include "world/level/lighting/ChunkLighting.hpp"
+#include "client/ui/DebugScreen.hpp"
+#include "client/ui/GuiScale.hpp"
+#include "client/ui/ItemData.hpp"
+#include "util/SystemInfo.hpp"
+#include "world/level/block/BlockPalette.hpp"
+#include "client/ui/UiAssets.hpp"
 #include "util/Paths.hpp"
 
+#include "client/player/Interaction.hpp"
 #include <glm/gtc/type_ptr.hpp>
 #include <glm/gtc/matrix_inverse.hpp>
 
 #include <algorithm>
 #include <chrono>
+#include <stdexcept>
 #include <cstdio>
 #include <cstdlib>
+#include <filesystem>
 #include <ctime>
 #include <iostream>
 
 namespace perlin {
     namespace {
+        AimHit gAim;
+        struct LocalCrack { bool active = false; int x = 0, y = 0, z = 0, stage = 0; };
+        LocalCrack gLocalCrack;
+        bool showHitboxes = false;
+        bool showChunkBorders = false;
+        bool advancedTooltips = false;
+        bool softPaused = false;
+        int switcherIndex = -1;
+    }
+}
+
+namespace perlin {
+    namespace {
         using Clock = std::chrono::steady_clock;
+        uint64_t MsNow() {
+            return static_cast<uint64_t>(
+                std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now().time_since_epoch()).count());
+        }
 
         constexpr float kMaxFrameDelta = 0.1f;
         constexpr float kDefaultFrameDelta = 0.016f;
@@ -84,6 +117,7 @@ namespace perlin {
     bool Perlin::Initialize(AppPlatform* p) {
         platform = p;
         options = Options::Load();
+        i18n::Lang::Get().Configure(std::string(), paths::DataDir(), options.language);
         if (!args.server.empty())
             options.server = args.server;
         if (!args.playerName.empty())
@@ -94,7 +128,7 @@ namespace perlin {
             std::cout << "[auth] saved Microsoft login removed" << std::endl;
         }
         if (args.login)
-            options.onlineLogin = true; // remembered: the next start signs in again without the flag
+            options.onlineLogin = true;
         onlineThisRun = options.onlineLogin && !args.offline;
 
         if (!AcceptEula())
@@ -125,13 +159,11 @@ namespace perlin {
         session = std::make_unique<BedrockSession>();
         session->SetPlayerName(options.playerName);
         session->SetTransport(args.transport.empty() ? options.transport : args.transport);
-        // Ask the server for the whole render distance. Within 32 chunks columns are full (meshed); beyond that only the
-        // surface is fetched and sampled into the far-terrain (LOD) store.
+
         session->SetChunkRadius(options.renderDistance);
         session->SetMaxViewDistance(std::max(32, options.renderDistance));
         session->SetNearRadius(options.renderDistance > LodStore::kRealChunks ? LodStore::kRealChunks : 1 << 20);
 
-        // --skin / --cape / --slim override options.json for this run only.
         SkinConfig skinConfig;
         skinConfig.skinPath = args.skin.empty() ? options.skin : args.skin;
         skinConfig.capePath = args.cape.empty() ? options.cape : args.cape;
@@ -140,7 +172,7 @@ namespace perlin {
         std::string skinError;
         if (!LoadSkinConfig(skinConfig, loadedSkin, skinError)) {
             std::cout << "[perlin] skin: " << skinError << " - using the default skin" << std::endl;
-            SetStatusHint("Skin not loaded: " + skinError);
+            SetStatusHint(i18n::Tr("perlin.status.skin_failed", {skinError}));
             skinConfig.skinPath.clear();
             skinConfig.capePath.clear();
             LoadSkinConfig(skinConfig, loadedSkin, skinError);
@@ -163,12 +195,12 @@ namespace perlin {
                     [this](const std::string& url, const std::string& code) {
                         std::cout << "[auth] To sign in, open " << url << " and enter the code " << code << std::endl;
                         platform->ShowSignInCode(url, code);
-                        SetStatusHint("Sign in at " + url + " with code " + code + " (copied to the clipboard)");
+                        SetStatusHint(i18n::Tr("perlin.status.sign_in", {url, code}));
                     },
                     error);
                 if (!signedIn) {
                     std::cout << "[auth] sign-in failed: " << error << std::endl;
-                    SetStatusHint("Sign-in failed: " + error);
+                    SetStatusHint(i18n::Tr("perlin.status.sign_in_failed", {error}));
                     return;
                 }
                 SetStatusHint({});
@@ -176,7 +208,7 @@ namespace perlin {
             if (session->Connect(host, port))
                 sessionReady = true;
             else if (account)
-                SetStatusHint("Login failed: " + session->LastError());
+                SetStatusHint(i18n::Tr("perlin.status.login_failed", {session->LastError()}));
         });
     }
 
@@ -190,7 +222,7 @@ namespace perlin {
         if (renderThread.joinable())
             renderThread.join();
         if (account)
-            account->Cancel(); // a pending sign-in would otherwise keep the worker busy for minutes
+            account->Cancel();
         if (session)
             session->Disconnect();
         if (workers)
@@ -207,6 +239,390 @@ namespace perlin {
         renderer->RequestScreenshot(dir + "/" + stamp + ".bmp");
     }
 
+    namespace {
+
+        void RayTargets(Level& level, glm::vec3 origin, glm::vec3 dir, double reach, ui::DebugInfo& info) {
+            BlockPalette& palette = BlockPalette::Instance();
+            static std::unordered_map<uint16_t, int> kind;
+            const auto classify = [&](uint16_t id) {
+                const auto it = kind.find(id);
+                if (it != kind.end())
+                    return it->second;
+                const std::string name = palette.Name(id);
+                int k = 2;
+                if (name == "minecraft:air" || name == "minecraft:cave_air" || name == "minecraft:void_air" || name.empty())
+                    k = 0;
+                else if (name == "minecraft:water" || name == "minecraft:flowing_water" || name == "minecraft:lava" ||
+                         name == "minecraft:flowing_lava")
+                    k = 1;
+                return kind[id] = k;
+            };
+            const auto describe = [&](ui::DebugInfo::Target& t, int x, int y, int z, uint16_t id) {
+                t.valid = true;
+                t.x = x;
+                t.y = y;
+                t.z = z;
+                t.name = palette.Name(id);
+                for (const auto& [key, value] : palette.States(id)) {
+                    std::string k = key;
+                    if (k.rfind("minecraft:", 0) == 0)
+                        k.erase(0, 10);
+                    std::string v;
+                    switch (value.kind) {
+                    case BlockPalette::StateValue::Bool: v = value.i ? "true" : "false"; break;
+                    case BlockPalette::StateValue::Int: v = std::to_string(value.i); break;
+                    default: v = value.s; break;
+                    }
+                    t.properties.emplace_back(k, v);
+                }
+            };
+            int x = static_cast<int>(std::floor(origin.x)), y = static_cast<int>(std::floor(origin.y)),
+                z = static_cast<int>(std::floor(origin.z));
+            const int stepX = dir.x > 0 ? 1 : -1, stepY = dir.y > 0 ? 1 : -1, stepZ = dir.z > 0 ? 1 : -1;
+            const auto inv = [](float d) { return d != 0.0f ? std::fabs(1.0f / d) : 1e30f; };
+            const float dx = inv(dir.x), dy = inv(dir.y), dz = inv(dir.z);
+            const auto firstBoundary = [](float o, int cell, int step, float delta) {
+                return (step > 0 ? (static_cast<float>(cell) + 1.0f - o) : (o - static_cast<float>(cell))) * delta;
+            };
+            float tx = firstBoundary(origin.x, x, stepX, dx), ty = firstBoundary(origin.y, y, stepY, dy),
+                  tz = firstBoundary(origin.z, z, stepZ, dz);
+            float t = 0.0f;
+            while (t <= reach) {
+                bool loaded = true;
+                const uint16_t id = level.GetBlock(x, y, z, loaded);
+                if (!loaded)
+                    return;
+                const int k = classify(id);
+                if (k == 2) {
+                    describe(info.block, x, y, z, id);
+                    return;
+                }
+                if (k == 1 && !info.fluid.valid)
+                    describe(info.fluid, x, y, z, id);
+                if (tx < ty && tx < tz) {
+                    t = tx;
+                    tx += dx;
+                    x += stepX;
+                } else if (ty < tz) {
+                    t = ty;
+                    ty += dy;
+                    y += stepY;
+                } else {
+                    t = tz;
+                    tz += dz;
+                    z += stepZ;
+                }
+            }
+        }
+    }
+
+    void Perlin::UpdateDeathScreen(ui::Hud& hud, BedrockSession* live, const ui::HudState& state, int fbW, int fbH) {
+        const bool preview = std::getenv("PERLIN_PREVIEW_DEATH") != nullptr;
+        bool dead = preview || (live && state.mode != ui::GameMode::Spectator && (state.health <= 0.0f || live->DeathPending()));
+        if (live && live->DeathPending() && state.health > 0.0f && deathShown && Clock::now() - deathAt > std::chrono::seconds(2))
+            live->ClearDeath();
+        const auto now = Clock::now();
+        if (dead && deathRespawnSent) {
+
+            if (now - deathSentAt < std::chrono::seconds(3))
+                dead = false;
+            else
+                deathRespawnSent = false;
+        } else if (!dead) {
+            deathRespawnSent = false;
+        }
+        if (!dead) {
+            if (deathShown) {
+                hud.Overlay().ClearOverlay();
+                deathShown = false;
+                deathSignature.clear();
+            }
+            if (deathTextMode) {
+                deathTextMode = false;
+                if (!chat.IsOpen())
+                    input.SetTextMode(false);
+            }
+            deathLeftDown = false;
+            return;
+        }
+        if (!deathShown) {
+            deathShown = true;
+            deathAt = now;
+            std::cout << "[ui] death screen shown: health=" << state.health << " pending=" << (live && live->DeathPending())
+                      << " cause='" << (live ? live->DeathCause() : std::string()) << "' hud=" << state.visible << std::endl;
+        }
+        if (!deathTextMode) {
+            deathTextMode = true;
+            input.SetTextMode(true);
+        }
+
+        const bool buttons = now - deathAt >= std::chrono::seconds(1);
+        ui::DeathScreenText t;
+        t.title = i18n::Tr("perlin.death.title");
+        t.cause = live ? live->DeathCause() : std::string();
+        t.respawn = i18n::Tr("perlin.death.respawn");
+        t.titleScreen = i18n::Tr("perlin.death.title_screen");
+        t.buttonsEnabled = buttons;
+
+        if (now - deathCheckAt > std::chrono::milliseconds(400) || deathTemplate.empty()) {
+            deathCheckAt = now;
+            uint64_t version = 0;
+            std::string text = ui::LoadDeathScreenTemplate(paths::DataDir(), version);
+            if (version != deathTemplateVersion || deathTemplate.empty()) {
+                deathTemplateVersion = version;
+                deathTemplate = std::move(text);
+                deathSignature.clear();
+                std::cout << "[ui] death screen: loaded " << paths::DataDir() << "/ui/death_screen.rml" << std::endl;
+            }
+        }
+
+        const int scale = hud.OverlayScale();
+        const int guiW = static_cast<int>(std::ceil(static_cast<float>(fbW) / static_cast<float>(scale)));
+        const int guiH = static_cast<int>(std::ceil(static_cast<float>(fbH) / static_cast<float>(scale)));
+        const std::string signature = t.title + "|" + t.cause + "|" + std::to_string(guiW) + "x" + std::to_string(guiH) + "|" +
+                                      (buttons ? "1" : "0") + "|" + t.respawn + t.titleScreen;
+        if (signature != deathSignature || !hud.Overlay().HasOverlay()) {
+            deathSignature = signature;
+            std::string error;
+            if (!hud.Overlay().SetOverlay(ui::BuildDeathScreenRml(deathTemplate, t, guiW, guiH), error)) {
+                std::cout << "[ui] death_screen.rml: " << error << std::endl;
+
+                deathTemplate = ui::DefaultDeathScreenTemplate();
+                hud.Overlay().SetOverlay(ui::BuildDeathScreenRml(deathTemplate, t, guiW, guiH), error);
+            }
+        }
+        float mx = input.MouseX(), my = input.MouseY();
+        if (const char* m = std::getenv("PERLIN_PREVIEW_MOUSE"))
+            std::sscanf(m, "%f,%f", &mx, &my);
+        hud.Overlay().MouseMove(mx / static_cast<float>(scale), my / static_cast<float>(scale));
+        hud.UpdateOverlay(fbW, fbH, options.guiScale);
+
+        const bool down = input.IsMouseDown(0);
+        if (std::getenv("PERLIN_PREVIEW_MOUSE") && !deathHoverLogged) {
+            deathHoverLogged = true;
+            std::cout << "[ui] death screen hover: '" << hud.Overlay().OverlayHover() << "'" << std::endl;
+        }
+        if (!down && deathLeftDown && buttons && !preview) {
+            const std::string hover = hud.Overlay().OverlayHover();
+            std::cout << "[ui] death screen click on '" << hover << "'" << std::endl;
+            if (hover == ui::kDeathRespawnId && live) {
+                live->RequestRespawn();
+                deathRespawnSent = true;
+                deathSentAt = now;
+            }
+
+        }
+        deathLeftDown = down;
+    }
+
+    void Perlin::FillDebug(ui::HudState& s, BedrockSession* live, Level* level) {
+        s.debug = debugOn && s.visible;
+        if (!s.debug)
+            return;
+        const auto now = Clock::now();
+        if (live && now - rateAt >= std::chrono::seconds(1)) {
+            txRate = static_cast<int>(live->PacketsSent() - rateTx);
+            rxRate = static_cast<int>(live->PacketsReceived() - rateRx);
+            rateTx = live->PacketsSent();
+            rateRx = live->PacketsReceived();
+            rateAt = now;
+        }
+        ui::DebugInfo d;
+        d.version = std::string("Perlin ") + "1.0.0" + " (bedrock " + kBedrockVersion + "/vanilla)";
+        d.fps = fpsShown;
+        d.maxFps = options.vsync ? 0 : options.maxFps;
+        d.vsync = options.vsync;
+        d.fancyGraphics = options.fancyGraphics;
+        const GraphicsSettings gfx = GraphicsSettings::From(options);
+        d.clouds = gfx.clouds;
+        d.fancyClouds = gfx.fancyClouds;
+        d.biomeBlend = gfx.biomeBlendRadius;
+        d.tx = txRate;
+        d.rx = rxRate;
+        d.renderDistance = options.renderDistance;
+        d.simulationDistance = options.renderDistance;
+        if (levelRenderer) {
+            d.chunksRendered = static_cast<int>(levelRenderer->MeshedChunks());
+            d.pendingChunks = static_cast<int>(levelRenderer->PendingMeshes());
+            d.pendingUploads = static_cast<int>(levelRenderer->MeshesInFlight());
+            d.availableBuffers = static_cast<int>(levelRenderer->MaxMeshesInFlight() - std::min(levelRenderer->MaxMeshesInFlight(), levelRenderer->MeshesInFlight()));
+        }
+        if (level) {
+            std::lock_guard lock(level->mutex);
+            d.chunksLoaded = static_cast<int>(level->chunks.size());
+        }
+        static const char* kDimensions[] = {"minecraft:overworld", "minecraft:the_nether", "minecraft:the_end"};
+        if (live)
+            d.dimension = kDimensions[std::clamp(live->DimensionId(), 0, 2)];
+
+        const glm::vec3 eye = camera.EyePosition();
+        d.x = camera.x;
+        d.y = camera.y - 1.62;
+        d.z = camera.z;
+        d.yaw = camera.yaw - 90.0f;
+        d.pitch = -camera.pitch;
+        d.skyLight = dbgSky;
+        d.blockLight = dbgBlock;
+        d.compiler = sysinfo::Compiler();
+        d.memUsed = sysinfo::ProcessMemory();
+        d.memPeak = sysinfo::ProcessPeakMemory();
+        d.memTotal = sysinfo::TotalMemory();
+        d.cpuThreads = sysinfo::CpuThreads();
+        static const std::string cpu = sysinfo::CpuName();
+        d.cpuName = cpu;
+        int w = 0, h = 0;
+        platform->GetFramebufferSize(w, h);
+        d.displayW = w;
+        d.displayH = h;
+        if (renderer) {
+            d.gpuLine1 = renderer->RendererName();
+            d.displayVendor = renderer->GpuVendor();
+            d.gpuLine2 = renderer->GpuDescription();
+        }
+        if (level) {
+            const int bx = static_cast<int>(std::floor(d.x)), bz = static_cast<int>(std::floor(d.z));
+            bool loaded = false;
+            level->GetBlock(bx, static_cast<int>(std::floor(d.y)), bz, loaded);
+            d.inLoadedChunk = loaded;
+            if (loaded) {
+                if (now - heightAt > std::chrono::milliseconds(500)) {
+                    heightAt = now;
+                    BlockPalette& palette = BlockPalette::Instance();
+                    heightSurface = level->FindBlockBelow(bx, bz, 319, [&](uint16_t id) { return palette.Name(id) != "minecraft:air"; }) + 1;
+                }
+                d.heightWorldSurface = d.heightMotionBlocking = heightSurface;
+                d.biome = levelRenderer ? levelRenderer->Tints().NameForId(level->GetBiome(bx, static_cast<int>(std::floor(d.y)), bz))
+                                        : "minecraft:plains";
+                if (d.biome.rfind("minecraft:", 0) != 0)
+                    d.biome = "minecraft:" + d.biome;
+            }
+            RayTargets(*level, eye, camera.Direction(), 20.0, d);
+        }
+        ui::BuildDebugLines(d, s.debugLeft, s.debugRight);
+    }
+
+    void Perlin::UpdateAudio(BedrockSession* live, double now, float dt) {
+        static bool opened = false, hooked = false;
+        const std::string& root = ui::UiAssets::Instance().VanillaRoot();
+        if (!opened && (live != nullptr || std::getenv("PERLIN_AUDIO"))) {
+            opened = true;
+            if (!audioEngine.Open())
+                std::cout << "[audio] running without an output device" << std::endl;
+        }
+        if (!hooked) {
+            hooked = true;
+            sounds.SetBlockNamer([](int32_t runtimeId) {
+                BlockPalette& palette = BlockPalette::Instance();
+                return palette.Name(palette.Intern(runtimeId));
+            });
+            sounds.SetSubtitleHook([this](const std::string& sound, const glm::dvec3& position, float volume, bool global) {
+                if (options.sound.subtitles)
+                    subtitles.Add(sound, position, volume, global, static_cast<double>(std::chrono::duration<double>(
+                                                                         std::chrono::steady_clock::now().time_since_epoch()).count()));
+            });
+        }
+        if (!root.empty())
+            sounds.Configure(root);
+        audio::Volumes volumes;
+        const SoundSettings& v = options.sound;
+        volumes.v = {v.master, v.music, v.record, v.weather, v.block, v.hostile, v.neutral, v.player, v.ambient, v.voice};
+        audioEngine.SetVolumes(volumes);
+        audioEngine.SetListener({camera.x, camera.y, camera.z}, camera.yaw - 90.0f);
+        sounds.Tick(now);
+
+        if (live) {
+            for (const BedrockSession::SoundRequest& r : live->TakeSounds()) {
+                const glm::dvec3 at(r.x, r.y, r.z);
+                switch (r.kind) {
+                case BedrockSession::SoundRequest::Kind::Named:
+                    sounds.PlayNamed(r.name, at, r.volume > 0.0f ? r.volume : 1.0f, r.pitch > 0.0f ? r.pitch : 1.0f, !r.global);
+                    break;
+                case BedrockSession::SoundRequest::Kind::Level:
+                    sounds.PlayLevelSound(r.name, at, r.extra, r.entityType, r.baby, r.global);
+                    break;
+                case BedrockSession::SoundRequest::Kind::Stop:
+                    if (r.stopAll)
+                        audioEngine.StopAll();
+                    else
+                        sounds.Stop(r.name);
+                    break;
+                }
+            }
+
+            const physics::State& st = player.State();
+            static physics::State last = st;
+            static double walked = 0, nextStep = 1;
+            static bool haveLast = false;
+            if (!haveLast) {
+                last = st;
+                haveLast = true;
+            }
+            Level& level = live->NetLevel();
+            const auto blockUnder = [&]() -> std::string {
+                for (double dy : {0.2, 0.6, 1.1}) {
+                    bool loaded = false;
+                    const uint16_t id = level.GetBlock(static_cast<int>(std::floor(st.x)), static_cast<int>(std::floor(st.y - dy)),
+                                                       static_cast<int>(std::floor(st.z)), loaded);
+                    if (!loaded)
+                        continue;
+                    const std::string name = BlockPalette::Instance().Name(id);
+                    if (name != "minecraft:air" && !sounds.BlockSoundType(name).empty())
+                        return name;
+                }
+                return {};
+            };
+            const glm::dvec3 feet(st.x, st.y, st.z);
+            if (hudState.mode != ui::GameMode::Spectator) {
+
+                static double swimClock = 0;
+                swimClock += dt;
+                if (st.inWater && !last.inWater && std::fabs(st.vy) > 0.1)
+                    sounds.PlayEntityEvent("minecraft:player", "splash", feet);
+                else if (st.inWater && swimClock > 0.45 && std::hypot(st.x - last.x, st.z - last.z) > 0.03) {
+                    swimClock = 0;
+                    sounds.PlayEntityEvent("minecraft:player", "swim", feet);
+                }
+                if (st.onGround && !last.onGround && !st.inWater) {
+                    const std::string under = blockUnder();
+                    if (!under.empty())
+                        sounds.PlayBlockEvent(under, last.y - st.y > 3.0 ? "fall" : "land", feet);
+                } else if (!st.onGround && last.onGround && st.y > last.y && !st.inWater) {
+                    const std::string under = blockUnder();
+                    if (!under.empty())
+                        sounds.PlayBlockEvent(under, "jump", feet);
+                }
+                if (st.onGround && !st.inWater && !st.onClimbable && !player.Sneaking()) {
+                    walked += std::hypot(st.x - last.x, st.z - last.z) * 0.6;
+                    if (walked > nextStep) {
+                        nextStep = std::floor(walked) + 1.0;
+                        const std::string under = blockUnder();
+                        if (!under.empty())
+                            sounds.PlayBlockEvent(under, "step", feet);
+                    }
+                }
+            }
+            last = st;
+        }
+
+        hudState.subtitles.clear();
+        if (options.sound.subtitles) {
+            const double clockNow = std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
+            for (const audio::Subtitles::Line& l : subtitles.Visible({camera.x, camera.y, camera.z}, camera.yaw - 90.0f, clockNow))
+                hudState.subtitles.push_back({l.text, l.direction, l.brightness});
+        } else {
+            subtitles.Clear();
+        }
+        if (std::getenv("PERLIN_PREVIEW_BORDERS"))
+            showChunkBorders = true;
+        if (std::getenv("PERLIN_PREVIEW_HITBOXES"))
+            showHitboxes = true;
+        if (std::getenv("PERLIN_PREVIEW_SUBTITLES")) {
+            hudState.subtitles = {{"Cow moos", -1, 1.0f}, {"Footsteps", 0, 0.8f}, {"Zombie groans", 1, 0.5f}, {"Explosion", 1, 0.3f}};
+        }
+        (void)dt;
+        (void)now;
+    }
+
     void Perlin::UpdateTitle(int fps) {
         std::string title = "Perlin";
         if (renderer && renderReady) {
@@ -214,19 +630,360 @@ namespace perlin {
             if (!backend.empty())
                 title += " (" + backend + ")";
         }
-        title += " | " + std::to_string(fps) + " FPS";
+        title += " | " + i18n::Tr("perlin.title.fps", {std::to_string(fps)});
         int64_t day = 0;
         int tick = 0;
         if (sessionReady && session->GetWorldTime(day, tick))
             title += " | " + FormatClock(day, tick);
         if (levelRenderer)
-            title += " | " + std::to_string(levelRenderer->MeshedChunks()) + " chunks";
+            title += " | " + i18n::Tr("perlin.title.chunks", {std::to_string(levelRenderer->MeshedChunks())});
         {
             std::lock_guard lock(statusMutex);
             if (!statusHint.empty())
                 title += " | " + statusHint;
         }
         platform->SetTitle(title);
+    }
+
+    namespace {
+        ui::HudItem ToHudItem(const BedrockSession::ItemStackInfo& info) {
+            ui::HudItem item;
+            if (info.Empty())
+                return item;
+            item.name = info.name;
+            item.count = info.count;
+            item.blockRuntimeId = info.blockRuntimeId;
+            item.enchanted = info.enchanted;
+            item.maxDamage = ui::MaxDurability(info.name);
+            item.aux = item.maxDamage > 0 ? std::clamp(info.damage, 0, item.maxDamage) : info.aux;
+            return item;
+        }
+    }
+
+    void Perlin::FillHudState(ui::HudState& s, BedrockSession* live, bool preview) {
+        s.visible = options.showHud && (live || preview);
+        s.tick = preview ? static_cast<uint64_t>(std::chrono::duration<double>(Clock::now().time_since_epoch()).count() * 20.0)
+                         : hudAnim.ticks;
+        s.inWater = headUnderwater;
+        chat.Fill(s, hudAnim.ticks, MsNow());
+        if (preview) {
+            s.health = 20.0f;
+            s.food = 20;
+            s.xpProgress = 0.55f;
+            s.xpLevel = 7;
+            s.armor = 0;
+            s.selectedSlot = previewSlot;
+            static const struct { const char* name; int count; int maxDamage; int aux; } kItems[9] = {
+                {"minecraft:diamond_sword", 1, 1561, 120}, {"minecraft:grass_block", 64, 0, 0},
+                {"minecraft:oak_planks", 12, 0, 0}, {"minecraft:torch", 33, 0, 0},
+                {"minecraft:apple", 5, 0, 0}, {"minecraft:cooked_beef", 2, 0, 0},
+                {"minecraft:iron_pickaxe", 1, 250, 40}, {"minecraft:oak_log", 20, 0, 0}, {"minecraft:bucket", 1, 0, 0}};
+            for (int i = 0; i < 9; i++) {
+                s.hotbar[i] = {};
+                s.hotbar[i].name = kItems[i].name;
+                s.hotbar[i].count = kItems[i].count;
+                s.hotbar[i].maxDamage = kItems[i].maxDamage;
+                s.hotbar[i].aux = kItems[i].aux;
+                s.hotbar[i].enchanted = std::getenv("PERLIN_PREVIEW_ENCHANT") != nullptr;
+            }
+            if (const char* item = std::getenv("PERLIN_PREVIEW_ITEM")) {
+                ui::HudItem& h = s.hotbar[std::clamp(previewSlot, 0, 8)];
+                h.name = item;
+                h.count = 1;
+                h.maxDamage = h.aux = 0;
+            }
+            if (const char* tab = std::getenv("PERLIN_PREVIEW_TAB")) {
+                s.tabOpen = true;
+                s.tabEntries.clear();
+                Texture head;
+                head.width = head.height = 8;
+                head.pixels.assign(8 * 8 * 4, 255);
+                for (size_t i = 0; i < 64; i++) { head.pixels[i * 4] = 170; head.pixels[i * 4 + 1] = 120; head.pixels[i * 4 + 2] = 90; }
+                ui::UiAssets::Instance().SetHead("preview", head);
+                for (int i = 0; i < std::atoi(tab); i++)
+                    s.tabEntries.push_back({"Player" + std::to_string(i + 1), "preview"});
+            }
+            if (std::getenv("PERLIN_PREVIEW_EMPTYHAND"))
+                s.hotbar[previewSlot] = {};
+            if (const char* n = std::getenv("PERLIN_PREVIEW_ITEMNAME")) {
+                s.itemName = n;
+                s.itemNameAlpha = 1.0f;
+            }
+            s.displayHealth = s.health;
+            return;
+        }
+        if (!live)
+            return;
+
+        const auto vitals = live->GetVitals();
+        const auto inv = live->GetInventory();
+        switch (live->GameType()) {
+        case 1: s.mode = ui::GameMode::Creative; break;
+        case 2: s.mode = ui::GameMode::Adventure; break;
+        case 3: case 4: case 6: s.mode = ui::GameMode::Spectator; break;
+        default: s.mode = ui::GameMode::Survival; break;
+        }
+        s.health = vitals.health;
+        s.maxHealth = std::max(1.0f, vitals.maxHealth);
+        s.absorption = vitals.absorption;
+        s.food = static_cast<int>(std::lround(vitals.hunger));
+        s.saturation = vitals.saturation;
+        s.xpLevel = vitals.level;
+        s.xpProgress = vitals.xpProgress;
+        s.air = vitals.air;
+        s.maxAir = std::max(1, vitals.maxAir);
+        s.poison = vitals.poison;
+        s.wither = vitals.wither;
+        s.regeneration = vitals.regeneration;
+        s.hungerEffect = vitals.hungerEffect;
+
+        s.selectedSlot = std::clamp(inv.selected, 0, 8);
+        for (int i = 0; i < 9; i++)
+            s.hotbar[i] = ToHudItem(inv.hotbar[i]);
+        s.offhand = ToHudItem(inv.offhand);
+        int armor = 0;
+        for (int i = 0; i < 4; i++) {
+            s.armorItems[i] = ToHudItem(inv.armor[i]);
+            armor += ui::ArmorPoints(inv.armor[i].name);
+        }
+        s.armor = std::min(20, armor);
+
+        s.healthBlinkUntil = hudAnim.blinkUntil;
+        s.displayHealth = static_cast<float>(hudAnim.displayHealth);
+
+        s.tabOpen = inputManager.IsDown(Action::PlayerList) && !inputManager.Blocked();
+        s.tabEntries.clear();
+        if (s.tabOpen) {
+            auto players = live->PlayerList();
+            std::stable_sort(players.begin(), players.end(), [](const BedrockSession::TabPlayer& a, const BedrockSession::TabPlayer& b) {
+                std::string x = a.name, y = b.name;
+                std::transform(x.begin(), x.end(), x.begin(), ::tolower);
+                std::transform(y.begin(), y.end(), y.begin(), ::tolower);
+                return x < y;
+            });
+            for (const BedrockSession::TabPlayer& p : players) {
+                std::string key = "default";
+                if (p.skin && p.skin->skinWidth >= 64 && p.skin->skinHeight >= 16) {
+                    key = p.uuid + ":" + std::to_string(p.skin->serial);
+                    if (!ui::UiAssets::Instance().HasHead(key)) {
+
+                        const int sc = std::max(1, p.skin->skinWidth / 64);
+                        Texture t;
+                        t.width = t.height = 8;
+                        t.pixels.assign(8 * 8 * 4, 255);
+                        for (int y = 0; y < 8; y++)
+                            for (int x = 0; x < 8; x++) {
+                                const auto px = [&](int ox, int oy, uint8_t out[4]) {
+                                    const size_t i = (static_cast<size_t>((oy + y) * sc + sc / 2) * p.skin->skinWidth +
+                                                      static_cast<size_t>((ox + x) * sc + sc / 2)) * 4;
+                                    for (int c = 0; c < 4; c++)
+                                        out[c] = i + 3 < p.skin->skinRgba.size() ? p.skin->skinRgba[i + c] : 255;
+                                };
+                                uint8_t face[4], hat[4];
+                                px(8, 8, face);
+                                px(40, 8, hat);
+                                uint8_t* o = &t.pixels[static_cast<size_t>(y * 8 + x) * 4];
+                                const float a = hat[3] / 255.0f;
+                                for (int c = 0; c < 3; c++)
+                                    o[c] = static_cast<uint8_t>(face[c] * (1.0f - a) + hat[c] * a);
+                                o[3] = 255;
+                            }
+                        ui::UiAssets::Instance().SetHead(key, std::move(t));
+                    }
+                } else if (!ui::UiAssets::Instance().HasHead(key)) {
+                    Texture t;
+                    t.width = t.height = 8;
+                    t.pixels.assign(8 * 8 * 4, 255);
+                    for (size_t i = 0; i < 64; i++) {
+                        t.pixels[i * 4] = 170; t.pixels[i * 4 + 1] = 120; t.pixels[i * 4 + 2] = 90;
+                    }
+                    ui::UiAssets::Instance().SetHead(key, std::move(t));
+                }
+                s.tabEntries.push_back({p.name, key});
+            }
+        }
+
+        const ui::HudItem& held = s.hotbar[s.selectedSlot];
+        if (!held.Empty() && hudAnim.toolTimer > 0 && s.mode != ui::GameMode::Spectator) {
+            s.itemName = ui::UiAssets::Instance().ItemName(held.name);
+            if (advancedTooltips) {
+
+                s.itemName += " (" + held.name + ")";
+                if (held.maxDamage > 0)
+                    s.itemName += " " + i18n::Tr("perlin.item.durability", {std::to_string(held.maxDamage - held.aux), std::to_string(held.maxDamage)});
+            }
+            s.itemNameAlpha = std::min(255.0f, static_cast<float>(hudAnim.toolTimer) * 256.0f / 10.0f) / 255.0f;
+        } else {
+            s.itemName.clear();
+            s.itemNameAlpha = 0.0f;
+        }
+
+        const auto text = live->GetTitleText();
+        if (hudAnim.overlayTime > 0 && !text.actionBar.empty()) {
+            const float f = static_cast<float>(hudAnim.overlayTime) - hudPartial;
+            s.actionBar = text.actionBar;
+            s.actionBarAlpha = std::clamp(static_cast<int>(f * 255.0f / 20.0f), 0, 255) > 8
+                                   ? std::min(255, static_cast<int>(f * 255.0f / 20.0f)) / 255.0f
+                                   : 0.0f;
+        } else {
+            s.actionBar.clear();
+            s.actionBarAlpha = 0.0f;
+        }
+        if (hudAnim.titleTime > 0 && !text.title.empty()) {
+            const float f = static_cast<float>(hudAnim.titleTime) - hudPartial;
+            int alpha = 255;
+            if (hudAnim.titleTime > hudAnim.titleFadeOut + hudAnim.titleStay) {
+                const float f1 = static_cast<float>(hudAnim.titleFadeIn + hudAnim.titleStay + hudAnim.titleFadeOut) - f;
+                alpha = static_cast<int>(f1 * 255.0f / std::max(1, hudAnim.titleFadeIn));
+            }
+            if (hudAnim.titleTime <= hudAnim.titleFadeOut)
+                alpha = static_cast<int>(f * 255.0f / std::max(1, hudAnim.titleFadeOut));
+            alpha = std::clamp(alpha, 0, 255);
+            s.title = text.title;
+            s.subtitle = text.subtitle;
+            s.titleAlpha = alpha > 8 ? static_cast<float>(alpha) / 255.0f : 0.0f;
+        } else {
+            s.title.clear();
+            s.subtitle.clear();
+            s.titleAlpha = 0.0f;
+        }
+    }
+
+    void Perlin::TickHud() {
+        HudAnim& a = hudAnim;
+        a.ticks++;
+        const int tick = static_cast<int>(a.ticks);
+        ui::HudState& s = hudState;
+
+        const int health = static_cast<int>(std::ceil(s.health));
+        if (!a.haveHealth) {
+            a.haveHealth = true;
+            a.lastHealth = health;
+            a.displayHealth = health;
+            a.lastHealthTick = tick;
+        }
+        const bool invulnerable = tick - a.lastHurtTick < 20;
+        if (health < a.lastHealth) {
+            a.lastHurtTick = tick;
+            a.lastHealthTick = tick;
+            a.blinkUntil = tick + 20;
+        } else if (health > a.lastHealth && invulnerable) {
+            a.lastHealthTick = tick;
+            a.blinkUntil = tick + 10;
+        }
+        if (tick - a.lastHealthTick > 20) {
+            a.lastHealth = health;
+            a.displayHealth = health;
+            a.lastHealthTick = tick;
+        }
+        a.lastHealth = health;
+
+        const ui::HudItem& held = s.hotbar[std::clamp(s.selectedSlot, 0, 8)];
+        if (held.Empty()) {
+            a.toolTimer = 0;
+        } else if (!a.lastTool.Empty() && a.lastTool.name == held.name &&
+                   (held.maxDamage > 0 || a.lastTool.aux == held.aux)) {
+            if (a.toolTimer > 0)
+                a.toolTimer--;
+        } else {
+            a.toolTimer = 40;
+        }
+        a.lastTool = held;
+
+        if (a.overlayTime > 0)
+            a.overlayTime--;
+        if (a.titleTime > 0)
+            a.titleTime--;
+        if (session) {
+            const auto text = session->GetTitleText();
+            if (text.actionAt != a.actionAtSeen) {
+                a.actionAtSeen = text.actionAt;
+                if (!text.actionBar.empty())
+                    a.overlayTime = 60;
+            }
+            if (text.titleAt != a.titleAtSeen) {
+                a.titleAtSeen = text.titleAt;
+                if (!text.title.empty()) {
+                    a.titleFadeIn = std::max(0, text.fadeIn);
+                    a.titleStay = std::max(0, text.stay);
+                    a.titleFadeOut = std::max(0, text.fadeOut);
+                    a.titleTime = a.titleFadeIn + a.titleStay + a.titleFadeOut;
+                }
+            }
+            if (text.title.empty() && text.subtitle.empty())
+                a.titleTime = 0;
+        }
+    }
+
+    void Perlin::SpawnPreviewEntities() {
+        const std::string list = std::getenv("PERLIN_PREVIEW_ENTITIES");
+        std::vector<std::string> names;
+        for (size_t start = 0; start <= list.size();) {
+            const size_t comma = list.find(',', start);
+            const std::string item = list.substr(start, comma == std::string::npos ? std::string::npos : comma - start);
+            if (!item.empty())
+                names.push_back(item);
+            if (comma == std::string::npos)
+                break;
+            start = comma + 1;
+        }
+        const float yawRad = glm::radians(camera.yaw);
+        const glm::dvec3 forward(std::cos(yawRad), 0.0, std::sin(yawRad));
+        const glm::dvec3 right(-forward.z, 0.0, forward.x);
+        const double groundY = std::getenv("PERLIN_PREVIEW_ENTITY_Y") ? std::atof(std::getenv("PERLIN_PREVIEW_ENTITY_Y")) : camera.y - 1.62;
+        const double distance = std::getenv("PERLIN_PREVIEW_ENTITY_DIST") ? std::atof(std::getenv("PERLIN_PREVIEW_ENTITY_DIST")) : 4.0;
+        const double spacing = std::getenv("PERLIN_PREVIEW_ENTITY_SPACING") ? std::atof(std::getenv("PERLIN_PREVIEW_ENTITY_SPACING")) : 1.8;
+        for (size_t i = 0; i < names.size(); i++) {
+            std::string type = names[i], variant;
+            if (const size_t colon = type.find(':'); colon != std::string::npos) {
+                variant = type.substr(colon + 1);
+                type.resize(colon);
+            }
+            const glm::dvec3 p = glm::dvec3(camera.x, groundY, camera.z) + forward * distance +
+                                 right * ((static_cast<double>(i) - (names.size() - 1) * 0.5) * spacing);
+            const float yaw = camera.yaw - 90.0f + 180.0f + (std::getenv("PERLIN_PREVIEW_ENTITY_YAW") ? static_cast<float>(std::atof(std::getenv("PERLIN_PREVIEW_ENTITY_YAW"))) : 0.0f);
+            const uint64_t rid = 1000 + i;
+            if (type == "item") {
+                previewEntities.AddItem(rid, static_cast<int64_t>(rid), p, "minecraft:" + (variant.empty() ? std::string("diamond_sword") : variant),
+                                        variant.find("stack") != std::string::npos ? 40 : 1, 0, 0, false);
+            } else if (type == "player") {
+                previewEntities.AddPlayer(rid, static_cast<int64_t>(rid), "preview" + std::to_string(i), "Steve",
+                                          {p.x, p.y + entity::kPlayerEye, p.z}, 0.0f, yaw, yaw, 0, "");
+                auto skin = std::make_shared<entity::SkinData>();
+                skin->serial = 100 + i;
+                const bool slim = variant.find("alex") != std::string::npos;
+                Texture t;
+                if (ui::UiAssets::Instance().Image(slim ? "textures/entity/alex" : "textures/entity/steve", t)) {
+                    skin->skinWidth = t.width;
+                    skin->skinHeight = t.height;
+                    skin->skinRgba.assign(t.pixels.begin(), t.pixels.end());
+                }
+                skin->slim = slim;
+                if (variant.find("cape") != std::string::npos) {
+                    skin->capeWidth = 64;
+                    skin->capeHeight = 32;
+                    skin->capeRgba.assign(64 * 32 * 4, 255);
+                    for (int y = 0; y < 32; y++)
+                        for (int x = 0; x < 64; x++) {
+                            uint8_t* px = &skin->capeRgba[(static_cast<size_t>(y) * 64 + x) * 4];
+                            px[0] = static_cast<uint8_t>(150 + (x * 3) % 90);
+                            px[1] = static_cast<uint8_t>(20 + y * 3);
+                            px[2] = static_cast<uint8_t>(60 + ((x / 4 + y / 4) % 2) * 80);
+                            px[3] = 255;
+                        }
+                }
+                previewEntities.SetSkin("preview" + std::to_string(i), skin);
+            } else {
+                const uint64_t flags = variant.find("baby") != std::string::npos ? entity::flag::Baby : 0;
+                previewEntities.AddEntity(rid, static_cast<int64_t>(rid), "minecraft:" + type, p, 0.0f, yaw, yaw, flags, 1.0f, 0, 0, 0);
+            }
+            if (const char* held = std::getenv("PERLIN_PREVIEW_HELD"))
+                previewEntities.SetHeld(rid, held);
+            if (std::getenv("PERLIN_PREVIEW_DEAD"))
+                previewEntities.Die(rid);
+            if (std::getenv("PERLIN_PREVIEW_ENTITY_WALK"))
+                previewWalk.push_back(rid);
+        }
     }
 
     void Perlin::RenderThreadMain() {
@@ -237,6 +994,9 @@ namespace perlin {
         }
         renderReady = true;
         levelRenderer = std::make_unique<LevelRenderer>(*renderer, options);
+        handRenderer.Initialize(*renderer);
+        entityRenderer.Initialize(*renderer);
+        entityRenderer.SetItemRenderer(&handRenderer);
 
         camera.fov = options.fov;
         camera.nearPlane = 0.05f;
@@ -253,7 +1013,6 @@ namespace perlin {
         auto animationAt = previous;
         uint64_t animationStep = 0;
 
-        // Developer preview (PERLIN_PREVIEW=1): generated world, fixed camera/time, optional screenshot and exit.
         const bool preview = std::getenv("PERLIN_PREVIEW") != nullptr;
         std::unique_ptr<Level> previewLevel;
         double previewTicks = kNoonTick;
@@ -266,17 +1025,46 @@ namespace perlin {
             camera.x = 24.0f; camera.y = 74.0f; camera.z = -22.0f; camera.yaw = 100.0f; camera.pitch = -6.0f;
             if (const char* c = std::getenv("PERLIN_PREVIEW_CAM"))
                 std::sscanf(c, "%f,%f,%f,%f,%f", &camera.x, &camera.y, &camera.z, &camera.yaw, &camera.pitch);
+            if (const char* m = std::getenv("PERLIN_PREVIEW_PERSPECTIVE"))
+                camera.mode = static_cast<PerspectiveMode>(std::atoi(m) % 3);
             if (const char* t = std::getenv("PERLIN_PREVIEW_TIME"))
                 previewTicks = std::atof(t);
             if (const char* t = std::getenv("PERLIN_PREVIEW_SHOT"))
                 previewShot = t;
             if (const char* t = std::getenv("PERLIN_PREVIEW_WAIT"))
                 previewWait = std::atof(t);
+            if (const char* t = std::getenv("PERLIN_PREVIEW_SWING"))
+                handRenderer.ForceSwingProgress(static_cast<float>(std::atof(t)));
+            if (const char* t = std::getenv("PERLIN_PREVIEW_SLOT"))
+                previewSlot = std::clamp(std::atoi(t), 0, 8);
+            if (std::getenv("PERLIN_PREVIEW_DEBUG"))
+                debugOn = true;
+
+            if (const char* t = std::getenv("PERLIN_PREVIEW_CHAT")) {
+                std::string all = t;
+                size_t from = 0;
+                while (from <= all.size()) {
+                    size_t bar = all.find('|', from);
+                    if (bar == std::string::npos)
+                        bar = all.size();
+                    chat.AddMessage(all.substr(from, bar - from), UINT64_MAX / 2);
+                    from = bar + 1;
+                }
+            }
+            if (const char* t = std::getenv("PERLIN_PREVIEW_CHATOPEN")) {
+                chat.Open(t, MsNow());
+                chatOpenedAt = Clock::now() - std::chrono::seconds(5);
+                input.SetTextMode(true);
+            }
         }
         int frames = 0;
+        auto handLightAt = previous;
+        int handSky = 15, handBlock = 0;
 
         while (renderRunning && platform->isRunning) {
             const auto frameStart = Clock::now();
+
+            i18n::Lang::Get().Configure(ui::UiAssets::Instance().VanillaRoot(), paths::DataDir(), options.language);
             float dt = std::chrono::duration<float>(frameStart - previous).count();
             previous = frameStart;
             if (dt <= 0.0f || dt > kMaxFrameDelta)
@@ -292,11 +1080,11 @@ namespace perlin {
             if (sessionReady) {
                 const uint32_t hurts = session->HurtCount();
                 const auto source = session->LatestHurtSource();
-                // Java: hurtDir = bearing to the damage source - the player's yaw (random 0/180 with no source).
+
                 const auto bearing = [&] {
                     if (!source.known)
                         return static_cast<float>(std::rand() % 2) * 180.0f;
-                    const float javaYaw = camera.yaw - 90.0f; // Perlin yaw 90 looks +Z, Java yaw 0 does
+                    const float javaYaw = camera.yaw - 90.0f;
                     return static_cast<float>(std::atan2(source.dz, source.dx) * 57.29577951308232) - javaYaw;
                 };
                 if (hurts != lastHurtCount) {
@@ -325,6 +1113,282 @@ namespace perlin {
             }
             levelRenderer->ReloadAssetsIfNeeded();
 
+            if (live)
+                for (const std::string& line : live->TakeChat())
+                    chat.AddMessage(line, hudAnim.ticks);
+            if (live || preview) {
+                if (!chat.IsOpen()) {
+                    if (inputManager.Pressed(Action::Chat) || inputManager.Pressed(Action::Command)) {
+                        chat.Open(inputManager.Pressed(Action::Chat) ? "" : "/", MsNow());
+                        chatOpenedAt = Clock::now();
+                        input.SetTextMode(true);
+                    }
+                } else {
+                    auto typed = inputManager.TakeTyped();
+
+                    if (Clock::now() - chatOpenedAt < std::chrono::milliseconds(150))
+                        typed.erase(std::remove_if(typed.begin(), typed.end(),
+                                                   [](const InputManager::Typed& t) {
+                                                       return t.character && (t.key == 't' || t.key == 'T' || t.key == '/');
+                                                   }),
+                                    typed.end());
+                    const ui::ChatLog::Result r = chat.Type(typed, inputManager.Scroll());
+                    if (r.send) {
+                        if (live && r.text[0] == '/')
+                            live->SendCommand(r.text.substr(1));
+                        else if (live)
+                            live->SendChat(r.text);
+                        else
+                            chat.AddMessage(i18n::Tr("chat.type.text", {i18n::Tr("perlin.chat.preview_player"), r.text}), hudAnim.ticks);
+                    }
+                    if (r.close) {
+                        chat.Close();
+                        input.SetTextMode(false);
+                    }
+                }
+            } else if (chat.IsOpen()) {
+                chat.Close();
+                input.SetTextMode(false);
+            }
+
+            if (inputManager.Pressed(Action::ToggleHud))
+                options.showHud = !options.showHud;
+            if ((live || preview) && input.Captured()) {
+                int newSlot = -1;
+                for (int i = 0; i < 9; i++)
+                    if (inputManager.Pressed(static_cast<Action>(static_cast<int>(Action::Hotbar1) + i)))
+                        newSlot = i;
+                static float scrollAccum = 0.0f;
+                if (!inputManager.IsDown(Action::Zoom)) {
+                    scrollAccum += inputManager.Scroll();
+                    while (scrollAccum >= 1.0f || scrollAccum <= -1.0f) {
+                        const int step = scrollAccum > 0.0f ? 1 : -1;
+                        scrollAccum -= static_cast<float>(step);
+                        const int from = newSlot >= 0 ? newSlot : hudState.selectedSlot;
+                        newSlot = ((from - step) % 9 + 9) % 9;
+                    }
+                }
+                if (newSlot >= 0 && newSlot != hudState.selectedSlot) {
+                    hudState.selectedSlot = newSlot;
+                    if (live)
+                        live->SelectHotbarSlot(newSlot);
+                    else
+                        previewSlot = newSlot;
+                }
+                const bool spectator = hudState.mode == ui::GameMode::Spectator;
+                const bool creative = hudState.mode == ui::GameMode::Creative;
+                const ui::HudItem& held = hudState.hotbar[std::clamp(hudState.selectedSlot, 0, 8)];
+
+                gAim = AimHit{};
+                if ((live || previewLevel) && !spectator && levelRenderer) {
+                    const std::vector<entity::Entity> aimEntities = live ? live->Entities().Snapshot() : previewEntities.Snapshot();
+                    gAim = Raycast(live ? live->NetLevel() : *previewLevel, &levelRenderer->Blocks(), aimEntities,
+                                   [&](const entity::Entity& e) {
+                                       const auto hb = entityRenderer.HitBox(e);
+                                       return glm::vec2(hb.first, hb.second);
+                                   },
+                                   {camera.x, camera.y, camera.z}, glm::dvec3(camera.Direction()), 5.7, creative ? 7.0 : 3.0);
+                }
+                if (std::getenv("PERLIN_AIM_DEBUG"))
+                    std::cout << "[aim] kind " << static_cast<int>(gAim.kind) << " block " << gAim.bx << "," << gAim.by << "," << gAim.bz
+                              << " face " << gAim.face << " dist " << gAim.distance << std::endl;
+                const float eyeF[3] = {camera.x, camera.y, camera.z};
+                auto clickOf = [&](float out[3]) {
+                    out[0] = static_cast<float>(gAim.point.x - gAim.bx);
+                    out[1] = static_cast<float>(gAim.point.y - gAim.by);
+                    out[2] = static_cast<float>(gAim.point.z - gAim.bz);
+                };
+                if (live && live->TakeBlockNamesLearned()) {
+                    MesherInvalidateCaches();
+                    live->NetLevel().MarkAllDirty();
+                }
+
+                static double breakClock = 0, useClock = 0, swingClock = 0;
+                static bool breaking = false, usingItem = false;
+                static int bkx = 0, bky = 0, bkz = 0, bkFace = 1;
+                static float breakProgress = 0.0f;
+                static int breakDelayTicks = 0;
+                static int hitTicks = 0;
+                breakClock += dt;
+                useClock += dt;
+                swingClock += dt;
+
+                auto stopBreaking = [&]() {
+                    if (breaking && live)
+                        live->SendPlayerAuthInputBlockAction(1  , bkx, bky, bkz, bkFace);
+                    breaking = false;
+                    breakProgress = 0.0f;
+                    gLocalCrack.active = false;
+                };
+
+                if (spectator) {
+                    stopBreaking();
+                } else {
+
+                    const bool attackHeld = inputManager.IsDown(Action::Attack);
+                    if (inputManager.Pressed(Action::Attack)) {
+                        handRenderer.Attack(options.hand, hudState.Survival());
+                        swingClock = 0;
+                        if (live) {
+                            live->SendSwingArm(gAim.kind == AimHit::Kind::Block ? "mine" : "attack");
+                            if (gAim.kind == AimHit::Kind::Entity) {
+                                float click[3] = {static_cast<float>(gAim.point.x), static_cast<float>(gAim.point.y),
+                                                  static_cast<float>(gAim.point.z)};
+                                live->SendAttackEntity(gAim.entity, eyeF, click);
+                            }
+                        }
+                    }
+                    if (live && attackHeld && gAim.kind == AimHit::Kind::Block) {
+                        const bool newTarget = !breaking || gAim.bx != bkx || gAim.by != bky || gAim.bz != bkz;
+                        if (newTarget) {
+                            stopBreaking();
+                            bkx = gAim.bx; bky = gAim.by; bkz = gAim.bz; bkFace = gAim.face;
+                            breaking = true;
+                            breakProgress = 0.0f;
+                            breakClock = 0;
+                            hitTicks = 0;
+                            live->SendPlayerAuthInputBlockAction(0  , bkx, bky, bkz, bkFace);
+                        }
+
+                        while (breaking && breakClock >= 0.05) {
+                            breakClock -= 0.05;
+                            if (breakDelayTicks > 0) {
+                                breakDelayTicks--;
+                                continue;
+                            }
+
+                            handRenderer.Swing(options.hand);
+                            bool loaded = false;
+                            const uint16_t id = live->NetLevel().GetBlock(bkx, bky, bkz, loaded);
+                            const std::string blockName = loaded ? BlockPalette::Instance().Name(id) : std::string();
+                            float step = 0.0f;
+                            if (creative) {
+                                step = 1.0f;
+                            } else if (!blockName.empty() && blockName != "minecraft:air") {
+                                destroy::Conditions c;
+                                c.heldItem = held.Empty() ? std::string() : held.name;
+                                c.onGround = player.State().onGround;
+                                c.inWater = hudState.inWater;
+                                step = destroy::ProgressPerTick(destroy::Lookup(blockName), c);
+                            }
+                            if (!live->ServerAuthoritativeBlockBreaking() && !creative)
+                                live->SendPlayerAuthInputBlockAction(18  , bkx, bky, bkz, bkFace);
+                            else
+                                live->SendPlayerAuthInputBlockAction(27  , bkx, bky, bkz, bkFace);
+                            breakProgress += step;
+
+                            if (!creative && ++hitTicks % 4 == 0 && !blockName.empty())
+                                sounds.PlayBlockEvent(blockName, "hit", glm::dvec3(bkx + 0.5, bky + 0.5, bkz + 0.5));
+                            if (breakProgress >= 1.0f) {
+                                live->SendPlayerAuthInputBlockAction(26  , bkx, bky, bkz, bkFace);
+                                if (!live->ServerAuthoritativeBlockBreaking() && !creative)
+                                    live->SendPlayerAuthInputBlockAction(2  , bkx, bky, bkz, bkFace);
+
+                                if (!blockName.empty())
+                                    sounds.PlayBlockEvent(blockName, "break", glm::dvec3(bkx + 0.5, bky + 0.5, bkz + 0.5));
+                                live->NetLevel().SetBlock(bkx, bky, bkz, 0);
+
+                                for (int up = 1; up <= 4; up++) {
+                                    bool aboveLoaded = false;
+                                    const uint16_t aboveId = live->NetLevel().GetBlock(bkx, bky + up, bkz, aboveLoaded);
+                                    const std::string aboveName = aboveLoaded ? BlockPalette::Instance().Name(aboveId) : std::string();
+                                    if (aboveName.empty() || !destroy::NeedsSupportBelow(aboveName))
+                                        break;
+                                    live->NetLevel().SetBlock(bkx, bky + up, bkz, 0);
+                                    if (up == 1 && !destroy::BreaksWholeStack(aboveName))
+                                        break;
+                                }
+                                breaking = false;
+                                breakProgress = 0.0f;
+                                gLocalCrack.active = false;
+                                breakDelayTicks = 5;
+                            } else {
+                                gLocalCrack = {true, bkx, bky, bkz, std::clamp(static_cast<int>(breakProgress * 10.0f), 0, 9)};
+                            }
+                        }
+                        if (swingClock > 0.3) {
+                            swingClock = 0;
+                            live->SendSwingArm("mine");
+                        }
+                    } else if (breaking) {
+                        stopBreaking();
+                    } else {
+                        gLocalCrack.active = false;
+                        if (!attackHeld)
+                            breakDelayTicks = 0;
+                    }
+                    if (breakDelayTicks > 0 && breakClock >= 0.05 && !breaking) {
+
+                        breakClock -= 0.05;
+                        breakDelayTicks--;
+                    }
+
+                    const bool useHeld = inputManager.IsDown(Action::Use);
+                    const bool usePressed = inputManager.Pressed(Action::Use);
+
+                    static auto lastUseSent = Clock::time_point{};
+                    const bool tooSoon = Clock::now() - lastUseSent < std::chrono::milliseconds(60);
+                    if ((usePressed || (useHeld && useClock >= 0.2)) && !tooSoon) {
+                        lastUseSent = Clock::now();
+                        useClock = 0;
+                        const bool holdsItem = !held.Empty();
+                        const bool holdsBlock = holdsItem && held.blockRuntimeId != 0;
+                        blockuse::Use use = blockuse::Use::Nothing;
+                        int dest[3] = {0, 0, 0};
+                        if (gAim.kind == AimHit::Kind::Block && (live || previewLevel)) {
+                            Level& lv = live ? live->NetLevel() : *previewLevel;
+                            const auto nameAt = [&](int x, int y, int z) {
+                                bool loaded = false;
+                                const uint16_t id = lv.GetBlock(x, y, z, loaded);
+                                return loaded ? BlockPalette::Instance().Name(id) : std::string();
+                            };
+                            int clicked[3] = {gAim.bx, gAim.by, gAim.bz};
+                            static const int kOff[6][3] = {{0, -1, 0}, {0, 1, 0}, {0, 0, -1}, {0, 0, 1}, {-1, 0, 0}, {1, 0, 0}};
+                            const int f = std::clamp(gAim.face, 0, 5);
+                            const blockuse::Result r = blockuse::Classify(
+                                nameAt(clicked[0], clicked[1], clicked[2]),
+                                nameAt(clicked[0] + kOff[f][0], clicked[1] + kOff[f][1], clicked[2] + kOff[f][2]), clicked, gAim.face,
+                                holdsItem, holdsBlock, inputManager.IsDown(Action::Sneak));
+                            use = r.use;
+                            std::copy(r.dest, r.dest + 3, dest);
+                        }
+
+                        const bool allowed = usePressed || (use == blockuse::Use::Place);
+                        if (gAim.kind == AimHit::Kind::Block && allowed) {
+                            if (use != blockuse::Use::Nothing)
+                                handRenderer.Swing(options.hand);
+                            if (live) {
+                                float click[3];
+                                clickOf(click);
+                                if (use != blockuse::Use::Nothing)
+                                    live->SendSwingArm(use == blockuse::Use::Place ? "build" : "interact");
+                                live->SendUseItemOnBlock(gAim.bx, gAim.by, gAim.bz, gAim.face, click, eyeF, static_cast<int>(use), dest);
+                            }
+                        }
+
+                        if (usePressed && live && holdsItem && use == blockuse::Use::Nothing) {
+                            live->SendUseItemInAir(eyeF);
+                            usingItem = true;
+                        }
+                    }
+                    if (!useHeld && live)
+                        live->EndItemUseOn();
+                    if (usingItem && !useHeld) {
+                        usingItem = false;
+                        if (live)
+                            live->SendReleaseItem(eyeF);
+                    }
+
+                    if (live && inputManager.Pressed(Action::PickBlock) && gAim.kind == AimHit::Kind::Block)
+                        live->SendPickBlock(gAim.bx, gAim.by, gAim.bz);
+
+                    if (live && inputManager.Pressed(Action::Drop) && !held.Empty())
+                        live->SendDropSelected(inputManager.IsDown(Action::Sprint) ? 0 : 1);
+                }
+            } else {
+                gAim = AimHit{};
+            }
+
             double worldTicks = preview ? previewTicks : kNoonTick;
             if (live)
                 live->GetWorldTicks(worldTicks);
@@ -345,7 +1409,45 @@ namespace perlin {
                 }
             }
 
-            // Camera inside water: fog, colour and water vision follow Java's WaterFogEnvironment.
+            if (preview && previewLevel && std::getenv("PERLIN_PREVIEW_EDIT")) {
+                static bool edited = false;
+                if (!edited && frameStart - previewReadyAt > std::chrono::seconds(4)) {
+                    edited = true;
+                    const std::string list = std::getenv("PERLIN_PREVIEW_EDIT");
+                    size_t start = 0;
+                    while (start < list.size()) {
+                        size_t end = list.find(';', start);
+                        if (end == std::string::npos)
+                            end = list.size();
+                        int dx = 0, dy = 0, dz = 0;
+                        char name[128] = {0};
+                        if (std::sscanf(list.substr(start, end - start).c_str(), "%d,%d,%d,%127s", &dx, &dy, &dz, name) == 4) {
+                            BlockPalette& palette = BlockPalette::Instance();
+                            const uint16_t id = palette.Intern(BlockPalette::HashState(name, {}));
+                            previewLevel->SetBlock(static_cast<int>(std::floor(camera.x)) + dx, static_cast<int>(std::floor(camera.y)) + dy,
+                                                   static_cast<int>(std::floor(camera.z)) + dz, id);
+                        }
+                        start = end + 1;
+                    }
+                    std::cout << "[preview] edits applied" << std::endl;
+                }
+            }
+
+            camera.thirdPersonDistance = 5.0f;
+            if (live && camera.mode != PerspectiveMode::FirstPerson) {
+                const LevelCollision col(live->NetLevel(), &levelRenderer->Blocks());
+                const glm::vec3 d = camera.mode == PerspectiveMode::ThirdPersonBack ? -camera.Direction() : camera.Direction();
+                for (float t = 0.3f; t <= 5.0f; t += 0.15f) {
+                    const glm::vec3 q = glm::vec3(camera.x, camera.y, camera.z) + d * t;
+                    const physics::BlockShape cell = col.Query(static_cast<int>(std::floor(q.x)), static_cast<int>(std::floor(q.y)),
+                                                               static_cast<int>(std::floor(q.z)));
+                    if (!cell.Empty()) {
+                        camera.thirdPersonDistance = std::max(0.3f, t - 0.3f);
+                        break;
+                    }
+                }
+            }
+
             bool underwater = false;
             std::string eyeBiome = "minecraft:plains";
             if (live) {
@@ -363,11 +1465,218 @@ namespace perlin {
             }
             static int waterVisionTime = 0;
 
+            headUnderwater = underwater;
+
+            if ((live || previewLevel) && frameStart - handLightAt > std::chrono::milliseconds(200)) {
+                handLightAt = frameStart;
+                const glm::vec3 e = camera.EyePosition();
+                const int bx = static_cast<int>(std::floor(e.x)), by = static_cast<int>(std::floor(e.y)),
+                          bz = static_cast<int>(std::floor(e.z));
+                ChunkLighting::Result lit;
+                Level& lightLevel = live ? live->NetLevel() : *previewLevel;
+                ChunkLighting::Compute(lightLevel, {bx >> 4, bz >> 4}, by - 1, by + 1, lit);
+                const uint8_t packed = lit.At(bx & 15, by, bz & 15);
+                handSky = ChunkLighting::Result::Sky(packed);
+                handBlock = ChunkLighting::Result::Block(packed);
+                dbgSky = handSky;
+                dbgBlock = handBlock;
+            }
+            FillHudState(hudState, live, preview);
+            {
+
+                static bool f3Was = false, combo = false;
+                static bool keyWas[256] = {};
+                static std::chrono::steady_clock::time_point cHeldSince{};
+                static bool cHeld = false;
+                const bool f3 = input.IsKeyDown(Key::F3) && !input.TextMode();
+                const auto edge = [&](int key) {
+                    const bool down = f3 && input.IsKeyDown(key);
+                    const bool fired = down && !keyWas[key & 255];
+                    keyWas[key & 255] = down;
+                    if (fired)
+                        combo = true;
+                    return fired;
+                };
+                const auto say = [&](const std::string& text) {
+                    chat.AddMessage(i18n::Tr("perlin.debug.prefix") + " " + text, hudAnim.ticks);
+                };
+                const auto onOff = [&](bool on) { return i18n::Tr(on ? "options.on" : "options.off"); };
+                const auto num = [](double v) {
+                    char b[32];
+                    std::snprintf(b, sizeof b, "%.2f", v);
+                    return std::string(b);
+                };
+                const float feetY = camera.y - 1.62f;
+                const std::string dimName = live ? (live->DimensionId() == 1 ? "minecraft:the_nether" : live->DimensionId() == 2 ? "minecraft:the_end" : "minecraft:overworld")
+                                                 : "minecraft:overworld";
+                (void)dimName;
+                if (edge('A')) {
+                    if (live)
+                        live->ReloadChunks();
+                    else if (levelRenderer)
+                        levelRenderer->RemeshAll();
+                    say(i18n::Tr("perlin.debug.reload_chunks"));
+                }
+                if (edge('B')) {
+                    showHitboxes = !showHitboxes;
+                    say(i18n::Tr(showHitboxes ? "perlin.debug.hitboxes_on" : "perlin.debug.hitboxes_off"));
+                }
+                {
+
+                    const bool cDown = f3 && input.IsKeyDown('C');
+                    if (edge('C')) {
+                        const std::string tp = "/tp @s " + num(camera.x) + " " + num(feetY) + " " + num(camera.z) + " " +
+                                               num(camera.yaw - 90.0f) + " " + num(-camera.pitch);
+                        platform->SetClipboard(tp);
+                        say(i18n::Tr("perlin.debug.copied_location", {tp}));
+                        cHeldSince = std::chrono::steady_clock::now();
+                        cHeld = true;
+                    }
+                    if (!cDown)
+                        cHeld = false;
+                    else if (cHeld && std::chrono::steady_clock::now() - cHeldSince > std::chrono::seconds(10))
+                        throw std::runtime_error(i18n::Tr("perlin.debug.manual_crash"));
+                }
+                if (edge('D')) {
+                    chat.Clear();
+                    say(i18n::Tr("perlin.debug.chat_cleared"));
+                }
+                if (edge('G')) {
+                    showChunkBorders = !showChunkBorders;
+                    say(i18n::Tr(showChunkBorders ? "perlin.debug.chunk_borders_on" : "perlin.debug.chunk_borders_off"));
+                }
+                if (edge('H')) {
+                    advancedTooltips = !advancedTooltips;
+                    say(i18n::Tr(advancedTooltips ? "perlin.debug.advanced_tooltips_on" : "perlin.debug.advanced_tooltips_off"));
+                }
+                if (edge('I')) {
+                    if (gAim.kind == AimHit::Kind::Block && (live || previewLevel)) {
+                        bool loaded = false;
+                        Level& l = live ? live->NetLevel() : *previewLevel;
+                        const std::string name = BlockPalette::Instance().Name(l.GetBlock(gAim.bx, gAim.by, gAim.bz, loaded));
+                        const std::string cmd = "/setblock " + std::to_string(gAim.bx) + " " + std::to_string(gAim.by) + " " +
+                                                std::to_string(gAim.bz) + " " + name;
+                        platform->SetClipboard(cmd);
+                        say(i18n::Tr("perlin.debug.copied_block", {cmd}));
+                    } else if (gAim.kind == AimHit::Kind::Entity && live) {
+                        entity::Entity target;
+                        if (live->Entities().Find(gAim.entity, target)) {
+                            const std::string cmd = "/summon " + target.type + " " + num(target.pos.x) + " " + num(target.pos.y) + " " + num(target.pos.z);
+                            platform->SetClipboard(cmd);
+                            say(i18n::Tr("perlin.debug.copied_entity", {cmd}));
+                        }
+                    } else {
+                        say(i18n::Tr("perlin.debug.nothing_targeted"));
+                    }
+                }
+                if (edge('N')) {
+                    static int previousMode = static_cast<int>(ui::GameMode::Creative);
+                    const ui::GameMode current = hudState.mode;
+                    const auto modeName = [](int m) { return m == 0 ? "survival" : m == 1 ? "creative" : m == 2 ? "adventure" : "spectator"; };
+                    if (live) {
+                        if (current != ui::GameMode::Spectator) {
+                            previousMode = static_cast<int>(current);
+                            live->SendCommand("gamemode spectator");
+                        } else {
+                            live->SendCommand(std::string("gamemode ") + modeName(previousMode));
+                        }
+                    }
+                    say(i18n::Tr("perlin.debug.gamemode_toggle"));
+                }
+                if (edge('P')) {
+                    input.pauseOnLostFocus = !input.pauseOnLostFocus;
+                    say(i18n::Tr(input.pauseOnLostFocus ? "perlin.debug.pause_on_lost_focus_on" : "perlin.debug.pause_on_lost_focus_off"));
+                }
+                if (edge('T')) {
+                    if (levelRenderer)
+                        levelRenderer->ReloadResources();
+                    entityRenderer.ClearCaches();
+                    ui::UiAssets::Instance().ClearItemCache();
+                    i18n::Lang::Get().Invalidate();
+                    sounds.Reload();
+                    if (hud)
+                        hud->Reload();
+                    say(i18n::Tr("perlin.debug.reload_resources"));
+                }
+                if (edge(Key::F4)) {
+                    if (switcherIndex < 0) {
+                        const int cur = static_cast<int>(hudState.mode);
+                        switcherIndex = cur == 1 ? 0 : cur == 0 ? 1 : cur == 2 ? 2 : 3;
+                    }
+                    switcherIndex = (switcherIndex + 1) % 4;
+                }
+                if (edge(Key::Escape)) {
+                    softPaused = !softPaused;
+                    inputManager.SetBlocked(softPaused);
+                    say(i18n::Tr(softPaused ? "perlin.debug.paused" : "perlin.debug.unpaused"));
+                }
+                if (f3Was && !f3) {
+                    if (switcherIndex >= 0) {
+                        static const char* kModes[4] = {"creative", "survival", "adventure", "spectator"};
+                        if (live)
+                            live->SendCommand(std::string("gamemode ") + kModes[switcherIndex]);
+                        switcherIndex = -1;
+                    } else if (!combo) {
+                        debugOn = !debugOn;
+                    }
+                    combo = false;
+                }
+                f3Was = f3;
+                if (!f3)
+                    std::fill(std::begin(keyWas), std::end(keyWas), false);
+                if (switcherIndex >= 0) {
+                    static const char* kKeys[4] = {"selectWorld.gameMode.creative", "selectWorld.gameMode.survival", "selectWorld.gameMode.adventure",
+                                                   "selectWorld.gameMode.spectator"};
+                    std::string line;
+                    for (int i = 0; i < 4; i++) {
+                        const std::string name = i18n::Tr(kKeys[i]);
+                        line += (i == switcherIndex ? "\u00a7" "e[ " + name + " ]\u00a7" "r" : "\u00a7" "7" + name + "\u00a7" "r");
+                        if (i < 3)
+                            line += "   ";
+                    }
+                    hudState.actionBar = i18n::Tr("perlin.gamemode.switcher") + ": " + line;
+                    hudState.actionBarAlpha = 1.0f;
+                }
+            }
+            FillDebug(hudState, live, live ? &live->NetLevel() : previewLevel.get());
+            UpdateAudio(live, std::chrono::duration<double>(frameStart - startedAt).count(), dt);
+
             tickDebt += dt * 20.0f;
             while (tickDebt >= 1.0) {
                 tickDebt -= 1.0;
                 blockLight.Tick();
                 damage.Tick();
+                if (live || preview) {
+                    TickHud();
+                    HandRenderer::TickIn handIn;
+                    handIn.yaw = camera.yaw - 90.0f;
+                    handIn.pitch = -camera.pitch;
+                    handIn.main = hudState.hotbar[std::clamp(hudState.selectedSlot, 0, 8)];
+                    handIn.off = hudState.offhand;
+                    handIn.survival = hudState.Survival();
+                    handIn.useHeld = (input.Captured() && inputManager.IsDown(Action::Use)) || std::getenv("PERLIN_PREVIEW_USE") != nullptr;
+                    {
+                        const std::string& mn = handIn.main.name;
+                        const bool drink = mn == "minecraft:potion" || mn == "minecraft:milk_bucket" || mn == "minecraft:honey_bottle" ||
+                                           mn == "minecraft:ominous_bottle";
+                        const bool always = mn == "minecraft:golden_apple" || mn == "minecraft:enchanted_golden_apple" ||
+                                            mn == "minecraft:chorus_fruit" || drink || mn == "minecraft:suspicious_stew";
+                        handIn.eating = handIn.survival && handIn.useHeld && HandRenderer::IsFood(mn) &&
+                                        (always || hudState.food < 20);
+                    }
+                    handRenderer.Tick(handIn, options.hand);
+                    {
+
+                        const int et = handRenderer.EatTicks();
+                        if (et >= 7 && et % 4 == 3) {
+                            const std::string& mn = handIn.main.name;
+                            const bool drink = mn == "minecraft:potion" || mn == "minecraft:milk_bucket" ||
+                                               mn == "minecraft:honey_bottle" || mn == "minecraft:ominous_bottle";
+                            sounds.PlayEntityEvent("minecraft:player", drink ? "drink" : "eat",
+                                                   glm::dvec3(camera.x, camera.y, camera.z));
+                        }
+                    }
+                }
                 waterVisionTime = underwater ? std::min(600, waterVisionTime + 1) : std::max(0, waterVisionTime - 10);
                 if (live) {
                     previousRainLevel = rainLevel;
@@ -377,6 +1686,7 @@ namespace perlin {
                 }
             }
             const float partial = static_cast<float>(tickDebt);
+            hudPartial = partial;
             const float rain = glm::mix(previousRainLevel, rainLevel, partial);
             const float thunder = glm::mix(previousThunderLevel, thunderLevel, partial) * rain;
 
@@ -388,7 +1698,13 @@ namespace perlin {
                 input.dimension = static_cast<Dimension>(std::clamp(live->DimensionId(), 0, 2));
             const Environment env = SampleEnvironment(input);
 
-            camera.viewEffect = sessionReady ? damage.ViewMatrix(partial, options.damageTilt) : glm::mat4(1.0f);
+            glm::mat4 bobMatrix(1.0f);
+            if (live && options.hand.viewBobbing && camera.mode == PerspectiveMode::FirstPerson)
+                bobMatrix = BobViewMatrix(player.Bob(), player.PartialTick(), options.hand.bobStrength);
+            const glm::mat4 hurtMatrix = sessionReady ? damage.ViewMatrix(partial, options.damageTilt) : glm::mat4(1.0f);
+
+            camera.viewEffect = hurtMatrix * (options.hand.bobCamera ? bobMatrix : glm::mat4(1.0f));
+            const glm::mat4 handViewEffect = hurtMatrix * (options.hand.bobHand ? bobMatrix : glm::mat4(1.0f));
             const glm::mat4 viewProjection = camera.ViewProjection();
             const Frustum frustum = Frustum::FromViewProjection(viewProjection);
             const glm::vec3 eye = camera.EyePosition();
@@ -431,7 +1747,35 @@ namespace perlin {
                               << " rd " << fog.renderDistanceStart << ".." << fog.renderDistanceEnd << " sky "
                               << fog.skyEnd << " rdchunks " << options.renderDistance << " ticks " << worldTicks << std::endl;
             }
+            std::vector<dynlight::Light> dyn;
+            int dynMode = options.dynamicLights == "fancy" ? 2 : options.dynamicLights == "fast" ? 1 : 0;
+            if (const char* dl = std::getenv("PERLIN_DYNLIGHTS"))
+                dynMode = std::string(dl) == "fancy" ? 2 : std::string(dl) == "fast" ? 1 : 0;
+            if (dynMode && (live || previewLevel)) {
+                const std::vector<entity::Entity> lightEntities = live ? live->Entities().Snapshot() : previewEntities.Snapshot();
+                for (const entity::Entity& le : lightEntities)
+                    if (!le.isSelf)
+                        dynlight::Collect(le, dyn);
+                if (hudState.mode != ui::GameMode::Spectator) {
+                    const int own = std::max(dynlight::ItemLevel(hudState.hotbar[std::clamp(hudState.selectedSlot, 0, 8)].name),
+                                             dynlight::ItemLevel(hudState.offhand.name));
+                    if (own > 0)
+                        dyn.push_back({glm::dvec3(camera.x, camera.y - 0.25, camera.z), static_cast<float>(own)});
+                }
+                dynlight::Select(dyn, glm::dvec3(camera.x, camera.y, camera.z), 8);
+            }
             FrameParams params{};
+            params.motionBlur = options.motionBlur;
+            if (const char* mb = std::getenv("PERLIN_MOTION_BLUR"))
+                params.motionBlur = std::clamp(static_cast<float>(std::atof(mb)), 0.0f, 1.0f);
+            params.dynMode = dynMode;
+            params.dynCount = static_cast<int>(dyn.size());
+            for (size_t i = 0; i < dyn.size(); i++) {
+                params.dynLights[i][0] = static_cast<float>(dyn[i].pos.x - camera.x);
+                params.dynLights[i][1] = static_cast<float>(dyn[i].pos.y - camera.y);
+                params.dynLights[i][2] = static_cast<float>(dyn[i].pos.z - camera.z);
+                params.dynLights[i][3] = dyn[i].level;
+            }
             std::copy_n(glm::value_ptr(viewProjection), 16, params.viewProjection);
             std::copy_n(glm::value_ptr(camera.SkyViewProjection()), 16, params.skyViewProjection);
             std::copy_n(glm::value_ptr(eye), 3, params.cameraPosition);
@@ -443,6 +1787,10 @@ namespace perlin {
             params.skyFogEnd = fog.skyEnd;
             params.cloudFogEnd = fog.cloudEnd;
             params.rgss = graphics.rgss;
+            {
+                const glm::mat4 handProjection = HandRenderer::Projection(70.0f, camera.aspect, camera.farPlane);
+                std::copy_n(glm::value_ptr(handProjection), 16, params.handProjection);
+            }
 
             params.sky.enabled = input.dimension == Dimension::Overworld;
             std::copy_n(glm::value_ptr(env.skyColor), 3, params.sky.skyColor);
@@ -463,11 +1811,16 @@ namespace perlin {
             params.cloud.height = env.cloudHeight;
             params.cloud.gameTicks = std::chrono::duration<double>(frameStart - startedAt).count() * 20.0;
 
-            params.crosshair = true;
+            params.crosshair = false;
+            {
+                int cw = 0, ch = 0;
+                renderer->FramebufferSize(cw, ch);
+                params.guiScale = ui::JavaGuiScale(cw, ch, options.guiScale);
+            }
             params.screenTint[0] = 1.0f;
             params.screenTint[1] = 0.0f;
             params.screenTint[2] = 0.0f;
-            params.screenTint[3] = options.damageTint ? damage.TintAlpha() : 0.0f; // vanilla overlay: constant while hurt
+            params.screenTint[3] = options.damageTint ? damage.TintAlpha() : 0.0f;
 
             {
                 static float waterTile = -1, flowTile = -1, lavaTile = -1;
@@ -505,7 +1858,7 @@ namespace perlin {
                 levelRenderer->Update(previewLevel.get(), camera.x, camera.z, frustum);
                 levelRenderer->Render(frustum, camera.x, camera.z);
                 if (!previewShot.empty() && previewShotFrames < 0) {
-                    // Wait until meshing has settled, then capture.
+
                     const size_t meshed = levelRenderer->MeshedChunks();
                     if (meshed != previewLastMeshed) {
                         previewLastMeshed = meshed;
@@ -521,6 +1874,215 @@ namespace perlin {
                     platform->isRunning = false;
                 }
             }
+
+            if (live) {
+                static const char* shot = std::getenv("PERLIN_LIVE_SHOT");
+                static const char* swingAt = std::getenv("PERLIN_LIVE_SWING");
+                static bool swung = false, shotDone = false;
+                static int shotFrames = 0;
+                const double t = std::chrono::duration<double>(frameStart - startedAt).count();
+                if (swingAt && !swung && t > std::atof(swingAt)) {
+                    swung = true;
+                    handRenderer.Attack(options.hand, true);
+                    live->SendSwingArm("attack");
+                }
+                if (shot) {
+                    const std::string spec = shot;
+                    const size_t at = spec.rfind('@');
+                    const double when = at == std::string::npos ? 20.0 : std::atof(spec.c_str() + at + 1);
+                    if (!shotDone && t > when) {
+                        shotDone = true;
+                        renderer->RequestScreenshot(spec.substr(0, at));
+                    } else if (shotDone && ++shotFrames > 8) {
+                        platform->isRunning = false;
+                    }
+                }
+            }
+
+            if ((live || previewLevel) && ui::UiAssets::Instance().VanillaRoot().size()) {
+                Level& entityLevel = live ? live->NetLevel() : *previewLevel;
+                if (!live && !previewEntitiesSpawned && std::getenv("PERLIN_PREVIEW_ENTITIES")) {
+                    previewEntitiesSpawned = true;
+                    SpawnPreviewEntities();
+                }
+                std::vector<entity::Entity> entities = live ? live->Entities().Snapshot() : previewEntities.Snapshot();
+                if (!live && !previewWalk.empty()) {
+
+                    static std::unordered_map<uint64_t, glm::dvec3> base;
+                    static const auto t0 = std::chrono::steady_clock::now();
+                    const double t = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
+                    for (entity::Entity& pe : entities)
+                        if (std::find(previewWalk.begin(), previewWalk.end(), pe.runtimeId) != previewWalk.end()) {
+                            const glm::dvec3 b = base.emplace(pe.runtimeId, pe.pos).first->second;
+                            const double yawRad = glm::radians(static_cast<double>(pe.yaw));
+                            pe.pos = b + glm::dvec3(-std::sin(yawRad), 0.0, std::cos(yawRad)) * std::sin(t * 1.5) * 1.5;
+                            previewEntities.Move(pe.runtimeId, pe.pos, pe.pitch, pe.yaw, pe.headYaw, true);
+                        }
+                }
+                const bool firstPerson = camera.mode == PerspectiveMode::FirstPerson;
+                if (live || !firstPerson || std::getenv("PERLIN_PREVIEW_SELF")) {
+                    entity::Entity self;
+                    self.runtimeId = 0xFFFFFFFFFFFF0001ull;
+                    self.type = "minecraft:player";
+                    self.isPlayer = self.isSelf = true;
+                    self.pos = {camera.x, camera.y - entity::kPlayerEye, camera.z};
+                    self.yaw = self.headYaw = camera.yaw - 90.0f;
+                    self.pitch = -camera.pitch;
+                    self.moveSerial = 1;
+                    self.mainHand = hudState.hotbar[std::clamp(hudState.selectedSlot, 0, 8)].name;
+                    self.offHand = hudState.offhand.name;
+                    if (inputManager.IsDown(Action::Sneak))
+                        self.flags |= entity::flag::Sneaking;
+                    if (live) {
+                        const LoadedSkin& ls = live->Skin();
+                        const std::string key = ls.skinId + (ls.slimArms ? "/slim" : "/classic");
+                        if (!selfSkinData || key != selfSkinKey) {
+                            auto sd = std::make_shared<entity::SkinData>();
+                            sd->serial = std::hash<std::string>{}(key) | 1ull;
+                            sd->skinWidth = ls.skinWidth;
+                            sd->skinHeight = ls.skinHeight;
+                            sd->skinRgba = ls.skinRgba;
+                            sd->capeWidth = ls.capeWidth;
+                            sd->capeHeight = ls.capeHeight;
+                            sd->capeRgba = ls.capeRgba;
+                            sd->slim = ls.slimArms || options.hand.slimArm;
+                            selfSkinData = sd;
+                            selfSkinKey = key;
+                        }
+                        self.skin = selfSkinData;
+                    }
+                    entities.push_back(std::move(self));
+                }
+                entity::EntityRenderer::FrameIn ein;
+                ein.time = std::chrono::duration<double>(frameStart - startedAt).count();
+                ein.dt = dt;
+                ein.camera = {camera.x, camera.y, camera.z};
+                ein.firstPerson = firstPerson;
+                ein.frustum = &frustum;
+                ein.cameraYaw = camera.yaw - 90.0f;
+                ein.cameraPitch = -camera.pitch;
+                ein.worldTicks = worldTicks;
+                {
+                    int fw = 0, fh = 0;
+                    platform->GetFramebufferSize(fw, fh);
+                    ein.pixelScale = fh > 0 ? 2.0f * std::tan(glm::radians(camera.fov) * 0.5f) / static_cast<float>(fh) : 0.0f;
+                    ein.lineWidthPx = std::max(2.5f, static_cast<float>(fw) / 1920.0f * 2.5f);
+                    ein.hitboxes = showHitboxes;
+                    ein.chunkBorders = showChunkBorders;
+                    ein.playerPos = glm::dvec3(camera.x, camera.y - 1.62, camera.z);
+                }
+                if (gAim.kind == AimHit::Kind::Block && options.showHud) {
+                    ein.outline = true;
+                    ein.outlineLo = gAim.boxLo;
+                    ein.outlineHi = gAim.boxHi;
+                    ein.outlineShape = gAim.shape;
+                }
+                if (live)
+                    for (const auto& c : live->Cracks())
+                        if (!(gLocalCrack.active && c.x == gLocalCrack.x && c.y == gLocalCrack.y && c.z == gLocalCrack.z))
+                            ein.cracks.push_back({c.x, c.y, c.z, c.stage});
+                if (gLocalCrack.active)
+                    ein.cracks.push_back({gLocalCrack.x, gLocalCrack.y, gLocalCrack.z, gLocalCrack.stage});
+                if (const char* cr = std::getenv("PERLIN_PREVIEW_CRACK"); cr && gAim.kind == AimHit::Kind::Block)
+                    ein.cracks.push_back({gAim.bx, gAim.by, gAim.bz, std::atoi(cr)});
+                ein.groundY = [&](double x, double y, double z) -> double {
+                    const int top = entityLevel.FindBlockBelow(static_cast<int>(std::floor(x)), static_cast<int>(std::floor(z)),
+                                                               static_cast<int>(std::floor(y)),
+                                                               [](uint16_t id) {
+
+                                                                   if (id == 0)
+                                                                       return false;
+                                                                   const physics::BlockShape& sh = LevelCollision::ShapeOf(id);
+                                                                   return sh.count == 1 && sh.boxes[0].x0 <= 0.001 && sh.boxes[0].y0 <= 0.001 &&
+                                                                          sh.boxes[0].z0 <= 0.001 && sh.boxes[0].x1 >= 0.999 &&
+                                                                          sh.boxes[0].y1 >= 0.999 && sh.boxes[0].z1 >= 0.999;
+                                                               });
+                    return top <= Chunk::MIN_Y - 1 ? -1000.0 : static_cast<double>(top) + 1.0;
+                };
+                ein.light = [&](const glm::dvec3& p) -> glm::vec3 {
+                    const int bx = static_cast<int>(std::floor(p.x)), by = static_cast<int>(std::floor(p.y)),
+                              bz = static_cast<int>(std::floor(p.z));
+                    const int64_t key = (static_cast<int64_t>(bx) * 73856093) ^ (static_cast<int64_t>(by) * 19349663) ^ (static_cast<int64_t>(bz) * 83492791);
+                    auto& entry = entityLight[key];
+                    if (frameStart - entry.at > std::chrono::milliseconds(300)) {
+                        entry.at = frameStart;
+                        ChunkLighting::Result lit;
+                        ChunkLighting::Compute(entityLevel, {bx >> 4, bz >> 4}, by - 1, by + 1, lit);
+                        const uint8_t packed = lit.At(bx & 15, by, bz & 15);
+                        const int sky = std::clamp<int>(ChunkLighting::Result::Sky(packed), 0, 15);
+                        const int blk = std::clamp<int>(ChunkLighting::Result::Block(packed), 0, 15);
+                        const uint8_t* px = params.lightmap + (static_cast<size_t>(sky) * kLightmapSize + blk) * 4;
+                        entry.colour = {px[0] / 255.0f, px[1] / 255.0f, px[2] / 255.0f};
+                        entry.sky = sky;
+                        entry.block = blk;
+                    }
+                    if (!dyn.empty()) {
+                        const int extra = static_cast<int>(dynlight::LevelAt(dyn, p + glm::dvec3(0.0, 0.5, 0.0)));
+                        if (extra > entry.block) {
+                            const uint8_t* px = params.lightmap + (static_cast<size_t>(entry.sky) * kLightmapSize + extra) * 4;
+                            return {px[0] / 255.0f, px[1] / 255.0f, px[2] / 255.0f};
+                        }
+                    }
+                    return entry.colour;
+                };
+                if (entityLight.size() > 4096)
+                    entityLight.clear();
+                entityRenderer.Render(entities, ein);
+            }
+
+            if ((live || preview) && camera.mode == PerspectiveMode::FirstPerson && options.showHud &&
+                hudState.mode != ui::GameMode::Spectator && ui::UiAssets::Instance().VanillaRoot().size()) {
+                HandRenderer::FrameIn handFrame;
+                handFrame.partial = partial;
+                handFrame.yaw = camera.yaw - 90.0f;
+                handFrame.pitch = -camera.pitch;
+                {
+
+                    const int sky = std::clamp(handSky, 0, 15);
+                    int blk = std::clamp(handBlock, 0, 15);
+                    if (!dyn.empty())
+                        blk = std::max(blk, static_cast<int>(dynlight::LevelAt(dyn, glm::dvec3(camera.x, camera.y, camera.z))));
+                    const uint8_t* px = params.lightmap + (static_cast<size_t>(sky) * kLightmapSize + blk) * 4;
+                    handFrame.light = {px[0] / 255.0f, px[1] / 255.0f, px[2] / 255.0f};
+                }
+                handFrame.viewEffect = handViewEffect;
+                if (session) {
+                    handFrame.skin = &session->Skin();
+                    handFrame.skinSerial = std::hash<std::string>{}(session->Skin().skinId) * 2 + ((session->Skin().slimArms || options.hand.slimArm) ? 1 : 0);
+                    handFrame.slimArm = session->Skin().slimArms;
+                }
+                handFrame.slimArm = handFrame.slimArm || options.hand.slimArm;
+                handRenderer.Render(handFrame, options.hand);
+            }
+
+            {
+                static double hudRetry = 0;
+                const double nowSeconds = std::chrono::duration<double>(frameStart - startedAt).count();
+                const std::string vanillaRoot = options.bedrockSamplesDir + "/repo/resource_pack";
+                if (!hud && nowSeconds >= hudRetry) {
+                    hudRetry = nowSeconds + 2.0;
+                    if (std::filesystem::exists(vanillaRoot + "/ui/hud_screen.json")) {
+                        ui::UiAssets::Instance().Configure(vanillaRoot, &levelRenderer->Blocks());
+                        auto candidate = std::make_unique<ui::Hud>();
+                        if (candidate->Initialize(*renderer, vanillaRoot, paths::DataDir()))
+                            hud = std::move(candidate);
+                        else
+                            candidate->Shutdown();
+                    }
+                }
+                if (hud) {
+                    int fbW = 0, fbH = 0;
+                    renderer->FramebufferSize(fbW, fbH);
+                    hud->Update(hudState, fbW, fbH, options.guiScale);
+                    UpdateDeathScreen(*hud, live, hudState, fbW, fbH);
+                    hud->Render();
+                    float cx, cy, cw, ch;
+                    if (options.showHud && !deathShown && (camera.mode == PerspectiveMode::FirstPerson || options.thirdPersonCrosshair) &&
+                        hudState.mode != ui::GameMode::Spectator &&
+                        hud->Cursor(cx, cy, cw, ch))
+                        renderer->DrawHudCursor(cx, cy, cw, ch);
+                }
+            }
             if (inputManager.Pressed(Action::Screenshot))
                 TakeScreenshot();
             renderer->EndFrame();
@@ -534,7 +2096,8 @@ namespace perlin {
             const auto now = Clock::now();
             if (now - titleAt >= kTitleInterval) {
                 const double seconds = std::chrono::duration<double>(now - titleAt).count();
-                UpdateTitle(static_cast<int>(frames / seconds + 0.5));
+                fpsShown = static_cast<int>(frames / seconds + 0.5);
+                UpdateTitle(fpsShown);
                 titleAt = now;
                 frames = 0;
             }
@@ -545,6 +2108,12 @@ namespace perlin {
             }
         }
 
+        audioEngine.Close();
+        entityRenderer.Shutdown();
+        handRenderer.Shutdown();
+        if (hud)
+            hud->Shutdown();
+        hud.reset();
         levelRenderer.reset();
         renderer->Shutdown();
     }

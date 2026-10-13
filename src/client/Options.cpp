@@ -30,6 +30,8 @@ namespace perlin {
             int cloudRange = 128;
             bool rgss = false;
             bool fovEffects = true;
+            float motionBlur = 0.0f;
+            bool thirdPersonCrosshair = false;
             int damageTilt = 100;
             bool damageTint = false;
             std::string texturePack;
@@ -44,6 +46,11 @@ namespace perlin {
             bool slimArms = false;
             bool onlineLogin = false;
             std::string transport = "auto";
+            HandSettings hand;
+            int guiScale = 0;
+            SoundSettings sound;
+            std::string language = "en_US";
+            std::string dynamicLights = "off";
         };
     }
 
@@ -84,6 +91,8 @@ namespace perlin {
                       o.cloudRange,
                       o.rgss,
                       o.fovEffects,
+                      o.motionBlur,
+                      o.thirdPersonCrosshair,
                       o.damageTilt,
                       o.damageTint,
                       o.texturePack,
@@ -97,7 +106,12 @@ namespace perlin {
                       o.cape,
                       o.slimArms,
                       o.onlineLogin,
-                      o.transport};
+                      o.transport,
+                      o.hand,
+                      o.guiScale,
+                      o.sound,
+                      o.language,
+                      o.dynamicLights};
         auto parsed = json::Read<Stored>(text);
         if (!parsed)
             return o;
@@ -125,12 +139,25 @@ namespace perlin {
         o.cloudRange = std::clamp(stored.cloudRange, 2, 128);
         o.rgss = stored.rgss;
         o.fovEffects = stored.fovEffects;
+        o.motionBlur = std::clamp(stored.motionBlur, 0.0f, 1.0f);
+        o.thirdPersonCrosshair = stored.thirdPersonCrosshair;
         o.damageTilt = std::clamp(stored.damageTilt, 0, 100);
         o.damageTint = stored.damageTint;
         o.texturePack = stored.texturePack;
         o.shadows = stored.shadows;
         o.heldLight = std::clamp(stored.heldLight, 0, 15);
         o.shadowDistance = std::clamp(stored.shadowDistance, 0, 256);
+        o.hand = stored.hand;
+        o.hand.bobStrength = std::clamp(o.hand.bobStrength, 0.0f, 3.0f);
+        o.hand.swingSpeed = std::clamp(o.hand.swingSpeed, 0.1f, 5.0f);
+        o.hand.scale = std::clamp(o.hand.scale, 0.25f, 2.0f);
+        o.guiScale = std::clamp(stored.guiScale, 0, 16);
+        o.sound = stored.sound;
+        o.dynamicLights = stored.dynamicLights == "fast" || stored.dynamicLights == "fancy" ? stored.dynamicLights : "off";
+        o.language = stored.language.empty() ? std::string("en_US") : stored.language;
+        for (float* v : {&o.sound.master, &o.sound.music, &o.sound.record, &o.sound.weather, &o.sound.block, &o.sound.hostile,
+                         &o.sound.neutral, &o.sound.player, &o.sound.ambient, &o.sound.voice})
+            *v = std::clamp(*v, 0.0f, 1.0f);
         o.zoom = stored.zoom;
         o.zoom.inSeconds = std::clamp(o.zoom.inSeconds, 0.0f, 5.0f);
         o.zoom.outSeconds = std::clamp(o.zoom.outSeconds, 0.0f, 5.0f);
@@ -140,7 +167,7 @@ namespace perlin {
         o.zoom.scrollStep = std::clamp(o.zoom.scrollStep, 0.0f, 0.9f);
         o.zoom.smoothing = std::clamp(o.zoom.smoothing, 0.0f, 100.0f);
         if (stored.version < kOptionsVersion) {
-            // Options saved by older builds carry the old vsync-on / 60 fps cap defaults; move them to the new ones once.
+
             o.vsync = Options().vsync;
             o.maxFps = Options().maxFps;
             o.damageTint = Options().damageTint;
@@ -175,6 +202,8 @@ namespace perlin {
                       cloudRange,
                       rgss,
                       fovEffects,
+                      motionBlur,
+                      thirdPersonCrosshair,
                       damageTilt,
                       damageTint,
                       texturePack,
@@ -188,7 +217,12 @@ namespace perlin {
                       cape,
                       slimArms,
                       onlineLogin,
-                      transport};
+                      transport,
+                      hand,
+                      guiScale,
+                      sound,
+                      language,
+                      dynamicLights};
         for (size_t i = 0; i < kActionCount; i++)
             stored.keys[ActionId(static_cast<Action>(i))] = keys[i].Serialize();
 

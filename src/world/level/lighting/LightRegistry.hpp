@@ -20,14 +20,12 @@ namespace perlin {
         uint8_t opacity = 0;
     };
 
-    // Which parts of each block face are solid, on a 16x16 grid (bit = row * 16 + column). Directions are
-    // -Y, +Y, -Z, +Z, -X, +X. Only blocks that light by shape (stairs, slabs...) have one.
     struct FaceOcclusion {
         uint64_t bits[6][4] = {};
         bool Full(int dir) const {
             return (bits[dir][0] & bits[dir][1] & bits[dir][2] & bits[dir][3]) == ~0ull;
         }
-        // Java Shapes.faceShapeOccludes: the two faces together cover the whole square.
+
         static bool Occludes(const FaceOcclusion* a, int dirA, const FaceOcclusion* b) {
             const int dirB = dirA ^ 1;
             for (int w = 0; w < 4; w++) {
@@ -50,7 +48,7 @@ namespace perlin {
         void LoadBehaviorPack(const std::string& blocksDir);
         void SetDerivedOpacity(OpacityFn fn);
         void SetOcclusion(OcclusionFn fn);
-        // Face shapes of a block that lights by shape, or null for every other block.
+
         const FaceOcclusion* Occlusion(uint16_t id) const;
         void Invalidate();
         bool HasRules() const;
@@ -88,7 +86,7 @@ namespace perlin {
         static int Evaluate(const Rule& rule, uint16_t id);
 
         mutable std::array<std::atomic<uint16_t>, 65536> memo;
-        mutable std::array<std::atomic<uintptr_t>, 65536> occlusion; // 0 unknown, 1 none, else FaceOcclusion*
+        mutable std::array<std::atomic<uintptr_t>, 65536> occlusion;
         OcclusionFn occlusionFn;
         mutable std::shared_mutex mutex;
         std::vector<Rule> emissionRules, opacityRules;

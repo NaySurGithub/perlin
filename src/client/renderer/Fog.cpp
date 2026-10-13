@@ -44,7 +44,7 @@ namespace perlin {
             color *= brightness;
         }
         if (in.underwater && color.x != 0.0f && color.y != 0.0f && color.z != 0.0f) {
-            // Water vision brightens the fog colour towards its full-brightness version.
+
             const float scale = 1.0f / std::max(color.x, std::max(color.y, color.z));
             color = glm::mix(color, color * scale, in.waterVision);
         }

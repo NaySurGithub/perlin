@@ -37,15 +37,19 @@ namespace perlin {
         static int TilePx() { return tilePxValue; }
         static constexpr int kAtlasTiles = 128;
 
-        // Picks the tile size from the active TexturePack (a power of two from its block textures; 16 for vanilla).
-        // Every texture is resampled to that one square size.
         void SetTexturePack(bool active);
         bool EnsureLoaded(const std::string& perlinPackDir, const std::string& vanillaRpRoot);
+
+        void Reset();
         bool Ready() const { return ready; }
         void SetFancy(bool value) { fancy = value; }
         bool Complete() const { return complete; }
 
         const BlockAppearance& Look(int32_t localId) const;
+
+        const BlockAppearance* LookByName(const std::string& name) const;
+
+        bool TilePixels(int tile, std::vector<uint8_t>& rgba) const;
         const BlockModels& Models() const { return models; }
         BlockGeometry& Geometry() const { return geometry; }
 
@@ -64,7 +68,7 @@ namespace perlin {
         TileAlpha AlphaOf(int tile) const;
         float SaturationOf(int tile) const;
         std::string TilePathOf(int tile) const;
-        // Atlas layer of the first loaded texture whose path contains `part` (-1 when none is loaded).
+
         int TileContaining(const std::string& part) const;
         void PollAnimation(uint64_t step, const std::function<void(int tile, const uint8_t* rgba)>& emit);
 
@@ -88,7 +92,7 @@ namespace perlin {
         std::unordered_map<int, TileAlpha> alphaByTile;
         std::unordered_map<int, std::string> pathByTile;
         struct AnimSrc {
-            std::vector<uint8_t> pixels; // frames stacked vertically, each already resampled to tilePx
+            std::vector<uint8_t> pixels;
             int frames = 0;
         };
         std::unordered_map<int, AnimSrc> animByTile;

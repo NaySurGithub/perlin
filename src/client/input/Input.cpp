@@ -11,6 +11,14 @@ namespace perlin {
         events.enqueue({InputEvent::KeyUp, key, 0, 0});
     }
 
+    void Input::OnKeyRepeat(int key) {
+        events.enqueue({InputEvent::KeyRepeat, key, 0, 0});
+    }
+
+    void Input::OnChar(int codepoint) {
+        events.enqueue({InputEvent::Char, codepoint, 0, 0});
+    }
+
     void Input::OnMouseMove(float x, float y) {
         mouseX = x;
         mouseY = y;

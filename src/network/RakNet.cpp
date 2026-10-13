@@ -94,7 +94,6 @@ namespace perlin {
         uint32_t GetBe32(const uint8_t* p) { return (uint32_t(p[0]) << 24) | (p[1] << 16) | (p[2] << 8) | p[3]; }
         uint64_t GetBe64(const uint8_t* p) { return (uint64_t(GetBe32(p)) << 32) | GetBe32(p + 4); }
 
-        // IPv4 address as RakNet writes it: 0x04, the four bytes inverted, port big endian.
         void PutAddr(std::vector<uint8_t>& o, const sockaddr_in& a) {
             o.push_back(4);
             const uint8_t* ip = reinterpret_cast<const uint8_t*>(&a.sin_addr);
@@ -138,7 +137,7 @@ namespace perlin {
 #ifdef _WIN32
             DWORD tv = static_cast<DWORD>(timeoutMs);
             setsockopt(s, SOL_SOCKET, SO_RCVTIMEO, reinterpret_cast<const char*>(&tv), sizeof(tv));
-            // A UDP "connection reset" from an earlier ICMP error would otherwise make recv fail on Windows.
+
             DWORD off = 0;
             DWORD bytes = 0;
             WSAIoctl(s, _WSAIOW(IOC_VENDOR, 12), &off, sizeof(off), nullptr, 0, &bytes, nullptr, nullptr);
@@ -178,7 +177,6 @@ namespace perlin {
             return p;
         }
 
-        // pong -> advertisement
         bool ParsePong(const uint8_t* b, int n, std::string& ad) {
             if (n < 35 || b[0] != IdUnconnectedPong)
                 return false;
@@ -190,7 +188,6 @@ namespace perlin {
         }
     }
 
-    // ===================================================================================================
     struct RakNet::Impl {
         Socket sock = kInvalid;
         sockaddr_in server{};
@@ -202,7 +199,6 @@ namespace perlin {
         std::atomic<int64_t> lastRecv{0};
         RakNet* owner = nullptr;
 
-        // ---- send side (guarded by sendMutex) ----
         std::mutex sendMutex;
         uint32_t datagramSeq = 0;
         uint32_t messageIndex = 0;
@@ -212,9 +208,8 @@ namespace perlin {
             std::vector<uint8_t> frame;
             int64_t at = 0;
         };
-        std::map<uint32_t, Sent> inflight; // datagram sequence -> reliable frame awaiting an ACK
+        std::map<uint32_t, Sent> inflight;
 
-        // ---- receive side (receive thread only) ----
         std::vector<uint32_t> acks;
         uint32_t msgLow = 0;
         std::set<uint32_t> msgSeen;
@@ -237,7 +232,6 @@ namespace perlin {
             running = false;
         }
 
-        // ---- sending ----
         void EmitDatagramLocked(const std::vector<uint8_t>& frame, bool reliable) {
             std::vector<uint8_t> d;
             d.reserve(frame.size() + 4);
@@ -277,7 +271,7 @@ namespace perlin {
             if (sock == kInvalid || n == 0)
                 return false;
             std::lock_guard<std::mutex> lock(sendMutex);
-            // Same sizing as go-raknet: IP/UDP 28, frame header 14, split info 10.
+
             const size_t whole = size_t(mtu) - 28 - 14;
             const size_t chunk = whole - 10;
             const uint32_t ord = IsOrdered(rel) ? (orderIndex++ & 0xFFFFFF) : 0;
@@ -353,7 +347,6 @@ namespace perlin {
             Resend(due);
         }
 
-        // ---- receiving ----
         void HandleAckOrNak(const uint8_t* b, int n, bool nak) {
             if (n < 3)
                 return;
@@ -384,7 +377,7 @@ namespace perlin {
 
         bool MarkMessageSeen(uint32_t idx) {
             if (((idx - msgLow) & 0xFFFFFF) >= 0x800000)
-                return false; // already past
+                return false;
             if (!msgSeen.insert(idx).second)
                 return false;
             while (msgSeen.erase(msgLow))
@@ -439,7 +432,7 @@ namespace perlin {
                 off += int(len);
 
                 if (IsReliable(rel) && !MarkMessageSeen(msgIdx))
-                    continue; // retransmission of something already handled
+                    continue;
                 if (split) {
                     if (sCount == 0 || sCount > 512 || sIdx >= sCount || splits.size() > 64)
                         continue;
@@ -467,7 +460,7 @@ namespace perlin {
 
         void Ordered(uint32_t idx, std::vector<uint8_t> content) {
             if (((idx - nextOrder) & 0xFFFFFF) >= 0x800000)
-                return; // old
+                return;
             pendingOrdered.emplace(idx, std::move(content));
             if (pendingOrdered.size() > 20000) {
                 Fail("RakNet: too many out-of-order packets");
@@ -502,7 +495,7 @@ namespace perlin {
             case IdConnectionAccepted: {
                 if (accepted)
                     return;
-                // client address, system index, up to 20 addresses, ping time, pong time
+
                 size_t off = 1;
                 off += AddrSize(c.data() + off, c.size() - off) + 2;
                 int count = 0;
@@ -571,7 +564,6 @@ namespace perlin {
         }
     };
 
-    // ===================================================================================================
     RakNet::RakNet() = default;
     RakNet::~RakNet() { Disconnect(); }
 
@@ -615,7 +607,7 @@ namespace perlin {
         impl->owner = this;
         Impl& s = *impl;
         std::mt19937_64 rng(std::random_device{}());
-        s.guid = -static_cast<int64_t>(rng() >> 2) - 1; // negative, like go-raknet's dialer ids
+        s.guid = -static_cast<int64_t>(rng() >> 2) - 1;
 
         if (!Resolve(host, port, s.server, lastError))
             return false;
@@ -625,7 +617,6 @@ namespace perlin {
             return false;
         }
 
-        // Advertisement (also tells us the server's own protocol, for a helpful log line).
         std::string ad;
         std::string pingError;
         if (Ping(host, port, ad, pingError, 1500)) {
@@ -650,7 +641,7 @@ namespace perlin {
         info.version = kBedrockVersion;
 
         uint8_t buf[2048];
-        // Open connection request 1, largest MTU first.
+
         bool gotReply1 = false;
         bool security = false;
         uint32_t cookie = 0;
@@ -696,7 +687,6 @@ namespace perlin {
         }
         mtu = std::clamp(mtu, 400, kMaxMtu);
 
-        // Open connection request 2.
         std::vector<uint8_t> r2{IdOcr2};
         r2.insert(r2.end(), kMagic, kMagic + 16);
         if (security) {
@@ -729,11 +719,10 @@ namespace perlin {
         s.mtu = mtu;
         std::cout << "[raknet] connected at MTU " << mtu << std::endl;
 
-        // Connected phase.
         SetTimeout(s.sock, 5);
         s.lastRecv = NowMs();
         s.running = true;
-        connected = true; // the thread's Fail() clears it
+        connected = true;
         s.thread = std::thread([this] { impl->Loop(); });
         std::vector<uint8_t> req{IdConnectionRequest};
         PutBe64(req, static_cast<uint64_t>(s.guid));
@@ -768,7 +757,7 @@ namespace perlin {
             CloseSocket(s.sock);
             s.sock = kInvalid;
         }
-        // keep `impl` (and its queue) alive until the next Connect: pending TryReceive callers still drain it
+
     }
 
     bool RakNet::SendReliable(const std::vector<uint8_t>& data) {

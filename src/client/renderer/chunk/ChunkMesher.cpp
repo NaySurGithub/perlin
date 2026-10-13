@@ -39,7 +39,6 @@ namespace perlin {
         return TexHas(t, "lava_") || TexHas(t, "lava");
     }
 
-    // Lava is a liquid like water: it has depth-based surface heights and does not occlude neighbouring faces.
     static bool IsLavaName(uint16_t id) {
         const std::string name = BlockPalette::Instance().Name(id);
         return name == "minecraft:lava" || name == "minecraft:flowing_lava";
@@ -252,7 +251,6 @@ namespace perlin {
         }
     }
 
-    // net.minecraft.util.Mth.getSeed(x, y, z)
     static int64_t JavaPosSeed(int x, int y, int z) {
         int64_t l = static_cast<int64_t>(static_cast<int32_t>(static_cast<uint32_t>(x) * 3129871u)) ^
                     (static_cast<int64_t>(z) * 116129781LL) ^ static_cast<int64_t>(y);
@@ -261,7 +259,6 @@ namespace perlin {
         return l >> 16;
     }
 
-    // java.util.Random (LegacyRandomSource) subset used for weighted model variant selection.
     struct JavaRandom {
         int64_t seed;
         explicit JavaRandom(int64_t s) : seed((s ^ 0x5DEECE66DLL) & ((1LL << 48) - 1)) {}
@@ -306,7 +303,6 @@ namespace perlin {
         uint32_t epoch = 1;
         uint32_t seenGlobal = 0;
 
-        // Entries stay valid until the block library changes (MesherInvalidateCaches), not per chunk.
         void Reset(uint32_t global) {
             if (seenGlobal != global) {
                 seenGlobal = global;
@@ -358,7 +354,6 @@ namespace perlin {
         return m.model[id];
     }
 
-    // 0 none, 1 water, 2 lava.
     static int LiquidKind(BlockLibrary* library, uint16_t id) {
         IdMemo& m = Memo();
         m.Touch(id);
@@ -366,6 +361,9 @@ namespace perlin {
         if (slot < 0) {
             const BlockAppearance* a = library ? LookupApp(library, id) : nullptr;
             slot = a && (IsWaterTex(a->texTop) || IsWaterTex(a->texSide)) ? 1 : (a && IsLavaName(id) ? 2 : 0);
+
+            if (!slot && BlockPalette::Instance().Name(id) == "minecraft:bubble_column")
+                slot = 1;
         }
         return slot;
     }
@@ -419,7 +417,7 @@ namespace perlin {
                 const int a2 = axis == 2 ? 1 : 2;
                 for (int r = 0; r < 16; r++)
                     for (int q = 0; q < 16; q++) {
-                        // r runs along a2, q along a1.
+
                         if (lo[a1] <= q / 16.0 + eps && hi[a1] >= (q + 1) / 16.0 - eps &&
                             lo[a2] <= r / 16.0 + eps && hi[a2] >= (r + 1) / 16.0 - eps) {
                             const int bit = r * 16 + q;
@@ -465,6 +463,18 @@ namespace perlin {
         for (int i = 0; i < 3; i++)
             if (tiles[i] && library.AlphaOf(tiles[i]).holes && !(i == 1 && a.overlayFrac > 0 && a.overlayTile))
                 return 1;
+
+        {
+            const physics::BlockShape& shape = LevelCollision::ShapeOf(id);
+            bool full = false;
+            for (int b = 0; b < shape.count && !full; b++) {
+                const physics::Box& bx = shape.boxes[b];
+                full = bx.x0 <= 1e-6 && bx.y0 <= 1e-6 && bx.z0 <= 1e-6 && bx.x1 >= 1.0 - 1e-6 && bx.y1 >= 1.0 - 1e-6 &&
+                       bx.z1 >= 1.0 - 1e-6;
+            }
+            if (!full)
+                return 0;
+        }
         return kMaxLight;
     }
 
@@ -491,7 +501,7 @@ namespace perlin {
         std::vector<uint16_t> cells;
         std::vector<uint8_t> solid;
         std::vector<uint8_t> biome;
-        std::vector<uint16_t> liquid; // second layer: water inside waterlogged blocks (usually all zero)
+        std::vector<uint16_t> liquid;
         bool anyLiquid = false;
         int yBase = 0, yRows = 0;
 
@@ -565,10 +575,7 @@ namespace perlin {
             BlockLibrary::TileAlpha at = library->AlphaOf(a.top);
             BlockLibrary::TileAlpha as = library->AlphaOf(a.side);
             BlockLibrary::TileAlpha ab = library->AlphaOf(a.bottom);
-            // The grass-block side tile is synthesised with transparent holes under the grass overlay;
-            // that must not make the whole block count as see-through.
-            // Only opaque cubes occlude: water, ice, glass and other translucent tiles must not cull the
-            // faces of the blocks around them (the terrain next to water was missing faces).
+
             if ((a.top && at.translucent) || (a.side && as.translucent) || (a.bottom && ab.translucent))
                 return false;
             if (IsWaterTex(a.texTop) || IsWaterTex(a.texSide) || IsLavaName(id))
@@ -588,7 +595,6 @@ namespace perlin {
         }
     };
 
-    // The liquid occupying a cell: a water block itself, or the water layer of a waterlogged block.
     static uint16_t EffLiquid(const BlockCache& cache, BlockLibrary* library, int x, int y, int z) {
         const uint16_t id = cache.Get(x, y, z);
         if (id != 0 && IsLiquidId(library, id))
@@ -625,8 +631,6 @@ namespace perlin {
         return weight ? total / static_cast<float>(weight) : 0.0f;
     }
 
-    // BlockBehaviour.getShadeBrightness: 0.2 for full-collision blocks, 1.0 otherwise (glass, water,
-    // plants, slabs...). Leaves and ice are full collision blocks that Perlin does not mark opaque.
     static float AoShade(const BlockCache& cache, BlockLibrary* library, int x, int y, int z) {
         const uint16_t id = cache.Get(x, y, z);
         if (id == 0)
@@ -648,8 +652,6 @@ namespace perlin {
         return m.ao[id] == 1 ? 0.2f : 1.0f;
     }
 
-    // Face-pair connectivity of one 16^3 section: flood fill the non-opaque cells; every component links all the
-    // section faces it touches. Faces: 0 down, 1 up, 2 north(-z), 3 south(+z), 4 west(-x), 5 east(+x).
     static uint16_t SectionConnectivity(const BlockCache& cache, int sy) {
         const int y0 = sy * 16;
         static thread_local std::vector<uint8_t> seen;
@@ -752,7 +754,7 @@ namespace perlin {
         else
             for (size_t i = 0; i < cache.cells.size(); i++)
                 cache.solid[i] = cache.cells[i] != 0;
-        // Below the lowest open cell of the padded area everything is buried stone: no faces, no light needed.
+
         int lowAir = cache.yBase + cache.yRows;
         {
             const size_t layer = (size_t)18 * 18;
@@ -806,14 +808,14 @@ namespace perlin {
                   for (int pass = 0; pass < 2; pass++) {
                     uint16_t id = cache.Get(x, y, z);
                     if (pass == 1 && y > cache.yBase && y < cache.yBase + cache.yRows - 1) {
-                        // A solid block with solid neighbours on all six sides has no visible face.
+
                         const size_t c = cache.Idx(x, y, z);
                         if (cache.solid[c] && cache.solid[c - 1] && cache.solid[c + 1] && cache.solid[c - 18] &&
                             cache.solid[c + 18] && cache.solid[c - 324] && cache.solid[c + 324])
                             continue;
                     }
                     if (pass == 0) {
-                        // Waterlogged blocks: the water layer is meshed as a water cell of its own.
+
                         id = cache.Liquid(x, y, z);
                         if (id == 0 || !library || !IsLiquidId(library, id) ||
                             IsLiquidId(library, cache.Get(x, y, z)))
@@ -826,8 +828,7 @@ namespace perlin {
                     const BlockAppearance* app = nullptr;
                     if (textured)
                         app = LookupApp(library, id);
-                    // Blocks without any texture (unknown hashes, barrier, light blocks, structure void...)
-                    // are invisible in Java; drawing them as a stand-in cube produced phantom blocks.
+
                     const ModelEntry* modelEntry = textured ? ModelFor(library, id) : nullptr;
                     if (app && !modelEntry && (app->top | app->side | app->bottom) == 0) {
                         static std::mutex logMutex;
@@ -1088,7 +1089,7 @@ namespace perlin {
                             return Packed{(n1.block + n2.block + n3.block + c.block) >> 2,
                                           (n1.sky + n2.sky + n3.sky + c.sky) >> 2};
                         };
-                        // Corner light/AO depends only on the face direction, so quads sharing one reuse it.
+
                         bool memoHave[12] = {};
                         float memoAo[12][2][2], memoBlock[12][2][2], memoSky[12][2][2];
                         auto emitQuad = [&](const ModelQuad& q) {
@@ -1189,7 +1190,7 @@ namespace perlin {
                             float u0, v0uv, u1, v1uv;
                             BlockLibrary::TileUV(tile, u0, v0uv, u1, v1uv);
                             const float dirShade = q.shade ? kDirShade[q.shadeDir] : 1.0f;
-                            // Reversed vertex order: Perlin front faces wind opposite to Java's.
+
                             static constexpr int kOrder[4] = {0, 3, 2, 1};
                             float v[4][3], col[4][3], uv[4][2], lt[4][2];
                             for (int k = 0; k < 4; k++) {
@@ -1476,7 +1477,7 @@ namespace perlin {
                         }
                         float ox, oy, oz;
                         PlantOffset(baseX + x, baseZ + z, tex, gi.dblPlant, ox, oy, oz);
-                        // Java tinted_cross uses rescale:true, so the 45-degree planes span 0.05..0.95 on both axes.
+
                         const float lo = 0.05f, hi = 0.95f;
                         const float px = bx + ox, py = by + oy, pz = bz + oz;
                         float va[4][3] = {
@@ -1489,7 +1490,7 @@ namespace perlin {
                     }
 
                     const int liquidKind = app ? LiquidKind(library, id) : 0;
-                    const bool isWater = liquidKind != 0; // any liquid (water or lava) uses the surface-height path
+                    const bool isWater = liquidKind != 0;
                     const bool translucent = liquidKind == 1 || (liquidKind == 0 && textured && IsTranslucentId(library, id));
                     int ovTile = 0;
                     float ovR = 1, ovG = 1, ovB = 1;
@@ -1502,7 +1503,7 @@ namespace perlin {
                         if (neighborId != 0 && translucent && neighborId == id)
                             return;
                         if (isWater) {
-                            // Faces between two cells of the same liquid are never visible.
+
                             const uint16_t other = EffLiquid(cache, library, x + nx, y + ny, z + nz);
                             if (other != 0 && LiquidKind(library, other) == liquidKind)
                                 return;
@@ -1555,8 +1556,7 @@ namespace perlin {
                         const int axis1 = nx != 0 ? 1 : 0;
                         const int axis2 = nz != 0 ? 1 : 2;
                         const int normal[3] = {nx, ny, nz};
-                        // Java BlockModelLighter.AdjacencyInfo corners[0] for this facing (used by its
-                        // "both outer cells block light" fallback, which always reuses that edge).
+
                         int first[3] = {0, 0, 0};
                         if (ny < 0)
                             first[0] = -1;
@@ -1630,8 +1630,7 @@ namespace perlin {
                             col[i][1] = base[1] * kv[i];
                             col[i][2] = base[2] * kv[i];
                         }
-                        // Java never flips the quad diagonal; its X faces list vertices in the opposite
-                        // winding from ours, so those are the ones that need the other split.
+
                         const bool flip = nx != 0;
                         tess.AddQuad(v, col, uv, flip, lt);
                         if (ovTile && ny == 0) {
@@ -1773,7 +1772,7 @@ namespace perlin {
                         face(0, 0, -1, tSide, trS, tgS, tbS, fS, known, kShadeZ, cNz, nz);
                         ovTile = 0;
                     }
-                  } // pass
+                  }
                 }
         }
         const uint64_t t4 = NowUs();

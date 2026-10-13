@@ -1,5 +1,6 @@
 #include "util/Paths.hpp"
 #include "client/multiplayer/BedrockSession.hpp"
+#include "client/multiplayer/DeviceProfile.hpp"
 
 #include "network/ClientIdentity.hpp"
 #include "network/NetherNet.hpp"
@@ -35,10 +36,23 @@ namespace perlin {
 
     using proto::LevelChunkPacket;
     using proto::PlayerAuthInputPacket;
-    using proto::SubChunkEntry;
-    using proto::SubChunkPacket;
-    using proto::SubChunkRequestPacket;
-    using proto::SubChunkResult;
+    using proto::SubChunkEntryEntry;
+    using proto::SubChunkEntryEntryResult;
+    using proto::SubchunkPacket;
+    using proto::SubchunkRequestPacket;
+
+    namespace {
+
+        bool IsRequestMode(const LevelChunkPacket& p) { return p.highestSubchunkCount.has_value(); }
+        int RequestSlots(const LevelChunkPacket& p, int dimensionSlots) {
+            if (!p.highestSubchunkCount)
+                return 0;
+            const int32_t limit = *p.highestSubchunkCount;
+            if (limit < 0)
+                return dimensionSlots;
+            return std::min(limit + 1, dimensionSlots);
+        }
+    }
 
     BedrockSession::BedrockSession() {
         RegisterPacketHandlers();
@@ -173,28 +187,30 @@ namespace perlin {
             if (identityJson.empty())
                 return std::nullopt;
 
-            // Without --skin the skin is a blank 64x64 image.
             const std::string skinData = loadedSkin.hasSkin()
                                              ? std::string(loadedSkin.skinRgba.begin(), loadedSkin.skinRgba.end())
                                              : std::string(64 * 64 * 4, '\0');
+
             std::random_device rd;
-            uint64_t devRand = (static_cast<uint64_t>(rd()) << 32) | rd();
-            char devBuf[37], fabBuf[17];
-            snprintf(devBuf, sizeof(devBuf), "d42334a7-6b87-34fe-a78b-%012llx",
-                     (unsigned long long)(devRand & 0xFFFFFFFFFFFFULL));
-            snprintf(fabBuf, sizeof(fabBuf), "%016llx", (unsigned long long)devRand);
-            for (char& c : fabBuf)
-                c = (char)tolower(c);
-            int64_t nowMs = std::chrono::duration_cast<std::chrono::milliseconds>(
-                                std::chrono::system_clock::now().time_since_epoch())
-                                .count();
+            const DeviceProfile device = LoadDeviceProfile();
+            const int64_t clientRandomId = static_cast<int64_t>(((static_cast<uint64_t>(rd()) << 32) | rd()) >> 1);
+            char skinUuid[37];
+            snprintf(skinUuid, sizeof(skinUuid), "%08x-%04x-4%03x-%04x-%08x%04x", rd(), rd() & 0xFFFF, rd() & 0xFFF,
+                     0x8000 | (rd() & 0x3FFF), rd(), rd() & 0xFFFF);
             claims::ClientData skin;
-            skin.ClientRandomId = nowMs;
+            skin.ClientRandomId = clientRandomId;
             skin.MaxViewDistance = maxViewDistance;
-            skin.DeviceId = devBuf;
+            skin.DeviceId = device.id;
             skin.GameVersion = gameVersion;
-            skin.PlayFabId = fabBuf;
-            skin.SelfSignedId = devBuf;
+
+            if (online) {
+                skin.PlayFabId = online->playFabId;
+                for (char& c : skin.PlayFabId)
+                    c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+            }
+            skin.SelfSignedId = DeriveSelfSignedId(clientRandomId, device.id);
+            skin.SkinId = std::string(skinUuid) + ".Custom";
+            skin.SkinColor = "#b37b62";
             skin.ServerAddress = serverAddress;
             skin.SkinData = B64Standard(skinData);
             skin.ThirdPartyName = playerName;
@@ -202,11 +218,11 @@ namespace perlin {
                 skin.SkinImageWidth = loadedSkin.skinWidth;
                 skin.SkinImageHeight = loadedSkin.skinHeight;
                 skin.SkinId = loadedSkin.skinId;
-                skin.OverrideSkin = true;
             }
             const char* geometry = loadedSkin.slimArms ? "geometry.humanoid.customSlim" : "geometry.humanoid.custom";
             skin.ArmSize = loadedSkin.slimArms ? "slim" : "wide";
-            skin.SkinGeometryName = geometry;
+
+            skin.SkinGeometryDataEngineVersion = B64Standard("1.14.60");
             skin.SkinResourcePatch = B64Standard(std::string("{\"geometry\":{\"default\":\"") + geometry + "\"}}");
             if (loadedSkin.hasCape()) {
                 skin.CapeData = B64Standard(std::string(loadedSkin.capeRgba.begin(), loadedSkin.capeRgba.end()));
@@ -216,9 +232,16 @@ namespace perlin {
                 skin.CapeOnClassicSkin = true;
             }
             if (online) {
-                // Online accounts log in as an Android device (the title id in the chain is Android's).
+
                 skin.DeviceOS = 1;
-                skin.DeviceModel = "Perlin";
+                skin.DeviceModel = device.model;
+                skin.PlatformType = 1;
+                skin.DefaultInputMode = 2;
+
+                skin.CurrentInputMode = 1;
+                skin.DefaultInputMode = 1;
+                skin.MemoryTier = 4;
+                skin.GuiScale = 0;
             }
             const claims::Header skinHeader{.x5u = cpk};
             std::string skinJwt = signJwt(skinHeader, skin);
@@ -227,6 +250,49 @@ namespace perlin {
                 return std::nullopt;
             }
 
+            if (online) {
+
+                auto part = [](const std::string& jwt, size_t index) {
+                    size_t from = 0;
+                    for (size_t i = 0; i < index; i++) {
+                        from = jwt.find('.', from);
+                        if (from == std::string::npos)
+                            return std::string();
+                        from++;
+                    }
+                    const size_t to = jwt.find('.', from);
+                    return to == std::string::npos ? std::string() : B64UrlDecode(jwt.substr(from, to - from));
+                };
+                std::string tokenInfo = "unreadable", chainInfo = "unreadable";
+                if (auto t = json::Document::Parse(part(identity.MultiplayerToken(), 1))) {
+                    const json::View r = t->root();
+                    tokenInfo = "iss=" + r["iss"].str() + " aud=" + r["aud"].str() + " xid=" + r["xid"].str() +
+                                " xname=" + r["xname"].str() + " mid=" + r["mid"].str() + " ipt=" + r["ipt"].str() +
+                                " cpk " + (r["cpk"].str() == cpk ? "matches" : "DIFFERS FROM") + " our key";
+                }
+                if (auto c = json::Document::Parse(online->chainJson)) {
+                    chainInfo.clear();
+                    int links = 0;
+                    for (const json::View link : c->root()["chain"].items()) {
+                        links++;
+                        if (auto p = json::Document::Parse(part(link.str(), 1))) {
+                            const json::View extra = p->root()["extraData"];
+                            if (extra["XUID"].isString())
+                                chainInfo += "xuid=" + extra["XUID"].str() + " name=" + extra["displayName"].str() +
+                                             " titleId=" + extra["titleId"].str() + " ";
+                        }
+                    }
+                    chainInfo += "(" + std::to_string(links) + " links)";
+                }
+                std::cout << "[login] multiplayer token: " << tokenInfo << std::endl;
+                std::cout << "[login] certificate chain: " << chainInfo << std::endl;
+                std::cout << "[login] client data: DeviceOS=" << skin.DeviceOS << " model='" << skin.DeviceModel
+                          << "' deviceId=" << skin.DeviceId << " playFabId=" << skin.PlayFabId
+                          << " selfSignedId=" << skin.SelfSignedId << " thirdPartyName=" << skin.ThirdPartyName
+                          << " serverAddress=" << skin.ServerAddress << " gameVersion=" << skin.GameVersion
+                          << " inputMode=" << skin.CurrentInputMode << "/" << skin.DefaultInputMode
+                          << " platformType=" << skin.PlatformType << std::endl;
+            }
             proto::LoginPacket login;
             login.protocolVersion = protocol;
             login.tokens.identity = identityJson;
@@ -252,7 +318,7 @@ namespace perlin {
         packs.Reset();
         packsExpected = 0;
         if (transfer && identity && identity->Valid()) {
-            // Same player, new server: keep the key and the sign-in.
+
         } else {
         identity = std::make_unique<ClientIdentity>();
         if (!identity->Valid()) {
@@ -262,8 +328,8 @@ namespace perlin {
         }
         playerUuid = RandomUuid();
         if (account) {
-            // The version the services are asked about; BDS reports its own after the transport connects.
-            constexpr const char* kServiceGameVersion = "1.26.52";
+
+            constexpr const char* kServiceGameVersion = "1.26.50";
             std::string authError;
             if (!account->LoginMinecraft(identity->PublicKeyB64(), kServiceGameVersion, onlineCreds, authError)) {
                 lastError = "online login failed: " + authError;
@@ -279,11 +345,10 @@ namespace perlin {
             return false;
         }
         }
-        // Pick the transport. Vanilla BDS can offer NetherNet (HTTP signalling + WebRTC); public servers such as
-        // Lifeboat and The Hive only speak RakNet over UDP.
+
         bool useRak = transportMode == "raknet";
         if (transfer && transportMode == "auto") {
-            useRak = usedRak; // the server that sent us here is a network of the same kind
+            useRak = usedRak;
         } else if (transportMode == "auto") {
             NetherNetServerInfo probe;
             std::string probeError;
@@ -331,7 +396,7 @@ namespace perlin {
         uint64_t seenPackets = diagPackets;
         while (state != State::InGame && state != State::Failed) {
             Update();
-            if (diagPackets != seenPackets) { // the server is still talking (pack downloads can take a while)
+            if (diagPackets != seenPackets) {
                 seenPackets = diagPackets;
                 start = std::chrono::steady_clock::now();
             }
@@ -360,6 +425,7 @@ namespace perlin {
         std::lock_guard<std::mutex> txLock(txMutex);
         if (!net || !net->IsConnected())
             return false;
+        txPackets++;
         std::vector<uint8_t> content;
         wire::WriteVarUint32(content, static_cast<uint32_t>(body.size() + wire::VarUint32Size(packetId)));
         wire::WriteVarUint32(content, packetId);
@@ -378,7 +444,7 @@ namespace perlin {
             batch.push_back(0xFF);
             batch.insert(batch.end(), content.begin(), content.end());
         }
-        // Encryption counters must follow the order packets leave in (txMutex is held since the top).
+
         if (cipher && cipher->Active())
             batch = cipher->Encrypt(batch);
         return reliable ? net->SendReliable(batch) : net->SendUnreliable(batch);
@@ -398,7 +464,7 @@ namespace perlin {
         for (const ChunkPos& p : loaded)
             netLevel.RemoveChunk(p.x, p.z);
         std::lock_guard<std::mutex> lk(reqMutex);
-        // Columns the renderer already sampled and released are only known here.
+
         std::vector<ChunkPos> doomed = std::move(loaded);
         for (const auto& entry : columns)
             if (outside(entry.first))
@@ -432,7 +498,7 @@ namespace perlin {
         }
         if (startGameSeen && !initializedSent &&
             std::chrono::steady_clock::now() - startGameAt > std::chrono::seconds(8)) {
-            // PlayerSpawn never came; finish the handshake anyway rather than staying a ghost.
+
             std::cout << "[bedrock] no PlayerSpawn after 8s, initialising anyway" << std::endl;
             SendLoadingScreen(false);
             SendSetLocalPlayerAsInitialized();
@@ -582,7 +648,7 @@ namespace perlin {
                           << " bytes)" << std::endl;
         }
 
-        if (id == LevelChunkPacket::kId || id == SubChunkPacket::kId) {
+        if (id == LevelChunkPacket::kId || id == SubchunkPacket::kId) {
             {
                 std::lock_guard<std::mutex> lk(chunkMutex);
                 chunkIn.emplace_back(id, body);
@@ -675,7 +741,7 @@ namespace perlin {
                 std::cout << "[bedrock] transfer complete" << std::endl;
             transferring = false;
         });
-        // transferThreadId is set from inside the thread; wait for it so Update() can tell the two threads apart.
+
         while (transferThreadId == std::thread::id())
             std::this_thread::yield();
     }
@@ -695,6 +761,7 @@ namespace perlin {
         gotSpawn = false;
         runtimeId = 0;
         uniqueId = 0;
+        ResetPlayerState();
         pose = PlayerPose{};
         haveLastAuthPos = false;
         haveStartPos = false;
@@ -707,7 +774,7 @@ namespace perlin {
 
     void BedrockSession::ResetWorldForDimension() {
         {
-            // Chunk data still queued belongs to the world we are leaving.
+
             std::lock_guard<std::mutex> lk(chunkMutex);
             chunkIn.clear();
         }
@@ -729,8 +796,7 @@ namespace perlin {
         {
             std::lock_guard lock(hurtMutex);
             lastHurtAt = now;
-            // The source is opposite the push we just got; with no recent push the direction stays unknown (Java
-            // then picks hurtDir at random).
+
             const bool recentKnock = knockAt.time_since_epoch().count() != 0 && now - knockAt < std::chrono::seconds(1);
             hurtSource.known = recentKnock;
             hurtSource.dx = recentKnock ? -knockX : 0.0f;
@@ -748,7 +814,7 @@ namespace perlin {
         knockX = vx;
         knockZ = vz;
         knockAt = now;
-        // Knockback that lands right after the hurt event tells us where it came from.
+
         if (!hurtSource.known && lastHurtAt.time_since_epoch().count() != 0 &&
             now - lastHurtAt < std::chrono::milliseconds(150)) {
             hurtSource.known = true;
@@ -823,7 +889,6 @@ namespace perlin {
             pendingTeleportAck = false;
         }
 
-        // A block action rides along with the next movement tick instead of costing a tick of its own.
         bool hasAction = input.hasBlockAction;
         BlockActionData action = input.blockAction;
         if (!hasAction && !pendingBlockActions.empty()) {
@@ -854,31 +919,28 @@ namespace perlin {
         PlayerAuthInputPacket f;
         f.pitch = input.pitch;
         f.yaw = input.yaw;
-        f.eyeX = input.position[0];
-        f.eyeY = input.position[1] + input.eyeHeight;
-        f.eyeZ = input.position[2];
-        f.moveX = mx;
-        f.moveZ = mz;
+        f.position = {input.position[0], input.position[1] + input.eyeHeight, input.position[2]};
+        f.moveVector = {mx, mz};
         f.headYaw = input.yaw;
-        f.flags = inputFlags;
-        f.interactPitch = input.pitch;
-        f.interactYaw = input.yaw;
+        f.inputData.reserve(inputFlags.size());
+        for (uint32_t id : inputFlags)
+            f.inputData.push_back(static_cast<proto::InputData>(id));
+        f.inputMode = proto::PlayerAuthInputPacketInputMode::Mouse;
+        f.playMode = proto::PlayerAuthInputPacketPlayMode::Normal;
+        f.interactionModel = proto::PlayerAuthInputPacketInteractionModel::Crosshair;
+        f.interactRotation = {input.pitch, input.yaw};
         f.tick = ++authTick;
-        f.deltaX = input.delta[0];
-        f.deltaY = input.delta[1];
-        f.deltaZ = input.delta[2];
-        f.hasBlockAction = hasAction;
-        f.blockActionType = static_cast<int32_t>(action.action);
-        f.blockX = action.x;
-        f.blockY = action.y;
-        f.blockZ = action.z;
-        f.blockFace = action.face;
-        // Keyboard input has no analogue vector; the raw vector is the normalised unprocessed key vector.
-        f.analogX = 0;
-        f.analogZ = 0;
-        f.camX = -std::sin(yaw) * cp;
-        f.camY = -std::sin(pitch);
-        f.camZ = std::cos(yaw) * cp;
+        f.delta = {input.delta[0], input.delta[1], input.delta[2]};
+        if (hasAction) {
+            proto::PlayerAuthInputPacketBlockActionEntry entry;
+            entry.action = static_cast<proto::Action>(action.action);
+            entry.position = {action.x, action.y, action.z};
+            entry.face = action.face;
+            f.blockAction = std::vector<proto::PlayerAuthInputPacketBlockActionEntry>{entry};
+        }
+
+        f.analogueMoveVector = {0, 0};
+        f.cameraOrientation = {-std::sin(yaw) * cp, -std::sin(pitch), std::cos(yaw) * cp};
         {
             float rx = input.rawX, rz = input.rawZ;
             const float rl = rx * rx + rz * rz;
@@ -887,22 +949,19 @@ namespace perlin {
                 rx *= inv;
                 rz *= inv;
             }
-            f.rawX = rx;
-            f.rawZ = rz;
+            f.rawMoveVector = {rx, rz};
         }
-        // Sent on the reliable channel: the server only simulates a player when an input arrives, and a
-        // dropped input would be a lost tick of movement.
+
         if (movePacketsSent < 3 || movePacketsSent % 200 == 0)
-            std::cout << "[move] input #" << movePacketsSent << " tick=" << f.tick << " eye=(" << f.eyeX << ","
-                      << f.eyeY << "," << f.eyeZ << ") move=(" << f.moveX << "," << f.moveZ << ") flags="
-                      << f.flags.size() << std::endl;
+            std::cout << "[move] input #" << movePacketsSent << " tick=" << f.tick << " eye=(" << f.position.x << ","
+                      << f.position.y << "," << f.position.z << ") move=(" << f.moveVector.x << "," << f.moveVector.z
+                      << ") flags=" << f.inputData.size() << std::endl;
         movePacketsSent++;
         return Send(f);
     }
 
     bool BedrockSession::SendPlayerAuthInputBlockAction(uint32_t action, int bx, int by, int bz, int face) {
-        // Every PlayerAuthInput is one simulated tick, so actions queue up and ride on successive real ticks
-        // instead of costing ticks of their own (an extra input would desync the server simulation).
+
         if (pendingBlockActions.size() < 64)
             pendingBlockActions.push_back({action, bx, by, bz, face});
         return true;
@@ -914,6 +973,32 @@ namespace perlin {
         out = serverMotion;
         serverMotion = {};
         return true;
+    }
+
+    void BedrockSession::PushChat(const std::string& line) {
+        std::lock_guard lock(chatMutex);
+        if (chatInbox.size() < 256)
+            chatInbox.push_back(line);
+    }
+
+    void BedrockSession::PushSound(SoundRequest request) {
+        std::lock_guard lock(soundMutex);
+        if (soundInbox.size() < 256)
+            soundInbox.push_back(std::move(request));
+    }
+
+    std::vector<BedrockSession::SoundRequest> BedrockSession::TakeSounds() {
+        std::lock_guard lock(soundMutex);
+        std::vector<SoundRequest> out;
+        out.swap(soundInbox);
+        return out;
+    }
+
+    std::vector<std::string> BedrockSession::TakeChat() {
+        std::lock_guard lock(chatMutex);
+        std::vector<std::string> out;
+        out.swap(chatInbox);
+        return out;
     }
 
     bool BedrockSession::SendChat(const std::string& message) {
@@ -935,9 +1020,13 @@ namespace perlin {
     bool BedrockSession::SendCommand(const std::string& command) {
         proto::CommandRequestPacket p;
         p.command = command;
-        p.origin.type = proto::CommandOriginType::Player;
+        p.origin.type = "player";
         p.origin.uuid = net::RandomUuidV4();
-        p.version = kCommandVersion;
+        p.origin.requestId = std::string();
+        p.origin.playerEntityId = 0;
+        p.internal = false;
+        p.version = "latest";
+
         std::cout << "[bedrock] command> " << command << std::endl;
         return Send(p);
     }
@@ -957,11 +1046,20 @@ namespace perlin {
         pose.known = true;
     }
 
+    void BedrockSession::RequestRespawn() {
+        proto::RespawnPacket r;
+        r.position = {0, 0, 0};
+        r.state = 2;
+        r.runtimeEntityId = runtimeId;
+        std::cout << "[bedrock] respawn requested (client ready, runtime " << runtimeId << ")" << std::endl;
+        Send(r);
+    }
+
     bool BedrockSession::SendPlayerAction(uint32_t action, int bx, int by, int bz, int face) {
         proto::PlayerActionPacket p;
         p.runtimeEntityId = runtimeId;
         p.action = static_cast<proto::Action>(action);
-        p.position = {bx, static_cast<uint32_t>(by), bz};
+        p.position = {bx, by, bz};
         p.resultPosition = p.position;
         p.face = face;
         std::cout << "[bedrock] PlayerAction " << action << " at (" << bx << "," << by << "," << bz << ")"
@@ -995,7 +1093,7 @@ namespace perlin {
                 loggedFull++;
             std::cout << "[chunk] LevelChunk (" << pkt.x << "," << pkt.z << ") dim=" << pkt.dimension
                       << " subChunkCount=" << (int32_t)pkt.subChunkCount
-                      << " requestMode=" << pkt.hasRequestLimit << " limit=" << pkt.requestLimit
+                      << " requestMode=" << IsRequestMode(pkt) << " limit=" << pkt.highestSubchunkCount.value_or(-1)
                       << " cache=" << pkt.cacheEnabled << " payload=" << pkt.payload.size() << "B"
                       << std::endl;
         }
@@ -1010,7 +1108,7 @@ namespace perlin {
             return;
         }
         if (pkt.dimension != dimensionId) {
-            // Late packets from the dimension we just left.
+
             static int staleLogged = 0;
             if (staleLogged++ < 4)
                 std::cout << "[chunk] ignoring chunk for dimension " << pkt.dimension << " (in " << dimensionId.load()
@@ -1018,7 +1116,7 @@ namespace perlin {
             return;
         }
         const DimensionInfo& dim = ChunkCodec::Dimension(pkt.dimension);
-        const bool requestMode = pkt.GetMode() == LevelChunkPacket::Mode::Request;
+        const bool requestMode = IsRequestMode(pkt);
         const bool far = requestMode &&
                          std::max(std::abs(pkt.x - viewCenterChunk[0]), std::abs(pkt.z - viewCenterChunk[1])) > nearRadius;
         netLevel.EnsureChunk(pkt.x, pkt.z, true, far);
@@ -1030,7 +1128,7 @@ namespace perlin {
         statLevelChunks++;
         lastColumnMs = static_cast<int64_t>(Level::NowMs());
 
-        if (pkt.GetMode() == LevelChunkPacket::Mode::Inline) {
+        if (!requestMode) {
             const uint8_t* p = pkt.payload.data();
             size_t left = pkt.payload.size();
             for (uint32_t i = 0; i < pkt.subChunkCount; i++) {
@@ -1049,7 +1147,7 @@ namespace perlin {
             netLevel.MarkComplete(pkt.x, pkt.z);
         } else {
             ApplyBiomeColumn(pkt.x, pkt.z, pkt.payload);
-            const int slots = pkt.RequestSlots(dim.slots);
+            const int slots = RequestSlots(pkt, dim.slots);
             {
                 std::lock_guard<std::mutex> lk(reqMutex);
                 ColumnInfo& c = columns[ChunkPos{pkt.x, pkt.z}];
@@ -1059,7 +1157,7 @@ namespace perlin {
                 c.biomes = pkt.payload;
             }
             if (far) {
-                // Only the top sub-chunks hold the surface (the server's limit stops at the highest block).
+
                 constexpr int kFarSlots = 3;
                 const int take = std::min(slots, kFarSlots);
                 QueueSubChunkRequests(pkt.dimension, pkt.x, pkt.z, dim.MinSubChunk() + slots - take, take, true);
@@ -1166,55 +1264,45 @@ namespace perlin {
         }
     }
 
-    void BedrockSession::HandleSubChunk(const SubChunkPacket& pkt) {
+    void BedrockSession::HandleSubChunk(const SubchunkPacket& pkt) {
         statSubChunkReplies++;
-        {
-            static int lastLayout = -2;
-            static bool lastExact = true;
-            static int layoutLogs = 0;
-            if ((pkt.layout != lastLayout || pkt.exact != lastExact) && layoutLogs++ < 4) {
-                lastLayout = pkt.layout;
-                lastExact = pkt.exact;
-                std::cout << "[chunk] SubChunk entry layout #" << pkt.layout
-                          << (pkt.exact ? " matched the whole packet"
-                                        : " NOT exact - only the first entry is trusted")
-                          << " (" << pkt.entries.size() << " entries)" << std::endl;
-            }
-        }
         if (pkt.dimension != dimensionId)
             return;
         const DimensionInfo& dim = ChunkCodec::Dimension(pkt.dimension);
         (void)dim;
-        for (const SubChunkEntry& e : pkt.entries) {
-            int cx = pkt.x + e.dx, absY = pkt.y + e.dy, cz = pkt.z + e.dz;
-            auto result = (SubChunkResult)e.result;
-            statResult[e.result < 7 ? e.result : 7]++;
+        for (const SubChunkEntryEntry& e : pkt.entries) {
+            int cx = pkt.origin.x + e.dx, absY = pkt.origin.y + e.dy, cz = pkt.origin.z + e.dz;
+            const auto result = e.result;
+            const std::vector<uint8_t> noPayload;
+            const std::vector<uint8_t>& body = e.payload ? *e.payload : noPayload;
+            const unsigned resultId = static_cast<unsigned>(e.result);
+            statResult[resultId < 7 ? resultId : 7]++;
             {
                 static int shown = 0;
                 if (shown++ < 12)
                     std::cout << "[chunk] reply (" << cx << "," << absY << "," << cz
-                              << ") result=" << (int)e.result << " payload=" << e.payload.size() << "B"
+                              << ") result=" << resultId << " payload=" << body.size() << "B"
                               << std::endl;
             }
             CompleteRequest(std::make_tuple(pkt.dimension, cx, absY, cz),
-                            result == SubChunkResult::ChunkNotFound);
-            if (result == SubChunkResult::SuccessAllAir) {
+                            result == SubChunkEntryEntryResult::ChunkNotFound);
+            if (result == SubChunkEntryEntryResult::SuccessAllAir) {
                 static const std::array<uint16_t, ChunkCodec::kCells> air{};
                 netLevel.SetSubChunk(cx, cz, absY, air.data());
                 continue;
             }
-            if (result != SubChunkResult::Success) {
+            if (result != SubChunkEntryEntryResult::Success) {
                 static int logged = 0;
                 if (logged++ < 8)
                     std::cout << "[chunk] SubChunk (" << cx << "," << absY << "," << cz
-                              << ") result=" << (int)e.result << std::endl;
+                              << ") result=" << resultId << std::endl;
                 continue;
             }
             SubChunkData sc;
             size_t used = 0;
             const char* why = nullptr;
-            if (!ChunkCodec::ParseSubChunk(e.payload.data(), e.payload.size(), sc, used, &why)) {
-                LogHex("SubChunk payload", why ? why : "?", e.payload);
+            if (!ChunkCodec::ParseSubChunk(body.data(), body.size(), sc, used, &why)) {
+                LogHex("SubChunk payload", why ? why : "?", body);
                 continue;
             }
             ApplySubChunk(cx, cz, absY, sc);
@@ -1243,8 +1331,7 @@ namespace perlin {
         }
         std::vector<uint16_t> local(st.palette.size());
         for (size_t i = 0; i < local.size(); i++) {
-            // Hash 0 is no real block state (the spawn point of at least one public server sits inside such cells),
-            // so it is treated as empty space rather than a solid unknown block.
+
             local[i] = st.palette[i] == 0 ? uint16_t(0) : BlockPalette::Instance().Intern(st.palette[i]);
             static int unknownLogged = 0;
             if (local[i] != 0 && unknownLogged < 20 && BlockPalette::Instance().NamesLoaded() &&
@@ -1257,7 +1344,7 @@ namespace perlin {
         std::array<uint16_t, ChunkCodec::kCells> cells;
         for (int i = 0; i < ChunkCodec::kCells; i++)
             cells[(size_t)i] = local[idx[(size_t)i]];
-        // Layer 1 holds the water inside waterlogged blocks (and seagrass/kelp/coral).
+
         std::array<uint16_t, ChunkCodec::kCells> liquid{};
         const uint16_t* liquidPtr = nullptr;
         if (sc.storages.size() > 1) {
@@ -1304,6 +1391,34 @@ namespace perlin {
         }
         if (idle)
             netLevel.MarkComplete(cx, cz);
+    }
+
+    void BedrockSession::ReloadChunks() {
+        std::vector<std::pair<ChunkPos, ColumnInfo>> cols;
+        {
+            std::lock_guard<std::mutex> lk(reqMutex);
+            for (const auto& [pos, info] : columns)
+                cols.emplace_back(pos, ColumnInfo{info.dim, info.firstSubY, info.slots, {}});
+            requestedSlots.clear();
+            colPending.clear();
+            retries.clear();
+            inflight.clear();
+            reqQueue = {};
+            reqQueueFar = {};
+        }
+        for (const auto& [pos, info] : cols) {
+            if (info.dim != dimensionId)
+                continue;
+            const bool far = std::max(std::abs(pos.x - viewCenterChunk[0]), std::abs(pos.z - viewCenterChunk[1])) > nearRadius;
+            if (far) {
+                const int take = std::min(info.slots, 3);
+                QueueSubChunkRequests(info.dim, pos.x, pos.z, info.firstSubY + info.slots - take, take, true);
+            } else {
+                QueueSubChunkRequests(info.dim, pos.x, pos.z, info.firstSubY, info.slots);
+            }
+        }
+        netLevel.MarkAllDirty();
+        std::cout << "[chunk] reload requested for " << cols.size() << " columns" << std::endl;
     }
 
     void BedrockSession::DropSlot(const std::tuple<int, int, int, int>& key,
@@ -1395,14 +1510,14 @@ namespace perlin {
 
     int BedrockSession::PendingSubChunkRequests() const {
         std::lock_guard<std::mutex> lk(const_cast<std::mutex&>(reqMutex));
-        return (int)reqQueue.size(); // far samples never hold the loading screen
+        return (int)reqQueue.size();
     }
 
     void BedrockSession::FillUnstreamedColumns() {
         const auto now = std::chrono::steady_clock::now();
         if (now - lastFill < std::chrono::milliseconds(750))
             return;
-        // Let the server's own stream (nearest first) run dry before asking for what it skipped.
+
         if (static_cast<int64_t>(Level::NowMs()) - lastColumnMs.load() < 1500 || lastColumnMs.load() == 0)
             return;
         lastFill = now;
@@ -1442,7 +1557,7 @@ namespace perlin {
                 c.slots = dim.slots;
             }
             if (far) {
-                // Height unknown without a LevelChunk: sample the band where terrain surfaces live.
+
                 QueueSubChunkRequests(dimensionId, p.x, p.z, dim.MinSubChunk() + 6, 8, true);
             } else {
                 QueueSubChunkRequests(dimensionId, p.x, p.z, dim.MinSubChunk(), dim.slots, false);
@@ -1456,8 +1571,6 @@ namespace perlin {
                       << std::endl;
     }
 
-    // Keeps full columns near the player and sample-only columns beyond: promotes far columns the player has come
-    // close to, and drops (the data of) near columns he has walked away from; their far-terrain sample stays.
     void BedrockSession::UpdateColumnLod() {
         const int cx = viewCenterChunk[0], cz = viewCenterChunk[1];
         if (cx == lodScanCentre[0] && cz == lodScanCentre[1])
@@ -1473,7 +1586,7 @@ namespace perlin {
         }
         {
             std::lock_guard<std::mutex> lk(netLevel.mutex);
-            // Candidates that are already full columns need nothing.
+
             candidates.erase(std::remove_if(candidates.begin(), candidates.end(),
                                             [&](const ChunkPos& p) {
                                                 const auto found = netLevel.chunks.find(p);
@@ -1509,7 +1622,7 @@ namespace perlin {
     }
 
     void BedrockSession::PumpRequests(int budget) {
-        // One request packet carries a whole vertical run of a column, like the vanilla client.
+
         constexpr size_t kMaxBatch = 32;
         auto now = std::chrono::steady_clock::now();
         std::vector<std::pair<int, int>> completed;
@@ -1535,7 +1648,7 @@ namespace perlin {
             int dimension = 0, cx = 0, cz = 0, firstY = 0, count = 0;
             {
                 std::lock_guard<std::mutex> lk(reqMutex);
-                // Near columns first; far samples only while few are waiting to be sampled and few are in flight.
+
                 const bool farOk = netLevel.lodOnlyCount.load() < 1500 && inflight.size() < 3000;
                 std::queue<std::tuple<int, int, int, int>>& queue =
                     !reqQueue.empty() ? reqQueue : reqQueueFar;
@@ -1568,7 +1681,11 @@ namespace perlin {
                     }
                 }
             }
-            const auto req = SubChunkRequestPacket::ForColumn(dimension, cx, cz, firstY, count);
+            SubchunkRequestPacket req;
+            req.dimension = dimension;
+            req.origin = {cx, 0, cz};
+            for (int i = 0; i < count; i++)
+                req.requests.push_back({0, static_cast<int8_t>(firstY + i), 0});
             Send(req);
             statRequestsSent += count;
         }

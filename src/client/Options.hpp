@@ -4,23 +4,46 @@
 #include <string>
 
 namespace perlin {
-    // Zoom (hold the zoom key). Every value can be changed in options.json under "zoom".
+
     struct ZoomSettings {
-        float inSeconds = 0.2f;      // time to zoom in after pressing the key
-        float outSeconds = 0.2f;     // time to ease back out after releasing it
-        std::string easing = "smooth"; // linear | smooth | cubic | quint | sine
-        float level = 0.25f;         // field-of-view scale on a fresh press (0.25 = 4x zoom)
-        float minLevel = 0.02f;      // farthest the wheel can zoom in (0.02 = 50x)
-        float maxLevel = 1.0f;       // farthest the wheel can zoom out
-        float scrollStep = 0.15f;    // zoom change per wheel notch (0.15 = 15%)
-        bool resetOnPress = true;    // false keeps the wheel-adjusted level between presses
-        bool cinematic = true;       // smooth the camera while zoomed
-        float smoothing = 9.0f;      // cinematic glide speed (higher = snappier, 0 = no smoothing)
-        bool scaleSensitivity = true;// slower aiming at higher zoom
+        float inSeconds = 0.2f;
+        float outSeconds = 0.2f;
+        std::string easing = "smooth";
+        float level = 0.25f;
+        float minLevel = 0.02f;
+        float maxLevel = 1.0f;
+        float scrollStep = 0.15f;
+        bool resetOnPress = true;
+        bool cinematic = true;
+        float smoothing = 9.0f;
+        bool scaleSensitivity = true;
+    };
+
+    struct HandSettings {
+        bool show = true;
+        bool viewBobbing = true;
+        bool bobCamera = true;
+        bool bobHand = true;
+        float bobStrength = 1.0f;
+        bool swing = true;
+        float swingSpeed = 1.0f;
+        bool equipAnimation = true;
+        bool sway = true;
+        bool leftHanded = false;
+        bool showOffhand = true;
+        bool slimArm = false;
+        bool attachables = true;
+        float scale = 1.0f;
+    };
+
+    struct SoundSettings {
+        float master = 1.0f, music = 1.0f, record = 1.0f, weather = 1.0f, block = 1.0f, hostile = 1.0f, neutral = 1.0f,
+              player = 1.0f, ambient = 1.0f, voice = 1.0f;
+        bool subtitles = false;
     };
 
     struct Options {
-        int maxFps = 0;      // 0 = uncapped (only used with vsync off)
+        int maxFps = 0;
         bool vsync = false;
         bool eulaAccepted = false;
         int renderDistance = 8;
@@ -31,24 +54,32 @@ namespace perlin {
         bool invertMouse = false;
         std::string server = "127.0.0.1:19132";
         std::string playerName = "Perlin";
-        std::string skin;          // path to a skin png (64x32, 64x64 or 128x128); empty = blank skin
-        std::string cape;          // path to a cape png (64x32); empty = no cape
-        bool slimArms = false;     // "Alex" arms
-        std::string transport = "auto"; // auto | raknet | nethernet
-        bool onlineLogin = false;  // sign in with a Microsoft/Xbox account (saved after the first sign-in)
+        std::string skin;
+        std::string cape;
+        bool slimArms = false;
+        std::string transport = "auto";
+        bool onlineLogin = false;
         std::string resourcePackDir;
         std::string bedrockSamplesDir;
         bool fancyGraphics = true;
         int cloudRange = 128;
         bool rgss = false;
-        bool fovEffects = true; // sprinting/flying/speed change the field of view (Java "FOV Effects")
-        int damageTilt = 100;     // hurt camera shake strength: 0 none, 100 vanilla
-        bool damageTint = false;  // optional red screen flash; the reference client has none in first person
-        bool shadows = true;      // shader packs that provide shadows
-        int heldLight = 0;        // dynamic light level of the item in hand (0-15), shader packs only
-        int shadowDistance = 0;   // blocks; 0 = the pack's default
+        float motionBlur = 0.0f;
+        bool thirdPersonCrosshair = false;
+        bool fovEffects = true;
+        int damageTilt = 100;
+        bool damageTint = false;
+        bool shadows = true;
+        int heldLight = 0;
+        int shadowDistance = 0;
         ZoomSettings zoom;
-        std::string texturePack;  // file or folder name inside <data>/texturepacks; empty = default textures
+        HandSettings hand;
+        int guiScale = 0;
+        SoundSettings sound;
+        std::string dynamicLights = "off";
+        std::string language = "en_US";
+        bool showHud = true;
+        std::string texturePack;
         KeyBindings keys = DefaultBindings();
 
         const Binding& GetKey(Action action) const { return keys[static_cast<size_t>(action)]; }

@@ -18,20 +18,18 @@ import numpy as np
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
-from javamodels import Models, DIRS, block_rotation  # noqa: E402
-from blockstates import load_all  # noqa: E402
-from translate import translate  # noqa: E402
+from javamodels import Models, DIRS, block_rotation
+from blockstates import load_all
+from translate import translate
 
 JAVA_ASSETS = os.environ.get("JAVA_ASSETS", "/tmp/claude-0/jm/assets/minecraft")
 OUT = os.environ.get("OUT", os.path.join(HERE, "..", "..", "resources", "block_models.bin"))
 
-# Blocks whose rendering the client implements specially; they keep the legacy path.
 KEEP_LEGACY = {
     "grass_block", "mycelium", "podzol", "water", "lava", "bubble_column", "fire", "soul_fire", "redstone_wire",
     "air", "cave_air", "void_air", "light", "barrier", "structure_void", "moving_piston", "piston_head",
 }
 
-# Java OffsetType: XZ (0.25) = 1, XYZ = 2, dripstone (0.125) = 3
 OFFSET_XZ = {
     "poppy", "dandelion", "blue_orchid", "allium", "azure_bluet", "red_tulip", "orange_tulip", "white_tulip",
     "pink_tulip", "oxeye_daisy", "cornflower", "lily_of_the_valley", "torchflower", "wither_rose", "sunflower",
@@ -45,7 +43,6 @@ OFFSET_DRIPSTONE = {"pointed_dripstone", "sulfur_spike"}
 
 DIR_INDEX = {d: i for i, d in enumerate(DIRS)}
 
-
 def load_records():
     states = json.load(open(os.path.join(HERE, "bedrock_states.json")))
     phys = json.load(open(os.path.join(HERE, "physics.json")))
@@ -57,14 +54,12 @@ def load_records():
                      "boxes": [[c / 1e8 for c in b] for b in boxes]})
     return recs
 
-
 def is_full_cube(model):
     els = model["elements"] or []
     if len(els) != 1:
         return False
     e = els[0]
     return (e["from"] == [0, 0, 0] and e["to"] == [16, 16, 16] and not e.get("rotation") and len(e["faces"]) == 6)
-
 
 class Gen:
     def __init__(self):
@@ -84,7 +79,6 @@ class Gen:
         self.register_special_models()
         self.register_sign_models()
 
-    # ---- block-entity shapes Java draws with entity renderers (no block model) ---------------------------
     CHEST_SETS = {
         "chest": ("chest_front", "chest_side", "chest_top"),
         "trapped_chest": ("trapped_chest_front", "chest_side", "chest_top"),
@@ -113,7 +107,6 @@ class Gen:
             self.alias["special/bell_" + t] = "textures/blocks/" + f
         bell_tex = {"side": "special/bell_side", "top": "special/bell_top", "bottom": "special/bell_bottom"}
         self.models.raw["special/bell_body"] = {"textures": bell_tex, "elements": [
-            # body (6x7x6) with the wider lip (8x2x8) under it, hanging from the beam like BellRenderer's model
             {"from": [5, 6, 5], "to": [11, 13, 11], "faces": {
                 "north": face("side"), "south": face("side"), "east": face("side"), "west": face("side"),
                 "up": face("top")}},
@@ -146,18 +139,15 @@ class Gen:
             tex = {"w": "special/sign_" + wood}
             for r in (-2, -1, 0, 1, 2):
                 a = r * 22.5
-                # standing sign: post + board, the board's front faces +Z (south) before the block rotation
                 self.models.raw["special/standing_sign_%s_%d" % (wood, r)] = {"textures": tex, "elements": [
                     box([7.33, 0, 7.33], [8.67, 9, 8.67], "w", a if a else None),
                     box([0, 9, 7.33], [16, 17, 8.67], "w", a if a else None)]}
-                # hanging sign hung from a ceiling (two chains)
                 self.models.raw["special/hanging_sign_%s_%d" % (wood, r)] = {"textures": tex, "elements": [
                     box([2, 12, 7.5], [3, 16, 8.5], "w", a if a else None),
                     box([13, 12, 7.5], [14, 16, 8.5], "w", a if a else None),
                     box([1, 2, 7], [15, 12, 9], "w", a if a else None)]}
             self.models.raw["special/wall_sign_" + wood] = {"textures": tex, "elements": [
                 box([0, 4.5, 0], [16, 12.5, 1.5], "w")]}
-            # wall-mounted hanging sign: horizontal arm along the wall plane and the board below it
             self.models.raw["special/arm_sign_" + wood] = {"textures": tex, "elements": [
                 box([0, 14, 6.5], [16, 16, 9.5], "w"),
                 box([1, 2, 7], [15, 12, 9], "w")]}
@@ -167,7 +157,6 @@ class Gen:
             box([7.5, 0, 7.5], [8.5, 16, 8.5], "p"), box([1, 0, 7.5], [15, 16, 8.5], "c")]}
         self.models.raw["special/wall_banner"] = {"textures": {"c": "special/banner_cloth", "p": "special/banner_pole"}, "elements": [
             box([0, 14, 0], [16, 16, 2], "p"), box([1, 0, 0.5], [15, 14, 1.5], "c")]}
-        # beds: head piece has its pillow end at +Z (direction south), foot piece its foot end at -Z
         for t, f_ in (("head_top", "bed_head_top"), ("head_side", "bed_head_side"), ("head_end", "bed_head_end"),
                       ("feet_top", "bed_feet_top"), ("feet_side", "bed_feet_side"), ("feet_end", "bed_feet_end")):
             self.alias["special/bed_" + t] = "textures/blocks/" + f_
@@ -205,7 +194,7 @@ class Gen:
         else:
             if n == "bed":
                 head = int(st.get("head_piece_bit", 0))
-                d = {0: 0, 1: 270, 2: 180, 3: 90}[int(st.get("direction", 0))]  # rotation from the south-facing model
+                d = {0: 0, 1: 270, 2: 180, 3: 90}[int(st.get("direction", 0))]
                 vid = self.bake_variant("special/bed_head" if head else "special/bed_foot", 0, d, False)
                 return self.entry_of_variants([vid])
             return None
@@ -215,10 +204,10 @@ class Gen:
         wood = wood.rstrip("_") or "oak"
         if wood not in self.PLANKS:
             wood = "oak"
-        FD_RY = {2: 180, 3: 0, 4: 90, 5: 270}  # facing_direction -> block rotation of a south-facing model
+        FD_RY = {2: 180, 3: 0, 4: 90, 5: 270}
         if kind == "standing" or (kind == "hanging" and int(st.get("hanging", 0))):
             if kind == "hanging" and not int(st.get("attached_bit", 0)):
-                k = {2: 8, 3: 0, 4: 4, 5: 12}.get(int(st.get("facing_direction", 2)), 0)  # axis-aligned, no 22.5deg
+                k = {2: 8, 3: 0, 4: 4, 5: 12}.get(int(st.get("facing_direction", 2)), 0)
             else:
                 k = int(st.get("ground_sign_direction", 0)) % 16
             m = round(k / 4)
@@ -253,7 +242,6 @@ class Gen:
             self.entries.append(key)
         return self.entry_ids[key]
 
-    # ----------------------------------------------------------------------------------------------
     def include(self, jname):
         """True when this Java block must be rendered through the model path."""
         if jname in self.include_cache:
@@ -270,12 +258,11 @@ class Gen:
                     visible = True
                     if not is_full_cube(m):
                         noncube = True
-            # Pure rotation variants of one cube model (stone, dirt, ...) stay on the legacy cube path.
             distinct = len({mid for mid, x, y in refs})
             if visible and noncube:
                 res = 1
             elif visible and distinct > 1:
-                res = 2  # full cubes whose model differs per state (furnace facing, lit ores...)
+                res = 2
         self.include_cache[jname] = res
         return res
 
@@ -310,14 +297,11 @@ class Gen:
                 continue
             out.append((DIR_INDEX[q["dir"]], DIR_INDEX[q["shade_dir"]], DIR_INDEX[q["cull"]] if q["cull"] else -1,
                         q["tint"], 1 if q["shade"] else 0, min(15, int(q.get("light", 0))), t, q["pos"], q["uv"]))
-        # Faces are back-face culled at draw time (CutoutCull/TranslucentCull), so coplanar up/down twins
-        # of zero-thickness elements (leaf litter) never z-fight and both sides stay visible like Java.
         vid = len(self.variants)
         self.variants.append(out)
         self.variant_ids[key] = vid
         return vid
 
-    # ---- voxel oracle ------------------------------------------------------------------------------
     def boxes_of(self, mid, x, y):
         key = (mid, x % 360, y % 360)
         if key in self.vox_cache:
@@ -332,7 +316,6 @@ class Gen:
                 corners = np.array([[c[0], c[1], c[2]] for c in itertools.product(*zip(fr, to))])
                 r = e.get("rotation")
                 if r:
-                    # approximate: ignore element rotation (only the bounding box matters for the fit)
                     pass
                 corners = 0.5 + (rot @ (corners - 0.5).T).T
                 boxes.append((corners.min(axis=0), corners.max(axis=0)))
@@ -379,7 +362,6 @@ class Gen:
                 best, bestp, bests = s, p, s
         return bestp, bests
 
-    # ---- emission ----------------------------------------------------------------------------------
     def entry_for(self, jname, props, offset, extra=()):
         jb = self.jb[jname]
         groups = jb.select(props)
@@ -505,7 +487,6 @@ class Gen:
         os.makedirs(os.path.dirname(os.path.abspath(OUT)), exist_ok=True)
         open(OUT, "wb").write(out)
         print("wrote", OUT, len(out), "bytes")
-
 
 if __name__ == "__main__":
     Gen().run()

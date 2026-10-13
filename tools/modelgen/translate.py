@@ -11,12 +11,9 @@ DIRN = {0: "south", 1: "west", 2: "north", 3: "east"}
 WEIRDO = {0: "east", 1: "west", 2: "south", 3: "north"}
 HORIZ = ["north", "east", "south", "west"]
 
-
 def b(v):
     return "true" if v else "false"
 
-
-# Bedrock name -> Java name when they differ
 ALIASES = {
     "brick_block": "bricks", "beetroot": "beetroots", "deadbush": "dead_bush", "end_brick_stairs": "end_stone_brick_stairs",
     "fence_gate": "oak_fence_gate", "frog_spawn": "frogspawn", "golden_rail": "powered_rail", "grass_path": "dirt_path",
@@ -38,11 +35,9 @@ ALIASES = {
     "pearlescent_froglight": "pearlescent_froglight", "magma": "magma_block", "stone_slab": "stone_slab",
 }
 
-
 def java_name(bname):
     n = bname.replace("minecraft:", "")
     return ALIASES.get(n, n)
-
 
 def _facing4(st):
     """Horizontal facing for the several Bedrock encodings."""
@@ -54,7 +49,6 @@ def _facing4(st):
         return FD.get(int(st["facing_direction"]), "north")
     return "north"
 
-
 def translate(bname, st, jb):
     """jb: dict of Java blocks.  Returns (jname, props, search) or None."""
     n = bname.replace("minecraft:", "")
@@ -64,7 +58,6 @@ def translate(bname, st, jb):
     props = {}
     search = {}
 
-    # ---- stairs -------------------------------------------------------------------------------------
     if "weirdo_direction" in st:
         if jn not in jb:
             return None
@@ -78,19 +71,16 @@ def translate(bname, st, jb):
             search["shape"] = [kind + "_left", kind + "_right"]
         return jn, props, search
 
-    # ---- slabs --------------------------------------------------------------------------------------
     if "minecraft:vertical_half" in st and jn.endswith("slab"):
         props["type"] = st["minecraft:vertical_half"]
         return jn, props, search
 
-    # ---- axis blocks ---------------------------------------------------------------------------------
     if "pillar_axis" in st and not ("creaking_heart_state" in st):
         props["axis"] = st["pillar_axis"]
         return jn, props, search
     if jn.endswith("_chain") or jn == "chain" or jn == "iron_chain":
         pass
 
-    # ---- fences / panes / bars ------------------------------------------------------------------------
     if "minecraft:connection_north" in st and "trip" not in n:
         for d in ("north", "east", "south", "west"):
             props[d] = b(int(st["minecraft:connection_" + d]))
@@ -102,7 +92,6 @@ def translate(bname, st, jb):
         props["up"] = b(int(st.get("wall_post_bit", 0)))
         return jn, props, search
 
-    # ---- doors ---------------------------------------------------------------------------------------
     if "door_hinge_bit" in st:
         props["half"] = "upper" if int(st["upper_block_bit"]) else "lower"
         props["open"] = b(int(st["open_bit"]))
@@ -110,14 +99,12 @@ def translate(bname, st, jb):
         props["hinge"] = "left" if int(st["door_hinge_bit"]) == 0 else "right"
         return jn, props, search
 
-    # ---- trapdoors -----------------------------------------------------------------------------------
     if "upside_down_bit" in st and "open_bit" in st and "direction" in st:
         props["half"] = "top" if int(st["upside_down_bit"]) else "bottom"
         props["open"] = b(int(st["open_bit"]))
         props["facing"] = {0: "east", 1: "west", 2: "south", 3: "north"}[int(st["direction"])]
         return jn, props, search
 
-    # ---- fence gates ---------------------------------------------------------------------------------
     if "in_wall_bit" in st:
         props["open"] = b(int(st["open_bit"]))
         props["in_wall"] = b(int(st["in_wall_bit"]))
@@ -125,7 +112,6 @@ def translate(bname, st, jb):
         search["facing"] = [st["minecraft:cardinal_direction"]] + [x for x in HORIZ if x != st["minecraft:cardinal_direction"]]
         return jn, props, search
 
-    # ---- buttons -------------------------------------------------------------------------------------
     if jn.endswith("_button"):
         d = FD[int(st["facing_direction"])]
         props["powered"] = b(int(st["button_pressed_bit"]))
@@ -137,7 +123,6 @@ def translate(bname, st, jb):
             props["face"], props["facing"] = "wall", d
         return jn, props, search
 
-    # ---- pressure plates -----------------------------------------------------------------------------
     if jn.endswith("_pressure_plate"):
         sig = int(st.get("redstone_signal", 0))
         if "weighted" in jn:
@@ -146,12 +131,10 @@ def translate(bname, st, jb):
             props["powered"] = b(sig > 0)
         return jn, props, search
 
-    # ---- ladders -------------------------------------------------------------------------------------
     if jn == "ladder":
         props["facing"] = FD.get(int(st["facing_direction"]), "north")
         return jn, props, search
 
-    # ---- torches -------------------------------------------------------------------------------------
     if "torch_facing_direction" in st:
         d = st["torch_facing_direction"]
         base = {"torch": "torch", "soul_torch": "soul_torch", "redstone_torch": "redstone_torch",
@@ -167,12 +150,10 @@ def translate(bname, st, jb):
             props["lit"] = b(n != "unlit_redstone_torch")
         return jnm, props, search
 
-    # ---- lanterns / chains ---------------------------------------------------------------------------
     if jn.endswith("lantern") and "hanging" in st:
         props["hanging"] = b(int(st["hanging"]))
         return jn, props, search
 
-    # ---- levers --------------------------------------------------------------------------------------
     if jn == "lever":
         d = st["lever_direction"]
         props["powered"] = b(int(st["open_bit"]))
@@ -183,7 +164,6 @@ def translate(bname, st, jb):
             props["facing"] = "north" if d.endswith("north_south") else "east"
         return jn, props, search
 
-    # ---- rails ---------------------------------------------------------------------------------------
     if "rail_direction" in st:
         shapes = ["north_south", "east_west", "ascending_east", "ascending_west", "ascending_north",
                   "ascending_south", "south_east", "south_west", "north_west", "north_east"]
@@ -192,7 +172,6 @@ def translate(bname, st, jb):
             props["powered"] = b(int(st["rail_data_bit"]))
         return jn, props, search
 
-    # ---- beds (colour lives in the block entity; default red) -----------------------------------------------
     if n == "bed":
         return None
         jn = "red_bed"
@@ -200,7 +179,6 @@ def translate(bname, st, jb):
         props["facing"] = DIRN[int(st["direction"])]
         return jn, props, search
 
-    # ---- candles -------------------------------------------------------------------------------------
     if "candles" in st:
         props["candles"] = str(int(st["candles"]) + 1)
         props["lit"] = b(int(st["lit"]))
@@ -212,26 +190,22 @@ def translate(bname, st, jb):
         props["bites"] = str(int(st["bite_counter"]))
         return jn, props, search
 
-    # ---- shelves -------------------------------------------------------------------------------------
     if "powered_shelf_type" in st:
         props["facing"] = st["minecraft:cardinal_direction"]
         props["powered"] = b(int(st["powered_bit"]))
         props["side_chain"] = ["unconnected", "right", "center", "left"][int(st["powered_shelf_type"])]
         return jn, props, search
 
-    # ---- dripstone -----------------------------------------------------------------------------------
     if "dripstone_thickness" in st:
         t = st["dripstone_thickness"]
         props["thickness"] = "tip_merge" if t == "merge" else t
         props["vertical_direction"] = "down" if int(st["hanging"]) else "up"
         return jn, props, search
 
-    # ---- amethyst ------------------------------------------------------------------------------------
     if "minecraft:block_face" in st:
         props["facing"] = st["minecraft:block_face"]
         return jn, props, search
 
-    # ---- hopper / piston / observer / dispenser / barrel / command blocks / lightning rods --------------------
     if n == "hopper":
         d = FD[int(st["facing_direction"])]
         props["facing"] = d if d != "up" else "down"
@@ -269,13 +243,11 @@ def translate(bname, st, jb):
         props["lit"] = b(n.startswith("lit_"))
         return jn, props, search
 
-    # ---- copper bulbs ----------------------------------------------------------------------------------
     if "copper_bulb" in n:
         props["lit"] = b(int(st["lit"]))
         props["powered"] = b(int(st["powered_bit"]))
         return jn, props, search
 
-    # ---- anvils / chests / simple cardinal blocks -----------------------------------------------------------
     if n in ("anvil", "chipped_anvil", "damaged_anvil", "deprecated_anvil"):
         jn = {"deprecated_anvil": "anvil"}.get(n, n)
         props["facing"] = st["minecraft:cardinal_direction"]
@@ -368,7 +340,6 @@ def translate(bname, st, jb):
         props["leaves"] = {"no_leaves": "none", "small_leaves": "small", "large_leaves": "large"}[st["bamboo_leaf_size"]]
         return jn, props, search
 
-    # ---- crops & plants ------------------------------------------------------------------------------------
     if n in ("wheat", "carrots", "potatoes") and "growth" in st:
         props["age"] = str(int(st["growth"]))
         return jn, props, search
@@ -518,11 +489,9 @@ def translate(bname, st, jb):
     if n == "cactus" or n == "cactus_flower":
         return jn, props, search
 
-    # ---- stateless blocks (Java blockstate has no properties we need) -------------------------------------
     if not st or all(k in IGNORE_KEYS for k in st):
         return jn, props, search
     return jn, props, search
-
 
 IGNORE_KEYS = {"age", "update_bit", "persistent_bit", "infiniburn_bit", "deprecated", "brushed_progress", "hanging",
                "explode_bit", "age_bit"}

@@ -39,7 +39,6 @@ namespace perlin {
             return false;
         }
 
-        // The folder holding the backend directories - downloaded packs are often nested one or two levels down.
         std::string FindFolderRoot(const fs::path& dir) {
             std::error_code ec;
             if (FolderHasBackend(dir))
@@ -78,10 +77,10 @@ namespace perlin {
         std::string folder;
         mz_zip_archive zip{};
         bool zipOpen = false;
-        std::unordered_map<std::string, mz_uint> index; // lower-case "<backend>/<shader>.bin" -> entry
+        std::unordered_map<std::string, mz_uint> index;
         std::set<std::string> backends;
         std::string label;
-        std::string meta; // pack.json text
+        std::string meta;
         mutable std::mutex mutex;
 
         void Reset() {
@@ -226,7 +225,7 @@ namespace perlin {
     }
 
     namespace {
-        // Value text following `"key":` in a flat scan of the manifest (nested objects are fine: keys are unique).
+
         std::string RawValue(const std::string& text, const std::string& key) {
             const size_t k = text.find("\"" + key + "\"");
             if (k == std::string::npos)

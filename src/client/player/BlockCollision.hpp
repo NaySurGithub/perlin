@@ -8,14 +8,12 @@
 namespace perlin {
     class BlockLibrary;
 
-    // Adapts the client's block world to the movement simulation: collision boxes, slipperiness,
-    // fluids, ladders and cobwebs, derived from block names and states.
     class LevelCollision final : public physics::World {
     public:
         LevelCollision(const Level& level, const BlockLibrary* blocks) : level(level), blocks(blocks) {}
 
         physics::BlockShape Query(int x, int y, int z) const override;
-        // Collision shape of a block id, independent of any level.
+
         static const physics::BlockShape& ShapeOf(uint16_t id);
 
     private:

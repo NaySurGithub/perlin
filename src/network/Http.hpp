@@ -7,7 +7,7 @@ namespace perlin::http {
     struct Response {
         int status = 0;
         std::string body;
-        std::map<std::string, std::string> headers; // lower-case names
+        std::map<std::string, std::string> headers;
     };
 
     Response Request(const std::string& host, uint16_t port, bool tls, const std::string& method,

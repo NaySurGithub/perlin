@@ -34,11 +34,21 @@ namespace perlin {
         const fs::path root(targetDir);
         const fs::path repo = root / "repo";
         if (Available(targetDir)) {
-            // Older checkouts predate the block geometry folder; pull it in on demand (best effort).
-            if (!fs::exists(repo / "resource_pack/models/blocks")) {
-                const std::string path = "\"" + repo.string() + "\"";
+
+            const std::string path = "\"" + repo.string() + "\"";
+            if (!fs::exists(repo / "resource_pack/models/blocks"))
                 Run("git -c core.longpaths=true -C " + path + " sparse-checkout add resource_pack/models/blocks");
-            }
+
+            if (!fs::exists(repo / "resource_pack/entity") || !fs::exists(repo / "behavior_pack/entities"))
+                Run("git -c core.longpaths=true -C " + path + " sparse-checkout add resource_pack/entity behavior_pack/entities");
+
+            if (!fs::exists(repo / "resource_pack/sounds/sound_definitions.json"))
+                Run("git -c core.longpaths=true -C " + path + " sparse-checkout add resource_pack/sounds");
+            if (!fs::exists(repo / "resource_pack/attachables"))
+                Run("git -c core.longpaths=true -C " + path + " sparse-checkout add resource_pack/attachables resource_pack/animations "
+                    "resource_pack/animation_controllers resource_pack/render_controllers resource_pack/models/entity");
+            if (!fs::exists(repo / "resource_pack/ui/hud_screen.json") || !fs::exists(repo / "resource_pack/texts"))
+                Run("git -c core.longpaths=true -C " + path + " sparse-checkout add resource_pack/ui resource_pack/texts resource_pack/font");
             return true;
         }
 
@@ -53,7 +63,10 @@ namespace perlin {
                 bool cloned = Run(git + "clone --depth 1 --filter=blob:none --sparse " + kRepository + " " + path) &&
                               Run(git + "-C " + path +
                                   " sparse-checkout set resource_pack/textures metadata/vanilladata_modules "
-                                  "behavior_pack/blocks behavior_pack/biomes resource_pack/models/blocks");
+                                  "behavior_pack/blocks behavior_pack/biomes resource_pack/models/blocks "
+                                  "resource_pack/ui resource_pack/texts resource_pack/font resource_pack/attachables "
+                                  "resource_pack/animations resource_pack/animation_controllers resource_pack/render_controllers "
+                                  "resource_pack/models/entity resource_pack/entity behavior_pack/entities resource_pack/sounds");
                 if (!cloned) {
                     fs::remove_all(repo, ec);
                     cloned = Run(git + "clone --depth 1 " + kRepository + " " + path);

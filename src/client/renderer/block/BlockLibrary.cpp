@@ -50,8 +50,7 @@ namespace perlin {
     }
 
     void BlockLibrary::SetTexturePack(bool active) {
-        // The tile size is the widest of a few reference block textures in the pack, rounded up to a power of
-        // two (like Java, where the atlas follows the largest sprite). Vanilla stays 16.
+
         int widest = 16;
         if (active) {
             static const char* const kProbe[] = {"stone", "dirt", "cobblestone", "planks_oak", "sand", "grass_side",
@@ -75,8 +74,7 @@ namespace perlin {
     }
 
     namespace {
-        // Resamples one w x h frame (rows `stride` pixels apart) to a size x size tile. Equal size copies; shrinking
-        // box-filters weighted by alpha; growing repeats pixels so low-resolution textures stay crisp.
+
         void ResampleFrame(const unsigned char* data, int w, int h, size_t stride, int size, uint8_t* out) {
             for (int y = 0; y < size; y++) {
                 for (int x = 0; x < size; x++) {
@@ -143,14 +141,13 @@ namespace perlin {
             stem.resize(stem.size() - suffix.size());
         const std::string order[2] = {fancy ? stem : stem + suffix, fancy ? stem + suffix : stem};
         for (const std::string& base : order) {
-            // Bedrock prefers the .tga when both exist; the .png next to it is a legacy copy (for
-            // example tallgrass.png differs from the shipped tallgrass.tga, which is Java's short_grass).
+
             tries.push_back(base + ".tga");
             tries.push_back(base + ".png");
         }
         int tile = 0;
         bool ok = false;
-        // A texture pack wins over the vanilla resources, file by file.
+
         TexturePack& pack = TexturePack::Instance();
         if (pack.Active())
             for (auto& t : tries)
@@ -190,8 +187,7 @@ namespace perlin {
             }
         }
         const unsigned char* data = tex.pixels.data();
-        // A texture taller than wide whose height is a multiple of its width is a flipbook strip of w x w frames
-        // (at any resolution). Anything else is one frame, resampled to the tile size.
+
         const bool strip = h > w && h % w == 0;
         const int fw = w, fh = strip ? w : h;
         const int frames = strip ? h / w : 1;
@@ -280,6 +276,21 @@ namespace perlin {
         }
     }
 
+    void BlockLibrary::Reset() {
+
+        std::lock_guard<std::mutex> lock(lookMutex);
+        ready = false;
+        complete = false;
+        fetchFails = 0;
+        lastFileMisses = -1;
+        stallStreak = 0;
+        nextTile = 1;
+        atlas.clear();
+        tileByPng.clear();
+        animByTile.clear();
+        baseTints.clear();
+    }
+
     bool BlockLibrary::EnsureLoaded(const std::string& perlinPackDir, const std::string& vanillaRpRoot) {
         if (ready && complete)
             return true;
@@ -352,7 +363,7 @@ namespace perlin {
         const int kTilePx = tilePxValue;
         if (atlas.empty()) {
             nextTile = 1;
-            atlas.assign((size_t)kTilePx * kTilePx * 4, 255); // tile 0 is solid white
+            atlas.assign((size_t)kTilePx * kTilePx * 4, 255);
         }
 
         auto resolveTexture = [&](const std::string& texName, std::vector<int>* all = nullptr) -> int {
@@ -758,7 +769,7 @@ namespace perlin {
                                             atlas.data() + (sb + (size_t)yy * atlasW + xx) * 4;
                                         uint8_t* o = atlas.data() + (cb + (size_t)yy * atlasW + xx) * 4;
                                         if (grassPx(yy, xx))
-                                            continue; // filled with dirt below; the overlay quad covers it
+                                            continue;
                                         if (dirtTile) {
                                             const uint8_t* dp =
                                                 atlas.data() + (db + (size_t)yy * atlasW + xx) * 4;
@@ -786,8 +797,7 @@ namespace perlin {
                                             }
                                         }
                                     }
-                                // The base is solid dirt under the grass overlay (as in Java). Leaving holes here let
-                                // sky show through wherever filtered samples of the two quads fell below the cutoff.
+
                                 for (int xx = 0; xx < kTilePx; xx++)
                                     for (int yy = 0; yy < kTilePx; yy++) {
                                         if (!grassPx(yy, xx))
@@ -885,8 +895,7 @@ namespace perlin {
         }
 
         if (fetchFails > 0) {
-            // The samples are fully downloaded by now, so a missing file stays missing: carry on without it
-            // (waiting and re-running the whole load would only delay the start).
+
             std::cout << "[blocks] " << fetchFails << " textures missing; continuing without them" << std::endl;
         }
         lastFileMisses = 0;
@@ -1016,8 +1025,21 @@ namespace perlin {
         return *cached;
     }
 
+    const BlockAppearance* BlockLibrary::LookByName(const std::string& name) const {
+        auto it = appearances.find(name);
+        return it == appearances.end() ? nullptr : &it->second;
+    }
+
+    bool BlockLibrary::TilePixels(int tile, std::vector<uint8_t>& rgba) const {
+        const size_t bytes = (size_t)tilePxValue * tilePxValue * 4;
+        if (tile < 0 || (size_t)(tile + 1) * bytes > atlas.size())
+            return false;
+        rgba.assign(atlas.begin() + (size_t)tile * bytes, atlas.begin() + (size_t)(tile + 1) * bytes);
+        return true;
+    }
+
     void BlockLibrary::TileUV(int tile, float& u0, float& v0, float& u1, float& v1) {
-        // The virtual atlas is kAtlasTiles x kAtlasTiles tiles; only ratios matter, the GPU holds one layer per tile.
+
         const int tx = tile % kAtlasTiles, ty = tile / kAtlasTiles;
         const float inv = 1.0f / (float)kAtlasTiles;
         const float half = 0.5f * inv / (float)tilePxValue;

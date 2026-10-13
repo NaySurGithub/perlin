@@ -1,11 +1,12 @@
-$input v_color0, v_texcoord0, v_fog, v_layer, v_visibility
+$input v_color0, v_texcoord0, v_fog, v_layer, v_visibility, v_rel, v_light, v_tint
 
 #include "common.sh"
+#include "terrain_light.sh"
 #include "block_sampling.sh"
 
 void main()
 {
-    vec4 color = sampleBlock(v_texcoord0, v_layer) * v_color0;
+    vec4 color = sampleBlock(v_texcoord0, v_layer) * litColor(v_color0, v_rel, v_light, v_tint);
     color = mix(u_fogColor * vec4(1.0, 1.0, 1.0, color.a), color, v_visibility);
     if (color.a < 0.5)
         discard;

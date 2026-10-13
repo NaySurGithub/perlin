@@ -11,6 +11,6 @@ namespace perlin {
     };
 
     bool LoadTexture(const std::string& path, Texture& out);
-    // Decodes an in-memory png/tga/jpg image to RGBA8.
+
     bool LoadTextureMemory(const unsigned char* data, size_t size, Texture& out);
 }

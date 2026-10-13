@@ -41,6 +41,18 @@ namespace {
             return K::Tab;
         case SDL_SCANCODE_BACKSPACE:
             return K::Backspace;
+        case SDL_SCANCODE_PAGEUP:
+            return K::PageUp;
+        case SDL_SCANCODE_PAGEDOWN:
+            return K::PageDown;
+        case SDL_SCANCODE_HOME:
+            return K::Home;
+        case SDL_SCANCODE_END:
+            return K::End;
+        case SDL_SCANCODE_DELETE:
+            return K::Delete;
+        case SDL_SCANCODE_SLASH:
+            return K::Slash;
         case SDL_SCANCODE_LEFT:
             return K::Left;
         case SDL_SCANCODE_UP:
@@ -91,7 +103,7 @@ void AppPlatform_SDL::ShowSignInCode(const std::string& url, const std::string& 
     struct Job {
         std::string url, code;
     };
-    // Browser and clipboard calls belong on the main thread.
+
     SDL_RunOnMainThread(
         [](void* data) {
             std::unique_ptr<Job> job(static_cast<Job*>(data));
@@ -99,6 +111,15 @@ void AppPlatform_SDL::ShowSignInCode(const std::string& url, const std::string& 
             SDL_OpenURL(job->url.c_str());
         },
         new Job{url, code}, false);
+}
+
+void AppPlatform_SDL::SetClipboard(const std::string& text) {
+    SDL_RunOnMainThread(
+        [](void* data) {
+            std::unique_ptr<std::string> t(static_cast<std::string*>(data));
+            SDL_SetClipboardText(t->c_str());
+        },
+        new std::string(text), false);
 }
 
 bool AppPlatform_SDL::ConfirmDialog(const std::string& title, const std::string& message) {
@@ -207,16 +228,42 @@ void AppPlatform_SDL::HandleEvent(const SDL_Event& e) {
     case SDL_EVENT_WINDOW_FOCUS_LOST:
     case SDL_EVENT_WINDOW_MINIMIZED:
     case SDL_EVENT_WINDOW_HIDDEN:
-        if (input)
+        if (input && (input->pauseOnLostFocus || e.type != SDL_EVENT_WINDOW_FOCUS_LOST))
             input->ReleaseAll();
         SetCursorCaptured(false);
         break;
     case SDL_EVENT_KEY_DOWN:
-        if (e.key.scancode == SDL_SCANCODE_ESCAPE && cursorCaptured)
+        if (e.key.scancode == SDL_SCANCODE_ESCAPE && cursorCaptured && !(input && input->IsKeyDown(0x72)))
             SetCursorCaptured(false);
-        if (input && !e.key.repeat)
-            if (int k = KeyFromScancode(e.key.scancode))
+        if (input) {
+            const int k = KeyFromScancode(e.key.scancode);
+            if (k && !e.key.repeat)
                 input->OnKeyDown(k);
+            else if (k && e.key.repeat && input->TextMode())
+                input->OnKeyRepeat(k);
+            if (k == 'V' && input->TextMode() && (e.key.mod & SDL_KMOD_CTRL)) {
+                if (char* clip = SDL_GetClipboardText()) {
+                    const char* p = clip;
+                    while (*p) {
+                        Uint32 cp = SDL_StepUTF8(&p, nullptr);
+                        if (cp >= 32 && cp != 127)
+                            input->OnChar(static_cast<int>(cp));
+                    }
+                    SDL_free(clip);
+                }
+            }
+        }
+        break;
+    case SDL_EVENT_TEXT_INPUT:
+        if (input && input->TextMode()) {
+            const char* p = e.text.text;
+            while (p && *p) {
+                Uint32 cp = SDL_StepUTF8(&p, nullptr);
+                if (cp == 0)
+                    break;
+                input->OnChar(static_cast<int>(cp));
+            }
+        }
         break;
     case SDL_EVENT_KEY_UP:
         if (input)
@@ -227,12 +274,12 @@ void AppPlatform_SDL::HandleEvent(const SDL_Event& e) {
         if (input) {
             if (cursorCaptured)
                 input->OnMouseDelta(e.motion.xrel, e.motion.yrel);
-            input->OnMouseMove(e.motion.x, e.motion.y);
+            input->OnMouseMove(e.motion.x * SDL_GetWindowPixelDensity(window), e.motion.y * SDL_GetWindowPixelDensity(window));
         }
         break;
     case SDL_EVENT_MOUSE_BUTTON_DOWN:
-        if (!cursorCaptured) {
-            // The click that grabs the cursor is not forwarded as a game click.
+        if (!cursorCaptured && !(input && input->TextMode())) {
+
             SetCursorCaptured(true);
             break;
         }
@@ -268,7 +315,23 @@ void AppPlatform_SDL::Run() {
             }
         }
 
-        // Never keep the pointer grabbed while the window is not the active one.
+        if (game) {
+            const bool text = game->GetInput().TextMode();
+            if (text != textActive) {
+                textActive = text;
+                if (text) {
+                    recaptureAfterText = cursorCaptured;
+                    SetCursorCaptured(false);
+                    SDL_StartTextInput(window);
+                } else {
+                    SDL_StopTextInput(window);
+                    if (recaptureAfterText)
+                        SetCursorCaptured(true);
+                    recaptureAfterText = false;
+                }
+            }
+        }
+
         if (cursorCaptured && !(SDL_GetWindowFlags(window) & SDL_WINDOW_INPUT_FOCUS))
             SetCursorCaptured(false);
 

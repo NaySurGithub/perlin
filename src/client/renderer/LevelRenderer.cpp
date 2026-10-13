@@ -31,7 +31,7 @@ namespace perlin {
         : context(context), options(options) {
         blocks.SetFancy(options.fancyGraphics);
         const unsigned cores = std::max(1u, std::thread::hardware_concurrency());
-        // The game thread, the render thread and the network thread need a core each; the rest meshes.
+
         const unsigned threads = std::clamp(cores > 4 ? cores - 3 : 2u, 2u, 8u);
         meshPool = std::make_unique<ThreadPool>(threads);
         maxInFlight = threads * 3;
@@ -117,7 +117,7 @@ namespace perlin {
         }
         context.ClearChunkMeshes();
         shown.clear();
-        // Everything has to be built again, including the far-terrain colours.
+
         lod.InvalidateColours();
         lodTiles.clear();
         lodDirty.clear();
@@ -128,6 +128,14 @@ namespace perlin {
         wantKey.clear();
         for (const auto& entry : info)
             Recompute(entry.first);
+    }
+
+    void LevelRenderer::ReloadResources() {
+        blocks.Reset();
+        texturePackResolved = false;
+        atlasUploaded = false;
+        uploadedTiles = 0;
+        lastAssetAttempt = {};
     }
 
     void LevelRenderer::ReloadAssetsIfNeeded() {
@@ -194,7 +202,7 @@ namespace perlin {
             finished.swap(done);
         }
         const uint32_t current = generation.load();
-        // GPU uploads are budgeted per frame so a burst of finished chunks cannot stall a frame.
+
         const auto uploadStart = std::chrono::steady_clock::now();
         size_t consumed = 0;
         for (MeshResult& r : finished) {
@@ -203,7 +211,7 @@ namespace perlin {
             consumed++;
             inFlight.erase(r.pos);
             if (!meshKey.count(r.pos))
-                continue; // the chunk was unloaded while it was being meshed
+                continue;
             if (r.generation == current) {
                 context.UpdateChunkMesh(r.pos.x, r.pos.z, *r.mesh, r.key);
                 if (shown.insert(r.pos).second)
@@ -233,8 +241,6 @@ namespace perlin {
         level.MarkAllDirty();
     }
 
-    // Wanted mesh key of a chunk: its own version plus its eight neighbours', since lighting, ambient occlusion
-    // and face culling read across chunk borders.
     void LevelRenderer::Recompute(const ChunkPos& pos) {
         const auto self = info.find(pos);
         if (self == info.end()) {
@@ -263,7 +269,7 @@ namespace perlin {
         touched.reserve(drained.size() * 3);
         for (const DirtyChunk& d : drained) {
             if (d.exists && d.lodOnly) {
-                // A far column only waits to be sampled for the far-terrain store; it is never meshed.
+
                 if (LodEnabled() && !d.streaming && capSet.insert(d.pos).second)
                     capQueue.push_back(d.pos);
                 continue;
@@ -277,7 +283,7 @@ namespace perlin {
                 if (meshKey.erase(d.pos))
                     context.RemoveChunkMesh(d.pos.x, d.pos.z);
                 wantKey.erase(d.pos);
-                // The far-terrain sample is kept: it keeps drawing the chunk once the full mesh is gone.
+
                 if (shown.erase(d.pos))
                     MarkLodTile(d.pos);
             }
@@ -292,14 +298,14 @@ namespace perlin {
     bool LevelRenderer::Ready(const ChunkPos& pos, uint64_t now) const {
         const ChunkInfo& self = info.at(pos);
         if (self.streaming)
-            return now - self.firstSeen > 8000; // a column that never finished must not stay invisible forever
+            return now - self.firstSeen > 8000;
         for (int dz = -1; dz <= 1; dz++)
             for (int dx = -1; dx <= 1; dx++) {
                 if (!dx && !dz)
                     continue;
                 const auto n = info.find(ChunkPos{pos.x + dx, pos.z + dz});
                 if (n == info.end()) {
-                    // Probably the edge of the loaded area; give the neighbour a moment to show up.
+
                     if (now - self.readyAt < 500)
                         return false;
                 } else if (n->second.streaming && now - n->second.firstSeen < 2500) {
@@ -324,7 +330,7 @@ namespace perlin {
         const int camChunkX = static_cast<int>(std::floor(camX / 16.0f)), camChunkZ = static_cast<int>(std::floor(camZ / 16.0f));
         for (const auto& [pos, key] : wantKey) {
             if (debugNear >= 0 && std::max(std::abs(pos.x - camChunkX), std::abs(pos.z - camChunkZ)) > debugNear)
-                continue; // developer test: leave far chunks to the LOD tiles
+                continue;
             if (inFlight.count(pos) || !Ready(pos, now))
                 continue;
             const float dx = pos.x * 16.0f + 8.0f - camX;
@@ -343,8 +349,7 @@ namespace perlin {
                           [](const Pending& a, const Pending& b) { return a.distance < b.distance; });
 
         if (!async) {
-            // Textures are still loading: meshing now would only be thrown away when the atlas arrives, so wait for
-            // them (they finish within moments) and only fall back to untextured meshes if they never do.
+
             const auto waitNow = std::chrono::steady_clock::now();
             if (firstWaitAt.time_since_epoch().count() == 0)
                 firstWaitAt = waitNow;
@@ -394,7 +399,7 @@ namespace perlin {
     }
 
     namespace {
-        // 4-block cells near the camera, 8-block cells for tiles more than 64 chunks away.
+
         int LodStride(int tx, int tz, int ccx, int ccz) {
             const int d = std::max(std::abs(tx * LodStore::kTileChunks + 2 - ccx),
                                    std::abs(tz * LodStore::kTileChunks + 2 - ccz));
@@ -419,7 +424,7 @@ namespace perlin {
 
     void LevelRenderer::ProcessLod(Level& level, float camX, float camZ) {
         if (!LodEnabled())
-            return; // up to 32 chunks everything is real geometry: no LOD at all
+            return;
         const bool assets = atlasUploaded && blocks.Complete() && biomeTints.Ready();
         if (!assets)
             return;
@@ -427,7 +432,6 @@ namespace perlin {
         const auto start = Clock::now();
         auto elapsed = [&] { return std::chrono::duration<double, std::milli>(Clock::now() - start).count(); };
 
-        // 1. Sample newly completed chunks.
         size_t taken = 0;
         const double captureBudget = capQueue.size() > 200 ? 5.0 : 2.0;
         while (taken < capQueue.size() && elapsed() < captureBudget) {
@@ -436,7 +440,7 @@ namespace perlin {
             captured++;
             if (lod.Capture(level, pos, blocks, biomeTints))
                 MarkLodTile(pos);
-            level.RemoveLodOnly(pos.x, pos.z); // sampled: the full column is not needed any more
+            level.RemoveLodOnly(pos.x, pos.z);
         }
         capQueue.erase(capQueue.begin(), capQueue.begin() + static_cast<std::ptrdiff_t>(taken));
         if (taken && std::getenv("PERLIN_STATS")) {
@@ -448,7 +452,6 @@ namespace perlin {
             }
         }
 
-        // 2. Re-plan which tiles exist when the camera moved.
         const int radius = std::max(2, options.renderDistance);
         const int ccx = static_cast<int>(std::floor(camX / 16.0f)), ccz = static_cast<int>(std::floor(camZ / 16.0f));
         if (lodScanForced || std::abs(ccx - lodScanX) >= 2 || std::abs(ccz - lodScanZ) >= 2) {
@@ -464,11 +467,11 @@ namespace perlin {
                 const ChunkPos& p = entry.first;
                 const int dist = std::max(std::abs(p.x - ccx), std::abs(p.z - ccz));
                 if (dist > radius + 2 || dist <= LodStore::kRealChunks)
-                    continue; // inside the real-geometry region there is nothing to draw
+                    continue;
                 const int tx = LodStore::TileOf(p.x), tz = LodStore::TileOf(p.z);
                 wanted[TileKey(tx, tz)] = LodStride(tx, tz, ccx, ccz);
             }
-            // Tiles straddling the real-geometry edge hide their inner chunks relative to where the camera is now.
+
             for (const auto& [key, stride] : wanted) {
                 const int tx = static_cast<int>(key >> 32), tz = static_cast<int>(static_cast<uint32_t>(key));
                 auto span = [](int tile, int centre, int& lo, int& hi) {
@@ -495,7 +498,7 @@ namespace perlin {
             for (const auto& [key, stride] : wanted) {
                 const auto built = lodTiles.find(key);
                 if (built == lodTiles.end()) {
-                    lodTiles[key] = 0; // placeholder until it is built
+                    lodTiles[key] = 0;
                     lodDirty.insert(key);
                 } else if (built->second != 0 && built->second != stride) {
                     lodDirty.insert(key);
@@ -503,7 +506,6 @@ namespace perlin {
             }
         }
 
-        // 3. Rebuild changed tiles, nearest first.
         if (lodDirty.empty())
             return;
         std::vector<std::pair<float, int64_t>> order;

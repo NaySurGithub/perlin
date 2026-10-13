@@ -18,7 +18,6 @@ namespace perlin {
             return s;
         }
 
-        // The pack id in a DataInfo/ChunkData packet is "uuid" or "uuid_version".
         std::string BareId(const std::string& id) {
             const size_t us = id.find('_');
             return Lower(us == std::string::npos ? id : id.substr(0, us));
@@ -66,7 +65,7 @@ namespace perlin {
 
     std::string PackDownloader::UuidString(const net::Uuid& id) {
         char buf[40];
-        // Bedrock writes a UUID as two little-endian 64-bit halves.
+
         uint8_t b[16];
         for (int i = 0; i < 8; i++) {
             b[i] = id.bytes[7 - i];

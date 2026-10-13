@@ -53,9 +53,6 @@ namespace perlin {
             return palette.HasState(id, key) || palette.HasState(id, std::string("minecraft:") + key);
         }
 
-
-        // Bedrock block physics registry (resources/block_physics.bin, generated from the BDS registry):
-        // exact collision boxes, friction, surface response and flags per network hash.
         struct PhysRecord {
             uint8_t flags = 0, surface = 0;
             float friction = 0.6f;
@@ -109,7 +106,6 @@ namespace perlin {
             return table;
         }
 
-        // Plants and decorations the player walks through.
         bool Passable(const std::string& n) {
             static const char* const exact[] = {
                 "short_grass", "tallgrass", "tall_grass", "fern", "large_fern", "double_plant", "yellow_flower",
@@ -147,14 +143,13 @@ namespace perlin {
     }
 
     const LevelCollision::Info& LevelCollision::Lookup(uint16_t id, const BlockLibrary* blocks) {
-        // Shapes depend only on the block id, so the table outlives the per-frame LevelCollision.
-        // Slots are published once and never freed, so the mesher threads and the game thread can share it.
+
         static std::array<std::atomic<Info*>, 65536> table{};
         Info* slot = table[id].load(std::memory_order_acquire);
         if (slot)
             return *slot;
         Info info = Classify(id, blocks);
-        // Unknown names (palette not synced yet) are re-classified on the next query.
+
         if (id != 0 && BlockPalette::Instance().Name(id).empty()) {
             static thread_local Info transient;
             transient = std::move(info);
@@ -178,7 +173,7 @@ namespace perlin {
 
         std::string n = BlockPalette::Instance().Name(id);
         if (n.empty()) {
-            // Palette name not known yet: behave as solid ground so the player never falls through.
+
             Add(s, 0, 0, 0, 1, 1, 1);
             info.full = true;
             return info;
@@ -186,7 +181,6 @@ namespace perlin {
         if (n.rfind("minecraft:", 0) == 0)
             n.erase(0, 10);
 
-        // Fluids and fluid plants.
         if (n == "water" || n == "flowing_water" || n == "lava" || n == "flowing_lava") {
             const int depth = State(id, "liquid_depth", 0);
             s.fluid = Has(n, "lava") ? 2 : 1;
@@ -228,7 +222,6 @@ namespace perlin {
         if (Passable(n))
             return info;
 
-        // Shapes derived from state.
         if (Ends(n, "_slab") && !Has(n, "double")) {
             const bool top = StateText(id, "vertical_half", "bottom") == "top" || State(id, "top_slot_bit", 0) != 0;
             top ? Add(s, 0, 0.5, 0, 1, 1, 1) : Add(s, 0, 0, 0, 1, 0.5, 1);
@@ -240,7 +233,7 @@ namespace perlin {
             const double base0 = flip ? 0.5 : 0.0, base1 = flip ? 1.0 : 0.5;
             const double step0 = flip ? 0.0 : 0.5, step1 = flip ? 0.5 : 1.0;
             Add(s, 0, base0, 0, 1, base1, 1);
-            // weirdo_direction names the side the stair ascends toward: 0 east, 1 west, 2 south, 3 north.
+
             switch (dir & 3) {
             case 0: Add(s, 0.5, step0, 0, 1, step1, 1); break;
             case 1: Add(s, 0, step0, 0, 0.5, step1, 1); break;
@@ -251,7 +244,7 @@ namespace perlin {
         }
         if (Ends(n, "_trapdoor")) {
             if (State(id, "open_bit", 0)) {
-                // direction names the hinge side: 0 east, 1 west, 2 south, 3 north.
+
                 switch (State(id, "direction", 0) & 3) {
                 case 0: Add(s, 0, 0, 0, 0.1875, 1, 1); break;
                 case 1: Add(s, 0.8125, 0, 0, 1, 1, 1); break;
@@ -348,7 +341,6 @@ namespace perlin {
             return info;
         }
 
-        // Anything else the renderer draws as a plant is not solid.
         if (blocks) {
             const BlockAppearance& look = blocks->Look(static_cast<int32_t>(id));
             if (look.shape == BlockAppearance::Shape::Cross || look.shape == BlockAppearance::Shape::Wall)
@@ -369,7 +361,7 @@ namespace perlin {
     physics::BlockShape LevelCollision::Query(int x, int y, int z) const {
         BlockShape s = QueryMain(x, y, z);
         if (s.fluid == 0 && y >= Chunk::MIN_Y && y < Chunk::MIN_Y + Chunk::HEIGHT) {
-            // Waterlogged blocks, seagrass, kelp: the water lives in the second block layer.
+
             const uint16_t liquid = level.GetLiquid(x, y, z);
             if (liquid != 0) {
                 const Info& li = Lookup(liquid, blocks);
@@ -399,7 +391,6 @@ namespace perlin {
         if (info.kind == Kind::Plain)
             return info.shape;
 
-        // Connectable shapes: post plus an arm toward every side that joins.
         auto joins = [&](int dx, int dz) {
             bool nl = false;
             const uint16_t other = level.GetBlock(x + dx, y, z + dz, nl);

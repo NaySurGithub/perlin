@@ -5,8 +5,6 @@
 #include <cmath>
 #include <vector>
 
-// Bedrock player movement, ported tick-for-tick from the bedsim reference as implemented in cinnabar's
-// `sim` crate: f32 velocity pipeline, Y->X->Z axis order, Bedrock step-up, ladder/water/flight rules.
 namespace perlin::physics {
     namespace {
         constexpr double kEps = 1.0e-7;
@@ -23,8 +21,6 @@ namespace perlin::physics {
         double HorizontalSq(const Vec3& v) { return v.x * v.x + v.z * v.z; }
         double F(double v) { return static_cast<double>(static_cast<float>(v)); }
 
-        // Every cell that can own a shape touching `region` (shapes reach one cell up from below: fences, walls),
-        // filtered with the reference's strict f32 intersection so touching boxes are not colliders.
         void Gather(const World& world, const Box& region, std::vector<Box>& out) {
             out.clear();
             const int x0 = static_cast<int>(std::floor(region.x0)) - 1;
@@ -58,8 +54,6 @@ namespace perlin::physics {
         double Lo(const Box& b, int a) { return a == 0 ? b.x0 : (a == 1 ? b.y0 : b.z0); }
         double Hi(const Box& b, int a) { return a == 0 ? b.x1 : (a == 1 ? b.y1 : b.z1); }
 
-        // bedsim / Oomph swept-AABB clip of a moving box against one stationary box (cinnabar `Aabb::clip_against`),
-        // evaluated in f32 with the 1e-7 contact snap so resting contact never counts as penetration.
         Vec3 ClipAgainst(const Box& self, const Box& stationary, Vec3 velocity) {
             if (ZeroVolume(stationary))
                 return velocity;
@@ -119,7 +113,6 @@ namespace perlin::physics {
         Vec3 Add(Vec3 a, Vec3 b) { return {a.x + b.x, a.y + b.y, a.z + b.z}; }
         Box TranslateBy(const Box& b, Vec3 d) { return b.Offset(d.x, d.y, d.z); }
 
-        // Single-axis request, clipped against every collider in reference order (reverse for the plain move).
         double ClipAxis(const std::vector<Box>& colliders, const Box& cur, int axis, double v, bool reverse = false) {
             Vec3 vel;
             vel[axis] = v;
@@ -141,7 +134,6 @@ namespace perlin::physics {
             return limit >= 0 ? std::clamp(value, 0.0, limit) : std::clamp(value, limit, 0.0);
         }
 
-        // Bedrock resolves Y, then X, then Z; horizontal axes can only be shortened.
         void ResolveAxes(const Box& start, const Vec3& v, const std::vector<Box>& colliders, Box& outBox, Vec3& moved) {
             Box cur = start;
             moved = {};
@@ -233,7 +225,6 @@ namespace perlin::physics {
             return F(static_cast<float>(value) - (value < 0 ? -1.0f : 1.0f) * static_cast<float>(offset));
         }
 
-        // Sneaking keeps the player on the edge: shortens the request until support stays within a step.
         Vec3 ClipSneakEdge(const World& world, const State& s, bool sneaking, Vec3 v, std::vector<Box>& scratch) {
             constexpr double kOffset = static_cast<double>(0.05f);
             const Box full = BoundingBox(s, sneaking);
@@ -273,7 +264,6 @@ namespace perlin::physics {
             bool water = false, lava = false, web = false;
         };
 
-        // Scans the cells touching `box` (deflated like the vanilla fluid / inside-block checks).
         Environment Scan(const World& world, const Box& box) {
             Environment env;
             const Box shrunk = box.Inflate(-0.001);
@@ -293,8 +283,6 @@ namespace perlin::physics {
             return env;
         }
 
-
-        // Vanilla liquid current (cinnabar sim/world/flow.rs + current.rs). Returns false when unknown.
         bool SolidMotion(const BlockShape& s) { return !s.Empty() && !s.fluid && !s.climbable && !s.web; }
 
         struct Cell { int mat = 0; int depth = 0; };
@@ -352,7 +340,6 @@ namespace perlin::physics {
             else out[0] = out[1] = out[2] = 0;
         }
 
-        // Adds the water/lava current at the start of the tick.
         void ApplyCurrent(State& s, const World& w, bool sneaking) {
             const float half = static_cast<float>(kWidth) * 0.5f;
             const float h = static_cast<float>(sneaking ? kSneakHeight : kStandHeight);
@@ -408,11 +395,10 @@ namespace perlin::physics {
                     s.vy = F(static_cast<float>(s.vy) + sum[1] / l * k);
                     s.vz = F(static_cast<float>(s.vz) + sum[2] / l * k);
                 }
-                return; // lava takes precedence when both touch
+                return;
             }
         }
 
-        // Applies the f32 steering products the way the native client does.
         void MoveRelative(State& s, double strafeIn, double forwardIn, double speed) {
             const float strafe = static_cast<float>(strafeIn), forward = static_cast<float>(forwardIn);
             const float forceSq = forward * forward + strafe * strafe;
@@ -421,7 +407,7 @@ namespace perlin::physics {
             const float force = static_cast<float>(speed) / std::max(std::sqrt(forceSq), 1.0f);
             const float yaw = static_cast<float>(s.yaw) * static_cast<float>(kPi / 180.0);
             const float sn = std::sin(yaw), cs = std::cos(yaw);
-            // Bedrock strafe is left-positive; Perlin's input is right-positive.
+
             s.vx = F((-strafe * force * cs - sn * forward * force) + static_cast<float>(s.vx));
             s.vz = F((-strafe * force * sn + forward * force * cs) + static_cast<float>(s.vz));
         }
@@ -432,7 +418,7 @@ namespace perlin::physics {
         }
 
         const BlockShape& Below(const World& world, const State& s, BlockShape& storage) {
-            // Friction probe: the cell 0.1 below the feet (air keeps the default).
+
             storage = world.Query(static_cast<int>(std::floor(s.x)), static_cast<int>(std::floor(s.y - 0.1f)),
                                   static_cast<int>(std::floor(s.z)));
             return storage;
@@ -447,7 +433,6 @@ namespace perlin::physics {
         return b;
     }
 
-    // Strict f32 comparison, as the reference's `Aabb::intersects`.
     bool Box::Intersects(const Box& o) const {
         return static_cast<float>(x1) > static_cast<float>(o.x0) && static_cast<float>(x0) < static_cast<float>(o.x1) &&
                static_cast<float>(y1) > static_cast<float>(o.y0) && static_cast<float>(y0) < static_cast<float>(o.y1) &&
@@ -455,7 +440,7 @@ namespace perlin::physics {
     }
 
     Box BoundingBox(const State& s, bool sneaking) {
-        // Vanilla builds the box in f32 from the f32 position.
+
         const float half = static_cast<float>(kWidth) * 0.5f;
         const float x = static_cast<float>(s.x), y = static_cast<float>(s.y), z = static_cast<float>(s.z);
         const float h = static_cast<float>(sneaking ? kSneakHeight : kStandHeight);
@@ -467,7 +452,6 @@ namespace perlin::physics {
         thread_local std::vector<Box> scratch;
         const bool sneaking = in.sneak && !in.flying;
 
-        // Native simulation precision.
         s.x = F(s.x); s.y = F(s.y); s.z = F(s.z);
         s.vx = F(s.vx); s.vy = F(s.vy); s.vz = F(s.vz);
         if (s.vx * s.vx + s.vy * s.vy + s.vz * s.vz < 1.0e-12)
@@ -492,21 +476,19 @@ namespace perlin::physics {
         const BlockShape& under = Below(world, s, frictionStorage);
         const float blockFriction = under.Empty() && !under.fluid && under.friction <= 0 ? 0.6f : under.friction;
 
-        // Pose-adjusted input axes (sneak scales the request, the native 0.98 impulse follows).
         const float slow = sneaking ? 0.3f : 1.0f;
         const double forward = static_cast<float>(std::clamp<double>(in.forward, -slow, slow)) * 0.98f;
         const double strafe = static_cast<float>(std::clamp<double>(in.strafe, -slow, slow)) * 0.98f;
 
-        // ---- spectator / ability flight -------------------------------------------------------------------
         if (in.flying) {
             const bool hovering = std::max(std::fabs(forward), std::fabs(strafe)) < 0.01f * 0.98f + 1e-9;
             const float hoverMod = hovering ? (in.creativeFlight ? 0.375f : 0.75f) : 1.0f;
-            // Sneak descends instead of slowing the walk.
+
             const double fwd = static_cast<float>(in.forward) * 0.98f, str = static_cast<float>(in.strafe) * 0.98f;
             const bool hover = std::max(std::fabs(in.forward), std::fabs(in.strafe)) < 0.01f;
             (void)hoverMod;
             MoveRelative(s, str, fwd, static_cast<double>(attr.flySpeed) * (in.sprint ? 2.0 : 1.0));
-            // vertical control
+
             if (in.flyUp && in.flyDown) {
                 s.vy = 0;
             } else {
@@ -538,7 +520,7 @@ namespace perlin::physics {
             const Box box = BoundingBox(s, false);
             const Motion m = ResolveMotion(world, box, req, grounded, scratch);
             s.x = m.position.x; s.y = m.position.y; s.z = m.position.z;
-            // Only touching the floor counts; a hover must not keep the grounded flag from the take-off tick.
+
             s.onGround = m.cy && req.y < 0.0;
             s.vx = m.resolved.x; s.vy = m.resolved.y; s.vz = m.resolved.z;
             if (m.stepped || m.cy) s.vy = 0;
@@ -551,12 +533,11 @@ namespace perlin::physics {
             s.vz = DampHorizontal(s.vz, h);
             s.vy = F(static_cast<float>(s.vy) * 0.6f);
             if (s.onGround && s.verticalCollision && in.flyDown == false && m.cy && req.y < 0) {
-                // landing ends flight in the caller
+
             }
             return;
         }
 
-        // ---- walking, swimming-in-place, climbing ------------------------------------------------------------
         const bool water = s.inWater, lava = s.inLava;
         const float friction = grounded ? 0.91f * blockFriction : 0.91f;
         double relSpeed;
@@ -576,7 +557,6 @@ namespace perlin::physics {
             relSpeed = in.sprint ? 0.026 : 0.02;
         }
 
-        // A held jump in a liquid swims up before the move.
         if (in.jump && (water || lava))
             s.vy = F(static_cast<float>(s.vy) + 0.04f);
 
@@ -634,7 +614,7 @@ namespace perlin::physics {
         if (m.stepped) v.y = 0;
         if (m.cx) v.x = 0;
         if (m.cy) {
-            // Slime / bed rebound.
+
             const BlockShape support = world.Query(static_cast<int>(std::floor(s.x)),
                                                    static_cast<int>(std::floor(s.y - 0.2f)),
                                                    static_cast<int>(std::floor(s.z)));
@@ -679,7 +659,6 @@ namespace perlin::physics {
             v.z = DampHorizontal(v.z, friction);
         }
 
-        // Hop out of liquid when pushing against a ledge.
         if ((water || lava) && (m.cx || m.cz)) {
             const double startY = box.y0;
             const Box probe = BoundingBox(s, false).Offset(v.x, (startY - s.y) + 0.6 + v.y, v.z);

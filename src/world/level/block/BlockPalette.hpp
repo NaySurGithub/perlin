@@ -24,14 +24,15 @@ namespace perlin {
                                  const std::vector<std::pair<std::string, StateValue>>& sortedStates);
 
         bool LoadVanillaDefinitions(const std::string& mojangBlocksJsonPath);
-        // Adds the block states of the target server's registry (resources/block_states.json). The vanilla
-        // definitions lack states the server adds (stair corners, newer blocks), so those ids stayed unknown.
+
         bool LoadServerStates(const std::string& path);
         bool LoadServerStatesText(const std::string& text, const std::string& source);
         bool NamesLoaded() const { return namesLoaded; }
         size_t StateCount() const { return nameByHash.size(); }
 
         uint16_t Intern(int32_t networkId);
+
+        bool LearnName(int32_t networkId, const std::string& name);
         int32_t NetworkId(uint16_t local) const;
         std::string Name(uint16_t local) const;
         std::vector<std::pair<std::string, StateValue>> States(uint16_t local) const;
@@ -54,6 +55,8 @@ namespace perlin {
         std::unordered_map<std::string, std::vector<std::string>> propsByName;
 
         mutable std::mutex mutex;
+        mutable std::mutex learnedMutex;
+        std::unordered_map<int32_t, std::string> learned;
         std::unordered_map<int32_t, uint16_t> localByNet;
         std::vector<int32_t> netByLocal;
         std::atomic<size_t> count{1};

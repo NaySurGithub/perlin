@@ -23,14 +23,24 @@ namespace perlin {
 
         bool Initialize(AppPlatform& platform, const Options& options) override;
         std::string RendererName() const override { return rendererName; }
+        std::string GpuVendor() const override;
+        std::string GpuDescription() const override;
         void Shutdown() override;
         void BeginFrame(const FrameParams& params) override;
         void EndFrame() override;
         void RequestScreenshot(const std::string& path) override;
         void UploadSkyTextures(const Texture& sun, const Texture& moon, const Texture& clouds) override;
         void UploadCrosshair(const Texture& icons) override;
+        void DrawHudCursor(float x, float y, float w, float h) override;
         void UploadAtlas(const uint8_t* rgba, int tilePx, int tiles) override;
         void UpdateAtlasRegion(int tile, const uint8_t* rgba) override;
+        uint32_t UiCreateTexture(int width, int height, const uint8_t* rgba, bool linear, bool repeat = false) override;
+        void UiDestroyTexture(uint32_t texture) override;
+        uint32_t UiCreateMesh(const UiVertex* vertices, uint32_t vertexCount, const uint32_t* indices,
+                              uint32_t indexCount) override;
+        void UiDestroyMesh(uint32_t mesh) override;
+        void UiSubmit(UiLayer layer, const UiDraw& draw) override;
+        void FramebufferSize(int& w, int& h) const override { w = width; h = height; }
         void UpdateChunkMesh(int cx, int cz, const Tessellator& tess, uint64_t version) override;
         void RemoveChunkMesh(int cx, int cz) override;
         void UpdateLodTile(int tx, int tz, int size, const Tessellator& tess, uint64_t version) override;
@@ -51,8 +61,7 @@ namespace perlin {
         };
         struct Page {
             bgfx::DynamicVertexBufferHandle vb = BGFX_INVALID_HANDLE;
-            // One index buffer per render layer: neighbouring chunks' ranges of the same layer end up adjacent, so the
-            // draw loop can merge them into a single submit. Indices are absolute within the page's vertex buffer.
+
             std::array<bgfx::DynamicIndexBufferHandle, kRenderLayerCount> ib;
             RangeAllocator vAlloc;
             std::array<RangeAllocator, kRenderLayerCount> iAlloc;
@@ -66,16 +75,16 @@ namespace perlin {
         struct GpuChunk {
             int page = -1;
             uint32_t vOff = 0, vCount = 0;
-            std::array<uint32_t, kRenderLayerCount> iOff{}; // offset inside the page's per-layer index buffer
+            std::array<uint32_t, kRenderLayerCount> iOff{};
             std::array<uint32_t, kRenderLayerCount> layerCount{};
             std::vector<GpuSection> sections;
             uint64_t version = 0;
             float minY = 0, maxY = 0;
             int cx = 0, cz = 0;
-            int size = 16;               // horizontal extent in blocks (LOD tiles are larger); origin is cx*size
-            int visMin = 0;              // section index of conn[0]
-            std::vector<uint16_t> conn;  // face-pair connectivity per section
-            uint32_t secVis = ~0u;       // bit (sy - visMin): reachable from the camera
+            int size = 16;
+            int visMin = 0;
+            std::vector<uint16_t> conn;
+            uint32_t secVis = ~0u;
         };
         void UpdateCaveVisibility(float camX, float camY, float camZ);
         uint64_t meshGeneration = 1;
@@ -101,18 +110,17 @@ namespace perlin {
         void UploadLightmap(const uint8_t* pixels);
         static int64_t ChunkKey(int cx, int cz) { return (static_cast<int64_t>(cx) << 32) | (uint32_t)cz; }
 
-        // Shadow mapping (shader packs that ask for it): sun/moon-space orthographic depth map around the camera.
         struct ShadowState {
             bgfx::FrameBufferHandle fb = BGFX_INVALID_HANDLE;
             bgfx::TextureHandle color = BGFX_INVALID_HANDLE;
             int size = 0;
             float distance = 80.0f;
-            bool enabled = false;   // resources exist
-            bool active = false;    // valid map this frame (light above the horizon)
-            float sample[16] = {};  // world -> (u, v, depth)
-            float raster[16] = {};  // world -> clip, for rendering the map
+            bool enabled = false;
+            bool active = false;
+            float sample[16] = {};
+            float raster[16] = {};
             float info[4] = {};
-            int64_t key[6] = {};    // what the current contents were rendered for
+            int64_t key[6] = {};
             uint64_t generation = 0;
             int framesSince = 0;
         } shadow;
@@ -135,6 +143,21 @@ namespace perlin {
         bgfx::VertexBufferHandle bottomSkyBuffer = BGFX_INVALID_HANDLE;
         bgfx::VertexBufferHandle screenBuffer = BGFX_INVALID_HANDLE;
         void DrawScreenTint();
+
+        struct MotionBlur {
+            bgfx::TextureHandle worldColor = BGFX_INVALID_HANDLE, worldDepth = BGFX_INVALID_HANDLE;
+            bgfx::FrameBufferHandle worldFb = BGFX_INVALID_HANDLE;
+            bgfx::TextureHandle histColor[2] = {BGFX_INVALID_HANDLE, BGFX_INVALID_HANDLE};
+            bgfx::FrameBufferHandle histFb[2] = {BGFX_INVALID_HANDLE, BGFX_INVALID_HANDLE};
+            bgfx::UniformHandle sampCur = BGFX_INVALID_HANDLE, sampHist = BGFX_INVALID_HANDLE, params = BGFX_INVALID_HANDLE;
+            int read = 0;
+            bool valid = false;
+            bool targets = false;
+            float lastTime = 0.0f;
+        } blur;
+        bool EnsureMotionBlurTargets();
+        void DestroyMotionBlur();
+        void SetupMotionBlur(const FrameParams& params);
         void DrawCrosshair();
         bgfx::VertexBufferHandle starBuffer = BGFX_INVALID_HANDLE;
         bgfx::VertexBufferHandle sunriseBuffer = BGFX_INVALID_HANDLE;
@@ -178,14 +201,37 @@ namespace perlin {
         int atlasLayers = 0;
         int tileSize = 16;
         bgfx::TextureHandle crosshairTexture = BGFX_INVALID_HANDLE;
-        int crosshairPx = 0; // source size of the crosshair square in texels
+        int crosshairPx = 0;
 
         std::vector<VisibleChunk> visible;
-        uint32_t drawCalls = 0; // merged submits issued this frame (diagnostic)
+        uint32_t drawCalls = 0;
 
         std::vector<Page> pages;
         std::unordered_map<int64_t, GpuChunk> gpuChunks;
         std::unordered_map<int64_t, GpuChunk> lodChunks;
+
+        struct UiMeshGpu {
+            bgfx::VertexBufferHandle vb = BGFX_INVALID_HANDLE;
+            bgfx::IndexBufferHandle ib = BGFX_INVALID_HANDLE;
+            uint32_t indexCount = 0;
+            bool used = false;
+        };
+        struct UiTextureGpu {
+            bgfx::TextureHandle handle = BGFX_INVALID_HANDLE;
+            bool linear = false;
+            bool used = false;
+        };
+        std::vector<UiMeshGpu> uiMeshes;
+        std::vector<UiTextureGpu> uiTextures;
+        bgfx::VertexLayout uiLayout;
+        bgfx::UniformHandle uiSampler = BGFX_INVALID_HANDLE;
+        bgfx::UniformHandle uiParams = BGFX_INVALID_HANDLE;
+        bgfx::UniformHandle uiOverlay = BGFX_INVALID_HANDLE;
+        bgfx::UniformHandle uiGlintSampler = BGFX_INVALID_HANDLE;
+        bgfx::UniformHandle uiGlintA = BGFX_INVALID_HANDLE;
+        bgfx::UniformHandle uiGlintB = BGFX_INVALID_HANDLE;
+        bgfx::TextureHandle uiWhite = BGFX_INVALID_HANDLE;
+        void DestroyUi();
 
         std::mutex shotMutex;
         std::atomic<bool> shotPending{false};

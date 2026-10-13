@@ -4,9 +4,7 @@
 #include <vector>
 
 namespace perlin {
-    // A runtime shader pack, separate from the executable: a folder or a .zip read in place, holding precompiled bgfx
-    // shaders per backend as <backend>/<shader>.bin (backend = dxbc, glsl, spirv, essl or metal) plus an optional
-    // pack.json {"name","description"}. Programs the pack does not provide fall back to the built-in shaders.
+
     class ShaderPack {
     public:
         static ShaderPack& Instance();
@@ -15,12 +13,12 @@ namespace perlin {
         void Close();
         bool Active() const;
         bool HasBackend(const std::string& backend) const;
-        // Reads <backend>/<shader>.bin. False when the pack does not contain it.
+
         bool Read(const std::string& backend, const std::string& shader, std::vector<char>& out) const;
         std::string Description() const;
-        // pack.json values: "features": {"shadows": true, ...} and plain numbers such as "shadowMapSize".
+
         bool Feature(const std::string& name) const;
-        bool Flag(const std::string& name, bool fallback) const; // true/false in pack.json, `fallback` when absent
+        bool Flag(const std::string& name, bool fallback) const;
         double Number(const std::string& name, double fallback) const;
 
     private:

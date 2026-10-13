@@ -9,29 +9,23 @@
 
 namespace perlin {
 
-    // Keeps the resource packs a server offers: skips what is already on disk, fetches the rest from the pack's CDN
-    // url or in chunks over the game connection, checks the SHA-256 the server announced and stores each pack as
-    // <dir>/<uuid>_<version>.zip. The packs are cached for later; the renderer does not apply them yet.
     class PackDownloader {
     public:
         void SetDirectory(std::string dir) { directory = std::move(dir); }
         void Reset();
 
-        // Looks at the server's offer. Returns the "uuid_version" ids that still have to come over the game
-        // connection (empty: nothing is missing).
         std::vector<std::string> Plan(const std::vector<proto::TexturePackInfosEntry>& offered);
 
         enum class Step { Ignore, RequestChunk, PackDone, Failed };
         struct Result {
             Step step = Step::Ignore;
-            std::string packId; // as the server spelled it
+            std::string packId;
             uint32_t chunkIndex = 0;
             std::string message;
         };
         Result OnDataInfo(const proto::ResourcePackDataInfoPacket& info);
         Result OnChunk(const proto::ResourcePackChunkDataPacket& chunk);
 
-        // True once every pack asked for over the connection has arrived.
         bool AllReceived() const { return awaiting.empty() && active.empty(); }
         size_t Downloaded() const { return downloaded; }
         size_t Cached() const { return cached; }
@@ -49,9 +43,9 @@ namespace perlin {
             std::string fileName;
         };
         std::string directory;
-        std::set<std::string> awaiting;     // lower-case uuids requested but not started
-        std::map<std::string, std::string> fileFor; // lower-case uuid -> file name
-        std::map<std::string, Active> active;       // lower-case uuid
+        std::set<std::string> awaiting;
+        std::map<std::string, std::string> fileFor;
+        std::map<std::string, Active> active;
         size_t downloaded = 0, cached = 0;
 
         bool Store(const std::string& fileName, const std::vector<uint8_t>& bytes);

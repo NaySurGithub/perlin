@@ -26,12 +26,18 @@ namespace perlin {
         void Stop();
 
         void ReloadAssetsIfNeeded();
+
+        void ReloadResources();
+        void RemeshAll() { InvalidateMeshes(); }
         void Update(Level* level, float camX, float camZ, const Frustum& frustum);
         void Render(const Frustum& frustum, float camX, float camZ);
         void TickAnimation(uint64_t step);
 
         const BlockLibrary& Blocks() const { return blocks; }
         const BiomeTints& Tints() const { return biomeTints; }
+        size_t PendingMeshes() const { return pending.size(); }
+        size_t MeshesInFlight() const { return inFlight.size(); }
+        size_t MaxMeshesInFlight() const { return maxInFlight; }
         size_t MeshedChunks() const { return meshKey.size(); }
         bool TexturesLoaded() const { return atlasUploaded; }
 
@@ -91,16 +97,15 @@ namespace perlin {
         std::mutex doneMutex;
         std::vector<MeshResult> done;
         PosSet inFlight;
-        PosMap<ChunkInfo> info;      // what the level holds
-        PosMap<uint64_t> meshKey;    // key of the mesh that is built or being built
-        PosMap<uint64_t> wantKey;    // chunks whose wanted key differs from meshKey
+        PosMap<ChunkInfo> info;
+        PosMap<uint64_t> meshKey;
+        PosMap<uint64_t> wantKey;
         std::vector<DirtyChunk> drained;
         std::vector<Pending> pending;
 
-        // Far-terrain LOD (see LodStore).
         LodStore lod;
-        PosSet shown;                              // chunks currently drawn at full detail
-        std::unordered_map<int64_t, int> lodTiles; // built tile -> stride
+        PosSet shown;
+        std::unordered_map<int64_t, int> lodTiles;
         std::unordered_set<int64_t> lodDirty;
         std::vector<ChunkPos> capQueue;
         PosSet capSet;

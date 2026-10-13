@@ -32,6 +32,10 @@ namespace perlin {
             BGFX_EMBEDDED_SHADER(fs_cloud),
             BGFX_EMBEDDED_SHADER(vs_screen),
             BGFX_EMBEDDED_SHADER(fs_screen),
+            BGFX_EMBEDDED_SHADER(vs_ui),
+            BGFX_EMBEDDED_SHADER(fs_ui),
+            BGFX_EMBEDDED_SHADER(vs_post),
+            BGFX_EMBEDDED_SHADER(fs_post),
             BGFX_EMBEDDED_SHADER_END(),
         };
 
@@ -50,6 +54,8 @@ namespace perlin {
             {"vs_celestial", "fs_celestial"},
             {"vs_cloud", "fs_cloud"},
             {"vs_screen", "fs_screen"},
+            {"vs_ui", "fs_ui"},
+            {"vs_post", "fs_post"},
             {"vs_shadow", "fs_shadow"},
             {"vs_shadow", "fs_shadow_cutout"},
         };
@@ -99,8 +105,7 @@ namespace perlin {
             programs[i] = BGFX_INVALID_HANDLE;
             if (i >= kPackOnlyFrom && !packActive)
                 continue;
-            // A pack overrides a program only when it supplies both of its stages; otherwise the built-in pair is
-            // used (the stages share varyings, so mixing them would not link).
+
             if (packActive) {
                 bgfx::ShaderHandle vertex = Load(source.vertex, true);
                 bgfx::ShaderHandle fragment = Load(source.fragment, true);
@@ -118,7 +123,7 @@ namespace perlin {
                 }
             }
             if (i >= kPackOnlyFrom)
-                continue; // no built-in version: the feature is simply off
+                continue;
             bgfx::ShaderHandle vertex = Load(source.vertex, false);
             bgfx::ShaderHandle fragment = Load(source.fragment, false);
             programs[i] = bgfx::createProgram(vertex, fragment, true);
@@ -145,6 +150,8 @@ namespace perlin {
         sunDirection = bgfx::createUniform("u_sunDir", bgfx::UniformType::Vec4);
         timeUniform = bgfx::createUniform("u_time", bgfx::UniformType::Vec4);
         heldLight = bgfx::createUniform("u_heldLight", bgfx::UniformType::Vec4);
+        dynParams = bgfx::createUniform("u_dynParams", bgfx::UniformType::Vec4);
+        dynLights = bgfx::createUniform("u_dynLights", bgfx::UniformType::Vec4, 8);
         tiles = bgfx::createUniform("u_tiles", bgfx::UniformType::Vec4);
         skyParams = bgfx::createUniform("u_skyParams", bgfx::UniformType::Vec4);
         shadowMatrix = bgfx::createUniform("u_shadowMtx", bgfx::UniformType::Mat4);
@@ -161,7 +168,7 @@ namespace perlin {
         }
         for (bgfx::UniformHandle* handle : {&atlasSampler, &lightmapSampler, &skySampler, &mvp, &camera, &fogColor,
                                             &fogEnvironment, &fogSky, &modulator, &textureInfo, &chunk, &cloudOffset,
-                                            &cloudColor, &sunDirection, &timeUniform, &heldLight, &tiles, &skyParams,
+                                            &cloudColor, &sunDirection, &timeUniform, &heldLight, &dynParams, &dynLights, &tiles, &skyParams,
                                             &shadowMatrix, &shadowInfo, &shadowSampler}) {
             if (bgfx::isValid(*handle))
                 bgfx::destroy(*handle);
@@ -181,7 +188,6 @@ namespace perlin {
         textureInfoValue[0] = 1.0f / static_cast<float>(std::max(1, tilePixels));
         textureInfoValue[1] = params.rgss ? 1.0f : 0.0f;
 
-        // Sun pose is Ry(-90) * Rx(angle) * (0, 1, 0); the moon sits opposite.
         const float sunY = std::cos(params.sky.sunAngle);
         sunDirectionValue[0] = -std::sin(params.sky.sunAngle);
         sunDirectionValue[1] = sunY;
@@ -196,6 +202,9 @@ namespace perlin {
         skyParamsValue[2] = params.sky.enabled ? 1.0f : 0.0f;
         skyParamsValue[3] = 0.0f;
         heldLightValue[0] = params.heldLight;
+        dynParamsValue[0] = static_cast<float>(params.dynMode);
+        dynParamsValue[1] = static_cast<float>(params.dynMode ? std::clamp(params.dynCount, 0, 8) : 0);
+        std::copy_n(&params.dynLights[0][0], 32, &dynLightsValue[0][0]);
         tilesValue[0] = params.waterTile;
         tilesValue[1] = params.lavaTile;
         tilesValue[2] = params.waterFlowTile;
@@ -210,6 +219,8 @@ namespace perlin {
         bgfx::setUniform(sunDirection, sunDirectionValue);
         bgfx::setUniform(timeUniform, timeValue);
         bgfx::setUniform(heldLight, heldLightValue);
+        bgfx::setUniform(dynParams, dynParamsValue);
+        bgfx::setUniform(dynLights, dynLightsValue, 8);
         bgfx::setUniform(tiles, tilesValue);
         bgfx::setUniform(skyParams, skyParamsValue);
         SetChunkVisibility(1.0f);

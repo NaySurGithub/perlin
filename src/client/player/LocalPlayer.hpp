@@ -1,5 +1,6 @@
 #pragma once
 #include "client/Camera.hpp"
+#include "client/hand/HandRenderer.hpp"
 #include "client/input/InputManager.hpp"
 #include "client/multiplayer/BedrockSession.hpp"
 #include "client/player/PlayerPhysics.hpp"
@@ -9,33 +10,36 @@
 #include <deque>
 
 namespace perlin {
-    // Runs the local player's movement prediction at 20 Hz and reports every tick to the server
-    // (server-authoritative movement: the server replays our inputs and corrects us when we diverge).
+
     class LocalPlayer {
     public:
         void Update(BedrockSession& session, const InputManager& input, Camera& camera,
                     const BlockLibrary& blocks, float dt);
 
         const physics::State& State() const { return state; }
-        // Java's LocalPlayer.getFieldOfViewModifier, smoothed: flying x1.1, speed attribute (sprint +30%) averaged with 1.
+
         float FovModifier() const { return fovModifier; }
+
+        const WalkBob& Bob() const { return walkBob; }
+        float PartialTick() const { return static_cast<float>(std::clamp(accumulator / physics::kTickSeconds, 0.0, 1.0)); }
+        uint64_t TickCount() const { return tickCounter; }
+        bool Sneaking() const { return sneaking; }
 
     private:
         void ApplyServerMotion(BedrockSession& session, Camera& camera);
         void Tick(BedrockSession& session, const InputManager& input, const Camera& camera,
                   const physics::World& world);
 
-        // One predicted tick, kept until the server confirms it (cinnabar PredictionHistory).
         struct Record {
             uint64_t tick = 0;
             physics::Input input;
             physics::Attributes attributes;
             float yaw = 0;
-            physics::State before; // state the tick started from
-            physics::State after;  // state the tick produced
+            physics::State before;
+            physics::State after;
         };
         std::deque<Record> history;
-        double smoothOffset[3] = {0, 0, 0}; // render offset that hides small corrections
+        double smoothOffset[3] = {0, 0, 0};
 
         const BlockLibrary* blocksPtr = nullptr;
         int correctionReplays = 0;
@@ -43,6 +47,8 @@ namespace perlin {
         physics::State previous;
         bool initialised = false;
         double accumulator = 0.0;
+        WalkBob walkBob;
+        uint64_t tickCounter = 0;
 
         float fovModifier = 1.0f;
         bool flying = false;

@@ -6,7 +6,7 @@
 
 namespace perlin {
     struct InputEvent {
-        enum Type { KeyDown, KeyUp, MouseMove, MouseDown, MouseUp };
+        enum Type { KeyDown, KeyUp, MouseMove, MouseDown, MouseUp, KeyRepeat, Char };
         Type type;
         int key;
         float x, y;
@@ -31,6 +31,12 @@ namespace perlin {
         float TakeWheel() { return wheel.exchange(0.0f, std::memory_order_relaxed); }
         void SetCaptured(bool c) { captured = c; }
         bool Captured() const { return captured; }
+        bool pauseOnLostFocus = true;
+        void OnKeyRepeat(int key);
+        void OnChar(int codepoint);
+
+        void SetTextMode(bool on) { textMode = on; }
+        bool TextMode() const { return textMode; }
         void ReleaseAll();
 
         bool IsKeyDown(int key) const;
@@ -47,5 +53,6 @@ namespace perlin {
         std::atomic<float> lookX{0}, lookY{0};
         std::atomic<float> wheel{0};
         std::atomic<bool> captured{false};
+        std::atomic<bool> textMode{false};
     };
 }

@@ -182,7 +182,7 @@ namespace perlin {
 
     void Level::SetLiquid(int x, int y, int z, uint16_t id) {
         std::lock_guard lock(mutex);
-        // Updates for chunks we do not hold would create phantom one-block chunks that nothing ever removes.
+
         const auto it = chunks.find({x >> 4, z >> 4});
         if (it == chunks.end())
             return;
@@ -330,6 +330,12 @@ namespace perlin {
         changeCounter++;
     }
 
+    bool Level::HasSectionAt(int x, int y, int z) const {
+        std::lock_guard lock(mutex);
+        const auto it = chunks.find({x >> 4, z >> 4});
+        return it != chunks.end() && !it->second.lodOnly && it->second.HasSection(y);
+    }
+
     bool Level::HasChunk(int cx, int cz) const {
         std::lock_guard lock(mutex);
         return chunks.count({cx, cz}) != 0;
@@ -341,7 +347,7 @@ namespace perlin {
             return;
 
         std::lock_guard lock(mutex);
-        // Late replies for a column that was already dropped must not resurrect it as a partial chunk.
+
         const auto found = chunks.find({cx, cz});
         if (found == chunks.end())
             return;

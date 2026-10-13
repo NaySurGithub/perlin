@@ -78,7 +78,7 @@ namespace perlin {
             error = "handshake token has no key or salt";
             return false;
         }
-        // The server key comes with the token itself, so verifying the signature would not authenticate anything.
+
         const std::string der = B64UrlDecode(header->root()["x5u"].str());
         const unsigned char* p = reinterpret_cast<const unsigned char*>(der.data());
         EVP_PKEY* pkey = d2i_PUBKEY(nullptr, &p, static_cast<long>(der.size()));

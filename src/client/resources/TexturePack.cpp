@@ -15,10 +15,10 @@ namespace perlin {
 
     struct TexturePack::Impl {
         bool zipMode = false;
-        std::string folder; // folder mode: directory containing textures/
+        std::string folder;
         mz_zip_archive zip{};
         bool zipOpen = false;
-        std::unordered_map<std::string, mz_uint> index; // lower-case pack-relative path -> zip entry
+        std::unordered_map<std::string, mz_uint> index;
         std::string label;
         mutable std::mutex mutex;
 
@@ -53,7 +53,6 @@ namespace perlin {
             return fs::is_directory(dir / "textures", ec);
         }
 
-        // The folder that holds textures/ - downloaded packs are often nested one or two levels down.
         std::string FindFolderRoot(const fs::path& dir) {
             std::error_code ec;
             if (HasTextures(dir))
@@ -113,7 +112,7 @@ namespace perlin {
         }
         impl->zipOpen = true;
         impl->zipMode = true;
-        // Index every texture entry; the pack root is whatever precedes "textures/" (empty, or a top folder).
+
         std::string prefix;
         bool prefixFound = false;
         const mz_uint count = mz_zip_reader_get_num_files(&impl->zip);

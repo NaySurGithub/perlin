@@ -35,6 +35,39 @@ namespace perlin {
         double gameTicks = 0.0;
     };
 
+    struct UiVertex {
+        float x, y, z;
+        uint32_t abgr;
+        float u, v;
+    };
+    static_assert(sizeof(UiVertex) == 24);
+
+    enum class UiLayer : uint8_t {
+        World,
+        Hand,
+        Gui
+    };
+
+    struct UiDraw {
+        uint32_t mesh = 0;
+        uint32_t texture = 0;
+        float model[16] = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+        bool scissor = false;
+        int scissorRect[4] = {0, 0, 0, 0};
+        bool premultiplied = true;
+        float alphaCutoff = 0.0f;
+        bool depth = false;
+        bool depthWrite = true;
+        uint8_t blend = 0;
+        float overlay[4] = {0, 0, 0, 0};
+        uint8_t emissive = 0;
+
+        uint32_t glintTexture = 0;
+        float glintMatrix[4] = {1, 0, 0, 1};
+        float glintOffset[2] = {0, 0};
+        float glintStrength = 0.9f;
+    };
+
     struct FrameParams {
         float viewProjection[16];
         float skyViewProjection[16];
@@ -50,11 +83,17 @@ namespace perlin {
         SkyFrame sky;
         CloudDraw cloud;
         float timeSeconds;
-        bool crosshair = false; // draw the inverting crosshair at the screen centre
-        float screenTint[4]; // full-screen colour overlay (damage flash); alpha 0 draws nothing
+        float motionBlur = 0.0f;
+        bool crosshair = false;
+        int guiScale = 0;
+        float screenTint[4];
         uint32_t frameIndex;
-        float heldLight = 0.0f;      // block light level of the item in hand (0 = none), for dynamic lighting
-        float waterTile = -1.0f;     // atlas layer of the water texture, so shader packs can recognise water
+        float handProjection[16] = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+        int dynMode = 0;
+        int dynCount = 0;
+        float dynLights[8][4] = {};
+        float heldLight = 0.0f;
+        float waterTile = -1.0f;
         float lavaTile = -1.0f;
         float waterFlowTile = -1.0f;
         uint8_t lightmap[kLightmapBytes];
@@ -66,22 +105,34 @@ namespace perlin {
 
         virtual bool Initialize(AppPlatform& platform, const Options& options) = 0;
         virtual void Shutdown() = 0;
-        // Graphics backend in use (for example "Direct3D 11"); empty before Initialize.
+
         virtual std::string RendererName() const { return {}; }
+
+        virtual std::string GpuVendor() const { return {}; }
+        virtual std::string GpuDescription() const { return {}; }
 
         virtual void BeginFrame(const FrameParams& params) = 0;
         virtual void EndFrame() = 0;
         virtual void RequestScreenshot(const std::string& path) = 0;
 
-        // `icons` is the GUI sheet (textures/gui/icons.png); the crosshair is its top-left 15/256 square.
         virtual void UploadCrosshair(const Texture& icons) = 0;
+
+        virtual void DrawHudCursor(float x, float y, float w, float h) = 0;
         virtual void UploadSkyTextures(const Texture& sun, const Texture& moon, const Texture& clouds) = 0;
         virtual void UploadAtlas(const uint8_t* rgba, int tilePx, int tiles) = 0;
         virtual void UpdateAtlasRegion(int tile, const uint8_t* rgba) = 0;
 
+        virtual uint32_t UiCreateTexture(int width, int height, const uint8_t* rgba, bool linear, bool repeat = false) = 0;
+        virtual void UiDestroyTexture(uint32_t texture) = 0;
+        virtual uint32_t UiCreateMesh(const UiVertex* vertices, uint32_t vertexCount, const uint32_t* indices,
+                                      uint32_t indexCount) = 0;
+        virtual void UiDestroyMesh(uint32_t mesh) = 0;
+        virtual void UiSubmit(UiLayer layer, const UiDraw& draw) = 0;
+        virtual void FramebufferSize(int& width, int& height) const = 0;
+
         virtual void UpdateChunkMesh(int cx, int cz, const Tessellator& tess, uint64_t version) = 0;
         virtual void RemoveChunkMesh(int cx, int cz) = 0;
-        // Far-terrain tiles: `size` blocks square, drawn through the same pipeline but never shadowed or cave-culled.
+
         virtual void UpdateLodTile(int tx, int tz, int size, const Tessellator& tess, uint64_t version) = 0;
         virtual void RemoveLodTile(int tx, int tz) = 0;
         virtual void ClearChunkMeshes() = 0;

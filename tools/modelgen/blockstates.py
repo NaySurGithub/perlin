@@ -2,16 +2,13 @@
 import json
 import os
 
-
 def _as_list(x):
     return x if isinstance(x, list) else [x]
-
 
 def _parse_key(key):
     if key == "":
         return {}
     return dict(kv.split("=", 1) for kv in key.split(","))
-
 
 def _match_when(when, props):
     if "OR" in when:
@@ -25,12 +22,11 @@ def _match_when(when, props):
             return False
     return True
 
-
 class JavaBlock:
     def __init__(self, name, data):
         self.name = name
         self.data = data
-        self.values = {}  # property -> ordered list of values
+        self.values = {}
         if "variants" in data:
             self.kind = "variants"
             self.variants = [(_parse_key(k), _as_list(v)) for k, v in data["variants"].items()]
@@ -97,13 +93,11 @@ class JavaBlock:
                     refs.add((v["model"].replace("minecraft:", ""), v.get("x", 0), v.get("y", 0)))
         return refs
 
-
 def default_value(prop, values):
     for pref in ("false", "none", "bottom", "floor", "lower", "0", "straight", "north", "normal", "x"):
         if pref in values:
             return pref
     return sorted(values)[0] if values else ""
-
 
 def load_all(root):
     d = os.path.join(root, "blockstates")

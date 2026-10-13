@@ -14,7 +14,7 @@
 
 namespace perlin {
     namespace {
-        // name + optional state fragment -> palette id, taken from the server state table.
+
         class Ids {
         public:
             Ids() {
@@ -102,7 +102,6 @@ namespace perlin {
                     set(x, y, z, water);
             }
 
-        // A cave under the hill near the origin, lit by a torch row and a lava pool.
         for (int x = 8; x <= 30; x++)
             for (int z = -6; z <= 6; z++)
                 for (int y = 30; y <= 36; y++)
@@ -114,7 +113,13 @@ namespace perlin {
             for (int z = -3; z <= 0; z++)
                 set(x, 29, z, lava);
 
-        // Trees.
+        for (int y = 30; y <= 33; y++)
+            set(20, y, 0, stone);
+        set(19, 32, 0, ids.Get("torch", "\"torch_facing_direction\":[\"s\",\"west\"]"));
+        set(21, 32, 0, ids.Get("torch", "\"torch_facing_direction\":[\"s\",\"east\"]"));
+        set(20, 32, -1, ids.Get("torch", "\"torch_facing_direction\":[\"s\",\"north\"]"));
+        set(20, 32, 1, ids.Get("torch", "\"torch_facing_direction\":[\"s\",\"south\"]"));
+
         for (int x = -span + 4; x < span - 4; x += 3)
             for (int z = -span + 4; z < span - 4; z += 3) {
                 const int tx = x + static_cast<int>(Hash(x, z) * 3), tz = z + static_cast<int>(Hash(z, x) * 3);
@@ -134,7 +139,6 @@ namespace perlin {
                 }
             }
 
-        // Flatten a pad and build a small cabin with a glowstone lamp and a glass window.
         const int padY = Height(0, 0);
         for (int x = -7; x <= 7; x++)
             for (int z = -7; z <= 7; z++) {

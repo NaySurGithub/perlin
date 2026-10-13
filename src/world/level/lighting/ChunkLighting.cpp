@@ -18,7 +18,6 @@ namespace perlin {
             return scratch;
         }
 
-        // Java LightEngine.shapeOccludes for a step from cell `from` in direction `dir`.
         inline bool Occluded(const ChunkLighting::Grid& grid, uint32_t from, uint32_t to, int dir) {
             if (grid.shaped.empty() || (!grid.shaped[from] && !grid.shaped[to]))
                 return false;
@@ -77,7 +76,6 @@ namespace perlin {
         grid.sky.assign(cells, 0);
         grid.block.assign(cells, 0);
 
-        // Highest row below full sky light per column; everything above it is plain open sky.
         static thread_local std::vector<int16_t> colTop;
         colTop.assign(kLayer, -1);
         for (int z = 0; z < kSpan; z++)
@@ -194,7 +192,7 @@ namespace perlin {
                 out.packed.assign(static_cast<size_t>(out.rows) * kPadded * kPadded, Result::kSkyOnly);
                 return;
             }
-            // Light travels at most 15 cells, so nothing farther than 16 rows below the wanted range can matter.
+
             grid.yBase = std::max(std::max(Chunk::MIN_Y, std::min(lo, yLo) - 1), yLo - 16);
             const int top = std::min(Chunk::MIN_Y + Chunk::HEIGHT - 1, std::max(hi, yHi) + 1);
             grid.rows = top - grid.yBase + 1;

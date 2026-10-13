@@ -3,7 +3,7 @@
 #include "client/player/BlockCollision.hpp"
 #include "protocol/Packets.hpp"
 #include "world/level/block/BlockPalette.hpp"
-#include "network/custom/PlayerAuthInput.hpp"
+#include "network/PlayerConstants.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -15,7 +15,6 @@ namespace perlin {
         constexpr auto kDoubleTapWindow = std::chrono::milliseconds(350);
         constexpr auto kSprintTapWindow = std::chrono::milliseconds(300);
 
-        // Camera yaw has 0 along +X; Bedrock yaw has 0 along +Z and grows toward -X.
         float BedrockYaw(float cameraYaw) {
             float yaw = std::fmod(cameraYaw - 90.0f, 360.0f);
             if (yaw >= 180.0f)
@@ -29,7 +28,6 @@ namespace perlin {
             return bedrockYaw + 90.0f;
         }
 
-        // Bedrock pitch grows downward; the camera pitch grows upward.
         float BedrockPitch(float cameraPitch) {
             return -cameraPitch;
         }
@@ -75,7 +73,7 @@ namespace perlin {
                 Record& r = history.front();
                 const double dx = r.after.x - motion.pos[0], dy = r.after.y - motion.pos[1],
                              dz = r.after.z - motion.pos[2];
-                // delta is the end-of-tick velocity, the same quantity this client sends.
+
                 const double ex = r.after.vx - motion.velocity[0];
                 const double ey = r.after.vy - motion.velocity[1];
                 const double ez = r.after.vz - motion.velocity[2];
@@ -84,7 +82,7 @@ namespace perlin {
                 if (posErr > 1e-5 || velErr > 1e-5) {
                     const physics::State shown = state;
                     if (correctionReplays < 40 || correctionReplays % 100 == 0) {
-                        // Which blocks the sim stood in when the server disagreed (names, not ids).
+
                         const Level& lv = session.NetLevel();
                         auto name = [&](int bx, int by, int bz) { return BlockPalette::Instance().Name(lv.GetBlock(bx, by, bz)); };
                         const int fx = static_cast<int>(std::floor(r.before.x)), fz = static_cast<int>(std::floor(r.before.z));
@@ -137,7 +135,7 @@ namespace perlin {
                 }
                 history.pop_front();
                 handled = true;
-                // The correction's velocity was folded into the replay; do not apply it again below.
+
                 motion.hasVelocity = false;
             }
         }
@@ -173,12 +171,11 @@ namespace perlin {
         const physics::State before = state;
 
         const float forward = input.Axis(Action::Forward, Action::Back);
-        const float strafe = input.Axis(Action::Right, Action::Left); // +1 right
+        const float strafe = input.Axis(Action::Right, Action::Left);
         const bool jump = input.IsDown(Action::Jump);
         const bool sneakKey = input.IsDown(Action::Sneak);
         const bool sprintKey = input.IsDown(Action::Sprint);
 
-        // Sprint: hold the sprint key (or double-tap forward) while moving forward and not sneaking.
         const bool wasSprinting = sprinting;
         if (forward <= 0.0f || sneakKey || state.horizontalCollision)
             sprinting = false;
@@ -220,12 +217,15 @@ namespace perlin {
             state.vx = state.vy = state.vz = 0;
         }
 
+        walkBob.Tick(std::hypot(state.x - before.x, state.z - before.z), state.onGround && !flying,
+                     state.inWater && sprinting);
+        ++tickCounter;
+
         if (flying && state.onGround && state.verticalCollision && !in.flyUp && !in.noClip) {
             flying = false;
             sendStopFlying = true;
         }
 
-        // Report the tick.
         BedrockSession::MoveInput packet;
         std::vector<uint32_t>& f = packet.flags;
         const bool goLeft = strafe < 0.0f, goRight = strafe > 0.0f;
@@ -239,8 +239,6 @@ namespace perlin {
         if (goBack && goLeft) f.push_back(Flag::DownLeft);
         if (goBack && goRight) f.push_back(Flag::DownRight);
 
-        // Flag semantics follow the native client (cinnabar encoding::input_flags): the Jump*/Sneak*/Sprint*
-        // flags mirror the held keys, the Start*/Stop* edges mirror the processed state.
         const bool jumpInitiated = !flying && before.jumpDelay == 0 && state.jumpDelay == 9;
         if (jump) {
             f.push_back(Flag::JumpDown);
@@ -295,19 +293,18 @@ namespace perlin {
         if (state.verticalCollision)
             f.push_back(Flag::VerticalCollision);
 
-        // move vector: pose-processed (sneak scales the request) and normalised; raw: the keys as pressed.
         const float slowFactor = sneaking ? 0.3f : 1.0f;
-        packet.moveX = -std::clamp(strafe, -slowFactor, slowFactor); // Bedrock: +X is left
+        packet.moveX = -std::clamp(strafe, -slowFactor, slowFactor);
         packet.moveZ = std::clamp(forward, -slowFactor, slowFactor);
         packet.rawX = -strafe;
         packet.rawZ = forward;
         packet.yaw = BedrockYaw(camera.yaw);
         packet.pitch = BedrockPitch(camera.pitch);
-        packet.eyeHeight = kPlayerEyeHeight; // the network position is always feet + 1.62001
+        packet.eyeHeight = kPlayerEyeHeight;
         packet.position[0] = static_cast<float>(state.x);
         packet.position[1] = static_cast<float>(state.y);
         packet.position[2] = static_cast<float>(state.z);
-        // Vanilla sends the end-of-tick velocity as the position delta.
+
         packet.delta[0] = static_cast<float>(state.vx);
         packet.delta[1] = static_cast<float>(state.vy);
         packet.delta[2] = static_cast<float>(state.vz);
@@ -352,11 +349,11 @@ namespace perlin {
             flying = false;
             sendStopFlying = true;
         }
-        // Follow the server when it toggles flight on its own (e.g. /ability or a creative switch).
+
         if (session.IsFlying() != serverFlying) {
             serverFlying = session.IsFlying();
             if (serverFlying && session.MayFly() && !flying) {
-                flying = true; // vertical speed carries over and decays, as on the server
+                flying = true;
             } else if (!serverFlying && flying && !spectator) {
                 flying = false;
             }
@@ -377,7 +374,7 @@ namespace perlin {
         }
 
         LevelCollision world(session.NetLevel(), &blocks);
-        // The server only simulates us once the spawn handshake is done; until then just hold position.
+
         if (!session.Initialized()) {
             accumulator = 0.0;
             previous = state;
@@ -401,12 +398,11 @@ namespace perlin {
             const float speed = session.MovementSpeedAttribute() * (sprinting ? 1.3f : 1.0f);
             target *= (speed / 0.1f + 1.0f) / 2.0f;
             target = std::clamp(target, 0.1f, 1.5f);
-            // Java lerps 0.5 per 20 Hz tick.
+
             const float keep = std::pow(0.5f, dt * 20.0f);
             fovModifier = target + (fovModifier - target) * keep;
         }
 
-        // Smooth the camera between the last two simulated ticks.
         const double t = std::clamp(accumulator / physics::kTickSeconds, 0.0, 1.0);
         const double x = previous.x + (state.x - previous.x) * t;
         const double y = previous.y + (state.y - previous.y) * t;

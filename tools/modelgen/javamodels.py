@@ -16,7 +16,6 @@ DIR_VEC = {
     "down": (0, -1, 0), "up": (0, 1, 0), "north": (0, 0, -1),
     "south": (0, 0, 1), "west": (-1, 0, 0), "east": (1, 0, 0),
 }
-# FaceInfo vertex order: each vertex picks min/max of (x, y, z).  0 = min, 1 = max
 FACE_VERTS = {
     "down": [(0, 0, 1), (0, 0, 0), (1, 0, 0), (1, 0, 1)],
     "up": [(0, 1, 0), (0, 1, 1), (1, 1, 1), (1, 1, 0)],
@@ -25,7 +24,6 @@ FACE_VERTS = {
     "west": [(0, 1, 0), (0, 0, 0), (0, 0, 1), (0, 1, 1)],
     "east": [(1, 1, 1), (1, 0, 1), (1, 0, 0), (1, 1, 0)],
 }
-# BlockMath.VANILLA_UV_TRANSFORM_LOCAL_TO_GLOBAL
 def _rot(axis, angle):
     c, s = math.cos(angle), math.sin(angle)
     if axis == "x":
@@ -33,7 +31,6 @@ def _rot(axis, angle):
     if axis == "y":
         return np.array([[c, 0, s], [0, 1, 0], [-s, 0, c]], dtype=np.float64)
     return np.array([[c, -s, 0], [s, c, 0], [0, 0, 1]], dtype=np.float64)
-
 
 LOCAL_TO_GLOBAL = {
     "south": np.eye(3),
@@ -45,7 +42,6 @@ LOCAL_TO_GLOBAL = {
 }
 GLOBAL_TO_LOCAL = {k: v.T for k, v in LOCAL_TO_GLOBAL.items()}
 
-
 def nearest_dir(v):
     best, bd = "up", -1e9
     for d in DIRS:
@@ -54,15 +50,13 @@ def nearest_dir(v):
             best, bd = d, dot
     return best
 
-
 def block_rotation(x, y):
     """BlockModelRotation: Ry(-y) * Rx(-x)."""
     return _rot("y", -math.radians(y)) @ _rot("x", -math.radians(x))
 
-
 class Models:
     def __init__(self, root):
-        self.root = root  # .../assets/minecraft
+        self.root = root
         self.raw = {}
         self.resolved = {}
 
@@ -108,7 +102,6 @@ class Models:
             break
         return ref.replace("minecraft:", "")
 
-    # ------------------------------------------------------------------
     def bake(self, mid, rx=0, ry=0, uvlock=False):
         """Returns a list of quad dicts for model `mid` with blockstate rotation (rx, ry)."""
         model = self.resolve(mid)
@@ -131,9 +124,7 @@ class Models:
                         emat = np.eye(3)
                     else:
                         emat = _rot(erot["axis"], ang)
-                        # JOML rotation(angle, axis) is the right-handed rotation
                 else:
-                    # Matrix4f.rotationZYX(z, y, x)
                     emat = (_rot("z", math.radians(erot.get("z", 0))) @ _rot("y", math.radians(erot.get("y", 0)))
                             @ _rot("x", math.radians(erot.get("x", 0))))
                 if erot.get("rescale") and not np.allclose(emat, np.eye(3)):
@@ -151,7 +142,6 @@ class Models:
                 if uvs is None:
                     uvs = default_uv(fr, to, dname)
                 fr_rot = (face.get("rotation", 0) // 90) % 4
-                # uv transform for uvlock
                 uvt = None
                 if uvlock and has_rot:
                     uvt = inverse_face_transform(rot, dname)
@@ -191,7 +181,6 @@ class Models:
                 })
         return quads
 
-
 def default_uv(fr, to, d):
     if d == "down":
         return [fr[0], 16 - to[2], to[0], 16 - fr[2]]
@@ -203,8 +192,7 @@ def default_uv(fr, to, d):
         return [fr[0], 16 - to[1], to[0], 16 - fr[1]]
     if d == "west":
         return [fr[2], 16 - to[1], to[2], 16 - fr[1]]
-    return [16 - to[2], 16 - to[1], 16 - fr[2], 16 - fr[1]]  # east
-
+    return [16 - to[2], 16 - to[1], 16 - fr[2], 16 - fr[1]]
 
 def inverse_face_transform(rot, d):
     """BlockMath.getFaceTransformation(...).invert, for a pure rotation matrix `rot`."""
@@ -212,8 +200,7 @@ def inverse_face_transform(rot, d):
     normal = action @ np.array([0.0, 0.0, 1.0])
     new_side = nearest_dir(normal)
     face_t = GLOBAL_TO_LOCAL[new_side] @ action
-    return face_t.T  # orthonormal => inverse == transpose
-
+    return face_t.T
 
 def recalc_winding(pos, uv, final):
     mn = np.min(pos, axis=0)
@@ -234,7 +221,7 @@ def recalc_winding(pos, uv, final):
                     swap = j
                     break
         if swap == -1:
-            return pos, uv  # degenerate / non-axis aligned
+            return pos, uv
         if swap != vtx:
             pos[swap], pos[vtx] = pos[vtx], pos[swap]
             uv[swap], uv[vtx] = uv[vtx], uv[swap]

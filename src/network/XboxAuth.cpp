@@ -29,7 +29,7 @@
 #endif
 
 namespace perlin::xbox {
-    // Outside the anonymous namespace: glaze's reflection cannot name types with internal linkage on MSVC.
+
     namespace persist {
         struct Cache {
             std::string refreshToken;
@@ -44,13 +44,13 @@ namespace perlin::xbox {
     using persist::Cache;
 
     namespace {
-        // The Android Bedrock client's identity (same values gophertunnel uses): MSA application id, Xbox title id.
+
         constexpr const char* kMsaClientId = "0000000048183522";
         constexpr const char* kMsaScope = "service::user.auth.xboxlive.com::MBI_SSL";
         constexpr const char* kUserAgent = "XAL Android 2025.04.20250326.000";
         constexpr const char* kSandbox = "RETAIL";
         constexpr int64_t kTitleId = 1739947436;
-        // Used when the service discovery cannot be reached.
+
         constexpr const char* kFallbackServiceUri = "https://authorization.franchise.minecraft-services.net";
         constexpr const char* kFallbackPlayFabTitle = "20CA2";
         constexpr const char* kPlayFabRelyingParty = "rp://playfabapi.com/";
@@ -165,8 +165,6 @@ namespace perlin::xbox {
             return s;
         }
 
-        // ---- request signing (Xbox "signature policy", see go-xsapi xal/internal/signature.go) ----
-
         void PutBe32(std::string& out, uint32_t v) {
             for (int i = 3; i >= 0; i--)
                 out += static_cast<char>((v >> (i * 8)) & 0xFF);
@@ -182,7 +180,7 @@ namespace perlin::xbox {
 
         struct Policy {
             uint32_t version = 1;
-            size_t maxBody = 0; // 0 = the whole body is signed
+            size_t maxBody = 0;
             std::vector<std::string> extraHeaders;
         };
 
@@ -229,8 +227,6 @@ namespace perlin::xbox {
             return B64Standard(out);
         }
 
-        // ---- keys ----
-
         EC_KEY* NewProofKey() {
             EC_KEY* key = EC_KEY_new_by_curve_name(NID_X9_62_prime256v1);
             if (key && !EC_KEY_generate_key(key)) {
@@ -276,8 +272,6 @@ namespace perlin::xbox {
                    "\",\"y\":\"" + B64Url(yb, 32) + "\"}";
         }
 
-        // ---- tokens ----
-
         struct Tok {
             std::string token;
             int64_t notAfter = 0;
@@ -319,9 +313,6 @@ namespace perlin::xbox {
         }
     }
 
-    // ===================================================================================================
-    // detail (testable)
-    // ===================================================================================================
     namespace detail {
         std::string SignRequest(void* ecKeyP256, const std::string& method, const std::string& pathAndQuery,
                                 const std::string& authorization, const std::string& body, int64_t unixNanos,
@@ -390,9 +381,6 @@ namespace perlin::xbox {
         }
     }
 
-    // ===================================================================================================
-    // Account
-    // ===================================================================================================
     struct Account::Impl {
         std::string cachePath;
         Cache cache;
@@ -400,7 +388,7 @@ namespace perlin::xbox {
         std::string msaAccess;
         int64_t msaExpiry = 0;
         Tok device, title, user;
-        int64_t skewSeconds = 0; // server time minus local time
+        int64_t skewSeconds = 0;
         std::vector<Endpoint> endpoints;
         std::vector<Policy> policies;
         bool nsalLoaded = false;
@@ -411,7 +399,6 @@ namespace perlin::xbox {
                 EC_KEY_free(proofKey);
         }
 
-        // ---- persistence ----
         void LoadCache() {
             std::ifstream file(cachePath, std::ios::binary);
             if (!file.good())
@@ -429,11 +416,10 @@ namespace perlin::xbox {
                 file << text;
             }
 #ifndef _WIN32
-            chmod(cachePath.c_str(), 0600); // holds a refresh token
+            chmod(cachePath.c_str(), 0600);
 #endif
         }
 
-        // ---- http ----
         int64_t ServerNow() const { return NowSec() + skewSeconds; }
         int64_t ServerNanos() const {
             return (std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::system_clock::now().time_since_epoch())
@@ -483,7 +469,6 @@ namespace perlin::xbox {
             return !cancelled;
         }
 
-        // ---- NSAL: which signature policy each Xbox host wants ----
         void LoadNsal() {
             if (nsalLoaded)
                 return;
@@ -518,7 +503,6 @@ namespace perlin::xbox {
             nsalLoaded = true;
         }
 
-        // Matches like go-xsapi's TitleData.Match: the last match wins, an exact host ends the search.
         const Endpoint* MatchEndpoint(const Url& u) {
             LoadNsal();
             const Endpoint* found = nullptr;
@@ -548,7 +532,6 @@ namespace perlin::xbox {
             return {};
         }
 
-        // POST with a request signature from the proof key.
         http::Response PostSigned(const Url& u, const std::string& body, std::map<std::string, std::string> headers,
                                   const Policy& policy) {
             headers["User-Agent"] = kUserAgent;
@@ -566,7 +549,6 @@ namespace perlin::xbox {
             return Post(u, body, "application/json", headers);
         }
 
-        // ---- Microsoft account (device code) ----
         struct MsaTokens {
             std::string access, refresh;
             int64_t expiresIn = 0;
@@ -603,7 +585,7 @@ namespace perlin::xbox {
             std::string code;
             if (!ReadMsa(r, t, code, error)) {
                 if (r.status != 0 && (code == "invalid_grant" || r.status == 400 || r.status == 401)) {
-                    cache.refreshToken.clear(); // expired or revoked: the device-code flow has to run again
+                    cache.refreshToken.clear();
                     SaveCache();
                 }
                 return false;
@@ -675,7 +657,6 @@ namespace perlin::xbox {
             return false;
         }
 
-        // ---- Xbox: device, then SISU authorize (title + user), then XSTS ----
         bool EnsureProofKey() {
             if (proofKey)
                 return true;
@@ -724,7 +705,7 @@ namespace perlin::xbox {
             return true;
         }
 
-        Tok sisuXsts; // XSTS token for http://xboxlive.com that the SISU call returns
+        Tok sisuXsts;
 
         bool EnsureUserAndTitle(std::string& error) {
             if (title.Valid() && user.Valid())
@@ -777,7 +758,7 @@ namespace perlin::xbox {
                 else
                     error = NetworkError(r, "the Xbox token service");
                 if (r.status == 401 && !(doc && doc->root()["XErr"].isNumber())) {
-                    // The cached title/user tokens were rejected; forget them so the next attempt starts over.
+
                     title = {};
                     user = {};
                 }
@@ -788,7 +769,6 @@ namespace perlin::xbox {
 
         static std::string XblHeader(const Tok& t) { return "XBL3.0 x=" + t.uhs + ";" + t.token; }
 
-        // ---- PlayFab + Minecraft authorization service ----
         struct ServiceEnv {
             std::string serviceUri = kFallbackServiceUri;
             std::string playFabTitle = kFallbackPlayFabTitle;
@@ -815,7 +795,7 @@ namespace perlin::xbox {
             return env;
         }
 
-        bool PlayFabTicket(const ServiceEnv& env, std::string& ticket, std::string& error) {
+        bool PlayFabTicket(const ServiceEnv& env, std::string& ticket, std::string& playFabId, std::string& error) {
             Url u;
             ParseUrl("https://" + Lower(env.playFabTitle) + ".playfabapi.com/Client/LoginWithXbox", u);
             std::string rp = kPlayFabRelyingParty;
@@ -836,6 +816,7 @@ namespace perlin::xbox {
                 return false;
             }
             ticket = data["SessionTicket"].str();
+            playFabId = data["PlayFabId"].isString() ? data["PlayFabId"].str() : std::string();
             return true;
         }
 
@@ -948,7 +929,7 @@ namespace perlin::xbox {
         std::cout << "[auth] contacting Xbox Live..." << std::endl;
         const Impl::ServiceEnv env = s.Discover(gameVersion);
         std::string ticket;
-        if (!s.PlayFabTicket(env, ticket, error))
+        if (!s.PlayFabTicket(env, ticket, out.playFabId, error))
             return false;
         std::cout << "[auth] PlayFab login ok" << std::endl;
         if (!s.MinecraftToken(env, ticket, gameVersion, publicKeyB64, out.multiplayerToken, error))
@@ -956,7 +937,7 @@ namespace perlin::xbox {
         std::cout << "[auth] multiplayer token ok" << std::endl;
         std::string chainError;
         if (!s.LegacyChain(publicKeyB64, gameVersion, out.chainJson, out.gamertag, out.xuid, chainError)) {
-            // Newer servers only need the multiplayer token; keep going and let the server decide.
+
             std::cout << "[auth] legacy certificate chain unavailable: " << chainError << std::endl;
             out.chainJson = "{\"chain\":[]}";
         }

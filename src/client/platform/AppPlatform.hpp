@@ -37,11 +37,12 @@ public:
         return false;
     }
 
-    // Microsoft sign-in: open the verification page and put the code on the clipboard. Callable from any thread.
     virtual void ShowSignInCode(const std::string& url, const std::string& code) {
         (void)url;
         (void)code;
     }
+
+    virtual void SetClipboard(const std::string& text) { (void)text; }
 
     virtual std::unique_ptr<perlin::RenderContext> CreateRenderContext() = 0;
 

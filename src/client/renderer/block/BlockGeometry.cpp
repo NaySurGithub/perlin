@@ -46,7 +46,7 @@ namespace perlin {
             const float c = std::cos(a), s = std::sin(a);
             return {{{c, -s, 0}, {s, c, 0}, {0, 0, 1}}};
         }
-        // Bedrock model rotation (degrees): X and Y are mirrored relative to a right-handed frame.
+
         Mat3 BedrockRotation(const float r[3]) {
             constexpr float kRad = 3.14159265358979f / 180.0f;
             return Mul(Rz(r[2] * kRad), Mul(Ry(-r[1] * kRad), Rx(-r[0] * kRad)));
@@ -57,9 +57,8 @@ namespace perlin {
                 v[i] = pivot[i] + m[i][0] * d[0] + m[i][1] * d[1] + m[i][2] * d[2];
         }
 
-        // Face order matches the baked models: 0 down 1 up 2 north 3 south 4 west 5 east.
         constexpr const char* kFaceNames[6] = {"down", "up", "north", "south", "west", "east"};
-        // vertex (min=0/max=1 per axis) order identical to Java's FaceInfo
+
         constexpr int kFaceVerts[6][4][3] = {
             {{0, 0, 1}, {0, 0, 0}, {1, 0, 0}, {1, 0, 1}}, {{0, 1, 0}, {0, 1, 1}, {1, 1, 1}, {1, 1, 0}},
             {{1, 1, 0}, {1, 0, 0}, {0, 0, 0}, {0, 1, 0}}, {{0, 1, 1}, {0, 0, 1}, {1, 0, 1}, {1, 1, 1}},
@@ -85,7 +84,6 @@ namespace perlin {
                     out[i] = v[(size_t)i].real();
         }
 
-        // --- molang-lite condition evaluation ---------------------------------------------------------
         using States = std::vector<std::pair<std::string, BlockPalette::StateValue>>;
 
         bool EvalAtom(std::string atom, const States& states) {
@@ -125,7 +123,7 @@ namespace perlin {
                     sv = &v;
             if (!sv)
                 return false;
-            if (rest.empty()) // bare truthiness test
+            if (rest.empty())
                 return sv->kind == BlockPalette::StateValue::String ? !sv->s.empty() : sv->i != 0;
             std::string op;
             for (const char* o : {"==", "!=", ">=", "<=", ">", "<"})
@@ -251,7 +249,7 @@ namespace perlin {
                         addGeometry(id, g, false);
                 }
             } else {
-                // legacy 1.8 format: "geometry.name": {...}
+
                 for (const auto m : root.members())
                     if (m.key.rfind("geometry.", 0) == 0)
                         addGeometry(m.key, m.value, true);
@@ -361,10 +359,10 @@ namespace perlin {
 
     std::vector<ModelQuad> BlockGeometry::Bake(const Geometry& g, const Components& c) const {
         std::vector<ModelQuad> out;
-        // Block-level transformation about the block centre.
+
         const Mat3 blockRot = c.hasTransform ? BedrockRotation(c.rot) : Identity();
         auto place = [&](float v[3]) {
-            // geometry space (x,z centred, 1/16 units) -> block space
+
             v[0] = v[0] / 16.0f + 0.5f;
             v[1] = v[1] / 16.0f;
             v[2] = v[2] / 16.0f + 0.5f;
@@ -382,7 +380,7 @@ namespace perlin {
             byName[b.name] = &b;
 
         for (const Bone& bone : g.bones) {
-            // chain of bones from this one to the root
+
             std::vector<const Bone*> chain;
             for (const Bone* b = &bone; b && chain.size() < 16;) {
                 chain.push_back(b);
@@ -437,7 +435,7 @@ namespace perlin {
                     q.light = 0;
                     auto dit = c.dimming.find(mat);
                     q.shade = (dit == c.dimming.end() || dit->second) ? 1 : 0;
-                    // Java-orientation corner UVs (see javamodels.py): vertex 0=(u0,v0) 1=(u0,v1) 2=(u1,v1) 3=(u1,v0)
+
                     const float cu[4] = {u0, u0, u1, u1}, cv[4] = {v0, v1, v1, v0};
                     bool flush = true;
                     for (int i = 0; i < 4; i++) {

@@ -4,7 +4,7 @@
 #include <vector>
 
 namespace perlin {
-    // *Cull layers are drawn with back-face culling (Java baked models); the plain layers are double sided.
+
     enum class RenderLayer : uint8_t { Solid, Cutout, Translucent, CutoutCull, TranslucentCull };
     constexpr int kRenderLayerCount = 5;
 
@@ -22,7 +22,6 @@ namespace perlin {
         std::array<uint32_t, kRenderLayerCount> count;
     };
 
-    // Per 16^3 section: which pairs of faces can see each other through non-opaque cells (15 bits).
     struct SectionVis {
         int sy;
         uint16_t conn;

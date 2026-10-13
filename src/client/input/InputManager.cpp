@@ -26,9 +26,21 @@ namespace perlin {
     void InputManager::Poll() {
         pressed.reset();
         InputEvent ev;
+        typed.clear();
         while (input.events.try_dequeue(ev)) {
-            if (ev.type == InputEvent::KeyDown)
+            if (input.TextMode()) {
+                if (ev.type == InputEvent::Char)
+                    typed.push_back({true, ev.key, false});
+                else if (ev.type == InputEvent::KeyDown || ev.type == InputEvent::KeyRepeat)
+                    typed.push_back({false, ev.key, input.IsKeyDown(Key::Control)});
+                continue;
+            }
+            if (ev.type == InputEvent::KeyDown) {
+
+                if (ev.key != Key::F3 && input.IsKeyDown(Key::F3))
+                    continue;
                 Dispatch(Binding::KeyboardKey(ev.key));
+            }
             else if (ev.type == InputEvent::MouseDown)
                 Dispatch(Binding::MouseButton(ev.key));
         }
@@ -39,7 +51,10 @@ namespace perlin {
         scroll = input.TakeWheel();
         float dx = 0, dy = 0;
         input.TakeMouseDelta(dx, dy);
-        if (input.Captured()) {
+        if (blocked) {
+            look = {};
+            pressed.reset();
+        } else if (input.Captured()) {
             const float sens = options.mouseSensitivity;
             look.yaw = dx * sens;
             look.pitch = dy * sens * (options.invertMouse ? 1.0f : -1.0f);
@@ -54,6 +69,10 @@ namespace perlin {
     }
 
     bool InputManager::IsDown(Action action) const {
+        if (blocked && action != Action::DebugScreen)
+            return false;
+        if (input.TextMode())
+            return false;
         const Binding& b = options.GetKey(action);
         switch (b.device) {
         case Binding::Device::Keyboard:

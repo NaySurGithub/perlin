@@ -46,10 +46,8 @@ register reinterpret_cast requires return short signed sizeof static static_asse
 template this thread_local throw true try typedef typeid typename union unsigned using virtual void volatile
 wchar_t while xor xor_eq""".split())
 
-
 class GenError(Exception):
     pass
-
 
 def words(name):
     parts = re.split(r"[^0-9A-Za-z]+", name)
@@ -60,13 +58,11 @@ def words(name):
         out.extend(re.findall(r"[A-Z]+(?![a-z])|[A-Z]?[a-z]+|[0-9]+", part) or [part])
     return out
 
-
 def pascal(name):
     text = "".join(w[:1].upper() + w[1:] for w in words(name))
     if not text or text[0].isdigit():
         text = "V" + text
     return text
-
 
 def camel(name):
     text = pascal(name)
@@ -74,7 +70,6 @@ def camel(name):
     if text in KEYWORDS:
         text += "_"
     return text
-
 
 class Decl:
     def __init__(self, kind, name):
@@ -85,7 +80,6 @@ class Decl:
         self.codec = []
         self.packet = None
         self.extra = []
-
 
 class Generator:
     def __init__(self, spec, overrides):
@@ -643,7 +637,6 @@ class Generator:
             first = False
         return lines
 
-
 def hard_deps(cpp, known):
     out = []
     i = 0
@@ -669,7 +662,6 @@ def hard_deps(cpp, known):
         if ident in known:
             out.append(ident)
     return out
-
 
 def order_decls(decls):
     known = {d.name for d in decls}
@@ -697,7 +689,6 @@ def order_decls(decls):
         visit(d, frozenset())
     return result
 
-
 def defer_incomplete(decls):
     position = {d.name: i for i, d in enumerate(decls) if d.kind == "struct"}
     for index, d in enumerate(decls):
@@ -719,10 +710,8 @@ def defer_incomplete(decls):
         d.lines[-1:] = [f"    {n}();", f"    ~{n}();", f"    {n}(const {n}&);", f"    {n}({n}&&) noexcept;",
                         f"    {n}& operator=(const {n}&);", f"    {n}& operator=({n}&&) noexcept;", "};"]
 
-
 def struct_name_for_packet(name):
     return pascal(name) + "Packet"
-
 
 def build(gen):
     packet_map = gen.types["mcpe_packet"]
@@ -742,7 +731,6 @@ def build(gen):
         packets.append((info["id"], name, info["type"]))
     return packets
 
-
 def emit_codec(decl):
     name = decl.name
     out = []
@@ -760,7 +748,6 @@ def emit_codec(decl):
     out.append(f"void Write(WriteStream& s, const {name}& v) {{ Serialize(s, const_cast<{name}&>(v)); }}")
     out.append(f"bool Read(ReadStream& s, {name}& v) {{ Serialize(s, v); return s.ok; }}")
     return out
-
 
 def main():
     ap = argparse.ArgumentParser()
@@ -907,13 +894,11 @@ def main():
         report.extend(f"  {n}: {why}" for n, why in opaque)
     sys.stdout.write("\n".join(report) + "\n")
 
-
 def write_if_changed(path, text):
     if os.path.exists(path) and open(path).read() == text:
         return
     with open(path, "w", newline="\n") as f:
         f.write(text)
-
 
 if __name__ == "__main__":
     try:

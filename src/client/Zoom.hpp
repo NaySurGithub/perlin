@@ -6,21 +6,18 @@
 #include <cmath>
 
 namespace perlin {
-    // OptiFine-style zoom: hold the key to narrow the field of view, scroll to zoom further in or out. The zoom
-    // eases in and out over configurable times, and while zoomed the camera is cinematic: mouse movement glides
-    // toward its target and aiming slows down in proportion to the zoom. All of it comes from options.json.
+
     class Zoom {
     public:
         explicit Zoom(const ZoomSettings& settings) : cfg(settings), level(settings.level) {}
 
-        // Returns the look delta to apply this frame.
         LookDelta Update(float dt, bool held, float scroll, LookDelta raw) {
             if (held && !wasHeld && cfg.resetOnPress)
                 level = cfg.level;
             wasHeld = held;
             if (held && scroll != 0.0f)
                 level = std::clamp(level * std::pow(1.0f - cfg.scrollStep, scroll), cfg.minLevel, cfg.maxLevel);
-            // The wheel glides too rather than stepping.
+
             shownLevel += (level - shownLevel) * (1.0f - std::exp(-dt * 16.0f));
             if (!active)
                 shownLevel = level;
@@ -29,7 +26,7 @@ namespace perlin {
             const float step = seconds <= 0.0001f ? 1.0f : dt / seconds;
             progress = std::clamp(progress + (held ? step : -step), 0.0f, 1.0f);
             const float eased = Ease(progress);
-            // Interpolate the zoom in log space so the change feels even along the whole transition.
+
             factor = std::exp(std::log(std::max(shownLevel, 1e-4f)) * eased);
             active = progress > 0.0f;
 
@@ -49,7 +46,6 @@ namespace perlin {
             return out;
         }
 
-        // Field of view in degrees after zooming (a true zoom: the image scales by 1/factor at the centre).
         float Fov(float baseDegrees) const {
             if (factor >= 0.999f)
                 return baseDegrees;
@@ -69,13 +65,13 @@ namespace perlin {
                 return t < 0.5f ? 16 * t * t * t * t * t : 1 - std::pow(-2 * t + 2, 5.0f) / 2;
             if (e == "sine")
                 return -(std::cos(3.14159265f * t) - 1) / 2;
-            return t * t * (3 - 2 * t); // "smooth": smoothstep
+            return t * t * (3 - 2 * t);
         }
 
         ZoomSettings cfg;
         float level;
         float shownLevel = 1.0f;
-        float progress = 0.0f; // 0 = not zoomed, 1 = fully zoomed (before easing)
+        float progress = 0.0f;
         float factor = 1.0f;
         bool wasHeld = false;
         bool active = false;

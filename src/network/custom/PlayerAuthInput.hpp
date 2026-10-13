@@ -3,7 +3,7 @@
 
 namespace perlin {
 
-    constexpr float kPlayerEyeHeight = 1.62001f; // network offset: feet + 1.62001, even while sneaking
+    constexpr float kPlayerEyeHeight = 1.62001f;
 
     namespace InputFlag {
         constexpr uint32_t Jumping = 6;

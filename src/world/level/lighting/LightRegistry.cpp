@@ -54,7 +54,7 @@ namespace perlin {
     void LightRegistry::SetOcclusion(OcclusionFn fn) {
         std::unique_lock lock(mutex);
         occlusionFn = std::move(fn);
-        // Published shapes are never freed (readers may hold them); they are simply recomputed.
+
         for (auto& slot : occlusion)
             slot.store(0, std::memory_order_relaxed);
     }

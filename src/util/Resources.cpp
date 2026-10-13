@@ -21,7 +21,7 @@ namespace perlin::resources {
     void SetProvider(Provider provider) { gProvider = provider; }
 
     bool Read(const std::string& name, std::string& out) {
-        // PERLIN_RESOURCES=<dir> lets a developer override the embedded files with edited ones.
+
         if (const char* dir = std::getenv("PERLIN_RESOURCES"); dir && *dir && ReadDisk(std::string(dir) + "/" + name, out))
             return true;
         const uint8_t* data = nullptr;

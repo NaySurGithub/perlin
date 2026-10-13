@@ -56,8 +56,6 @@ namespace perlin::claims {
         std::vector<std::string> chain{""};
     };
 
-    // First link of the online certificate chain: signed by the client key, vouching for the key that signed the
-    // chain Mojang's service returned.
     struct ChainLink {
         int64_t exp = 0;
         int64_t nbf = 0;
@@ -71,7 +69,6 @@ namespace perlin::claims {
         std::string XUID;
     };
 
-    // The single self-signed link a client without an Xbox account sends (what the vanilla client does offline).
     struct SelfSignedLink {
         int64_t exp = 0;
         int64_t nbf = 0;
@@ -124,18 +121,16 @@ namespace perlin::claims {
         std::string SkinAnimationData;
         std::string SkinColor = "#0";
         std::string SkinData;
-        std::string SkinGeometryName = "geometry.humanoid.custom";
-        std::string SkinGeometry;
+        std::string SkinGeometryData;
         std::string SkinGeometryDataEngineVersion;
         std::string SkinId = "Standard_Steve";
         int SkinImageHeight = 64;
         int SkinImageWidth = 64;
         std::string SkinResourcePatch = "{}";
         std::string ThirdPartyName;
+        bool ThirdPartyNameOnly = false;
         bool TrustedSkin = false;
         int UIProfile = 0;
-        bool ServerAuthoritativeMovement = false;
-        bool ServerAuthoritativeBlockBreaking = false;
     };
 
 }

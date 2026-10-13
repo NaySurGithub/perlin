@@ -45,12 +45,8 @@ namespace {
         setvbuf(stdout, nullptr, _IONBF, 0);
     }
 
-
-    // Everything written to stdout/stderr (printf, std::cout, std::cerr, library output) is piped through a
-    // reader thread into perlin.log and still forwarded to the console. Flushed on every write so a crash
-    // never loses the tail of the log.
     void StartLogCapture(const std::vector<std::string>& paths) {
-        // The log goes to every path that can be opened (the data directory and next to the executable).
+
         std::vector<FILE*> logs;
         for (const std::string& path : paths)
             if (FILE* f = std::fopen(path.c_str(), "wb")) {
@@ -63,9 +59,7 @@ namespace {
         std::fflush(stdout);
         std::fflush(stderr);
 #ifdef _WIN32
-        // A GUI-subsystem process has no console and its CRT streams are not attached to fds 1/2, so pipes and fd
-        // juggling silently log nothing. Reopen the CRT's own stdout/stderr onto the log file instead: printf,
-        // std::cout (synced with stdio) and std::cerr then all land in it, unbuffered.
+
         for (FILE* f : logs)
             std::fclose(f);
         const std::string& primary = paths.front();

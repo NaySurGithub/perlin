@@ -3,9 +3,11 @@
 #include "network/PacketDispatcher.hpp"
 #include "protocol/Packets.hpp"
 #include "client/multiplayer/SkinLoader.hpp"
+#include "client/entity/EntityTracker.hpp"
 #include "network/XboxAuth.hpp"
 #include "network/Transport.hpp"
 #include "network/PacketCipher.hpp"
+#include "network/PlayerConstants.hpp"
 #include "client/multiplayer/PackDownloader.hpp"
 
 #include <condition_variable>
@@ -51,23 +53,25 @@ namespace perlin {
         BedrockSession& operator=(const BedrockSession&) = delete;
 
         void SetPlayerName(const std::string& name) { playerName = name.empty() ? std::string("Perlin") : name; }
-        // "nethernet", "raknet" or "auto" (NetherNet if the server answers its HTTP probe, otherwise RakNet).
+
         void SetTransport(const std::string& mode) { transportMode = mode; }
         void SetSkin(LoadedSkin loaded) { skin = std::move(loaded); }
-        // Signs in with this Microsoft/Xbox account instead of an offline name (the name becomes the gamertag).
+        const LoadedSkin& Skin() const { return skin; }
+
+        entity::EntityTracker& Entities() { return entities; }
+
         void SetAccount(std::shared_ptr<xbox::Account> a) { account = std::move(a); }
         void SetChunkRadius(int r) { chunkRadius = r; }
-        // Columns farther than this many chunks from the player are fetched only as far-terrain samples (their top
-        // sub-chunks, kept just long enough to sample) and promoted to full columns when the player comes closer.
+
         void SetNearRadius(int r) { nearRadius = r; }
-        // Reported to the server in the login (the highest render distance this client can handle).
+
         void SetMaxViewDistance(int r) { maxViewDistance = r; }
 
         bool Connect(const std::string& host, uint16_t port);
         void Disconnect();
-        // Where server resource packs are kept (empty: do not download any).
+
         void SetPackDirectory(const std::string& dir) { packs.SetDirectory(dir); }
-        // True while the client is moving to another server after a Transfer packet; the session is not usable then.
+
         bool Transferring() const { return transferring; }
 
         void Update();
@@ -93,18 +97,22 @@ namespace perlin {
         bool SendPlayerAuthInput();
         bool SendPlayerAuthInputBlockAction(uint32_t action, int bx, int by, int bz, int face);
 
+        void EndItemUseOn();
+        bool TakeBlockNamesLearned() { return blockNamesLearned.exchange(false); }
+        bool ServerAuthoritativeBlockBreaking() const { return serverAuthBreaking.load(); }
+        std::atomic<bool> serverAuthBreaking{true};
+
         struct BlockActionData {
             uint32_t action = 0;
             int x = 0, y = 0, z = 0, face = 0;
         };
-        // One movement tick as the server-authoritative protocol wants it: feet position, the velocity
-        // of the tick, the held inputs and the look direction (Bedrock yaw: 0 faces +Z).
+
         struct MoveInput {
             std::vector<uint32_t> flags;
-            float moveX = 0, moveZ = 0; // +X is left, +Z is forward
+            float moveX = 0, moveZ = 0;
             float yaw = 0, pitch = 0;
             float eyeHeight = 1.62001f;
-            float rawX = 0, rawZ = 0; // unprocessed key vector (left-positive)
+            float rawX = 0, rawZ = 0;
             float position[3] = {0, 0, 0};
             float delta[3] = {0, 0, 0};
             bool hasDelta = false;
@@ -113,15 +121,14 @@ namespace perlin {
         };
         bool SendMoveInput(const MoveInput& input);
 
-        // Changes the server forced on us since the last call: teleports, corrections, knockback.
         struct ServerMotion {
-            bool poseChanged = false;   // position was replaced
-            bool teleport = false;      // MovePlayer teleport/reset or respawn
-            bool hasVelocity = false;   // velocity (blocks per tick) was replaced
+            bool poseChanged = false;
+            bool teleport = false;
+            bool hasVelocity = false;
             bool hasRotation = false;
             float velocity[3] = {0, 0, 0};
-            float yaw = 0, pitch = 0;   // Bedrock convention
-            // CorrectPlayerMovePrediction: the server's state for input tick `tick` (feet position + tick delta).
+            float yaw = 0, pitch = 0;
+
             bool correction = false;
             uint64_t tick = 0;
             bool onGround = false;
@@ -130,7 +137,7 @@ namespace perlin {
         uint64_t LastAuthTick() const { return authTick; }
         bool TakeServerMotion(ServerMotion& out);
         float MovementSpeedAttribute() const { return movementSpeed; }
-        // True once the spawn handshake finished (loading screen ended, local player initialised).
+
         bool Initialized() const { return initializedSent; }
         void PruneChunks(int centerChunkX, int centerChunkZ, int radiusChunks);
         bool SendLoadingScreen(bool start, std::optional<uint32_t> id = std::nullopt);
@@ -138,22 +145,75 @@ namespace perlin {
                                           float yawOverride, uint32_t action = UINT32_MAX, int bx = 0,
                                           int by = 0, int bz = 0, int face = 1);
         bool SendChat(const std::string& message);
+        uint64_t PacketsSent() const { return txPackets; }
+        uint64_t PacketsReceived() const { return diagPackets; }
+
+        std::vector<std::string> TakeChat();
+
+        struct SoundRequest {
+            enum class Kind { Named, Level, Stop } kind = Kind::Named;
+            std::string name;
+            float x = 0, y = 0, z = 0;
+            float volume = 1, pitch = 1;
+            int32_t extra = 0;
+            std::string entityType;
+            bool baby = false, global = false, stopAll = false;
+        };
+        std::vector<SoundRequest> TakeSounds();
+
+        struct PendingPlace {
+            int x = 0, y = 0, z = 0;
+            std::chrono::steady_clock::time_point at{};
+            bool active = false;
+            int32_t held = 0;
+        };
         bool SendCommand(const std::string& command);
+
+        struct TabPlayer {
+            std::string uuid, name;
+            std::shared_ptr<const entity::SkinData> skin;
+        };
+        std::vector<TabPlayer> PlayerList() const {
+            std::lock_guard<std::mutex> lk(tabMutex);
+            return tabPlayers;
+        }
+
+        void ReloadChunks();
         bool SendTickSync(uint64_t timestamp);
+
+        struct BlockCrack {
+            int x, y, z, stage;
+        };
+        std::vector<BlockCrack> Cracks();
         bool SendPlayerAction(uint32_t action, int bx, int by, int bz, int face = 1);
+
+void RequestRespawn();
+
+        bool DeathPending() const {
+            std::lock_guard<std::mutex> lk(deathMutex);
+            return deathPending;
+        }
+        void ClearDeath() {
+            std::lock_guard<std::mutex> lk(deathMutex);
+            deathPending = false;
+        }
+        std::string DeathCause() const {
+            std::lock_guard<std::mutex> lk(deathMutex);
+            return deathCause;
+        }
         void SetPose(float x, float y, float z, float yaw, float pitch);
         bool HaveBlockPos() const { return haveBlockPos; }
         bool GetWorldTime(int64_t& outDay, int& outTicksOfDay) const;
         bool GetWorldTicks(double& outTicks) const;
         void SetDayCycle(bool running);
         int DimensionId() const { return dimensionId; }
-        // Increments every time the local player takes damage (drives the red flash and camera shake).
+
         uint32_t HurtCount() const { return hurtCounter.load(); }
-        // Where the latest hit came from: horizontal vector from us toward the source (opposite the knockback).
+
         struct HurtSource {
             bool known = false;
             float dx = 0, dz = 0;
-            uint32_t serial = 0; // bumps when the direction is learned or changes
+            uint32_t serial = 0;
         };
         HurtSource LatestHurtSource() const {
             std::lock_guard lock(hurtMutex);
@@ -205,6 +265,53 @@ namespace perlin {
             out[2] = worldSpawn[2];
         }
 
+        struct ItemStackInfo {
+            std::string name;
+            int count = 0;
+            int aux = 0;
+            int damage = 0;
+            uint32_t blockRuntimeId = 0;
+            bool enchanted = false;
+            bool Empty() const { return name.empty() || count <= 0; }
+        };
+        struct Vitals {
+            float health = 20.0f, maxHealth = 20.0f, absorption = 0.0f;
+            float hunger = 20.0f, saturation = 5.0f;
+            int level = 0;
+            float xpProgress = 0.0f;
+            int air = 300, maxAir = 300;
+            bool poison = false, wither = false, regeneration = false, hungerEffect = false;
+            bool known = false;
+        };
+        struct InventoryView {
+            ItemStackInfo hotbar[9];
+            ItemStackInfo main[27];
+            ItemStackInfo offhand;
+            ItemStackInfo armor[4];
+            int selected = 0;
+        };
+        struct TitleText {
+            std::string title, subtitle, actionBar;
+            std::chrono::steady_clock::time_point titleAt{}, actionAt{};
+            int fadeIn = 10, stay = 70, fadeOut = 20;
+            uint32_t serial = 0;
+        };
+        Vitals GetVitals() const;
+        InventoryView GetInventory() const;
+        TitleText GetTitleText() const;
+
+        bool SelectHotbarSlot(int slot);
+
+        bool SendSwingArm(const char* source = "build");
+
+        bool SendUseItemOnBlock(int bx, int by, int bz, int face, const float click[3], const float eye[3], int use, const int dest[3]);
+        bool SendUseItemInAir(const float eye[3]);
+        bool SendReleaseItem(const float eye[3]);
+        bool SendAttackEntity(uint64_t targetRuntimeId, const float eye[3], const float click[3]);
+        bool SendPickBlock(int bx, int by, int bz);
+
+        bool SendDropSelected(int count);
+
         Level& NetLevel() { return netLevel; }
         bool HasSpawn() const { return gotSpawn; }
         int ChunksReceived() const { return chunksReceived; }
@@ -227,13 +334,12 @@ namespace perlin {
 
         bool Transmit(uint32_t packetId, const std::vector<uint8_t>& body, bool reliable);
         void HandleLevelChunk(const proto::LevelChunkPacket& packet);
-        void HandleSubChunk(const proto::SubChunkPacket& packet);
+        void HandleSubChunk(const proto::SubchunkPacket& packet);
         void QueueSubChunkRequests(int dim, int cx, int cz, int firstSubY, int count, bool far = false);
         void UpdateColumnLod();
-        // client-side-chunk-generation-enabled=true: the server leaves part of the view for clients to generate
-        // themselves. Perlin cannot, so it asks the server for the columns it did not stream.
+
         void FillUnstreamedColumns();
-        bool clientGen = false;       // StartGame.client_side_generation
+        bool clientGen = false;
         int maxViewDistance = 32;
         std::atomic<int> grantedRadius{0};
         std::atomic<int64_t> lastColumnMs{0};
@@ -242,8 +348,6 @@ namespace perlin {
         bool ApplySubChunk(int cx, int cz, int absSubY, const SubChunkData& sc);
         void ApplyBiomeColumn(int cx, int cz, const std::vector<uint8_t>& payload);
 
-        // Chunk packets (LevelChunk / SubChunk) are inflated-batch payloads that are expensive to decode; they go to
-        // one worker, in order, so a burst of chunk data never stalls a frame.
         void ChunkWorkerMain();
         void StartChunkWorker();
         void StopChunkWorker();
@@ -269,8 +373,8 @@ namespace perlin {
         bool usedRak = false;
 
         std::unique_ptr<Transport> net;
-        std::unique_ptr<PacketCipher> cipher; // set once the server's handshake switched encryption on
-        std::mutex txMutex;                   // keeps encryption counters in step with send order
+        std::unique_ptr<PacketCipher> cipher;
+        std::mutex txMutex;
         std::string transportMode = "auto";
         std::unique_ptr<ClientIdentity> identity;
         std::atomic<State> state{State::Disconnected};
@@ -278,30 +382,52 @@ namespace perlin {
         PacketHandler onPacket;
 
         Level netLevel;
+        std::atomic<bool> blockNamesLearned{false};
+        std::atomic<bool> itemUseOnActive{false};
+        int itemUseDest[3] = {0, 0, 0};
+        std::atomic<bool> haveLoggedInteraction{false};
+        mutable std::mutex placeMutex;
+        PendingPlace pendingPlace;
+        void ConfirmPlace(int x, int y, int z, int32_t runtimeId);
+        void NoteUnknownBlock(int32_t networkId);
         std::atomic<bool> gotSpawn{false};
         std::atomic<int> chunksReceived{0};
         std::mutex reqMutex;
+        mutable std::mutex tabMutex;
+        mutable std::mutex deathMutex;
+        std::string deathCause;
+        bool deathPending = false;
+        std::vector<TabPlayer> tabPlayers;
+        struct CrackState {
+            int x = 0, y = 0, z = 0;
+            double progress = 0.0;
+            double perSecond = 0.0;
+            std::chrono::steady_clock::time_point since;
+        };
+        std::mutex crackMutex;
+        std::vector<CrackState> crackStates;
         std::set<std::tuple<int, int, int, int>> requestedSlots;
-        std::queue<std::tuple<int, int, int, int>> reqQueue;    // near columns: always served first
-        std::queue<std::tuple<int, int, int, int>> reqQueueFar; // far-terrain samples
-        // What the server announced for every column in range, kept so a far column can be fetched in full later.
+        std::queue<std::tuple<int, int, int, int>> reqQueue;
+        std::queue<std::tuple<int, int, int, int>> reqQueueFar;
+
         struct ColumnInfo {
             int dim = 0, firstSubY = 0, slots = 0;
             std::vector<uint8_t> biomes;
         };
-        std::unordered_map<ChunkPos, ColumnInfo, ChunkPosHash> columns; // reqMutex
+        std::unordered_map<ChunkPos, ColumnInfo, ChunkPosHash> columns;
         int nearRadius = 32;
         int lodScanCentre[2] = {INT32_MIN, INT32_MIN};
         std::map<std::tuple<int, int, int, int>, std::chrono::steady_clock::time_point> inflight;
         std::map<std::tuple<int, int, int, int>, int> retries;
         void CompleteRequest(const std::tuple<int, int, int, int>& key, bool retry);
-        // Forget a requested slot for good (reqMutex held); columns that have nothing left owed are appended.
+
         void DropSlot(const std::tuple<int, int, int, int>& key, std::vector<std::pair<int, int>>& completed);
         void FinishColumns(const std::vector<std::pair<int, int>>& columns);
-        std::map<std::pair<int, int>, int> colPending; // outstanding slots per column
+        std::map<std::pair<int, int>, int> colPending;
 
         std::string playerName = "Perlin";
         LoadedSkin skin;
+        entity::EntityTracker entities;
         std::shared_ptr<xbox::Account> account;
         xbox::Credentials onlineCreds;
         std::string playerUuid;
@@ -363,7 +489,7 @@ namespace perlin {
         HurtSource hurtSource;
         float knockX = 0, knockZ = 0;
         std::chrono::steady_clock::time_point knockAt{};
-        // A ChangeDimension was received: the world was cleared and the server waits for our acknowledgement.
+
         std::atomic<bool> dimAckPending{false};
         std::chrono::steady_clock::time_point dimAckSince{};
         std::optional<uint32_t> dimLoadingId;
@@ -373,6 +499,7 @@ namespace perlin {
         std::atomic<float> thunderTarget{0.0f};
         std::atomic<bool> dayCycleRunning{true};
         std::atomic<uint64_t> diagPackets{0};
+        std::atomic<uint64_t> txPackets{0};
         std::mutex idCountMutex;
         std::map<uint32_t, uint64_t> idCounts;
         std::atomic<uint32_t> diagLastId{0};
@@ -380,6 +507,22 @@ namespace perlin {
         uint64_t diagPrevPackets = 0;
         bool diagLostLogged = false;
         std::chrono::steady_clock::time_point timeAt{};
+
+        void RegisterPlayerStateHandlers();
+        void ResetPlayerState();
+        mutable std::mutex statusMutex;
+        Vitals vitals;
+        InventoryView inventory;
+        proto::ItemV4 inventoryRaw[36];
+        int32_t nextStackRequestId = -1;
+        std::map<int, std::string> itemNames;
+        TitleText titleText;
+        void PushChat(const std::string& line);
+        std::mutex chatMutex;
+        std::vector<std::string> chatInbox;
+        void PushSound(SoundRequest request);
+        std::mutex soundMutex;
+        std::vector<SoundRequest> soundInbox;
 
         bool compressEnabled = false;
         uint16_t compressThreshold = 0;

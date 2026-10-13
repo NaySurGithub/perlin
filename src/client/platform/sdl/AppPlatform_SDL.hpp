@@ -27,8 +27,11 @@ public:
 
 private:
     void HandleEvent(const SDL_Event& event);
+    void SetClipboard(const std::string& text) override;
     void SetCursorCaptured(bool captured);
     bool cursorCaptured = false;
+    bool textActive = false;
+    bool recaptureAfterText = false;
 
     SDL_Window* window = nullptr;
     NativeWindowInfo native;

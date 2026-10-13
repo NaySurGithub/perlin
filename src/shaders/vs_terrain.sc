@@ -1,5 +1,5 @@
 $input a_position, a_color0, a_texcoord0, a_texcoord1
-$output v_color0, v_texcoord0, v_fog, v_layer, v_visibility
+$output v_color0, v_texcoord0, v_fog, v_layer, v_visibility, v_rel, v_light, v_tint
 
 #include "common.sh"
 
@@ -10,6 +10,15 @@ void main()
 
     v_fog = vec2(length(relative), max(length(relative.xz), abs(relative.y)));
     vec2 light = floor(a_texcoord1.xy * 255.0 + 0.5);
+    if (u_dynParams.x > 0.5 && u_dynParams.x < 1.5)
+    {
+        // Fast: whole light levels per block, as if the lights changed the light of the blocks around them.
+        vec3 cell = floor(a_position) + vec3_splat(0.5) - u_camera.xyz;
+        light.x = max(light.x, floor(dynamicLevel(cell)) * 16.0);
+    }
+    v_rel = relative;
+    v_light = light;
+    v_tint = a_color0.rgb;
     v_color0 = vec4(a_color0.rgb * sampleLightmap(light), a_color0.a);
     v_texcoord0 = a_texcoord0;
     v_layer = floor(a_texcoord1.z * 255.0 + 0.5) + floor(a_texcoord1.w * 255.0 + 0.5) * 256.0;

@@ -17,7 +17,7 @@ namespace perlin::proto {
             {false, 2, true}, {false, 2, false}, {false, 0, true}, {false, 0, false},
         };
         constexpr int kLayoutCount = sizeof(kLayouts) / sizeof(kLayouts[0]);
-        int lastLayout = 2; // {payload flag, nested height maps, blob flag}: the layout of the real protocol
+        int lastLayout = 2;
 
         bool ReadPresence(wire::Reader& r, bool& present) {
             uint8_t b = 0;
@@ -27,7 +27,6 @@ namespace perlin::proto {
             return true;
         }
 
-        // Protocol 1.26: sixteen arrays, each a varuint length followed by that many signed bytes.
         bool SkipNested(wire::Reader& r) {
             for (int i = 0; i < 16; i++) {
                 uint32_t inner = 0;

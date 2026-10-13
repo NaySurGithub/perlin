@@ -262,13 +262,30 @@ namespace perlin {
         return netByLocal[local];
     }
 
+    bool BlockPalette::LearnName(int32_t networkId, const std::string& name) {
+        if (name.empty())
+            return false;
+        {
+            std::lock_guard<std::mutex> lk(learnedMutex);
+            if (!learned.emplace(networkId, name).second)
+                return false;
+        }
+        return true;
+    }
+
     std::string BlockPalette::Name(uint16_t local) const {
         if (local == 0)
             return "minecraft:air";
-        if (!namesLoaded || local >= count.load(std::memory_order_acquire))
+        if (local >= count.load(std::memory_order_acquire))
             return {};
-        auto h = nameByHash.find(netByLocal[local]);
-        return h == nameByHash.end() ? std::string() : h->second;
+        if (namesLoaded) {
+            auto h = nameByHash.find(netByLocal[local]);
+            if (h != nameByHash.end())
+                return h->second;
+        }
+        std::lock_guard<std::mutex> lk(learnedMutex);
+        const auto it = learned.find(netByLocal[local]);
+        return it == learned.end() ? std::string() : it->second;
     }
 
     std::vector<std::pair<std::string, BlockPalette::StateValue>> BlockPalette::States(uint16_t local) const {

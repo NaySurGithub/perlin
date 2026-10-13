@@ -106,7 +106,7 @@ namespace perlin {
                             continue;
                         const BlockAppearance& look = blocks.Look(id);
                         if (look.shape != BlockAppearance::Shape::Cube && !look.cutout)
-                            continue; // plants, torches, rails: not part of the terrain silhouette
+                            continue;
                         if (look.shape != BlockAppearance::Shape::Cube)
                             continue;
                         floorY = y;
@@ -123,7 +123,7 @@ namespace perlin {
                         const Rgb w = ColourOf(waterId, biome, true, blocks, tints);
                         Rgb f = floorId ? ColourOf(floorId, biome, true, blocks, tints) : Rgb{0, 0, 0};
                         const int depth = floorId ? std::max(1, waterTop - floorY) : 16;
-                        // Shallow water shows the floor, deep water turns opaque.
+
                         const float a = std::min(0.85f, 0.45f + depth * 0.06f);
                         cell.r = static_cast<uint8_t>(w.r * a + f.r * (1 - a));
                         cell.g = static_cast<uint8_t>(w.g * a + f.g * (1 - a));
@@ -169,10 +169,10 @@ namespace perlin {
 
     bool LodStore::BuildTile(int tileX, int tileZ, int stride, const std::function<bool(const ChunkPos&)>& hidden,
                              Tessellator& out) const {
-        constexpr int kSide = LodStore::kTileChunks * LodColumn::kCells; // cells per tile side at stride 1
+        constexpr int kSide = LodStore::kTileChunks * LodColumn::kCells;
         const int cellsPerSide = kSide / stride;
         const int blockSize = LodColumn::kCellSize * stride;
-        // Resolve the tile's cells; cell (i, j) merges a stride x stride group (highest wins, colour of that one).
+
         struct Cell { int y; uint8_t r, g, b; uint8_t water; bool present; };
         std::vector<Cell> grid(static_cast<size_t>(cellsPerSide) * cellsPerSide, Cell{0, 0, 0, 0, 0, false});
         const int chunkX0 = tileX * kTileChunks, chunkZ0 = tileZ * kTileChunks;
@@ -227,14 +227,14 @@ namespace perlin {
                     shade(c, 1.0f, col);
                     out.AddQuad(v, col, uv, false, 0.0f, 15.0f);
                 }
-                // Skirts toward lower neighbours so no gaps open between cells of different height.
+
                 static const int kDir[4][2] = {{0, -1}, {0, 1}, {-1, 0}, {1, 0}};
                 static const float kShade[4] = {0.8f, 0.8f, 0.65f, 0.65f};
                 for (int d = 0; d < 4; d++) {
                     const int nx = gx + kDir[d][0], nz = gz + kDir[d][1];
                     int ny;
                     if (nx < 0 || nz < 0 || nx >= cellsPerSide || nz >= cellsPerSide) {
-                        // Across the tile border: look the neighbour chunk up directly.
+
                         const int cxw = chunkX0 * LodColumn::kCells + nx * stride;
                         const int czw = chunkZ0 * LodColumn::kCells + nz * stride;
                         const int ccx = cxw >= 0 ? cxw / LodColumn::kCells : -((-cxw + LodColumn::kCells - 1) / LodColumn::kCells);
@@ -242,9 +242,9 @@ namespace perlin {
                         const ChunkPos np{ccx, ccz};
                         const LodColumn* ncol = Find(np);
                         if (!ncol) {
-                            ny = c.y - 24; // edge of the known world
+                            ny = c.y - 24;
                         } else if (hidden(np)) {
-                            continue;      // the full-detail chunk covers that side
+                            continue;
                         } else {
                             const int lx = cxw - ccx * LodColumn::kCells, lz = czw - ccz * LodColumn::kCells;
                             const LodCell& n = ncol->cells[static_cast<size_t>(lz) * LodColumn::kCells + lx];

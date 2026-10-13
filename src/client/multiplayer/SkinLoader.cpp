@@ -8,7 +8,7 @@
 
 namespace perlin {
     namespace {
-        // FNV-1a over the pixels: stable for an unchanged image, different for a different one.
+
         std::string HashId(const char* prefix, const std::vector<uint8_t>& data, int w, int h) {
             uint64_t hash = 1469598103934665603ULL;
             for (uint8_t b : data) {
@@ -28,7 +28,7 @@ namespace perlin {
     std::vector<uint8_t> UpgradeLegacySkin(const std::vector<uint8_t>& src) {
         std::vector<uint8_t> out(64 * 64 * 4, 0);
         std::memcpy(out.data(), src.data(), std::min<size_t>(src.size(), 64 * 32 * 4));
-        // Same table the Java client uses: (x, y, xOffset, yOffset, width, height), mirrored horizontally.
+
         struct Copy { int x, y, dx, dy, w, h; };
         static constexpr Copy kCopies[] = {
             {4, 16, 16, 32, 4, 4},  {8, 16, 16, 32, 4, 4},  {0, 20, 24, 32, 4, 12}, {4, 20, 16, 32, 4, 12},

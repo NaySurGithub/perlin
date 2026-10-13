@@ -17,8 +17,10 @@ namespace perlin {
         Celestial,
         Cloud,
         Screen,
-        Shadow,        // optional, shader packs only
-        ShadowCutout,  // optional, shader packs only
+        Ui,
+        Post,
+        Shadow,
+        ShadowCutout,
         Count
     };
 
@@ -39,7 +41,7 @@ namespace perlin {
         void SetCloud(const float offset[3], const float color[4]) const;
         void BindSky(bgfx::TextureHandle texture, uint32_t flags) const;
         bool Has(ShaderProgram program) const { return bgfx::isValid(programs[static_cast<size_t>(program)]); }
-        // World -> shadow map lookup (xy = texture coordinate, z = depth) and the matrix used to rasterise into it.
+
         void SetShadow(const float sample[16], const float info[4], bool enabled) const;
         void BindShadow(bgfx::TextureHandle texture) const;
         void Apply(bgfx::TextureHandle atlas, bgfx::TextureHandle lightmap, uint32_t atlasFlags,
@@ -66,6 +68,8 @@ namespace perlin {
         bgfx::UniformHandle sunDirection = BGFX_INVALID_HANDLE;
         bgfx::UniformHandle timeUniform = BGFX_INVALID_HANDLE;
         bgfx::UniformHandle heldLight = BGFX_INVALID_HANDLE;
+        bgfx::UniformHandle dynParams = BGFX_INVALID_HANDLE;
+        bgfx::UniformHandle dynLights = BGFX_INVALID_HANDLE;
         bgfx::UniformHandle tiles = BGFX_INVALID_HANDLE;
         bgfx::UniformHandle skyParams = BGFX_INVALID_HANDLE;
         bgfx::UniformHandle shadowMatrix = BGFX_INVALID_HANDLE;
@@ -80,6 +84,8 @@ namespace perlin {
         float sunDirectionValue[4] = {};
         float timeValue[4] = {};
         float heldLightValue[4] = {};
+        float dynParamsValue[4] = {};
+        float dynLightsValue[8][4] = {};
         float tilesValue[4] = {};
         float skyParamsValue[4] = {};
     };
