@@ -1,0 +1,81 @@
+#pragma once
+
+#include "client/attachable/Animation.hpp"
+#include "client/attachable/Geometry.hpp"
+#include "client/attachable/Molang.hpp"
+#include "client/entity/Materials.hpp"
+
+#include <map>
+#include <memory>
+#include <string>
+#include <unordered_map>
+#include <vector>
+
+namespace perlin::entity {
+    using ExprPtr = std::shared_ptr<molang::Expr>;
+
+    struct ClientEntityDef {
+        std::string identifier;
+        std::map<std::string, std::string> textures, geometries, animations;
+        std::map<std::string, std::string> materials;
+        std::vector<ExprPtr> initialize, preAnimation;
+        struct Animate {
+            std::string name;
+            ExprPtr weight;
+        };
+        std::vector<Animate> animate;
+        ExprPtr scale;
+        struct Controller {
+            std::string id;
+            ExprPtr condition;
+        };
+        std::vector<Controller> renderControllers;
+        bool ok = false;
+    };
+
+    struct RenderControllerDef {
+        ExprPtr geometry;
+        std::vector<ExprPtr> textures;
+        std::map<std::string, std::vector<molang::Value>> arrays;
+        struct Part {
+            std::string pattern;
+            ExprPtr visible;
+        };
+        std::vector<Part> parts;
+        struct MaterialRule {
+            std::string pattern;
+            ExprPtr value;
+        };
+        std::vector<MaterialRule> materials;
+        ExprPtr color[4];
+        bool hasColor = false;
+        bool translucent = false;
+    };
+
+    class EntityAssets {
+    public:
+
+        void Configure(const std::string& root);
+        bool Loaded() const { return loaded; }
+        const ClientEntityDef* Entity(const std::string& identifier) const;
+        const RenderControllerDef* RenderController(const std::string& id) const;
+
+        bool CollisionBox(const std::string& identifier, float& width, float& height) const;
+        MaterialLibrary materialLibrary;
+        attachable::AnimationLibrary animations;
+        attachable::GeometryLibrary geometries;
+        size_t EntityCount() const { return entities.size(); }
+        const std::string& Root() const { return root; }
+
+    private:
+        void LoadAll();
+        std::string root;
+        bool loaded = false;
+        std::unordered_map<std::string, ClientEntityDef> entities;
+        std::unordered_map<std::string, RenderControllerDef> controllers;
+        std::unordered_map<std::string, std::pair<float, float>> collisionBoxes;
+    };
+
+    std::string LowerCase(std::string s);
+    std::string AfterDot(const std::string& ref);
+}

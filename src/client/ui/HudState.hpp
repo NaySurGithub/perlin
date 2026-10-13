@@ -1,0 +1,99 @@
+#pragma once
+#include <cstdint>
+#include <string>
+#include <vector>
+
+namespace perlin::ui {
+    struct HudItem {
+        std::string name;
+        int count = 0;
+        int aux = 0;
+        uint32_t blockRuntimeId = 0;
+        int maxDamage = 0;
+        bool enchanted = false;
+        bool Empty() const { return name.empty() || count <= 0; }
+
+        std::string Key() const { return name + ";" + std::to_string(maxDamage > 0 ? 0 : aux); }
+        bool operator==(const HudItem& o) const {
+            return name == o.name && count == o.count && aux == o.aux && blockRuntimeId == o.blockRuntimeId &&
+                   maxDamage == o.maxDamage && enchanted == o.enchanted;
+        }
+    };
+
+    enum class GameMode : int { Survival = 0, Creative = 1, Adventure = 2, Spectator = 6 };
+
+    struct HudState {
+        bool visible = true;
+        GameMode mode = GameMode::Survival;
+
+        float health = 20.0f;
+        float maxHealth = 20.0f;
+        float absorption = 0.0f;
+        int food = 20;
+        float saturation = 5.0f;
+        int armor = 0;
+        float xpProgress = 0.0f;
+        int xpLevel = 0;
+        int air = 300;
+        int maxAir = 300;
+        bool inWater = false;
+        bool poison = false, wither = false, freezing = false, regeneration = false, hungerEffect = false;
+        bool hardcore = false;
+
+        int selectedSlot = 0;
+        HudItem hotbar[9];
+        HudItem offhand;
+        HudItem armorItems[4];
+
+        uint64_t tick = 0;
+        int healthBlinkUntil = 0;
+        float displayHealth = 20.0f;
+        int regenIndex = -1;
+
+        std::string itemName;
+        float itemNameAlpha = 0.0f;
+        std::string actionBar;
+        float actionBarAlpha = 0.0f;
+        std::string title;
+        std::string subtitle;
+        float titleAlpha = 0.0f;
+
+        struct ChatLine {
+            std::string text;
+            float alpha = 1.0f;
+            int row = 0;
+        };
+
+        struct SubtitleLine {
+            std::string text;
+            int direction = 0;
+            float brightness = 1.0f;
+        };
+        std::vector<SubtitleLine> subtitles;
+        std::vector<ChatLine> chatLines;
+
+        struct TabEntry {
+            std::string name;
+            std::string headKey;
+        };
+        bool tabOpen = false;
+        std::vector<TabEntry> tabEntries;
+        bool chatOpen = false;
+        bool chatScrolled = false;
+        int chatTotalLines = 0, chatScroll = 0;
+        std::string chatInput;
+        int chatCaret = 0;
+        bool chatCaretVisible = true;
+
+        bool debug = false;
+        bool advancedTooltips = false;
+        std::string gameModeSwitcher;
+        std::vector<std::string> debugLeft, debugRight;
+        float guiW = 0, guiH = 0;
+
+        bool showPaperDoll = false;
+        bool showCrosshair = true;
+
+        bool Survival() const { return mode == GameMode::Survival || mode == GameMode::Adventure; }
+    };
+}

@@ -1,0 +1,87 @@
+#pragma once
+#include "client/attachable/Animation.hpp"
+#include "client/resources/TextureLoader.hpp"
+
+#include <glm/glm.hpp>
+
+#include <functional>
+#include <string>
+#include <unordered_map>
+#include <vector>
+
+namespace perlin::attachable {
+    struct Quad {
+        glm::vec3 p[4];
+        glm::vec2 uv[4];
+        glm::vec3 n;
+    };
+
+    struct Cube {
+        glm::vec3 origin{0.0f}, size{0.0f};
+        glm::vec3 pivot{0.0f}, rotation{0.0f};
+        float inflate = 0;
+        bool mirror = false;
+        bool hasRotation = false;
+
+        bool boxUv = true;
+        glm::vec2 uv{0.0f};
+        struct FaceUv {
+            bool present = false;
+            glm::vec2 uv{0.0f}, size{0.0f};
+        } faces[6];
+    };
+
+    struct TextureMesh {
+        std::string texture;
+        glm::vec3 position{0.0f}, rotation{0.0f}, scale{1.0f}, localPivot{0.0f};
+    };
+
+    struct Bone {
+        std::string name;
+        int parent = -1;
+        glm::vec3 pivot{0.0f}, rotation{0.0f};
+        std::vector<Cube> cubes;
+        std::vector<TextureMesh> meshes;
+        std::string binding;
+        std::string parentName;
+        float inflate = 0;
+        bool neverRender = false;
+    };
+
+    struct Geometry {
+        std::string id;
+        std::string parentId;
+        bool linked = false;
+        float textureWidth = 64, textureHeight = 64;
+        std::vector<Bone> bones;
+    };
+
+    class GeometryLibrary {
+    public:
+        void Load(const std::string& text);
+        const Geometry* Find(const std::string& id) const;
+        size_t Size() const { return geometries.size(); }
+
+    private:
+        void Link();
+        std::unordered_map<std::string, Geometry> geometries;
+    };
+
+    struct BuiltMesh {
+        std::vector<Quad> body;
+        struct Extra {
+            std::string texture;
+            std::vector<Quad> quads;
+        };
+        std::vector<Extra> extras;
+    };
+    using TextureLookup = std::function<const Texture*(const std::string& shortName)>;
+
+    using BoneFilter = std::function<bool(const std::string&)>;
+    void BuildMesh(const Geometry& geometry, const Pose& pose, const TextureLookup& textures, BuiltMesh& out,
+                   const BoneFilter& visible = nullptr);
+
+    glm::mat4 EulerZYX(const glm::vec3& degrees);
+
+    bool BoneWorld(const Geometry& geometry, const Pose& pose, const std::string& lowerName, glm::mat4& world, glm::vec3& pivot);
+}

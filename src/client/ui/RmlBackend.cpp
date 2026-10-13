@@ -1,0 +1,650 @@
+#include "client/ui/Glint.hpp"
+#include <chrono>
+#include <algorithm>
+#include "client/ui/RmlBackend.hpp"
+
+#include "client/renderer/RenderContext.hpp"
+#include "client/ui/McFont.hpp"
+#include "client/ui/UiAssets.hpp"
+
+#include <RmlUi/Core.h>
+#include <RmlUi/Core/Element.h>
+#include <RmlUi/Core/ElementInstancer.h>
+#include <RmlUi/Core/FontEngineInterface.h>
+#include <RmlUi/Core/Geometry.h>
+#include <RmlUi/Core/MeshUtilities.h>
+#include <RmlUi/Core/RenderInterface.h>
+#include <RmlUi/Core/SystemInterface.h>
+
+#include <algorithm>
+#include <chrono>
+#include <cmath>
+#include <cstring>
+#include <iostream>
+#include <sstream>
+#include <unordered_map>
+
+namespace perlin::ui {
+    namespace {
+        RenderContext* gRenderer = nullptr;
+        int gScale = 1;
+        bool gGlintPass = false;
+        uint32_t gGlintTexture = 0;
+        int gGlintWidth = 64;
+
+        uint32_t GlintTexture() {
+            if (gGlintTexture == 0 && gRenderer)
+                gGlintTexture = CreateGlintTexture(*gRenderer, &gGlintWidth);
+            return gGlintTexture;
+        }
+
+        uint32_t Pack(const Rml::ColourbPremultiplied& c) {
+            return (static_cast<uint32_t>(c.alpha) << 24) | (static_cast<uint32_t>(c.blue) << 16) |
+                   (static_cast<uint32_t>(c.green) << 8) | static_cast<uint32_t>(c.red);
+        }
+
+        Rml::ColourbPremultiplied Colour(float r, float g, float b, float a) {
+            const auto byte = [](float v) { return static_cast<Rml::byte>(std::clamp(static_cast<int>(std::lround(v * 255.0f)), 0, 255)); };
+            return Rml::ColourbPremultiplied(byte(r * a), byte(g * a), byte(b * a), byte(a));
+        }
+    }
+
+    class BgfxRenderInterface final : public Rml::RenderInterface {
+    public:
+        Rml::CompiledGeometryHandle CompileGeometry(Rml::Span<const Rml::Vertex> vertices, Rml::Span<const int> indices) override {
+            std::vector<UiVertex> v(vertices.size());
+            for (size_t i = 0; i < vertices.size(); i++) {
+                v[i] = {vertices[i].position.x, vertices[i].position.y, 0.0f, Pack(vertices[i].colour),
+                        vertices[i].tex_coord.x, vertices[i].tex_coord.y};
+            }
+            std::vector<uint32_t> idx(indices.size());
+            for (size_t i = 0; i < indices.size(); i++)
+                idx[i] = static_cast<uint32_t>(indices[i]);
+            const uint32_t mesh = gRenderer->UiCreateMesh(v.data(), static_cast<uint32_t>(v.size()), idx.data(),
+                                                          static_cast<uint32_t>(idx.size()));
+            return static_cast<Rml::CompiledGeometryHandle>(mesh);
+        }
+
+        void RenderGeometry(Rml::CompiledGeometryHandle geometry, Rml::Vector2f translation, Rml::TextureHandle texture) override {
+            UiDraw draw;
+            draw.mesh = static_cast<uint32_t>(geometry);
+            draw.texture = static_cast<uint32_t>(texture);
+            const float s = static_cast<float>(gScale);
+            draw.model[0] = s;
+            draw.model[5] = s;
+            draw.model[10] = 1.0f;
+            draw.model[12] = translation.x * s;
+            draw.model[13] = translation.y * s;
+            draw.scissor = scissorOn;
+            for (int i = 0; i < 4; i++)
+                draw.scissorRect[i] = scissor[i];
+            draw.premultiplied = true;
+            if (gGlintPass) {
+                draw.glintTexture = GlintTexture();
+                if (draw.glintTexture == 0)
+                    return;
+                const auto ms = static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(
+                                                          std::chrono::steady_clock::now().time_since_epoch())
+                                                          .count());
+                const GlintTransform g = MakeGlintTransform(ms, 0.5f, 16.0f / static_cast<float>(std::max(1, gGlintWidth)));
+                std::copy(g.matrix, g.matrix + 4, draw.glintMatrix);
+                std::copy(g.offset, g.offset + 2, draw.glintOffset);
+            }
+            gRenderer->UiSubmit(UiLayer::Gui, draw);
+        }
+
+        void ReleaseGeometry(Rml::CompiledGeometryHandle geometry) override {
+            gRenderer->UiDestroyMesh(static_cast<uint32_t>(geometry));
+        }
+
+        Rml::TextureHandle LoadTexture(Rml::Vector2i& dimensions, const Rml::String& source) override {
+            Texture t;
+            if (source == "mc:white") {
+                t.width = t.height = 1;
+                t.pixels = {255, 255, 255, 255};
+            } else if (source.rfind("mcfont:", 0) == 0) {
+                const McFont& f = McFont::Instance();
+                t.width = f.AtlasWidth();
+                t.height = f.AtlasHeight();
+                t.pixels = f.Atlas();
+            } else if (source.rfind("mchead:", 0) == 0) {
+                if (!UiAssets::Instance().Head(source.substr(7), t))
+                    return 0;
+            } else if (source.rfind("mcicon:", 0) == 0) {
+                if (!UiAssets::Instance().ItemIcon(source.substr(7), t))
+                    return 0;
+            } else if (!UiAssets::Instance().Image(source, t)) {
+                std::cout << "[ui] missing texture " << source << std::endl;
+
+                t.width = t.height = 2;
+                t.pixels = {248, 0, 248, 255, 0, 0, 0, 255, 0, 0, 0, 255, 248, 0, 248, 255};
+            }
+            dimensions = {t.width, t.height};
+            Premultiply(t);
+            return Upload(t);
+        }
+
+        Rml::TextureHandle GenerateTexture(Rml::Span<const Rml::byte> source, Rml::Vector2i dimensions) override {
+            Texture t;
+            t.width = dimensions.x;
+            t.height = dimensions.y;
+            t.pixels.assign(source.begin(), source.end());
+            return Upload(t);
+        }
+
+        void ReleaseTexture(Rml::TextureHandle texture) override {
+            gRenderer->UiDestroyTexture(static_cast<uint32_t>(texture));
+        }
+
+        void EnableScissorRegion(bool enable) override { scissorOn = enable; }
+
+        void SetScissorRegion(Rml::Rectanglei region) override {
+            scissor[0] = region.Left() * gScale;
+            scissor[1] = region.Top() * gScale;
+            scissor[2] = region.Width() * gScale;
+            scissor[3] = region.Height() * gScale;
+        }
+
+    private:
+        static void Premultiply(Texture& t) {
+            for (size_t i = 0; i + 3 < t.pixels.size(); i += 4) {
+                const unsigned a = t.pixels[i + 3];
+                if (a == 255)
+                    continue;
+                t.pixels[i] = static_cast<unsigned char>((t.pixels[i] * a + 127) / 255);
+                t.pixels[i + 1] = static_cast<unsigned char>((t.pixels[i + 1] * a + 127) / 255);
+                t.pixels[i + 2] = static_cast<unsigned char>((t.pixels[i + 2] * a + 127) / 255);
+            }
+        }
+
+        static Rml::TextureHandle Upload(const Texture& t) {
+            return static_cast<Rml::TextureHandle>(gRenderer->UiCreateTexture(t.width, t.height, t.pixels.data(), false));
+        }
+
+        bool scissorOn = false;
+        int scissor[4] = {0, 0, 0, 0};
+    };
+
+    class GameSystemInterface final : public Rml::SystemInterface {
+    public:
+        double GetElapsedTime() override {
+            using Clock = std::chrono::steady_clock;
+            static const auto start = Clock::now();
+            return std::chrono::duration<double>(Clock::now() - start).count();
+        }
+
+        void JoinPath(Rml::String& translated, const Rml::String&, const Rml::String& path) override { translated = path; }
+
+        bool LogMessage(Rml::Log::Type type, const Rml::String& message) override {
+            if (type <= Rml::Log::LT_WARNING)
+                std::cout << "[rml] " << message << std::endl;
+            return true;
+        }
+    };
+
+    class McFontEngine final : public Rml::FontEngineInterface {
+    public:
+        bool LoadFontFace(const Rml::String&, int, bool, Rml::Style::FontWeight) override { return true; }
+        bool LoadFontFace(Rml::Span<const Rml::byte>, int, const Rml::String&, Rml::Style::FontStyle, Rml::Style::FontWeight,
+                          bool) override {
+            return true;
+        }
+
+        Rml::FontFaceHandle GetFontFaceHandle(const Rml::String& family, Rml::Style::FontStyle, Rml::Style::FontWeight weight,
+                                              int size) override {
+            Face face;
+            face.shadow = family.find("shadow") != Rml::String::npos;
+            face.outline = family.find("outline") != Rml::String::npos;
+            face.bold = weight == Rml::Style::FontWeight::Bold;
+            face.size = std::max(size, 1);
+            for (size_t i = 0; i < faces.size(); i++)
+                if (faces[i].shadow == face.shadow && faces[i].outline == face.outline && faces[i].bold == face.bold && faces[i].size == face.size)
+                    return static_cast<Rml::FontFaceHandle>(i + 1);
+            faces.push_back(face);
+            return static_cast<Rml::FontFaceHandle>(faces.size());
+        }
+
+        Rml::FontEffectsHandle PrepareFontEffects(Rml::FontFaceHandle, const Rml::FontEffectList&) override { return 0; }
+
+        const Rml::FontMetrics& GetFontMetrics(Rml::FontFaceHandle handle) override {
+            Face& f = faces[handle - 1];
+            const float s = static_cast<float>(f.size) / 8.0f;
+            f.metrics.size = f.size;
+            f.metrics.ascent = 7.0f * s;
+            f.metrics.descent = 2.0f * s;
+            f.metrics.line_spacing = 9.0f * s;
+            f.metrics.x_height = 5.0f * s;
+            f.metrics.underline_position = 1.0f * s;
+            f.metrics.underline_thickness = std::max(1.0f, s);
+            return f.metrics;
+        }
+
+        int GetStringWidth(Rml::FontFaceHandle handle, Rml::StringView string, const Rml::TextShapingContext&,
+                           Rml::Character) override {
+            const Face& f = faces[handle - 1];
+            const float s = static_cast<float>(f.size) / 8.0f;
+            const McFont& font = McFont::Instance();
+            float width = 0;
+            const std::string text(string.begin(), string.end());
+            size_t i = 0;
+            uint32_t cp;
+            while (McFont::Next(text, i, cp))
+                width += static_cast<float>(font.Get(cp).advance + (f.bold ? 1 : 0));
+            return static_cast<int>(std::lround(width * s));
+        }
+
+        int GenerateString(Rml::RenderManager& renderManager, Rml::FontFaceHandle handle, Rml::FontEffectsHandle,
+                           Rml::StringView string, Rml::Vector2f position, Rml::ColourbPremultiplied colour, float opacity,
+                           const Rml::TextShapingContext&, Rml::TexturedMeshList& meshes) override {
+            const Face& f = faces[handle - 1];
+            const float s = static_cast<float>(f.size) / 8.0f;
+            const McFont& font = McFont::Instance();
+            Rml::Texture texture = renderManager.LoadTexture("mcfont:atlas#" + std::to_string(font.Version()));
+            meshes.resize(meshes.size() + 1);
+            Rml::TexturedMesh& out = meshes.back();
+            out.texture = texture;
+
+            const auto scaleAlpha = [&](Rml::ColourbPremultiplied c) {
+                if (opacity < 1.0f) {
+                    c.red = static_cast<Rml::byte>(c.red * opacity);
+                    c.green = static_cast<Rml::byte>(c.green * opacity);
+                    c.blue = static_cast<Rml::byte>(c.blue * opacity);
+                    c.alpha = static_cast<Rml::byte>(c.alpha * opacity);
+                }
+                return c;
+            };
+            const Rml::ColourbPremultiplied main = scaleAlpha(colour);
+
+            const Rml::ColourbPremultiplied shade(static_cast<Rml::byte>(main.red / 4), static_cast<Rml::byte>(main.green / 4),
+                                                  static_cast<Rml::byte>(main.blue / 4), main.alpha);
+
+            const std::string text(string.begin(), string.end());
+            const auto quads = [&](float ox, float oy, const Rml::ColourbPremultiplied& c) {
+                float pen = 0;
+                size_t i = 0;
+                uint32_t cp;
+                while (McFont::Next(text, i, cp)) {
+                    const McFont::Glyph& g = font.Get(cp);
+                    if (g.width > 0) {
+                        const float x = position.x + pen + ox;
+                        const float y = position.y - 7.0f * s + oy;
+                        for (int pass = 0; pass < (f.bold ? 2 : 1); pass++)
+                            Rml::MeshUtilities::GenerateQuad(out.mesh, {x + pass * s, y}, {g.width * s, 8.0f * s}, c,
+                                                             {g.u0, g.v0}, {g.u1, g.v1});
+                    }
+                    pen += static_cast<float>(g.advance + (f.bold ? 1 : 0)) * s;
+                }
+                return pen;
+            };
+            if (f.shadow)
+                quads(s, s, shade);
+            if (f.outline) {
+                const Rml::ColourbPremultiplied black(0, 0, 0, main.alpha);
+                quads(s, 0, black);
+                quads(-s, 0, black);
+                quads(0, s, black);
+                quads(0, -s, black);
+            }
+            const float width = quads(0, 0, main);
+            return static_cast<int>(std::lround(width));
+        }
+
+        int GetVersion(Rml::FontFaceHandle) override { return static_cast<int>(McFont::Instance().Version()); }
+        void ReleaseFontResources() override {}
+
+    private:
+        struct Face {
+            bool shadow = false;
+            bool outline = false;
+            bool bold = false;
+            int size = 8;
+            Rml::FontMetrics metrics{};
+        };
+        std::vector<Face> faces;
+    };
+
+    namespace {
+        std::vector<float> Floats(const Rml::String& text) {
+            std::vector<float> out;
+            std::istringstream in(text);
+            float v;
+            while (in >> v)
+                out.push_back(v);
+            return out;
+        }
+
+        class ElementMcImg : public Rml::Element {
+        public:
+            explicit ElementMcImg(const Rml::String& tag) : Rml::Element(tag) {}
+
+        protected:
+            void OnAttributeChange(const Rml::ElementAttributes& changed) override {
+                Rml::Element::OnAttributeChange(changed);
+                dirty = true;
+                texture = {};
+                loaded = false;
+            }
+
+            void OnResize() override {
+                dirty = true;
+            }
+
+            void OnRender() override {
+                Rml::RenderManager* manager = GetRenderManager();
+                if (!manager)
+                    return;
+                if (!loaded) {
+                    source = GetAttribute<Rml::String>("src", "");
+                    if (source.empty())
+                        return;
+                    texture = manager->LoadTexture(source);
+                    loaded = true;
+                    dirty = true;
+                }
+                if (dirty)
+                    Build(*manager);
+                if (geometry)
+                    geometry.Render(GetAbsoluteOffset(Rml::BoxArea::Border), texture);
+            }
+
+        private:
+            void Build(Rml::RenderManager& manager) {
+                dirty = false;
+                Rml::Mesh mesh = geometry.Release(Rml::Geometry::ReleaseMode::ClearMesh);
+                mesh.vertices.clear();
+                mesh.indices.clear();
+                const Rml::Vector2f size = GetBox().GetSize(Rml::BoxArea::Border);
+                const Rml::Vector2i dims = texture.GetDimensions();
+                if (size.x <= 0 || size.y <= 0 || dims.x <= 0 || dims.y <= 0)
+                    return;
+                const float tw = static_cast<float>(dims.x), th = static_cast<float>(dims.y);
+
+                float cr = 1, cg = 1, cb = 1, ca = 1;
+                if (HasAttribute("color")) {
+                    const auto c = Floats(GetAttribute<Rml::String>("color", ""));
+                    if (c.size() >= 3) { cr = c[0]; cg = c[1]; cb = c[2]; }
+                }
+                if (HasAttribute("alpha"))
+                    ca = GetAttribute<float>("alpha", 1.0f);
+                const Rml::ColourbPremultiplied colour = Colour(cr, cg, cb, ca);
+
+                float su = 0, sv = 0, sw = tw, sh = th;
+                if (HasAttribute("uv")) {
+                    const auto uv = Floats(GetAttribute<Rml::String>("uv", ""));
+                    if (uv.size() >= 2) { su = uv[0]; sv = uv[1]; sw = tw - su; sh = th - sv; }
+                    if (uv.size() >= 4) {
+                        if (uv[2] >= 0) sw = uv[2];
+                        if (uv[3] >= 0) sh = uv[3];
+                    }
+                }
+
+                float dx = 0, dy = 0, dw = size.x, dh = size.y;
+                if (GetAttribute<int>("keep", 0)) {
+                    const float ratio = sw / std::max(sh, 1.0f);
+                    if (dw / dh > ratio) {
+                        const float w = dh * ratio;
+                        dx = (dw - w) * 0.5f;
+                        dw = w;
+                    } else {
+                        const float h = dw / ratio;
+                        dy = (dh - h) * 0.5f;
+                        dh = h;
+                    }
+                }
+
+                float cu0 = 0, cu1 = 1, cv0 = 0, cv1 = 1;
+                if (HasAttribute("clip")) {
+                    std::istringstream in(GetAttribute<Rml::String>("clip", ""));
+                    std::string dir;
+                    float ratio = 1;
+                    in >> dir >> ratio;
+                    ratio = std::clamp(ratio, 0.0f, 1.0f);
+                    if (dir == "left") cu1 = ratio;
+                    else if (dir == "right") cu0 = 1 - ratio;
+                    else if (dir == "up") cv1 = ratio;
+                    else if (dir == "down") cv0 = 1 - ratio;
+                    else if (dir == "center") { cu0 = (1 - ratio) * 0.5f; cu1 = 1 - cu0; }
+                }
+
+                const auto quad = [&](float x, float y, float w, float h, float u0, float v0, float u1, float v1) {
+                    if (w <= 0 || h <= 0)
+                        return;
+
+                    const float vx0 = dx + dw * cu0, vx1 = dx + dw * cu1, vy0 = dy + dh * cv0, vy1 = dy + dh * cv1;
+                    float x0 = std::max(x, vx0), x1 = std::min(x + w, vx1);
+                    float y0 = std::max(y, vy0), y1 = std::min(y + h, vy1);
+                    if (x1 <= x0 || y1 <= y0)
+                        return;
+                    const float ku = (u1 - u0) / w, kv = (v1 - v0) / h;
+                    Rml::MeshUtilities::GenerateQuad(mesh, {x0, y0}, {x1 - x0, y1 - y0}, colour,
+                                                     {(u0 + (x0 - x) * ku) / tw, (v0 + (y0 - y) * kv) / th},
+                                                     {(u0 + (x1 - x) * ku) / tw, (v0 + (y1 - y) * kv) / th});
+                };
+
+                bool nine = false;
+                float slice[4] = {0, 0, 0, 0};
+                float sliceScale = 1.0f;
+                if (HasAttribute("nine")) {
+                    const auto n = Floats(GetAttribute<Rml::String>("nine", ""));
+                    if (n.size() >= 4) { nine = true; for (int i = 0; i < 4; i++) slice[i] = n[i]; }
+                } else {
+                    const TextureSidecar sc = UiAssets::Instance().Sidecar(source);
+                    if (sc.nine) {
+                        nine = true;
+                        for (int i = 0; i < 4; i++) slice[i] = sc.slice[i];
+                        if (sc.baseW > 0)
+                            sliceScale = tw / static_cast<float>(sc.baseW);
+                    }
+                }
+                const int tiled = GetAttribute<int>("tiled", 0);
+                const float tileScale = HasAttribute("tilescale") ? GetAttribute<float>("tilescale", 1.0f) : 1.0f;
+
+                if (nine && !tiled) {
+
+                    const float l = slice[0] * sliceScale, t = slice[1] * sliceScale, r = slice[2] * sliceScale, b = slice[3] * sliceScale;
+                    const float dl = slice[0], dt = slice[1], dr = slice[2], db = slice[3];
+                    const float xs[4] = {dx, dx + dl, dx + dw - dr, dx + dw};
+                    const float ys[4] = {dy, dy + dt, dy + dh - db, dy + dh};
+                    const float us[4] = {su, su + l, su + sw - r, su + sw};
+                    const float vs[4] = {sv, sv + t, sv + sh - b, sv + sh};
+                    for (int j = 0; j < 3; j++)
+                        for (int i = 0; i < 3; i++)
+                            quad(xs[i], ys[j], xs[i + 1] - xs[i], ys[j + 1] - ys[j], us[i], vs[j], us[i + 1], vs[j + 1]);
+                } else if (tiled) {
+                    const float cellW = sw * tileScale, cellH = sh * tileScale;
+                    const bool tx = tiled == 1 || tiled == 2, ty = tiled == 1 || tiled == 3;
+                    const float stepX = tx ? cellW : dw, stepY = ty ? cellH : dh;
+                    int guard = 0;
+                    for (float y = 0; y < dh && guard < 8192; y += stepY)
+                        for (float x = 0; x < dw && guard < 8192; x += stepX, guard++) {
+                            const float w = std::min(stepX, dw - x), h = std::min(stepY, dh - y);
+                            quad(dx + x, dy + y, w, h, su, sv, su + sw * (w / stepX), sv + sh * (h / stepY));
+                        }
+                } else {
+                    quad(dx, dy, dw, dh, su, sv, su + sw, sv + sh);
+                }
+                geometry = manager.MakeGeometry(std::move(mesh));
+            }
+
+            Rml::Geometry geometry;
+            Rml::Texture texture;
+            Rml::String source;
+            bool loaded = false;
+            bool dirty = true;
+        };
+
+        class ElementMcItem : public Rml::Element {
+        public:
+            explicit ElementMcItem(const Rml::String& tag) : Rml::Element(tag) {}
+
+        protected:
+            void OnAttributeChange(const Rml::ElementAttributes& changed) override {
+                Rml::Element::OnAttributeChange(changed);
+                dirty = true;
+                loaded = false;
+            }
+            void OnResize() override { dirty = true; }
+            void OnRender() override {
+                Rml::RenderManager* manager = GetRenderManager();
+                if (!manager)
+                    return;
+                if (!loaded) {
+                    texture = manager->LoadTexture("mcicon:" + GetAttribute<Rml::String>("key", ""));
+                    loaded = true;
+                    dirty = true;
+                }
+                if (dirty) {
+                    dirty = false;
+                    Rml::Mesh mesh = geometry.Release(Rml::Geometry::ReleaseMode::ClearMesh);
+                    mesh.vertices.clear();
+                    mesh.indices.clear();
+                    const Rml::Vector2f size = GetBox().GetSize(Rml::BoxArea::Border);
+                    const float alpha = HasAttribute("alpha") ? GetAttribute<float>("alpha", 1.0f) : 1.0f;
+                    Rml::MeshUtilities::GenerateQuad(mesh, {0, 0}, size, Colour(1, 1, 1, alpha), {0, 0}, {1, 1});
+                    geometry = manager->MakeGeometry(std::move(mesh));
+                }
+                if (geometry) {
+                    geometry.Render(GetAbsoluteOffset(Rml::BoxArea::Border), texture);
+                    if (HasAttribute("glint")) {
+                        gGlintPass = true;
+                        geometry.Render(GetAbsoluteOffset(Rml::BoxArea::Border), texture);
+                        gGlintPass = false;
+                    }
+                }
+            }
+
+        private:
+            Rml::Geometry geometry;
+            Rml::Texture texture;
+            bool loaded = false;
+            bool dirty = true;
+        };
+
+        Rml::ElementInstancerGeneric<ElementMcImg> gImgInstancer;
+        Rml::ElementInstancerGeneric<ElementMcItem> gItemInstancer;
+    }
+
+    RmlBackend::RmlBackend() = default;
+    RmlBackend::~RmlBackend() = default;
+
+    bool RmlBackend::Initialize(RenderContext& renderer) {
+        if (ready)
+            return true;
+        gRenderer = &renderer;
+        renderInterface = std::make_unique<BgfxRenderInterface>();
+        systemInterface = std::make_unique<GameSystemInterface>();
+        fontEngine = std::make_unique<McFontEngine>();
+        Rml::SetSystemInterface(systemInterface.get());
+        Rml::SetRenderInterface(renderInterface.get());
+        Rml::SetFontEngineInterface(fontEngine.get());
+        if (!Rml::Initialise()) {
+            std::cout << "[ui] RmlUi failed to initialise" << std::endl;
+            return false;
+        }
+        Rml::Factory::RegisterElementInstancer("mcimg", &gImgInstancer);
+        Rml::Factory::RegisterElementInstancer("mcitem", &gItemInstancer);
+        context = Rml::CreateContext("hud", Rml::Vector2i(427, 240));
+        if (!context) {
+            std::cout << "[ui] RmlUi context creation failed" << std::endl;
+            Rml::Shutdown();
+            return false;
+        }
+        ready = true;
+        return true;
+    }
+
+    void RmlBackend::Shutdown() {
+        if (!ready)
+            return;
+        if (context)
+            context->UnloadAllDocuments();
+        document = nullptr;
+        Rml::Shutdown();
+        context = nullptr;
+        ready = false;
+        gRenderer = nullptr;
+    }
+
+    void RmlBackend::Resize(int w, int h, int s) {
+        guiW = w;
+        guiH = h;
+        scale = std::max(1, s);
+        gScale = scale;
+        if (context)
+            context->SetDimensions({w, h});
+    }
+
+    bool RmlBackend::SetDocument(const std::string& rml, std::string& error) {
+        if (!context)
+            return false;
+        Rml::ElementDocument* next = context->LoadDocumentFromMemory(rml);
+        if (!next) {
+            error = "RmlUi could not parse the generated document";
+            return false;
+        }
+        if (document)
+            context->UnloadDocument(document);
+        document = next;
+        document->Show();
+        if (overlay)
+            overlay->PullToFront();
+        return true;
+    }
+
+    bool RmlBackend::SetOverlay(const std::string& rml, std::string& error) {
+        if (!context)
+            return false;
+        Rml::ElementDocument* next = context->LoadDocumentFromMemory(rml);
+        if (!next) {
+            error = "RmlUi could not parse the overlay document";
+            return false;
+        }
+        if (overlay)
+            context->UnloadDocument(overlay);
+        overlay = next;
+        overlay->Show();
+        return true;
+    }
+
+    void RmlBackend::ClearOverlay() {
+        if (context && overlay)
+            context->UnloadDocument(overlay);
+        overlay = nullptr;
+    }
+
+    void RmlBackend::MouseMove(float guiX, float guiY) {
+        if (context)
+            context->ProcessMouseMove(static_cast<int>(guiX), static_cast<int>(guiY), 0);
+    }
+
+    std::string RmlBackend::OverlayHover() const {
+        if (!context || !overlay)
+            return {};
+        for (Rml::Element* e = context->GetHoverElement(); e; e = e->GetParentNode())
+            if (!e->GetId().empty() && e->GetOwnerDocument() == overlay)
+                return e->GetId();
+        return {};
+    }
+
+    void RmlBackend::Update() {
+        if (context)
+            context->Update();
+    }
+
+    void RmlBackend::Render() {
+        if (!context)
+            return;
+        gScale = scale;
+        context->Render();
+    }
+
+    void RmlBackend::ReloadTextures() {
+        if (!ready)
+            return;
+        Rml::ReleaseTextures();
+        if (gGlintTexture != 0 && gRenderer) {
+            gRenderer->UiDestroyTexture(gGlintTexture);
+            gGlintTexture = 0;
+        }
+    }
+}

@@ -1,0 +1,552 @@
+#include "client/ui/UiAssets.hpp"
+#include "client/i18n/Lang.hpp"
+#include "client/ui/McFont.hpp"
+#include "util/Resources.hpp"
+
+#include "client/renderer/block/BlockLibrary.hpp"
+#include "client/resources/TexturePack.hpp"
+#include "client/ui/Json.hpp"
+
+#include <algorithm>
+#include <cmath>
+#include <cstring>
+#include <filesystem>
+#include <fstream>
+#include <sstream>
+
+namespace fs = std::filesystem;
+
+namespace perlin::ui {
+    namespace {
+        bool Slurp(const std::string& path, std::string& out) {
+            std::ifstream f(path, std::ios::binary);
+            if (!f)
+                return false;
+            std::stringstream ss;
+            ss << f.rdbuf();
+            out = ss.str();
+            return true;
+        }
+
+        std::string Short(const std::string& id) {
+            const size_t colon = id.find(':');
+            return colon == std::string::npos ? id : id.substr(colon + 1);
+        }
+
+        std::string Pretty(const std::string& id) {
+            std::string out;
+            bool up = true;
+            for (const char c : Short(id)) {
+                if (c == '_') {
+                    out += ' ';
+                    up = true;
+                } else {
+                    out += up ? static_cast<char>(std::toupper(static_cast<unsigned char>(c))) : c;
+                    up = false;
+                }
+            }
+            return out;
+        }
+
+        std::vector<std::string> Words(const std::string& s) {
+            std::vector<std::string> w;
+            std::string cur;
+            for (const char c : s) {
+                if (c == '_') {
+                    w.push_back(cur);
+                    cur.clear();
+                } else {
+                    cur += c;
+                }
+            }
+            w.push_back(cur);
+            return w;
+        }
+    }
+
+    UiAssets& UiAssets::Instance() {
+        static UiAssets instance;
+        return instance;
+    }
+
+    void UiAssets::Configure(const std::string& vanillaRoot, const BlockLibrary* blockLibrary) {
+        std::lock_guard lock(mutex);
+        root = vanillaRoot;
+        blocks = blockLibrary;
+        items.clear();
+        itemTableLoaded = false;
+        langLoaded = false;
+        lang.clear();
+        sidecars.clear();
+    }
+
+    std::string UiAssets::LoadFont(const std::string& dataDir) {
+        McFont& font = McFont::Instance();
+        auto apply = [&](const Texture& t) {
+            return t.width > 0 && font.LoadSheet(t.pixels.data(), t.width, t.height);
+        };
+        Texture t;
+        {
+            std::lock_guard lock(mutex);
+            for (const char* rel : {"font/default8.png", "textures/font/default8.png"})
+                if (FindImage(rel, t) && apply(t))
+                    return std::string("pack ") + rel;
+        }
+        for (const char* name : {"/font/default8.png", "/font/ascii.png"})
+            if (LoadTexture(dataDir + name, t) && apply(t))
+                return "data dir" + std::string(name);
+        std::string bytes;
+        if (resources::Read("mojangles_ascii.png", bytes) &&
+            LoadTextureMemory(reinterpret_cast<const unsigned char*>(bytes.data()), bytes.size(), t) && apply(t))
+            return "bundled Mojangles";
+        font.UseBuiltin();
+        return "built-in face";
+    }
+
+    bool UiAssets::FindImage(const std::string& rel, Texture& out) const {
+        std::string base = rel;
+        const bool hasExt = base.size() > 4 && base[base.size() - 4] == '.';
+        const char* exts[] = {".png", ".tga"};
+        auto& pack = TexturePack::Instance();
+        if (pack.Active()) {
+            if (hasExt && pack.Load(base, out))
+                return true;
+            for (const char* e : exts)
+                if (!hasExt && pack.Load(base + e, out))
+                    return true;
+        }
+        if (root.empty())
+            return false;
+        if (hasExt)
+            return LoadTexture(root + "/" + base, out);
+        for (const char* e : exts)
+            if (LoadTexture(root + "/" + base + e, out))
+                return true;
+        return false;
+    }
+
+    bool UiAssets::Image(const std::string& rel, Texture& out) {
+        std::lock_guard lock(mutex);
+        return FindImage(rel, out);
+    }
+
+    bool UiAssets::ImageSize(const std::string& rel, int& w, int& h) {
+        std::lock_guard lock(mutex);
+
+        std::string base = rel;
+        if (base.size() < 5 || base.substr(base.size() - 4) != ".png")
+            base += ".png";
+        std::ifstream f(root + "/" + base, std::ios::binary);
+        unsigned char b[24];
+        if (f.read(reinterpret_cast<char*>(b), 24) && b[1] == 'P') {
+            w = (b[16] << 24) | (b[17] << 16) | (b[18] << 8) | b[19];
+            h = (b[20] << 24) | (b[21] << 16) | (b[22] << 8) | b[23];
+            return w > 0 && h > 0;
+        }
+        Texture t;
+        if (!FindImage(rel, t))
+            return false;
+        w = t.width;
+        h = t.height;
+        return true;
+    }
+
+    TextureSidecar UiAssets::Sidecar(const std::string& rel) {
+        std::lock_guard lock(mutex);
+        auto cached = sidecars.find(rel);
+        if (cached != sidecars.end())
+            return cached->second;
+        TextureSidecar out;
+        std::string base = rel;
+        if (base.size() > 4 && base[base.size() - 4] == '.')
+            base.resize(base.size() - 4);
+        std::string text;
+        if (Slurp(root + "/" + base + ".json", text)) {
+            Json json;
+            std::string error;
+            if (Json::Parse(text, json, error) && json.IsObject()) {
+                out.present = true;
+                if (const Json* n = json.Find("nineslice_size")) {
+                    out.nine = true;
+                    if (n->IsNumber()) {
+                        for (float& v : out.slice) v = static_cast<float>(n->number);
+                    } else if (n->IsArray() && n->array.size() >= 4) {
+                        for (int i = 0; i < 4; i++) out.slice[i] = static_cast<float>(n->array[i].NumberOr(0));
+                    }
+                }
+                if (const Json* b = json.Find("base_size"); b && b->IsArray() && b->array.size() >= 2) {
+                    out.baseW = static_cast<int>(b->array[0].NumberOr(0));
+                    out.baseH = static_cast<int>(b->array[1].NumberOr(0));
+                }
+            }
+        }
+        sidecars[rel] = out;
+        return out;
+    }
+
+    void UiAssets::LoadLang() {}
+
+    std::string UiAssets::Localize(const std::string& key) {
+        return i18n::Lang::Get().Tr(key);
+    }
+
+    std::string UiAssets::ItemName(const std::string& identifier) {
+        std::lock_guard lock(mutex);
+        const std::string name = Short(identifier);
+        std::string text;
+        for (const char* prefix : {"item.", "tile."})
+            if (i18n::Lang::Get().Find(std::string(prefix) + name + ".name", text))
+                return text;
+
+        static const std::unordered_map<std::string, std::string> legacy = [] {
+            std::unordered_map<std::string, std::string> out;
+            std::string data;
+            if (resources::Read("item_names.map", data)) {
+                size_t pos = 0;
+                while (pos < data.size()) {
+                    size_t end = data.find('\n', pos);
+                    if (end == std::string::npos) end = data.size();
+                    const std::string line = data.substr(pos, end - pos);
+                    pos = end + 1;
+                    if (const size_t eq = line.find('='); eq != std::string::npos)
+                        out[line.substr(0, eq)] = line.substr(eq + 1);
+                }
+            }
+            return out;
+        }();
+        if (const auto it = legacy.find(name); it != legacy.end() && i18n::Lang::Get().Find(it->second, text))
+            return text;
+        return Pretty(identifier);
+    }
+
+    void UiAssets::LoadItemTextureTable() {
+        if (itemTableLoaded)
+            return;
+        itemTableLoaded = true;
+        std::string text;
+        if (!Slurp(root + "/textures/item_texture.json", text))
+            return;
+        Json json;
+        std::string error;
+        if (!Json::Parse(text, json, error) || !json.IsObject())
+            return;
+        const Json* data = json.Find("texture_data");
+        if (!data || !data->IsObject())
+            return;
+        for (const auto& entry : data->object) {
+            const Json* textures = entry.second.Find("textures");
+            if (!textures)
+                continue;
+            std::vector<std::string> paths;
+            const auto add = [&](const Json& v) {
+                if (v.IsString())
+                    paths.push_back(v.string);
+                else if (v.IsObject())
+                    if (const Json* p = v.Find("path"); p && p->IsString())
+                        paths.push_back(p->string);
+            };
+            if (textures->IsArray())
+                for (const Json& v : textures->array) add(v);
+            else
+                add(*textures);
+            if (!paths.empty())
+                itemTextures[entry.first] = std::move(paths);
+        }
+    }
+
+    bool UiAssets::FlatSprite(const std::string& name, int aux, ItemSprite& out) {
+        LoadItemTextureTable();
+        std::vector<std::string> candidates{name};
+
+        const auto replaceWord = [&](const std::string& from, const std::string& to) {
+            std::string s;
+            for (const std::string& w : Words(name)) {
+                if (!s.empty()) s += '_';
+                s += w == from ? to : w;
+            }
+            return s;
+        };
+        candidates.push_back(name + "_standby");
+        candidates.push_back(replaceWord("golden", "gold"));
+        candidates.push_back(replaceWord("wooden", "wood"));
+        {
+
+            static const std::pair<const char*, const char*> kAlias[] = {
+                {"beef", "beef_raw"}, {"porkchop", "porkchop_raw"}, {"chicken", "chicken_raw"}, {"mutton", "mutton_raw"},
+                {"cod", "fish"}, {"cooked_cod", "cooked_fish"}, {"tropical_fish", "clownfish"},
+                {"enchanted_golden_apple", "apple_golden"}, {"melon_slice", "melon"}, {"potion", "potion_bottle_drinkable"},
+                {"milk_bucket", "bucket"}};
+            for (const auto& [from, to] : kAlias)
+                if (name == from)
+                    candidates.push_back(to);
+        }
+        {
+            const auto w = Words(name);
+            if (w.size() >= 2) {
+                std::string swapped = w.back();
+                for (size_t i = 0; i + 1 < w.size(); i++) swapped += "_" + w[i];
+                candidates.push_back(swapped);
+                std::string rotated = w[1];
+                for (size_t i = 2; i < w.size(); i++) rotated += "_" + w[i];
+                candidates.push_back(rotated + "_" + w[0]);
+            }
+        }
+        if (name.size() > 5 && name.compare(name.size() - 5, 5, "_door") == 0) {
+            const std::string kind = name.substr(0, name.size() - 5);
+            candidates.push_back("door_" + (kind == "oak" ? std::string("wood") : kind));
+        }
+        for (const std::string& c : candidates) {
+            std::string path;
+            auto it = itemTextures.find(c);
+            if (it != itemTextures.end() && it->second.size() == 1) {
+                path = it->second[0];
+            } else if (it != itemTextures.end() && c != name) {
+                const auto& paths = it->second;
+                path = paths[static_cast<size_t>(std::clamp(aux, 0, static_cast<int>(paths.size()) - 1))];
+            } else {
+                path = "textures/items/" + c;
+            }
+            Texture t;
+            if (!FindImage(path, t)) {
+                if (it == itemTextures.end() || !FindImage(it->second[static_cast<size_t>(std::clamp(aux, 0, static_cast<int>(it->second.size()) - 1))], t))
+                    continue;
+            }
+            out.ok = true;
+            out.block = false;
+            out.w = t.width;
+            out.h = t.height;
+            out.rgba = std::move(t.pixels);
+            const bool tool = name.find("sword") != std::string::npos || name.find("pickaxe") != std::string::npos ||
+                              name.find("_axe") != std::string::npos || name.find("shovel") != std::string::npos ||
+                              name.find("hoe") != std::string::npos || name == "stick" || name == "bow" ||
+                              name.find("rod") != std::string::npos || name == "trident" || name == "mace" ||
+                              name == "shears" || name == "carrot_on_a_stick" || name == "blaze_rod" || name == "bone";
+            out.handheld = tool;
+            return true;
+        }
+        return false;
+    }
+
+    namespace {
+        void Multiply(std::vector<uint8_t>& rgba, float r, float g, float b) {
+            for (size_t i = 0; i + 3 < rgba.size(); i += 4) {
+                rgba[i] = static_cast<uint8_t>(std::clamp(rgba[i] * r, 0.0f, 255.0f));
+                rgba[i + 1] = static_cast<uint8_t>(std::clamp(rgba[i + 1] * g, 0.0f, 255.0f));
+                rgba[i + 2] = static_cast<uint8_t>(std::clamp(rgba[i + 2] * b, 0.0f, 255.0f));
+            }
+        }
+    }
+
+    const ItemSprite* UiAssets::Item(const std::string& key) {
+        std::lock_guard lock(mutex);
+        auto it = items.find(key);
+        if (it != items.end())
+            return it->second.ok ? &it->second : nullptr;
+        ItemSprite sprite;
+        const size_t semi = key.rfind(';');
+        const std::string id = semi == std::string::npos ? key : key.substr(0, semi);
+        const int aux = semi == std::string::npos ? 0 : std::atoi(key.c_str() + semi + 1);
+        std::string name = Short(id);
+        if (name == "tallgrass") name = "short_grass";
+
+        if (!FlatSprite(name, aux, sprite) && blocks && blocks->Ready()) {
+            if (const BlockAppearance* a = blocks->LookByName("minecraft:" + name)) {
+                const int px = BlockLibrary::TilePx();
+                sprite.tile = px;
+                const bool cube = a->shape == BlockAppearance::Shape::Cube || a->shape == BlockAppearance::Shape::Wall;
+                std::vector<uint8_t> top, side;
+                if (blocks->TilePixels(a->top, top) && blocks->TilePixels(a->side, side)) {
+                    float tr = a->tintR, tg = a->tintG, tb = a->tintB;
+                    const bool unsetTint = tr >= 0.999f && tg >= 0.999f && tb >= 0.999f;
+                    bool tintTop = a->tintTop, tintSide = a->tintSide;
+                    if (unsetTint) {
+
+                        auto set = [&](uint32_t rgb) {
+                            tr = ((rgb >> 16) & 255) / 255.0f;
+                            tg = ((rgb >> 8) & 255) / 255.0f;
+                            tb = (rgb & 255) / 255.0f;
+                        };
+                        if (name.find("spruce_leaves") != std::string::npos) { set(0x619961); tintTop = tintSide = true; }
+                        else if (name.find("birch_leaves") != std::string::npos) { set(0x80A755); tintTop = tintSide = true; }
+                        else if (name.find("_leaves") != std::string::npos && name.find("cherry") == std::string::npos &&
+                                 name.find("azalea") == std::string::npos) { set(0x48B518); tintTop = tintSide = true; }
+                        else if (a->overlayTile != 0) { set(0x79C05A); tintTop = true; }
+                        else if (name == "short_grass" || name == "tallgrass" || name == "fern" || name == "large_fern" ||
+                                 name == "tall_grass" || name == "grass") { set(0x79C05A); tintTop = tintSide = true; }
+                        else if (name == "vine" || name == "lily_pad") { set(0x48B518); tintTop = tintSide = true; }
+                    }
+                    if (tintTop) Multiply(top, tr, tg, tb);
+                    if (a->overlayTile != 0) {
+
+                        std::vector<uint8_t> ov;
+                        if (blocks->TilePixels(a->overlayTile, ov) && ov.size() == side.size()) {
+                            if (unsetTint) Multiply(ov, tr, tg, tb);
+                            else Multiply(ov, a->tintR, a->tintG, a->tintB);
+                            for (size_t i = 0; i + 3 < ov.size(); i += 4) {
+                                const float al = ov[i + 3] / 255.0f;
+                                if (al <= 0) continue;
+                                for (int c = 0; c < 3; c++)
+                                    side[i + c] = static_cast<uint8_t>(side[i + c] * (1 - al) + ov[i + c] * al);
+                                side[i + 3] = 255;
+                            }
+                        }
+                        tintSide = false;
+                    }
+                    if (!a->carriedTex.empty()) {
+                        Texture carried;
+                        if (FindImage(a->carriedTex, carried) && carried.width == px && carried.height == px) {
+                            side = carried.pixels;
+                            if (a->hasCarriedRGB) Multiply(side, a->carriedR, a->carriedG, a->carriedB);
+                        }
+                    } else if (tintSide) {
+                        Multiply(side, tr, tg, tb);
+                    }
+                    if (cube) {
+                        sprite.ok = true;
+                        sprite.block = true;
+                        sprite.top = std::move(top);
+                        sprite.left = side;
+                        sprite.right = std::move(side);
+                    } else {
+                        sprite.ok = true;
+                        sprite.block = false;
+                        sprite.w = sprite.h = px;
+                        sprite.rgba = a->shape == BlockAppearance::Shape::Flat ? std::move(top) : std::move(side);
+                        if (tintSide || tintTop)
+                            Multiply(sprite.rgba, tr, tg, tb);
+                    }
+                }
+            }
+        }
+        auto inserted = items.emplace(key, std::move(sprite)).first;
+        return inserted->second.ok ? &inserted->second : nullptr;
+    }
+
+    void UiAssets::ClearItemCache() {
+        std::lock_guard lock(mutex);
+        items.clear();
+        itemTextures.clear();
+        itemTableLoaded = false;
+        generation++;
+    }
+
+    bool UiAssets::HasHead(const std::string& key) {
+        std::lock_guard lock(mutex);
+        return heads.count(key) != 0;
+    }
+    void UiAssets::SetHead(const std::string& key, Texture head) {
+        std::lock_guard lock(mutex);
+        heads[key] = std::move(head);
+    }
+    bool UiAssets::Head(const std::string& key, Texture& out) {
+        std::lock_guard lock(mutex);
+        const auto it = heads.find(key);
+        if (it == heads.end())
+            return false;
+        out = it->second;
+        return true;
+    }
+
+    bool UiAssets::ItemIcon(const std::string& key, Texture& out) {
+        const ItemSprite* s = Item(key);
+        if (!s) {
+
+            out.width = out.height = 16;
+            out.pixels.assign(16 * 16 * 4, 255);
+            for (int y = 0; y < 16; y++)
+                for (int x = 0; x < 16; x++) {
+                    const bool pink = ((x / 8) + (y / 8)) % 2 == 0;
+                    uint8_t* p = &out.pixels[(y * 16 + x) * 4];
+                    p[0] = pink ? 248 : 0;
+                    p[1] = 0;
+                    p[2] = pink ? 248 : 0;
+                    p[3] = 255;
+                }
+            return true;
+        }
+        if (s->block) {
+            BakeCubeIcon(*s, 64, out);
+            return true;
+        }
+        out.width = s->w;
+        out.height = s->h;
+        out.pixels = s->rgba;
+        return true;
+    }
+
+    void BakeCubeIcon(const ItemSprite& sprite, int size, Texture& out) {
+        out.width = out.height = size;
+        out.pixels.assign(static_cast<size_t>(size) * size * 4, 0);
+        struct Face {
+            float n[3];
+            float o[3];
+            float u[3];
+            float v[3];
+            int which;
+        };
+        const Face faces[] = {
+            {{0, 1, 0}, {-.5f, .5f, -.5f}, {1, 0, 0}, {0, 0, 1}, 0},
+            {{0, -1, 0}, {-.5f, -.5f, .5f}, {1, 0, 0}, {0, 0, -1}, 0},
+            {{0, 0, 1}, {-.5f, .5f, .5f}, {1, 0, 0}, {0, -1, 0}, 1},
+            {{0, 0, -1}, {.5f, .5f, -.5f}, {-1, 0, 0}, {0, -1, 0}, 1},
+            {{1, 0, 0}, {.5f, .5f, .5f}, {0, 0, -1}, {0, -1, 0}, 2},
+            {{-1, 0, 0}, {-.5f, .5f, -.5f}, {0, 0, 1}, {0, -1, 0}, 2},
+        };
+        const float ry = 225.0f * 3.14159265f / 180.0f, rx = 30.0f * 3.14159265f / 180.0f;
+        const auto rotate = [&](const float* p, float* r) {
+            const float x1 = p[0] * std::cos(ry) + p[2] * std::sin(ry);
+            const float z1 = -p[0] * std::sin(ry) + p[2] * std::cos(ry);
+            r[0] = x1;
+            r[1] = p[1] * std::cos(rx) - z1 * std::sin(rx);
+            r[2] = p[1] * std::sin(rx) + z1 * std::cos(rx);
+        };
+
+        const float scale = 10.0f * static_cast<float>(size) / 16.0f;
+        const float centre = static_cast<float>(size) * 0.5f;
+        const float l0[3] = {0.2f / 1.237f, 1.0f / 1.237f, -0.7f / 1.237f};
+        const float l1[3] = {-0.2f / 1.237f, 1.0f / 1.237f, 0.7f / 1.237f};
+        const int tile = sprite.tile;
+        for (const Face& f : faces) {
+            float n[3];
+            rotate(f.n, n);
+            if (n[2] <= 0.001f)
+                continue;
+            const auto dot = [&](const float* l) { return std::max(0.0f, n[0] * l[0] + n[1] * l[1] + n[2] * l[2]); };
+            const float shade = std::min(1.0f, (dot(l0) + dot(l1)) * 0.6f + 0.4f);
+            float o[3], u[3], v[3], tmp[3];
+            rotate(f.o, o);
+            for (int i = 0; i < 3; i++) tmp[i] = f.o[i] + f.u[i];
+            rotate(tmp, u);
+            for (int i = 0; i < 3; i++) tmp[i] = f.o[i] + f.v[i];
+            rotate(tmp, v);
+
+            const float ox = centre + o[0] * scale, oy = centre - o[1] * scale;
+            const float ux = centre + u[0] * scale - ox, uy = centre - u[1] * scale - oy;
+            const float vx = centre + v[0] * scale - ox, vy = centre - v[1] * scale - oy;
+            const float det = ux * vy - uy * vx;
+            if (std::fabs(det) < 1e-4f)
+                continue;
+            const std::vector<uint8_t>& image = f.which == 0 ? sprite.top : (f.which == 1 ? sprite.left : sprite.right);
+            if (image.size() < static_cast<size_t>(tile) * tile * 4)
+                continue;
+            for (int y = 0; y < size; y++)
+                for (int x = 0; x < size; x++) {
+                    const float px = x + 0.5f - ox, py = y + 0.5f - oy;
+                    const float a = (px * vy - py * vx) / det;
+                    const float b = (ux * py - uy * px) / det;
+                    if (a < 0 || a >= 1 || b < 0 || b >= 1)
+                        continue;
+                    const int tx = std::min(tile - 1, static_cast<int>(a * tile));
+                    const int ty = std::min(tile - 1, static_cast<int>(b * tile));
+                    const uint8_t* src = &image[(static_cast<size_t>(ty) * tile + tx) * 4];
+                    if (src[3] == 0)
+                        continue;
+                    uint8_t* dst = &out.pixels[(static_cast<size_t>(y) * size + x) * 4];
+                    dst[0] = static_cast<uint8_t>(src[0] * shade);
+                    dst[1] = static_cast<uint8_t>(src[1] * shade);
+                    dst[2] = static_cast<uint8_t>(src[2] * shade);
+                    dst[3] = src[3];
+                }
+        }
+    }
+}
