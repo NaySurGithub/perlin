@@ -138,14 +138,6 @@ namespace perlin {
                 std::cout << "[bedrock] asking the server for " << wanted.size() << " resource pack(s)" << std::endl;
                 Send(ask);
             }
-            if (!cacheStatusSent) {
-                SendClientCacheStatus();
-                cacheStatusSent = true;
-            }
-            if (!radiusSent) {
-                SendRequestChunkRadius();
-                radiusSent = true;
-            }
         });
 
         // Chat and system messages: shown in the log so a waiting room or kick reason is not a mystery.
@@ -192,11 +184,28 @@ namespace perlin {
         On<ResourcePackStackPacket>([this](const ResourcePackStackPacket&) {
             std::cout << "[bedrock] ResourcePackStack" << std::endl;
             SendResourcePackResponse(PackStatus::Completed);
+            // Only now: a server that is still waiting for the pack stage to finish treats this as unexpected.
+            if (!cacheStatusSent) {
+                SendClientCacheStatus();
+                cacheStatusSent = true;
+            }
+            if (!radiusSent) {
+                SendRequestChunkRadius();
+                radiusSent = true;
+            }
         });
 
         On<ResourcePacksReadyForValidationPacket>([this](const ResourcePacksReadyForValidationPacket&) {
             std::cout << "[bedrock] ResourcePacksReadyForValidation" << std::endl;
             SendResourcePackResponse(PackStatus::Completed);
+            if (!cacheStatusSent) {
+                SendClientCacheStatus();
+                cacheStatusSent = true;
+            }
+            if (!radiusSent) {
+                SendRequestChunkRadius();
+                radiusSent = true;
+            }
         });
 
         On<PacketViolationWarningPacket>([](const PacketViolationWarningPacket& p) {
