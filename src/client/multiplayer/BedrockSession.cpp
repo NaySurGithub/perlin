@@ -1227,12 +1227,15 @@ namespace perlin {
         std::vector<uint16_t> local(st.palette.size());
         for (size_t i = 0; i < local.size(); i++) {
             local[i] = BlockPalette::Instance().Intern(st.palette[i]);
-            static int unknownLogged = 0;
-            if (unknownLogged < 20 && BlockPalette::Instance().NamesLoaded() &&
-                BlockPalette::Instance().Name(local[i]).empty()) {
-                unknownLogged++;
-                std::cout << "[chunk] unknown block state hash " << st.palette[i] << " in sub-chunk (" << cx << ","
-                          << absSubY << "," << cz << ")" << std::endl;
+            if (BlockPalette::Instance().NamesLoaded() && BlockPalette::Instance().Name(local[i]).empty()) {
+                static const int32_t stoneHash = BlockPalette::HashState("minecraft:stone", {});
+                static int unknownLogged = 0;
+                if (unknownLogged < 20) {
+                    unknownLogged++;
+                    std::cout << "[chunk] unknown block state hash " << st.palette[i] << " in sub-chunk (" << cx
+                              << "," << absSubY << "," << cz << "), drawing it as stone" << std::endl;
+                }
+                local[i] = BlockPalette::Instance().Intern(stoneHash);
             }
         }
         std::array<uint16_t, ChunkCodec::kCells> cells;
