@@ -471,6 +471,15 @@ namespace perlin {
                           << "), state=" << (int)state.load() << ", time " << (known ? "known" : "UNKNOWN")
                           << ", chunks=" << chunksReceived << std::endl;
                 diagPrevPackets = n;
+                std::map<uint32_t, uint64_t> counts;
+                {
+                    std::lock_guard<std::mutex> lk(idCountMutex);
+                    counts = idCounts;
+                }
+                std::string line;
+                for (const auto& [pid, c] : counts)
+                    line += " " + std::string(PacketName(pid)) + "=" + std::to_string(c);
+                std::cout << "[net] totals by packet:" << line << std::endl;
             }
         }
         std::vector<uint8_t> msg;
@@ -546,6 +555,10 @@ namespace perlin {
     void BedrockSession::OnGamePacket(uint32_t id, const std::vector<uint8_t>& body) {
         diagPackets++;
         diagLastId = id;
+        {
+            std::lock_guard<std::mutex> lk(idCountMutex);
+            idCounts[id]++;
+        }
         if (onPacket)
             onPacket(id, body);
         {
@@ -974,8 +987,12 @@ namespace perlin {
 
     void BedrockSession::HandleLevelChunk(const LevelChunkPacket& pkt) {
         static int logged = 0;
-        if (logged < 4) {
+        static int loggedFull = 0;
+        const bool interesting = pkt.payload.size() > 0 || (int32_t)pkt.subChunkCount != 0;
+        if (logged < 4 || (interesting && loggedFull < 40)) {
             logged++;
+            if (interesting)
+                loggedFull++;
             std::cout << "[chunk] LevelChunk (" << pkt.x << "," << pkt.z << ") dim=" << pkt.dimension
                       << " subChunkCount=" << (int32_t)pkt.subChunkCount
                       << " requestMode=" << pkt.hasRequestLimit << " limit=" << pkt.requestLimit

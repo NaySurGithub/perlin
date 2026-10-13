@@ -373,6 +373,8 @@ namespace perlin {
         std::atomic<float> thunderTarget{0.0f};
         std::atomic<bool> dayCycleRunning{true};
         std::atomic<uint64_t> diagPackets{0};
+        std::mutex idCountMutex;
+        std::map<uint32_t, uint64_t> idCounts;
         std::atomic<uint32_t> diagLastId{0};
         std::chrono::steady_clock::time_point diagAt{};
         uint64_t diagPrevPackets = 0;

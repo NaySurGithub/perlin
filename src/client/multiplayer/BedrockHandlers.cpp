@@ -400,6 +400,15 @@ namespace perlin {
                                    BlockPalette::Instance().Intern(static_cast<int32_t>(p.blockRuntimeId)));
         });
 
+        On<UpdateBlockSyncedPacket>([this](const UpdateBlockSyncedPacket& p) {
+            const int x = p.position.x, y = static_cast<int32_t>(p.position.y), z = p.position.z;
+            const uint16_t id = BlockPalette::Instance().Intern(static_cast<int32_t>(p.blockRuntimeId));
+            if (p.layer == 0)
+                netLevel.SetBlock(x, y, z, id);
+            else if (p.layer == 1)
+                netLevel.SetLiquid(x, y, z, id);
+        });
+
         On<MovePlayerPacket>([this](const MovePlayerPacket& p) {
             if (runtimeId != 0 && p.runtimeId != runtimeId)
                 return;
