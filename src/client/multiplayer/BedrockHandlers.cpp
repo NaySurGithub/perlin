@@ -207,6 +207,8 @@ namespace perlin {
                 haveStartPos = true;
             }
             clientGen = p.clientSideGeneration;
+            std::cout << "[bedrock] blockNetworkIdsAreHashes=" << (p.blockNetworkIdsAreHashes ? "true" : "false")
+                      << std::endl;
             std::cout << "[bedrock] client_side_generation=" << (clientGen ? "true" : "false")
                       << " (requested chunk radius " << chunkRadius << ", max view distance " << maxViewDistance
                       << ")" << std::endl;
