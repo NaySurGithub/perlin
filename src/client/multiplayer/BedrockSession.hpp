@@ -6,6 +6,7 @@
 #include "network/XboxAuth.hpp"
 #include "network/Transport.hpp"
 #include "network/PacketCipher.hpp"
+#include "client/multiplayer/PackDownloader.hpp"
 
 #include <condition_variable>
 #include <deque>
@@ -49,7 +50,7 @@ namespace perlin {
         BedrockSession(const BedrockSession&) = delete;
         BedrockSession& operator=(const BedrockSession&) = delete;
 
-        void SetPlayerName(const std::string& name) { playerName = name; }
+        void SetPlayerName(const std::string& name) { playerName = name.empty() ? std::string("Perlin") : name; }
         // "nethernet", "raknet" or "auto" (NetherNet if the server answers its HTTP probe, otherwise RakNet).
         void SetTransport(const std::string& mode) { transportMode = mode; }
         void SetSkin(LoadedSkin loaded) { skin = std::move(loaded); }
@@ -64,6 +65,10 @@ namespace perlin {
 
         bool Connect(const std::string& host, uint16_t port);
         void Disconnect();
+        // Where server resource packs are kept (empty: do not download any).
+        void SetPackDirectory(const std::string& dir) { packs.SetDirectory(dir); }
+        // True while the client is moving to another server after a Transfer packet; the session is not usable then.
+        bool Transferring() const { return transferring; }
 
         void Update();
 
@@ -248,6 +253,20 @@ namespace perlin {
         std::deque<std::pair<uint32_t, std::vector<uint8_t>>> chunkIn;
         bool chunkStop = false;
         bool chunkBusy = false;
+
+        bool ConnectImpl(const std::string& host, uint16_t port, bool transfer);
+        void BeginTransfer();
+        void ResetForTransfer();
+        PackDownloader packs;
+        size_t packsExpected = 0;
+        std::atomic<bool> transferring{false};
+        std::atomic<bool> transferRequested{false};
+        std::thread transferThread;
+        std::thread::id transferThreadId;
+        std::mutex updateMutex;
+        std::string transferHost;
+        uint16_t transferPort = 0;
+        bool usedRak = false;
 
         std::unique_ptr<Transport> net;
         std::unique_ptr<PacketCipher> cipher; // set once the server's handshake switched encryption on

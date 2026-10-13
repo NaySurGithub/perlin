@@ -169,7 +169,7 @@ namespace perlin {
                 return h + "." + p + "." + B64Url(raw.data(), raw.size());
             };
 
-            const std::string identityJson = BuildIdentityJson(identity, online ? &online->chainJson : nullptr, error);
+            const std::string identityJson = BuildIdentityJson(identity, online ? &online->chainJson : nullptr, error, playerName);
             if (identityJson.empty())
                 return std::nullopt;
 
@@ -236,13 +236,24 @@ namespace perlin {
 
     }
 
-    bool BedrockSession::Connect(const std::string& host, uint16_t port) {
-        Disconnect();
+    bool BedrockSession::Connect(const std::string& host, uint16_t port) { return ConnectImpl(host, port, false); }
+
+    bool BedrockSession::ConnectImpl(const std::string& host, uint16_t port, bool transfer) {
+        if (!transfer)
+            Disconnect();
         lastError.clear();
         state = State::Connecting;
 
-        cipher.reset();
-        net.reset();
+        {
+            std::lock_guard<std::mutex> lk(txMutex);
+            cipher.reset();
+            net.reset();
+        }
+        packs.Reset();
+        packsExpected = 0;
+        if (transfer && identity && identity->Valid()) {
+            // Same player, new server: keep the key and the sign-in.
+        } else {
         identity = std::make_unique<ClientIdentity>();
         if (!identity->Valid()) {
             lastError = "identity keygen failed";
@@ -267,16 +278,20 @@ namespace perlin {
             state = State::Failed;
             return false;
         }
+        }
         // Pick the transport. Vanilla BDS can offer NetherNet (HTTP signalling + WebRTC); public servers such as
         // Lifeboat and The Hive only speak RakNet over UDP.
         bool useRak = transportMode == "raknet";
-        if (transportMode == "auto") {
+        if (transfer && transportMode == "auto") {
+            useRak = usedRak; // the server that sent us here is a network of the same kind
+        } else if (transportMode == "auto") {
             NetherNetServerInfo probe;
             std::string probeError;
             useRak = !NetherNet::Probe(host, port, probe, probeError, 4);
             std::cout << "[perlin] transport: " << (useRak ? "raknet (no NetherNet endpoint found)" : "nethernet")
                       << std::endl;
         }
+        usedRak = useRak;
         if (useRak) {
             auto rak = std::make_unique<RakNet>();
             if (!rak->Connect(host, port)) {
@@ -313,8 +328,13 @@ namespace perlin {
         state = State::WaitingNetworkSettings;
 
         auto start = std::chrono::steady_clock::now();
+        uint64_t seenPackets = diagPackets;
         while (state != State::InGame && state != State::Failed) {
             Update();
+            if (diagPackets != seenPackets) { // the server is still talking (pack downloads can take a while)
+                seenPackets = diagPackets;
+                start = std::chrono::steady_clock::now();
+            }
             if (std::chrono::steady_clock::now() - start > std::chrono::seconds(60)) {
                 lastError = "handshake timed out in state " + std::to_string((int)state.load());
                 state = State::Failed;
@@ -325,6 +345,9 @@ namespace perlin {
     }
 
     void BedrockSession::Disconnect() {
+        transferRequested = false;
+        if (transferThread.joinable() && std::this_thread::get_id() != transferThreadId)
+            transferThread.join();
         state = State::Disconnected;
         if (net)
             net->Disconnect();
@@ -334,6 +357,7 @@ namespace perlin {
     }
 
     bool BedrockSession::Transmit(uint32_t packetId, const std::vector<uint8_t>& body, bool reliable) {
+        std::lock_guard<std::mutex> txLock(txMutex);
         if (!net || !net->IsConnected())
             return false;
         std::vector<uint8_t> content;
@@ -354,8 +378,7 @@ namespace perlin {
             batch.push_back(0xFF);
             batch.insert(batch.end(), content.begin(), content.end());
         }
-        // Encryption counters must follow the order packets leave in.
-        std::lock_guard<std::mutex> txLock(txMutex);
+        // Encryption counters must follow the order packets leave in (txMutex is held since the top).
         if (cipher && cipher->Active())
             batch = cipher->Encrypt(batch);
         return reliable ? net->SendReliable(batch) : net->SendUnreliable(batch);
@@ -393,6 +416,15 @@ namespace perlin {
     }
 
     void BedrockSession::Update() {
+        if (transferring && std::this_thread::get_id() != transferThreadId)
+            return;
+        std::unique_lock<std::mutex> updateLock(updateMutex, std::defer_lock);
+        if (std::this_thread::get_id() != transferThreadId)
+            updateLock.lock();
+        if (transferRequested && !transferring && std::this_thread::get_id() != transferThreadId) {
+            BeginTransfer();
+            return;
+        }
         if (state == State::InGame) {
             UpdateColumnLod();
             if (clientGen)
@@ -417,7 +449,8 @@ namespace perlin {
         if (net && !net->IsConnected() && !diagLostLogged && state != State::Disconnected) {
             diagLostLogged = true;
             std::cout << "[net] CONNECTION LOST (transport closed) state=" << (int)state.load()
-                      << " lastError='" << lastError << "'" << std::endl;
+                      << " lastError='" << lastError << "' transport='" << net->LastError()
+                      << "'" << std::endl;
         }
         if (!net || !net->IsConnected())
             return;
@@ -516,6 +549,20 @@ namespace perlin {
         if (onPacket)
             onPacket(id, body);
         {
+            static int dumped = 0;
+            if (dumped < 12) {
+                dumped++;
+                static const char* hx = "0123456789abcdef";
+                std::string h;
+                for (size_t i = 0; i < body.size() && i < 64; i++) {
+                    h += hx[body[i] >> 4];
+                    h += hx[body[i] & 15];
+                }
+                std::cout << "[net] packet #" << dumped << " id " << id << " len " << body.size() << " hex " << h
+                          << std::endl;
+            }
+        }
+        {
             static std::set<uint32_t> seen;
             if (seen.insert(id).second)
                 std::cout << "[net] first " << PacketName(id) << " (id " << id << ", " << body.size()
@@ -595,6 +642,54 @@ namespace perlin {
         p.type = start ? 1 : 2;
         p.loadingScreenId = id;
         return Send(p);
+    }
+
+    void BedrockSession::BeginTransfer() {
+        transferRequested = false;
+        if (transferThread.joinable())
+            transferThread.join();
+        transferring = true;
+        transferThreadId = std::thread::id();
+        const std::string host = transferHost;
+        const uint16_t port = transferPort;
+        transferThread = std::thread([this, host, port] {
+            transferThreadId = std::this_thread::get_id();
+            std::cout << "[bedrock] transferring to " << host << ":" << port << std::endl;
+            ResetForTransfer();
+            if (!ConnectImpl(host, port, true))
+                std::cout << "[bedrock] transfer failed: " << lastError << std::endl;
+            else
+                std::cout << "[bedrock] transfer complete" << std::endl;
+            transferring = false;
+        });
+        // transferThreadId is set from inside the thread; wait for it so Update() can tell the two threads apart.
+        while (transferThreadId == std::thread::id())
+            std::this_thread::yield();
+    }
+
+    void BedrockSession::ResetForTransfer() {
+        {
+            std::lock_guard<std::mutex> lk(txMutex);
+            if (net)
+                net->Disconnect();
+        }
+        ResetWorldForDimension();
+        compressEnabled = false;
+        cacheStatusSent = false;
+        radiusSent = false;
+        startGameSeen = false;
+        initializedSent = false;
+        gotSpawn = false;
+        runtimeId = 0;
+        uniqueId = 0;
+        pose = PlayerPose{};
+        haveLastAuthPos = false;
+        haveStartPos = false;
+        pendingTeleportAck = false;
+        dimAckPending = false;
+        diagLostLogged = false;
+        chunksReceived = 0;
+        state = State::Connecting;
     }
 
     void BedrockSession::ResetWorldForDimension() {

@@ -65,6 +65,20 @@ namespace perlin::claims {
         bool certificateAuthority = true;
     };
 
+    struct ExtraData {
+        std::string displayName;
+        std::string identity;
+        std::string XUID;
+    };
+
+    // The single self-signed link a client without an Xbox account sends (what the vanilla client does offline).
+    struct SelfSignedLink {
+        int64_t exp = 0;
+        int64_t nbf = 0;
+        std::string identityPublicKey;
+        ExtraData extraData;
+    };
+
     struct Identity {
         std::string Certificate;
         int AuthenticationType = 2;
@@ -107,7 +121,7 @@ namespace perlin::claims {
         bool PremiumSkin = false;
         std::string SelfSignedId;
         std::string ServerAddress;
-        std::vector<std::string> SkinAnimationData;
+        std::string SkinAnimationData;
         std::string SkinColor = "#0";
         std::string SkinData;
         std::string SkinGeometryName = "geometry.humanoid.custom";

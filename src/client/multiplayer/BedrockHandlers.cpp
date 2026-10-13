@@ -80,6 +80,20 @@ namespace perlin {
         On<DisconnectPacket>([this](const DisconnectPacket& p) {
             lastError = "server disconnect, reason=" + std::to_string(static_cast<int>(p.reason)) +
                         (p.message.empty() ? "" : " message='" + p.message + "'");
+            switch (static_cast<int>(p.reason)) {
+                case 44:
+                    lastError += " (ServerIdConflict: the server still has a session with this name/id from an earlier"
+                                 " run. Wait ~30 s, restart the server, or join with a different --name)";
+                    break;
+                case 35:
+                case 8:
+                    lastError += " (version mismatch with Perlin's 1.26.52)";
+                    break;
+                case 46:
+                    lastError += " (the server wants an Xbox login: use --login)";
+                    break;
+                default: break;
+            }
             std::cout << "[bedrock] " << lastError << std::endl;
             state = State::Failed;
         });
@@ -101,10 +115,21 @@ namespace perlin {
             Send(ClientToServerHandshakePacket{});
         });
 
-        On<ResourcePacksInfoPacket>([this](const ResourcePacksInfoPacket&) {
-            std::cout << "[bedrock] ResourcePacksInfo" << std::endl;
-            SendResourcePackResponse(PackStatus::Completed);
+        On<ResourcePacksInfoPacket>([this](const ResourcePacksInfoPacket& info) {
+            std::cout << "[bedrock] ResourcePacksInfo (" << info.texturePacks.size() << " packs)" << std::endl;
             state = State::ResourcePacks;
+            std::vector<std::string> wanted = packs.Plan(info.texturePacks);
+            if (wanted.empty()) {
+                SendResourcePackResponse(PackStatus::HaveAllPacks);
+            } else {
+                packsExpected = wanted.size();
+                proto::ResourcePackClientResponsePacket ask;
+                ask.responseStatus = PackStatus::SendPacks;
+                ask.responseStatusName = "downloading";
+                ask.resourcepackids = wanted;
+                std::cout << "[bedrock] asking the server for " << wanted.size() << " resource pack(s)" << std::endl;
+                Send(ask);
+            }
             if (!cacheStatusSent) {
                 SendClientCacheStatus();
                 cacheStatusSent = true;
@@ -113,6 +138,40 @@ namespace perlin {
                 SendRequestChunkRadius();
                 radiusSent = true;
             }
+        });
+
+        On<ResourcePackDataInfoPacket>([this](const ResourcePackDataInfoPacket& info) {
+            const auto step = packs.OnDataInfo(info);
+            if (step.step == PackDownloader::Step::RequestChunk) {
+                Send(proto::ResourcePackChunkRequestPacket{.packId = step.packId, .chunkIndex = step.chunkIndex});
+            } else if (step.step == PackDownloader::Step::Failed) {
+                lastError = "resource pack download failed: " + step.message;
+                state = State::Failed;
+            } else if (step.step == PackDownloader::Step::PackDone && packs.AllReceived()) {
+                SendResourcePackResponse(PackStatus::HaveAllPacks);
+            } else if (step.step == PackDownloader::Step::Ignore && !step.message.empty()) {
+                std::cout << "[packs] " << step.message << std::endl;
+            }
+        });
+
+        On<ResourcePackChunkDataPacket>([this](const ResourcePackChunkDataPacket& chunk) {
+            const auto step = packs.OnChunk(chunk);
+            if (step.step == PackDownloader::Step::RequestChunk) {
+                Send(proto::ResourcePackChunkRequestPacket{.packId = step.packId, .chunkIndex = step.chunkIndex});
+            } else if (step.step == PackDownloader::Step::Failed) {
+                lastError = "resource pack download failed: " + step.message;
+                state = State::Failed;
+            } else if (step.step == PackDownloader::Step::PackDone && packs.AllReceived()) {
+                SendResourcePackResponse(PackStatus::HaveAllPacks);
+            }
+        });
+
+        // The server hands us over to another one (a lobby sending you into a game, or a proxy).
+        On<TransferPacket>([this](const TransferPacket& t) {
+            std::cout << "[bedrock] Transfer -> " << t.serverAddress << ":" << t.port << std::endl;
+            transferHost = t.serverAddress;
+            transferPort = t.port;
+            transferRequested = true;
         });
 
         On<ResourcePackStackPacket>([this](const ResourcePackStackPacket&) {

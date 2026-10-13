@@ -150,6 +150,7 @@ namespace perlin {
                       << (loadedSkin.slimArms ? ", slim arms" : "") << std::endl;
         }
         session->SetSkin(std::move(loadedSkin));
+        session->SetPackDirectory(paths::DataDir() + "/server_packs");
 
         if (onlineThisRun) {
             account = std::make_shared<xbox::Account>(paths::DataDir() + "/auth.json");
@@ -316,7 +317,7 @@ namespace perlin {
             if (width > 0 && height > 0)
                 camera.aspect = static_cast<float>(width) / static_cast<float>(height);
 
-            BedrockSession* live = sessionReady ? session.get() : nullptr;
+            BedrockSession* live = sessionReady && !session->Transferring() ? session.get() : nullptr;
             if (live) {
                 live->Update();
                 live->PumpRequests(256);

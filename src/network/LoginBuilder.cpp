@@ -20,15 +20,34 @@ namespace perlin {
         }
     }
 
-    std::string BuildIdentityJson(ClientIdentity& identity, const std::string* onlineChainJson, std::string& error) {
+    std::string BuildIdentityJson(ClientIdentity& identity, const std::string* onlineChainJson, std::string& error,
+                                  const std::string& displayName) {
         const std::string& mpToken = identity.MultiplayerToken();
         const std::string cpk = identity.PublicKeyB64();
         if (!identity.Valid() || mpToken.empty() || cpk.empty()) {
             error = "no client identity";
             return {};
         }
-        if (!onlineChainJson)
-            return json::Write(claims::Identity{json::Write(claims::Chain{}), 2, mpToken});
+        if (!onlineChainJson) {
+            claims::Chain self;
+            self.chain.clear();
+            if (!displayName.empty()) {
+                const int64_t now = static_cast<int64_t>(std::time(nullptr));
+                claims::SelfSignedLink link;
+                link.exp = now + 6 * 3600;
+                link.nbf = now - 6 * 3600;
+                link.identityPublicKey = cpk;
+                link.extraData.displayName = displayName;
+                link.extraData.identity = RandomUuid();
+                const std::string jwt = SignJwt(identity, claims::Header{.x5u = cpk}, link);
+                if (jwt.empty()) {
+                    error = "could not sign the offline identity";
+                    return {};
+                }
+                self.chain.push_back(jwt);
+            }
+            return json::Write(claims::Identity{json::Write(self), 2, mpToken});
+        }
 
         claims::Chain chain;
         chain.chain.clear();
