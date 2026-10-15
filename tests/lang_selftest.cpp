@@ -1,4 +1,3 @@
-// Tests of the translation system: parsing, formatting, fallback and the shipped Perlin strings.
 #include "client/i18n/Lang.hpp"
 
 #include <cstdio>
@@ -18,19 +17,16 @@ static int failures = 0;
     } while (0)
 
 int main(int argc, char** argv) {
-    // Format: sequential, positional and escaped placeholders.
     CHECK(Lang::Format("%s joined the game", {"Steve"}) == "Steve joined the game");
     CHECK(Lang::Format("%2$s then %1$s", {"a", "b"}) == "b then a");
     CHECK(Lang::Format("100%% of %d", {"5"}) == "100% of 5");
     CHECK(Lang::Format("%s and %s", {"x"}) == "x and ");
 
-    // Parse: comments, carriage returns, trailing "\t#" comments, a BOM.
     std::unordered_map<std::string, std::string> map;
     Lang::Parse("\xEF\xBB\xBF## comment\r\na.b=Hello\t# note\r\nc=d=e\r\n", map);
     CHECK(map["a.b"] == "Hello");
     CHECK(map["c"] == "d=e");
 
-    // Fallback: a key missing from the chosen language comes from en_US, then from the key itself.
     Lang& lang = Lang::Get();
     lang.LoadFromText("hello=Hallo\n", "hello=Hello\nonly.english=Only\n");
     CHECK(lang.Tr("hello") == "Hallo");
@@ -38,7 +34,6 @@ int main(int argc, char** argv) {
     CHECK(lang.Tr("missing.key") == "missing.key");
     CHECK(lang.Has("hello") && !lang.Has("missing.key"));
 
-    // The shipped file: every key has a value and the placeholders of debug lines work.
     if (argc > 1) {
         std::ifstream f(std::string(argv[1]) + "/perlin_en_US.lang", std::ios::binary);
         std::stringstream ss;

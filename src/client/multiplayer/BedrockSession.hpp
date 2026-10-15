@@ -7,6 +7,7 @@
 #include "client/entity/EntityTracker.hpp"
 #include "network/XboxAuth.hpp"
 #include "network/Transport.hpp"
+#include "util/ThreadPool.hpp"
 #include "network/PacketCipher.hpp"
 #include "network/PlayerConstants.hpp"
 #include "client/multiplayer/PackDownloader.hpp"
@@ -274,6 +275,7 @@ void RequestRespawn();
             int damage = 0;
             uint32_t blockRuntimeId = 0;
             bool enchanted = false;
+            std::string customName;
             bool Empty() const { return name.empty() || count <= 0; }
         };
         struct Vitals {
@@ -283,6 +285,7 @@ void RequestRespawn();
             float xpProgress = 0.0f;
             int air = 300, maxAir = 300;
             bool poison = false, wither = false, regeneration = false, hungerEffect = false;
+            bool onFire = false;
             bool known = false;
         };
         struct InventoryView {
@@ -296,6 +299,25 @@ void RequestRespawn();
             int selected = 0;
         };
         static constexpr int kInvArmor0 = 36, kInvOffhand = 40, kInvCraft0 = 41, kInvOutput = 45, kInvCursor = 46, kInvSlots = 47;
+        struct CreativeGroup {
+            int category = 0;
+            std::string name;
+            ItemStackInfo icon;
+        };
+        struct CreativeItem {
+            uint32_t entryId = 0;
+            ItemStackInfo info;
+            int group = 0;
+        };
+        struct CreativeCatalog {
+            std::vector<CreativeGroup> groups;
+            std::vector<CreativeItem> items;
+            uint32_t version = 0;
+        };
+        CreativeCatalog Creative() const;
+        uint32_t CreativeVersion() const;
+        void InvCreativeTake(uint32_t entryId, int mode);
+        void InvDestroyCursor();
         void InvClick(int addr, bool right);
         void InvShiftClick(int addr);
         void InvHotbarKey(int addr, int hotbar);
@@ -371,6 +393,7 @@ void RequestRespawn();
         void StartChunkWorker();
         void StopChunkWorker();
         std::thread chunkThread;
+        std::unique_ptr<ThreadPool> decodePool;
         std::mutex chunkMutex;
         std::condition_variable chunkCv;
         std::deque<std::pair<uint32_t, std::vector<uint8_t>>> chunkIn;
@@ -476,8 +499,8 @@ void RequestRespawn();
         int viewRadiusChunks = 0;
         uint64_t movePacketsSent = 0;
         uint64_t correctionsReceived = 0;
-        uint64_t statLevelChunks = 0, statRequestsSent = 0, statSubChunkReplies = 0, statSubChunksApplied = 0,
-                 statSubChunksFailed = 0;
+        uint64_t statLevelChunks = 0, statRequestsSent = 0, statSubChunkReplies = 0, statSubChunksFailed = 0;
+        std::atomic<uint64_t> statSubChunksApplied{0};
         std::chrono::steady_clock::time_point lastStatLog{};
         float startPos[3] = {0, 0, 0};
         bool haveStartPos = false;
@@ -550,6 +573,7 @@ void RequestRespawn();
             uint32_t netId = 0;
         };
         std::vector<RecipeInfo> recipes;
+        std::map<int32_t, std::string> invSummaries;
         int craftedRecipe = -1;
         std::deque<std::function<bool(proto::ItemStackRequest&)>> invQueue;
         bool invCloseWanted = false;
@@ -568,6 +592,9 @@ void RequestRespawn();
         int dropForm = 0;
         bool SendDropRequest(int slot, int count, int attempt);
         std::map<int, std::string> itemNames;
+        CreativeCatalog creative;
+        std::map<uint32_t, proto::ItemV4> creativeRaw;
+        std::map<uint64_t, proto::ItemV4> droppedRaw;
         TitleText titleText;
         void PushChat(const std::string& line);
         std::mutex chatMutex;

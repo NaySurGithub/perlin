@@ -268,7 +268,7 @@ namespace perlin {
             offShown = in.off;
 
         float mainTarget = SameItem(mainShown, in.main) ? 1.0f : 0.0f;
-        if (mainTarget > 0.0f && s.equipAnimation) {
+        if (mainTarget > 0.0f && s.equipAnimation && in.main.name != "minecraft:shield") {
             const float delay = std::max(1.0f, 20.0f / AttackSpeed(in.main.name));
             const float strength = std::clamp((static_cast<float>(attackStrengthTicker) + 1.0f) / delay, 0.0f, 1.0f);
             mainTarget = strength * strength * strength;

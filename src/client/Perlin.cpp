@@ -17,6 +17,7 @@
 #include "client/player/BlockUse.hpp"
 #include "client/ui/DeathScreen.hpp"
 #include "client/ui/InventoryScreen.hpp"
+#include "client/ui/CreativeScreen.hpp"
 #include "client/ui/DisconnectScreen.hpp"
 #include "client/ui/UiLayout.hpp"
 #include "client/ui/PauseScreen.hpp"
@@ -708,6 +709,7 @@ namespace perlin {
             item.count = info.count;
             item.blockRuntimeId = info.blockRuntimeId;
             item.enchanted = info.enchanted;
+            item.customName = info.customName;
             item.maxDamage = ui::MaxDurability(info.name);
             item.aux = item.maxDamage > 0 ? std::clamp(info.damage, 0, item.maxDamage) : info.aux;
             return item;
@@ -747,6 +749,8 @@ namespace perlin {
         if (!invShown)
             return;
         bool close = false;
+        const bool creativeMode = (live || preview) && state.mode == ui::GameMode::Creative;
+        const bool searching = creativeMode && creativeTab == ui::kCreativeSearchTab;
         if (deathShown || (live && live->TakeServerClosedInventory()))
             close = true;
         for (const auto& t : inputManager.TakeTyped()) {
@@ -754,7 +758,11 @@ namespace perlin {
                 continue;
             if (!t.character && t.key == Key::Escape)
                 close = true;
-            else if (t.character && (t.key == 'e' || t.key == 'E'))
+            else if (searching && t.character && t.key >= 32 && t.key < 127)
+                creativeSearch += static_cast<char>(t.key);
+            else if (searching && !t.character && t.key == Key::Backspace && !creativeSearch.empty())
+                creativeSearch.pop_back();
+            else if (t.character && (t.key == 'e' || t.key == 'E') && !searching)
                 close = true;
             else if (t.character && (t.key == 'q' || t.key == 'Q') && live && invHoverAddr >= 0)
                 live->InvDropSlot(invHoverAddr, t.ctrl);
@@ -770,6 +778,11 @@ namespace perlin {
             invHoverAddr = -1;
             if (!chat.IsOpen() && !deathShown)
                 input.SetTextMode(false);
+            return;
+        }
+
+        if (creativeMode || (preview && PERLIN_ENV("PERLIN_PREVIEW_CREATIVE"))) {
+            UpdateCreativeScreen(hud, live, state, fbW, fbH);
             return;
         }
 
@@ -829,10 +842,7 @@ namespace perlin {
         v.mouseX = gx;
         v.mouseY = gy;
 
-        const bool followsMouse = !v.cursor.Empty() || invHoverAddr >= 0;
         std::string signature = std::to_string(guiW) + "x" + std::to_string(guiH) + "|" + std::to_string(invHoverAddr);
-        if (followsMouse)
-            signature += "|" + std::to_string(static_cast<int>(gx)) + "," + std::to_string(static_cast<int>(gy));
         const auto sig = [&](const ui::HudItem& it) { signature += it.name + ":" + std::to_string(it.count) + ":" + std::to_string(it.aux) + (it.enchanted ? "g" : "") + ";"; };
         for (const auto& it : v.slots) sig(it);
         for (const auto& it : v.armor) sig(it);
@@ -849,8 +859,10 @@ namespace perlin {
                 hud.Overlay().SetOverlay(ui::BuildInventoryScreenRml(invTemplate, v, guiW, guiH), error);
             }
             hud.Overlay().MouseMove(gx, gy);
-            hud.UpdateOverlay(fbW, fbH, options.guiScale);
         }
+        hud.Overlay().MoveOverlayElement("cursor", static_cast<int>(gx) - 8, static_cast<int>(gy) - 8);
+        hud.Overlay().MoveOverlayElement("tip", static_cast<int>(gx) + 15, static_cast<int>(gy) - 15);
+        hud.UpdateOverlay(fbW, fbH, options.guiScale);
 
         const bool left = input.IsMouseDown(Mouse::Left), right = input.IsMouseDown(Mouse::Right);
         const bool fresh = now - invOpenedAt > std::chrono::milliseconds(150);
@@ -915,10 +927,19 @@ namespace perlin {
         t.back = i18n::Tr("menu.returnToGame");
         t.options = i18n::Tr("menu.options");
         t.quit = i18n::Tr("menu.disconnect");
+        const auto tr = [](const char* key, const char* fallback) {
+            std::string s = i18n::Tr(key);
+            return s == key ? std::string(fallback) : s;
+        };
+        t.advancements = tr("gui.advancements", "Advancements");
+        t.stats = tr("gui.stats", "Statistics");
+        t.feedback = tr("menu.sendFeedback", "Give Feedback");
+        t.bugs = tr("menu.reportBugs", "Report Bugs");
+        t.lan = tr("menu.shareToLan", "Open to LAN");
         const int scale = hud.OverlayScale();
         const int guiW = static_cast<int>(std::ceil(static_cast<float>(fbW) / static_cast<float>(scale)));
         const int guiH = static_cast<int>(std::ceil(static_cast<float>(fbH) / static_cast<float>(scale)));
-        const std::string signature = std::to_string(guiW) + "x" + std::to_string(guiH) + t.title + t.back + t.options + t.quit;
+        const std::string signature = std::to_string(guiW) + "x" + std::to_string(guiH) + t.title + t.back + t.options + t.quit + t.advancements + t.stats + t.feedback + t.bugs + t.lan;
         if (signature != pauseSignature || !hud.Overlay().HasOverlay()) {
             pauseSignature = signature;
             std::string error;
@@ -1122,6 +1143,8 @@ namespace perlin {
                 s.hotbar[i].aux = kItems[i].aux;
                 s.hotbar[i].enchanted = PERLIN_ENV("PERLIN_PREVIEW_ENCHANT") != nullptr;
             }
+            s.burning = PERLIN_ENV("PERLIN_PREVIEW_FIRE") != nullptr;
+            s.fireFrame = static_cast<int>(s.tick % 32);
             if (const char* item = PERLIN_ENV("PERLIN_PREVIEW_ITEM")) {
                 ui::HudItem& h = s.hotbar[std::clamp(previewSlot, 0, 8)];
                 h.name = item;
@@ -1167,6 +1190,8 @@ namespace perlin {
         s.xpLevel = vitals.level;
         s.xpProgress = vitals.xpProgress;
         s.air = vitals.air;
+        s.burning = vitals.onFire && s.mode != ui::GameMode::Spectator;
+        s.fireFrame = static_cast<int>(s.tick % 32);
         s.maxAir = std::max(1, vitals.maxAir);
         s.poison = vitals.poison;
         s.wither = vitals.wither;
@@ -1240,7 +1265,22 @@ namespace perlin {
 
         const ui::HudItem& held = s.hotbar[s.selectedSlot];
         if (!held.Empty() && hudAnim.toolTimer > 0 && s.mode != ui::GameMode::Spectator) {
-            s.itemName = ui::UiAssets::Instance().ItemName(held.name);
+            const std::string shortName = held.name.rfind("minecraft:", 0) == 0 ? held.name.substr(10) : held.name;
+            int rarity = 0;
+            static const char* const kUncommon[] = {"experience_bottle", "nether_star", "totem_of_undying", "heart_of_the_sea", "dragon_breath", "enchanted_book"};
+            static const char* const kRare[] = {"golden_apple", "beacon", "conduit"};
+            static const char* const kEpic[] = {"enchanted_golden_apple", "dragon_egg", "command_block", "chain_command_block",
+                                                "repeating_command_block", "structure_block", "jigsaw"};
+            for (const char* n : kUncommon) if (shortName == n) rarity = 1;
+            for (const char* n : kRare) if (shortName == n) rarity = 2;
+            for (const char* n : kEpic) if (shortName == n) rarity = 3;
+            if (shortName.rfind("music_disc_", 0) == 0)
+                rarity = 2;
+            if (held.enchanted && shortName != "enchanted_book" && shortName != "enchanted_golden_apple")
+                rarity = rarity <= 1 ? 2 : 3;
+            static const char* const kRarityCode[] = {"f", "e", "b", "d"};
+            s.itemName = held.customName.empty() ? ui::UiAssets::Instance().ItemName(held.name) : held.customName;
+            s.itemName = std::string("\xC2\xA7") + kRarityCode[rarity] + (held.customName.empty() ? "" : "\xC2\xA7o") + s.itemName;
             if (advancedTooltips) {
                 s.itemName += " (" + held.name + ")";
                 if (held.maxDamage > 0)
@@ -1426,6 +1466,10 @@ namespace perlin {
                 previewEntities.SetFlags(rid, entity::flag::Sneaking);
             if (PERLIN_ENV("PERLIN_PREVIEW_SWIM"))
                 previewEntities.SetFlags(rid, entity::flag::Swimming | entity::flag::Sprinting);
+            if (PERLIN_ENV("PERLIN_PREVIEW_GLIDE")) {
+                previewEntities.SetFlags(rid, entity::flag::Gliding);
+                previewEntities.SetArmor(rid, 1, "minecraft:elytra");
+            }
             if (PERLIN_ENV("PERLIN_PREVIEW_DEAD"))
                 previewEntities.Die(rid);
             if (PERLIN_ENV("PERLIN_PREVIEW_ENTITY_WALK"))
@@ -1519,7 +1563,8 @@ namespace perlin {
 
         while (renderRunning && platform->isRunning) {
             const auto frameStart = Clock::now();
-            i18n::Lang::Get().Configure(ui::UiAssets::Instance().VanillaRoot(), paths::DataDir(), options.language);
+            if ((frames & 15) == 0)
+                i18n::Lang::Get().Configure(ui::UiAssets::Instance().VanillaRoot(), paths::DataDir(), options.language);
             float dt = std::chrono::duration<float>(frameStart - previous).count();
             previous = frameStart;
             if (dt <= 0.0f || dt > kMaxFrameDelta)
@@ -1564,6 +1609,7 @@ namespace perlin {
                 camera.aspect = static_cast<float>(width) / static_cast<float>(height);
 
             BedrockSession* live = sessionReady && !session->Transferring() ? session.get() : nullptr;
+            const std::vector<entity::Entity> frameEntities = live ? live->Entities().Snapshot() : previewEntities.Snapshot();
             if (live) {
                 live->Update();
                 live->PumpRequests(256);
@@ -1579,7 +1625,7 @@ namespace perlin {
                     }
                     if (!seated)
                         player.SetRidePosition(false, 0, 0, 0);
-                    for (const entity::Entity& e : live->Entities().Snapshot()) {
+                    for (const entity::Entity& e : frameEntities) {
                         if (e.type != "minecraft:cushion" || (seated && e.uniqueId == rideUid))
                             continue;
                         float w = 0.999f, h = 0.249f;
@@ -1587,6 +1633,18 @@ namespace perlin {
                         solid.push_back({e.pos.x - w / 2, e.pos.y, e.pos.z - w / 2, e.pos.x + w / 2, e.pos.y + h, e.pos.z + w / 2});
                     }
                     SetEntityCollisionBoxes(std::move(solid));
+                }
+                player.SetToggleModes(options.sprintMode == "toggle", options.sneakMode == "toggle");
+                {
+                    std::string status;
+                    if (player.Sneaking() || player.SneakLatched())
+                        status += std::string("Sneaking (") + (player.SneakLatched() ? "Toggled" : "Held") + ")";
+                    if (player.Sprinting() || player.SprintLatched()) {
+                        if (!status.empty())
+                            status += "\n";
+                        status += std::string("Sprinting (") + (player.SprintLatched() ? "Toggled" : "Held") + ")";
+                    }
+                    hudState.moveStatus = (options.sprintMode == "toggle" || options.sneakMode == "toggle") ? status : std::string();
                 }
                 player.SetItemSlow(gItemSlow);
                 player.Update(*live, inputManager, camera, levelRenderer->Blocks(), dt);
@@ -1676,7 +1734,7 @@ namespace perlin {
 
                 gAim = AimHit{};
                 if ((live || previewLevel) && !spectator && levelRenderer) {
-                    const std::vector<entity::Entity> aimEntities = live ? live->Entities().Snapshot() : previewEntities.Snapshot();
+                    const std::vector<entity::Entity>& aimEntities = frameEntities;
                     gAim = Raycast(live ? live->NetLevel() : *previewLevel, &levelRenderer->Blocks(), aimEntities,
                                    [&](const entity::Entity& e) {
                                        const auto hb = entityRenderer.HitBox(e);
@@ -1738,12 +1796,33 @@ namespace perlin {
                         if (newTarget && breakDelayTicks > 0 && !breaking) {
                         } else if (newTarget) {
                             stopBreaking();
-                            bkx = gAim.bx; bky = gAim.by; bkz = gAim.bz; bkFace = gAim.face;
-                            breaking = true;
-                            breakProgress = 0.0f;
-                            breakClock = 0;
-                            hitTicks = 0;
-                            live->SendPlayerAuthInputBlockAction(0  , bkx, bky, bkz, bkFace);
+                            static const int faceDx[6] = {0, 0, 0, 0, -1, 1};
+                            static const int faceDy[6] = {-1, 1, 0, 0, 0, 0};
+                            static const int faceDz[6] = {0, 0, -1, 1, 0, 0};
+                            const int fx = gAim.bx + faceDx[gAim.face], fy = gAim.by + faceDy[gAim.face], fz = gAim.bz + faceDz[gAim.face];
+                            bool fireLoaded = false;
+                            const uint16_t fireId = live->NetLevel().GetBlock(fx, fy, fz, fireLoaded);
+                            const std::string fireName = fireLoaded ? BlockPalette::Instance().Name(fireId) : std::string();
+                            if (fireName == "minecraft:fire" || fireName == "minecraft:soul_fire") {
+                                live->SendPlayerAuthInputBlockAction(0, gAim.bx, gAim.by, gAim.bz, gAim.face);
+                                live->SendPlayerAuthInputBlockAction(1, gAim.bx, gAim.by, gAim.bz, gAim.face);
+                                live->NetLevel().SetBlock(fx, fy, fz, 0);
+                                sounds.PlayBlockEvent(fireName, "break", glm::dvec3(fx + 0.5, fy + 0.5, fz + 0.5));
+                                breakDelayTicks = 5;
+                            } else {
+                                bkx = gAim.bx; bky = gAim.by; bkz = gAim.bz; bkFace = gAim.face;
+                                breaking = true;
+                                breakProgress = 0.0f;
+                                breakClock = 0;
+                                hitTicks = 0;
+                                live->SendPlayerAuthInputBlockAction(0  , bkx, bky, bkz, bkFace);
+                            }
+                        }
+                        if (breaking) {
+                            bool present = false;
+                            const uint16_t cur = live->NetLevel().GetBlock(bkx, bky, bkz, present);
+                            if (present && cur == 0)
+                                stopBreaking();
                         }
                         while (breaking && breakClock >= 0.05) {
                             breakClock -= 0.05;
@@ -1809,7 +1888,7 @@ namespace perlin {
                                 handRenderer.Swing(options.hand);
                                 breakDelayTicks = 5;
                             } else {
-                                gLocalCrack = {true, bkx, bky, bkz, std::clamp(static_cast<int>(breakProgress * 10.0f), 0, 9)};
+                                gLocalCrack = {breakProgress > 0.0f, bkx, bky, bkz, std::clamp(static_cast<int>(breakProgress * 10.0f), 0, 9)};
                             }
                         }
                         if (swingClock > 0.3) {
@@ -1852,7 +1931,7 @@ namespace perlin {
                             const blockuse::Result r = blockuse::Classify(
                                 nameAt(clicked[0], clicked[1], clicked[2]),
                                 nameAt(clicked[0] + kOff[f][0], clicked[1] + kOff[f][1], clicked[2] + kOff[f][2]), clicked, gAim.face,
-                                holdsItem, holdsBlock, inputManager.IsDown(Action::Sneak));
+                                holdsItem, holdsBlock, player.Sneaking());
                             use = r.use;
                             std::copy(r.dest, r.dest + 3, dest);
                         }
@@ -1987,6 +2066,7 @@ namespace perlin {
                 }
             }
             bool underwater = false;
+            bool eyeInLava = false;
             std::string eyeBiome = "minecraft:plains";
             if (live) {
                 const glm::vec3 e = camera.EyePosition();
@@ -1997,6 +2077,10 @@ namespace perlin {
                 if (cell.fluid == 1) {
                     const float top = col.Query(bx, by + 1, bz).fluid == 1 ? 1.0f : cell.fluidLevel;
                     underwater = e.y < static_cast<float>(by) + top;
+                }
+                if (cell.fluid == 2) {
+                    const float top = col.Query(bx, by + 1, bz).fluid == 2 ? 1.0f : cell.fluidLevel;
+                    eyeInLava = e.y < static_cast<float>(by) + top;
                 }
                 if (underwater)
                     eyeBiome = levelRenderer->Tints().NameForId(live->NetLevel().GetBiome(bx, by, bz));
@@ -2187,7 +2271,7 @@ namespace perlin {
                     handIn.main = hudState.hotbar[std::clamp(hudState.selectedSlot, 0, 8)];
                     handIn.off = hudState.offhand;
                     handIn.survival = hudState.Survival();
-                    handIn.sneaking = inputManager.IsDown(Action::Sneak);
+                    handIn.sneaking = player.Sneaking();
                     handIn.useHeld = (input.Captured() && inputManager.IsDown(Action::Use)) || PERLIN_ENV("PERLIN_PREVIEW_USE") != nullptr;
                     {
                         const std::string& mn = handIn.main.name;
@@ -2255,6 +2339,7 @@ namespace perlin {
             fogInput.rain = rain;
             fogInput.thunder = thunder;
             fogInput.underwater = underwater;
+            fogInput.inLava = eyeInLava;
             if (underwater) {
                 const float t = static_cast<float>(waterVisionTime);
                 fogInput.waterVision = waterVisionTime >= 600
@@ -2289,7 +2374,7 @@ namespace perlin {
             if (const char* dl = PERLIN_ENV("PERLIN_DYNLIGHTS"))
                 dynMode = std::string(dl) == "fancy" ? 2 : std::string(dl) == "fast" ? 1 : 0;
             if (dynMode && (live || previewLevel)) {
-                const std::vector<entity::Entity> lightEntities = live ? live->Entities().Snapshot() : previewEntities.Snapshot();
+                const std::vector<entity::Entity>& lightEntities = frameEntities;
                 for (const entity::Entity& le : lightEntities)
                     if (!le.isSelf)
                         dynlight::Collect(le, dyn);
@@ -2303,6 +2388,8 @@ namespace perlin {
             }
             FrameParams params{};
             params.motionBlur = options.motionBlur;
+            if (pauseShown && options.menuBlur > 0)
+                params.menuBlur = static_cast<float>(options.menuBlur * std::max(1, hud->OverlayScale()));
             if (const char* mb = PERLIN_ENV("PERLIN_MOTION_BLUR"))
                 params.motionBlur = std::clamp(static_cast<float>(std::atof(mb)), 0.0f, 1.0f);
             params.dynMode = dynMode;
@@ -2442,7 +2529,7 @@ namespace perlin {
                     previewEntitiesSpawned = true;
                     SpawnPreviewEntities();
                 }
-                std::vector<entity::Entity> entities = live ? live->Entities().Snapshot() : previewEntities.Snapshot();
+                std::vector<entity::Entity> entities = frameEntities;
                 if (!live && PERLIN_ENV("PERLIN_PREVIEW_RIDE") && entities.size() >= 2) {
                     std::sort(entities.begin(), entities.end(), [](const entity::Entity& a, const entity::Entity& b) { return a.runtimeId < b.runtimeId; });
                     entities[1].vehicleUid = entities[0].uniqueId;
@@ -2498,9 +2585,12 @@ namespace perlin {
                     for (int i = 0; i < 4; i++)
                         self.armor[i] = hudState.armorItems[i].name;
                     self.offHand = hudState.offhand.name;
-                    if (inputManager.IsDown(Action::Sneak))
+                    if (player.Sneaking())
                         self.flags |= entity::flag::Sneaking;
-                    player.SetSwimming(live && player.Sprinting() && headUnderwater);
+                    player.SetHeadUnderwater(live && headUnderwater);
+                    player.SetElytra(hudState.armorItems[1].name == "minecraft:elytra");
+                    if (player.Gliding())
+                        self.flags |= entity::flag::Gliding;
                     if (player.Swimming())
                         self.flags |= entity::flag::Swimming;
                     if (live) {
@@ -2530,12 +2620,19 @@ namespace perlin {
                 entity::EntityRenderer::FrameIn ein;
                 ein.time = std::chrono::duration<double>(frameStart - startedAt).count();
                 ein.dt = dt;
-                ein.camera = {camera.x, camera.y, camera.z};
+                {
+                    const glm::vec3 eyePos = camera.EyePosition();
+                    ein.camera = {eyePos.x, eyePos.y, eyePos.z};
+                }
                 ein.firstPerson = firstPerson;
                 ein.ownNametag = options.thirdPersonNametag;
                 ein.frustum = &frustum;
                 ein.cameraYaw = camera.yaw - 90.0f;
                 ein.cameraPitch = -camera.pitch;
+                if (camera.mode == PerspectiveMode::ThirdPersonFront) {
+                    ein.cameraYaw += 180.0f;
+                    ein.cameraPitch = camera.pitch;
+                }
                 ein.worldTicks = worldTicks;
                 {
                     int fw = 0, fh = 0;
@@ -2553,9 +2650,14 @@ namespace perlin {
                     ein.outlineShape = gAim.shape;
                 }
                 if (live)
-                    for (const auto& c : live->Cracks())
+                    for (const auto& c : live->Cracks()) {
+                        bool present = false;
+                        const uint16_t cur = live->NetLevel().GetBlock(c.x, c.y, c.z, present);
+                        if (present && cur == 0)
+                            continue;
                         if (!(gLocalCrack.active && c.x == gLocalCrack.x && c.y == gLocalCrack.y && c.z == gLocalCrack.z))
                             ein.cracks.push_back({c.x, c.y, c.z, c.stage});
+                    }
                 if (gLocalCrack.active)
                     ein.cracks.push_back({gLocalCrack.x, gLocalCrack.y, gLocalCrack.z, gLocalCrack.stage});
                 if (const char* cr = PERLIN_ENV("PERLIN_PREVIEW_CRACK"); cr && gAim.kind == AimHit::Kind::Block)
@@ -2705,6 +2807,26 @@ namespace perlin {
                         particleClock = 0;
                     particleQuads.clear();
                     particles.Collect(static_cast<float>(particleClock / 0.05), pw, particleQuads);
+                    if (const int fireTile = levelRenderer->Blocks().TileContaining("fire_1"); fireTile >= 0) {
+                        for (const entity::Entity& burner : entities) {
+                            const bool selfBurning = burner.isSelf && hudState.burning;
+                            if (!selfBurning && !(burner.flags & entity::flag::Onfire))
+                                continue;
+                            if ((burner.flags & entity::flag::FireImmune) || burner.dying || burner.isItem)
+                                continue;
+                            const glm::dvec3 at = burner.pos;
+                            const float scale = burner.scale;
+                            for (int k = 0; k < 6; k++) {
+                                const float a = static_cast<float>(k) * 1.0472f + 0.5f;
+                                const float h = 0.15f + 0.3f * static_cast<float>(k % 3);
+                                particle::Quad q;
+                                q.centre = at + glm::dvec3(std::cos(a) * 0.3 * scale, (h + 0.35f * (k / 3)) * scale, std::sin(a) * 0.3 * scale);
+                                q.half = 0.4f * scale;
+                                q.terrainTile = fireTile;
+                                particleQuads.push_back(q);
+                            }
+                        }
+                    }
                     ein.particles = &particleQuads;
                     ein.tilePixels = [this](int tile, std::vector<uint8_t>& rgba) { return levelRenderer->Blocks().TilePixels(tile, rgba); };
                 }
@@ -2731,7 +2853,7 @@ namespace perlin {
                     handFrame.slimArm = session->Skin().slimArms;
                 }
                 handFrame.slimArm = handFrame.slimArm || options.hand.slimArm;
-                { ProfScope p(4); handRenderer.Render(handFrame, options.hand); }
+                if (!(pauseShown && options.menuBlur > 0)) { ProfScope p(4); handRenderer.Render(handFrame, options.hand); }
                 {
                     int sw = 0, sh = 0;
                     renderer->FramebufferSize(sw, sh);
@@ -2801,12 +2923,15 @@ namespace perlin {
                         UpdateChatClicks(*hud, live, fbW, fbH);
                     }
                     hud->Render();
-                    if (invShown && dollSelf) {
+                    const bool creativeUi = hudState.mode == ui::GameMode::Creative || PERLIN_ENV("PERLIN_PREVIEW_CREATIVE");
+                    if (invShown && dollSelf && (!creativeUi || creativeDollVisible)) {
                         const int scale = hud->OverlayScale();
                         const int guiW = static_cast<int>(std::ceil(static_cast<float>(fbW) / static_cast<float>(scale)));
                         const int guiH = static_cast<int>(std::ceil(static_cast<float>(fbH) / static_cast<float>(scale)));
-                        const float px = static_cast<float>((guiW - ui::kInvPanelW) / 2), py = static_cast<float>((guiH - ui::kInvPanelH) / 2);
-                        const float centerX = px + 51.0f, centerY = py + 43.0f;
+                        const bool creativeDoll = creativeUi;
+                        const float px = static_cast<float>(creativeDoll ? (guiW - ui::kCreativeW) / 2 : (guiW - ui::kInvPanelW) / 2),
+                                    py = static_cast<float>(creativeDoll ? (guiH - ui::kCreativeH) / 2 : (guiH - ui::kInvPanelH) / 2);
+                        const float centerX = creativeDoll ? px + 89.0f : px + 51.0f, centerY = creativeDoll ? py + 27.5f : py + 43.0f;
                         const float f = std::atan((centerX - invMouseX) / 40.0f), g = std::atan((centerY - invMouseY) / 40.0f);
                         entity::Entity doll = *dollSelf;
                         doll.runtimeId = 0xFFFFFFFFFFFF0002ull;
@@ -2822,10 +2947,11 @@ namespace perlin {
                         din.dt = dt;
                         din.firstPerson = false;
                         din.camera = {0, 0, 0};
-                        const int clip[4] = {static_cast<int>((px + 26) * scale), static_cast<int>((py + 8) * scale),
-                                             49 * scale, 70 * scale};
-                        entityRenderer.RenderDoll(doll, din, (px + 50.5f) * scale, (py + 43.0f + (1.8f / 2.0f + 0.0625f) * 30.0f) * scale,
-                                                  30.0f * scale, clip);
+                        const float dollScale = creativeDoll ? 20.0f : 30.0f;
+                        const int clip[4] = {static_cast<int>((creativeDoll ? px + 73 : px + 26) * scale), static_cast<int>((creativeDoll ? py + 6 : py + 8) * scale),
+                                             (creativeDoll ? 32 : 49) * scale, (creativeDoll ? 43 : 70) * scale};
+                        entityRenderer.RenderDoll(doll, din, (creativeDoll ? px + 89.0f : px + 50.5f) * scale,
+                                                  (centerY + (1.8f / 2.0f + 0.0625f) * dollScale) * scale, dollScale * scale, clip);
                     }
                     float cx, cy, cw, ch;
                     if (options.showHud && !deathShown && !invShown && !pauseShown && !disconnectShown && (camera.mode == PerspectiveMode::FirstPerson || options.thirdPersonCrosshair) &&

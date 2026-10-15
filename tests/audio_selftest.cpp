@@ -1,4 +1,3 @@
-// Decoders, the mixer (volumes per category, distance and pan), sound resolution from sounds.json and subtitles.
 #include "client/audio/SoundSystem.hpp"
 #include "client/audio/Subtitles.hpp"
 #include "client/i18n/Lang.hpp"
@@ -47,7 +46,6 @@ static std::vector<uint8_t> MakeWav(const std::vector<int16_t>& samples, int rat
     return b;
 }
 
-// An FSB5 bank with one sound (header layout of version 1).
 static std::vector<uint8_t> MakeFsb(uint32_t codec, const std::vector<uint8_t>& data, uint64_t samples, int freqIndex, bool stereo) {
     std::vector<uint8_t> b = {'F', 'S', 'B', '5'};
     Put32(b, 1); Put32(b, 1); Put32(b, 8); Put32(b, 0); Put32(b, static_cast<uint32_t>(data.size())); Put32(b, codec);
@@ -78,21 +76,18 @@ static void TestDecoders() {
     CHECK(DecodeSound(MakeFsb(2, raw, 4, 9, false), ".fsb", pcm));
     CHECK(pcm.rate == 48000 && pcm.channels == 1 && pcm.Frames() == 4 && pcm.samples[3] == 4);
 
-    // FADPCM: coefficient index 0 (no prediction), shift 0, every nibble 1 -> every sample is 1.
     std::vector<uint8_t> frame(0x8C, 0);
     for (int i = 0; i < 8 * 4; i++) { frame[12 + i * 4] = 0x11; frame[13 + i * 4] = 0x11; frame[14 + i * 4] = 0x11; frame[15 + i * 4] = 0x11; }
     CHECK(DecodeSound(MakeFsb(16, frame, 256, 8, false), ".fsb", pcm));
     CHECK(pcm.Frames() == 256 && pcm.samples[0] == 1 && pcm.samples[255] == 1);
-    // The same with a history: sample = (nibble*64 + 60*h1) >> 6 with coefficient set 1.
-    frame[0] = 0x11; frame[1] = 0x11; frame[2] = 0x11; frame[3] = 0x11; // all eight sub-frames use coefficients {60, 0}
-    frame[8] = 64; // hist1 = 64
+    frame[0] = 0x11; frame[1] = 0x11; frame[2] = 0x11; frame[3] = 0x11;
+    frame[8] = 64;
     CHECK(DecodeSound(MakeFsb(16, frame, 256, 8, false), ".fsb", pcm));
-    CHECK(pcm.samples[0] == ((64 + 60 * 64) >> 6)); // 61 + 1... = (64 + 3840) >> 6
+    CHECK(pcm.samples[0] == ((64 + 60 * 64) >> 6));
     CHECK(!DecodeSound({1, 2, 3}, ".fsb", pcm));
     CHECK(!DecodeSound(raw, ".mp3", pcm));
     CHECK(MakeFsb(2, raw, 4, 9, false).size() > 60);
 
-    // A real bank when the sample pack is around (optional).
     if (const char* dir = std::getenv("PERLIN_TEST_SOUNDS")) {
         const fs::path p = fs::path(dir) / "mob/cow/say1.fsb";
         if (fs::exists(p)) {
@@ -101,7 +96,7 @@ static void TestDecoders() {
             CHECK(DecodeSound(bytes, ".fsb", pcm));
             double e = 0, c = 0;
             for (size_t i = 0; i + 1 < pcm.samples.size(); i++) { e += double(pcm.samples[i]) * pcm.samples[i]; c += double(pcm.samples[i]) * pcm.samples[i + 1]; }
-            CHECK(pcm.Frames() == 22016 && c / e > 0.95); // a moo is smooth
+            CHECK(pcm.Frames() == 22016 && c / e > 0.95);
         }
     }
 }
@@ -127,7 +122,7 @@ static void TestMixer() {
         v.pcm = Constant(16384, 48000);
         v.category = Category::Music;
         engine.Start(v);
-        CHECK(std::fabs(RenderPeak(engine, 480) - 0.5f) < 0.01f); // full volume: 16384 / 32768
+        CHECK(std::fabs(RenderPeak(engine, 480) - 0.5f) < 0.01f);
     }
     {
         AudioEngine engine;
@@ -139,17 +134,16 @@ static void TestMixer() {
         v.pcm = Constant(16384, 48000);
         v.category = Category::Music;
         engine.Start(v);
-        CHECK(std::fabs(RenderPeak(engine, 480) - 0.125f) < 0.005f); // master * music
+        CHECK(std::fabs(RenderPeak(engine, 480) - 0.125f) < 0.005f);
         Voice w;
         w.pcm = Constant(16384, 48000);
-        w.category = Category::Master; // "ui": only the master volume
+        w.category = Category::Master;
         engine.StopAll();
         RenderPeak(engine, 2000);
         engine.Start(w);
         CHECK(std::fabs(RenderPeak(engine, 480) - 0.25f) < 0.005f);
     }
     {
-        // Distance: range 16, at 8.5 blocks the gain is exactly half.
         AudioEngine engine;
         engine.SetListener({0, 0, 0}, 0.0f);
         Voice v;
@@ -161,9 +155,8 @@ static void TestMixer() {
         float l = 0, r = 0;
         RenderPeak(engine, 480, &l, &r);
         CHECK(std::fabs(AudioEngine::Attenuation(8.5f, 16.0f) - 0.5f) < 1e-5f);
-        CHECK(std::fabs(l - r) < 0.02f); // straight ahead: centred
+        CHECK(std::fabs(l - r) < 0.02f);
         CHECK(l > 0.12f && l < 0.35f);
-        // Beyond the range: silent.
         AudioEngine far;
         far.SetListener({0, 0, 0}, 0.0f);
         Voice f = v;
@@ -172,7 +165,6 @@ static void TestMixer() {
         CHECK(RenderPeak(far, 480) < 1e-6f);
     }
     {
-        // Pan: yaw 0 faces +z, so -x is on the right.
         AudioEngine engine;
         engine.SetListener({0, 0, 0}, 0.0f);
         Voice v;
@@ -183,7 +175,6 @@ static void TestMixer() {
         float l = 0, r = 0;
         RenderPeak(engine, 480, &l, &r);
         CHECK(r > l * 3.0f);
-        // Turn 180 degrees: now it is on the left.
         AudioEngine back;
         back.SetListener({0, 0, 0}, 180.0f);
         back.Start(v);
@@ -191,7 +182,6 @@ static void TestMixer() {
         CHECK(l > r * 3.0f);
     }
     {
-        // One-shots end on their own; pitch 2 plays twice as fast.
         AudioEngine engine;
         Voice v;
         v.pcm = Constant(8000, 4800);
@@ -201,7 +191,6 @@ static void TestMixer() {
         CHECK(engine.Active() == 1);
         RenderPeak(engine, 2000);
         CHECK(engine.Active() == 0);
-        // Stopping fades out instead of clicking.
         Voice loop;
         loop.pcm = Constant(8000, 4800);
         loop.loop = true;
@@ -250,22 +239,21 @@ static void TestSoundSystem() {
 
     double t = 1.0;
     sounds.Tick(t);
-    CHECK(sounds.PlayLevelSound("Step", {1, 2, 3}, 7, "", false, false)); // block step through the block's sound type
+    CHECK(sounds.PlayLevelSound("Step", {1, 2, 3}, 7, "", false, false));
     CHECK(engine.Active() == 1 && lastSubtitle == "step.stone");
     CHECK(SubtitleText(lastSubtitle) == "Footsteps");
     sounds.Tick(t += 1.0);
-    CHECK(sounds.PlayLevelSound("minecraft:item_use_on", {0, 0, 0}, 7, "", false, false)); // place event via item.use.on
+    CHECK(sounds.PlayLevelSound("minecraft:item_use_on", {0, 0, 0}, 7, "", false, false));
     sounds.Tick(t += 1.0);
-    CHECK(!sounds.PlayLevelSound("break", {0, 0, 0}, 7, "", false, false)); // break.stone has no definition in this pack
+    CHECK(!sounds.PlayLevelSound("break", {0, 0, 0}, 7, "", false, false));
     sounds.Tick(t += 1.0);
-    CHECK(sounds.PlayLevelSound("ambient", {0, 0, 0}, 0, "minecraft:cow", false, false)); // entity event
+    CHECK(sounds.PlayLevelSound("ambient", {0, 0, 0}, 0, "minecraft:cow", false, false));
     CHECK(lastSubtitle == "mob.cow.say" && SubtitleText(lastSubtitle) == "Cow moos");
     sounds.Tick(t += 1.0);
-    CHECK(sounds.PlayNamed("cow.moo", {0, 0, 0}, 1.0f, 1.0f)); // sounds.json individual name
+    CHECK(sounds.PlayNamed("cow.moo", {0, 0, 0}, 1.0f, 1.0f));
     sounds.Tick(t += 1.0);
     CHECK(sounds.PlayNamed("mob.cow.say", {0, 0, 0}, 1.0f, 1.0f, false) && lastGlobal);
     CHECK(!sounds.PlayNamed("does.not.exist", {0, 0, 0}, 1.0f, 1.0f));
-    // Two identical sounds within a tick collapse into one.
     sounds.Tick(t += 1.0);
     CHECK(sounds.PlayNamed("step.stone", {0, 0, 0}, 1.0f, 1.0f));
     CHECK(!sounds.PlayNamed("step.stone", {0, 0, 0}, 1.0f, 1.0f));
@@ -281,27 +269,26 @@ static void TestSubtitles() {
     CHECK(SubtitleText("music.game").empty());
 
     Subtitles s;
-    s.Add("mob.cow.say", {10, 0, 0}, 1.0f, false, 0.0);   // to the east
-    s.Add("random.explode", {0, 0, 5}, 1.0f, false, 0.5); // straight ahead (yaw 0 faces +z)
-    s.Add("mob.cow.say", {10, 0, 0}, 1.0f, false, 1.0);   // repeat refreshes instead of adding
+    s.Add("mob.cow.say", {10, 0, 0}, 1.0f, false, 0.0);
+    s.Add("random.explode", {0, 0, 5}, 1.0f, false, 0.5);
+    s.Add("mob.cow.say", {10, 0, 0}, 1.0f, false, 1.0);
     CHECK(s.Count() == 2);
     auto lines = s.Visible({0, 0, 0}, 0.0f, 1.2);
     CHECK(lines.size() == 2);
     for (const auto& l : lines) {
-        if (l.text == "Cow moos") CHECK(l.direction == -1); // +x is on the left when facing +z
+        if (l.text == "Cow moos") CHECK(l.direction == -1);
         if (l.text == "Explosion") CHECK(l.direction == 0);
         CHECK(l.brightness <= 1.0f && l.brightness >= 75.0f / 255.0f);
     }
-    s.Add("mob.zombie.say", {100, 0, 0}, 1.0f, false, 1.2); // too far to hear: no caption
+    s.Add("mob.zombie.say", {100, 0, 0}, 1.0f, false, 1.2);
     CHECK(s.Visible({0, 0, 0}, 0.0f, 1.3).size() == 2);
-    CHECK(s.Visible({0, 0, 0}, 0.0f, 4.6).empty()); // 3 seconds later everything is gone
+    CHECK(s.Visible({0, 0, 0}, 0.0f, 4.6).empty());
 }
 
 static void LoadLanguage() {
     std::ifstream f(PERLIN_LANG_FILE, std::ios::binary);
     std::stringstream ss;
     ss << f.rdbuf();
-    // Minecraft's own caption strings (normally from the resource pack's texts/en_US.lang).
     ss << "\nsubtitles.block.generic.footsteps=Footsteps\nsubtitles.block.generic.break=Block broken\n"
           "subtitles.entity.cow.ambient=Cow moos\nsubtitles.entity.zombie.ambient=Zombie groans\n"
           "subtitles.entity.polar_bear.hurt=Polar Bear hurts\nsubtitles.entity.pig.death=Pig dies\n"

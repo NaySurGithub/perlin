@@ -4,6 +4,7 @@
 
 #include "client/ui/Json.hpp"
 #include "util/Paths.hpp"
+#include "util/ThreadPool.hpp"
 
 #include <algorithm>
 #include <chrono>
@@ -306,17 +307,32 @@ namespace perlin::entity {
         for (const fs::path& p : JsonFiles(fs::path(root) / "animation_controllers"))
             if (ReadAll(p, text))
                 animations.LoadControllers(text);
-        for (const fs::path& p : JsonFiles(fs::path(root) / "render_controllers")) {
-            Json doc;
-            std::string error;
-            if (ReadAll(p, text) && Json::Parse(text, doc, error))
-                ParseRenderControllers(doc, controllers);
+        ThreadPool pool(HardwareThreads());
+        const auto parseAll = [&pool](const std::vector<fs::path>& files, std::vector<Json>& docs, std::vector<char>& ok) {
+            docs.assign(files.size(), Json());
+            ok.assign(files.size(), 0);
+            pool.ParallelFor(files.size(), [&](size_t i) {
+                std::string body, error;
+                ok[i] = ReadAll(files[i], body) && Json::Parse(body, docs[i], error) ? 1 : 0;
+            });
+        };
+        {
+            const std::vector<fs::path> files = JsonFiles(fs::path(root) / "render_controllers");
+            std::vector<Json> docs;
+            std::vector<char> ok;
+            parseAll(files, docs, ok);
+            for (size_t i = 0; i < files.size(); i++)
+                if (ok[i])
+                    ParseRenderControllers(docs[i], controllers);
         }
-        for (const fs::path& p : JsonFiles(fs::path(root) / "entity")) {
-            Json doc;
-            std::string error;
-            if (ReadAll(p, text) && Json::Parse(text, doc, error))
-                ParseEntity(doc, entities);
+        {
+            const std::vector<fs::path> files = JsonFiles(fs::path(root) / "entity");
+            std::vector<Json> docs;
+            std::vector<char> ok;
+            parseAll(files, docs, ok);
+            for (size_t i = 0; i < files.size(); i++)
+                if (ok[i])
+                    ParseEntity(docs[i], entities);
         }
         {
             std::function<const Json*(const Json&)> findBox = [&](const Json& j) -> const Json* {
@@ -329,11 +345,14 @@ namespace perlin::entity {
                 }
                 return nullptr;
             };
-            for (const fs::path& p : JsonFiles(fs::path(root).parent_path() / "behavior_pack" / "entities")) {
-                Json doc;
-                std::string error;
-                if (!ReadAll(p, text) || !Json::Parse(text, doc, error))
+            const std::vector<fs::path> behaviorFiles = JsonFiles(fs::path(root).parent_path() / "behavior_pack" / "entities");
+            std::vector<Json> behaviorDocs;
+            std::vector<char> behaviorOk;
+            parseAll(behaviorFiles, behaviorDocs, behaviorOk);
+            for (size_t behaviorIndex = 0; behaviorIndex < behaviorFiles.size(); behaviorIndex++) {
+                if (!behaviorOk[behaviorIndex])
                     continue;
+                const Json& doc = behaviorDocs[behaviorIndex];
                 const Json* entity = doc.Find("minecraft:entity");
                 const Json* desc = entity ? entity->Find("description") : nullptr;
                 const Json* id = desc ? desc->Find("identifier") : nullptr;

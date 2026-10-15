@@ -146,7 +146,6 @@ int main() {
         auto cells = MakeCells(12, 99);
         std::vector<uint8_t> sub;
         ChunkCodec::WriteSubChunk(sub, 3, cells);
-        // The generated SubChunk codec: an entry with a payload and nested height maps, and an all-air entry.
         SubchunkPacket p;
         p.dimension = 0;
         p.origin = {4, 0, -2};

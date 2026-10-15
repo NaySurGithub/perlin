@@ -42,7 +42,6 @@ int main() {
         p.origin.type = "player";
         p.version = "52";
         const std::vector<uint8_t> body = net::Encode(p);
-        // command | origin: type string, uuid, request id string, player id (i64) | internal | version string
         CHECK(body.size() == 1 + p.command.size() + (1 + 6) + 16 + 1 + 8 + 1 + (1 + 2));
         CHECK(body[0] == p.command.size());
         CHECK(body[1 + p.command.size()] == 6);
@@ -58,7 +57,6 @@ int main() {
         CHECK(Decode(net::Encode(p), r) && r.origin.playerEntityId == -9 && r.origin.type == "test");
     }
     {
-        // PlayerAuthInput as the generated codec writes it: the size matches the layout that is known to work on BDS.
         PlayerAuthInputPacket p;
         p.inputData = {InputData::Up, InputData::BlockAction};
         p.inputMode = PlayerAuthInputPacketInputMode::Mouse;

@@ -467,6 +467,51 @@ namespace perlin::ui {
         s.chatInput = input;
         s.chatCaret = static_cast<int>(caret);
         s.chatCaretVisible = ((nowMs - openedAt) / 300) % 2 == 0;
+        s.chatColors.assign(input.size(), 'r');
+        if (!input.empty() && input[0] == '/') {
+            size_t i = 1;
+            const auto word = [&] {
+                const size_t b = i;
+                int depth = 0;
+                bool quote = false;
+                while (i < input.size() && (quote || depth > 0 || input[i] != ' ')) {
+                    const char ch = input[i];
+                    if (ch == '"') quote = !quote;
+                    else if (!quote && (ch == '[' || ch == '{')) depth++;
+                    else if (!quote && (ch == ']' || ch == '}') && depth > 0) depth--;
+                    i++;
+                }
+                return std::pair<size_t, size_t>(b, i);
+            };
+            while (i < input.size() && input[i] == ' ') i++;
+            const auto head = word();
+            const std::string name = Lower(input.substr(head.first, head.second - head.first));
+            size_t maxArgs = 0;
+            bool known = commands.empty();
+            for (const CommandInfo& ci : commands)
+                if (Lower(ci.name) == name) {
+                    known = true;
+                    for (const auto& o : ci.overloads)
+                        maxArgs = std::max(maxArgs, o.size());
+                }
+            static const char kCycle[5] = {'b', 'e', 'a', 'd', '6'};
+            if (!known) {
+                for (size_t k = 1; k < input.size(); k++)
+                    s.chatColors[k] = 'c';
+            } else {
+                size_t index = 0;
+                while (i < input.size()) {
+                    while (i < input.size() && input[i] == ' ') i++;
+                    if (i >= input.size())
+                        break;
+                    const auto arg = word();
+                    const char col = (!commands.empty() && index >= maxArgs) ? 'c' : kCycle[index % 5];
+                    for (size_t k = arg.first; k < arg.second; k++)
+                        s.chatColors[k] = col;
+                    index++;
+                }
+            }
+        }
         s.chatSuggestions.clear();
         s.chatSuggestSelected = -1;
         s.chatSuggestStart = static_cast<int>(suggestWordStart);

@@ -420,7 +420,8 @@ namespace perlin {
     void RenderContext_bgfx::SetupMotionBlur(const FrameParams& params) {
         const float intensity = std::clamp(params.motionBlur, 0.0f, 1.0f);
         static bool failed = false;
-        const bool on = intensity > 0.001f && !failed && !PERLIN_ENV("PERLIN_NO_BLUR");
+        const float menuPx = std::max(0.0f, params.menuBlur);
+        const bool on = (intensity > 0.001f || menuPx > 0.01f) && !failed && !PERLIN_ENV("PERLIN_NO_BLUR");
         if (!on || !EnsureMotionBlurTargets()) {
             if (on && !blur.targets)
                 failed = true;
@@ -440,16 +441,16 @@ namespace perlin {
         const float dt = std::clamp(now - blur.lastTime, 1.0f / 480.0f, 0.1f);
         blur.lastTime = now;
         float weight = std::pow(0.95f * intensity, dt * 60.0f);
-        if (!blur.valid)
+        if (!blur.valid || menuPx > 0.01f)
             weight = 0.0f;
         const int write = 1 - blur.read;
         const float origin = bgfx::getCaps()->originBottomLeft ? 1.0f : 0.0f;
 
         const auto fullscreen = [&](bgfx::ViewId view, bgfx::FrameBufferHandle fb, bgfx::TextureHandle cur,
-                                    bgfx::TextureHandle hist, float w) {
+                                    bgfx::TextureHandle hist, float w, float dir) {
             bgfx::setViewFrameBuffer(view, fb);
             bgfx::setViewRect(view, 0, 0, static_cast<uint16_t>(width), static_cast<uint16_t>(height));
-            const float p[4] = {w, origin, 0.0f, 0.0f};
+            const float p[4] = {w, origin, menuPx, dir};
             bgfx::setUniform(blur.params, p);
             bgfx::setTexture(0, blur.sampCur, cur, BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP);
             bgfx::setTexture(1, blur.sampHist, hist, BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP);
@@ -457,8 +458,8 @@ namespace perlin {
             bgfx::setState(BGFX_STATE_WRITE_RGB);
             bgfx::submit(view, shaders.Program(ShaderProgram::Post));
         };
-        fullscreen(kViewBlur, blur.histFb[write], blur.worldColor, blur.histColor[blur.read], weight);
-        fullscreen(kViewBlurOut, BGFX_INVALID_HANDLE, blur.histColor[write], blur.histColor[write], 0.0f);
+        fullscreen(kViewBlur, blur.histFb[write], blur.worldColor, blur.histColor[blur.read], weight, 0.0f);
+        fullscreen(kViewBlurOut, BGFX_INVALID_HANDLE, blur.histColor[write], blur.histColor[write], 0.0f, 1.0f);
         blur.read = write;
         blur.valid = true;
     }
@@ -488,6 +489,7 @@ namespace perlin {
             bgfx::setViewTransform(kViewEntity, identity, worldProj);
             bgfx::touch(kViewEntity);
             bgfx::setViewRect(kViewLate, 0, 0, static_cast<uint16_t>(width), static_cast<uint16_t>(height));
+            bgfx::setViewTransform(kViewLate, identity, worldProj);
             bgfx::touch(kViewLate);
             bgfx::setViewRect(kViewHand, 0, 0, static_cast<uint16_t>(width), static_cast<uint16_t>(height));
             bgfx::setViewClear(kViewHand, BGFX_CLEAR_DEPTH, 0, 1.0f, 0);
@@ -690,7 +692,7 @@ namespace perlin {
         bgfx::TextureHandle texture = uiWhite;
         if (draw.texture != 0 && draw.texture <= uiTextures.size() && uiTextures[draw.texture - 1].used)
             texture = uiTextures[draw.texture - 1].handle;
-        const bgfx::ViewId view = layer == UiLayer::World ? kViewEntity : layer == UiLayer::Hand ? kViewHand : layer == UiLayer::Doll ? kViewDoll : kViewGui;
+        const bgfx::ViewId view = layer == UiLayer::World ? kViewEntity : layer == UiLayer::WorldLate ? kViewLate : layer == UiLayer::Hand ? kViewHand : layer == UiLayer::Doll ? kViewDoll : kViewGui;
 
         float model[16];
         std::memcpy(model, draw.model, sizeof(model));
@@ -762,7 +764,33 @@ namespace perlin {
     }
 
     void RenderContext_bgfx::EndFrame() {
+        static const bool gpuTime = PERLIN_ENV("PERLIN_GPUTIME") != nullptr;
+        static uint32_t timedFrames = 0;
+        static double gpuSum = 0, cpuSum = 0, viewSum[16] = {};
+        if (gpuTime && timedFrames == 0)
+            bgfx::setDebug(BGFX_DEBUG_PROFILER);
         bgfx::frame();
+        if (gpuTime) {
+            const bgfx::Stats* stats = bgfx::getStats();
+            const double toMs = 1000.0 / static_cast<double>(stats->gpuTimerFreq ? stats->gpuTimerFreq : 1);
+            gpuSum += static_cast<double>(stats->gpuTimeEnd - stats->gpuTimeBegin) * toMs;
+            cpuSum += static_cast<double>(stats->cpuTimeEnd - stats->cpuTimeBegin) * 1000.0 / static_cast<double>(stats->cpuTimerFreq ? stats->cpuTimerFreq : 1);
+            for (uint16_t i = 0; i < stats->numViews && i < 16; i++)
+                viewSum[stats->viewStats[i].view < 16 ? stats->viewStats[i].view : 15] +=
+                    static_cast<double>(stats->viewStats[i].gpuTimeEnd - stats->viewStats[i].gpuTimeBegin) * toMs;
+            if (++timedFrames >= 120) {
+                std::printf("[gpu] ms/frame: gpu=%.3f cpu=%.3f draws=%u", gpuSum / timedFrames, cpuSum / timedFrames, stats->numDraw);
+                for (int v = 0; v < 16; v++)
+                    if (viewSum[v] > 0.0)
+                        std::printf(" v%d=%.3f", v, viewSum[v] / timedFrames);
+                std::printf("\n");
+                std::fflush(stdout);
+                timedFrames = 1;
+                gpuSum = cpuSum = 0;
+                for (double& v : viewSum)
+                    v = 0;
+            }
+        }
     }
 
     void RenderContext_bgfx::RequestScreenshot(const std::string& path) {

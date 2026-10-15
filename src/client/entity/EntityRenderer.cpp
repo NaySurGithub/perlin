@@ -69,7 +69,7 @@ namespace perlin::entity {
         double born = 0, lastSeen = 0, now = 0;
         float dt = 0;
         float animTime = 0;
-        float yawSpeed = 0, standAmount = 0, sitAmount = 0, swimAmount = 0, lieAmount = 0, swellAmount = 0;
+        float glideTime = 0, yawSpeed = 0, standAmount = 0, sitAmount = 0, swimAmount = 0, lieAmount = 0, swellAmount = 0;
         molang::Scope scope;
         bool initialised = false;
         struct AnimStamp { double start = 0; uint32_t seen = 0; };
@@ -309,6 +309,7 @@ namespace perlin::entity {
         ease(v.sitAmount, e.Has(flag::Sitting), 0.3f);
         ease(v.swimAmount, e.Has(flag::Swimming), 0.4f);
         ease(v.lieAmount, e.Has(flag::LayingDown), 0.4f);
+        v.glideTime = e.Has(flag::Gliding) ? v.glideTime + dt : 0.0f;
         ease(v.swellAmount, e.Has(flag::Ignited), 1.5f);
     }
 
@@ -820,13 +821,40 @@ namespace perlin::entity {
                     }
                     continue;
                 }
+                attachable::Pose elytraPose;
+                const attachable::Pose* meshPose = &pose;
+                if (item == "minecraft:elytra") {
+                    elytraPose = pose;
+                    elytraPose["body"].scale *= 1.067f;
+                    glm::vec3 pl{4.5f, 4.0f, -2.0f}, rl{15.0f, 0.0f, -13.0f};
+                    if (e.Has(flag::Gliding)) {
+                        float ratio = 1.0f;
+                        const float vy = v.verticalSpeed;
+                        const float len = std::sqrt(v.groundSpeed * v.groundSpeed + vy * vy);
+                        if (vy < 0.0f && len > 1e-4f)
+                            ratio = 1.0f - std::pow(std::min(1.0f, -vy / len), 1.5f);
+                        pl = {2.0f, 2.0f, -2.0f};
+                        rl = {15.0f + 5.0f * ratio, 0.0f, -15.0f - 75.0f * ratio};
+                    } else if (e.Has(flag::Swimming)) {
+                        pl = {5.0f, 2.0f, -2.0f};
+                        rl = {v.swimAmount * 15.0f, 0.0f, -15.0f};
+                    } else if (e.Has(flag::Sneaking)) {
+                        pl = {2.0f, 3.0f, -2.0f};
+                        rl = {20.0f, -15.0f, -45.0f};
+                    }
+                    const glm::vec3 pr{-pl.x, pl.y, pl.z};
+                    const glm::vec3 rr{rl.x, -rl.y, -rl.z};
+                    elytraPose["left_wing"] = {pl, rl, glm::vec3(1.0f, 1.0f, 2.0f)};
+                    elytraPose["right_wing"] = {pr, rr, glm::vec3(1.0f, 1.0f, 2.0f)};
+                    meshPose = &elytraPose;
+                }
                 attachable::BuiltMesh mesh;
                 glm::mat4 rootWorld(1.0f);
                 glm::vec3 rootPivot(0.0f);
                 bool haveRoot = false;
                 if (bindGeometry && e.isPlayer)
                     haveRoot = attachable::BoneWorld(*bindGeometry, pose, "root", rootWorld, rootPivot);
-                attachable::BuildMesh(*geometry, pose, nullptr, mesh, attachable::BoneFilter(), haveRoot ? &rootWorld : nullptr);
+                attachable::BuildMesh(*geometry, *meshPose, nullptr, mesh, attachable::BoneFilter(), haveRoot ? &rootWorld : nullptr);
                 if (PERLIN_ENV("PERLIN_ARMOR_DEBUG"))
                 {
                     glm::vec3 lo(1e9f), hi(-1e9f);
@@ -837,7 +865,7 @@ namespace perlin::entity {
                 if (mesh.body.empty())
                     continue;
                 Layer layer;
-                layer.texture = texture;
+                layer.texture = (item == "minecraft:elytra" && e.isPlayer && e.skin && e.skin->capeWidth > 0) ? std::string("#cape") : texture;
                 layer.material = assets.materialLibrary.Find("entity_alphatest");
                 layer.quads = std::move(mesh.body);
                 layers.push_back(std::move(layer));
@@ -868,6 +896,11 @@ namespace perlin::entity {
             const float f = std::min(std::sqrt(std::max(0.0f, (t - 1.0f) / 20.0f * 1.6f)), 1.0f);
             model = glm::translate(model, glm::vec3(0, 0.0f, 0));
             model = glm::rotate(model, f * 90.0f * kDeg, glm::vec3(0, 0, 1));
+        }
+        if (v.glideTime > 0.0f && e.isPlayer) {
+            const float t = std::min(v.glideTime * 20.0f, 10.0f);
+            const float amount = std::clamp(t * t / 100.0f, 0.0f, 1.0f);
+            model = glm::rotate(model, amount * (90.0f + v.pitch) * kDeg, glm::vec3(1, 0, 0));
         }
         if (e.type == "minecraft:arrow")
             model = glm::rotate(model, 180.0f * kDeg, glm::vec3(0, 1, 0));
@@ -1295,7 +1328,7 @@ namespace perlin::entity {
                 draw.depth = !seeThrough;
                 draw.depthWrite = false;
                 draw.emissive = 2;
-                renderer->UiSubmit(UiLayer::World, draw);
+                renderer->UiSubmit(UiLayer::WorldLate, draw);
             };
             submit(bgV, bgI, 0, true, 1.0f);
             submit(textV, textI, fontTexture, true, tag.sneaking ? 1.0f : 32.0f / 255.0f);

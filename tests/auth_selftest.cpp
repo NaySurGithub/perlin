@@ -1,6 +1,3 @@
-// Offline checks for the skin loader, the login identity builder and the Xbox/Minecraft sign-in flow.
-// The flow runs against a local mock of the services (nothing here can reach Microsoft), so it proves the plumbing
-// and the request signatures, not the live services' behaviour.
 #include "client/multiplayer/SkinLoader.hpp"
 #include "network/ClientIdentity.hpp"
 #include "network/Http.hpp"
@@ -112,7 +109,6 @@ namespace {
 }
 
 static void TestSignatures() {
-    // Vector produced by go-xsapi's own SignaturePolicy.Generate (fixed time and request, random key).
     const std::string x = FromHex("063f059c42433992182ab753c50e2cae04e48de93a0c89770d4f29297384ce7b");
     const std::string y = FromHex("cab5b6658b20be402fa3f2ea003464c15541e2a45595cc049dbe6baeb930c39b");
     const std::string sig = FromHex(
@@ -125,16 +121,13 @@ static void TestSignatures() {
     const std::string path = "/xsts/authorize?a=b";
     const std::string auth = "XBL3.0 x=abc;def";
 
-    // Header (version + Windows time) must match byte for byte, and the Go signature must verify against our digest.
     CHECK(sig.size() == 12 + 64);
     CHECK(VerifyRaw(key, xbox::detail::RequestDigest("POST", path, auth, body, nanos), sig.substr(12)));
     CHECK(VerifyRaw(key, xbox::detail::RequestDigest("POST", path, auth, body, nanos, 5), sig2.substr(12)));
-    // ...and not against a different request.
     CHECK(!VerifyRaw(key, xbox::detail::RequestDigest("POST", path, auth, body + " ", nanos), sig.substr(12)));
     CHECK(!VerifyRaw(key, xbox::detail::RequestDigest("POST", path, "", body, nanos), sig.substr(12)));
     EC_KEY_free(key);
 
-    // Our own signatures verify with our own key and carry the same 12-byte header as Go's.
     EC_KEY* mine = EC_KEY_new_by_curve_name(NID_X9_62_prime256v1);
     EC_KEY_generate_key(mine);
     const std::string mySig = StdB64Decode(xbox::detail::SignRequest(mine, "POST", path, auth, body, nanos));
@@ -180,18 +173,14 @@ static void TestSkins() {
     cfg.skinPath = (dir / "skin128.png").string();
     CHECK(LoadSkinConfig(cfg, out, err) && out.skinWidth == 128 && out.skinHeight == 128 && out.skinId != id64);
 
-    // Legacy 64x32 skins become 64x64 with mirrored left limbs; the top half is untouched.
     cfg.skinPath = (dir / "skin32.png").string();
     CHECK(LoadSkinConfig(cfg, out, err) && out.skinWidth == 64 && out.skinHeight == 64);
     const std::vector<unsigned char> legacy = Gradient(64, 32);
     CHECK(std::memcmp(out.skinRgba.data(), legacy.data(), legacy.size()) == 0);
     auto pixel = [&](int px, int py) { return &out.skinRgba[(static_cast<size_t>(py) * 64 + px) * 4]; };
-    // right leg top (4..7,16) -> left leg top (20..23,48), mirrored: source x=4 lands on x=23
     CHECK(std::memcmp(pixel(23, 48), &legacy[(16 * 64 + 4) * 4], 4) == 0);
     CHECK(std::memcmp(pixel(20, 48), &legacy[(16 * 64 + 7) * 4], 4) == 0);
-    // right arm front (44..47,20) -> left arm (36..39,52)
     CHECK(std::memcmp(pixel(39, 52), &legacy[(20 * 64 + 44) * 4], 4) == 0);
-    // bottom half outside the copied limbs stays transparent
     CHECK(pixel(0, 40)[3] == 0);
 
     cfg.skinPath = (dir / "bad.png").string();
@@ -232,14 +221,13 @@ static void TestIdentity() {
     ClientIdentity id;
     CHECK(id.Valid());
     std::string err;
-    CHECK(BuildIdentityJson(id, nullptr, err).empty()); // no token yet
+    CHECK(BuildIdentityJson(id, nullptr, err).empty());
     id.BuildMultiplayerToken("Tester", RandomUuid());
 
     const auto offline = json::Document::Parse(BuildIdentityJson(id, nullptr, err));
     CHECK(offline && offline->root()["AuthenticationType"].integer(-1) == 2);
     CHECK(offline && offline->root()["Token"].str() == id.MultiplayerToken());
 
-    // A fake Mojang chain: [jwt0 (x5u = key A, identityPublicKey = key B), jwt1 (x5u = key B, extraData)]
     const std::string mojangA = "MHYwEAYHKoZIzj0CAQYFK4EEACIDYgAEAAAA";
     const std::string chainJson = "{\"chain\":[\"" + Jwt("{\"alg\":\"ES384\",\"x5u\":\"" + mojangA + "\"}",
                                                          "{\"identityPublicKey\":\"B\"}") +
@@ -254,7 +242,6 @@ static void TestIdentity() {
     auto cert = json::Document::Parse(doc->root()["Certificate"].str());
     CHECK(cert && cert->root()["chain"].size() == 3);
     const std::string first = cert->root()["chain"][0].str();
-    // the first link is signed by our key, advertises our key, and vouches for the key that signed Mojang's chain
     auto header = json::Document::Parse(B64UrlDecode(first.substr(0, first.find('.'))));
     CHECK(header && header->root()["x5u"].str() == id.PublicKeyB64());
     CHECK(VerifyJwtEs384(first, id.PublicKeyB64()));
@@ -268,7 +255,6 @@ static void TestIdentity() {
     CHECK(BuildIdentityJson(id, new std::string("{\"chain\":[\"nodots\"]}"), err).empty());
 }
 
-// ---- the sign-in flow against a mock of the Microsoft / Xbox / PlayFab / Minecraft services ----
 namespace {
     struct Mock {
         httplib::Server server;
@@ -451,7 +437,7 @@ static void TestFlow() {
         CHECK(!account.HasSavedLogin());
         CHECK(account.SignIn([&](const std::string& u, const std::string& c) { promptUrl = u; promptCode = c; }, err));
         CHECK(promptUrl == "https://www.microsoft.com/link" && promptCode == "ABCD1234");
-        CHECK(mock.devicePolls >= 2); // first poll was "authorization_pending"
+        CHECK(mock.devicePolls >= 2);
         CHECK(account.HasSavedLogin());
 
         xbox::Credentials creds;
@@ -474,7 +460,6 @@ static void TestFlow() {
             CHECK(mock.seen.count(path) == 1);
     }
 
-    // A new run reuses the saved login: no code prompt, a refresh instead; and the device token is reused.
     {
         xbox::Account again(cache);
         CHECK(again.HasSavedLogin());
@@ -487,7 +472,6 @@ static void TestFlow() {
         CHECK(mock.deviceAuths == 1);
     }
 
-    // A revoked refresh token falls back to the code flow.
     {
         {
             std::ofstream f(cache);
@@ -508,7 +492,6 @@ static void TestFlow() {
 static std::vector<uint8_t> Bytes(const std::string& s) { return std::vector<uint8_t>(s.begin(), s.end()); }
 
 static void TestCipher() {
-    // Known answers produced by gophertunnel's packet encrypt (same key schedule, checksum and counters).
     uint8_t key[32];
     for (int i = 0; i < 32; i++)
         key[i] = uint8_t(i * 3);
@@ -530,7 +513,6 @@ static void TestCipher() {
     CHECK(e.InitWithKey(key));
     CHECK(!e.Decrypt(tampered, plain));
 
-    // Full handshake: a fake server derives the same key from its side of the ECDH exchange.
     ClientIdentity client, server;
     const std::string salt = "0123456789abcdef";
     const std::string token = Jwt("{\"alg\":\"ES384\",\"x5u\":\"" + server.PublicKeyB64() + "\"}",

@@ -62,9 +62,16 @@ namespace perlin {
         uint64_t deathTemplateVersion = 0;
         bool deathHoverLogged = false;
         std::chrono::steady_clock::time_point deathCheckAt{};
+        void UpdateCreativeScreen(ui::Hud& hud, BedrockSession* live, const ui::HudState& state, int fbW, int fbH);
         void UpdateInventoryScreen(ui::Hud& hud, BedrockSession* live, const ui::HudState& state, int fbW, int fbH);
         bool invShown = false, invLeftDown = false, invRightDown = false, invPreviewOpened = false;
         float invMouseX = 0, invMouseY = 0;
+        int creativeTab = 0;
+        bool creativeDollVisible = false;
+        float creativeScroll = 0.0f;
+        bool creativeDragging = false;
+        std::string creativeSearch, creativeSignature, creativeTemplate;
+        uint64_t creativeTemplateVersion = 0;
         std::optional<entity::Entity> dollSelf;
         int invHoverAddr = -1;
         const Level* particleLevel = nullptr;

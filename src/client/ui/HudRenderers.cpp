@@ -138,6 +138,21 @@ namespace perlin::ui {
                 Tex(w, n, right - i * 8 - 9, n.ay, 9, i < full ? "bubble" : "bubble_pop");
         }
 
+        void Fire(const HudState& s, const LNode& n, RmlWriter& w) {
+            if (!s.burning)
+                return;
+            const float unit = s.guiH * 1.4286f;
+            const float top = s.guiH * 0.2143f;
+            ImageStyle st;
+            st.u = 0;
+            st.v = static_cast<float>(s.fireFrame * 16);
+            st.uw = 16;
+            st.vh = 16;
+            st.alpha = 0.9f;
+            for (const float side : {-1.0f, 1.0f})
+                w.Image(s.guiW * 0.5f + side * 0.24f * unit - unit * 0.5f, top, unit, unit, n.layer, "textures/blocks/fire_1", st);
+        }
+
         void Hotbar(const HudState&, const LNode& n, RmlWriter& w) {
             if (n.index < 0 || n.index > 8)
                 return;
@@ -189,8 +204,26 @@ namespace perlin::ui {
 
     namespace {
         void Debug(const HudState& s, const LNode& n, RmlWriter& w) {
-            if (!s.debug)
+            if (!s.debug) {
+                if (!s.moveStatus.empty()) {
+                    TextStyle ms;
+                    ms.shadow = true;
+                    ms.r = ms.g = ms.b = 1.0f;
+                    float y = 2.0f;
+                    size_t from = 0;
+                    while (from <= s.moveStatus.size()) {
+                        const size_t nl = s.moveStatus.find('\n', from);
+                        const std::string line = s.moveStatus.substr(from, nl == std::string::npos ? std::string::npos : nl - from);
+                        if (!line.empty())
+                            w.Text(2.0f, y, McFont::Instance().Width(line) + 2.0f, 9, n.layer + 1, {line}, ms);
+                        y += 10.0f;
+                        if (nl == std::string::npos)
+                            break;
+                        from = nl + 1;
+                    }
+                }
                 return;
+            }
             const McFont& font = McFont::Instance();
             TextStyle st;
             st.r = st.g = st.b = 224.0f / 255.0f;
@@ -318,7 +351,21 @@ namespace perlin::ui {
                 TextStyle st;
                 st.shadow = true;
                 st.r = st.g = st.b = 224.0f / 255.0f;
-                w.Text(2, 2, room, 9, 2, {before + after}, st);
+                std::string shown;
+                {
+                    char cur = 'r';
+                    const size_t end = in.size();
+                    for (size_t k = start; k < end; k++) {
+                        const char want = in[k] == ' ' ? cur : (k < s.chatColors.size() ? s.chatColors[k] : 'r');
+                        if (want != cur) {
+                            shown += "\xC2\xA7";
+                            shown += want;
+                            cur = want;
+                        }
+                        shown += in[k];
+                    }
+                }
+                w.Text(2, 2, room, 9, 2, {shown}, st);
                 const float cx = 2.0f + font.Width(before);
                 if (s.chatCaretVisible) {
                     if (caret >= in.size())
@@ -379,6 +426,7 @@ namespace perlin::ui {
         emitter.Register("debug_renderer", [s](const LNode& n, RmlWriter& w) { Debug(*s, n, w); });
         emitter.Register("chat_renderer", [s](const LNode& n, RmlWriter& w) { Chat(*s, n, w); });
         emitter.Register("subtitle_renderer", [s](const LNode& n, RmlWriter& w) { Subtitles(*s, n, w); });
+        emitter.Register("fire_renderer", [s](const LNode& n, RmlWriter& w) { Fire(*s, n, w); });
         emitter.Register("progress_bar_renderer", [s](const LNode& n, RmlWriter& w) { ProgressBar(*s, n, w); });
         for (const char* name : {"horse_jump_renderer", "dash_renderer", "locator_bar", "mob_effects_renderer",
                                  "vignette_renderer", "camera_renderer", "hud_player_renderer", "horse_heart_renderer",

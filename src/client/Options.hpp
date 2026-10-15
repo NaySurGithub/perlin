@@ -79,6 +79,9 @@ namespace perlin {
         int guiScale = 0;
         SoundSettings sound;
         std::string dynamicLights = "off";
+        int menuBlur = 5;
+        std::string sprintMode = "hold";
+        std::string sneakMode = "hold";
         std::string language = "en_US";
         bool showHud = true;
         std::string texturePack;

@@ -14,6 +14,8 @@
 #include "util/Json.hpp"
 #include <sstream>
 #include "util/Paths.hpp"
+#include "util/ThreadPool.hpp"
+#include <unordered_map>
 #include "client/Options.hpp"
 
 namespace perlin {
@@ -193,6 +195,48 @@ namespace perlin {
         return -1;
     }
 
+    namespace {
+        std::unordered_map<std::string, Texture>& PrefetchCache() {
+            static std::unordered_map<std::string, Texture> cache;
+            return cache;
+        }
+
+        void PrefetchTextures(const std::string& root, const std::string& terrainText) {
+            namespace fs = std::filesystem;
+            std::vector<std::string> paths;
+            std::error_code ec;
+            size_t at = 0;
+            while ((at = terrainText.find("\"textures/", at)) != std::string::npos) {
+                const size_t end = terrainText.find('"', at + 1);
+                if (end == std::string::npos)
+                    break;
+                const std::string stem = terrainText.substr(at + 1, end - at - 1);
+                at = end + 1;
+                for (const char* ext : {".png", ".tga"}) {
+                    const std::string path = root + "/" + stem + ext;
+                    if (fs::is_regular_file(path, ec))
+                        paths.push_back(path);
+                }
+            }
+            std::sort(paths.begin(), paths.end());
+            paths.erase(std::unique(paths.begin(), paths.end()), paths.end());
+            std::vector<Texture> decoded(paths.size());
+            std::vector<char> ok(paths.size(), 0);
+            ThreadPool pool(HardwareThreads());
+            pool.ParallelFor(paths.size(), [&](size_t i) { ok[i] = LoadTexture(paths[i], decoded[i]) ? 1 : 0; });
+            auto& cache = PrefetchCache();
+            cache.clear();
+            cache.reserve(paths.size());
+            for (size_t i = 0; i < paths.size(); i++)
+                if (ok[i])
+                    cache.emplace(std::move(paths[i]), std::move(decoded[i]));
+        }
+
+        struct PrefetchGuard {
+            ~PrefetchGuard() { PrefetchCache().clear(); }
+        };
+    }
+
     int BlockLibrary::FetchTile(const std::string& pngRelPath, const std::string& vanillaRpRoot) {
         auto it = tileByPng.find(pngRelPath);
         if (it != tileByPng.end())
@@ -227,7 +271,10 @@ namespace perlin {
         if (!ok)
             for (auto& t : tries) {
                 full = vanillaRpRoot + "/" + t;
-                if (LoadTexture(full, tex) && tex.width > 0 && tex.height > 0) {
+                const auto cached = PrefetchCache().find(full);
+                if (cached != PrefetchCache().end())
+                    tex = cached->second;
+                if ((cached != PrefetchCache().end() || LoadTexture(full, tex)) && tex.width > 0 && tex.height > 0) {
                     w = tex.width;
                     h = tex.height;
                     ok = true;
@@ -361,9 +408,12 @@ namespace perlin {
         if (ready && complete)
             return true;
         fetchFails = 0;
+        PrefetchGuard prefetchGuard;
 
         std::string vanillaBlocks = ReadFile(vanillaRpRoot + "/blocks.json");
         std::string terrainTex = ReadFile(vanillaRpRoot + "/textures/terrain_texture.json");
+        if (HardwareThreads() >= 4)
+            PrefetchTextures(vanillaRpRoot, terrainTex);
         if (vanillaBlocks.empty() || terrainTex.empty()) {
             std::cout << "[blocks] cannot read blocks.json/terrain_texture.json under " << vanillaRpRoot << std::endl;
             return false;

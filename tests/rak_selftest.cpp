@@ -1,6 +1,3 @@
-// Talks to tests/rak (a go-raknet echo server, optionally behind a lossy relay):
-//   rak_selftest 127.0.0.1 19232      lossless
-//   rak_selftest 127.0.0.1 19233      through the relay that drops datagrams
 #include "network/RakNet.hpp"
 
 #include <chrono>
@@ -57,11 +54,9 @@ int main(int argc, char** argv) {
     }
 
     std::vector<uint8_t> got;
-    // small echo
     CHECK(rak.SendReliable({'h', 'i'}));
     CHECK(Wait(rak, got) && got == std::vector<uint8_t>({'h', 'i'}));
 
-    // a 100 KB random packet: split upstream, echoed split downstream
     std::mt19937 rng(7);
     std::vector<uint8_t> big(100000);
     for (auto& b : big)
@@ -69,11 +64,9 @@ int main(int argc, char** argv) {
     CHECK(rak.SendReliable(big));
     CHECK(Wait(rak, got) && got == big);
 
-    // server -> client split (300 KB)
     CHECK(rak.SendReliable({'B', 'I', 'G'}));
     CHECK(Wait(rak, got) && got == Pattern(300000));
 
-    // ordering: 400 packets of varying size must arrive in order and intact
     std::vector<uint8_t> req{'C', 'O', 'U', 'N', 'T', 0, 0, 1, 0x90};
     CHECK(rak.SendReliable(req));
     int ordered = 0;
@@ -92,7 +85,6 @@ int main(int argc, char** argv) {
     }
     CHECK(ordered == 400);
 
-    // a burst of many small packets upstream, echoed back in order
     for (int i = 0; i < 300; i++)
         rak.SendReliable({'e', uint8_t(i >> 8), uint8_t(i)});
     int echoed = 0;
@@ -104,7 +96,7 @@ int main(int argc, char** argv) {
     }
     CHECK(echoed == 300);
 
-    std::this_thread::sleep_for(std::chrono::seconds(3)); // keep-alive pings flow both ways
+    std::this_thread::sleep_for(std::chrono::seconds(3));
     CHECK(rak.IsConnected());
     rak.Disconnect();
     CHECK(!rak.IsConnected());

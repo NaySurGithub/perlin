@@ -1,4 +1,3 @@
-// Builds the vanilla HUD from resource_pack/ui, lays it out and prints the generated RML (no GPU, no RmlUi).
 #include "client/ui/HudData.hpp"
 #include "client/ui/HudRenderers.hpp"
 #include "client/ui/McFont.hpp"

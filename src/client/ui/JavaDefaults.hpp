@@ -11,8 +11,13 @@ namespace perlin::ui {
   "item_name_text@hud.item_name_text_root": {
     "modifications": [],
     "$show_survival_padding": true,
-    "$show_text_background": true,
+    "$show_text_background": false,
     "offset": [ 0, -11 ]
+  },
+
+  "hud_actionbar_text": {
+    "modifications": [],
+    "alpha": 0
   },
 
   "hud_title_text": {
@@ -30,14 +35,6 @@ namespace perlin::ui {
           "anchor_to": "center",
           "offset": [ 0, -22 ],
           "controls": [
-            {
-              "title_background": {
-                "type": "image",
-                "size": [ "100%sm + 16px", "100%sm + 16px" ],
-                "texture": "textures/ui/hud_tip_text_background",
-                "alpha": "@hud.anim_title_background_alpha_in"
-              }
-            },
             {
               "title": {
                 "type": "label",
@@ -70,14 +67,6 @@ namespace perlin::ui {
           "anchor_to": "center",
           "offset": [ 0, 19 ],
           "controls": [
-            {
-              "subtitle_background": {
-                "type": "image",
-                "size": [ "100%sm + 8px", "100%sm + 8px" ],
-                "texture": "textures/ui/hud_tip_text_background",
-                "alpha": "@hud.anim_title_background_alpha_in"
-              }
-            },
             {
               "subtitle": {
                 "type": "label",
@@ -117,6 +106,14 @@ namespace perlin::ui {
               "renderer": "debug_renderer",
               "size": [ 0, 0 ],
               "layer": 40
+            }
+          },
+          {
+            "perlin_fire": {
+              "type": "custom",
+              "renderer": "fire_renderer",
+              "size": [ "100%", "100%" ],
+              "layer": 0
             }
           },
           {

@@ -29,6 +29,7 @@ namespace perlin::ui {
         bool SetDocument(const std::string& rml, std::string& error);
         bool SetOverlay(const std::string& rml, std::string& error);
         void ClearOverlay();
+        void MoveOverlayElement(const char* id, int guiX, int guiY);
         bool HasOverlay() const { return overlay != nullptr; }
         void MouseMove(float guiX, float guiY);
         std::string OverlayHover() const;

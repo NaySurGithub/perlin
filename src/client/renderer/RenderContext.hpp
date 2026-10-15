@@ -44,6 +44,7 @@ namespace perlin {
 
     enum class UiLayer : uint8_t {
         World,
+        WorldLate,
         Hand,
         Gui,
         Doll
@@ -84,6 +85,7 @@ namespace perlin {
         CloudDraw cloud;
         float timeSeconds;
         float motionBlur = 0.0f;
+        float menuBlur = 0.0f;
         bool crosshair = false;
         int guiScale = 0;
         float screenTint[4];

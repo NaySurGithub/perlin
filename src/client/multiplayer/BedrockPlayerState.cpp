@@ -43,6 +43,40 @@ namespace perlin {
             return false;
         }
 
+        bool FindNbtString(const std::vector<uint8_t>& nbt, const char* name, std::string& out) {
+            const size_t n = std::strlen(name);
+            for (size_t i = 0; i + n + 4 <= nbt.size(); i++) {
+                if (nbt[i] != 0x08)
+                    continue;
+                size_t p = 0;
+                if (nbt[i + 1] == n && nbt[i + 2] == 0 && std::memcmp(&nbt[i + 3], name, n) == 0)
+                    p = i + 3 + n;
+                else if (nbt[i + 1] == n && std::memcmp(&nbt[i + 2], name, n) == 0)
+                    p = i + 2 + n;
+                else
+                    continue;
+                size_t len = 0;
+                if (p + 2 <= nbt.size() && nbt[i + 2] == 0 && nbt[i + 1] == n) {
+                    len = nbt[p] | (static_cast<size_t>(nbt[p + 1]) << 8);
+                    p += 2;
+                } else {
+                    int shift = 0;
+                    while (p < nbt.size() && shift < 35) {
+                        const uint8_t b = nbt[p++];
+                        len |= static_cast<size_t>(b & 0x7f) << shift;
+                        if (!(b & 0x80))
+                            break;
+                        shift += 7;
+                    }
+                }
+                if (len == 0 || p + len > nbt.size() || len > 256)
+                    continue;
+                out.assign(reinterpret_cast<const char*>(&nbt[p]), len);
+                return true;
+            }
+            return false;
+        }
+
         bool Contains(const std::vector<uint8_t>& bytes, const char* text) {
             const size_t n = std::strlen(text);
             if (bytes.size() < n)
@@ -161,6 +195,7 @@ namespace perlin {
             }
             if (const auto* nbt = ItemNbt(raw)) {
                 int damage = 0;
+                FindNbtString(*nbt, "Name", info.customName);
                 if (FindNbtInt(*nbt, "Damage", damage))
                     info.damage = std::max(0, damage);
                 info.enchanted = Contains(*nbt, "ench") || Contains(*nbt, "Enchantments") || Contains(*nbt, "StoredEnchantments") ||
@@ -189,7 +224,7 @@ namespace perlin {
                           << firstSlot << " n " << items.size() << (whole ? " (content)" : " (slot)") << std::endl;
             const bool mainOnly = type == ContainerSlotType::Inventory && whole && items.size() == 27;
             const bool uiWindow = window == WindowIDVarint::Ui || type == ContainerSlotType::Cursor || type == ContainerSlotType::CraftingInput ||
-                                  type == ContainerSlotType::CraftingOutput;
+                                  type == ContainerSlotType::CraftingOutput || type == ContainerSlotType::CreativeOutput;
             for (size_t i = 0; i < items.size(); i++) {
                 const int slot = firstSlot + static_cast<int>(i);
                 const ItemStackInfo info = convert(items[i]);
@@ -199,7 +234,7 @@ namespace perlin {
                         addr = kInvCursor;
                     else if (slot >= 28 && slot <= 31 && (type == ContainerSlotType::CraftingInput || window == WindowIDVarint::Ui))
                         addr = kInvCraft0 + slot - 28;
-                    else if (type == ContainerSlotType::CraftingOutput)
+                    else if (type == ContainerSlotType::CraftingOutput || type == ContainerSlotType::CreativeOutput)
                         addr = kInvOutput;
                     if (addr >= 0) {
                         InvInfoLocked(addr) = info;
@@ -247,7 +282,8 @@ namespace perlin {
                     pendingDrops.erase(pending);
                 }
                 if (r.status != ItemStackResponsesEntryStatus::Ok)
-                    std::cout << "[inventory] request " << r.requestId << " rejected, status " << static_cast<int>(r.status) << std::endl;
+                    std::cout << "[inventory] request " << r.requestId << " rejected, status " << static_cast<int>(r.status) << ":"
+                              << (invSummaries.count(r.requestId) ? invSummaries[r.requestId] : std::string()) << std::endl;
                 else if (debug)
                     std::cout << "[inventory] request " << r.requestId << " ok" << std::endl;
                 if (r.status != ItemStackResponsesEntryStatus::Ok || !r.containers)
@@ -259,11 +295,12 @@ namespace perlin {
                         switch (type) {
                         case ContainerSlotType::HotbarAndInventory:
                         case ContainerSlotType::Hotbar: slot = s.slot; break;
-                        case ContainerSlotType::Inventory: slot = s.slot + 9; break;
+                        case ContainerSlotType::Inventory: slot = s.slot; break;
                         case ContainerSlotType::Armor: slot = kInvArmor0 + s.slot; break;
                         case ContainerSlotType::Offhand: slot = kInvOffhand; break;
                         case ContainerSlotType::CraftingInput: slot = s.slot >= 28 && s.slot <= 31 ? kInvCraft0 + s.slot - 28 : -1; break;
-                        case ContainerSlotType::CraftingOutput: slot = kInvOutput; break;
+                        case ContainerSlotType::CraftingOutput:
+                        case ContainerSlotType::CreativeOutput: slot = kInvOutput; break;
                         case ContainerSlotType::Cursor: slot = kInvCursor; break;
                         default: break;
                         }
@@ -296,6 +333,47 @@ namespace perlin {
                         invPendingRequest = 0;
             }
             InvPump();
+        });
+
+        On<CreativeContentPacket>([this](const CreativeContentPacket& p) {
+            std::lock_guard lock(statusMutex);
+            const auto info = [this](const ItemLegacy& o) {
+                ItemStackInfo r;
+                const auto it = itemNames.find(o.networkId);
+                if (o.networkId != 0) {
+                    r.name = it == itemNames.end() ? std::string("minecraft:unknown") : it->second;
+                    r.count = std::max<int>(1, o.count);
+                    r.aux = static_cast<int>(o.metadata);
+                    r.blockRuntimeId = static_cast<uint32_t>(o.blockRuntimeId);
+                }
+                return r;
+            };
+            CreativeCatalog next;
+            creativeRaw.clear();
+            for (const auto& g : p.groups) {
+                CreativeGroup group;
+                group.category = static_cast<int>(g.category);
+                group.name = g.name;
+                group.icon = info(g.iconItem);
+                next.groups.push_back(std::move(group));
+            }
+            for (const auto& i : p.items) {
+                CreativeItem item;
+                item.entryId = i.entryId;
+                item.info = info(i.item);
+                item.group = static_cast<int>(i.groupIndex);
+                if (item.info.name.empty())
+                    continue;
+                ItemV4 raw;
+                raw.networkId = static_cast<int16_t>(i.item.networkId);
+                raw.count = static_cast<uint16_t>(item.info.count);
+                raw.metadata = i.item.metadata;
+                raw.blockRuntimeId = static_cast<uint32_t>(i.item.blockRuntimeId);
+                creativeRaw[i.entryId] = raw;
+                next.items.push_back(std::move(item));
+            }
+            next.version = creative.version + 1;
+            creative = std::move(next);
         });
 
         On<CraftingDataPacket>([this](const CraftingDataPacket& p) {
@@ -450,7 +528,9 @@ namespace perlin {
             std::lock_guard lock(statusMutex);
             for (const MetadataDictionaryEntry& e : p.metadata) {
                 int value = 0;
-                if (e.key == MetadataDictionaryEntryKey::Air && IntegerOf(e, value))
+                if (e.key == MetadataDictionaryEntryKey::Flags && IntegerOf(e, value))
+                    vitals.onFire = (value & 1) != 0;
+                else if (e.key == MetadataDictionaryEntryKey::Air && IntegerOf(e, value))
                     vitals.air = value;
                 else if (e.key == MetadataDictionaryEntryKey::MaxAirdataMaxAir && IntegerOf(e, value) && value > 0)
                     vitals.maxAir = value;

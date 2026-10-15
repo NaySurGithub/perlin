@@ -145,8 +145,12 @@ namespace perlin::ui {
             mix(static_cast<uint64_t>(it.aux));
             mix(it.blockRuntimeId);
             mix(it.enchanted);
+            mixs(it.customName);
         }
         mixs(s.itemName);
+        mix(s.burning);
+        if (s.burning)
+            mix(static_cast<uint64_t>(s.fireFrame));
         mixf(s.itemNameAlpha);
         mixs(s.actionBar);
         mixf(s.actionBarAlpha);

@@ -11,11 +11,12 @@ namespace perlin::ui {
         uint32_t blockRuntimeId = 0;
         int maxDamage = 0;
         bool enchanted = false;
+        std::string customName;
         bool Empty() const { return name.empty() || count <= 0; }
         std::string Key() const { return name + ";" + std::to_string(maxDamage > 0 ? 0 : aux); }
         bool operator==(const HudItem& o) const {
             return name == o.name && count == o.count && aux == o.aux && blockRuntimeId == o.blockRuntimeId &&
-                   maxDamage == o.maxDamage && enchanted == o.enchanted;
+                   maxDamage == o.maxDamage && enchanted == o.enchanted && customName == o.customName;
         }
     };
 
@@ -33,6 +34,8 @@ namespace perlin::ui {
         int armor = 0;
         float xpProgress = 0.0f;
         int xpLevel = 0;
+        bool burning = false;
+        int fireFrame = 0;
         int air = 300;
         int maxAir = 300;
         bool inWater = false;
@@ -86,6 +89,7 @@ namespace perlin::ui {
         std::string chatInput;
         int chatCaret = 0;
         bool chatCaretVisible = true;
+        std::string chatColors;
         std::vector<std::string> chatSuggestions;
         int chatSuggestSelected = -1;
         int chatSuggestStart = 0;
@@ -93,6 +97,7 @@ namespace perlin::ui {
         bool chatSuggestMore[2] = {false, false};
         std::string chatHint;
         bool debug = false;
+        std::string moveStatus;
         bool advancedTooltips = false;
         std::string gameModeSwitcher;
         std::vector<std::string> debugLeft, debugRight;

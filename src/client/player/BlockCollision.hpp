@@ -18,6 +18,7 @@ namespace perlin {
 
         physics::BlockShape Query(int x, int y, int z) const override;
         static const physics::BlockShape& ShapeOf(uint16_t id);
+        bool Selection(int x, int y, int z, std::vector<physics::Box>& out) const;
 
     private:
         enum class Kind : uint8_t { Plain, Fence, Wall, Pane };

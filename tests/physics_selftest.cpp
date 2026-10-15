@@ -39,12 +39,9 @@ static BlockShape Slab(double h) {
 int main() {
     Attributes attr;
 
-    // A flat floor at y < 0.
     TestWorld flat;
     flat.fn = [](int, int y, int) { return y < 0 ? Full() : BlockShape{}; };
 
-    // Pressing into a wall never pushes the player into it, at any coordinate or heading (float rounding of the
-    // position used to leave the box a few 1e-6 inside, after which the clip stopped working and you slid through).
     {
         const double starts[] = {3.3, 100.7, 1234.567, -987.654, 20000.1, -300000.3};
         const float yaws[] = {0, 33.3f, 90, 135.5f, 180, -90, -45.7f};
@@ -84,7 +81,6 @@ int main() {
             }
     }
 
-    // Falling lands on the floor; after 40 ticks the player rests on it.
     {
         State s;
         s.y = 10;
@@ -95,23 +91,20 @@ int main() {
         CHECK(Near(s.y, 0.0, 1e-6));
     }
 
-    // Free fall matches Minecraft: after 20 ticks velocity -> (0.08 * (1 - 0.98^n)) / 0.02 terminal series.
     {
         State s;
         s.y = 200;
         Input in;
         for (int i = 0; i < 20; i++)
             Step(s, in, attr, flat);
-        // y(n) = y0 + sum of vy; closed form for vy_{k} = ((vy_{k-1}) - 0.08) * 0.98
         double vy = 0, y = 200;
         for (int i = 0; i < 20; i++) {
             y += vy;
             vy = (vy - 0.08) * 0.98;
         }
-        CHECK(Near(s.y, y, 1e-3)); // f32 rounding like BDS
+        CHECK(Near(s.y, y, 1e-3));
     }
 
-    // Walking speed settles at 4.317 blocks/s; sprinting at 5.612.
     {
         State s;
         Input in;
@@ -132,7 +125,6 @@ int main() {
         CHECK(Near(t.z - t0, 5.612, 0.03));
     }
 
-    // Sneaking is 0.3x walking speed.
     {
         State s;
         Input in;
@@ -146,7 +138,6 @@ int main() {
         CHECK(Near(s.z - z0, 4.317 * 0.3, 0.03));
     }
 
-    // Yaw: 0 faces +Z, 90 faces -X.
     {
         State s;
         s.yaw = 90;
@@ -156,7 +147,6 @@ int main() {
             Step(s, in, attr, flat);
         CHECK(s.x < -0.5);
         CHECK(Near(s.z, 0.0, 1e-6));
-        // Strafe right at yaw 0 is -X.
         State r;
         Input rin;
         rin.strafe = 1;
@@ -165,7 +155,6 @@ int main() {
         CHECK(r.x < -0.5);
     }
 
-    // Jump apex is about 1.2522 blocks.
     {
         State s;
         s.onGround = true;
@@ -181,7 +170,6 @@ int main() {
         CHECK(Near(top, 1.2522, 0.002));
     }
 
-    // A wall stops horizontal movement; the player does not enter the block.
     {
         TestWorld wall;
         wall.fn = [](int x, int y, int z) {
@@ -204,7 +192,6 @@ int main() {
         CHECK(s.horizontalCollision);
     }
 
-    // Step up half a block (slab) but not a full block.
     {
         TestWorld steps;
         steps.fn = [](int, int y, int z) {
@@ -227,7 +214,6 @@ int main() {
         CHECK(s.z <= 6.0 - 0.3 + 1e-6);
     }
 
-    // Sneaking at an edge does not fall off.
     {
         TestWorld edge;
         edge.fn = [](int, int y, int z) { return (y < 0 && z < 1) ? Full() : BlockShape{}; };
@@ -244,7 +230,6 @@ int main() {
         CHECK(s.z < 1.31);
     }
 
-    // Water: slow fall.
     {
         TestWorld water;
         water.fn = [](int, int y, int) {
@@ -264,7 +249,6 @@ int main() {
         CHECK(s.vy > -0.1);
     }
 
-    // Flying holds height without gravity and rises when asked.
     {
         State s;
         s.y = 20;

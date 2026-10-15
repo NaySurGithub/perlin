@@ -90,14 +90,19 @@ namespace perlin {
             return !base.empty() && Has(n, base.c_str());
         }
 
+        uint8_t LegacyActionId(ItemStackRequestActionsEntryTypeId id) {
+            const uint32_t v = static_cast<uint32_t>(id);
+            return static_cast<uint8_t>(v >= 7 ? v + 2 : v);
+        }
+
         void Address(StackRequestSlotInfo& s, int a, const ItemV4& raw) {
             using C = ContainerSlotType;
             C type = C::HotbarAndInventory;
             int slot = a;
             if (a >= BedrockSession::kInvArmor0 && a < BedrockSession::kInvOffhand) { type = C::Armor; slot = a - BedrockSession::kInvArmor0; }
-            else if (a == BedrockSession::kInvOffhand) { type = C::Offhand; slot = 0; }
+            else if (a == BedrockSession::kInvOffhand) { type = C::Offhand; slot = 1; }
             else if (a >= BedrockSession::kInvCraft0 && a < BedrockSession::kInvOutput) { type = C::CraftingInput; slot = 28 + a - BedrockSession::kInvCraft0; }
-            else if (a == BedrockSession::kInvOutput) { type = C::CraftingOutput; slot = 50; }
+            else if (a == BedrockSession::kInvOutput) { type = C::CreativeOutput; slot = 50; }
             else if (a == BedrockSession::kInvCursor) { type = C::Cursor; slot = 0; }
             s.slotType.containerId = type;
             s.slotType.dynamicContainerId.reset();
@@ -237,11 +242,19 @@ namespace perlin {
                     nextStackRequestId -= 2;
                     r.cause = static_cast<ItemStackRequestCause>(-1);
                     if (op(r) && !r.actions.empty()) {
-                        if (PERLIN_ENV("PERLIN_INV_DEBUG")) {
-                            std::cout << "[inventory] send request " << r.requestId << ":";
+                        {
+                            std::string text;
                             for (const auto& a : r.actions)
-                                std::cout << ' ' << static_cast<int>(a.typeId) << '(' << static_cast<int>(a.count) << ',' << static_cast<int>(a.source.slotType.containerId) << ':' << static_cast<int>(a.source.slot) << '#' << a.source.stackId << "->" << static_cast<int>(a.destination.slotType.containerId) << ':' << static_cast<int>(a.destination.slot) << ')';
-                            std::cout << std::endl;
+                                text += " " + std::to_string(static_cast<int>(a.typeId)) + "(" + std::to_string(static_cast<int>(a.count)) + "," +
+                                        std::to_string(static_cast<int>(a.source.slotType.containerId)) + ":" + std::to_string(static_cast<int>(a.source.slot)) +
+                                        "#" + std::to_string(a.source.stackId) + "->" +
+                                        std::to_string(static_cast<int>(a.destination.slotType.containerId)) + ":" +
+                                        std::to_string(static_cast<int>(a.destination.slot)) + "#" + std::to_string(a.destination.stackId) + ")";
+                            invSummaries[r.requestId] = text;
+                            if (invSummaries.size() > 32)
+                                invSummaries.erase(invSummaries.begin());
+                            if (PERLIN_ENV("PERLIN_INV_DEBUG"))
+                                std::cout << "[inventory] send request " << r.requestId << ":" << text << std::endl;
                         }
                         invPendingRequest = r.requestId;
                         invPendingAt = std::chrono::steady_clock::now();
@@ -277,7 +290,7 @@ namespace perlin {
                 const ItemStackRequestActionsEntryTypeId type = dst == BedrockSession::kInvCursor ? ItemStackRequestActionsEntryTypeId::Take
                                                                                                   : ItemStackRequestActionsEntryTypeId::Place;
                 a.typeId = type;
-                a.legacyTypeId = static_cast<uint8_t>(type);
+                a.legacyTypeId = LegacyActionId(type);
                 a.count = static_cast<uint8_t>(n);
                 Address(a.source, src, sr);
                 Address(a.destination, dst, dr);
@@ -306,7 +319,7 @@ namespace perlin {
             void Swap(int a, int b) {
                 ItemStackRequestActionsEntry act;
                 act.typeId = ItemStackRequestActionsEntryTypeId::Swap;
-                act.legacyTypeId = static_cast<uint8_t>(act.typeId);
+                act.legacyTypeId = LegacyActionId(act.typeId);
                 Address(act.source, a, raw(a));
                 Address(act.destination, b, raw(b));
                 r.actions.push_back(act);
@@ -344,13 +357,13 @@ namespace perlin {
     static void CraftPrelude(Mover& m, BedrockSession::ItemStackInfo outInfo, const ItemV4& outRaw, uint32_t recipeId) {
         ItemStackRequestActionsEntry craft;
         craft.typeId = ItemStackRequestActionsEntryTypeId::CraftRecipe;
-        craft.legacyTypeId = static_cast<uint8_t>(craft.typeId);
+        craft.legacyTypeId = LegacyActionId(craft.typeId);
         craft.recipeNetworkId = recipeId;
         craft.timesCrafted = 1;
         m.r.actions.push_back(craft);
         ItemStackRequestActionsEntry res;
         res.typeId = ItemStackRequestActionsEntryTypeId::ResultsDeprecated;
-        res.legacyTypeId = static_cast<uint8_t>(res.typeId);
+        res.legacyTypeId = LegacyActionId(res.typeId);
         ItemStackRequestInstanceDescriptor d;
         d.type = ItemStackRequestInstanceDescriptorType::Name;
         d.legacyType = 1;
@@ -367,7 +380,7 @@ namespace perlin {
                 continue;
             ItemStackRequestActionsEntry c;
             c.typeId = ItemStackRequestActionsEntryTypeId::Consume;
-            c.legacyTypeId = static_cast<uint8_t>(c.typeId);
+            c.legacyTypeId = LegacyActionId(c.typeId);
             c.count = 1;
             Address(c.source, a, m.raw(a));
             m.r.actions.push_back(c);
@@ -498,6 +511,72 @@ namespace perlin {
         });
     }
 
+    BedrockSession::CreativeCatalog BedrockSession::Creative() const {
+        std::lock_guard lock(statusMutex);
+        return creative;
+    }
+
+    uint32_t BedrockSession::CreativeVersion() const {
+        std::lock_guard lock(statusMutex);
+        return creative.version;
+    }
+
+    void BedrockSession::InvCreativeTake(uint32_t entryId, int mode) {
+        InvEnqueue([this, entryId, mode](ItemStackRequest& r) {
+            const auto found = std::find_if(creative.items.begin(), creative.items.end(),
+                                            [&](const CreativeItem& c) { return c.entryId == entryId; });
+            const auto rawIt = creativeRaw.find(entryId);
+            if (found == creative.items.end() || rawIt == creativeRaw.end())
+                return false;
+            ItemStackInfo out = found->info;
+            out.count = mode == 1 ? 1 : MaxStack(out.name);
+            ItemV4 raw = rawIt->second;
+            raw.count = static_cast<uint16_t>(out.count);
+            auto& C = InvInfoLocked(kInvCursor);
+            const ItemV4& cRaw = InvRawLocked(kInvCursor);
+            if (mode != 2 && !C.Empty() && (!SameStack(cRaw, raw) || C.count + out.count > MaxStack(C.name)))
+                return false;
+            Mover m{*this, r, [this](int a) -> ItemStackInfo& { return InvInfoLocked(a); }, [this](int a) -> ItemV4& { return InvRawLocked(a); }};
+            ItemStackRequestActionsEntry craft;
+            craft.typeId = ItemStackRequestActionsEntryTypeId::CraftCreative;
+            craft.legacyTypeId = LegacyActionId(craft.typeId);
+            craft.itemId = entryId;
+            craft.timesCrafted = 1;
+            r.actions.push_back(craft);
+            inventory.output = out;
+            extraRaw[kInvOutput - 36] = raw;
+            extraRaw[kInvOutput - 36].stackId = r.requestId;
+            extraRaw[kInvOutput - 36].hasStackId = true;
+            bool ok = true;
+            if (mode == 2) {
+                ok = QuickMove(m, kInvOutput, {{0, 8}, {9, 35}});
+            } else {
+                m.Move(kInvOutput, kInvCursor, out.count);
+            }
+            inventory.output = ItemStackInfo{};
+            extraRaw[kInvOutput - 36] = ItemV4{};
+            return ok;
+        });
+    }
+
+    void BedrockSession::InvDestroyCursor() {
+        InvEnqueue([this](ItemStackRequest& r) {
+            auto& C = InvInfoLocked(kInvCursor);
+            auto& raw = InvRawLocked(kInvCursor);
+            if (C.Empty())
+                return false;
+            ItemStackRequestActionsEntry a;
+            a.typeId = ItemStackRequestActionsEntryTypeId::Destroy;
+            a.legacyTypeId = LegacyActionId(a.typeId);
+            a.count = static_cast<uint8_t>(std::min(C.count, 255));
+            Address(a.source, kInvCursor, raw);
+            r.actions.push_back(a);
+            C = ItemStackInfo{};
+            raw = ItemV4{};
+            return true;
+        });
+    }
+
     void BedrockSession::InvDropCursor(bool whole) {
         InvEnqueue([this, whole](ItemStackRequest& r) {
             auto& C = InvInfoLocked(kInvCursor);
@@ -506,7 +585,7 @@ namespace perlin {
                 return false;
             ItemStackRequestActionsEntry a;
             a.typeId = ItemStackRequestActionsEntryTypeId::Drop;
-            a.legacyTypeId = static_cast<uint8_t>(a.typeId);
+            a.legacyTypeId = LegacyActionId(a.typeId);
             a.count = static_cast<uint8_t>(whole ? std::min(C.count, 255) : 1);
             Address(a.source, kInvCursor, raw);
             r.actions.push_back(a);

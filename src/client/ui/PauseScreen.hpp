@@ -3,7 +3,7 @@
 
 namespace perlin::ui {
     struct PauseScreenText {
-        std::string title, back, options, quit;
+        std::string title, back, options, quit, advancements, stats, feedback, bugs, lan;
         bool optionsEnabled = false;
     };
     inline constexpr const char* kPauseResumeId = "resume";

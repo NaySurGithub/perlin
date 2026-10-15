@@ -139,6 +139,92 @@ namespace perlin {
         }
     }
 
+    namespace {
+        struct SelectionTable {
+            struct Shape {
+                uint8_t pick = 1;
+                std::vector<physics::Box> boxes;
+            };
+            std::vector<Shape> shapes;
+            std::unordered_map<int32_t, uint16_t> byHash;
+        };
+
+        const SelectionTable& Selections() {
+            static const SelectionTable table = [] {
+                SelectionTable t;
+                std::string raw;
+                if (!resources::Read("block_selection.bin", raw) || raw.size() < 12 || std::memcmp(raw.data(), "SEL2", 4) != 0)
+                    return t;
+                const uint8_t* d = reinterpret_cast<const uint8_t*>(raw.data());
+                uint32_t shapeCount, recordCount;
+                std::memcpy(&shapeCount, d + 4, 4);
+                std::memcpy(&recordCount, d + 8, 4);
+                size_t p = 12;
+                const auto have = [&](size_t n) { return p + n <= raw.size(); };
+                t.shapes.reserve(shapeCount);
+                for (uint32_t i = 0; i < shapeCount && have(2); i++) {
+                    SelectionTable::Shape s;
+                    s.pick = d[p++];
+                    const int n = d[p++];
+                    if (!have(static_cast<size_t>(n) * 24 + 1))
+                        return t;
+                    for (int b = 0; b < n; b++, p += 24) {
+                        float v[6];
+                        std::memcpy(v, d + p, 24);
+                        s.boxes.push_back({v[0], v[1], v[2], v[3], v[4], v[5]});
+                    }
+                    if (d[p++])
+                        p += 24;
+                    t.shapes.push_back(std::move(s));
+                }
+                t.byHash.reserve(recordCount);
+                for (uint32_t i = 0; i < recordCount && have(6); i++, p += 6) {
+                    uint32_t hash;
+                    uint16_t idx;
+                    std::memcpy(&hash, d + p, 4);
+                    std::memcpy(&idx, d + p + 4, 2);
+                    t.byHash.emplace(static_cast<int32_t>(hash), idx);
+                }
+                return t;
+            }();
+            return table;
+        }
+    }
+
+    bool LevelCollision::Selection(int x, int y, int z, std::vector<physics::Box>& out) const {
+        out.clear();
+        bool loaded = false;
+        const uint16_t id = level.GetBlock(x, y, z, loaded);
+        if (!loaded || id == 0)
+            return false;
+        const Info& info = Lookup(id, blocks);
+        if (info.kind == Kind::Plain) {
+            const SelectionTable& t = Selections();
+            const auto it = t.byHash.find(BlockPalette::Instance().NetworkId(id));
+            if (it != t.byHash.end()) {
+                const SelectionTable::Shape& s = t.shapes[it->second];
+                if (s.pick != 1 || s.boxes.empty())
+                    return false;
+                out = s.boxes;
+                return true;
+            }
+        }
+        const physics::BlockShape shape = Query(x, y, z);
+        if (shape.fluid != 0)
+            return false;
+        if (shape.Empty()) {
+            out.push_back({0, 0, 0, 1, 1, 1});
+            return true;
+        }
+        for (int b = 0; b < shape.count; b++) {
+            physics::Box box = shape.boxes[b];
+            if (info.kind == Kind::Fence || info.kind == Kind::Wall)
+                box.y1 = std::min(box.y1, 1.0);
+            out.push_back(box);
+        }
+        return true;
+    }
+
     const physics::BlockShape& LevelCollision::ShapeOf(uint16_t id) {
         return Lookup(id, nullptr).shape;
     }

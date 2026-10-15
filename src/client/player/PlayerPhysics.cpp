@@ -553,10 +553,49 @@ namespace perlin::physics {
         if (in.jump && (water || lava))
             s.vy = F(static_cast<float>(s.vy) + 0.04f);
 
-        MoveRelative(s, strafe, forward, relSpeed);
+        if (water && in.swimming) {
+            const float look = in.lookY;
+            const float gain = look < -0.2f ? 0.085f : 0.06f;
+            if (look <= 0.0f || in.jump || in.headInWater)
+                s.vy = F(static_cast<float>(s.vy) + (look - static_cast<float>(s.vy)) * gain);
+        }
+
+        const bool glide = in.gliding && !water && !lava;
+        if (glide) {
+            const double yawR = static_cast<double>(s.yaw) * kPi / 180.0;
+            const double pitchR = static_cast<double>(in.javaPitch) * kPi / 180.0;
+            const double lx = -std::sin(yawR) * std::cos(pitchR);
+            const double lz = std::cos(yawR) * std::cos(pitchR);
+            const double horizLook = std::sqrt(lx * lx + lz * lz);
+            const double horizMove = std::sqrt(s.vx * s.vx + s.vz * s.vz);
+            double lift = std::cos(pitchR);
+            lift = lift * lift;
+            s.vy += 0.08 * (-1.0 + lift * 0.75);
+            if (s.vy < 0 && horizLook > 0) {
+                const double m = s.vy * -0.1 * lift;
+                s.vx += lx * m / horizLook;
+                s.vy += m;
+                s.vz += lz * m / horizLook;
+            }
+            if (pitchR < 0 && horizLook > 0) {
+                const double m = horizMove * -std::sin(pitchR) * 0.04;
+                s.vx += -lx * m / horizLook;
+                s.vy += m * 3.2;
+                s.vz += -lz * m / horizLook;
+            }
+            if (horizLook > 0) {
+                s.vx += (lx / horizLook * horizMove - s.vx) * 0.1;
+                s.vz += (lz / horizLook * horizMove - s.vz) * 0.1;
+            }
+            s.vx *= 0.99;
+            s.vy *= 0.98;
+            s.vz *= 0.99;
+        } else {
+            MoveRelative(s, strafe, forward, relSpeed);
+        }
 
         const bool climbJump = in.jump && s.onClimbable;
-        const bool jumpInitiated = in.jump && !climbJump && s.onGround && s.jumpDelay == 0 && !water && !lava;
+        const bool jumpInitiated = in.jump && !glide && !climbJump && s.onGround && s.jumpDelay == 0 && !water && !lava;
         if (jumpInitiated) {
             s.vy = F(std::max(static_cast<float>(s.vy), 0.42f));
             s.jumpDelay = 10;
@@ -644,7 +683,7 @@ namespace perlin::physics {
                 v.z = F(static_cast<float>(v.z) * 0.5f);
             }
             v.y = F(static_cast<float>(v.y) - (water ? 0.005f : 0.02f));
-        } else {
+        } else if (!glide) {
             if (!autoClimb)
                 v.y = F((static_cast<float>(v.y) - 0.08f) * 0.98f);
             v.x = DampHorizontal(v.x, friction);

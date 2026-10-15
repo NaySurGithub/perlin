@@ -31,10 +31,10 @@ namespace perlin {
     LevelRenderer::LevelRenderer(RenderContext& context, const Options& options)
         : context(context), options(options) {
         blocks.SetFancy(options.fancyGraphics);
-        const unsigned cores = std::max(1u, std::thread::hardware_concurrency());
-        const unsigned threads = std::clamp(cores > 4 ? cores - 3 : 2u, 2u, 8u);
+        const unsigned cores = HardwareThreads();
+        const unsigned threads = std::clamp(cores > 2 ? cores - 1 : 2u, 2u, 32u);
         meshPool = std::make_unique<ThreadPool>(threads);
-        maxInFlight = threads * 3;
+        maxInFlight = threads * 4;
     }
 
     LevelRenderer::~LevelRenderer() {

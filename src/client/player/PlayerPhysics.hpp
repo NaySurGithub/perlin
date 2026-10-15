@@ -63,6 +63,11 @@ namespace perlin::physics {
         bool flyDown = false;
         bool noClip = false;
         bool creativeFlight = false;
+        bool swimming = false;
+        bool headInWater = false;
+        float lookY = 0;
+        bool gliding = false;
+        float javaPitch = 0;
     };
 
     struct State {

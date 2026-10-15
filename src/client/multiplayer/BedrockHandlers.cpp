@@ -845,6 +845,9 @@ namespace perlin {
             const auto it = itemNames.find(p.item.networkId);
             if (p.item.networkId == 0 || it == itemNames.end() || p.item.count == 0)
                 return;
+            if (droppedRaw.size() > 1024)
+                droppedRaw.clear();
+            droppedRaw[p.runtimeEntityId] = p.item;
             entities.AddItem(p.runtimeEntityId, p.entityIdSelf, {p.position.x, p.position.y, p.position.z}, it->second, p.item.count,
                              static_cast<int>(p.item.metadata), p.item.blockRuntimeId, false);
         });
@@ -854,26 +857,37 @@ namespace perlin {
             if (runtimeId != 0 && p.target == runtimeId && entities.Find(p.runtimeEntityId, item) && item.isItem && item.itemCount > 0) {
                 std::lock_guard lock(statusMutex);
                 int left = item.itemCount;
-                const auto fits = [&](const ItemStackInfo& s) { return s.name == item.itemName && s.aux == item.itemAux && s.count < 64; };
-                for (ItemStackInfo* s : {&inventory.hotbar[0], &inventory.hotbar[1], &inventory.hotbar[2], &inventory.hotbar[3],
-                                         &inventory.hotbar[4], &inventory.hotbar[5], &inventory.hotbar[6], &inventory.hotbar[7],
-                                         &inventory.hotbar[8]})
-                    if (left > 0 && !s->Empty() && fits(*s)) {
-                        const int add = std::min(left, 64 - s->count);
-                        s->count += add;
-                        left -= add;
-                    }
-                for (ItemStackInfo& s : inventory.hotbar)
-                    if (left > 0 && s.Empty()) {
-                        s.name = item.itemName;
-                        s.aux = item.itemAux;
-                        s.blockRuntimeId = item.itemBlock;
-                        s.enchanted = item.itemEnchanted;
-                        s.damage = 0;
-                        s.count = std::min(left, 64);
-                        left -= s.count;
-                    }
+                ItemV4 dropped;
+                if (const auto found = droppedRaw.find(p.runtimeEntityId); found != droppedRaw.end())
+                    dropped = found->second;
+                const auto slotInfo = [&](int i) -> ItemStackInfo& { return i < 9 ? inventory.hotbar[i] : inventory.main[i - 9]; };
+                for (int i = 0; i < 36 && left > 0; i++) {
+                    ItemStackInfo& s = slotInfo(i);
+                    if (s.Empty() || s.name != item.itemName || s.aux != item.itemAux || s.count >= 64)
+                        continue;
+                    const int add = std::min(left, 64 - s.count);
+                    s.count += add;
+                    inventoryRaw[i].count = static_cast<uint16_t>(s.count);
+                    left -= add;
+                }
+                for (int i = 0; i < 36 && left > 0; i++) {
+                    ItemStackInfo& s = slotInfo(i);
+                    if (!s.Empty())
+                        continue;
+                    s.name = item.itemName;
+                    s.aux = item.itemAux;
+                    s.blockRuntimeId = item.itemBlock;
+                    s.enchanted = item.itemEnchanted;
+                    s.damage = 0;
+                    s.count = std::min(left, 64);
+                    left -= s.count;
+                    inventoryRaw[i] = dropped;
+                    inventoryRaw[i].count = static_cast<uint16_t>(s.count);
+                    inventoryRaw[i].hasStackId = false;
+                    inventoryRaw[i].stackId.reset();
+                }
             }
+            droppedRaw.erase(p.runtimeEntityId);
             entities.RemoveRuntime(p.runtimeEntityId);
         });
 

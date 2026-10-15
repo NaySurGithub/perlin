@@ -1,6 +1,7 @@
 #include "client/ui/InventoryScreen.hpp"
 
 #include "client/ui/RmlEmit.hpp"
+#include "client/ui/UiSprite.hpp"
 #include "client/ui/UiTemplate.hpp"
 #include "client/i18n/Lang.hpp"
 
@@ -12,12 +13,11 @@
 
 namespace perlin::ui {
     std::string DefaultInventoryScreenTemplate() {
-        return R"PERLINRML(<!--perlin-ui:3-->
+        return R"PERLINRML(<!--perlin-ui:4-->
 <rml>
 <head>
 <title>inventory</title>
 <style>
-/* Edit this file while the game runs: it is reloaded when it changes. {{name}} placeholders are filled in by Perlin. */
 body { position: absolute; left: 0px; top: 0px; width: {{w}}px; height: {{h}}px; margin: 0; padding: 0; background: transparent; }
 div { display: block; position: absolute; }
 mcitem { display: block; position: absolute; }
@@ -98,77 +98,7 @@ mcitem { display: block; position: absolute; }
 
     namespace {
         std::string Chrome() {
-            constexpr int kW = 176, kH = 166;
-            std::vector<uint32_t> grid(static_cast<size_t>(kW) * kH, 0);
-            const auto parse = [](const char* c) { return static_cast<uint32_t>(std::strtoul(c + 1, nullptr, 16)) | 0x1000000u; };
-            const auto r = [&](int x, int y, int w, int h, const char* c) {
-                const uint32_t v = parse(c);
-                for (int yy = std::max(0, y); yy < std::min(kH, y + h); yy++)
-                    for (int xx = std::max(0, x); xx < std::min(kW, x + w); xx++)
-                        grid[static_cast<size_t>(yy) * kW + static_cast<size_t>(xx)] = v;
-            };
-            r(0, 0, 176, 166, "#000000");
-            r(1, 1, 174, 164, "#c6c6c6");
-            r(1, 1, 172, 2, "#ffffff");
-            r(1, 1, 2, 162, "#ffffff");
-            r(3, 163, 172, 2, "#555555");
-            r(173, 3, 2, 161, "#555555");
-            r(1, 1, 1, 1, "#000000"); r(173, 1, 1, 1, "#000000"); r(174, 2, 1, 1, "#000000"); r(3, 3, 1, 1, "#ffffff");
-            r(172, 162, 1, 1, "#555555"); r(1, 163, 1, 1, "#000000"); r(2, 164, 1, 1, "#000000"); r(174, 164, 1, 1, "#000000");
-            const auto slot = [&](int x, int y) {
-                r(x, y, 18, 18, "#ffffff");
-                r(x, y, 17, 17, "#373737");
-                r(x + 1, y + 1, 16, 16, "#8b8b8b");
-                r(x + 17, y, 1, 1, "#8b8b8b");
-                r(x, y + 17, 1, 1, "#8b8b8b");
-            };
-            for (int a = 0; a < 36; a++) {
-                int x, y;
-                InventorySlotPos(a, x, y);
-                slot(x, y);
-            }
-            for (int a = kInvAddrArmor; a <= kInvAddrOutput; a++) {
-                int x, y;
-                InventorySlotPos(a, x, y);
-                slot(x, y);
-            }
-            r(25, 7, 51, 72, "#ffffff"); r(25, 7, 50, 71, "#373737"); r(26, 8, 49, 70, "#000000");
-            r(75, 7, 1, 1, "#8b8b8b"); r(25, 78, 1, 1, "#8b8b8b");
-            r(135, 34, 9, 3, "#8b8b8b");
-            static const int head[7][2] = {{29, 13}, {30, 11}, {31, 9}, {32, 7}, {33, 5}, {34, 3}, {35, 1}};
-            for (int i = 0; i < 7; i++)
-                r(144 + i, head[i][0], 1, head[i][1], "#8b8b8b");
-
-            std::string s;
-            std::vector<uint8_t> used(grid.size(), 0);
-            char color[16];
-            for (int y = 0; y < kH; y++)
-                for (int x = 0; x < kW; x++) {
-                    const size_t at = static_cast<size_t>(y) * kW + static_cast<size_t>(x);
-                    if (used[at] || grid[at] == 0)
-                        continue;
-                    const uint32_t v = grid[at];
-                    int w = 1;
-                    while (x + w < kW && !used[at + static_cast<size_t>(w)] && grid[at + static_cast<size_t>(w)] == v)
-                        w++;
-                    int h = 1;
-                    for (; y + h < kH; h++) {
-                        bool same = true;
-                        for (int k = 0; k < w && same; k++) {
-                            const size_t q = static_cast<size_t>(y + h) * kW + static_cast<size_t>(x + k);
-                            same = !used[q] && grid[q] == v;
-                        }
-                        if (!same)
-                            break;
-                    }
-                    for (int yy = 0; yy < h; yy++)
-                        for (int xx = 0; xx < w; xx++)
-                            used[static_cast<size_t>(y + yy) * kW + static_cast<size_t>(x + xx)] = 1;
-                    std::snprintf(color, sizeof(color), "#%06x", v & 0xFFFFFFu);
-                    s += "<div class=\"r\" style=\"left:" + std::to_string(x) + "px;top:" + std::to_string(y) + "px;width:" + std::to_string(w) +
-                         "px;height:" + std::to_string(h) + "px;background-color:" + color + ";\"></div>";
-                }
-            return s;
+            return SpriteRml("ui_inventory.png", 0, 0, 176, 166, 0, 0);
         }
 
         std::string Cell(const std::string& id, int px, int py, int addr, const HudItem& item) {
@@ -176,6 +106,10 @@ mcitem { display: block; position: absolute; }
             InventorySlotPos(addr, x, y);
             std::string s = "  <div id=\"" + id + "\" class=\"slot\" style=\"left:" + std::to_string(px + x) + "px;top:" + std::to_string(py + y) +
                             "px;\"><div class=\"hlb\"></div>";
+            if (item.Empty() && ((addr >= kInvAddrArmor && addr < kInvAddrOffhand) || addr == kInvAddrOffhand)) {
+                const int icon = addr == kInvAddrOffhand ? 4 : addr - kInvAddrArmor;
+                s += SpriteRml("ui_slot_icons.png", icon * 16, 0, 16, 16, 1, 1);
+            }
             if (!item.Empty()) {
                 s += "<mcitem key=\"" + EscapeRml(item.Key()) + "\" style=\"left:1px;top:1px;width:16px;height:16px;\"";
                 if (item.enchanted)

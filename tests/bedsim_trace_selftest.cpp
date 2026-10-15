@@ -1,4 +1,3 @@
-// Replays pinned bedsim (Oomph's Bedrock movement simulator) traces through perlin::physics::Step.
 #include "client/player/PlayerPhysics.hpp"
 
 #include <cmath>
@@ -108,7 +107,7 @@ int main(int argc, char** argv) {
             in >> fwd >> strafe >> yaw >> jump >> jumpPressed >> sprint >> sneak;
             input = Input{};
             input.forward = static_cast<float>(fwd);
-            input.strafe = static_cast<float>(-strafe); // bedsim: +strafe is left
+            input.strafe = static_cast<float>(-strafe);
             input.jump = jump != 0;
             input.sprint = sprint != 0;
             input.sneak = sneak != 0;
@@ -126,9 +125,6 @@ int main(int argc, char** argv) {
                     std::printf("FAIL %s: %s got %.9f want %.9f\n", scenario.c_str(), what, got, want);
                 }
             };
-            // Vanilla-faithful behaviours that intentionally differ from the old Go capture (see cinnabar
-            // conformance.rs): bed 0.75 restitution, soul sand 1.225 acceleration friction, slime damping after
-            // friction, sneak edge clipping only the request, consumable slowdown (not modelled yet).
             static const char* const kSkip[] = {"bed_bounce", "soul_sand", "slime_walk", "sneak_north", "sneak_south",
                                                 "sneak_east", "sneak_west", "consumable_slowdown",
                                                 "water_ledge_exit"};

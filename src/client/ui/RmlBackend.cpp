@@ -608,6 +608,15 @@ namespace perlin::ui {
         overlay = nullptr;
     }
 
+    void RmlBackend::MoveOverlayElement(const char* id, int guiX, int guiY) {
+        if (!overlay)
+            return;
+        if (Rml::Element* e = overlay->GetElementById(id)) {
+            e->SetProperty("left", std::to_string(guiX) + "px");
+            e->SetProperty("top", std::to_string(guiY) + "px");
+        }
+    }
+
     void RmlBackend::MouseMove(float guiX, float guiY) {
         if (context)
             context->ProcessMouseMove(static_cast<int>(guiX), static_cast<int>(guiY), 0);

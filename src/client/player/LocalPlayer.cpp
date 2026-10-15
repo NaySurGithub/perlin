@@ -50,6 +50,8 @@ namespace perlin {
             constexpr uint32_t StartSneaking = 27;
             constexpr uint32_t StopSneaking = 28;
             constexpr uint32_t StartJumping = 31;
+            constexpr uint32_t StartGliding = 32;
+            constexpr uint32_t StopGliding = 33;
             constexpr uint32_t HorizontalCollision = 49;
             constexpr uint32_t VerticalCollision = 50;
             constexpr uint32_t DownLeft = 51;
@@ -175,10 +177,12 @@ namespace perlin {
         const float forward = forwardKeys * useScale;
         const float strafe = strafeKeys * useScale;
         const bool jump = !rideLock && input.IsDown(Action::Jump);
-        const bool sneakKey = input.IsDown(Action::Sneak);
+        const bool sneakHeldKey = input.IsDown(Action::Sneak);
+        const bool sneakKey = sneakToggle ? sneakLatch : sneakHeldKey;
         if (rideLock && sneakKey && !sneakHeld)
             session.SendLeaveVehicle();
-        const bool sprintKey = input.IsDown(Action::Sprint);
+        const bool sprintHeldKey = input.IsDown(Action::Sprint);
+        const bool sprintKey = sprintToggle ? sprintLatch : sprintHeldKey;
 
         const bool wasSprinting = sprinting;
         if (forward <= 0.0f || sneakKey || itemSlow || state.horizontalCollision)
@@ -192,7 +196,18 @@ namespace perlin {
         const bool column = session.ColumnSettled(static_cast<int>(std::floor(state.x)) >> 4,
                                                   static_cast<int>(std::floor(state.z)) >> 4);
 
+        swimming = sprinting && !flying && (swimming ? state.inWater : headUnderwater);
+        if (gliding && (!hasElytra || state.onGround || state.inWater || flying || rideLock))
+            gliding = false;
+        else if (!gliding && hasElytra && jump && !jumpHeld && !state.onGround && !state.inWater && !flying &&
+                 !rideLock && state.vy < 0)
+            gliding = true;
         physics::Input in;
+        in.gliding = gliding;
+        in.javaPitch = -camera.pitch;
+        in.swimming = swimming && !gliding;
+        in.headInWater = headUnderwater;
+        in.lookY = std::sin(glm::radians(camera.pitch));
         in.forward = forward;
         in.strafe = strafe;
         in.jump = jump;
@@ -296,6 +311,11 @@ namespace perlin {
         if (!swimming && sentSwimming)
             f.push_back(Flag::StopSwimming);
         sentSwimming = swimming;
+        if (gliding && !sentGliding)
+            f.push_back(Flag::StartGliding);
+        if (!gliding && sentGliding)
+            f.push_back(Flag::StopGliding);
+        sentGliding = gliding;
 
         if (sendStartFlying) {
             f.push_back(InputFlag::StartFlying);
@@ -352,6 +372,18 @@ namespace perlin {
             flying = session.IsFlying();
         }
         blocksPtr = &blocks;
+        if (sneakToggle) {
+            if (input.Pressed(Action::Sneak))
+                sneakLatch = !sneakLatch;
+        } else {
+            sneakLatch = false;
+        }
+        if (sprintToggle) {
+            if (input.Pressed(Action::Sprint))
+                sprintLatch = !sprintLatch;
+        } else {
+            sprintLatch = false;
+        }
         if (rideLock) {
             BedrockSession::ServerMotion ignored;
             while (session.TakeServerMotion(ignored)) {}

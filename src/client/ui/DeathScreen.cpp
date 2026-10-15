@@ -39,7 +39,14 @@ namespace perlin::ui {
     std::string LoadDeathScreenTemplate(const std::string& dataDir, uint64_t& version) {
         const fs::path file = fs::path(dataDir) / "ui" / "death_screen.rml";
         std::error_code ec;
-        if (!fs::exists(file, ec) || fs::file_size(file, ec) == 0) {
+        bool stale = false;
+        if (fs::exists(file, ec)) {
+            std::ifstream probe(file, std::ios::binary);
+            std::stringstream existing;
+            existing << probe.rdbuf();
+            stale = existing.str().find("class=\"strip\"") != std::string::npos;
+        }
+        if (stale || !fs::exists(file, ec) || fs::file_size(file, ec) == 0) {
             fs::create_directories(file.parent_path(), ec);
             std::ofstream out(file, std::ios::binary);
             out << DefaultDeathScreenTemplate();

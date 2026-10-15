@@ -64,6 +64,8 @@ namespace perlin {
 
     void BedrockSession::StartChunkWorker() {
         chunkStop = false;
+        if (!decodePool)
+            decodePool = std::make_unique<ThreadPool>(std::max(1u, HardwareThreads() - 1));
         chunkThread = std::thread([this] { ChunkWorkerMain(); });
     }
 
@@ -75,6 +77,8 @@ namespace perlin {
         chunkCv.notify_all();
         if (chunkThread.joinable())
             chunkThread.join();
+        if (decodePool)
+            decodePool->Stop();
     }
 
     void BedrockSession::ChunkWorkerMain() {
@@ -1306,6 +1310,9 @@ namespace perlin {
             return;
         const DimensionInfo& dim = ChunkCodec::Dimension(pkt.dimension);
         (void)dim;
+        struct DecodeJob { int cx, absY, cz; const std::vector<uint8_t>* body; };
+        std::vector<DecodeJob> decodeJobs;
+        decodeJobs.reserve(pkt.entries.size());
         for (const SubChunkEntryEntry& e : pkt.entries) {
             int cx = pkt.origin.x + e.dx, absY = pkt.origin.y + e.dy, cz = pkt.origin.z + e.dz;
             const auto result = e.result;
@@ -1334,22 +1341,31 @@ namespace perlin {
                               << ") result=" << resultId << std::endl;
                 continue;
             }
+            decodeJobs.push_back({cx, absY, cz, &body});
+        }
+        const auto decode = [this, &decodeJobs](size_t i) {
+            const DecodeJob& job = decodeJobs[i];
             SubChunkData sc;
             size_t used = 0;
             const char* why = nullptr;
-            if (!ChunkCodec::ParseSubChunk(body.data(), body.size(), sc, used, &why)) {
-                LogHex("SubChunk payload", why ? why : "?", body);
-                continue;
+            if (!ChunkCodec::ParseSubChunk(job.body->data(), job.body->size(), sc, used, &why)) {
+                LogHex("SubChunk payload", why ? why : "?", *job.body);
+                return;
             }
-            ApplySubChunk(cx, cz, absY, sc);
-        }
+            ApplySubChunk(job.cx, job.cz, job.absY, sc);
+        };
+        if (decodeJobs.size() >= 4 && decodePool)
+            decodePool->ParallelFor(decodeJobs.size(), decode);
+        else
+            for (size_t i = 0; i < decodeJobs.size(); i++)
+                decode(i);
     }
 
     bool BedrockSession::ApplySubChunk(int cx, int cz, int absSubY, const SubChunkData& sc) {
         if (sc.storages.empty())
             return false;
         if (sc.hasYIndex && sc.yIndex != absSubY) {
-            static int mismatches = 0;
+            static std::atomic<int> mismatches{0};
             if (mismatches++ < 16)
                 std::cout << "[chunk] sub-chunk (" << cx << "," << cz << ") y mismatch: placed at " << absSubY
                           << " but payload says " << static_cast<int>(sc.yIndex) << std::endl;
@@ -1358,7 +1374,7 @@ namespace perlin {
         const PaletteStorage& st = sc.storages[0];
         ChunkCodec::CellIndices idx;
         if (!ChunkCodec::ExpandIndices(st, idx)) {
-            static int logged = 0;
+            static std::atomic<int> logged{0};
             if (logged++ < 8)
                 std::cout << "[chunk] sub-chunk (" << cx << "," << absSubY << "," << cz
                           << ") storage did not expand (bpb=" << st.bitsPerBlock
@@ -1368,7 +1384,7 @@ namespace perlin {
         std::vector<uint16_t> local(st.palette.size());
         for (size_t i = 0; i < local.size(); i++) {
             local[i] = st.palette[i] == 0 ? uint16_t(0) : BlockPalette::Instance().Intern(st.palette[i]);
-            static int unknownLogged = 0;
+            static std::atomic<int> unknownLogged{0};
             if (local[i] != 0 && unknownLogged < 20 && BlockPalette::Instance().NamesLoaded() &&
                 BlockPalette::Instance().Name(local[i]).empty()) {
                 unknownLogged++;
@@ -1400,7 +1416,7 @@ namespace perlin {
         netLevel.SetSubChunk(cx, cz, absSubY, cells.data(), liquidPtr);
         statSubChunksApplied++;
         {
-            static int shown = 0;
+            static std::atomic<int> shown{0};
             if (shown++ < 12)
                 std::cout << "[chunk] applied (" << cx << "," << absSubY << "," << cz
                           << ") bpb=" << st.bitsPerBlock << " palette=" << st.palette.size()

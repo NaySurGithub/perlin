@@ -62,12 +62,11 @@ namespace perlin {
                 tDelta[a] = std::fabs(1.0 / dir[a]);
             }
         }
+        std::vector<physics::Box> selectionScratch;
         double traveled = 0;
         for (int i = 0; i < 64 && traveled <= reach; i++) {
-            const physics::BlockShape shape = world.Query(cell.x, cell.y, cell.z);
-            bool loaded = false;
-            const uint16_t id = level.GetBlock(cell.x, cell.y, cell.z, loaded);
-            const bool targetable = loaded && (!shape.Empty() || (id != 0 && shape.fluid == 0));
+            std::vector<physics::Box>& boxes = selectionScratch;
+            const bool targetable = world.Selection(cell.x, cell.y, cell.z, boxes);
             if (targetable) {
                 double bestT = std::numeric_limits<double>::infinity();
                 int bestFace = 1;
@@ -83,13 +82,8 @@ namespace perlin {
                     }
                 };
                 const glm::dvec3 base(cell);
-                if (shape.Empty())
-                    test(base, base + glm::dvec3(1.0));
-                else
-                    for (int b = 0; b < shape.count; b++) {
-                        const physics::Box& x = shape.boxes[b];
-                        test(base + glm::dvec3(x.x0, x.y0, x.z0), base + glm::dvec3(x.x1, x.y1, x.z1));
-                    }
+                for (const physics::Box& x : boxes)
+                    test(base + glm::dvec3(x.x0, x.y0, x.z0), base + glm::dvec3(x.x1, x.y1, x.z1));
                 if (bestT <= reach) {
                     best.kind = AimHit::Kind::Block;
                     best.bx = cell.x; best.by = cell.y; best.bz = cell.z;
@@ -98,13 +92,8 @@ namespace perlin {
                     best.point = eye + dir * bestT;
                     best.boxLo = lo; best.boxHi = hi;
                     best.shape.clear();
-                    if (shape.Empty())
-                        best.shape.emplace_back(base, base + glm::dvec3(1.0));
-                    else
-                        for (int b = 0; b < shape.count; b++) {
-                            const physics::Box& x = shape.boxes[b];
-                            best.shape.emplace_back(base + glm::dvec3(x.x0, x.y0, x.z0), base + glm::dvec3(x.x1, x.y1, x.z1));
-                        }
+                    for (const physics::Box& x : boxes)
+                        best.shape.emplace_back(base + glm::dvec3(x.x0, x.y0, x.z0), base + glm::dvec3(x.x1, x.y1, x.z1));
                     break;
                 }
             }

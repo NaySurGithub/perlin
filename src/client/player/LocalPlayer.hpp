@@ -23,7 +23,14 @@ namespace perlin {
         bool Sneaking() const { return sneaking; }
         bool Sprinting() const { return sprinting; }
         void SetSwimming(bool value) { swimming = value; }
+        void SetHeadUnderwater(bool value) { headUnderwater = value; }
+        bool InWater() const { return state.inWater; }
         bool Swimming() const { return swimming; }
+        void SetToggleModes(bool sprint, bool sneak) { sprintToggle = sprint; sneakToggle = sneak; }
+        bool SprintLatched() const { return sprintToggle && sprintLatch; }
+        bool SneakLatched() const { return sneakToggle && sneakLatch; }
+        bool Gliding() const { return gliding; }
+        void SetElytra(bool value) { hasElytra = value; }
         void SetItemSlow(bool slow) { itemSlow = slow; }
         void SetRidePosition(bool riding, double x, double y, double z) { rideLock = riding; rideX = x; rideY = y; rideZ = z; }
 
@@ -57,7 +64,12 @@ namespace perlin {
         bool serverFlying = false;
         bool sprinting = false;
         bool swimming = false;
+        bool headUnderwater = false;
         bool sentSwimming = false;
+        bool sprintToggle = false, sneakToggle = false, sprintLatch = false, sneakLatch = false;
+        bool gliding = false;
+        bool sentGliding = false;
+        bool hasElytra = false;
         bool sneaking = false;
         bool jumpHeld = false;
         bool sprintHeld = false;
