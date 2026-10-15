@@ -1,5 +1,6 @@
 import argparse
 import json
+import os
 import subprocess
 import sys
 
@@ -54,6 +55,7 @@ def main():
 
     if not core:
         sys.exit("manifest is empty")
+    os.makedirs(os.path.dirname(os.path.abspath(args.out)), exist_ok=True)
     with open(args.out, "w") as f:
         json.dump({"repository": args.repository, "ref": ref, "files": {"core": core, "sounds": sounds}}, f, separators=(",", ":"))
     print(f"{len(core)} core files, {len(sounds)} sound files at {ref}")

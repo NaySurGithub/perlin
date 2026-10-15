@@ -277,6 +277,7 @@ jobs:
       - name: Generate asset manifest
         run: |
           git clone --depth 1 --filter=blob:none --no-checkout https://github.com/Mojang/bedrock-samples bedrock-samples-index
+          mkdir -p android/app/src/main/assets
           python3 tools/web/gen_manifest.py --repo bedrock-samples-index --out android/app/src/main/assets/assets-manifest.json
       - name: Build APK
         working-directory: android
