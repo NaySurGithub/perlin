@@ -282,6 +282,7 @@ jobs:
       - name: Build APK
         working-directory: android
         run: |
+          chmod +x gradlew
           ./gradlew --no-daemon assembleRelease \
             -PsdlDir="$GITHUB_WORKSPACE/android/sdl" \
             -PshaderDir="$GITHUB_WORKSPACE/android-shaders" \

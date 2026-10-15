@@ -18,6 +18,11 @@ namespace perlin {
 
         inline void Tick() {
             LoopState* s = State();
+            static bool announced = false;
+            if (!announced) {
+                announced = true;
+                EM_ASM({ if (Module.onFirstFrame) Module.onFirstFrame(); });
+            }
             if (!s->frame()) {
                 emscripten_cancel_main_loop();
                 s->finish();

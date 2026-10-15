@@ -151,6 +151,9 @@
     throw lastError;
   }
 
+  var persistence = Promise.resolve();
+  var firstFrame = null;
+
   async function ensureSamples(db, includeSounds) {
     setStatus('Reading asset list...');
     var manifestResponse = await fetch('assets-manifest.json', { cache: 'no-cache' });
@@ -209,7 +212,7 @@
       for (var i = 0; i < CONCURRENCY; i++) workers.push(worker());
       await Promise.all(workers);
       if (pending.length) flush(pending);
-      await flushing;
+      persistence = flushing;
       if (failed.length) {
         var coreFailed = failed.filter(function (p) { return manifest.files.core.indexOf(p) >= 0; });
         if (coreFailed.length) throw new Error(coreFailed.length + ' required files failed to download (first: ' + coreFailed[0] + '). Press Start to retry.');
@@ -263,9 +266,12 @@
       setStatus('Restoring saved data...');
       await restoreState(db);
       await ensureSamples(db, el('sounds').checked);
-      db.close();
-      setStatus('Starting...');
-      el('launcher').hidden = true;
+      persistence.then(function () { db.close(); });
+      setStatus('Starting engine, compiling shaders...');
+      setProgress(-1);
+      await new Promise(function (resolve) { setTimeout(resolve, 30); });
+      firstFrame = new Promise(function (resolve) { Module.onFirstFrame = resolve; });
+      firstFrame.then(function () { el('launcher').hidden = true; });
       setInterval(saveState, 5000);
       window.addEventListener('pagehide', saveState);
       document.addEventListener('visibilitychange', function () { if (document.hidden) saveState(); });
