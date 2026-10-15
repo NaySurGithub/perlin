@@ -218,7 +218,7 @@ jobs:
           cp build-web/*.worker.js site/ 2>/dev/null || true
           cp build-web/*.data site/ 2>/dev/null || true
           cp build-web/perlin-*.js build-web/coi-sw.js build-web/perlin.css build-web/assets-manifest.json site/
-          touch site/.nojekyll
+          cp tools/web/serve.py site/serve.py
           mkdir dist
           (cd site && zip -qr ../dist/Perlin-web.zip .)
       - uses: actions/upload-artifact@v4
@@ -226,9 +226,6 @@ jobs:
           name: Perlin-web
           path: dist/Perlin-web.zip
           if-no-files-found: error
-      - uses: actions/upload-pages-artifact@v3
-        with:
-          path: site
 
   android:
     name: android
@@ -247,11 +244,11 @@ jobs:
         with:
           distribution: temurin
           java-version: "17"
-      - uses: android-actions/setup-android@v3
       - name: Install SDK components
         run: |
-          yes | sdkmanager --licenses >/dev/null || true
-          sdkmanager "platforms;android-35" "build-tools;35.0.0" "ndk;${NDK_VERSION}" "cmake;${CMAKE_VERSION}"
+          SDKMANAGER="$(ls "$ANDROID_HOME"/cmdline-tools/*/bin/sdkmanager | head -n1)"
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
+          "$SDKMANAGER" "platforms;android-35" "build-tools;35.0.0" "ndk;${NDK_VERSION}" "cmake;${CMAKE_VERSION}"
       - uses: actions/download-artifact@v4
         with:
           name: essl-shaders
@@ -302,20 +299,6 @@ jobs:
           name: Perlin-android
           path: dist/Perlin.apk
           if-no-files-found: error
-
-  pages:
-    if: github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
-    needs: web
-    runs-on: ubuntu-24.04
-    permissions:
-      pages: write
-      id-token: write
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - id: deployment
-        uses: actions/deploy-pages@v4
 
   release:
     if: startsWith(github.ref, 'refs/tags/v')
