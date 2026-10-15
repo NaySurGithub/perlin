@@ -22,8 +22,6 @@ endif()
 
 add_compile_definitions(GLM_FORCE_DEPTH_ZERO_TO_ONE)
 
-# Everything is linked statically so the executable is the whole program: no OpenSSL / libdatachannel / C++ runtime
-# files next to it, and the data files from resources/ are embedded in it.
 if(WIN32 AND NOT OPENSSL_ROOT_DIR)
     foreach(root "$ENV{VCPKG_INSTALLATION_ROOT}" "$ENV{VCPKG_ROOT}" "C:/Users/judah/vcpkg")
         if(root AND EXISTS "${root}/installed/x64-windows-static/include/openssl")
@@ -88,8 +86,6 @@ set(SDL_EXAMPLES OFF CACHE BOOL "" FORCE)
 set(SDL_INSTALL OFF CACHE BOOL "" FORCE)
 CPMAddPackage(NAME SDL3 GITHUB_REPOSITORY libsdl-org/SDL GIT_TAG release-3.4.18)
 
-# RmlUi draws the HUD (JSON UI is converted to RML at runtime). Fonts are Minecraft's bitmap fonts, rendered by our own
-# FontEngineInterface, so no FreeType.
 set(RMLUI_FONT_ENGINE none CACHE STRING "" FORCE)
 set(RMLUI_SAMPLES OFF CACHE BOOL "" FORCE)
 set(RMLUI_TESTS OFF CACHE BOOL "" FORCE)
@@ -201,6 +197,15 @@ foreach(dir dxbc dxil essl glsl spirv metal)
 endforeach()
 file(GENERATE OUTPUT "${PERLIN_SHADER_HEADER}" CONTENT "${PERLIN_SHADER_HEADER_TEXT}")
 
+if(TARGET shaderc)
+    add_custom_target(shaderpacks ALL
+        COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/shaderpacks/build_shaderpack.py" Radiance
+                --shaderc "$<TARGET_FILE:shaderc>" --bgfx-src "${bgfx_SOURCE_DIR}/bgfx/src"
+                --zip "${CMAKE_CURRENT_BINARY_DIR}/shaderpacks" --soft
+        DEPENDS shaderc
+        COMMENT "Building shader packs")
+endif()
+
 set(PERLIN_PROTOCOL_OUT "${CMAKE_CURRENT_BINARY_DIR}/generated/protocol")
 set(PERLIN_PROTOCOL_CODEC_COUNT 6)
 set(PERLIN_PROTOCOL_SOURCES)
@@ -231,9 +236,6 @@ target_include_directories(perlin_protocol PUBLIC
     "${CMAKE_CURRENT_SOURCE_DIR}/src"
     "${CMAKE_CURRENT_BINARY_DIR}/generated")
 target_compile_features(perlin_protocol PUBLIC cxx_std_23)
-# `ar qc` appends to an existing archive, so an old libperlin_protocol.a from before the hand written codecs were removed kept
-# its stale members (PlayerAuthInput.cpp.o, LevelChunk.cpp.o) and the link failed with "multiple definition". A new file name
-# makes every existing build directory start from a clean archive.
 set_target_properties(perlin_protocol PROPERTIES ARCHIVE_OUTPUT_NAME perlin_protocol_gen)
 if(MSVC)
     set_source_files_properties(${PERLIN_PROTOCOL_SOURCES} PROPERTIES COMPILE_OPTIONS "/w;/bigobj;$<$<CONFIG:Debug>:/O1>")
@@ -241,14 +243,11 @@ else()
     set_source_files_properties(${PERLIN_PROTOCOL_SOURCES} PROPERTIES COMPILE_OPTIONS "-w;$<$<CONFIG:Debug>:-O1>")
 endif()
 
-# Embed resources/* into the executable.
 file(GLOB PERLIN_RESOURCE_FILES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/resources/*")
 set(PERLIN_EMBED_DIR "${CMAKE_CURRENT_BINARY_DIR}/embedded")
 file(MAKE_DIRECTORY "${PERLIN_EMBED_DIR}")
 set(PERLIN_EMBED_NAMES_SOURCE "")
 if(MSVC)
-    # Windows resources (RCDATA, numbered 1..N) plus a generated name table. rc.exe is only used for MSVC; MinGW and
-    # everything else embed with .incbin below.
     enable_language(RC)
     set(PERLIN_EMBED_SOURCE "${PERLIN_EMBED_DIR}/embedded_resources.rc")
     set(PERLIN_EMBED_NAMES_SOURCE "${PERLIN_EMBED_DIR}/embedded_names.cpp")
@@ -356,8 +355,6 @@ else()
     target_link_options(Perlin PRIVATE -static-libstdc++ -static-libgcc)
 endif()
 
-# Debug builds stay debuggable but the game itself must still be playable: optimise Perlin's own sources (not the
-# dependencies, so bgfx keeps its debug asserts). Turn off with -DPERLIN_DEBUG_OPT=OFF to step through game code.
 option(PERLIN_DEBUG_OPT "Optimise Perlin's own sources in Debug builds" ON)
 if(PERLIN_DEBUG_OPT)
     if(MSVC)
@@ -387,8 +384,6 @@ include(CheckIPOSupported)
 check_ipo_supported(RESULT PERLIN_IPO OUTPUT PERLIN_IPO_LOG)
 if(PERLIN_IPO)
     set_property(TARGET Perlin PROPERTY INTERPROCEDURAL_OPTIMIZATION_RELEASE ON)
-    # clang's LTO codegen (lld-link, "Register Coalescer") crashes with an access violation on EntityRenderer::Draw, a very
-    # large function. Build that one file as a plain native object instead; the rest of the program still gets LTO.
     if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
         set_source_files_properties(src/client/entity/EntityRenderer.cpp PROPERTIES COMPILE_OPTIONS "-fno-lto")
     elseif(MSVC)
@@ -398,7 +393,6 @@ endif()
 
 install(TARGETS Perlin RUNTIME DESTINATION .)
 if(MSVC)
-    # Debug info ships next to the exe so crash stack traces in perlin.log resolve to function names.
     install(FILES "$<TARGET_PDB_FILE:Perlin>" DESTINATION . OPTIONAL)
     install(FILES "$<TARGET_FILE_DIR:Perlin>/Perlin.map" DESTINATION . OPTIONAL)
 endif()
@@ -499,11 +493,13 @@ if(PERLIN_BUILD_TESTS)
     target_link_libraries(auth_selftest PRIVATE glaze::glaze miniz OpenSSL::SSL OpenSSL::Crypto Threads::Threads)
     if(WIN32)
         target_link_libraries(auth_selftest PRIVATE ws2_32 crypt32)
+    elseif(APPLE)
+        target_link_libraries(auth_selftest PRIVATE "-framework Security" "-framework CoreFoundation")
+        target_compile_definitions(auth_selftest PRIVATE CPPHTTPLIB_USE_CERTS_FROM_MACOSX_KEYCHAIN)
     endif()
     target_compile_features(auth_selftest PRIVATE cxx_std_23)
     add_test(NAME auth_selftest COMMAND auth_selftest)
 
-    # Needs the go-raknet harness in tests/rak running, so it is not part of ctest (see tests/rak/README.md).
     add_executable(rak_selftest tests/rak_selftest.cpp src/network/RakNet.cpp)
     target_include_directories(rak_selftest PRIVATE src "${concurrentqueue_SOURCE_DIR}")
     target_link_libraries(rak_selftest PRIVATE Threads::Threads)
