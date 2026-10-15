@@ -47,6 +47,7 @@ namespace perlin {
         constexpr bgfx::ViewId kViewBlurOut = 6;
         constexpr bgfx::ViewId kViewLate = 8;
         constexpr bgfx::ViewId kViewDoll = 7;
+        constexpr bgfx::ViewId kViewTop = 9;
         constexpr uint32_t kPageVerts = 1u << 20;
         constexpr uint32_t kPageIdx = (kPageVerts / 4) * 6;
 
@@ -157,6 +158,9 @@ namespace perlin {
         else if (forced == "metal")
             init.type = bgfx::RendererType::Metal;
 
+#ifdef __ANDROID__
+        init.type = bgfx::RendererType::OpenGLES;
+#endif
         ShaderPack& pack = ShaderPack::Instance();
         if (!options.shaderPack.empty()) {
             std::string error;
@@ -286,11 +290,12 @@ namespace perlin {
         bgfx::setViewMode(kViewEntity, bgfx::ViewMode::Sequential);
         bgfx::setViewMode(kViewLate, bgfx::ViewMode::Sequential);
         {
-            const bgfx::ViewId order[9] = {0, 1, kViewEntity, kViewLate, kViewBlur, kViewBlurOut, kViewHand, kViewGui, kViewDoll};
-            bgfx::setViewOrder(0, 9, order);
+            const bgfx::ViewId order[10] = {0, 1, kViewEntity, kViewLate, kViewBlur, kViewBlurOut, kViewHand, kViewGui, kViewDoll, kViewTop};
+            bgfx::setViewOrder(0, 10, order);
         }
         bgfx::setViewMode(kViewGui, bgfx::ViewMode::Sequential);
         bgfx::setViewMode(kViewDoll, bgfx::ViewMode::Sequential);
+        bgfx::setViewMode(kViewTop, bgfx::ViewMode::Sequential);
         bgfx::setViewMode(kViewBlur, bgfx::ViewMode::Sequential);
         bgfx::setViewMode(kViewBlurOut, bgfx::ViewMode::Sequential);
 
@@ -506,6 +511,9 @@ namespace perlin {
             bgfx::setViewClear(kViewDoll, BGFX_CLEAR_DEPTH, 0, 1.0f, 0);
             bgfx::setViewTransform(kViewDoll, identity, guiProj);
             bgfx::touch(kViewDoll);
+            bgfx::setViewRect(kViewTop, 0, 0, static_cast<uint16_t>(width), static_cast<uint16_t>(height));
+            bgfx::setViewTransform(kViewTop, identity, guiProj);
+            bgfx::touch(kViewTop);
         }
         SetupMotionBlur(params);
 
@@ -692,7 +700,7 @@ namespace perlin {
         bgfx::TextureHandle texture = uiWhite;
         if (draw.texture != 0 && draw.texture <= uiTextures.size() && uiTextures[draw.texture - 1].used)
             texture = uiTextures[draw.texture - 1].handle;
-        const bgfx::ViewId view = layer == UiLayer::World ? kViewEntity : layer == UiLayer::WorldLate ? kViewLate : layer == UiLayer::Hand ? kViewHand : layer == UiLayer::Doll ? kViewDoll : kViewGui;
+        const bgfx::ViewId view = layer == UiLayer::World ? kViewEntity : layer == UiLayer::WorldLate ? kViewLate : layer == UiLayer::Hand ? kViewHand : layer == UiLayer::Doll ? kViewDoll : layer == UiLayer::Top ? kViewTop : kViewGui;
 
         float model[16];
         std::memcpy(model, draw.model, sizeof(model));

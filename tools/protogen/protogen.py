@@ -899,6 +899,7 @@ CODEC_PATCHES = [(
     "    if constexpr (S::kReading) v.extra = {};\n    if (v.networkId == net::context::ShieldItemID()) {",
     "    if constexpr (S::kReading) v.extra = {};\n"
     "    if constexpr (!S::kReading) { if (v.networkId == 0) { uint32_t zero = 0; s.varint(zero); return; } }\n"
+    "    if constexpr (!S::kReading) { if (std::holds_alternative<std::monostate>(v.extra)) { if (v.networkId == net::context::ShieldItemID()) v.extra.template emplace<1>(); else v.extra.template emplace<2>(); } }\n"
     "    if (v.networkId == net::context::ShieldItemID()) {",
 )]
 

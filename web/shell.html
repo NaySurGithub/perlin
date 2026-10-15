@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Perlin</title>
+<link rel="stylesheet" href="perlin.css">
+<script src="perlin-isolation.js"></script>
+</head>
+<body>
+<canvas id="canvas" tabindex="-1"></canvas>
+<main id="launcher">
+  <h1>Perlin</h1>
+  <p class="lead">Minecraft Bedrock client for the browser. Joins NetherNet (WebRTC) servers.</p>
+  <form id="form" autocomplete="off">
+    <label>Server<input id="server" name="server" placeholder="127.0.0.1:19132 or https://host:443" spellcheck="false" required></label>
+    <label>Player name<input id="name" name="name" value="Steve" maxlength="16" spellcheck="false"></label>
+    <label>Signaling
+      <select id="signaling">
+        <option value="auto">Automatic</option>
+        <option value="https">Always https</option>
+        <option value="http">Always http</option>
+      </select>
+    </label>
+    <label>STUN servers<input id="stun" value="stun:stun.l.google.com:19302" spellcheck="false"></label>
+    <label class="check"><input type="checkbox" id="sounds"> Download sounds (about 150 MB)</label>
+    <label class="check"><input type="checkbox" id="eula" required> I accept the <a href="https://www.minecraft.net/en-us/eula" target="_blank" rel="noopener">Minecraft EULA</a></label>
+    <div class="row">
+      <button type="submit" id="start" disabled>Loading engine...</button>
+      <button type="button" id="clear" class="secondary">Clear cached data</button>
+    </div>
+  </form>
+  <div id="progress" hidden><div id="bar"></div></div>
+  <p id="status" role="status"></p>
+</main>
+<script src="perlin-loader.js"></script>
+{{{ SCRIPT }}}
+</body>
+</html>

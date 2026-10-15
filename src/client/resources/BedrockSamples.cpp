@@ -1,4 +1,5 @@
 #include "client/resources/BedrockSamples.hpp"
+#include "client/resources/SampleDownload.hpp"
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
@@ -31,6 +32,13 @@ namespace perlin {
     }
 
     bool BedrockSamples::Ensure(const std::string& targetDir) {
+#ifdef __EMSCRIPTEN__
+        return Available(targetDir);
+#elif defined(__ANDROID__)
+        if (Available(targetDir))
+            return true;
+        return DownloadSamples(targetDir);
+#else
         const fs::path root(targetDir);
         const fs::path repo = root / "repo";
         if (Available(targetDir)) {
@@ -81,5 +89,6 @@ namespace perlin {
             }
         }
         return false;
+#endif
     }
 }

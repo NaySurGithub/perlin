@@ -2,6 +2,10 @@
 #include <cstdlib>
 #include <filesystem>
 
+#if defined(__ANDROID__)
+#include <SDL3/SDL_system.h>
+#endif
+
 #if defined(_WIN32)
 #ifndef NOMINMAX
 #define NOMINMAX
@@ -43,7 +47,15 @@ namespace perlin::paths {
     }
 
     std::string DataDir() {
-#if defined(_WIN32)
+#if defined(__EMSCRIPTEN__)
+        return "/perlin";
+#elif defined(__ANDROID__)
+        if (const char* path = SDL_GetAndroidExternalStoragePath(); path && *path)
+            return (fs::path(path) / "Perlin").generic_string();
+        if (const char* path = SDL_GetAndroidInternalStoragePath(); path && *path)
+            return (fs::path(path) / "Perlin").generic_string();
+        return "/data/local/tmp/Perlin";
+#elif defined(_WIN32)
         const char* base = std::getenv("APPDATA");
         return (fs::path(base ? base : ".") / "Perlin").generic_string();
 #elif defined(__APPLE__)

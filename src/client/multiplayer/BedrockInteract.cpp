@@ -1,6 +1,7 @@
 #include "client/multiplayer/BedrockSession.hpp"
 
 #include <algorithm>
+#include <iterator>
 #include <cstdlib>
 #include <iostream>
 #include <mutex>
@@ -188,7 +189,7 @@ namespace perlin {
             nextStackRequestId -= 2;
             pendingDrops[r.requestId] = {slot, a.count, attempt};
             if (pendingDrops.size() > 64)
-                pendingDrops.erase(pendingDrops.begin());
+                pendingDrops.erase(std::prev(pendingDrops.end()));
         }
         a.typeId = ItemStackRequestActionsEntryTypeId::Drop;
         a.legacyTypeId = static_cast<uint8_t>(ItemStackRequestActionsEntryTypeId::Drop);

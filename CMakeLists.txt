@@ -10,6 +10,7 @@ set(CMAKE_POLICY_VERSION_MINIMUM 3.10)
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
+set(CMAKE_CXX_SCAN_FOR_MODULES OFF)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
@@ -21,6 +22,39 @@ if(WIN32)
 endif()
 
 add_compile_definitions(GLM_FORCE_DEPTH_ZERO_TO_ONE)
+
+option(PERLIN_WEB_SHADERS_ONLY "Only compile the ESSL shaders used by the web build" OFF)
+set(PERLIN_WEB_SHADER_DIR "" CACHE PATH "Directory holding prebuilt essl shader headers for the web build")
+if(PERLIN_WEB_SHADERS_ONLY)
+    set(PERLIN_BUILD_APP OFF)
+else()
+    set(PERLIN_BUILD_APP ON)
+endif()
+
+if(EMSCRIPTEN OR ANDROID)
+    set(PERLIN_PREBUILT_SHADERS ON)
+else()
+    set(PERLIN_PREBUILT_SHADERS OFF)
+endif()
+
+if(EMSCRIPTEN)
+    add_compile_options(-pthread -fwasm-exceptions)
+    string(REPLACE "." ";" PERLIN_EMSCRIPTEN_VERSION_PARTS "${EMSCRIPTEN_VERSION}")
+    list(GET PERLIN_EMSCRIPTEN_VERSION_PARTS 0 PERLIN_EM_MAJOR)
+    list(GET PERLIN_EMSCRIPTEN_VERSION_PARTS 1 PERLIN_EM_MINOR)
+    list(GET PERLIN_EMSCRIPTEN_VERSION_PARTS 2 PERLIN_EM_TINY)
+    string(REGEX REPLACE "[^0-9].*" "" PERLIN_EM_TINY "${PERLIN_EM_TINY}")
+    add_compile_definitions(
+        __EMSCRIPTEN_MAJOR__=${PERLIN_EM_MAJOR}
+        __EMSCRIPTEN_MINOR__=${PERLIN_EM_MINOR}
+        __EMSCRIPTEN_TINY__=${PERLIN_EM_TINY})
+    add_link_options(-pthread -fwasm-exceptions)
+endif()
+
+set(PERLIN_ANDROID_OPENSSL_BASE "" CACHE PATH "Directory holding one OpenSSL install per Android ABI")
+if(ANDROID AND PERLIN_ANDROID_OPENSSL_BASE AND NOT OPENSSL_ROOT_DIR)
+    set(OPENSSL_ROOT_DIR "${PERLIN_ANDROID_OPENSSL_BASE}/${ANDROID_ABI}" CACHE PATH "OpenSSL root" FORCE)
+endif()
 
 if(WIN32 AND NOT OPENSSL_ROOT_DIR)
     foreach(root "$ENV{VCPKG_INSTALLATION_ROOT}" "$ENV{VCPKG_ROOT}" "C:/Users/judah/vcpkg")
@@ -48,18 +82,28 @@ set(OPENSSL_USE_STATIC_LIBS ON)
 if(WIN32)
     set(OPENSSL_MSVC_STATIC_RT ON)
 endif()
-find_package(OpenSSL REQUIRED)
-find_package(Threads REQUIRED)
+if((EMSCRIPTEN OR ANDROID) AND OPENSSL_ROOT_DIR)
+    list(APPEND CMAKE_FIND_ROOT_PATH "${OPENSSL_ROOT_DIR}")
+endif()
+if(PERLIN_BUILD_APP)
+    find_package(OpenSSL REQUIRED)
+    find_package(Threads REQUIRED)
+endif()
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
 
 include(cmake/CPM.cmake)
 
+if(PERLIN_BUILD_APP)
 CPMAddPackage("gh:stephenberry/glaze@7.1.1")
 CPMAddPackage("gh:cameron314/concurrentqueue@1.0.4")
 CPMAddPackage("gh:g-truc/glm#1.0.1")
 CPMAddPackage(NAME stb GITHUB_REPOSITORY nothings/stb GIT_TAG master DOWNLOAD_ONLY YES)
+if(NOT EMSCRIPTEN)
 CPMAddPackage(NAME httplib GITHUB_REPOSITORY yhirose/cpp-httplib GIT_TAG v0.60.1 DOWNLOAD_ONLY YES)
+endif()
+endif()
 
+if(PERLIN_BUILD_APP AND NOT EMSCRIPTEN)
 set(DATACHANNEL_TESTS OFF CACHE BOOL "" FORCE)
 set(DBUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(NO_EXAMPLES ON CACHE BOOL "" FORCE)
@@ -75,11 +119,21 @@ CPMAddPackage(
     OPTIONS "USE_GNUTLS OFF" "USE_NICE OFF" "NO_TESTS ON" "NO_EXAMPLES ON"
 )
 set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+endif()
 
+if(PERLIN_BUILD_APP)
 CPMAddPackage(NAME miniz GITHUB_REPOSITORY richgel999/miniz GIT_TAG 3.0.2)
 
-set(SDL_SHARED OFF CACHE BOOL "" FORCE)
-set(SDL_STATIC ON CACHE BOOL "" FORCE)
+if(EMSCRIPTEN)
+    set(SDL_PTHREADS ON CACHE BOOL "" FORCE)
+endif()
+if(ANDROID)
+    set(SDL_SHARED ON CACHE BOOL "" FORCE)
+    set(SDL_STATIC OFF CACHE BOOL "" FORCE)
+else()
+    set(SDL_SHARED OFF CACHE BOOL "" FORCE)
+    set(SDL_STATIC ON CACHE BOOL "" FORCE)
+endif()
 set(SDL_TEST_LIBRARY OFF CACHE BOOL "" FORCE)
 set(SDL_TESTS OFF CACHE BOOL "" FORCE)
 set(SDL_EXAMPLES OFF CACHE BOOL "" FORCE)
@@ -98,10 +152,16 @@ CPMAddPackage(
     GIT_TAG 6.1
     GIT_SHALLOW YES
 )
+endif()
 
 set(BGFX_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
-set(BGFX_BUILD_TOOLS ON CACHE BOOL "" FORCE)
-set(BGFX_BUILD_TOOLS_SHADER ON CACHE BOOL "" FORCE)
+if(PERLIN_PREBUILT_SHADERS)
+    set(BGFX_BUILD_TOOLS OFF CACHE BOOL "" FORCE)
+    set(BGFX_BUILD_TOOLS_SHADER OFF CACHE BOOL "" FORCE)
+else()
+    set(BGFX_BUILD_TOOLS ON CACHE BOOL "" FORCE)
+    set(BGFX_BUILD_TOOLS_SHADER ON CACHE BOOL "" FORCE)
+endif()
 set(BGFX_BUILD_TOOLS_TEXTURE OFF CACHE BOOL "" FORCE)
 set(BGFX_BUILD_TOOLS_GEOMETRY OFF CACHE BOOL "" FORCE)
 set(BGFX_BUILD_TOOLS_BIN2C OFF CACHE BOOL "" FORCE)
@@ -119,7 +179,10 @@ set(PERLIN_SHADER_DIR "${CMAKE_CURRENT_SOURCE_DIR}/src/shaders")
 set(PERLIN_SHADER_OUT "${CMAKE_CURRENT_BINARY_DIR}/shaders")
 file(MAKE_DIRECTORY "${PERLIN_SHADER_OUT}")
 
-if(WIN32)
+if(PERLIN_PREBUILT_SHADERS OR PERLIN_WEB_SHADERS_ONLY)
+    set(PERLIN_SHADER_PROFILES 300_es)
+    set(PERLIN_EMBED essl)
+elseif(WIN32)
     set(PERLIN_SHADER_PROFILES spirv 430 s_5_0)
     set(PERLIN_EMBED dxbc glsl spv)
 elseif(APPLE)
@@ -168,6 +231,7 @@ function(perlin_compile_shaders type varying)
     set(PERLIN_SHADER_OUTPUTS ${PERLIN_SHADER_OUTPUTS} ${compiled} PARENT_SCOPE)
 endfunction()
 
+if(NOT PERLIN_PREBUILT_SHADERS)
 perlin_compile_shaders(VERTEX varying_terrain.def.sc vs_terrain)
 perlin_compile_shaders(FRAGMENT varying_terrain.def.sc fs_terrain_solid fs_terrain_cutout fs_terrain_translucent)
 perlin_compile_shaders(VERTEX varying_sky.def.sc vs_sky)
@@ -186,6 +250,14 @@ perlin_compile_shaders(VERTEX varying_ui.def.sc vs_ui)
 perlin_compile_shaders(FRAGMENT varying_ui.def.sc fs_ui)
 perlin_compile_shaders(VERTEX varying_post.def.sc vs_post)
 perlin_compile_shaders(FRAGMENT varying_post.def.sc fs_post)
+endif()
+
+if(PERLIN_PREBUILT_SHADERS)
+    if(NOT PERLIN_WEB_SHADER_DIR OR NOT EXISTS "${PERLIN_WEB_SHADER_DIR}/essl")
+        message(FATAL_ERROR "Set PERLIN_WEB_SHADER_DIR to a directory containing the essl shaders built with PERLIN_WEB_SHADERS_ONLY")
+    endif()
+    file(COPY "${PERLIN_WEB_SHADER_DIR}/essl" DESTINATION "${PERLIN_SHADER_OUT}")
+endif()
 
 set(PERLIN_SHADER_HEADER "${PERLIN_SHADER_OUT}/perlin_shaders.h")
 set(PERLIN_SHADER_HEADER_TEXT "#pragma once\n")
@@ -196,6 +268,11 @@ foreach(dir dxbc dxil essl glsl spirv metal)
     endforeach()
 endforeach()
 file(GENERATE OUTPUT "${PERLIN_SHADER_HEADER}" CONTENT "${PERLIN_SHADER_HEADER_TEXT}")
+
+if(PERLIN_WEB_SHADERS_ONLY)
+    add_custom_target(perlin_web_shaders ALL DEPENDS ${PERLIN_SHADER_OUTPUTS})
+    return()
+endif()
 
 set(PERLIN_PROTOCOL_OUT "${CMAKE_CURRENT_BINARY_DIR}/generated/protocol")
 set(PERLIN_PROTOCOL_CODEC_COUNT 6)
@@ -257,7 +334,12 @@ if(MSVC)
     file(GENERATE OUTPUT "${PERLIN_EMBED_NAMES_SOURCE}" CONTENT "${names}")
 else()
     set(PERLIN_EMBED_SOURCE "${PERLIN_EMBED_DIR}/embedded_resources.cpp")
-    if(APPLE)
+    set(endsection ".previous")
+    if(EMSCRIPTEN)
+        set(sym "")
+        set(section ".section .rodata.perlin,\\\"\\\",@")
+        set(endsection ".text")
+    elseif(APPLE)
         set(sym "_")
         set(section ".section __DATA,__const")
     elseif(WIN32)
@@ -279,7 +361,7 @@ else()
         string(APPEND table "    {\"${n}\", perlin_res_${i}, perlin_res_${i}_end},\n")
         math(EXPR i "${i}+1")
     endforeach()
-    string(APPEND text ");\nextern \"C\" {\n${decls}")
+    string(APPEND text "\"${endsection}\\n\"\n);\nextern \"C\" {\n${decls}")
     string(APPEND text "struct PerlinEmbeddedFile { const char* name; const uint8_t* begin; const uint8_t* end; };\n")
     string(APPEND text "extern const PerlinEmbeddedFile perlin_embedded_files[] = {\n${table}    {nullptr, nullptr, nullptr}};\n")
     string(APPEND text "extern const size_t perlin_embedded_count = ${i};\n}\n")
@@ -290,8 +372,16 @@ set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${PERLIN_RESOURCE
 
 file(GLOB_RECURSE PERLIN_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp")
 list(FILTER PERLIN_SOURCES EXCLUDE REGEX "/src/network/Nbt\\.cpp")
+if(EMSCRIPTEN)
+    list(FILTER PERLIN_SOURCES EXCLUDE REGEX "/src/network/(NetherNet|Http|RakNet)\\.cpp")
+else()
+    list(FILTER PERLIN_SOURCES EXCLUDE REGEX "_web\\.cpp$")
+endif()
 
-if(WIN32)
+if(ANDROID)
+    add_library(Perlin SHARED ${PERLIN_SOURCES} ${PERLIN_EMBED_SOURCE} ${PERLIN_EMBED_NAMES_SOURCE} ${PERLIN_SHADER_OUTPUTS})
+    set_target_properties(Perlin PROPERTIES OUTPUT_NAME main)
+elseif(WIN32)
     add_executable(Perlin WIN32 ${PERLIN_SOURCES} ${PERLIN_EMBED_SOURCE} ${PERLIN_EMBED_NAMES_SOURCE} ${PERLIN_SHADER_OUTPUTS})
 elseif(APPLE)
     add_executable(Perlin ${PERLIN_SOURCES} ${PERLIN_EMBED_SOURCE} ${PERLIN_EMBED_NAMES_SOURCE} ${PERLIN_SHADER_OUTPUTS})
@@ -305,17 +395,20 @@ target_include_directories(Perlin PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/src"
     "${PERLIN_SHADER_OUT}"
     "${stb_SOURCE_DIR}"
-    "${httplib_SOURCE_DIR}"
     "${concurrentqueue_SOURCE_DIR}"
     "${glm_SOURCE_DIR}"
-    "${libdatachannel_SOURCE_DIR}/include"
 )
+if(NOT EMSCRIPTEN)
+    target_include_directories(Perlin PRIVATE "${httplib_SOURCE_DIR}" "${libdatachannel_SOURCE_DIR}/include")
+endif()
 
 target_compile_definitions(Perlin PRIVATE ${PERLIN_SHADER_DEFS}
     GLM_FORCE_DEPTH_ZERO_TO_ONE
-    CPPHTTPLIB_OPENSSL_SUPPORT
     OPENSSL_SUPPRESS_DEPRECATED
 )
+if(NOT EMSCRIPTEN)
+    target_compile_definitions(Perlin PRIVATE CPPHTTPLIB_OPENSSL_SUPPORT)
+endif()
 
 if(WIN32)
     target_compile_definitions(Perlin PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN _WIN32_WINNT=0x0A00)
@@ -325,8 +418,6 @@ target_link_libraries(Perlin PRIVATE
     perlin_protocol
     glaze::glaze
     miniz
-    datachannel-static
-    OpenSSL::SSL
     OpenSSL::Crypto
     Threads::Threads
     SDL3::SDL3
@@ -335,13 +426,51 @@ target_link_libraries(Perlin PRIVATE
     bimg
     bx
 )
+if(NOT EMSCRIPTEN)
+    target_link_libraries(Perlin PRIVATE datachannel-static OpenSSL::SSL)
+endif()
 
-if(WIN32)
+if(EMSCRIPTEN)
+    set(PERLIN_WEB_DIR "${CMAKE_CURRENT_SOURCE_DIR}/web")
+    set_target_properties(Perlin PROPERTIES OUTPUT_NAME index SUFFIX ".html")
+    target_link_options(Perlin PRIVATE
+        -sWASMFS=1
+        -sFORCE_FILESYSTEM=1
+        -sMAX_WEBGL_VERSION=2
+        -sMIN_WEBGL_VERSION=2
+        -sFULL_ES3=1
+        -sALLOW_MEMORY_GROWTH=1
+        -sINITIAL_MEMORY=1024MB
+        -sMAXIMUM_MEMORY=4GB
+        -sSTACK_SIZE=8MB
+        -sDEFAULT_PTHREAD_STACK_SIZE=2MB
+        -sPTHREAD_POOL_SIZE=navigator.hardwareConcurrency+6
+        -sPTHREAD_POOL_SIZE_STRICT=0
+        -sFETCH=1
+        -sEXIT_RUNTIME=0
+        -sASSERTIONS=0
+        -sENVIRONMENT=web,worker
+        -sTEXTDECODER=1
+        "-sEXPORTED_FUNCTIONS=_main,_malloc,_free,_perlin_nn_on_message,_perlin_nn_on_closed"
+        "-sEXPORTED_RUNTIME_METHODS=FS,callMain,ccall,cwrap,UTF8ToString,stringToUTF8,lengthBytesUTF8"
+        "--js-library=${PERLIN_WEB_DIR}/library_nethernet.js"
+        "--shell-file=${PERLIN_WEB_DIR}/shell.html")
+    option(PERLIN_WEB_PROFILING "Keep function names and enable runtime checks in the web build" OFF)
+    if(PERLIN_WEB_PROFILING)
+        target_link_options(Perlin PRIVATE --profiling-funcs -sASSERTIONS=1 -sSTACK_OVERFLOW_CHECK=2)
+    endif()
+    set_property(TARGET Perlin APPEND PROPERTY LINK_DEPENDS "${PERLIN_WEB_DIR}/library_nethernet.js" "${PERLIN_WEB_DIR}/shell.html")
+    add_custom_command(TARGET Perlin POST_BUILD
+        COMMAND "${CMAKE_COMMAND}" -E copy_directory "${PERLIN_WEB_DIR}/static" "$<TARGET_FILE_DIR:Perlin>")
+elseif(WIN32)
     target_link_libraries(Perlin PRIVATE ws2_32 crypt32 dbghelp advapi32 user32 gdi32 bcrypt iphlpapi)
 elseif(APPLE)
     target_link_libraries(Perlin PRIVATE "-framework Security" "-framework CoreFoundation")
     target_compile_definitions(Perlin PRIVATE CPPHTTPLIB_USE_CERTS_FROM_MACOSX_KEYCHAIN)
-else()
+elseif(ANDROID)
+    target_link_libraries(Perlin PRIVATE log android EGL GLESv3)
+    target_link_options(Perlin PRIVATE -Wl,--build-id=none -Wl,-z,max-page-size=16384)
+elseif(NOT EMSCRIPTEN)
     target_link_libraries(Perlin PRIVATE dl)
     target_link_options(Perlin PRIVATE -static-libstdc++ -static-libgcc)
 endif()
@@ -372,7 +501,11 @@ else()
 endif()
 
 include(CheckIPOSupported)
-check_ipo_supported(RESULT PERLIN_IPO OUTPUT PERLIN_IPO_LOG)
+if(EMSCRIPTEN OR ANDROID)
+    set(PERLIN_IPO OFF)
+else()
+    check_ipo_supported(RESULT PERLIN_IPO OUTPUT PERLIN_IPO_LOG)
+endif()
 if(PERLIN_IPO)
     set_property(TARGET Perlin PROPERTY INTERPROCEDURAL_OPTIMIZATION_RELEASE ON)
     if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
@@ -382,13 +515,15 @@ if(PERLIN_IPO)
     endif()
 endif()
 
-install(TARGETS Perlin RUNTIME DESTINATION .)
+if(NOT ANDROID)
+    install(TARGETS Perlin RUNTIME DESTINATION .)
+endif()
 if(MSVC)
     install(FILES "$<TARGET_PDB_FILE:Perlin>" DESTINATION . OPTIONAL)
     install(FILES "$<TARGET_FILE_DIR:Perlin>/Perlin.map" DESTINATION . OPTIONAL)
 endif()
 option(PERLIN_BUILD_TESTS "Build unit tests" OFF)
-if(PERLIN_BUILD_TESTS)
+if(PERLIN_BUILD_TESTS AND NOT EMSCRIPTEN AND NOT ANDROID)
     enable_testing()
     add_executable(hud_dump tests/hud_dump.cpp src/client/ui/Json.cpp src/client/ui/UiExpr.cpp src/client/ui/JsonUi.cpp
         src/client/ui/UiLayout.cpp src/client/ui/McFont.cpp src/client/ui/RmlEmit.cpp src/client/ui/HudData.cpp

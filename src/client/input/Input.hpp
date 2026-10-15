@@ -12,6 +12,12 @@ namespace perlin {
         float x, y;
     };
 
+    inline void AtomicAdd(std::atomic<float>& target, float value) {
+        float expected = target.load(std::memory_order_relaxed);
+        while (!target.compare_exchange_weak(expected, expected + value, std::memory_order_relaxed)) {
+        }
+    }
+
     class Input {
     public:
         void OnKeyDown(int key);
@@ -20,14 +26,14 @@ namespace perlin {
         void OnMouseDown(int button);
         void OnMouseUp(int button);
         void OnMouseDelta(float dx, float dy) {
-            lookX.fetch_add(dx, std::memory_order_relaxed);
-            lookY.fetch_add(dy, std::memory_order_relaxed);
+            AtomicAdd(lookX, dx);
+            AtomicAdd(lookY, dy);
         }
         void TakeMouseDelta(float& dx, float& dy) {
             dx = lookX.exchange(0.0f, std::memory_order_relaxed);
             dy = lookY.exchange(0.0f, std::memory_order_relaxed);
         }
-        void OnMouseWheel(float dy) { wheel.fetch_add(dy, std::memory_order_relaxed); }
+        void OnMouseWheel(float dy) { AtomicAdd(wheel, dy); }
         float TakeWheel() { return wheel.exchange(0.0f, std::memory_order_relaxed); }
         void SetCaptured(bool c) { captured = c; }
         bool Captured() const { return captured; }

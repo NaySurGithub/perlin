@@ -24,6 +24,10 @@ namespace perlin {
         NetherNet(const NetherNet&) = delete;
         NetherNet& operator=(const NetherNet&) = delete;
 
+        static void SetSecureSignaling(bool secure);
+        static void SetIceServers(const std::string& servers);
+        static bool SecureSignaling();
+
         static bool Probe(const std::string& host, uint16_t port, NetherNetServerInfo& info,
                           std::string& error, int timeoutSecs = 15);
 
@@ -35,6 +39,11 @@ namespace perlin {
         bool SendPacket(const std::vector<uint8_t>& data) { return SendReliable(data); }
 
         bool TryReceive(std::vector<uint8_t>& out) override;
+
+#ifdef __EMSCRIPTEN__
+        void OnWebMessage(bool reliable, const uint8_t* data, size_t size);
+        void OnWebClosed();
+#endif
 
         bool IsConnected() const override { return connected; }
         std::string LastError() const override { return lastError; }

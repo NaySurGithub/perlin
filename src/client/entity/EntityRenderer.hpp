@@ -38,7 +38,6 @@ namespace perlin::entity {
             double worldTicks = 0;
             const Frustum* frustum = nullptr;
             bool outline = false;
-            bool hitboxes = false;
             std::vector<std::array<int, 4>> cracks;
             std::function<double(double, double, double)> groundY;
             bool chunkBorders = false;
@@ -123,7 +122,6 @@ namespace perlin::entity {
         void AddShapeOutline(const std::vector<std::pair<glm::dvec3, glm::dvec3>>& boxes, uint32_t colour);
         void DrawCracks(const FrameIn& in);
         size_t outlineLineStart = 0;
-        void AddHitbox(const Entity& e, const View& v);
         void DrawLines(const FrameIn& in);
         std::string loadedRoot;
         std::unordered_map<std::string, bool> warned;

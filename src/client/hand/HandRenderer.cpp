@@ -235,7 +235,7 @@ namespace perlin {
             const bool shield = is(in.main, "minecraft:shield") || is(in.off, "minecraft:shield");
             useHeld = in.useHeld && drawable;
             usedTicks = useHeld ? usedTicks + 1 : 0;
-            blocking = in.sneaking && shield;
+            blocking = shield && (in.sneaking || (in.useHeld && (is(in.main, "minecraft:shield") || !drawable)));
             scoping = in.useHeld && is(in.main, "minecraft:spyglass");
             oScopeScale = scopeScale;
             scopeScale = scoping ? scopeScale + (1.125f - scopeScale) * 0.5f : 0.5f;
@@ -884,6 +884,7 @@ namespace perlin {
             RenderShield(in, s, item, rightArm, m);
             return;
         }
+        
         if (item.name == "minecraft:trident" && s.attachables && DrawGeometryItem(item, m, !rightArm, true, in.light))
             return;
         if (s.attachables && RenderAttachable(in, s, item, rightArm, m))
@@ -999,7 +1000,7 @@ namespace perlin {
         const attachable::Frame frame = attachables.Evaluate(st, firstPerson ? 2 : 3);
         if (!frame.valid || frame.parts.empty())
             return false;
-        const glm::mat4 m = base * itemdisplay::Apply(t, leftHand) * S(1.0f / 16.0f) * T(0.0f, -24.0f, 0.0f);
+        const glm::mat4 m = base * itemdisplay::Apply(t, leftHand) * T(-0.5f, -0.5f, -0.5f) * S(1.0f / 16.0f) * T(0.0f, -24.0f, 0.0f);
         for (const attachable::Part& part : frame.parts) {
             const uint32_t texture = AttachableTexture(part.texture);
             if (texture)

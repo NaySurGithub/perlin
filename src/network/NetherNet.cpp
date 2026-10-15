@@ -17,12 +17,13 @@
 namespace perlin {
 
     namespace {
+        std::atomic<bool> g_secureSignaling{false};
 
         std::pair<int, std::string> HttpRequest(const std::string& host, uint16_t port,
                                                 const std::string& verb, const std::string& path,
                                                 const std::string& body, const std::string& contentType,
                                                 int timeoutSecs = 15) {
-            http::Response r = http::Request(host, port, false, verb, path, body, contentType, {}, timeoutSecs);
+            http::Response r = http::Request(host, port, g_secureSignaling.load(), verb, path, body, contentType, {}, timeoutSecs);
             return {r.status, std::move(r.body)};
         }
 
@@ -49,6 +50,16 @@ namespace perlin {
         std::atomic<bool> failed{false};
         std::string offerSdp;
     };
+
+    void NetherNet::SetSecureSignaling(bool secure) {
+        g_secureSignaling = secure;
+    }
+
+    bool NetherNet::SecureSignaling() {
+        return g_secureSignaling;
+    }
+
+    void NetherNet::SetIceServers(const std::string&) {}
 
     NetherNet::NetherNet() = default;
     NetherNet::~NetherNet() {

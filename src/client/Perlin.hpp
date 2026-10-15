@@ -38,6 +38,9 @@ namespace perlin {
         bool offline = false;
         std::string transport;
         bool logout = false;
+        bool secure = false;
+        bool acceptEula = false;
+        std::string stun;
     };
 
     class Perlin {

@@ -377,4 +377,11 @@ namespace perlin::net {
         return out;
     }
 
+    template <class P> bool EncodeChecked(const P& packet, std::vector<uint8_t>& out) {
+        out.clear();
+        WriteStream stream(out);
+        Write(stream, packet);
+        return stream.ok;
+    }
+
 }

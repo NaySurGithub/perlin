@@ -17,6 +17,7 @@ namespace perlin::ui {
         bool ok = false;
         bool block = false;
         bool handheld = false;
+        bool fromBlock = false;
         int w = 0, h = 0;
         std::vector<uint8_t> rgba;
         int tile = 0;
@@ -60,6 +61,7 @@ namespace perlin::ui {
         void LoadItemTextureTable();
         void LoadLang();
         bool FlatSprite(const std::string& shortName, int aux, ItemSprite& out);
+        bool BakeModelIcon(const std::string& name, int32_t hash, int size, Texture& out);
 
         std::string root;
         const BlockLibrary* blocks = nullptr;

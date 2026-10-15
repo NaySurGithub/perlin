@@ -6,9 +6,14 @@
 #include <bgfx/bgfx.h>
 
 #include <atomic>
+#include <cstdlib>
 #include <memory>
 #include <iostream>
 #include <thread>
+
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+#endif
 
 namespace {
     int KeyFromScancode(SDL_Scancode sc) {
@@ -34,6 +39,7 @@ namespace {
         case SDL_SCANCODE_RALT:
             return K::Alt;
         case SDL_SCANCODE_ESCAPE:
+        case SDL_SCANCODE_AC_BACK:
             return K::Escape;
         case SDL_SCANCODE_RETURN:
             return K::Enter;
@@ -80,6 +86,12 @@ namespace {
     }
 }
 
+#ifdef __EMSCRIPTEN__
+EM_JS(int, perlin_js_confirm, (const char* title, const char* message), {
+    return confirm(UTF8ToString(title) + "\n\n" + UTF8ToString(message)) ? 1 : 0;
+});
+#endif
+
 std::unique_ptr<perlin::RenderContext> AppPlatform_SDL::CreateRenderContext() {
     return std::make_unique<perlin::RenderContext_bgfx>();
 }
@@ -122,6 +134,9 @@ void AppPlatform_SDL::SetClipboard(const std::string& text) {
 }
 
 bool AppPlatform_SDL::ConfirmDialog(const std::string& title, const std::string& message) {
+#ifdef __EMSCRIPTEN__
+    return perlin_js_confirm(title.c_str(), message.c_str()) == 1;
+#else
     SDL_MessageBoxButtonData buttons[2] = {};
     buttons[0].flags = SDL_MESSAGEBOX_BUTTON_RETURNKEY_DEFAULT;
     buttons[0].buttonID = 1;
@@ -140,9 +155,29 @@ bool AppPlatform_SDL::ConfirmDialog(const std::string& title, const std::string&
     if (!SDL_ShowMessageBox(&data, &pressed))
         return false;
     return pressed == 1;
+#endif
+}
+
+void AppPlatform_SDL::DrawTouchOverlay(perlin::RenderContext& renderer) {
+    if (!touchMode || !game)
+        return;
+    touch.SetViewport(framebufferWidth, framebufferHeight);
+    touch.Draw(renderer, touch.Gameplay(game->GetInput()));
 }
 
 bool AppPlatform_SDL::Initialize() {
+#ifdef __EMSCRIPTEN__
+    SDL_SetHint(SDL_HINT_EMSCRIPTEN_ASYNCIFY, "0");
+#endif
+#ifdef SDL_PLATFORM_ANDROID
+    touchMode = true;
+    SDL_SetHint(SDL_HINT_ORIENTATIONS, "LandscapeLeft LandscapeRight");
+    SDL_SetHint(SDL_HINT_TOUCH_MOUSE_EVENTS, "0");
+    SDL_SetHint(SDL_HINT_MOUSE_TOUCH_EVENTS, "0");
+    SDL_SetHint(SDL_HINT_ANDROID_TRAP_BACK_BUTTON, "1");
+#endif
+    if (const char* t = std::getenv("PERLIN_TOUCH"))
+        touchMode = touchMode || std::atoi(t) != 0;
     if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS)) {
         std::cout << "[sdl] SDL_Init failed: " << SDL_GetError() << std::endl;
         return false;
@@ -154,6 +189,9 @@ bool AppPlatform_SDL::Initialize() {
     SDL_SetNumberProperty(props, SDL_PROP_WINDOW_CREATE_HEIGHT_NUMBER, 720);
     SDL_SetBooleanProperty(props, SDL_PROP_WINDOW_CREATE_RESIZABLE_BOOLEAN, true);
     SDL_SetBooleanProperty(props, SDL_PROP_WINDOW_CREATE_HIGH_PIXEL_DENSITY_BOOLEAN, true);
+#ifdef SDL_PLATFORM_ANDROID
+    SDL_SetBooleanProperty(props, SDL_PROP_WINDOW_CREATE_FULLSCREEN_BOOLEAN, true);
+#endif
     window = SDL_CreateWindowWithProperties(props);
     SDL_DestroyProperties(props);
     if (!window) {
@@ -161,13 +199,21 @@ bool AppPlatform_SDL::Initialize() {
         return false;
     }
 
+#ifdef __EMSCRIPTEN__
+    SDL_SetWindowFillDocument(window, true);
+#endif
+
     SDL_PropertiesID wp = SDL_GetWindowProperties(window);
     const char* driver = SDL_GetCurrentVideoDriver();
     std::string drv = driver ? driver : "";
-#if defined(SDL_PLATFORM_WIN32)
+#if defined(SDL_PLATFORM_EMSCRIPTEN)
+    native.window = const_cast<char*>("#canvas");
+#elif defined(SDL_PLATFORM_WIN32)
     native.window = SDL_GetPointerProperty(wp, SDL_PROP_WINDOW_WIN32_HWND_POINTER, nullptr);
 #elif defined(SDL_PLATFORM_MACOS)
     native.window = SDL_GetPointerProperty(wp, SDL_PROP_WINDOW_COCOA_WINDOW_POINTER, nullptr);
+#elif defined(SDL_PLATFORM_ANDROID)
+    native.window = SDL_GetPointerProperty(wp, SDL_PROP_WINDOW_ANDROID_WINDOW_POINTER, nullptr);
 #else
     if (drv == "wayland") {
         native.wayland = true;
@@ -190,14 +236,18 @@ bool AppPlatform_SDL::Initialize() {
     framebufferWidth = w > 0 ? w : 1280;
     framebufferHeight = h > 0 ? h : 720;
 
+#ifndef __EMSCRIPTEN__
     bgfx::renderFrame();
+#endif
 
     game = std::make_unique<perlin::Perlin>(args);
     if (!game->Initialize(this))
         return false;
+#ifndef __EMSCRIPTEN__
     SDL_RaiseWindow(window);
     if (SDL_GetWindowFlags(window) & SDL_WINDOW_INPUT_FOCUS)
         SetCursorCaptured(true);
+#endif
     return true;
 }
 
@@ -284,8 +334,27 @@ void AppPlatform_SDL::HandleEvent(const SDL_Event& e) {
                 input->OnMouseDown(b);
         break;
     case SDL_EVENT_MOUSE_WHEEL:
-        if (input && cursorCaptured)
+        if (input)
             input->OnMouseWheel(e.wheel.y);
+        break;
+    case SDL_EVENT_FINGER_DOWN:
+    case SDL_EVENT_FINGER_MOTION:
+    case SDL_EVENT_FINGER_UP:
+    case SDL_EVENT_FINGER_CANCELED:
+        if (input && touchMode) {
+            touch.SetViewport(framebufferWidth, framebufferHeight);
+            const float w = static_cast<float>(framebufferWidth), h = static_cast<float>(framebufferHeight);
+            const int64_t id = static_cast<int64_t>(e.tfinger.fingerID);
+            const float x = e.tfinger.x * w, y = e.tfinger.y * h;
+            if (e.type == SDL_EVENT_FINGER_DOWN)
+                touch.FingerDown(*input, id, x, y);
+            else if (e.type == SDL_EVENT_FINGER_MOTION)
+                touch.FingerMove(*input, id, x, y, e.tfinger.dx * w, e.tfinger.dy * h);
+            else if (e.type == SDL_EVENT_FINGER_UP)
+                touch.FingerUp(*input, id, x, y);
+            else
+                touch.Cancel(*input);
+        }
         break;
     case SDL_EVENT_MOUSE_BUTTON_UP:
         if (input)
@@ -297,40 +366,46 @@ void AppPlatform_SDL::HandleEvent(const SDL_Event& e) {
     }
 }
 
+void AppPlatform_SDL::PumpFrame() {
+    SDL_Event e;
+    while (SDL_PollEvent(&e))
+        HandleEvent(e);
+
+    {
+        std::lock_guard lock(titleMutex);
+        if (titleDirty) {
+            SDL_SetWindowTitle(window, pendingTitle.c_str());
+            titleDirty = false;
+        }
+    }
+
+    if (game && touchMode)
+        touch.Update(game->GetInput());
+
+    if (game) {
+        const bool text = game->GetInput().TextMode();
+        if (text != textActive) {
+            textActive = text;
+            if (text) {
+                recaptureAfterText = cursorCaptured;
+                SetCursorCaptured(false);
+                SDL_StartTextInput(window);
+            } else {
+                SDL_StopTextInput(window);
+                if (recaptureAfterText)
+                    SetCursorCaptured(true);
+                recaptureAfterText = false;
+            }
+        }
+    }
+
+    if (cursorCaptured && !(SDL_GetWindowFlags(window) & SDL_WINDOW_INPUT_FOCUS))
+        SetCursorCaptured(false);
+}
+
 void AppPlatform_SDL::Run() {
     while (isRunning) {
-        SDL_Event e;
-        while (SDL_PollEvent(&e))
-            HandleEvent(e);
-
-        {
-            std::lock_guard lock(titleMutex);
-            if (titleDirty) {
-                SDL_SetWindowTitle(window, pendingTitle.c_str());
-                titleDirty = false;
-            }
-        }
-
-        if (game) {
-            const bool text = game->GetInput().TextMode();
-            if (text != textActive) {
-                textActive = text;
-                if (text) {
-                    recaptureAfterText = cursorCaptured;
-                    SetCursorCaptured(false);
-                    SDL_StartTextInput(window);
-                } else {
-                    SDL_StopTextInput(window);
-                    if (recaptureAfterText)
-                        SetCursorCaptured(true);
-                    recaptureAfterText = false;
-                }
-            }
-        }
-
-        if (cursorCaptured && !(SDL_GetWindowFlags(window) & SDL_WINDOW_INPUT_FOCUS))
-            SetCursorCaptured(false);
-
+        PumpFrame();
         bgfx::renderFrame(8);
     }
 }

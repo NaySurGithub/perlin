@@ -47,7 +47,8 @@ namespace perlin {
         WorldLate,
         Hand,
         Gui,
-        Doll
+        Doll,
+        Top
     };
 
     struct UiDraw {

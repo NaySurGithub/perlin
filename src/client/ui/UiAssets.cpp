@@ -12,6 +12,7 @@
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <cstdlib>
 #include <sstream>
 
 namespace fs = std::filesystem;
@@ -272,7 +273,7 @@ namespace perlin::ui {
                 {"cod", "fish"}, {"cooked_cod", "cooked_fish"}, {"tropical_fish", "clownfish"},
                 {"enchanted_golden_apple", "apple_golden"}, {"melon_slice", "melon"}, {"potion", "potion_bottle_drinkable"},
                 {"milk_bucket", "bucket"}, {"totem_of_undying", "totem"}, {"fire_charge", "fireball"},
-                {"firework_rocket", "fireworks"}, {"oak_sign", "sign"}, {"popped_chorus_fruit", "chorus_fruit_popped"},
+                {"firework_rocket", "fireworks"}, {"splash_potion", "potion_bottle_splash"}, {"lingering_potion", "potion_bottle_lingering"}, {"oak_sign", "sign"}, {"popped_chorus_fruit", "chorus_fruit_popped"},
                 {"sugar_cane", "reeds"}, {"turtle_scute", "turtle_shell_piece"}};
             if (name.rfind("music_disc_", 0) == 0)
                 candidates.push_back("record_" + name.substr(11));
@@ -332,6 +333,10 @@ namespace perlin::ui {
                 out.handheld = false;
                 return true;
             }
+            if (name.rfind("leather_", 0) == 0)
+                for (size_t i = 3; i < t.pixels.size(); i += 4)
+                    if (t.pixels[i] != 0 && t.pixels[i] < 16)
+                        t.pixels[i] = 255;
             out.ok = true;
             out.block = false;
             out.w = t.width;
@@ -374,6 +379,7 @@ namespace perlin::ui {
             if (const BlockAppearance* a = blocks->LookByName("minecraft:" + name)) {
                 const int px = BlockLibrary::TilePx();
                 sprite.tile = px;
+                sprite.fromBlock = true;
                 const bool cube = a->shape == BlockAppearance::Shape::Cube || a->shape == BlockAppearance::Shape::Wall;
                 std::vector<uint8_t> top, side;
                 if (blocks->TilePixels(a->top, top) && blocks->TilePixels(a->side, side)) {
@@ -468,6 +474,17 @@ namespace perlin::ui {
 
     bool UiAssets::ItemIcon(const std::string& key, Texture& out) {
         const ItemSprite* s = Item(key);
+        if (!s || s->fromBlock) {
+            const size_t hashAt = key.find('#');
+            if (hashAt != std::string::npos && blocks && blocks->Ready()) {
+                const size_t semi = key.rfind(';', hashAt);
+                std::string name = Short(semi == std::string::npos ? key.substr(0, hashAt) : key.substr(0, semi));
+                if (name == "tallgrass") name = "short_grass";
+                const int32_t hash = static_cast<int32_t>(std::strtoul(key.c_str() + hashAt + 1, nullptr, 10));
+                if (BakeModelIcon(name, hash, 64, out))
+                    return true;
+            }
+        }
         if (!s) {
             out.width = out.height = 16;
             out.pixels.assign(16 * 16 * 4, 255);
@@ -489,6 +506,189 @@ namespace perlin::ui {
         out.width = s->w;
         out.height = s->h;
         out.pixels = s->rgba;
+        return true;
+    }
+
+    bool UiAssets::BakeModelIcon(const std::string& name, int32_t hash, int size, Texture& out) {
+        const BlockModels& bm = blocks->Models();
+        if (!bm.Loaded())
+            return false;
+        const ModelEntry* entry = bm.Find(hash);
+        if (!entry)
+            return false;
+        std::vector<const ModelQuad*> quads;
+        if (entry->direct) {
+            for (const ModelQuad& q : entry->quads) quads.push_back(&q);
+        } else {
+            for (const auto& group : entry->groups)
+                if (!group.empty())
+                    for (const ModelQuad& q : bm.Variant(group[0].variant)) quads.push_back(&q);
+        }
+        if (quads.empty())
+            return false;
+        const BlockAppearance* app = blocks->LookByName("minecraft:" + name);
+        float tr = 1, tg = 1, tb = 1;
+        bool tinted = false;
+        {
+            auto set = [&](uint32_t rgb) {
+                tr = ((rgb >> 16) & 255) / 255.0f;
+                tg = ((rgb >> 8) & 255) / 255.0f;
+                tb = (rgb & 255) / 255.0f;
+                tinted = true;
+            };
+            if (name.find("spruce_leaves") != std::string::npos) set(0x619961);
+            else if (name.find("birch_leaves") != std::string::npos) set(0x80A755);
+            else if (name.find("_leaves") != std::string::npos && name.find("cherry") == std::string::npos &&
+                     name.find("azalea") == std::string::npos && name.find("pale") == std::string::npos) set(0x48B518);
+            else if (name == "short_grass" || name == "tallgrass" || name == "fern" || name == "large_fern" ||
+                     name == "tall_grass" || name == "grass_block" || name == "grass" || name == "grass_path" ||
+                     name == "sugar_cane" || name == "reeds") set(0x79C05A);
+            else if (name == "vine" || name == "lily_pad") set(0x48B518);
+            else if (app && (app->tintTop || app->tintSide)) {
+                tr = app->tintR;
+                tg = app->tintG;
+                tb = app->tintB;
+                tinted = true;
+            }
+        }
+        const int ss = 2;
+        const int big = size * ss;
+        std::vector<uint8_t> color(static_cast<size_t>(big) * big * 4, 0);
+        std::vector<float> depth(static_cast<size_t>(big) * big, -1e9f);
+        std::unordered_map<int, std::vector<uint8_t>> tiles;
+        const float ry = 225.0f * 3.14159265f / 180.0f, rx = 30.0f * 3.14159265f / 180.0f;
+        const auto rotate = [&](const float* p, float* r) {
+            const float x1 = p[0] * std::cos(ry) + p[2] * std::sin(ry);
+            const float z1 = -p[0] * std::sin(ry) + p[2] * std::cos(ry);
+            r[0] = x1;
+            r[1] = p[1] * std::cos(rx) - z1 * std::sin(rx);
+            r[2] = p[1] * std::sin(rx) + z1 * std::cos(rx);
+        };
+        const float scale = 10.0f * static_cast<float>(big) / 16.0f;
+        const float centre = static_cast<float>(big) * 0.5f;
+        const float l0[3] = {0.2f / 1.237f, 1.0f / 1.237f, -0.7f / 1.237f};
+        const float l1[3] = {-0.2f / 1.237f, 1.0f / 1.237f, 0.7f / 1.237f};
+        int ymin = big, ymax = -1, xmin = big, xmax = -1;
+        struct Projected {
+            float sx[4], sy[4], sz[4];
+        };
+        std::vector<Projected> projected(quads.size());
+        for (size_t qi = 0; qi < quads.size(); qi++) {
+            const ModelQuad& q = *quads[qi];
+            for (int i = 0; i < 4; i++) {
+                const float p[3] = {q.pos[i][0] - 0.5f, q.pos[i][1] - 0.5f, q.pos[i][2] - 0.5f};
+                float r[3];
+                rotate(p, r);
+                projected[qi].sx[i] = centre + r[0] * scale;
+                projected[qi].sy[i] = centre - r[1] * scale;
+                projected[qi].sz[i] = r[2];
+            }
+        }
+        for (size_t qi = 0; qi < quads.size(); qi++) {
+            const ModelQuad& q = *quads[qi];
+            const Projected& P = projected[qi];
+            int tile = q.tile ? q.tile : ((q.tex != 0xFFFF && q.tex < bm.tiles.size()) ? bm.tiles[q.tex] : 0);
+            if (!tile)
+                continue;
+            auto found = tiles.find(tile);
+            if (found == tiles.end()) {
+                std::vector<uint8_t> px;
+                if (!blocks->TilePixels(tile, px))
+                    px.clear();
+                found = tiles.emplace(tile, std::move(px)).first;
+            }
+            const std::vector<uint8_t>& tex = found->second;
+            const int tpx = BlockLibrary::TilePx();
+            if (tex.size() < static_cast<size_t>(tpx) * tpx * 4)
+                continue;
+            float e1[3], e2[3];
+            for (int c = 0; c < 3; c++) {
+                e1[c] = q.pos[1][c] - q.pos[0][c];
+                e2[c] = q.pos[3][c] - q.pos[0][c];
+            }
+            float n[3] = {e1[1] * e2[2] - e1[2] * e2[1], e1[2] * e2[0] - e1[0] * e2[2], e1[0] * e2[1] - e1[1] * e2[0]};
+            const float nl = std::sqrt(n[0] * n[0] + n[1] * n[1] + n[2] * n[2]);
+            if (nl < 1e-6f)
+                continue;
+            for (float& c : n) c /= nl;
+            float rn[3];
+            rotate(n, rn);
+            if (rn[2] < 0)
+                for (float& c : rn) c = -c;
+            const auto dot = [&](const float* l) { return std::max(0.0f, rn[0] * l[0] + rn[1] * l[1] + rn[2] * l[2]); };
+            const float shade = q.shade ? std::min(1.0f, (dot(l0) + dot(l1)) * 0.6f + 0.4f) : 1.0f;
+            const bool useTint = tinted && q.tint >= 0 && !q.tile;
+            const int tris[2][3] = {{0, 1, 2}, {0, 2, 3}};
+            for (const auto& t : tris) {
+                const float x0 = P.sx[t[0]], y0 = P.sy[t[0]], x1 = P.sx[t[1]], y1 = P.sy[t[1]], x2 = P.sx[t[2]], y2 = P.sy[t[2]];
+                const float det = (x1 - x0) * (y2 - y0) - (x2 - x0) * (y1 - y0);
+                if (std::fabs(det) < 1e-6f)
+                    continue;
+                const int minX = std::max(0, static_cast<int>(std::floor(std::min({x0, x1, x2}))));
+                const int maxX = std::min(big - 1, static_cast<int>(std::ceil(std::max({x0, x1, x2}))));
+                const int minY = std::max(0, static_cast<int>(std::floor(std::min({y0, y1, y2}))));
+                const int maxY = std::min(big - 1, static_cast<int>(std::ceil(std::max({y0, y1, y2}))));
+                for (int y = minY; y <= maxY; y++)
+                    for (int x = minX; x <= maxX; x++) {
+                        const float px = x + 0.5f, py = y + 0.5f;
+                        const float w1 = ((px - x0) * (y2 - y0) - (x2 - x0) * (py - y0)) / det;
+                        const float w2 = ((x1 - x0) * (py - y0) - (px - x0) * (y1 - y0)) / det;
+                        const float w0 = 1.0f - w1 - w2;
+                        if (w0 < -1e-4f || w1 < -1e-4f || w2 < -1e-4f)
+                            continue;
+                        const float z = w0 * P.sz[t[0]] + w1 * P.sz[t[1]] + w2 * P.sz[t[2]];
+                        const float u = w0 * q.uv[t[0]][0] + w1 * q.uv[t[1]][0] + w2 * q.uv[t[2]][0];
+                        const float v = w0 * q.uv[t[0]][1] + w1 * q.uv[t[1]][1] + w2 * q.uv[t[2]][1];
+                        const int tx = std::clamp(static_cast<int>(u / 16.0f * tpx), 0, tpx - 1);
+                        const int ty = std::clamp(static_cast<int>(v / 16.0f * tpx), 0, tpx - 1);
+                        const uint8_t* src = &tex[(static_cast<size_t>(ty) * tpx + tx) * 4];
+                        if (src[3] < 8)
+                            continue;
+                        const size_t at = static_cast<size_t>(y) * big + x;
+                        if (z < depth[at])
+                            continue;
+                        depth[at] = z;
+                        uint8_t* dst = &color[at * 4];
+                        float r = src[0] * shade, g = src[1] * shade, b = src[2] * shade;
+                        if (useTint) {
+                            r *= tr;
+                            g *= tg;
+                            b *= tb;
+                        }
+                        dst[0] = static_cast<uint8_t>(std::min(255.0f, r));
+                        dst[1] = static_cast<uint8_t>(std::min(255.0f, g));
+                        dst[2] = static_cast<uint8_t>(std::min(255.0f, b));
+                        dst[3] = src[3];
+                        xmin = std::min(xmin, x);
+                        xmax = std::max(xmax, x);
+                        ymin = std::min(ymin, y);
+                        ymax = std::max(ymax, y);
+                    }
+            }
+        }
+        if (xmax < 0)
+            return false;
+        out.width = out.height = size;
+        out.pixels.assign(static_cast<size_t>(size) * size * 4, 0);
+        for (int y = 0; y < size; y++)
+            for (int x = 0; x < size; x++) {
+                int sum[4] = {0, 0, 0, 0};
+                for (int dy = 0; dy < ss; dy++)
+                    for (int dx = 0; dx < ss; dx++) {
+                        const uint8_t* c = &color[(static_cast<size_t>(y * ss + dy) * big + x * ss + dx) * 4];
+                        sum[0] += c[0] * c[3];
+                        sum[1] += c[1] * c[3];
+                        sum[2] += c[2] * c[3];
+                        sum[3] += c[3];
+                    }
+                uint8_t* dst = &out.pixels[(static_cast<size_t>(y) * size + x) * 4];
+                if (sum[3] > 0) {
+                    dst[0] = static_cast<uint8_t>(sum[0] / sum[3]);
+                    dst[1] = static_cast<uint8_t>(sum[1] / sum[3]);
+                    dst[2] = static_cast<uint8_t>(sum[2] / sum[3]);
+                    dst[3] = static_cast<uint8_t>(sum[3] / (ss * ss));
+                }
+            }
         return true;
     }
 

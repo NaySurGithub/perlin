@@ -34,6 +34,8 @@
 #include "world/level/block/BlockPalette.hpp"
 #include "client/ui/UiAssets.hpp"
 #include "util/Paths.hpp"
+#include "client/platform/web/WebLoop.hpp"
+#include "network/NetherNet.hpp"
 
 #include "client/player/Interaction.hpp"
 #include <glm/gtc/type_ptr.hpp>
@@ -47,6 +49,12 @@
 #include <filesystem>
 #include <ctime>
 #include <iostream>
+
+#ifdef __EMSCRIPTEN__
+#define PERLIN_WEB_PERSIST static
+#else
+#define PERLIN_WEB_PERSIST
+#endif
 
 namespace perlin {
     namespace {
@@ -105,7 +113,6 @@ namespace perlin {
         bool gItemSlow = false;
         struct LocalCrack { bool active = false; int x = 0, y = 0, z = 0, stage = 0; };
         LocalCrack gLocalCrack;
-        bool showHitboxes = false;
         bool showChunkBorders = false;
         bool advancedTooltips = false;
         bool softPaused = false;
@@ -165,6 +172,11 @@ namespace perlin {
     bool Perlin::AcceptEula() {
         if (options.eulaAccepted)
             return true;
+        if (args.acceptEula) {
+            options.eulaAccepted = true;
+            options.Save();
+            return true;
+        }
         if (!platform->ConfirmDialog("Minecraft EULA",
                                      "This software uses Minecraft assets under the Mojang EULA.\n\n"
                                      "Do you accept the Minecraft EULA?"))
@@ -204,17 +216,36 @@ namespace perlin {
             Connect();
 
         renderRunning = true;
+#ifdef __EMSCRIPTEN__
+        RenderThreadMain();
+#else
         renderThread = std::thread(&Perlin::RenderThreadMain, this);
+#endif
         return true;
     }
 
     void Perlin::Connect() {
         std::string host;
         uint16_t port = 0;
-        if (!ParseServer(options.server, host, port)) {
+        std::string serverText = options.server;
+        bool secureSignaling = args.secure;
+        if (serverText.rfind("https://", 0) == 0) {
+            serverText.erase(0, 8);
+            secureSignaling = true;
+        } else if (serverText.rfind("http://", 0) == 0) {
+            serverText.erase(0, 7);
+        }
+        while (!serverText.empty() && serverText.back() == '/')
+            serverText.pop_back();
+        NetherNet::SetSecureSignaling(secureSignaling);
+        if (!args.stun.empty())
+            NetherNet::SetIceServers(args.stun);
+        if (!ParseServer(serverText, host, port)) {
             std::cout << "[perlin] invalid server address '" << options.server << "'" << std::endl;
             return;
         }
+        if (secureSignaling && serverText.rfind(':') == std::string::npos)
+            port = 443;
 
         particleLevel = nullptr;
         session = std::make_unique<BedrockSession>();
@@ -669,8 +700,6 @@ namespace perlin {
         }
         if (PERLIN_ENV("PERLIN_PREVIEW_BORDERS"))
             showChunkBorders = true;
-        if (PERLIN_ENV("PERLIN_PREVIEW_HITBOXES"))
-            showHitboxes = true;
         if (PERLIN_ENV("PERLIN_PREVIEW_SUBTITLES")) {
             hudState.subtitles = {{"Cow moos", -1, 1.0f}, {"Footsteps", 0, 0.8f}, {"Zombie groans", 1, 0.5f}, {"Explosion", 1, 0.3f}};
         }
@@ -701,6 +730,37 @@ namespace perlin {
     }
 
     namespace {
+        bool IsAmmoFor(const std::string& weapon, const std::string& name) {
+            if (name == "minecraft:arrow" || name == "minecraft:spectral_arrow" || name == "minecraft:tipped_arrow")
+                return true;
+            return weapon == "minecraft:crossbow" && name == "minecraft:firework_rocket";
+        }
+
+        bool WeaponNeedsAmmo(const ui::HudState& st, const std::string& weapon) {
+            return (weapon == "minecraft:bow" || weapon == "minecraft:crossbow") && st.Survival();
+        }
+
+        bool HasAmmo(const ui::HudState& st, BedrockSession* live, const std::string& weapon) {
+            if (!WeaponNeedsAmmo(st, weapon))
+                return true;
+            if (!st.offhand.Empty() && IsAmmoFor(weapon, st.offhand.name))
+                return true;
+            if (live) {
+                const auto inv = live->GetInventory();
+                for (const auto& it : inv.hotbar)
+                    if (!it.Empty() && IsAmmoFor(weapon, it.name))
+                        return true;
+                for (const auto& it : inv.main)
+                    if (!it.Empty() && IsAmmoFor(weapon, it.name))
+                        return true;
+                return false;
+            }
+            for (const auto& it : st.hotbar)
+                if (!it.Empty() && IsAmmoFor(weapon, it.name))
+                    return true;
+            return false;
+        }
+
         ui::HudItem ToHudItem(const BedrockSession::ItemStackInfo& info) {
             ui::HudItem item;
             if (info.Empty())
@@ -1495,25 +1555,25 @@ namespace perlin {
         camera.farPlane = std::max(static_cast<float>(options.renderDistance * 16 * 4),
                                    static_cast<float>(GraphicsSettings::From(options).cloudRange * 16));
 
-        Zoom zoom(options.zoom);
-        float scopeFov = 1.0f;
-        auto previous = Clock::now();
-        const auto startedAt = previous;
-        uint64_t frameCounter = 0;
-        DamageEffect damage;
-        uint32_t lastHurtCount = 0, lastHurtSerial = 0;
-        auto titleAt = previous;
-        auto animationAt = previous;
-        uint64_t animationStep = 0;
+        PERLIN_WEB_PERSIST Zoom zoom(options.zoom);
+        PERLIN_WEB_PERSIST float scopeFov = 1.0f;
+        PERLIN_WEB_PERSIST auto previous = Clock::now();
+        PERLIN_WEB_PERSIST const auto startedAt = previous;
+        PERLIN_WEB_PERSIST uint64_t frameCounter = 0;
+        PERLIN_WEB_PERSIST DamageEffect damage;
+        PERLIN_WEB_PERSIST uint32_t lastHurtCount = 0, lastHurtSerial = 0;
+        PERLIN_WEB_PERSIST auto titleAt = previous;
+        PERLIN_WEB_PERSIST auto animationAt = previous;
+        PERLIN_WEB_PERSIST uint64_t animationStep = 0;
 
-        const bool preview = PERLIN_ENV("PERLIN_PREVIEW") != nullptr;
-        std::unique_ptr<Level> previewLevel;
-        double previewTicks = kNoonTick;
-        std::string previewShot;
-        double previewWait = 15.0;
-        int previewShotFrames = -1;
-        auto previewReadyAt = previous;
-        size_t previewLastMeshed = 0;
+        PERLIN_WEB_PERSIST const bool preview = PERLIN_ENV("PERLIN_PREVIEW") != nullptr;
+        PERLIN_WEB_PERSIST std::unique_ptr<Level> previewLevel;
+        PERLIN_WEB_PERSIST double previewTicks = kNoonTick;
+        PERLIN_WEB_PERSIST std::string previewShot;
+        PERLIN_WEB_PERSIST double previewWait = 15.0;
+        PERLIN_WEB_PERSIST int previewShotFrames = -1;
+        PERLIN_WEB_PERSIST auto previewReadyAt = previous;
+        PERLIN_WEB_PERSIST size_t previewLastMeshed = 0;
         if (preview) {
             camera.x = 24.0f; camera.y = 74.0f; camera.z = -22.0f; camera.yaw = 100.0f; camera.pitch = -6.0f;
             if (const char* c = PERLIN_ENV("PERLIN_PREVIEW_CAM"))
@@ -1557,11 +1617,14 @@ namespace perlin {
                 input.SetTextMode(true);
             }
         }
-        int frames = 0;
-        auto handLightAt = previous;
-        int handSky = 15, handBlock = 0;
+        PERLIN_WEB_PERSIST int frames = 0;
+        PERLIN_WEB_PERSIST auto handLightAt = previous;
+        PERLIN_WEB_PERSIST int handSky = 15, handBlock = 0;
 
-        while (renderRunning && platform->isRunning) {
+        PERLIN_WEB_PERSIST auto frameStep = [&]() {
+#ifdef __EMSCRIPTEN__
+            platform->PumpFrame();
+#endif
             const auto frameStart = Clock::now();
             if ((frames & 15) == 0)
                 i18n::Lang::Get().Configure(ui::UiAssets::Instance().VanillaRoot(), paths::DataDir(), options.language);
@@ -1907,8 +1970,9 @@ namespace perlin {
                         breakDelayTicks--;
                     }
 
-                    const bool useHeld = inputManager.IsDown(Action::Use);
-                    const bool usePressed = inputManager.Pressed(Action::Use);
+                    const bool ammoBlocked = !HasAmmo(hudState, live, held.name);
+                    const bool useHeld = inputManager.IsDown(Action::Use) && !ammoBlocked;
+                    const bool usePressed = inputManager.Pressed(Action::Use) && !ammoBlocked;
                     static auto lastUseSent = Clock::time_point{};
                     const bool tooSoon = Clock::now() - lastUseSent < std::chrono::milliseconds(60);
                     if ((usePressed || (useHeld && useClock >= 0.2)) && !tooSoon) {
@@ -2135,10 +2199,6 @@ namespace perlin {
                         levelRenderer->RemeshAll();
                     say(i18n::Tr("perlin.debug.reload_chunks"));
                 }
-                if (edge('B')) {
-                    showHitboxes = !showHitboxes;
-                    say(i18n::Tr(showHitboxes ? "perlin.debug.hitboxes_on" : "perlin.debug.hitboxes_off"));
-                }
                 {
                     const bool cDown = f3 && input.IsKeyDown('C');
                     if (edge('C')) {
@@ -2272,7 +2332,8 @@ namespace perlin {
                     handIn.off = hudState.offhand;
                     handIn.survival = hudState.Survival();
                     handIn.sneaking = player.Sneaking();
-                    handIn.useHeld = (input.Captured() && inputManager.IsDown(Action::Use)) || PERLIN_ENV("PERLIN_PREVIEW_USE") != nullptr;
+                    handIn.useHeld = ((input.Captured() && inputManager.IsDown(Action::Use)) || PERLIN_ENV("PERLIN_PREVIEW_USE") != nullptr) &&
+                                     HasAmmo(hudState, live, handIn.main.name);
                     {
                         const std::string& mn = handIn.main.name;
                         const bool drink = mn == "minecraft:potion" || mn == "minecraft:milk_bucket" || mn == "minecraft:honey_bottle" ||
@@ -2530,6 +2591,14 @@ namespace perlin {
                     SpawnPreviewEntities();
                 }
                 std::vector<entity::Entity> entities = frameEntities;
+                if (player.Gliding()) {
+                    const glm::dvec3 here(camera.x, camera.y, camera.z);
+                    entities.erase(std::remove_if(entities.begin(), entities.end(),
+                                                  [&](const entity::Entity& e) {
+                                                      return e.type == "minecraft:fireworks_rocket" && glm::distance(e.pos, here) < 6.0;
+                                                  }),
+                                   entities.end());
+                }
                 if (!live && PERLIN_ENV("PERLIN_PREVIEW_RIDE") && entities.size() >= 2) {
                     std::sort(entities.begin(), entities.end(), [](const entity::Entity& a, const entity::Entity& b) { return a.runtimeId < b.runtimeId; });
                     entities[1].vehicleUid = entities[0].uniqueId;
@@ -2585,6 +2654,11 @@ namespace perlin {
                     for (int i = 0; i < 4; i++)
                         self.armor[i] = hudState.armorItems[i].name;
                     self.offHand = hudState.offhand.name;
+                    {
+                        const HandRenderer::RigState rig = handRenderer.Rig(0.0f);
+                        if (rig.using_ || rig.blocking || handRenderer.EatTicks() > 0)
+                            self.flags |= entity::flag::UsingItem;
+                    }
                     if (player.Sneaking())
                         self.flags |= entity::flag::Sneaking;
                     player.SetHeadUnderwater(live && headUnderwater);
@@ -2639,11 +2713,10 @@ namespace perlin {
                     platform->GetFramebufferSize(fw, fh);
                     ein.pixelScale = fh > 0 ? 2.0f * std::tan(glm::radians(camera.fov) * 0.5f) / static_cast<float>(fh) : 0.0f;
                     ein.lineWidthPx = std::max(2.5f, static_cast<float>(fw) / 1920.0f * 2.5f);
-                    ein.hitboxes = showHitboxes;
                     ein.chunkBorders = showChunkBorders;
                     ein.playerPos = glm::dvec3(camera.x, camera.y - 1.62, camera.z);
                 }
-                if (gAim.kind != AimHit::Kind::None && options.showHud) {
+                if (gAim.kind == AimHit::Kind::Block && options.showHud) {
                     ein.outline = true;
                     ein.outlineLo = gAim.boxLo;
                     ein.outlineHi = gAim.boxHi;
@@ -2774,6 +2847,8 @@ namespace perlin {
                         for (const BedrockSession::ParticleEvent& pe : live->TakeParticles()) {
                             const glm::dvec3 at(pe.x, pe.y, pe.z);
                             if (pe.event == 0) {
+                                if (player.Gliding() && pe.name.find("firework") != std::string::npos)
+                                    continue;
                                 particles.SpawnNamed(pe.name, at);
                             } else if (pe.event == 2001 || pe.event == 2021 || pe.event == 16404) {
                                 const int bx = static_cast<int>(std::floor(pe.x)), by = static_cast<int>(std::floor(pe.y)),
@@ -2960,6 +3035,8 @@ namespace perlin {
                         renderer->DrawHudCursor(cx, cy, cw, ch);
                 }
             }
+            if (!deathShown && !pauseShown && !invShown && !disconnectShown)
+                platform->DrawTouchOverlay(*renderer);
             if (inputManager.Pressed(Action::Screenshot))
                 TakeScreenshot();
             { ProfScope p(6); renderer->EndFrame(); }
@@ -2991,20 +3068,32 @@ namespace perlin {
                 frames = 0;
             }
 
+#ifndef __EMSCRIPTEN__
             if (!options.vsync && options.maxFps > 0) {
                 const auto target = frameStart + std::chrono::microseconds(1000000 / options.maxFps);
                 std::this_thread::sleep_until(target);
             }
-        }
+#endif
+        };
 
-        audioEngine.Close();
-        StopSampleProfiler();
-        entityRenderer.Shutdown();
-        handRenderer.Shutdown();
-        if (hud)
-            hud->Shutdown();
-        hud.reset();
-        levelRenderer.reset();
-        renderer->Shutdown();
+        PERLIN_WEB_PERSIST const auto teardown = [&] {
+            audioEngine.Close();
+            StopSampleProfiler();
+            entityRenderer.Shutdown();
+            handRenderer.Shutdown();
+            if (hud)
+                hud->Shutdown();
+            hud.reset();
+            levelRenderer.reset();
+            renderer->Shutdown();
+        };
+
+#ifdef __EMSCRIPTEN__
+        RunWebMainLoop([&] { return renderRunning && platform->isRunning ? (frameStep(), true) : false; }, teardown);
+#else
+        while (renderRunning && platform->isRunning)
+            frameStep();
+        teardown();
+#endif
     }
 }

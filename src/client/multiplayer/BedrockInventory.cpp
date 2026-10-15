@@ -2,6 +2,7 @@
 #include "client/multiplayer/BedrockSession.hpp"
 
 #include <algorithm>
+#include <iterator>
 #include <array>
 #include <iostream>
 
@@ -50,6 +51,16 @@ namespace perlin {
             if (EndsWith(n, "_boots"))
                 return 3;
             return -1;
+        }
+
+        bool OffhandAllowed(const std::string& full) {
+            const std::string n = full.rfind("minecraft:", 0) == 0 ? full.substr(10) : full;
+            static const char* const kAllowed[] = {"shield", "totem_of_undying", "arrow", "spectral_arrow", "tipped_arrow",
+                                                   "firework_rocket", "filled_map", "empty_map", "map"};
+            for (const char* a : kAllowed)
+                if (n == a)
+                    return true;
+            return false;
         }
 
         const std::vector<uint8_t>* NbtOf(const ItemV4& item) {
@@ -241,7 +252,14 @@ namespace perlin {
                     r.requestId = nextStackRequestId;
                     nextStackRequestId -= 2;
                     r.cause = static_cast<ItemStackRequestCause>(-1);
+                    InvSnapshot snapshot;
+                    snapshot.view = inventory;
+                    std::copy(std::begin(inventoryRaw), std::end(inventoryRaw), std::begin(snapshot.raw));
+                    std::copy(std::begin(extraRaw), std::end(extraRaw), std::begin(snapshot.extra));
                     if (op(r) && !r.actions.empty()) {
+                        invSnapshots[r.requestId] = std::move(snapshot);
+                        if (invSnapshots.size() > 16)
+                            invSnapshots.erase(std::prev(invSnapshots.end()));
                         {
                             std::string text;
                             for (const auto& a : r.actions)
@@ -252,7 +270,7 @@ namespace perlin {
                                         std::to_string(static_cast<int>(a.destination.slot)) + "#" + std::to_string(a.destination.stackId) + ")";
                             invSummaries[r.requestId] = text;
                             if (invSummaries.size() > 32)
-                                invSummaries.erase(invSummaries.begin());
+                                invSummaries.erase(std::prev(invSummaries.end()));
                             if (PERLIN_ENV("PERLIN_INV_DEBUG"))
                                 std::cout << "[inventory] send request " << r.requestId << ":" << text << std::endl;
                         }
@@ -423,6 +441,8 @@ namespace perlin {
             const bool cEmpty = C.Empty(), sEmpty = S.Empty();
             if (!cEmpty) {
                 if (addr >= kInvArmor0 && addr < kInvOffhand && ArmorSlotOf(C.name) != addr - kInvArmor0)
+                    return false;
+                if (addr == kInvOffhand && !OffhandAllowed(C.name))
                     return false;
             }
             const int max = cEmpty ? 64 : MaxStack(C.name);

@@ -28,6 +28,7 @@ namespace perlin::ui {
     namespace {
         RenderContext* gRenderer = nullptr;
         int gScale = 1;
+        UiLayer gLayer = UiLayer::Gui;
         bool gGlintPass = false;
         uint32_t gGlintTexture = 0;
         int gGlintWidth = 64;
@@ -90,7 +91,7 @@ namespace perlin::ui {
                 std::copy(g.matrix, g.matrix + 4, draw.glintMatrix);
                 std::copy(g.offset, g.offset + 2, draw.glintOffset);
             }
-            gRenderer->UiSubmit(UiLayer::Gui, draw);
+            gRenderer->UiSubmit(gLayer, draw);
         }
 
         void ReleaseGeometry(Rml::CompiledGeometryHandle geometry) override {
@@ -311,6 +312,16 @@ namespace perlin::ui {
             return out;
         }
 
+        class ElementMcLayer : public Rml::Element {
+        public:
+            explicit ElementMcLayer(const Rml::String& tag) : Rml::Element(tag) {}
+
+        protected:
+            void OnRender() override {
+                gLayer = GetAttribute<Rml::String>("layer", "gui") == "top" ? UiLayer::Top : UiLayer::Gui;
+            }
+        };
+
         class ElementMcImg : public Rml::Element {
         public:
             explicit ElementMcImg(const Rml::String& tag) : Rml::Element(tag) {}
@@ -518,6 +529,7 @@ namespace perlin::ui {
 
         Rml::ElementInstancerGeneric<ElementMcImg> gImgInstancer;
         Rml::ElementInstancerGeneric<ElementMcItem> gItemInstancer;
+        Rml::ElementInstancerGeneric<ElementMcLayer> gLayerInstancer;
     }
 
     RmlBackend::RmlBackend() = default;
@@ -539,6 +551,7 @@ namespace perlin::ui {
         }
         Rml::Factory::RegisterElementInstancer("mcimg", &gImgInstancer);
         Rml::Factory::RegisterElementInstancer("mcitem", &gItemInstancer);
+        Rml::Factory::RegisterElementInstancer("mclayer", &gLayerInstancer);
         context = Rml::CreateContext("hud", Rml::Vector2i(427, 240));
         if (!context) {
             std::cout << "[ui] RmlUi context creation failed" << std::endl;
@@ -649,7 +662,9 @@ namespace perlin::ui {
         if (!context)
             return;
         gScale = scale;
+        gLayer = UiLayer::Gui;
         context->Render();
+        gLayer = UiLayer::Gui;
     }
 
     void RmlBackend::ReloadTextures() {

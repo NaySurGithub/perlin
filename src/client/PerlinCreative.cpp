@@ -5,6 +5,7 @@
 #include "client/ui/CreativeScreen.hpp"
 #include "client/ui/InventoryScreen.hpp"
 #include "client/ui/ItemData.hpp"
+#include "client/PreviewWorld.hpp"
 #include "client/ui/UiAssets.hpp"
 #include "client/ui/UiTemplate.hpp"
 #include "util/Env.hpp"
@@ -55,7 +56,7 @@ namespace perlin {
             catalogVersion = live->CreativeVersion();
             creativeSignature.clear();
         } else if (!live && catalog.items.empty()) {
-            const char* names[4][6] = {{"minecraft:bricks", "minecraft:stone", "minecraft:oak_planks", "minecraft:glass", "minecraft:cobblestone", "minecraft:sandstone"},
+            const char* names[4][6] = {{"minecraft:brick_block", "minecraft:stone", "minecraft:oak_planks", "minecraft:glass", "minecraft:cobblestone", "minecraft:sandstone"},
                                        {"minecraft:grass_block", "minecraft:dirt", "minecraft:oak_log", "minecraft:oak_leaves", "minecraft:sand", "minecraft:gravel"},
                                        {"minecraft:diamond_sword", "minecraft:iron_pickaxe", "minecraft:bow", "minecraft:iron_helmet", "minecraft:shield", "minecraft:elytra"},
                                        {"minecraft:apple", "minecraft:bucket", "minecraft:diamond", "minecraft:stick", "minecraft:torch", "minecraft:redstone"}};
@@ -72,6 +73,27 @@ namespace perlin {
                         item.group = g;
                         catalog.items.push_back(item);
                     }
+            }
+            if (PERLIN_ENV("PERLIN_PREVIEW_ICONS")) {
+                catalog = {};
+                BedrockSession::CreativeGroup group;
+                group.category = 1;
+                catalog.groups.push_back(group);
+                uint32_t id = 1;
+                std::string only;
+                if (const char* list = PERLIN_ENV("PERLIN_PREVIEW_ONLY"))
+                    only = std::string(",") + list + ",";
+                for (const auto& [hash, name] : PreviewBlockList()) {
+                    if (!only.empty() && only.find("," + name.substr(10) + ",") == std::string::npos)
+                        continue;
+                    BedrockSession::CreativeItem item;
+                    item.entryId = id++;
+                    item.info.name = name;
+                    item.info.count = 1;
+                    item.info.blockRuntimeId = static_cast<uint32_t>(hash);
+                    item.group = 0;
+                    catalog.items.push_back(item);
+                }
             }
             catalogVersion = 0;
         }
@@ -128,7 +150,9 @@ namespace perlin {
             const float step = 1.0f / static_cast<float>(maxRow);
             creativeScroll = std::clamp(creativeScroll - (inputManager.Scroll() > 0 ? step : -step), 0.0f, 1.0f);
         }
-        const int firstRow = static_cast<int>(std::lround(creativeScroll * static_cast<float>(maxRow)));
+        int firstRow = static_cast<int>(std::lround(creativeScroll * static_cast<float>(maxRow)));
+        if (const char* row = PERLIN_ENV("PERLIN_PREVIEW_ROW"))
+            firstRow = std::clamp(std::atoi(row), 0, maxRow);
 
         creativeDollVisible = creativeTab == ui::kCreativeSurvivalTab;
         ui::CreativeView v;
@@ -210,10 +234,24 @@ namespace perlin {
         const int px = (guiW - ui::kCreativeW) / 2, py = (guiH - ui::kCreativeH) / 2;
         const bool leftEdge = left && !invLeftDown, rightEdge = right && !invRightDown;
         if (live && fresh && (leftEdge || rightEdge)) {
-            if (!hoverId.empty() && hoverId[0] == 't' && leftEdge) {
-                const int t = std::atoi(hoverId.c_str() + 1);
-                if (t >= 0 && t < ui::kCreativeTabs && present[static_cast<size_t>(t)]) {
-                    creativeTab = t;
+            int clickedTab = -1;
+            if (leftEdge)
+                for (int t = 0; t < ui::kCreativeTabs; t++) {
+                    if (!present[static_cast<size_t>(t)])
+                        continue;
+                    int tx, ty;
+                    bool top;
+                    ui::CreativeTabPos(t, tx, ty, top);
+                    const float x0 = static_cast<float>(px + tx), y0 = static_cast<float>(py + (top ? ty : ty + 4));
+                    const float y1 = top ? static_cast<float>(py) : y0 + 28.0f;
+                    if (gx >= x0 && gx < x0 + 26.0f && gy >= y0 && gy < y1) {
+                        clickedTab = t;
+                        break;
+                    }
+                }
+            if (clickedTab >= 0) {
+                if (clickedTab != creativeTab) {
+                    creativeTab = clickedTab;
                     creativeScroll = 0.0f;
                     creativeSignature.clear();
                 }

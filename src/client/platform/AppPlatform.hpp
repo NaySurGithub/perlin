@@ -31,6 +31,8 @@ public:
 
     virtual void SetCursorCaptured(bool captured) { (void)captured; }
 
+    virtual void PumpFrame() {}
+
     virtual void SetTitle(const std::string& title) { (void)title; }
 
     virtual bool ConfirmDialog(const std::string& title, const std::string& message) {
@@ -45,6 +47,8 @@ public:
     }
 
     virtual void SetClipboard(const std::string& text) { (void)text; }
+
+    virtual void DrawTouchOverlay(perlin::RenderContext& renderer) { (void)renderer; }
 
     virtual std::unique_ptr<perlin::RenderContext> CreateRenderContext() = 0;
 

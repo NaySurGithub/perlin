@@ -1,0 +1,106 @@
+name: Android build
+
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  OPENSSL_VERSION: openssl-3.0.15
+  SDL_REF: release-3.4.18
+  NDK_VERSION: 27.2.12479018
+  CMAKE_VERSION: 3.31.5
+  CPM_SOURCE_CACHE: ${{ github.workspace }}/.cpm-cache
+
+jobs:
+  shaders:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/cache@v4
+        with:
+          path: .cpm-cache
+          key: cpm-shaders-${{ hashFiles('CMakeLists.txt') }}
+      - name: Install tools
+        run: sudo apt-get update && sudo apt-get install -y ninja-build cmake python3
+      - name: Compile ESSL shaders
+        run: |
+          cmake -S . -B build-shaders -G Ninja -DPERLIN_WEB_SHADERS_ONLY=ON
+          cmake --build build-shaders --target perlin_web_shaders
+      - uses: actions/upload-artifact@v4
+        with:
+          name: essl-shaders
+          path: build-shaders/shaders/essl
+          if-no-files-found: error
+
+  apk:
+    runs-on: ubuntu-24.04
+    needs: shaders
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/cache@v4
+        with:
+          path: .cpm-cache
+          key: cpm-android-${{ hashFiles('CMakeLists.txt') }}
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - name: Install SDK components
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platforms;android-35" "build-tools;35.0.0" "ndk;${NDK_VERSION}" "cmake;${CMAKE_VERSION}"
+      - uses: actions/download-artifact@v4
+        with:
+          name: essl-shaders
+          path: android-shaders/essl
+      - name: Fetch SDL
+        run: git clone --depth 1 -b "$SDL_REF" https://github.com/libsdl-org/SDL android/sdl
+      - name: Cache OpenSSL for Android
+        id: openssl-cache
+        uses: actions/cache@v4
+        with:
+          path: ossl-android
+          key: openssl-android-${{ env.OPENSSL_VERSION }}-${{ env.NDK_VERSION }}-v1
+      - name: Build OpenSSL for Android
+        if: steps.openssl-cache.outputs.cache-hit != 'true'
+        run: |
+          export ANDROID_NDK_ROOT="$ANDROID_HOME/ndk/$NDK_VERSION"
+          export PATH="$ANDROID_NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin:$PATH"
+          git clone --depth 1 -b "$OPENSSL_VERSION" https://github.com/openssl/openssl openssl-src
+          for pair in arm64-v8a:android-arm64 x86_64:android-x86_64; do
+            abi="${pair%%:*}"
+            target="${pair##*:}"
+            rm -rf "openssl-build-$abi"
+            mkdir "openssl-build-$abi"
+            (cd "openssl-build-$abi" && ../openssl-src/Configure "$target" -D__ANDROID_API__=26 no-shared no-tests no-ui-console no-engine no-dso no-stdio --prefix="$GITHUB_WORKSPACE/ossl-android/$abi" --openssldir="$GITHUB_WORKSPACE/ossl-android/$abi/ssl" && make -j"$(nproc)" build_libs && make install_dev)
+          done
+      - name: Generate asset manifest
+        run: |
+          git clone --depth 1 --filter=blob:none --no-checkout https://github.com/Mojang/bedrock-samples bedrock-samples-index
+          python3 tools/web/gen_manifest.py --repo bedrock-samples-index --out android/app/src/main/assets/assets-manifest.json
+      - name: Build APK
+        working-directory: android
+        run: |
+          ./gradlew --no-daemon assembleRelease \
+            -PsdlDir="$GITHUB_WORKSPACE/android/sdl" \
+            -PshaderDir="$GITHUB_WORKSPACE/android-shaders" \
+            -PopensslBase="$GITHUB_WORKSPACE/ossl-android" \
+            -PndkVersion="$NDK_VERSION" \
+            -PcmakeVersion="$CMAKE_VERSION" \
+            -Pabis="arm64-v8a,x86_64" \
+            -PappVersionCode="$GITHUB_RUN_NUMBER" \
+            -PappVersionName="1.0.$GITHUB_RUN_NUMBER"
+      - name: Collect APK
+        run: |
+          mkdir dist
+          cp android/app/build/outputs/apk/release/*.apk dist/Perlin.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Perlin-android-apk
+          path: dist/Perlin.apk
+          if-no-files-found: error

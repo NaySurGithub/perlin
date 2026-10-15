@@ -13,7 +13,7 @@
 
 namespace perlin::ui {
     std::string DefaultInventoryScreenTemplate() {
-        return R"PERLINRML(<!--perlin-ui:4-->
+        return R"PERLINRML(<!--perlin-ui:6-->
 <rml>
 <head>
 <title>inventory</title>
@@ -26,10 +26,8 @@ mcitem { display: block; position: absolute; }
 .r { position: absolute; }
 .label { font-family: minecraft; font-size: 8px; line-height: 9px; color: #404040; white-space: nowrap; }
 .slot { width: 18px; height: 18px; z-index: 2; }
-.slot .hlb { left: 1px; top: 1px; width: 16px; height: 16px; background-color: transparent; z-index: 1; }
-.slot .hl { left: 1px; top: 1px; width: 16px; height: 16px; background-color: transparent; z-index: 6; }
-.slot:hover .hlb { background-color: rgba(255,255,255,96); }
-.slot:hover .hl { background-color: rgba(255,255,255,32); }
+.slot .pb { display: none; left: 0px; top: 0px; width: 18px; height: 18px; z-index: 1; pointer-events: none; }
+.slot:hover .pb { display: block; }
 .slot mcitem { z-index: 4; }
 .cnt { font-family: minecraft-shadow; font-size: 8px; line-height: 9px; color: #ffffff; text-align: right; white-space: nowrap; z-index: 5; }
 #cursor { z-index: 30; pointer-events: none; width: 16px; height: 16px; }
@@ -44,8 +42,7 @@ mcitem { display: block; position: absolute; }
   <div id="panel">{{chrome}}</div>
   <div class="label" style="left: {{lx}}px; top: {{ly}}px; z-index: 3;">{{title}}</div>
   {{slots}}
-  {{cursor}}
-  {{tooltip}}
+  <div id="top" style="left: 0px; top: 0px; width: {{w}}px; height: {{h}}px; z-index: 50; pointer-events: none;"><mclayer layer="top" style="display: block; position: absolute; width: 0px; height: 0px; z-index: -999;"></mclayer>{{cursor}}{{tooltip}}<mclayer layer="gui" style="display: block; position: absolute; width: 0px; height: 0px; z-index: 999;"></mclayer></div>
 </body>
 </rml>
 )PERLINRML";
@@ -105,7 +102,7 @@ mcitem { display: block; position: absolute; }
             int x, y;
             InventorySlotPos(addr, x, y);
             std::string s = "  <div id=\"" + id + "\" class=\"slot\" style=\"left:" + std::to_string(px + x) + "px;top:" + std::to_string(py + y) +
-                            "px;\"><div class=\"hlb\"></div>";
+                            "px;\">";
             if (item.Empty() && ((addr >= kInvAddrArmor && addr < kInvAddrOffhand) || addr == kInvAddrOffhand)) {
                 const int icon = addr == kInvAddrOffhand ? 4 : addr - kInvAddrArmor;
                 s += SpriteRml("ui_slot_icons.png", icon * 16, 0, 16, 16, 1, 1);
@@ -118,7 +115,7 @@ mcitem { display: block; position: absolute; }
                 if (item.count > 1)
                     s += "<div class=\"cnt\" style=\"left:-1px;top:10px;width:19px;height:9px;\">" + std::to_string(item.count) + "</div>";
             }
-            s += "<div class=\"hl\"></div></div>\n";
+            s += "<mcimg class=\"pb\" src=\"textures/ui/purpleBorder\" nine=\"4 4 4 4\"/></div>\n";
             return s;
         }
     }

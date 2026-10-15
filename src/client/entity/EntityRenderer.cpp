@@ -248,6 +248,18 @@ namespace perlin::entity {
         v.yawSpeed = WrapDegrees(v.yaw - prevYaw) / dt;
         v.headYaw = turn(v.headYaw, e.headYaw);
         v.pitch = v.pitch + (e.pitch - v.pitch) * static_cast<float>(follow);
+        if (e.type == "minecraft:arrow" || e.type == "minecraft:thrown_trident") {
+            const double len = glm::length(d);
+            if (len > 0.04) {
+                const float targetYaw = static_cast<float>(std::atan2(-d.x, d.z) * 180.0 / 3.14159265358979);
+                const float targetPitch = static_cast<float>(-std::asin(std::clamp(d.y / len, -1.0, 1.0)) * 180.0 / 3.14159265358979);
+                const float aim = 1.0f - std::exp(-dt / 0.03f);
+                v.yaw = v.yaw + WrapDegrees(targetYaw - v.yaw) * aim;
+                v.pitch = v.pitch + (targetPitch - v.pitch) * aim;
+            }
+            v.headYaw = v.yaw;
+            v.yawSpeed = 0.0f;
+        }
 
         const glm::dvec3 step = v.pos - v.lastPos;
         const float horizontal = static_cast<float>(std::sqrt(step.x * step.x + step.z * step.z));
@@ -486,7 +498,7 @@ namespace perlin::entity {
             } else {
                 host.using_ = e.Has(flag::UsingItem);
                 host.usedTicks = host.using_ ? static_cast<float>((v.now - v.usingSince) * 20.0) : 0.0f;
-                host.blocking = host.using_ && usedItem == "minecraft:shield";
+                host.blocking = host.using_ && (usedItem == "minecraft:shield" || e.offHand == "minecraft:shield");
             }
         }
         host.timeOfDay = std::fmod(in.worldTicks, 24000.0) / 24000.0;
@@ -751,7 +763,7 @@ namespace perlin::entity {
                 continue;
             addLayer(rcRef.id, false);
         }
-        if (e.isPlayer && e.skin && e.skin->capeWidth > 0 && !e.Has(flag::Invisible) && !v.fp)
+        if (e.isPlayer && e.skin && e.skin->capeWidth > 0 && !e.Has(flag::Invisible) && !v.fp && e.armor[1] != "minecraft:elytra")
             addLayer("controller.render.player.cape", true);
         if (itemRenderer && !e.Has(flag::Invisible) && e.isPlayer) {
             const auto bind = [&](const std::string& name, const glm::mat4& boneWorld, bool left) {
@@ -900,7 +912,7 @@ namespace perlin::entity {
         if (v.glideTime > 0.0f && e.isPlayer) {
             const float t = std::min(v.glideTime * 20.0f, 10.0f);
             const float amount = std::clamp(t * t / 100.0f, 0.0f, 1.0f);
-            model = glm::rotate(model, amount * (90.0f + v.pitch) * kDeg, glm::vec3(1, 0, 0));
+            model = glm::rotate(model, -amount * (90.0f + v.pitch) * kDeg, glm::vec3(1, 0, 0));
         }
         if (e.type == "minecraft:arrow")
             model = glm::rotate(model, 180.0f * kDeg, glm::vec3(0, 1, 0));
@@ -1437,8 +1449,6 @@ namespace perlin::entity {
                     continue;
                 }
             }
-            if (in.hitboxes)
-                AddHitbox(e, v);
             if (!e.Has(flag::Invisible) && !(e.isSelf && in.firstPerson)) {
                 if (e.isItem) {
                     DrawShadow(v.pos, 0.15f, 0.75f, in);
@@ -1786,20 +1796,5 @@ namespace perlin::entity {
         model[3] = glm::vec4(static_cast<float>(in.camera.x), static_cast<float>(in.camera.y), static_cast<float>(in.camera.z), 1.0f);
         std::copy_n(&model[0][0], 16, draw.model);
         renderer->UiSubmit(UiLayer::World, draw);
-    }
-
-    void EntityRenderer::AddHitbox(const Entity& e, const View& v) {
-        auto [w, h] = HitBox(e);
-        if (e.Has(flag::Baby) && !e.isPlayer)
-            { w *= 0.5f; h *= 0.5f; }
-        const double hw = w * 0.5;
-        const glm::dvec3 lo(v.pos.x - hw, v.pos.y, v.pos.z - hw), hi(v.pos.x + hw, v.pos.y + h, v.pos.z + hw);
-        AddBox(lo, hi, 0xFFFFFFFFu);
-        const double eye = e.isPlayer ? (e.Has(flag::Sneaking) ? 1.27 : 1.62) : h * 0.85;
-        AddBox({lo.x, v.pos.y + eye - 0.01, lo.z}, {hi.x, v.pos.y + eye + 0.01, hi.z}, 0xFF0000FFu);
-        const double yaw = static_cast<double>(v.headYaw) * 3.14159265358979 / 180.0, pitch = static_cast<double>(v.pitch) * 3.14159265358979 / 180.0;
-        const glm::dvec3 from(v.pos.x, v.pos.y + eye, v.pos.z);
-        const glm::dvec3 look(-std::sin(yaw) * std::cos(pitch), -std::sin(pitch), std::cos(yaw) * std::cos(pitch));
-        lines.push_back({from, from + look * 2.0, 0xFFFF0000u});
     }
 }

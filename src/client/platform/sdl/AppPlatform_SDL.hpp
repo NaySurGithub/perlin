@@ -1,5 +1,6 @@
 #pragma once
 #include "client/Perlin.hpp"
+#include "client/input/TouchControls.hpp"
 #include "client/platform/AppPlatform.hpp"
 
 #include <atomic>
@@ -17,6 +18,7 @@ public:
     bool Initialize() override;
     void Run() override;
     void Shutdown() override;
+    void PumpFrame() override;
 
     NativeWindowInfo GetNativeWindowInfo() override;
     void GetFramebufferSize(int& width, int& height) override;
@@ -24,6 +26,7 @@ public:
     void ShowSignInCode(const std::string& url, const std::string& code) override;
     bool ConfirmDialog(const std::string& title, const std::string& message) override;
     std::unique_ptr<perlin::RenderContext> CreateRenderContext() override;
+    void DrawTouchOverlay(perlin::RenderContext& renderer) override;
 
 private:
     void HandleEvent(const SDL_Event& event);
@@ -32,6 +35,8 @@ private:
     bool cursorCaptured = false;
     bool textActive = false;
     bool recaptureAfterText = false;
+    bool touchMode = false;
+    perlin::TouchControls touch;
 
     SDL_Window* window = nullptr;
     NativeWindowInfo native;

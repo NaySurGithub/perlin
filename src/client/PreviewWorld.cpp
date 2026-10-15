@@ -70,28 +70,33 @@ namespace perlin {
         }
     }
 
+    std::vector<std::pair<int32_t, std::string>> PreviewBlockList() {
+        std::string text;
+        resources::Read("block_states.json", text);
+        std::vector<std::pair<int32_t, std::string>> blocks;
+        std::string last;
+        for (size_t at = 0; (at = text.find(",\"minecraft:", at)) != std::string::npos;) {
+            const size_t end = text.find('"', at + 13);
+            const size_t open = text.rfind('[', at);
+            if (end == std::string::npos || open == std::string::npos)
+                break;
+            const std::string name = text.substr(at + 2, end - at - 2);
+            const char first = text[open + 1];
+            const bool entry = (first == '-' || (first >= '0' && first <= '9')) && text.find(',', open) == at;
+            if (entry && name != last) {
+                blocks.push_back({std::stoi(text.substr(open + 1)), name});
+                last = name;
+            }
+            at = end;
+        }
+        return blocks;
+    }
+
     namespace {
         bool BuildGallery(Level& level, int radius, const char* spec) {
             int page = 0, columns = 12, rows = 7;
             std::sscanf(spec, "%d,%d,%d", &page, &columns, &rows);
-            std::string text;
-            resources::Read("block_states.json", text);
-            std::vector<std::pair<int32_t, std::string>> blocks;
-            std::string last;
-            for (size_t at = 0; (at = text.find(",\"minecraft:", at)) != std::string::npos;) {
-                const size_t end = text.find('"', at + 13);
-                const size_t open = text.rfind('[', at);
-                if (end == std::string::npos || open == std::string::npos)
-                    break;
-                const std::string name = text.substr(at + 2, end - at - 2);
-                const char first = text[open + 1];
-                const bool entry = (first == '-' || (first >= '0' && first <= '9')) && text.find(',', open) == at;
-                if (entry && name != last) {
-                    blocks.push_back({std::stoi(text.substr(open + 1)), name});
-                    last = name;
-                }
-                at = end;
-            }
+            std::vector<std::pair<int32_t, std::string>> blocks = PreviewBlockList();
             std::vector<std::string> partners;
             if (const char* only = std::getenv("PERLIN_PREVIEW_ONLY")) {
                 std::vector<std::pair<int32_t, std::string>> picked;

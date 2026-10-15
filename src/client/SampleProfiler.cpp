@@ -1,6 +1,6 @@
 #include "client/SampleProfiler.hpp"
 
-#if defined(__linux__)
+#if defined(__linux__) && !defined(__EMSCRIPTEN__) && !defined(__ANDROID__)
 #include <csignal>
 #include <cstdio>
 #include <cstdlib>

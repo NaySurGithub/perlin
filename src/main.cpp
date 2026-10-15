@@ -192,6 +192,12 @@ namespace {
                 args.transport = "nethernet";
             else if (arg == "--logout")
                 args.logout = true;
+            else if (arg == "--tls")
+                args.secure = true;
+            else if (arg == "--accept-eula")
+                args.acceptEula = true;
+            else if (arg == "--stun" && i + 1 < argc)
+                args.stun = argv[++i];
             else if (arg == "--help" || arg == "-h")
                 std::printf(
                     "Perlin options:\n"
@@ -204,7 +210,9 @@ namespace {
                     "  --offline            skip the saved Microsoft login for this run\n"
                     "  --logout             forget the saved Microsoft login\n"
                     "  --raknet             connect over RakNet (Lifeboat, The Hive, any public server)\n"
-                    "  --nethernet          connect over NetherNet (BDS with the nethernet transport)\n");
+                    "  --nethernet          connect over NetherNet (BDS with the nethernet transport)\n"
+                    "  --tls                use https for the NetherNet signaling requests\n"
+                    "  --stun <urls>        comma separated STUN servers for NetherNet\n");
         }
         return args;
     }
@@ -218,7 +226,9 @@ int main(int argc, char** argv) {
     perlin::paths::EnsureDir(dataDir);
     perlin::paths::EnsureDir(dataDir + "/texturepacks");
     perlin::paths::EnsureDir(dataDir + "/shaderpacks");
+#ifndef __EMSCRIPTEN__
     StartLogCapture({dataDir + "/perlin.log"});
+#endif
 #ifdef _WIN32
     SetUnhandledExceptionFilter(CrashFilter);
 #endif
@@ -229,6 +239,12 @@ int main(int argc, char** argv) {
         std::printf("[perlin] starting %s, data dir %s, log %s/perlin.log\n", stamp, dataDir.c_str(), dataDir.c_str());
     }
 
+#ifdef __EMSCRIPTEN__
+    auto* platform = new AppPlatform_SDL(ParseArgs(argc, argv));
+    if (!platform->Initialize())
+        return 1;
+    return 0;
+#else
     AppPlatform_SDL platform(ParseArgs(argc, argv));
     if (!platform.Initialize())
         return 1;
@@ -236,4 +252,5 @@ int main(int argc, char** argv) {
     platform.Run();
     platform.Shutdown();
     return 0;
+#endif
 }

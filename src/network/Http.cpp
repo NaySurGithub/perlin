@@ -30,6 +30,9 @@ namespace perlin::http {
         };
         if (tls) {
             httplib::SSLClient cli(host, port);
+#ifdef __ANDROID__
+            cli.set_ca_cert_path(std::string(), "/system/etc/security/cacerts");
+#endif
             return run(cli);
         }
         httplib::Client cli(host, port);

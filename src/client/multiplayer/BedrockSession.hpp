@@ -16,6 +16,7 @@
 #include <deque>
 #include <optional>
 #include <atomic>
+#include <iostream>
 #include <chrono>
 #include <cstdint>
 #include <functional>
@@ -72,9 +73,21 @@ namespace perlin {
 
         void Update();
 
-        template <class P> bool Send(const P& packet) { return Transmit(P::kId, net::Encode(packet), true); }
+        template <class P> bool Send(const P& packet) {
+            std::vector<uint8_t> body;
+            if (!net::EncodeChecked(packet, body)) {
+                std::cout << "[net] refusing to send malformed " << P::kName << std::endl;
+                return false;
+            }
+            return Transmit(P::kId, body, true);
+        }
         template <class P> bool SendUnreliable(const P& packet) {
-            return Transmit(P::kId, net::Encode(packet), false);
+            std::vector<uint8_t> body;
+            if (!net::EncodeChecked(packet, body)) {
+                std::cout << "[net] refusing to send malformed " << P::kName << std::endl;
+                return false;
+            }
+            return Transmit(P::kId, body, false);
         }
 
         template <class P, class Fn> void On(Fn&& fn) { dispatcher.On<P>(std::forward<Fn>(fn)); }
@@ -574,6 +587,12 @@ void RequestRespawn();
         };
         std::vector<RecipeInfo> recipes;
         std::map<int32_t, std::string> invSummaries;
+        struct InvSnapshot {
+            InventoryView view;
+            proto::ItemV4 raw[36];
+            proto::ItemV4 extra[11];
+        };
+        std::map<int32_t, InvSnapshot> invSnapshots;
         int craftedRecipe = -1;
         std::deque<std::function<bool(proto::ItemStackRequest&)>> invQueue;
         bool invCloseWanted = false;
@@ -586,7 +605,7 @@ void RequestRespawn();
         bool SendCloseNow();
         bool inventoryOpen = false, serverClosedInventory = false;
         int inventoryWindow = 0;
-        int32_t nextStackRequestId = -1;
+        int32_t nextStackRequestId = -3;
         struct PendingDrop { int slot; int count; int attempt; };
         std::map<int32_t, PendingDrop> pendingDrops;
         int dropForm = 0;

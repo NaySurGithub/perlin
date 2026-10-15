@@ -128,6 +128,7 @@ namespace perlin {
         for (ItemV4& raw : extraRaw)
             raw = ItemV4{};
         invQueue.clear();
+        invSnapshots.clear();
         ridingUid = 0;
         invPendingRequest = 0;
         recipes.clear();
@@ -286,6 +287,17 @@ namespace perlin {
                               << (invSummaries.count(r.requestId) ? invSummaries[r.requestId] : std::string()) << std::endl;
                 else if (debug)
                     std::cout << "[inventory] request " << r.requestId << " ok" << std::endl;
+                if (const auto snap = invSnapshots.find(r.requestId); snap != invSnapshots.end()) {
+                    if (r.status != ItemStackResponsesEntryStatus::Ok) {
+                        const int selected = inventory.selected;
+                        inventory = snap->second.view;
+                        inventory.selected = selected;
+                        std::copy(std::begin(snap->second.raw), std::end(snap->second.raw), std::begin(inventoryRaw));
+                        std::copy(std::begin(snap->second.extra), std::end(snap->second.extra), std::begin(extraRaw));
+                        InvRecomputeOutputLocked();
+                    }
+                    invSnapshots.erase(snap);
+                }
                 if (r.status != ItemStackResponsesEntryStatus::Ok || !r.containers)
                     continue;
                 for (const auto& c : *r.containers) {

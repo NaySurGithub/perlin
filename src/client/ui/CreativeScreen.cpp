@@ -10,7 +10,7 @@
 
 namespace perlin::ui {
     std::string DefaultCreativeScreenTemplate() {
-        return R"PERLINRML(<!--perlin-ui:1-->
+        return R"PERLINRML(<!--perlin-ui:3-->
 <rml>
 <head>
 <title>creative</title>
@@ -18,6 +18,7 @@ namespace perlin::ui {
 body { position: absolute; left: 0px; top: 0px; width: {{w}}px; height: {{h}}px; margin: 0; padding: 0; background: transparent; }
 div { display: block; position: absolute; }
 mcitem { display: block; position: absolute; }
+mcimg { display: block; position: absolute; }
 #dim { left: 0px; top: 0px; width: {{w}}px; height: {{h}}px; decorator: vertical-gradient( rgba(16,16,16,192) rgba(16,16,16,208) ); }
 #panel { left: {{x}}px; top: {{y}}px; width: 195px; height: 136px; z-index: 2; }
 .tab { width: 26px; height: 32px; }
@@ -27,10 +28,8 @@ mcitem { display: block; position: absolute; }
 .label { font-family: minecraft; font-size: 8px; line-height: 9px; color: #404040; white-space: nowrap; z-index: 3; }
 .search { font-family: minecraft-shadow; font-size: 8px; line-height: 9px; color: #ffffff; white-space: nowrap; z-index: 3; }
 .slot { width: 18px; height: 18px; z-index: 3; }
-.slot .hlb { left: 1px; top: 1px; width: 16px; height: 16px; background-color: transparent; z-index: 1; }
-.slot .hl { left: 1px; top: 1px; width: 16px; height: 16px; background-color: transparent; z-index: 6; }
-.slot:hover .hlb { background-color: rgba(255,255,255,96); }
-.slot:hover .hl { background-color: rgba(255,255,255,32); }
+.slot .pb { display: none; left: 0px; top: 0px; width: 18px; height: 18px; z-index: 1; pointer-events: none; }
+.slot:hover .pb { display: block; }
 .slot mcitem { z-index: 4; }
 .cnt { font-family: minecraft-shadow; font-size: 8px; line-height: 9px; color: #ffffff; text-align: right; white-space: nowrap; z-index: 5; }
 #scroll { left: {{sx}}px; top: {{sy}}px; width: 12px; height: 15px; z-index: 3; }
@@ -50,8 +49,7 @@ mcitem { display: block; position: absolute; }
   {{search}}
   {{scrollbar}}
   {{slots}}
-  {{cursor}}
-  {{tooltip}}
+  <div id="top" style="left: 0px; top: 0px; width: {{w}}px; height: {{h}}px; z-index: 50; pointer-events: none;"><mclayer layer="top" style="display: block; position: absolute; width: 0px; height: 0px; z-index: -999;"></mclayer>{{cursor}}{{tooltip}}<mclayer layer="gui" style="display: block; position: absolute; width: 0px; height: 0px; z-index: 999;"></mclayer></div>
 </body>
 </rml>
 )PERLINRML";
@@ -98,7 +96,7 @@ mcitem { display: block; position: absolute; }
             int x, y;
             CreativeSlotPos(id, survival, x, y);
             std::string s = "  <div id=\"" + id + "\" class=\"slot\" style=\"left:" + std::to_string(px + x) + "px;top:" + std::to_string(py + y) +
-                            "px;\"><div class=\"hlb\"></div>";
+                            "px;\">";
             if (item.Empty() && iconIndex >= 0)
                 s += SpriteRml("ui_slot_icons.png", iconIndex * 16, 0, 16, 16, 1, 1);
             if (!item.Empty()) {
@@ -109,7 +107,7 @@ mcitem { display: block; position: absolute; }
                 if (item.count > 1)
                     s += "<div class=\"cnt\" style=\"left:-1px;top:10px;width:19px;height:9px;\">" + std::to_string(item.count) + "</div>";
             }
-            s += "<div class=\"hl\"></div></div>\n";
+            s += "<mcimg class=\"pb\" src=\"textures/ui/purpleBorder\" nine=\"4 4 4 4\"/></div>\n";
             return s;
         }
 
@@ -138,10 +136,13 @@ mcitem { display: block; position: absolute; }
             tabs += "  <div id=\"t" + std::to_string(t) + "\" class=\"tab " + (selected ? "on" : "off") + "\" style=\"left:" + std::to_string(px + x) +
                     "px;top:" + std::to_string(py + y) + "px;\">" + SpriteRml("ui_creative_tabs.png", col * 26, row * 32, 26, 32, 0, 0) + "</div>\n";
             HudItem icon = v.tabIcons[static_cast<size_t>(t)];
-            if (t == kCreativeSearchTab)
-                icon.name = "minecraft:compass", icon.count = 1;
-            else if (t == kCreativeSurvivalTab)
-                icon.name = "minecraft:chest", icon.count = 1;
+            if (t == kCreativeSearchTab) {
+                tabs += "  <mcimg class=\"ticon\" src=\"textures/ui/magnifyingGlass\" style=\"left:" + std::to_string(px + x + 5) + "px;top:" +
+                        std::to_string(py + y + 9) + "px;width:16px;height:16px;\"/>\n";
+                continue;
+            }
+            if (t == kCreativeSurvivalTab)
+                icon.name = "minecraft:grass_block", icon.count = 1, icon.blockRuntimeId = 0, icon.aux = 0;
             const int iy = py + y + (top ? 9 : 7);
             if (icon.Empty())
                 continue;

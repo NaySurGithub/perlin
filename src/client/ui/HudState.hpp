@@ -13,7 +13,12 @@ namespace perlin::ui {
         bool enchanted = false;
         std::string customName;
         bool Empty() const { return name.empty() || count <= 0; }
-        std::string Key() const { return name + ";" + std::to_string(maxDamage > 0 ? 0 : aux); }
+        std::string Key() const {
+            std::string k = name + ";" + std::to_string(maxDamage > 0 ? 0 : aux);
+            if (blockRuntimeId != 0)
+                k += "#" + std::to_string(blockRuntimeId);
+            return k;
+        }
         bool operator==(const HudItem& o) const {
             return name == o.name && count == o.count && aux == o.aux && blockRuntimeId == o.blockRuntimeId &&
                    maxDamage == o.maxDamage && enchanted == o.enchanted && customName == o.customName;

@@ -50,8 +50,6 @@ namespace perlin::i18n {
     "perlin.debug.on=on\n"
     "perlin.debug.off=off\n"
     "perlin.debug.reload_chunks=Reloading all chunks\n"
-    "perlin.debug.hitboxes_on=Hitboxes: shown\n"
-    "perlin.debug.hitboxes_off=Hitboxes: hidden\n"
     "perlin.debug.copied_location=Copied location to clipboard: %s\n"
     "perlin.debug.manual_crash=Manually triggered debug crash\n"
     "perlin.debug.chat_cleared=Cleared chat\n"
