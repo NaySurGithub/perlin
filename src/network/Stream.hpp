@@ -305,7 +305,6 @@ namespace perlin::net {
         s.varint(length);
         if (!s.length(length))
             return;
-
         if (length == 0)
             return;
         ReadStream sub = s.slice(length);

@@ -9,7 +9,6 @@
 namespace perlin::ui {
     namespace {
         std::string Pretty(const std::string& key) {
-
             std::string s = key;
             const size_t a = s.find('.');
             if (a != std::string::npos) {
@@ -124,7 +123,6 @@ namespace perlin::ui {
     std::string Translate(const std::string& rawKey, const std::vector<std::string>& parameters) {
         std::string key = rawKey;
         std::string prefix;
-
         size_t p = 0;
         while (p + 1 < key.size() && key.compare(p, 2, "\xC2\xA7") == 0 && p + 3 <= key.size())
             p += 3;

@@ -1,4 +1,7 @@
+#include <cstdlib>
+#include "util/Env.hpp"
 #include "client/attachable/Animation.hpp"
+#include <cctype>
 
 #include <algorithm>
 #include <cmath>
@@ -173,6 +176,9 @@ namespace perlin::attachable {
                         }
                     };
                     readList("animations", s.animations);
+                    for (auto& entry : s.animations)
+                        for (char& ch : entry.first)
+                            ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
                     readList("transitions", s.transitions);
                     for (const char* key : {"on_entry", "on_exit"}) {
                         const Json* arr = st.Find(key);
@@ -198,7 +204,8 @@ namespace perlin::attachable {
         if (a.blendWeight)
             weight *= static_cast<float>(a.blendWeight->Number(scope));
         if (a.overridePrevious)
-            pose.clear();
+            for (const auto& entry : a.bones)
+                pose.erase(entry.first);
         for (const auto& [bone, anim] : a.bones) {
             BoneXform& x = pose[bone];
             const auto setThis = [&](const glm::vec3& v) {
@@ -208,7 +215,11 @@ namespace perlin::attachable {
             };
             if (anim.rotation.present) {
                 setThis(bindRotation ? x.rotation + bindRotation(bone) : x.rotation);
-                x.rotation += anim.rotation.Eval(scope, time) * weight;
+                glm::vec3 r = anim.rotation.Eval(scope, time);
+                static const float armZ = PERLIN_ENV("PERLIN_ARMZ") ? static_cast<float>(std::atof(PERLIN_ENV("PERLIN_ARMZ"))) : -1.0f;
+                if (bone == "rightarm" || bone == "leftarm")
+                    r.z *= gFirstPersonPose ? 1.0f : armZ;
+                x.rotation += r * weight;
             }
             if (anim.position.present) {
                 setThis(x.position);

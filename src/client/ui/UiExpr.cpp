@@ -67,7 +67,6 @@ namespace perlin::ui {
                     return true;
                 if (a.IsNull() || b.IsNull())
                     return false;
-
                 return a.Dump() == b.Dump();
             }
 
@@ -224,7 +223,6 @@ namespace perlin::ui {
                 if (MatchWord("false")) return Json(false);
                 if (MatchWord("null")) return Json();
                 if (std::isalpha(static_cast<unsigned char>(c)) || c == '_') {
-
                     const size_t start = lex.pos;
                     while (lex.pos < lex.s.size() &&
                            (std::isalnum(static_cast<unsigned char>(lex.s[lex.pos])) || lex.s[lex.pos] == '_' ||

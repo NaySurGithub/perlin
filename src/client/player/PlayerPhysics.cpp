@@ -407,7 +407,6 @@ namespace perlin::physics {
             const float force = static_cast<float>(speed) / std::max(std::sqrt(forceSq), 1.0f);
             const float yaw = static_cast<float>(s.yaw) * static_cast<float>(kPi / 180.0);
             const float sn = std::sin(yaw), cs = std::cos(yaw);
-
             s.vx = F((-strafe * force * cs - sn * forward * force) + static_cast<float>(s.vx));
             s.vz = F((-strafe * force * sn + forward * force * cs) + static_cast<float>(s.vz));
         }
@@ -418,7 +417,6 @@ namespace perlin::physics {
         }
 
         const BlockShape& Below(const World& world, const State& s, BlockShape& storage) {
-
             storage = world.Query(static_cast<int>(std::floor(s.x)), static_cast<int>(std::floor(s.y - 0.1f)),
                                   static_cast<int>(std::floor(s.z)));
             return storage;
@@ -440,7 +438,6 @@ namespace perlin::physics {
     }
 
     Box BoundingBox(const State& s, bool sneaking) {
-
         const float half = static_cast<float>(kWidth) * 0.5f;
         const float x = static_cast<float>(s.x), y = static_cast<float>(s.y), z = static_cast<float>(s.z);
         const float h = static_cast<float>(sneaking ? kSneakHeight : kStandHeight);
@@ -483,12 +480,10 @@ namespace perlin::physics {
         if (in.flying) {
             const bool hovering = std::max(std::fabs(forward), std::fabs(strafe)) < 0.01f * 0.98f + 1e-9;
             const float hoverMod = hovering ? (in.creativeFlight ? 0.375f : 0.75f) : 1.0f;
-
             const double fwd = static_cast<float>(in.forward) * 0.98f, str = static_cast<float>(in.strafe) * 0.98f;
             const bool hover = std::max(std::fabs(in.forward), std::fabs(in.strafe)) < 0.01f;
             (void)hoverMod;
             MoveRelative(s, str, fwd, static_cast<double>(attr.flySpeed) * (in.sprint ? 2.0 : 1.0));
-
             if (in.flyUp && in.flyDown) {
                 s.vy = 0;
             } else {
@@ -520,7 +515,6 @@ namespace perlin::physics {
             const Box box = BoundingBox(s, false);
             const Motion m = ResolveMotion(world, box, req, grounded, scratch);
             s.x = m.position.x; s.y = m.position.y; s.z = m.position.z;
-
             s.onGround = m.cy && req.y < 0.0;
             s.vx = m.resolved.x; s.vy = m.resolved.y; s.vz = m.resolved.z;
             if (m.stepped || m.cy) s.vy = 0;
@@ -533,7 +527,6 @@ namespace perlin::physics {
             s.vz = DampHorizontal(s.vz, h);
             s.vy = F(static_cast<float>(s.vy) * 0.6f);
             if (s.onGround && s.verticalCollision && in.flyDown == false && m.cy && req.y < 0) {
-
             }
             return;
         }
@@ -614,7 +607,6 @@ namespace perlin::physics {
         if (m.stepped) v.y = 0;
         if (m.cx) v.x = 0;
         if (m.cy) {
-
             const BlockShape support = world.Query(static_cast<int>(std::floor(s.x)),
                                                    static_cast<int>(std::floor(s.y - 0.2f)),
                                                    static_cast<int>(std::floor(s.z)));

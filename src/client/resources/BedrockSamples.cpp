@@ -34,14 +34,11 @@ namespace perlin {
         const fs::path root(targetDir);
         const fs::path repo = root / "repo";
         if (Available(targetDir)) {
-
             const std::string path = "\"" + repo.string() + "\"";
             if (!fs::exists(repo / "resource_pack/models/blocks"))
                 Run("git -c core.longpaths=true -C " + path + " sparse-checkout add resource_pack/models/blocks");
-
             if (!fs::exists(repo / "resource_pack/entity") || !fs::exists(repo / "behavior_pack/entities"))
                 Run("git -c core.longpaths=true -C " + path + " sparse-checkout add resource_pack/entity behavior_pack/entities");
-
             if (!fs::exists(repo / "resource_pack/sounds/sound_definitions.json"))
                 Run("git -c core.longpaths=true -C " + path + " sparse-checkout add resource_pack/sounds");
             if (!fs::exists(repo / "resource_pack/attachables"))

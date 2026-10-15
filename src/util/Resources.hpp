@@ -4,7 +4,6 @@
 #include <string>
 
 namespace perlin::resources {
-
     using Provider = bool (*)(const char* name, const uint8_t** data, size_t* size);
     void SetProvider(Provider provider);
 

@@ -7,7 +7,6 @@ namespace perlin {
 }
 
 namespace perlin::ui {
-
     uint32_t CreateGlintTexture(RenderContext& renderer, int* width = nullptr);
 
     struct GlintTransform {

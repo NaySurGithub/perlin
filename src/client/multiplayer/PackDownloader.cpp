@@ -65,7 +65,6 @@ namespace perlin {
 
     std::string PackDownloader::UuidString(const net::Uuid& id) {
         char buf[40];
-
         uint8_t b[16];
         for (int i = 0; i < 8; i++) {
             b[i] = id.bytes[7 - i];

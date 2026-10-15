@@ -25,7 +25,6 @@ namespace perlin {
         bool Full(int dir) const {
             return (bits[dir][0] & bits[dir][1] & bits[dir][2] & bits[dir][3]) == ~0ull;
         }
-
         static bool Occludes(const FaceOcclusion* a, int dirA, const FaceOcclusion* b) {
             const int dirB = dirA ^ 1;
             for (int w = 0; w < 4; w++) {
@@ -48,7 +47,6 @@ namespace perlin {
         void LoadBehaviorPack(const std::string& blocksDir);
         void SetDerivedOpacity(OpacityFn fn);
         void SetOcclusion(OcclusionFn fn);
-
         const FaceOcclusion* Occlusion(uint16_t id) const;
         void Invalidate();
         bool HasRules() const;

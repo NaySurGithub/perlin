@@ -1,5 +1,4 @@
 #pragma once
-
 #include "client/Options.hpp"
 #include "client/attachable/Attachable.hpp"
 #include "client/multiplayer/SkinLoader.hpp"
@@ -15,11 +14,9 @@
 #include <vector>
 
 namespace perlin {
-
     struct WalkBob {
         float walkDist = 0, walkDistO = 0;
         float bob = 0, oBob = 0;
-
         void Tick(double moved, bool onGround, bool swimming);
     };
 
@@ -35,19 +32,18 @@ namespace perlin {
             float pitch = 0;
             ui::HudItem main, off;
             bool survival = true;
+            bool sneaking = false;
             bool useHeld = false;
             bool eating = false;
         };
         static bool IsFood(const std::string& name);
         int EatTicks() const { return eatTicks; }
+        bool Scoping() const { return scoping; }
+        void RenderScope(int width, int height, float partial);
         void Tick(const TickIn& in, const HandSettings& settings);
-
         void Swing(const HandSettings& settings);
-
         void Attack(const HandSettings& settings, bool resetsCooldown);
-
         float SwingProgress(float partial) const;
-
         void ForceSwingProgress(float progress) { forcedSwing = progress; }
 
         struct FrameIn {
@@ -62,10 +58,24 @@ namespace perlin {
         void Render(const FrameIn& in, const HandSettings& settings);
 
         void BeginWorldItems();
-
         void DrawWorldItem(const ui::HudItem& item, const glm::dvec3& feet, float age, uint64_t seed, const glm::vec3& light);
 
         void DrawHeldItem(const ui::HudItem& item, const glm::mat4& arm, bool left, const glm::vec3& light);
+
+        bool ThirdPersonAttachable(const std::string& item, bool left, bool firstPerson, bool sneaking, bool using_, float usedTicks,
+                                   bool blocking, double life, const std::string& mainItem, const std::string& offItem,
+                                   attachable::Frame& out);
+
+        struct RigState {
+            float attackTime = 0, armHeight = 1, offArmHeight = 1;
+            std::string main, off;
+            bool using_ = false, blocking = false;
+            float usedTicks = 0;
+        };
+        RigState Rig(float partial) const;
+        bool RigItem(const std::string& name);
+
+        bool ArmorAttachable(const std::string& identifier, std::string& geometry, std::string& texture);
 
         static glm::mat4 Projection(float fovDegrees, float aspect, float farPlane);
 
@@ -81,6 +91,7 @@ namespace perlin {
             std::vector<Quad> base, sleeve;
         };
 
+        bool DrawGeometryItem(const ui::HudItem& item, const glm::mat4& base, bool leftHand, bool firstPerson, const glm::vec3& light);
         void DrawModel(const std::vector<Quad>& quads, uint32_t texture, const glm::mat4& model, const glm::vec3& light,
                        float alphaCutoff, bool glint = false);
         const Model& ItemModel(const ui::HudItem& item);
@@ -92,7 +103,6 @@ namespace perlin {
         bool RenderAttachable(const FrameIn& in, const HandSettings& s, const ui::HudItem& item, bool rightArm,
                               const glm::mat4& hand);
         uint32_t AttachableTexture(const std::string& path);
-
         void RenderShield(const FrameIn& in, const HandSettings& s, const ui::HudItem& item, bool rightArm,
                           const glm::mat4& hand);
         uint32_t shieldTexture = 0;
@@ -128,6 +138,12 @@ namespace perlin {
         int eatTicks = 0; bool eatLatched = false;
         int usedTicks = 0;
         bool blocking = false;
+        bool scoping = false;
+        std::vector<uint32_t> scopeMeshes;
+        float scopeScale = 0.5f, oScopeScale = 0.5f;
+        uint32_t scopeTexture = 0, spyglassTexture = 0;
+        Model spyglassModel;
+        const Model& SpyglassModel();
         int glintWidth = 64;
         uint64_t skinSerialUploaded = ~0ull;
         bool skinFallback = true;

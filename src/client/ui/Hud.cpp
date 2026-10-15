@@ -5,6 +5,8 @@
 #include "client/ui/McFont.hpp"
 #include "client/ui/UiAssets.hpp"
 #include "client/ui/JavaDefaults.hpp"
+#include "client/ui/RmlEmit.hpp"
+#include "client/ui/UiTemplate.hpp"
 
 #include <algorithm>
 #include <chrono>
@@ -39,7 +41,6 @@ namespace perlin::ui {
     Hud::~Hud() = default;
 
     void Hud::WriteDefaults() {
-
         Write(fs::path(dataDir) / "ui_defaults" / "_perlin_java.json", kJavaHudOverrides);
     }
 
@@ -87,11 +88,9 @@ namespace perlin::ui {
         }
         tree = std::move(built);
         {
-
             BuildReport crossReport;
             crosshairTree = BuildTree(library, "hud_crosshair.hud_crosshair_screen", EngineRootVariables(), crossReport);
             cursorEmitter.Register("cursor_renderer", [this](const LNode& n, RmlWriter&) {
-
                 cursorX = std::floor(n.ax + (n.w - 15.0f) * 0.5f);
                 cursorY = std::floor(n.ay + (n.h - 15.0f) * 0.5f);
                 cursorValid = true;
@@ -117,7 +116,6 @@ namespace perlin::ui {
     int Hud::Update(const HudState& incoming, int fbW, int fbH, int guiScaleOption) {
         if (!backend.Ready())
             return 1;
-
         const uint64_t incomingSignature = HudSignature(incoming);
         const bool stateChanged = incomingSignature != lastIncomingSignature;
         lastIncomingSignature = incomingSignature;
@@ -138,9 +136,8 @@ namespace perlin::ui {
 
         const double now = Now();
         bool rebuilt = false;
-        if (reloadRequested || now - sinceCheck > 0.5) {
+        if (reloadRequested || now - sinceCheck > 2.0) {
             sinceCheck = now;
-
             std::string freshRcss = ReadUserRcss();
             if (freshRcss != rcssCache) {
                 rcssCache = std::move(freshRcss);
@@ -156,6 +153,20 @@ namespace perlin::ui {
         }
         if (!tree)
             return scale;
+        if (now - templateCheck > 2.0 || templatesStale) {
+            templateCheck = now;
+            uint64_t vh = 0, vc = 0;
+            std::string hudT = LoadUiTemplate(dataDir, "hud_screen.rml", DefaultHudTemplate(), vh);
+            std::string chatT = LoadUiTemplate(dataDir, "chat_screen.rml", DefaultChatTemplate(), vc);
+            if (vh != hudTemplateVersion || vc != chatTemplateVersion || templatesStale) {
+                hudTemplateVersion = vh;
+                chatTemplateVersion = vc;
+                emitter.SetTemplates(std::move(hudT), std::move(chatT));
+                lastSignature = 0;
+                templatesStale = false;
+                std::cout << "[ui] loaded " << dataDir << "/ui/hud_screen.rml and chat_screen.rml" << std::endl;
+            }
+        }
 
         if (crosshairTree && (!cursorValid || resized || rebuilt)) {
             cursorValid = false;
@@ -163,7 +174,6 @@ namespace perlin::ui {
             cursorEmitter.Emit(*crossEvaluated, guiW, guiH, std::string(), false);
         }
         if (!cursorValid) {
-
             cursorX = std::floor((guiW - 15.0f) * 0.5f);
             cursorY = std::floor((guiH - 15.0f) * 0.5f);
             cursorValid = true;
@@ -181,8 +191,17 @@ namespace perlin::ui {
         lastRml = emitter.Emit(*evaluated, guiW, guiH, rcss, false);
         backend.Resize(static_cast<int>(guiW), static_cast<int>(guiH), scale);
         std::string error;
-        if (!backend.SetDocument(lastRml, error))
+        if (!backend.SetDocument(lastRml, error)) {
             std::cout << "[ui] " << error << std::endl;
+            if (!emitterDefault) {
+                emitterDefault = true;
+                emitter.SetTemplates(std::string(), std::string());
+                lastRml = emitter.Emit(*evaluated, guiW, guiH, std::string(), false);
+                backend.SetDocument(lastRml, error);
+            }
+        } else {
+            emitterDefault = false;
+        }
         if (!dumped || rebuilt) {
             dumped = true;
             Write(fs::path(dataDir) / "ui_generated" / "hud.rml", lastRml);

@@ -25,7 +25,6 @@ namespace perlin {
 
     class LodStore {
     public:
-
         static constexpr int kRealChunks = 32;
         static constexpr int kTileChunks = 4;
 
@@ -34,14 +33,12 @@ namespace perlin {
         bool Capture(const Level& level, const ChunkPos& pos, const BlockLibrary& blocks, const BiomeTints& tints);
         void Remove(const ChunkPos& pos) { columns.erase(pos); }
         void Clear() { columns.clear(); colours.clear(); }
-
         void InvalidateColours() { colours.clear(); }
         const LodColumn* Find(const ChunkPos& pos) const {
             const auto it = columns.find(pos);
             return it == columns.end() ? nullptr : &it->second;
         }
         size_t Size() const { return columns.size(); }
-
         void Evict(int centreX, int centreZ, int radius, std::vector<ChunkPos>& removed);
         const std::unordered_map<ChunkPos, LodColumn, ChunkPosHash>& All() const { return columns; }
 

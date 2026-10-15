@@ -1,3 +1,4 @@
+// Decoders, the mixer (volumes per category, distance and pan), sound resolution from sounds.json and subtitles.
 #include "client/audio/SoundSystem.hpp"
 #include "client/audio/Subtitles.hpp"
 #include "client/i18n/Lang.hpp"
@@ -46,6 +47,7 @@ static std::vector<uint8_t> MakeWav(const std::vector<int16_t>& samples, int rat
     return b;
 }
 
+// An FSB5 bank with one sound (header layout of version 1).
 static std::vector<uint8_t> MakeFsb(uint32_t codec, const std::vector<uint8_t>& data, uint64_t samples, int freqIndex, bool stereo) {
     std::vector<uint8_t> b = {'F', 'S', 'B', '5'};
     Put32(b, 1); Put32(b, 1); Put32(b, 8); Put32(b, 0); Put32(b, static_cast<uint32_t>(data.size())); Put32(b, codec);
@@ -76,15 +78,16 @@ static void TestDecoders() {
     CHECK(DecodeSound(MakeFsb(2, raw, 4, 9, false), ".fsb", pcm));
     CHECK(pcm.rate == 48000 && pcm.channels == 1 && pcm.Frames() == 4 && pcm.samples[3] == 4);
 
+    // FADPCM: coefficient index 0 (no prediction), shift 0, every nibble 1 -> every sample is 1.
     std::vector<uint8_t> frame(0x8C, 0);
     for (int i = 0; i < 8 * 4; i++) { frame[12 + i * 4] = 0x11; frame[13 + i * 4] = 0x11; frame[14 + i * 4] = 0x11; frame[15 + i * 4] = 0x11; }
     CHECK(DecodeSound(MakeFsb(16, frame, 256, 8, false), ".fsb", pcm));
     CHECK(pcm.Frames() == 256 && pcm.samples[0] == 1 && pcm.samples[255] == 1);
-
+    // The same with a history: sample = (nibble*64 + 60*h1) >> 6 with coefficient set 1.
     frame[0] = 0x11; frame[1] = 0x11; frame[2] = 0x11; frame[3] = 0x11; // all eight sub-frames use coefficients {60, 0}
     frame[8] = 64; // hist1 = 64
     CHECK(DecodeSound(MakeFsb(16, frame, 256, 8, false), ".fsb", pcm));
-    CHECK(pcm.samples[0] == ((64 + 60 * 64) >> 6));
+    CHECK(pcm.samples[0] == ((64 + 60 * 64) >> 6)); // 61 + 1... = (64 + 3840) >> 6
     CHECK(!DecodeSound({1, 2, 3}, ".fsb", pcm));
     CHECK(!DecodeSound(raw, ".mp3", pcm));
     CHECK(MakeFsb(2, raw, 4, 9, false).size() > 60);
@@ -298,7 +301,7 @@ static void LoadLanguage() {
     std::ifstream f(PERLIN_LANG_FILE, std::ios::binary);
     std::stringstream ss;
     ss << f.rdbuf();
-
+    // Minecraft's own caption strings (normally from the resource pack's texts/en_US.lang).
     ss << "\nsubtitles.block.generic.footsteps=Footsteps\nsubtitles.block.generic.break=Block broken\n"
           "subtitles.entity.cow.ambient=Cow moos\nsubtitles.entity.zombie.ambient=Zombie groans\n"
           "subtitles.entity.polar_bear.hurt=Polar Bear hurts\nsubtitles.entity.pig.death=Pig dies\n"

@@ -132,7 +132,6 @@ namespace perlin::ui {
 
     bool UiAssets::ImageSize(const std::string& rel, int& w, int& h) {
         std::lock_guard lock(mutex);
-
         std::string base = rel;
         if (base.size() < 5 || base.substr(base.size() - 4) != ".png")
             base += ".png";
@@ -197,7 +196,6 @@ namespace perlin::ui {
         for (const char* prefix : {"item.", "tile."})
             if (i18n::Lang::Get().Find(std::string(prefix) + name + ".name", text))
                 return text;
-
         static const std::unordered_map<std::string, std::string> legacy = [] {
             std::unordered_map<std::string, std::string> out;
             std::string data;
@@ -257,7 +255,6 @@ namespace perlin::ui {
     bool UiAssets::FlatSprite(const std::string& name, int aux, ItemSprite& out) {
         LoadItemTextureTable();
         std::vector<std::string> candidates{name};
-
         const auto replaceWord = [&](const std::string& from, const std::string& to) {
             std::string s;
             for (const std::string& w : Words(name)) {
@@ -270,12 +267,15 @@ namespace perlin::ui {
         candidates.push_back(replaceWord("golden", "gold"));
         candidates.push_back(replaceWord("wooden", "wood"));
         {
-
             static const std::pair<const char*, const char*> kAlias[] = {
                 {"beef", "beef_raw"}, {"porkchop", "porkchop_raw"}, {"chicken", "chicken_raw"}, {"mutton", "mutton_raw"},
                 {"cod", "fish"}, {"cooked_cod", "cooked_fish"}, {"tropical_fish", "clownfish"},
                 {"enchanted_golden_apple", "apple_golden"}, {"melon_slice", "melon"}, {"potion", "potion_bottle_drinkable"},
-                {"milk_bucket", "bucket"}};
+                {"milk_bucket", "bucket"}, {"totem_of_undying", "totem"}, {"fire_charge", "fireball"},
+                {"firework_rocket", "fireworks"}, {"oak_sign", "sign"}, {"popped_chorus_fruit", "chorus_fruit_popped"},
+                {"sugar_cane", "reeds"}, {"turtle_scute", "turtle_shell_piece"}};
+            if (name.rfind("music_disc_", 0) == 0)
+                candidates.push_back("record_" + name.substr(11));
             for (const auto& [from, to] : kAlias)
                 if (name == from)
                     candidates.push_back(to);
@@ -318,7 +318,7 @@ namespace perlin::ui {
             out.rgba = std::move(t.pixels);
             const bool tool = name.find("sword") != std::string::npos || name.find("pickaxe") != std::string::npos ||
                               name.find("_axe") != std::string::npos || name.find("shovel") != std::string::npos ||
-                              name.find("hoe") != std::string::npos || name == "stick" || name == "bow" ||
+                              name.find("hoe") != std::string::npos || name == "stick" || name.rfind("bow", 0) == 0 || name.rfind("crossbow", 0) == 0 ||
                               name.find("rod") != std::string::npos || name == "trident" || name == "mace" ||
                               name == "shears" || name == "carrot_on_a_stick" || name == "blaze_rod" || name == "bone";
             out.handheld = tool;
@@ -360,7 +360,6 @@ namespace perlin::ui {
                     const bool unsetTint = tr >= 0.999f && tg >= 0.999f && tb >= 0.999f;
                     bool tintTop = a->tintTop, tintSide = a->tintSide;
                     if (unsetTint) {
-
                         auto set = [&](uint32_t rgb) {
                             tr = ((rgb >> 16) & 255) / 255.0f;
                             tg = ((rgb >> 8) & 255) / 255.0f;
@@ -377,7 +376,6 @@ namespace perlin::ui {
                     }
                     if (tintTop) Multiply(top, tr, tg, tb);
                     if (a->overlayTile != 0) {
-
                         std::vector<uint8_t> ov;
                         if (blocks->TilePixels(a->overlayTile, ov) && ov.size() == side.size()) {
                             if (unsetTint) Multiply(ov, tr, tg, tb);
@@ -450,7 +448,6 @@ namespace perlin::ui {
     bool UiAssets::ItemIcon(const std::string& key, Texture& out) {
         const ItemSprite* s = Item(key);
         if (!s) {
-
             out.width = out.height = 16;
             out.pixels.assign(16 * 16 * 4, 255);
             for (int y = 0; y < 16; y++)
@@ -500,7 +497,6 @@ namespace perlin::ui {
             r[1] = p[1] * std::cos(rx) - z1 * std::sin(rx);
             r[2] = p[1] * std::sin(rx) + z1 * std::cos(rx);
         };
-
         const float scale = 10.0f * static_cast<float>(size) / 16.0f;
         const float centre = static_cast<float>(size) * 0.5f;
         const float l0[3] = {0.2f / 1.237f, 1.0f / 1.237f, -0.7f / 1.237f};
@@ -519,7 +515,6 @@ namespace perlin::ui {
             rotate(tmp, u);
             for (int i = 0; i < 3; i++) tmp[i] = f.o[i] + f.v[i];
             rotate(tmp, v);
-
             const float ox = centre + o[0] * scale, oy = centre - o[1] * scale;
             const float ux = centre + u[0] * scale - ox, uy = centre - u[1] * scale - oy;
             const float vx = centre + v[0] * scale - ox, vy = centre - v[1] * scale - oy;

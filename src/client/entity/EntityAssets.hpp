@@ -1,10 +1,10 @@
 #pragma once
-
 #include "client/attachable/Animation.hpp"
 #include "client/attachable/Geometry.hpp"
 #include "client/attachable/Molang.hpp"
 #include "client/entity/Materials.hpp"
 
+#include <array>
 #include <map>
 #include <memory>
 #include <string>
@@ -16,7 +16,7 @@ namespace perlin::entity {
 
     struct ClientEntityDef {
         std::string identifier;
-        std::map<std::string, std::string> textures, geometries, animations;
+        std::map<std::string, std::string> textures, geometries, animations, controllers;
         std::map<std::string, std::string> materials;
         std::vector<ExprPtr> initialize, preAnimation;
         struct Animate {
@@ -54,12 +54,10 @@ namespace perlin::entity {
 
     class EntityAssets {
     public:
-
         void Configure(const std::string& root);
         bool Loaded() const { return loaded; }
         const ClientEntityDef* Entity(const std::string& identifier) const;
         const RenderControllerDef* RenderController(const std::string& id) const;
-
         bool CollisionBox(const std::string& identifier, float& width, float& height) const;
         MaterialLibrary materialLibrary;
         attachable::AnimationLibrary animations;
@@ -67,6 +65,8 @@ namespace perlin::entity {
         size_t EntityCount() const { return entities.size(); }
         const std::string& Root() const { return root; }
 
+    public:
+        bool Seat(const std::string& identifier, float& x, float& y, float& z) const;
     private:
         void LoadAll();
         std::string root;
@@ -74,6 +74,7 @@ namespace perlin::entity {
         std::unordered_map<std::string, ClientEntityDef> entities;
         std::unordered_map<std::string, RenderControllerDef> controllers;
         std::unordered_map<std::string, std::pair<float, float>> collisionBoxes;
+        std::unordered_map<std::string, std::array<float, 3>> seats;
     };
 
     std::string LowerCase(std::string s);

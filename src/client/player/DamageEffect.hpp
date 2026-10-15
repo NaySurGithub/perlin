@@ -6,7 +6,6 @@
 #include <cstdint>
 
 namespace perlin {
-
     inline float JavaSin(float x) {
         static const struct Table {
             float v[65536];

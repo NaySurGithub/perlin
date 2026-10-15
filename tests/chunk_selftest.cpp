@@ -1,3 +1,4 @@
+
 #include "protocol/Packets.hpp"
 #include "network/VarInt.hpp"
 #include "world/level/chunk/ChunkCodec.hpp"
@@ -104,7 +105,7 @@ int main() {
         LevelChunkPacket p;
         CHECK(Decode(b.data(), b.size(), p));
         CHECK(p.x == -3 && p.z == 12 && p.dimension == 0 && p.subChunkCount == 2);
-        CHECK(p.GetMode() == LevelChunkPacket::Mode::Inline && p.RequestSlots(24) == 0);
+        CHECK(!p.highestSubchunkCount.has_value());
         CHECK(p.payload == payload && !p.cacheEnabled);
     }
     {
@@ -120,8 +121,7 @@ int main() {
         wire::WriteVarUint32(b, 0);
         LevelChunkPacket p;
         CHECK(Decode(b.data(), b.size(), p));
-        CHECK(p.GetMode() == LevelChunkPacket::Mode::Request && p.requestLimit == 9);
-        CHECK(p.RequestSlots(24) == 10 && p.RequestSlots(8) == 8);
+        CHECK(p.highestSubchunkCount.has_value() && *p.highestSubchunkCount == 9);
     }
     {
         std::vector<uint8_t> b;
@@ -138,53 +138,49 @@ int main() {
         wire::WriteVarUint32(b, 0);
         LevelChunkPacket p;
         CHECK(Decode(b.data(), b.size(), p));
-        CHECK(p.GetMode() == LevelChunkPacket::Mode::Request && p.cacheEnabled);
-        CHECK(p.blobHashes.size() == 2 && p.RequestSlots(24) == 24);
+        CHECK(p.highestSubchunkCount.has_value() && *p.highestSubchunkCount == -1 && p.cacheEnabled);
+        CHECK(p.blobs.size() == 2 && p.blobs[0] == (1ull | (2ull << 32)));
     }
 
     {
         auto cells = MakeCells(12, 99);
         std::vector<uint8_t> sub;
         ChunkCodec::WriteSubChunk(sub, 3, cells);
-        std::vector<uint8_t> b;
-        b.push_back(0);
-        wire::WriteZigzag32(b, 0);
-        wire::WriteLE32(b, 4);
-        wire::WriteLE32(b, 0);
-        wire::WriteLE32(b, (uint32_t)-2);
-        wire::WriteVarUint32(b, 2);
-        b.push_back(0);
-        b.push_back((uint8_t)(int8_t)5);
-        b.push_back(0);
-        b.push_back(1);
-        b.push_back(1);
-        wire::WriteVarUint32(b, (uint32_t)sub.size());
-        b.insert(b.end(), sub.begin(), sub.end());
-        b.push_back(1);
-        b.push_back(1);
-        b.insert(b.end(), 256, 7);
-        b.push_back(0);
-        b.push_back(0);
-        b.push_back(0);
-        b.push_back(0);
-        b.push_back(0);
-        b.push_back(0);
-        b.push_back(6);
-        b.push_back(0);
-        b.push_back(0);
-        b.push_back(0);
-        b.push_back(0);
-        b.push_back(0);
-        b.push_back(0);
-        SubChunkPacket p;
-        CHECK(Decode(b.data(), b.size(), p));
-        CHECK(p.exact && p.x == 4 && p.z == -2 && p.entries.size() == 2);
-        CHECK(p.entries[0].dy == 5 && p.entries[0].result == 1 && p.entries[0].payload == sub);
-        CHECK(p.entries[1].result == (uint8_t)SubChunkResult::SuccessAllAir);
+        // The generated SubChunk codec: an entry with a payload and nested height maps, and an all-air entry.
+        SubchunkPacket p;
+        p.dimension = 0;
+        p.origin = {4, 0, -2};
+        SubChunkEntryEntry e0;
+        e0.dx = 0; e0.dy = 5; e0.dz = 0;
+        e0.result = SubChunkEntryEntryResult::Success;
+        e0.payload = sub;
+        e0.heightmapType = HeightMapDataType::HasData;
+        std::array<std::vector<int8_t>, 16> hm;
+        for (auto& row : hm) row.assign(16, 7);
+        e0.heightmap = hm;
+        e0.renderHeightmapType = HeightMapDataType::NoData;
+        SubChunkEntryEntry e1;
+        e1.dy = 6;
+        e1.result = SubChunkEntryEntryResult::SuccessAllAir;
+        e1.heightmapType = HeightMapDataType::NoData;
+        e1.renderHeightmapType = HeightMapDataType::NoData;
+        p.entries = {e0, e1};
+        SubchunkPacket q;
+        auto bytes = perlin::net::Encode(p);
+        CHECK(Decode(bytes.data(), bytes.size(), q));
+        CHECK(q.origin.x == 4 && q.origin.z == -2 && q.entries.size() == 2);
+        CHECK(q.entries[0].dy == 5 && q.entries[0].result == SubChunkEntryEntryResult::Success);
+        CHECK(q.entries[0].payload && *q.entries[0].payload == sub);
+        CHECK(q.entries[0].heightmap && (*q.entries[0].heightmap)[3].size() == 16);
+        CHECK(q.entries[1].result == SubChunkEntryEntryResult::SuccessAllAir);
     }
     {
-        auto req = perlin::net::Encode(SubChunkRequestPacket::ForSlot(0, -3, -4, 7));
-        wire::Reader r(req.data(), req.size());
+        SubchunkRequestPacket req;
+        req.dimension = 0;
+        req.origin = {-3, 0, 7};
+        req.requests.push_back({0, -4, 0});
+        auto bytes = perlin::net::Encode(req);
+        wire::Reader r(bytes.data(), bytes.size());
         int32_t d;
         uint32_t n, x, y, z;
         int8_t a, bb, c;

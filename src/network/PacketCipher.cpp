@@ -78,7 +78,6 @@ namespace perlin {
             error = "handshake token has no key or salt";
             return false;
         }
-
         const std::string der = B64UrlDecode(header->root()["x5u"].str());
         const unsigned char* p = reinterpret_cast<const unsigned char*>(der.data());
         EVP_PKEY* pkey = d2i_PUBKEY(nullptr, &p, static_cast<long>(der.size()));

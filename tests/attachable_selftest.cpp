@@ -1,3 +1,4 @@
+// Molang, animation and geometry checks. Optional argument: the vanilla resource_pack folder (enables the file tests).
 #include "client/attachable/Animation.hpp"
 #include "client/attachable/Geometry.hpp"
 #include "client/attachable/Molang.hpp"
@@ -67,6 +68,7 @@ int main(int argc, char** argv) {
     CHECK(molang::Expr::Parse("array.frames[9]")->Eval(s).s == "geometry.p0");
     CHECK(!molang::Expr::Parse("1 +")->Ok() || true);
 
+    // Animation keyframes and constants.
     attachable::AnimationLibrary lib;
     lib.LoadAnimations(R"({"animations": {"animation.t": {"loop": true, "bones": {"Arm": {
         "position": {"0": [0, 0, 0], "1.0": [10, 20, 0]}, "rotation": ["c.is_first_person ? 38.0 : 0.0", 0, 0]}}}}})");
@@ -80,6 +82,7 @@ int main(int argc, char** argv) {
         CHECK(pose["arm"].rotation.x == 38.0f);
     }
 
+    // Vanilla files.
     if (argc > 1) {
         const std::string root = argv[1];
         attachable::AnimationLibrary vanilla;

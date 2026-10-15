@@ -1,5 +1,4 @@
 #pragma once
-
 #include <glm/glm.hpp>
 
 #include <cstdint>
@@ -24,7 +23,6 @@ namespace perlin::entity {
     };
 
     namespace flag {
-
         enum : uint64_t {
             Onfire = 1ull << 0, Sneaking = 1ull << 1, Riding = 1ull << 2, Sprinting = 1ull << 3, UsingItem = 1ull << 4,
             Invisible = 1ull << 5, Tempted = 1ull << 6, InLove = 1ull << 7, Saddled = 1ull << 8, Powered = 1ull << 9,
@@ -46,6 +44,7 @@ namespace perlin::entity {
         bool isPlayer = false;
         bool isSelf = false;
         std::string name, uuid;
+        std::string nameTag;
         glm::dvec3 pos{0.0};
         float yaw = 0, pitch = 0, headYaw = 0;
         bool onGround = true;
@@ -63,6 +62,9 @@ namespace perlin::entity {
         uint32_t itemBlock = 0;
         bool itemEnchanted = false;
         double born = -1.0;
+        int64_t targetUid = 0;
+        int64_t ownerUid = 0;
+        int64_t vehicleUid = 0;
         std::string mainHand, offHand;
         std::string armor[4];
         std::shared_ptr<const SkinData> skin;
@@ -82,26 +84,29 @@ namespace perlin::entity {
         void Remove(int64_t uid);
         void RemoveRuntime(uint64_t rid);
         void Move(uint64_t rid, glm::dvec3 pos, float pitch, float yaw, float headYaw, bool onGround);
-
         void MoveDelta(uint64_t rid, const double* x, const double* y, const double* z, const float* pitch, const float* yaw,
                        const float* headYaw, bool onGround);
         void SetFlags(uint64_t rid, uint64_t flags);
         void SetScale(uint64_t rid, float scale);
+        void SetNameTag(uint64_t rid, const std::string& nameTag);
         void SetVariant(uint64_t rid, int variant, int markVariant, int color);
         void SetHealth(uint64_t rid, float health);
+        void SetOwner(uint64_t rid, int64_t ownerUid);
+        void SetTarget(uint64_t rid, int64_t targetUid);
         void SetHeld(uint64_t rid, const std::string& item);
         void SetArmor(uint64_t rid, int slot, const std::string& item);
+        void SetVehicle(int64_t riderUid, int64_t vehicleUid);
         void Hurt(uint64_t rid);
         void Die(uint64_t rid);
         void Swing(uint64_t rid);
         void SetProperty(uint64_t rid, const std::string& key, float value);
-
         void SetSkin(const std::string& uuid, std::shared_ptr<const SkinData> skin);
         void SetSelf(uint64_t rid, const std::string& uuid);
 
         std::vector<Entity> Snapshot() const;
         size_t Count() const;
         bool Find(uint64_t rid, Entity& out) const;
+        bool FindUnique(int64_t uid, Entity& out) const;
 
     private:
         void AttachSkinLocked(Entity& e);

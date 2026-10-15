@@ -32,7 +32,6 @@ namespace perlin {
         u.hand = TransactionUseItemHand::MainHand;
         u.playerPos = V(eye);
         u.clickPos = V(click);
-
         {
             bool loaded = false;
             const uint16_t clicked = netLevel.GetBlock(bx, by, bz, loaded);
@@ -43,12 +42,11 @@ namespace perlin {
                   << " held " << u.heldItem.networkId << " x" << static_cast<int>(u.heldItem.count) << " block " << u.heldItem.blockRuntimeId
                   << " use " << (use == 2 ? "place" : use == 1 ? "interact" : "nothing") << " dest (" << dest[0] << "," << dest[1] << "," << dest[2]
                   << ")" << std::endl;
-        if (use == 2 && u.heldItem.blockRuntimeId != 0) {
+        if (use == 2) {
             std::lock_guard lock(placeMutex);
             pendingPlace = {dest[0], dest[1], dest[2], std::chrono::steady_clock::now(), true, static_cast<int32_t>(u.heldItem.blockRuntimeId)};
         }
         if (use != 0 && !itemUseOnActive.exchange(true)) {
-
             PlayerActionPacket start;
             start.runtimeEntityId = runtimeId;
             start.action = Action::StartItemUseOn;
@@ -120,6 +118,39 @@ namespace perlin {
         return Send(p);
     }
 
+    bool BedrockSession::SendInteractEntity(uint64_t targetRuntimeId, const float eye[3], const float click[3]) {
+        InventoryTransactionPacket p;
+        p.transaction.transactionType = TransactionTransactionType::ItemUseOnEntity;
+        TransactionTransactionDataCase1 a;
+        {
+            std::lock_guard lock(statusMutex);
+            a.hotbarSlot = std::clamp(inventory.selected, 0, 8);
+            a.heldItem = inventoryRaw[a.hotbarSlot];
+        }
+        a.entityRuntimeId = targetRuntimeId;
+        a.actionType = TransactionTransactionDataCase1ActionType::Interact;
+        a.playerPos = V(eye);
+        a.clickPos = V(click);
+        p.transaction.transactionData = a;
+        std::cout << "[interact] entity " << targetRuntimeId << std::endl;
+        return Send(p);
+    }
+
+    bool BedrockSession::SendLeaveVehicle() {
+        const int64_t uid = ridingUid.load();
+        if (uid == 0)
+            return false;
+        entity::Entity vehicle;
+        if (!entities.FindUnique(uid, vehicle))
+            return false;
+        InteractPacket p;
+        p.actionId = InteractPacketActionId::LeaveVehicle;
+        p.targetEntityId = vehicle.runtimeId;
+        p.hasPosition = false;
+        std::cout << "[interact] leave vehicle " << vehicle.runtimeId << std::endl;
+        return Send(p);
+    }
+
     bool BedrockSession::SendPickBlock(int bx, int by, int bz) {
         BlockPickRequestPacket p;
         p.x = bx;
@@ -133,37 +164,54 @@ namespace perlin {
         return Send(p);
     }
 
-    bool BedrockSession::SendDropSelected(int count) {
+    bool BedrockSession::SendDropRequest(int slot, int count, int attempt) {
         ItemStackRequestPacket p;
         ItemStackRequest r;
         ItemStackRequestActionsEntry a;
         {
             std::lock_guard lock(statusMutex);
-            const int slot = std::clamp(inventory.selected, 0, 8);
             const ItemV4& raw = inventoryRaw[slot];
             if (raw.networkId == 0 || raw.count == 0)
                 return false;
-            a.source.slotType.containerId = ContainerSlotType::HotbarAndInventory;
-            a.source.slot = static_cast<uint8_t>(slot);
-            a.source.stackId = raw.stackId.value_or(0);
+            if (attempt < 0)
+                attempt = dropForm;
+            if (attempt == 1) {
+                a.source.slotType.containerId = slot < 9 ? ContainerSlotType::Hotbar : ContainerSlotType::Inventory;
+                a.source.slot = static_cast<uint8_t>(slot < 9 ? slot : slot - 9);
+            } else {
+                a.source.slotType.containerId = ContainerSlotType::HotbarAndInventory;
+                a.source.slot = static_cast<uint8_t>(slot);
+            }
+            a.source.stackId = attempt >= 2 ? 0 : raw.stackId.value_or(0);
             a.count = static_cast<uint8_t>(count <= 0 ? std::min<int>(raw.count, 255) : std::min<int>(count, raw.count));
+            r.requestId = nextStackRequestId;
+            nextStackRequestId -= 2;
+            pendingDrops[r.requestId] = {slot, a.count, attempt};
+            if (pendingDrops.size() > 64)
+                pendingDrops.erase(pendingDrops.begin());
         }
         a.typeId = ItemStackRequestActionsEntryTypeId::Drop;
         a.legacyTypeId = static_cast<uint8_t>(ItemStackRequestActionsEntryTypeId::Drop);
         a.randomly = false;
-        r.requestId = nextStackRequestId;
-        nextStackRequestId -= 2;
         r.actions.push_back(a);
         r.cause = static_cast<ItemStackRequestCause>(-1);
-        std::cout << "[inventory] drop request " << r.requestId << " slot " << static_cast<int>(a.source.slot) << " stack " << a.source.stackId
-                  << " count " << static_cast<int>(a.count) << std::endl;
+        std::cout << "[inventory] drop request " << r.requestId << " slot " << slot << " stack " << a.source.stackId << " count "
+                  << static_cast<int>(a.count) << " form " << attempt << std::endl;
         p.requests.push_back(std::move(r));
         return Send(p);
+    }
+
+    bool BedrockSession::SendDropSelected(int count) {
+        int slot;
+        {
+            std::lock_guard lock(statusMutex);
+            slot = std::clamp(inventory.selected, 0, 8);
+        }
+        return SendDropRequest(slot, count, -1);
     }
 }
 
 namespace perlin {
-
     void BedrockSession::ConfirmPlace(int x, int y, int z, int32_t runtimeId) {
         int32_t held = 0;
         {
@@ -185,16 +233,6 @@ namespace perlin {
                       << z << "), we placed with block id " << held << " (" << pal.Name(pal.Intern(held)) << ")"
                       << (runtimeId != held ? "  <-- different" : "") << std::endl;
         }
-        if (runtimeId == BlockPalette::AirHash())
-            return;
-        SoundRequest r;
-        r.kind = SoundRequest::Kind::Level;
-        r.name = "place";
-        r.x = x + 0.5f;
-        r.y = y + 0.5f;
-        r.z = z + 0.5f;
-        r.extra = runtimeId;
-        PushSound(std::move(r));
     }
 }
 
@@ -225,5 +263,85 @@ namespace perlin {
         stop.resultPosition = {0, 0u, 0};
         stop.face = 0;
         Send(stop);
+    }
+
+    bool BedrockSession::OpenInventory() {
+        InteractPacket p;
+        p.actionId = InteractPacketActionId::OpenInventory;
+        p.targetEntityId = runtimeId;
+        p.hasPosition = false;
+        std::cout << "[inventory] open (Interact OpenInventory, runtime id " << runtimeId << ")" << std::endl;
+        return Send(p);
+    }
+
+    bool BedrockSession::CloseInventory() {
+        InvReturnCursor();
+        {
+            std::lock_guard lock(statusMutex);
+            invCloseWanted = true;
+        }
+        InvPump();
+        return true;
+    }
+
+    bool BedrockSession::SendCloseNow() {
+        int window;
+        {
+            std::lock_guard lock(statusMutex);
+            window = inventoryOpen ? inventoryWindow : 0;
+            inventoryOpen = false;
+        }
+        ContainerClosePacket p;
+        p.windowId = static_cast<WindowID>(window);
+        p.windowType = WindowType::Inventory;
+        p.server = false;
+        std::cout << "[inventory] close window " << window << std::endl;
+        return Send(p);
+    }
+
+    bool BedrockSession::TakeServerClosedInventory() {
+        std::lock_guard lock(statusMutex);
+        const bool v = serverClosedInventory;
+        serverClosedInventory = false;
+        return v;
+    }
+
+    static void FillSlot(StackRequestSlotInfo& s, int slot, const ItemV4& raw) {
+        s.slotType.containerId = ContainerSlotType::HotbarAndInventory;
+        s.slot = static_cast<uint8_t>(slot);
+        s.stackId = raw.stackId.value_or(0);
+    }
+
+    bool BedrockSession::SwapInventorySlots(int a, int b) {
+        if (a == b || a < 0 || b < 0 || a > 35 || b > 35)
+            return false;
+        ItemStackRequestPacket p;
+        ItemStackRequest r;
+        ItemStackRequestActionsEntry act;
+        {
+            std::lock_guard lock(statusMutex);
+            FillSlot(act.source, a, inventoryRaw[a]);
+            FillSlot(act.destination, b, inventoryRaw[b]);
+            if (inventoryRaw[a].networkId == 0 && inventoryRaw[b].networkId == 0)
+                return false;
+            std::swap(inventoryRaw[a], inventoryRaw[b]);
+            auto at = [&](int i) -> ItemStackInfo& { return i < 9 ? inventory.hotbar[i] : inventory.main[i - 9]; };
+            std::swap(at(a), at(b));
+        }
+        act.typeId = ItemStackRequestActionsEntryTypeId::Swap;
+        act.legacyTypeId = static_cast<uint8_t>(ItemStackRequestActionsEntryTypeId::Swap);
+        r.requestId = nextStackRequestId;
+        nextStackRequestId -= 2;
+        r.actions.push_back(act);
+        r.cause = static_cast<ItemStackRequestCause>(-1);
+        std::cout << "[inventory] swap request " << r.requestId << " " << a << " <-> " << b << std::endl;
+        p.requests.push_back(std::move(r));
+        return Send(p);
+    }
+
+    bool BedrockSession::DropInventorySlot(int slot, bool whole) {
+        if (slot < 0 || slot > 35)
+            return false;
+        return SendDropRequest(slot, whole ? 0 : 1, -1);
     }
 }

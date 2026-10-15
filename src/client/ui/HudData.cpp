@@ -12,7 +12,6 @@ namespace perlin::ui {
 
     Vars EngineRootVariables() {
         Vars v;
-
         Json xp = Json::MakeArray();
         xp.Push(Json(0.5019608));
         xp.Push(Json(1.0));
@@ -159,7 +158,6 @@ namespace perlin::ui {
             mix(static_cast<uint64_t>(l.direction + 2));
             mixf(l.brightness);
         }
-
         const bool animated = s.health + s.absorption <= 4.0f || s.regeneration || s.healthBlinkUntil > static_cast<int>(s.tick) ||
                               s.saturation <= 0.0f;
         if (animated)
@@ -195,6 +193,13 @@ namespace perlin::ui {
             mixs(s.chatInput);
             mix(static_cast<uint64_t>(s.chatCaret));
             mix(s.chatCaretVisible);
+            for (const std::string& g : s.chatSuggestions)
+                mixs(g);
+            mix(static_cast<uint64_t>(s.chatSuggestSelected + 1));
+            mix(static_cast<uint64_t>(s.chatSuggestStart));
+            mixs(s.chatHint);
+            mixs(s.chatGhost);
+            mix(static_cast<uint64_t>(s.chatSuggestMore[0]) | (static_cast<uint64_t>(s.chatSuggestMore[1]) << 1));
             mix(static_cast<uint64_t>(s.chatScroll));
             mix(static_cast<uint64_t>(s.chatTotalLines));
         }

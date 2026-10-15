@@ -1,4 +1,5 @@
 #include "client/audio/SoundSystem.hpp"
+#include "util/Env.hpp"
 
 #include "client/ui/Json.hpp"
 
@@ -65,7 +66,7 @@ namespace perlin::audio {
                 return;
             for (const auto& [key, value] : events.object) {
                 EventSound e = ParseEvent(value);
-                if (!e.Valid())
+                if (!e.Valid() || e.sound.rfind("missing.", 0) == 0)
                     continue;
                 e.volumeLo *= volumeScale;
                 e.volumeHi *= volumeScale;
@@ -156,7 +157,6 @@ namespace perlin::audio {
                     if (const Json* v = def.Find("volume"); v && v->IsNumber())
                         vol = static_cast<float>(v->number);
                     auto& dest = entityEvents[ShortName(type)];
-
                     if (const Json* variants = def.Find("variants"))
                         if (const Json* map = variants->Find("map"))
                             if (const Json* dv = map->Find("default"))
@@ -301,13 +301,12 @@ namespace perlin::audio {
         if (it == definitions.end() || it->second.entries.empty()) {
             if (!warned["def:" + definition]) {
                 warned["def:" + definition] = true;
-                if (std::getenv("PERLIN_AUDIO_DEBUG"))
+                if (PERLIN_ENV("PERLIN_AUDIO_DEBUG"))
                     std::cout << "[audio] no sound definition " << definition << std::endl;
             }
             return false;
         }
         const SoundDefinition& def = it->second;
-
         float total = 0;
         for (const auto& e : def.entries)
             total += e.weight;
@@ -320,7 +319,6 @@ namespace perlin::audio {
             }
             r -= e.weight;
         }
-
         if (auto last = lastPlayed.find(definition); last != lastPlayed.end()) {
             const double age = clock - last->second.time;
             const double apart = glm::length(last->second.position - position);
@@ -343,7 +341,6 @@ namespace perlin::audio {
         voice.category = CategoryFor(def.category, definition);
         voice.positional = positional && voice.category != Category::Music && voice.category != Category::Record;
         voice.position = position;
-
         voice.range = std::max(16.0f * std::max(volume * eventVolume * chosen->volume, 1.0f), def.maxDistance > 0 ? def.maxDistance : 0.0f);
         voice.loop = false;
         voice.name = definition;
@@ -391,7 +388,6 @@ namespace perlin::audio {
         const bool positional = !global;
         if (key == "burp")
             return false;
-
         static const std::unordered_map<std::string, const char*> kDirect = {
             {"explode", "random.explode"}, {"thunder", "ambient.weather.thunder"}, {"lightningimpact", "ambient.weather.lightning.impact"},
             {"bow", "random.bow"}, {"bowhit", "random.bowhit"}, {"levelup", "random.levelup"}, {"pop", "random.pop"},
@@ -407,7 +403,6 @@ namespace perlin::audio {
             {"enderchestclosed", "random.enderchestclosed"}, {"hitnodamage", "game.player.hurt"}, {"hurt", "game.player.hurt"}};
         if (!entityType.empty() && entityType != "minecraft:") {
             if (key == "step" || key == "land" || key == "jump" || key == "fall" || key == "heavystep") {
-
                 EventSound own;
                 if (FindEntityEvent(entityType, "step", own) && key == "step" && entityType != "minecraft:player")
                     return Play(own.sound, 1.0f, baby ? 1.3f : 1.0f, position, positional, &own);
@@ -426,7 +421,6 @@ namespace perlin::audio {
         }
         if (const auto it = kDirect.find(key); it != kDirect.end())
             return Play(it->second, 1.0f, 1.0f, position, positional);
-
         return Play(eventId, 1.0f, 1.0f, position, positional);
     }
 }

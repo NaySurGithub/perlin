@@ -1,4 +1,5 @@
 #pragma once
+#include <atomic>
 #include <cstdint>
 #include <functional>
 #include <mutex>
@@ -39,18 +40,19 @@ namespace perlin {
 
         void SetTexturePack(bool active);
         bool EnsureLoaded(const std::string& perlinPackDir, const std::string& vanillaRpRoot);
-
         void Reset();
         bool Ready() const { return ready; }
         void SetFancy(bool value) { fancy = value; }
         bool Complete() const { return complete; }
 
         const BlockAppearance& Look(int32_t localId) const;
-
         const BlockAppearance* LookByName(const std::string& name) const;
-
         bool TilePixels(int tile, std::vector<uint8_t>& rgba) const;
         const BlockModels& Models() const { return models; }
+        int GlassMode() const { return glassMode.load(std::memory_order_relaxed); }
+        void SetGlassMode(int mode) { glassMode.store(mode, std::memory_order_relaxed); }
+        bool IsGlassBase(int tile) const { return glassTiles.find(tile) != glassTiles.end(); }
+        int GlassTile(int baseTile, int mode, int mask) const;
         BlockGeometry& Geometry() const { return geometry; }
 
         const std::vector<uint8_t>& AtlasPixels() const { return atlas; }
@@ -68,7 +70,6 @@ namespace perlin {
         TileAlpha AlphaOf(int tile) const;
         float SaturationOf(int tile) const;
         std::string TilePathOf(int tile) const;
-
         int TileContaining(const std::string& part) const;
         void PollAnimation(uint64_t step, const std::function<void(int tile, const uint8_t* rgba)>& emit);
 
@@ -97,6 +98,10 @@ namespace perlin {
         };
         std::unordered_map<int, AnimSrc> animByTile;
         int NewTile();
+        void BuildGlassVariants();
+        bool glassBuilt = false;
+        std::atomic<int> glassMode{0};
+        std::unordered_map<int, std::vector<int>> glassTiles;
         inline static int tilePxValue = 16;
         std::unordered_map<std::string, std::array<float, 3>> baseTints;
         mutable std::unordered_map<int32_t, bool> unknownLogged;

@@ -15,13 +15,11 @@ namespace perlin {
         PacketCipher& operator=(const PacketCipher&) = delete;
 
         bool InitFromHandshake(const ClientIdentity& identity, const std::string& token, std::string& error);
-
         bool InitWithKey(const uint8_t key[32]);
 
         bool Active() const { return active; }
 
         std::vector<uint8_t> Encrypt(const std::vector<uint8_t>& plain);
-
         bool Decrypt(const std::vector<uint8_t>& cipher, std::vector<uint8_t>& plain);
 
     private:

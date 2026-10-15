@@ -1,5 +1,6 @@
 #pragma once
 #include "client/input/InputManager.hpp"
+#include "client/ui/CommandInfo.hpp"
 #include "client/ui/HudState.hpp"
 
 #include <cstdint>
@@ -8,7 +9,6 @@
 #include <vector>
 
 namespace perlin::ui {
-
     class ChatLog {
     public:
         static constexpr int kWidth = 320;
@@ -18,6 +18,13 @@ namespace perlin::ui {
 
         void AddMessage(const std::string& text, uint64_t tick);
         void Clear() { lines.clear(); scroll = 0; }
+        void SetCommands(std::vector<CommandInfo> list) { commands = std::move(list); Recompute(); }
+        void SetPlayers(std::vector<std::string> names) { players = std::move(names); }
+        struct Coordinate {
+            size_t begin = 0, end = 0;
+            std::string command, x, y, z;
+        };
+        static std::vector<Coordinate> FindCoordinates(const std::string& line);
 
         void Open(const std::string& prefill, uint64_t nowMs);
         void Close();
@@ -28,7 +35,6 @@ namespace perlin::ui {
             bool send = false;
             std::string text;
         };
-
         Result Type(const std::vector<InputManager::Typed>& typed, float wheel);
 
         void Fill(HudState& s, uint64_t tick, uint64_t nowMs) const;
@@ -44,6 +50,16 @@ namespace perlin::ui {
         void Erase(bool forward, bool word);
         void MoveCaret(int delta, bool word);
         void Recall(int direction);
+        void Recompute();
+        void ApplySuggestion(size_t index);
+        std::vector<CommandInfo> commands;
+        std::vector<std::string> players;
+        std::vector<std::string> suggestions;
+        size_t suggestIndex = 0, suggestWordStart = 0;
+        mutable size_t suggestOffset = 0;
+        std::string hint;
+        bool cycling = false;
+        std::string cycleBase;
 
         std::deque<Line> lines;
         std::vector<std::string> history;

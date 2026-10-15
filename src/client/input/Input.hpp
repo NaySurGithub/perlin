@@ -34,7 +34,6 @@ namespace perlin {
         bool pauseOnLostFocus = true;
         void OnKeyRepeat(int key);
         void OnChar(int codepoint);
-
         void SetTextMode(bool on) { textMode = on; }
         bool TextMode() const { return textMode; }
         void ReleaseAll();

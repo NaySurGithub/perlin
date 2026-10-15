@@ -26,7 +26,6 @@ namespace perlin::audio {
         if (category == "player") return Category::Player;
         if (category == "ambient") return Category::Ambient;
         if (category == "ui") return Category::Master;
-
         if (name.rfind("music.", 0) == 0) return Category::Music;
         if (name.rfind("record.", 0) == 0) return Category::Record;
         if (name.rfind("ambient.weather", 0) == 0 || name.rfind("weather.", 0) == 0) return Category::Weather;
@@ -108,11 +107,9 @@ namespace perlin::audio {
         if (!voice.pcm || voice.pcm->Frames() == 0)
             return 0;
         std::lock_guard lock(mutex);
-
         if (voice.positional && glm::length(voice.position - listener) > static_cast<double>(voice.range))
             return 0;
         if (voices.size() >= kMaxVoices) {
-
             auto it = std::find_if(voices.begin(), voices.end(), [](const Voice& v) { return !v.loop; });
             if (it == voices.end())
                 return 0;
@@ -163,13 +160,11 @@ namespace perlin::audio {
         std::lock_guard lock(mutex);
         const float master = volumes.Get(Category::Master);
         const double yaw = static_cast<double>(listenerYaw) * 3.14159265358979323846 / 180.0;
-
         const glm::dvec2 right(-std::cos(yaw), -std::sin(yaw));
         for (Voice& v : voices) {
             const Pcm& pcm = *v.pcm;
             const size_t total = pcm.Frames();
             float left = 1.0f, rightGain = 1.0f;
-
             float gain = v.volume;
             if (v.category != Category::Master)
                 gain *= volumes.Get(v.category);
@@ -235,7 +230,6 @@ namespace perlin::audio {
         voices.erase(std::remove_if(voices.begin(), voices.end(),
                                     [](const Voice& v) { return v.fade <= 0.0f || (v.stopping && v.fade <= 0.0f); }),
                      voices.end());
-
         for (int i = 0; i < frames * 2; i++) {
             const float a = std::fabs(out[i]);
             if (a > 0.8f)

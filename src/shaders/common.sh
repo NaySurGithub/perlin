@@ -13,10 +13,9 @@ uniform vec4 u_textureInfo;
 uniform vec4 u_chunk;
 uniform vec4 u_cloudOffset;
 uniform vec4 u_cloudColor;
-uniform vec4 u_dynParams;     // x: 0 off, 1 fast, 2 fancy; y: light count
-uniform vec4 u_dynLights[8];  // xyz relative to the camera, w block light level
+uniform vec4 u_dynParams;
+uniform vec4 u_dynLights[8];
 
-// Block light (0..15) the dynamic lights add at a camera-relative point: level - distance, like OptiFine.
 float dynamicLevel(vec3 rel)
 {
     float best = 0.0;

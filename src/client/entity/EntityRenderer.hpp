@@ -1,5 +1,5 @@
 #pragma once
-
+#include "client/particle/ParticleSystem.hpp"
 #include "client/entity/EntityAssets.hpp"
 #include "client/entity/EntityTracker.hpp"
 #include "client/renderer/RenderContext.hpp"
@@ -19,9 +19,11 @@ namespace perlin::entity {
         EntityRenderer();
         ~EntityRenderer();
         void Initialize(RenderContext& renderer);
-
         std::pair<float, float> HitBox(const Entity& e) const;
+        glm::dvec3 SeatPosition(const Entity& vehicle) const;
+        bool CollisionBoxOf(const std::string& type, float& width, float& height) const { return assets.CollisionBox(type, width, height); }
         void SetItemRenderer(HandRenderer* items) { itemRenderer = items; }
+        void ResolveSeats(std::vector<Entity>& entities) const;
         void Shutdown();
         void ClearCaches();
 
@@ -40,6 +42,9 @@ namespace perlin::entity {
             std::vector<std::array<int, 4>> cracks;
             std::function<double(double, double, double)> groundY;
             bool chunkBorders = false;
+            bool ownNametag = false;
+            const std::vector<particle::Quad>* particles = nullptr;
+            std::function<bool(int, std::vector<uint8_t>&)> tilePixels;
             glm::dvec3 playerPos{0.0};
             float pixelScale = 0;
             float lineWidthPx = 2.5f;
@@ -47,6 +52,16 @@ namespace perlin::entity {
             std::vector<std::pair<glm::dvec3, glm::dvec3>> outlineShape;
         };
         void Render(const std::vector<Entity>& entities, const FrameIn& in);
+
+        struct FpState {
+            float attackTime = 0, armHeight = 1, offArmHeight = 1;
+            bool bob = true, using_ = false, blocking = false;
+            float usedTicks = 0;
+            glm::mat4 viewEffect{1.0f};
+            glm::vec3 light{1.0f};
+        };
+        void RenderFirstPerson(const Entity& self, const FrameIn& in, const FpState& fp);
+        void RenderDoll(const Entity& doll, const FrameIn& in, float cx, float feetY, float pxPerBlock, const int clip[4]);
 
         size_t Drawn() const { return drawn; }
         size_t Considered() const { return considered; }
@@ -67,10 +82,27 @@ namespace perlin::entity {
         void RunAnimations(const Entity& e, View& v, const ClientEntityDef& def, attachable::Pose& pose, const FrameIn& in,
                            const attachable::Geometry* bindGeometry);
         void Draw(const Entity& e, const View& v, const std::vector<Layer>& layers, float scale, const FrameIn& in);
+        const FpState* fp = nullptr;
+        const glm::mat4* fpModel = nullptr;
+        const glm::mat4* dollModel = nullptr;
+        const int* dollClip = nullptr;
         uint32_t TextureFor(const Entity& e, const std::string& key);
         void Track(const Entity& e, View& v, const FrameIn& in);
         void DrawShadow(const glm::dvec3& pos, float radius, float strength, const FrameIn& in);
         uint32_t shadowTexture = 0;
+        struct Tag {
+            std::string text;
+            glm::dvec3 at;
+            bool sneaking = false;
+        };
+        std::vector<Tag> tags;
+        void DrawNametags(const FrameIn& in);
+        void DrawParticles(const FrameIn& in);
+        uint32_t particleSheet = 0;
+        bool particleSheetTried = false;
+        std::unordered_map<int, uint32_t> particleTiles;
+        uint32_t fontTexture = 0;
+        uint32_t fontTextureVersion = 0;
 
         RenderContext* renderer = nullptr;
         EntityAssets assets;

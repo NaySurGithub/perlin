@@ -1,5 +1,4 @@
 #pragma once
-
 #include "client/attachable/Animation.hpp"
 #include "client/attachable/Geometry.hpp"
 #include "client/attachable/Molang.hpp"
@@ -11,13 +10,13 @@
 #include <vector>
 
 namespace perlin::attachable {
-
     struct ItemState {
         std::string identifier;
         bool mainHand = true;
         bool firstPerson = true;
         bool enchanted = false;
         bool blocking = false;
+        bool bindPose = false;
         bool using_ = false;
         float usedTicks = 0;
         float maxUseTicks = 72000;
@@ -44,11 +43,10 @@ namespace perlin::attachable {
         ~Attachables();
         Attachables(const Attachables&) = delete;
         Attachables& operator=(const Attachables&) = delete;
-
         void Configure(const std::string& root);
         bool Has(const std::string& identifier);
-
         Frame Evaluate(const ItemState& state, int slot);
+        bool ArmorInfo(const std::string& identifier, std::string& geometry, std::string& texture);
         void Clear();
 
     private:

@@ -36,7 +36,6 @@ namespace perlin {
             const json::View colorMap = value["color_map"];
             if (!colorMap.isString())
                 return false;
-
             const std::string mapName = colorMap.str();
             if (mapName == "grass" || mapName == "foliage" || mapName == "dry_foliage")
                 return false;

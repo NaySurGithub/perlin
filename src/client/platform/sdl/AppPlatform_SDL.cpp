@@ -103,7 +103,6 @@ void AppPlatform_SDL::ShowSignInCode(const std::string& url, const std::string& 
     struct Job {
         std::string url, code;
     };
-
     SDL_RunOnMainThread(
         [](void* data) {
             std::unique_ptr<Job> job(static_cast<Job*>(data));
@@ -233,8 +232,6 @@ void AppPlatform_SDL::HandleEvent(const SDL_Event& e) {
         SetCursorCaptured(false);
         break;
     case SDL_EVENT_KEY_DOWN:
-        if (e.key.scancode == SDL_SCANCODE_ESCAPE && cursorCaptured && !(input && input->IsKeyDown(0x72)))
-            SetCursorCaptured(false);
         if (input) {
             const int k = KeyFromScancode(e.key.scancode);
             if (k && !e.key.repeat)
@@ -279,7 +276,6 @@ void AppPlatform_SDL::HandleEvent(const SDL_Event& e) {
         break;
     case SDL_EVENT_MOUSE_BUTTON_DOWN:
         if (!cursorCaptured && !(input && input->TextMode())) {
-
             SetCursorCaptured(true);
             break;
         }

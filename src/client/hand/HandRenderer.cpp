@@ -1,4 +1,8 @@
 #include "client/hand/HandRenderer.hpp"
+#include "util/Env.hpp"
+
+#include "client/hand/ItemDisplay.hpp"
+#include "client/resources/TextureLoader.hpp"
 
 #include "client/ui/Glint.hpp"
 #include "client/ui/UiAssets.hpp"
@@ -15,9 +19,8 @@
 
 namespace perlin {
     namespace {
-
         glm::mat4 AttachAttach() {
-            if (const char* e = std::getenv("PERLIN_ATTACH_K")) {
+            if (const char* e = PERLIN_ENV("PERLIN_ATTACH_K")) {
                 float v[7] = {0, 0, 0, 0, 0, 0, 1};
                 std::sscanf(e, "%f,%f,%f,%f,%f,%f,%f", v, v + 1, v + 2, v + 3, v + 4, v + 5, v + 6);
                 return glm::translate(glm::mat4(1.0f), glm::vec3(v[0], v[1], v[2])) *
@@ -26,7 +29,6 @@ namespace perlin {
                        glm::rotate(glm::mat4(1.0f), glm::radians(v[5]), glm::vec3(0, 0, 1)) *
                        glm::scale(glm::mat4(1.0f), glm::vec3(v[6]));
             }
-
             return glm::translate(glm::mat4(1.0f), glm::vec3(0.2f, 0.5f, -0.1f)) *
                    glm::rotate(glm::mat4(1.0f), glm::radians(90.0f), glm::vec3(0, 0, 1)) *
                    glm::scale(glm::mat4(1.0f), glm::vec3(0.65f));
@@ -35,7 +37,7 @@ namespace perlin {
     static const glm::mat4 kAttachableAttach = AttachAttach();
     static glm::vec4 EntityPlace() {
         glm::vec4 v(0.0f, 0.1f, -0.5f, 0.0f);
-        if (const char* e = std::getenv("PERLIN_ENTITY_K"))
+        if (const char* e = PERLIN_ENV("PERLIN_ENTITY_K"))
             std::sscanf(e, "%f,%f,%f,%f", &v.x, &v.y, &v.z, &v.w);
         return v;
     }
@@ -87,7 +89,6 @@ namespace perlin {
         walkDistO = walkDist;
         oBob = bob;
         walkDist += static_cast<float>(moved) * 0.6f;
-
         const float speed = onGround && !swimming ? std::min(0.1f, static_cast<float>(moved) * 0.546f) : 0.0f;
         bob += (speed - bob) * 0.4f;
     }
@@ -136,7 +137,14 @@ namespace perlin {
                 renderer->UiDestroyTexture(skinTexture);
             if (glintTexture)
                 renderer->UiDestroyTexture(glintTexture);
+            if (scopeTexture)
+                renderer->UiDestroyTexture(scopeTexture);
+            if (spyglassTexture)
+                renderer->UiDestroyTexture(spyglassTexture);
         }
+        scopeTexture = 0;
+        spyglassTexture = 0;
+        spyglassModel = Model();
         skinTexture = 0;
         glintTexture = 0;
         renderer = nullptr;
@@ -197,7 +205,6 @@ namespace perlin {
     }
 
     void HandRenderer::Tick(const TickIn& in, const HandSettings& s) {
-
         const int duration = std::max(1, static_cast<int>(std::lround(6.0f / std::max(0.1f, s.swingSpeed))));
         oAttackAnim = attackAnim;
         if (swinging) {
@@ -222,14 +229,18 @@ namespace perlin {
         } else {
             eatTicks = 0;
         }
-
         {
             const auto is = [](const ui::HudItem& i, const char* n) { return i.name == n; };
             const bool drawable = is(in.main, "minecraft:bow") || is(in.main, "minecraft:crossbow") || is(in.main, "minecraft:trident");
             const bool shield = is(in.main, "minecraft:shield") || is(in.off, "minecraft:shield");
             useHeld = in.useHeld && drawable;
             usedTicks = useHeld ? usedTicks + 1 : 0;
-            blocking = in.useHeld && shield && !drawable;
+            blocking = in.sneaking && shield;
+            scoping = in.useHeld && is(in.main, "minecraft:spyglass");
+            oScopeScale = scopeScale;
+            scopeScale = scoping ? scopeScale + (1.125f - scopeScale) * 0.5f : 0.5f;
+            if (!scoping)
+                oScopeScale = 0.5f;
         }
 
         const float yaw = Unwrap(in.yaw);
@@ -258,7 +269,6 @@ namespace perlin {
 
         float mainTarget = SameItem(mainShown, in.main) ? 1.0f : 0.0f;
         if (mainTarget > 0.0f && s.equipAnimation) {
-
             const float delay = std::max(1.0f, 20.0f / AttackSpeed(in.main.name));
             const float strength = std::clamp((static_cast<float>(attackStrengthTicker) + 1.0f) / delay, 0.0f, 1.0f);
             mainTarget = strength * strength * strength;
@@ -280,7 +290,6 @@ namespace perlin {
     }
 
     namespace {
-
         template <typename Q>
         void AddBox(std::vector<Q>& out, glm::vec3 mn, glm::vec3 mx, float u0, float v0, float w, float h, float d,
                     float texW, float texH) {
@@ -294,37 +303,31 @@ namespace perlin {
                 out.push_back(q);
             };
             const float x0 = mn.x, x1 = mx.x, y0 = mn.y, y1 = mx.y, z0 = mn.z, z1 = mx.z;
-
             {
                 const float U0 = u0 + d, U1 = u0 + d + w, V0 = v0 + d, V1 = v0 + d + h;
                 push({x0, y0, z0}, uv(U0, V0), {x1, y0, z0}, uv(U1, V0), {x1, y1, z0}, uv(U1, V1), {x0, y1, z0}, uv(U0, V1),
                      {0, 0, -1});
             }
-
             {
                 const float U0 = u0 + d + w + d, U1 = u0 + d + w + d + w, V0 = v0 + d, V1 = v0 + d + h;
                 push({x1, y0, z1}, uv(U0, V0), {x0, y0, z1}, uv(U1, V0), {x0, y1, z1}, uv(U1, V1), {x1, y1, z1}, uv(U0, V1),
                      {0, 0, 1});
             }
-
             {
                 const float U0 = u0, U1 = u0 + d, V0 = v0 + d, V1 = v0 + d + h;
                 push({x0, y0, z1}, uv(U0, V0), {x0, y0, z0}, uv(U1, V0), {x0, y1, z0}, uv(U1, V1), {x0, y1, z1}, uv(U0, V1),
                      {-1, 0, 0});
             }
-
             {
                 const float U0 = u0 + d + w, U1 = u0 + d + w + d, V0 = v0 + d, V1 = v0 + d + h;
                 push({x1, y0, z0}, uv(U0, V0), {x1, y0, z1}, uv(U1, V0), {x1, y1, z1}, uv(U1, V1), {x1, y1, z0}, uv(U0, V1),
                      {1, 0, 0});
             }
-
             {
                 const float U0 = u0 + d, U1 = u0 + d + w, V0 = v0, V1 = v0 + d;
                 push({x0, y0, z1}, uv(U0, V0), {x1, y0, z1}, uv(U1, V0), {x1, y0, z0}, uv(U1, V1), {x0, y0, z0}, uv(U0, V1),
                      {0, -1, 0});
             }
-
             {
                 const float U0 = u0 + d + w, U1 = u0 + d + w + w, V0 = v0, V1 = v0 + d;
                 push({x0, y1, z0}, uv(U0, V0), {x1, y1, z0}, uv(U1, V0), {x1, y1, z1}, uv(U1, V1), {x0, y1, z1}, uv(U0, V1),
@@ -343,7 +346,6 @@ namespace perlin {
             m.base.clear();
             m.sleeve.clear();
             const float w = slim ? 3.0f : 4.0f;
-
             const float minX = right ? (slim ? -2.0f : -3.0f) : -1.0f;
             const glm::vec3 mn(minX, -2.0f, -2.0f), mx(minX + w, 10.0f, 2.0f);
             const float u0 = right ? 40.0f : 32.0f, v0 = right ? 16.0f : 48.0f;
@@ -365,7 +367,6 @@ namespace perlin {
         const LoadedSkin* skin = in.skin;
         bool usable = skin && skin->hasSkin() && skin->skinWidth >= 64 && skin->skinHeight >= 64;
         if (usable) {
-
             size_t opaque = 0;
             for (size_t i = 3; i < skin->skinRgba.size(); i += 4)
                 opaque += skin->skinRgba[i] > 16 ? 1 : 0;
@@ -376,7 +377,6 @@ namespace perlin {
             skinFallback = false;
             return;
         }
-
         {
             Texture tex;
             if (ui::UiAssets::Instance().Image(in.slimArm ? "textures/entity/alex.png" : "textures/entity/steve.png", tex) &&
@@ -386,7 +386,6 @@ namespace perlin {
                 return;
             }
         }
-
         std::vector<uint8_t> px(64 * 64 * 4);
         auto fill = [&](int x0, int y0, int x1, int y1, uint8_t r, uint8_t g, uint8_t b, uint8_t a) {
             for (int y = y0; y < y1; y++)
@@ -418,7 +417,6 @@ namespace perlin {
         const ui::ItemSprite* sprite = assets.Item(key);
         if (sprite && sprite->ok) {
             if (sprite->block && sprite->tile > 0) {
-
                 const int t = sprite->tile;
                 std::vector<uint8_t> atlas(static_cast<size_t>(t) * 3 * t * 4, 0);
                 auto blit = [&](const std::vector<uint8_t>& face, int slot) {
@@ -438,16 +436,6 @@ namespace perlin {
                     b = e;
                     d = 1.0f - e;
                 };
-                auto face = [&](glm::vec3 a, glm::vec3 b, glm::vec3 c, glm::vec3 d, glm::vec3 n, int slot) {
-                    float u0, v0, u1, v1;
-                    rect(slot, u0, v0, u1, v1);
-                    Quad q;
-                    q.p[0] = a; q.p[1] = b; q.p[2] = c; q.p[3] = d;
-                    q.uv[0] = {u0, v0}; q.uv[1] = {u1, v0}; q.uv[2] = {u1, v1}; q.uv[3] = {u0, v1};
-                    q.n = n;
-                    model.quads.push_back(q);
-                };
-
                 int clearRows = 0;
                 while (clearRows < t / 2) {
                     bool empty = true;
@@ -458,13 +446,55 @@ namespace perlin {
                     clearRows++;
                 }
                 const float top = 1.0f - static_cast<float>(clearRows) / static_cast<float>(t);
-
-                face({0, top, 0}, {1, top, 0}, {1, top, 1}, {0, top, 1}, {0, 1, 0}, 0);
-                face({0, 0, 1}, {1, 0, 1}, {1, 0, 0}, {0, 0, 0}, {0, -1, 0}, 1);
-                face({1, top, 0}, {0, top, 0}, {0, 0, 0}, {1, 0, 0}, {0, 0, -1}, 1);
-                face({0, top, 1}, {1, top, 1}, {1, 0, 1}, {0, 0, 1}, {0, 0, 1}, 1);
-                face({0, top, 0}, {0, top, 1}, {0, 0, 1}, {0, 0, 0}, {-1, 0, 0}, 2);
-                face({1, top, 1}, {1, top, 0}, {1, 0, 0}, {1, 0, 1}, {1, 0, 0}, 2);
+                struct Box { glm::vec3 lo, hi; };
+                std::vector<Box> boxes;
+                const std::string& nm = item.name;
+                auto has = [&](const char* k) { return nm.find(k) != std::string::npos; };
+                if (has("_stairs"))
+                    boxes = {{{0, 0, 0}, {1, 0.5f, 1}}, {{0.5f, 0.5f, 0}, {1, 1, 1}}};
+                else if (has("_slab") && !has("double"))
+                    boxes = {{{0, 0, 0}, {1, 0.5f, 1}}};
+                else if (has("_fence_gate"))
+                    boxes = {{{0, 5.0f / 16, 7.0f / 16}, {2.0f / 16, 1, 9.0f / 16}}, {{14.0f / 16, 5.0f / 16, 7.0f / 16}, {1, 1, 9.0f / 16}},
+                             {{6.0f / 16, 6.0f / 16, 7.0f / 16}, {10.0f / 16, 15.0f / 16, 9.0f / 16}}};
+                else if (has("_fence") || has("_wall"))
+                    boxes = {{{6.0f / 16, 0, 6.0f / 16}, {10.0f / 16, has("_wall") ? 14.0f / 16 : 1.0f, 10.0f / 16}}};
+                else if (has("_trapdoor"))
+                    boxes = {{{0, 0, 0}, {1, 3.0f / 16, 1}}};
+                else if (has("carpet") || has("pressure_plate"))
+                    boxes = {{{0, 0, 0}, {1, has("carpet") ? 1.0f / 16 : 1.0f / 16, 1}}};
+                else if (has("daylight_detector"))
+                    boxes = {{{0, 0, 0}, {1, 6.0f / 16, 1}}};
+                else if (has("_bed") && false)
+                    boxes = {};
+                else
+                    boxes = {{{0, 0, 0}, {1, top, 1}}};
+                auto face = [&](glm::vec3 a, glm::vec3 b, glm::vec3 c, glm::vec3 d, glm::vec3 n, int slot, const Box& bx) {
+                    auto uvOf = [&](glm::vec3 p) -> glm::vec2 {
+                        float fu, fv;
+                        if (slot == 0) { fu = p.x; fv = p.z; }
+                        else if (slot == 1) { fu = (n.z > 0) ? p.x : (n.z < 0 ? 1.0f - p.x : p.x); fv = 1.0f - p.y; }
+                        else { fu = (n.x > 0) ? 1.0f - p.z : p.z; fv = 1.0f - p.y; }
+                        float u0, v0, u1, v1;
+                        rect(slot, u0, v0, u1, v1);
+                        return {u0 + (u1 - u0) * fu, v0 + (v1 - v0) * fv};
+                    };
+                    (void)bx;
+                    Quad q;
+                    q.p[0] = a; q.p[1] = b; q.p[2] = c; q.p[3] = d;
+                    q.uv[0] = uvOf(a); q.uv[1] = uvOf(b); q.uv[2] = uvOf(c); q.uv[3] = uvOf(d);
+                    q.n = n;
+                    model.quads.push_back(q);
+                };
+                for (Box bx : boxes) {
+                    const glm::vec3 l = bx.lo, h = bx.hi;
+                    face({l.x, h.y, l.z}, {h.x, h.y, l.z}, {h.x, h.y, h.z}, {l.x, h.y, h.z}, {0, 1, 0}, 0, bx);
+                    face({l.x, l.y, h.z}, {h.x, l.y, h.z}, {h.x, l.y, l.z}, {l.x, l.y, l.z}, {0, -1, 0}, 1, bx);
+                    face({h.x, h.y, l.z}, {l.x, h.y, l.z}, {l.x, l.y, l.z}, {h.x, l.y, l.z}, {0, 0, -1}, 1, bx);
+                    face({l.x, h.y, h.z}, {h.x, h.y, h.z}, {h.x, l.y, h.z}, {l.x, l.y, h.z}, {0, 0, 1}, 1, bx);
+                    face({l.x, h.y, l.z}, {l.x, h.y, h.z}, {l.x, l.y, h.z}, {l.x, l.y, l.z}, {-1, 0, 0}, 2, bx);
+                    face({h.x, h.y, h.z}, {h.x, h.y, l.z}, {h.x, l.y, l.z}, {h.x, l.y, h.z}, {1, 0, 0}, 2, bx);
+                }
                 model.valid = true;
             } else if (sprite->w > 0 && sprite->h > 0 && !sprite->rgba.empty()) {
                 const int w = sprite->w, h = sprite->h;
@@ -517,6 +547,103 @@ namespace perlin {
         return items.emplace(key, std::move(model)).first->second;
     }
 
+    const HandRenderer::Model& HandRenderer::SpyglassModel() {
+        if (spyglassModel.valid)
+            return spyglassModel;
+        std::string bytes;
+        Texture tex;
+        if (!resources::Read("spyglass_model.png", bytes) ||
+            !LoadTextureMemory(reinterpret_cast<const unsigned char*>(bytes.data()), bytes.size(), tex))
+            return spyglassModel;
+        if (spyglassTexture)
+            renderer->UiDestroyTexture(spyglassTexture);
+        spyglassTexture = renderer->UiCreateTexture(tex.width, tex.height, tex.pixels.data(), false);
+        spyglassModel.texture = spyglassTexture;
+        auto box = [&](glm::vec3 from, glm::vec3 to, bool down, glm::vec2 s0, float v0, float v1, glm::vec2 up, glm::vec2 dn) {
+            const glm::vec3 l = from / 16.0f, h = to / 16.0f;
+            auto uv = [](float u, float v) { return glm::vec2(u / 16.0f, v / 16.0f); };
+            auto face = [&](glm::vec3 a, glm::vec3 b, glm::vec3 c, glm::vec3 d, glm::vec3 n, glm::vec2 lo, glm::vec2 hi) {
+                Quad q;
+                q.p[0] = a; q.p[1] = b; q.p[2] = c; q.p[3] = d;
+                q.uv[0] = uv(lo.x, lo.y); q.uv[1] = uv(hi.x, lo.y); q.uv[2] = uv(hi.x, hi.y); q.uv[3] = uv(lo.x, hi.y);
+                q.n = n;
+                spyglassModel.quads.push_back(q);
+            };
+            const glm::vec2 sideLo(s0.x, v0), sideHi(s0.y, v1);
+            face({l.x, h.y, l.z}, {h.x, h.y, l.z}, {h.x, h.y, h.z}, {l.x, h.y, h.z}, {0, 1, 0}, up, up + glm::vec2(2, 2));
+            if (down)
+                face({l.x, l.y, h.z}, {h.x, l.y, h.z}, {h.x, l.y, l.z}, {l.x, l.y, l.z}, {0, -1, 0}, dn, dn + glm::vec2(2, 2));
+            face({h.x, h.y, l.z}, {l.x, h.y, l.z}, {l.x, l.y, l.z}, {h.x, l.y, l.z}, {0, 0, -1}, sideLo, sideHi);
+            face({l.x, h.y, h.z}, {h.x, h.y, h.z}, {h.x, l.y, h.z}, {l.x, l.y, h.z}, {0, 0, 1}, sideLo, sideHi);
+            face({l.x, h.y, l.z}, {l.x, h.y, h.z}, {l.x, l.y, h.z}, {l.x, l.y, l.z}, {-1, 0, 0}, sideLo, sideHi);
+            face({h.x, h.y, h.z}, {h.x, h.y, l.z}, {h.x, l.y, l.z}, {h.x, l.y, h.z}, {1, 0, 0}, sideLo, sideHi);
+        };
+        box({7, 8.5f, 7}, {9, 13.5f, 9}, false, {0, 2}, 2, 7, {0, 0}, {0, 0});
+        box({6.9f, 2.4f, 6.9f}, {9.1f, 8.6f, 9.1f}, true, {0, 2}, 7, 13, {0, 5}, {0, 13});
+        spyglassModel.valid = true;
+        return spyglassModel;
+    }
+
+    void HandRenderer::RenderScope(int width, int height, float partial) {
+        if (!renderer || !scoping || width <= 0 || height <= 0)
+            return;
+        for (uint32_t mesh : scopeMeshes)
+            renderer->UiDestroyMesh(mesh);
+        scopeMeshes.clear();
+        if (!scopeTexture) {
+            std::string bytes;
+            Texture tex;
+            if (resources::Read("spyglass_scope.png", bytes) &&
+                LoadTextureMemory(reinterpret_cast<const unsigned char*>(bytes.data()), bytes.size(), tex))
+                scopeTexture = renderer->UiCreateTexture(tex.width, tex.height, tex.pixels.data(), false);
+        }
+        const float scale = oScopeScale + (scopeScale - oScopeScale) * partial;
+        const float side = std::floor(static_cast<float>(std::min(width, height)) * scale);
+        const float x0 = std::floor((static_cast<float>(width) - side) * 0.5f), y0 = std::floor((static_cast<float>(height) - side) * 0.5f);
+        const float x1 = x0 + side, y1 = y0 + side;
+        const float W = static_cast<float>(width), H = static_cast<float>(height);
+        std::vector<UiVertex> v;
+        std::vector<uint32_t> idx;
+        auto quad = [&](float ax, float ay, float bx, float by, uint32_t color, float u0, float v0, float u1, float v1) {
+            if (bx <= ax || by <= ay)
+                return;
+            const uint32_t base = static_cast<uint32_t>(v.size());
+            v.push_back({ax, ay, 0, color, u0, v0});
+            v.push_back({bx, ay, 0, color, u1, v0});
+            v.push_back({bx, by, 0, color, u1, v1});
+            v.push_back({ax, by, 0, color, u0, v1});
+            for (uint32_t i : {0u, 1u, 2u, 0u, 2u, 3u})
+                idx.push_back(base + i);
+        };
+        const uint32_t black = 0xff000000u, white = 0xffffffffu;
+        const uint32_t mesh0 = [&] {
+            quad(0, 0, W, std::max(0.0f, y0), black, 0, 0, 0, 0);
+            quad(0, y1, W, H, black, 0, 0, 0, 0);
+            quad(0, std::max(0.0f, y0), std::max(0.0f, x0), std::min(H, y1), black, 0, 0, 0, 0);
+            quad(x1, std::max(0.0f, y0), W, std::min(H, y1), black, 0, 0, 0, 0);
+            return renderer->UiCreateFrameMesh(v.data(), static_cast<uint32_t>(v.size()), idx.data(), static_cast<uint32_t>(idx.size()));
+        }();
+        if (mesh0) {
+            scopeMeshes.push_back(mesh0);
+            UiDraw d;
+            d.mesh = mesh0;
+            renderer->UiSubmit(UiLayer::Gui, d);
+        }
+        if (scopeTexture) {
+            v.clear();
+            idx.clear();
+            quad(x0, y0, x1, y1, white, 0, 0, 1, 1);
+            const uint32_t mesh1 = renderer->UiCreateFrameMesh(v.data(), static_cast<uint32_t>(v.size()), idx.data(), static_cast<uint32_t>(idx.size()));
+            if (mesh1) {
+                scopeMeshes.push_back(mesh1);
+                UiDraw d;
+                d.mesh = mesh1;
+                d.texture = scopeTexture;
+                renderer->UiSubmit(UiLayer::Gui, d);
+            }
+        }
+    }
+
     void HandRenderer::DrawModel(const std::vector<Quad>& quads, uint32_t texture, const glm::mat4& model,
                                  const glm::vec3& light, float alphaCutoff, bool glint) {
         if (!renderer || quads.empty())
@@ -541,7 +668,7 @@ namespace perlin {
             for (uint32_t i : {0u, 1u, 2u, 0u, 2u, 3u})
                 indices.push_back(base + i);
         }
-        const uint32_t mesh = renderer->UiCreateMesh(vertices.data(), static_cast<uint32_t>(vertices.size()),
+        const uint32_t mesh = renderer->UiCreateFrameMesh(vertices.data(), static_cast<uint32_t>(vertices.size()),
                                                      indices.data(), static_cast<uint32_t>(indices.size()));
         if (!mesh)
             return;
@@ -563,6 +690,7 @@ namespace perlin {
                                                           .count());
                 const ui::GlintTransform g = ui::MakeGlintTransform(ms, 0.5f, 16.0f / static_cast<float>(std::max(1, glintWidth)));
                 draw.glintTexture = glintTexture;
+                draw.glintStrength = PERLIN_ENV("PERLIN_GLINT_STRENGTH") ? static_cast<float>(std::atof(PERLIN_ENV("PERLIN_GLINT_STRENGTH"))) : 1.3f;
                 std::copy(g.matrix, g.matrix + 4, draw.glintMatrix);
                 std::copy(g.offset, g.offset + 2, draw.glintOffset);
                 renderer->UiSubmit(worldPass ? UiLayer::World : UiLayer::Hand, draw);
@@ -592,7 +720,9 @@ namespace perlin {
             return static_cast<float>(x & 0xFFFFFF) / static_cast<float>(0x1000000);
         };
         const float bobOffs = hash(1) * 2.0f * kPi;
-        const float scale = model.block ? 0.25f : 0.5f;
+        const itemdisplay::Entry& groundDisplay = itemdisplay::Lookup(item.name, true);
+        const bool tabled = groundDisplay.found && groundDisplay.ground.present;
+        const float scale = tabled ? groundDisplay.ground.scale.y : (model.block ? 0.25f : 0.5f);
         const float display = model.block ? 3.0f / 16.0f : 2.0f / 16.0f;
         const float yOff = std::sin(age / 10.0f + bobOffs) * 0.1f + 0.1f;
         const float spin = (age / 20.0f + bobOffs) / kDeg;
@@ -604,7 +734,10 @@ namespace perlin {
             if (i > 0)
                 m = m * T((hash(10 + i) * 2.0f - 1.0f) * 0.15f * 0.5f, (hash(20 + i) * 2.0f - 1.0f) * 0.15f * 0.5f,
                           (hash(30 + i) * 2.0f - 1.0f) * 0.15f * 0.5f);
-            m = m * T(0.0f, display, 0.0f) * S(scale) * T(-0.5f, -0.5f, -0.5f);
+            if (tabled)
+                m = m * itemdisplay::Apply(groundDisplay.ground, false) * T(-0.5f, -0.5f, -0.5f);
+            else
+                m = m * T(0.0f, display, 0.0f) * S(scale) * T(-0.5f, -0.5f, -0.5f);
             DrawModel(model.quads, model.texture, m, light, 0.1f, false);
         }
         worldPass = false;
@@ -624,6 +757,24 @@ namespace perlin {
         };
         const bool handheld = ends("_sword") || ends("_pickaxe") || ends("_axe") || ends("_shovel") || ends("_hoe") || n == "stick" ||
                               n == "blaze_rod" || n == "bone" || n == "mace" || n == "breeze_rod" || ends("_on_a_stick") || n == "fishing_rod";
+        const itemdisplay::Entry& display = itemdisplay::Lookup(item.name, false);
+        const itemdisplay::Transform& third = left ? display.thirdLeft : display.thirdRight;
+        if (item.name == "minecraft:trident") {
+            const glm::mat4 base = arm * Rx(-90.0f) * Ry(180.0f) * T(side / 16.0f, 2.0f / 16.0f, -10.0f / 16.0f);
+            worldPass = true;
+            const bool drawn = DrawGeometryItem(item, base, left, false, light);
+            worldPass = false;
+            if (drawn)
+                return;
+        }
+        if (display.found && third.present) {
+            glm::mat4 held = arm * Rx(-90.0f) * Ry(180.0f) * T(side / 16.0f, 2.0f / 16.0f, -10.0f / 16.0f);
+            held = held * itemdisplay::Apply(third, left) * T(-0.5f, -0.5f, -0.5f);
+            worldPass = true;
+            DrawModel(model.quads, model.texture, held, light, 0.1f, item.enchanted);
+            worldPass = false;
+            return;
+        }
         glm::vec3 rot(0.0f), tr(0.0f);
         float scale = 1.0f;
         if (model.block) {
@@ -661,12 +812,12 @@ namespace perlin {
         const float f6 = std::sin(f1 * kPi);
         m = m * Ry(f * f6 * 70.0f);
         m = m * Rz(f * f5 * -20.0f);
-        m = m * T(f * -1.0f, 3.6f, 3.5f);
+        static const float au = PERLIN_ENV("PERLIN_ARMU") ? static_cast<float>(std::atof(PERLIN_ENV("PERLIN_ARMU"))) : 1.0f;
+        m = m * T(f * -1.0f * au, 3.6f * au, 3.5f * au);
         m = m * Rz(f * 120.0f);
         m = m * Rx(200.0f);
         m = m * Ry(f * -135.0f);
-        m = m * T(f * 5.6f, 0.0f, 0.0f);
-
+        m = m * T(f * 5.6f * au, 0.0f, 0.0f);
         const float pivotY = in.slimArm ? 2.5f : 2.0f;
         const glm::mat4 part = (rightArm ? T(-5.0f / 16.0f, pivotY / 16.0f, 0.0f) * Rz(0.1f / kDeg)
                                          : T(5.0f / 16.0f, pivotY / 16.0f, 0.0f) * Rz(-0.1f / kDeg)) *
@@ -681,10 +832,37 @@ namespace perlin {
                                   float swing, float equip) {
         const float side = rightArm ? 1.0f : -1.0f;
         glm::mat4 m = in.viewEffect;
-
+        const bool isMain = &item == &mainShown;
+        const bool isBow = item.name == "minecraft:bow", isTrident = item.name == "minecraft:trident",
+                   isCrossbow = item.name == "minecraft:crossbow";
+        const bool useAnim = isMain && useHeld && !blocking && (isBow || isTrident || isCrossbow);
+        const auto applyArm = [&](glm::mat4 b) { return b * T(side * 0.56f, -0.52f + equip * -0.6f, -0.72f); };
+        if (useAnim) {
+            m = applyArm(m);
+            const float t = static_cast<float>(usedTicks) + in.partial;
+            float f9;
+            if (isBow) {
+                m = m * T(side * -0.2785682f, 0.18344387f, 0.15731531f) * Rx(-13.935f) * Ry(side * 35.3f) * Rz(side * -9.785f);
+                f9 = t / 20.0f;
+                f9 = (f9 * f9 + f9 * 2.0f) / 3.0f;
+            } else if (isTrident) {
+                m = m * T(side * -0.5f, 0.7f, 0.1f) * Rx(-55.0f) * Ry(side * 35.3f) * Rz(side * -9.785f);
+                f9 = t / 10.0f;
+            } else {
+                m = m * T(side * -0.4785682f, -0.094387f, 0.05731531f) * Rx(-11.935f) * Ry(side * 65.3f) * Rz(side * -9.785f);
+                f9 = t / 25.0f;
+            }
+            f9 = std::min(f9, 1.0f);
+            if (f9 > 0.1f) {
+                const float shake = std::sin((t - 0.1f) * 1.3f) * (f9 - 0.1f);
+                m = m * T(0.0f, shake * 0.004f, 0.0f);
+            }
+            m = m * T(0.0f, 0.0f, isTrident ? f9 * 0.2f : f9 * 0.04f) * glm::scale(glm::mat4(1.0f), glm::vec3(1.0f, 1.0f, 1.0f + f9 * 0.2f)) *
+                Ry(side * -45.0f);
+        }
         const float sq = std::sqrt(swing);
+        if (!useAnim) {
         if (eatTicks > 0) {
-
             const float remaining = 32.0f - (static_cast<float>(eatTicks) + in.partial) + 1.0f;
             const float f0 = remaining / 32.0f;
             if (f0 < 0.8f)
@@ -694,26 +872,45 @@ namespace perlin {
         } else {
             m = m * T(side * (-0.4f * std::sin(sq * kPi)), 0.2f * std::sin(sq * kPi * 2.0f), -0.2f * std::sin(swing * kPi));
         }
-
         m = m * T(side * 0.56f, -0.52f + equip * -0.6f, -0.72f);
-
         const float f = std::sin(swing * swing * kPi);
         m = m * Ry(side * (45.0f + f * -20.0f));
         const float f1 = std::sin(sq * kPi);
         m = m * Rz(side * f1 * -20.0f);
         m = m * Rx(f1 * -80.0f);
         m = m * Ry(side * -45.0f);
+        }
         if (item.name == "minecraft:shield") {
             RenderShield(in, s, item, rightArm, m);
             return;
         }
+        if (item.name == "minecraft:trident" && s.attachables && DrawGeometryItem(item, m, !rightArm, true, in.light))
+            return;
         if (s.attachables && RenderAttachable(in, s, item, rightArm, m))
             return;
-        const Model& model = ItemModel(item);
+        if (item.name == "minecraft:spyglass") {
+            const Model& spy = SpyglassModel();
+            if (spy.valid) {
+                m = m * S(s.scale) * T(-0.5f, -0.5f, -0.5f);
+                DrawModel(spy.quads, spy.texture, m, in.light, 0.1f, item.enchanted);
+                return;
+            }
+        }
+        ui::HudItem pulled;
+        if (useAnim && (isBow || isCrossbow)) {
+            const float pull = (static_cast<float>(usedTicks) + in.partial) / (isBow ? 20.0f : 25.0f);
+            const int frame = isBow ? (pull >= 0.9f ? 2 : pull >= 0.65f ? 1 : 0) : (pull >= 1.0f ? 2 : pull >= 0.58f ? 1 : 0);
+            pulled = item;
+            pulled.name = std::string(isBow ? "minecraft:bow_pulling_" : "minecraft:crossbow_pulling_") + std::to_string(frame);
+        }
+        const Model& model = ItemModel(pulled.name.empty() ? item : pulled);
         if (!model.valid)
             return;
-
-        if (model.block) {
+        const itemdisplay::Entry& display = itemdisplay::Lookup(item.name, false);
+        const itemdisplay::Transform& first = rightArm ? display.firstRight : display.firstLeft;
+        if (display.found && first.present) {
+            m = m * itemdisplay::Apply(first, !rightArm);
+        } else if (model.block) {
             m = m * Ry(rightArm ? 45.0f : -45.0f) * S(0.4f);
         } else {
             m = m * T(side * (1.13f / 16.0f), 3.2f / 16.0f, 1.13f / 16.0f) * (Ry(-90.0f) * Rz(25.0f)) * S(0.68f);
@@ -723,7 +920,6 @@ namespace perlin {
     }
 
     namespace {
-
         void JavaBox(std::vector<attachable::Quad>& out, glm::vec3 o, glm::vec3 sz, float u, float v) {
             const float w = sz.x, h = sz.y, d = sz.z;
             const glm::vec3 lo = o, hi = o + sz;
@@ -741,34 +937,25 @@ namespace perlin {
                 q.n = n;
                 out.push_back(q);
             };
-
             face({lo.x, lo.y, lo.z}, {w, 0, 0}, {0, h, 0}, u + d, v + d, w, h, {0, 0, -1});
-
             face({hi.x, lo.y, hi.z}, {-w, 0, 0}, {0, h, 0}, u + d + w + d, v + d, w, h, {0, 0, 1});
-
             face({lo.x, lo.y, hi.z}, {0, 0, -d}, {0, h, 0}, u, v + d, d, h, {-1, 0, 0});
-
             face({hi.x, lo.y, lo.z}, {0, 0, d}, {0, h, 0}, u + d + w, v + d, d, h, {1, 0, 0});
-
             face({lo.x, lo.y, lo.z}, {w, 0, 0}, {0, 0, d}, u + d, v, w, d, {0, -1, 0});
-
             face({lo.x, hi.y, hi.z}, {w, 0, 0}, {0, 0, -d}, u + d + w, v, w, d, {0, 1, 0});
         }
     }
 
     void HandRenderer::RenderShield(const FrameIn& in, const HandSettings& s, const ui::HudItem& item, bool rightArm,
                                     const glm::mat4& hand) {
-
         if (!shieldTexture)
             shieldTexture = AttachableTexture("textures/entity/shield");
         if (!shieldTexture)
             return;
         if (shieldQuads.empty()) {
-
             JavaBox(shieldQuads, {-6, -11, -2}, {12, 22, 1}, 0, 0);
             JavaBox(shieldQuads, {-1, -3, -1}, {2, 6, 6}, 26, 0);
         }
-
         struct Display { glm::vec3 rot, tr; float scale; };
         static const Display idle[2] = {{{0, 180, 5}, {-10, 1.75f, -10}, 1.25f}, {{0, 180, 5}, {10, 0, -10}, 1.25f}};
         static const Display block[2] = {{{0, 180, -5}, {-15, 3.25f, -11}, 1.25f}, {{0, 180, -5}, {5, 5, -11}, 1.25f}};
@@ -776,9 +963,8 @@ namespace perlin {
         const Display& d = (use ? block : idle)[rightArm ? 0 : 1];
         const float f = rightArm ? 1.0f : -1.0f;
         glm::mat4 m = hand * T(f * d.tr.x / 16.0f, d.tr.y / 16.0f, d.tr.z / 16.0f) * Rx(d.rot.x) * Ry(d.rot.y * f) * Rz(d.rot.z * f) *
-                      S(d.scale) * S(s.scale) * T(-0.5f, -0.5f, -0.5f);
-
-        m = m * glm::scale(glm::mat4(1.0f), glm::vec3(1.0f / 16.0f, -1.0f / 16.0f, -1.0f / 16.0f));
+                      S(d.scale) * S(s.scale);
+        m = m * Ry(180.0f) * glm::scale(glm::mat4(1.0f), glm::vec3(1.0f / 16.0f, -1.0f / 16.0f, -1.0f / 16.0f));
         DrawModel(shieldQuads, shieldTexture, m, in.light, 0.1f, item.enchanted);
     }
 
@@ -794,17 +980,99 @@ namespace perlin {
         return id;
     }
 
+    bool HandRenderer::DrawGeometryItem(const ui::HudItem& item, const glm::mat4& base, bool leftHand, bool firstPerson,
+                                        const glm::vec3& light) {
+        const itemdisplay::Entry& display = itemdisplay::Lookup(item.name, false);
+        const itemdisplay::Transform& t = firstPerson ? (leftHand ? display.firstLeft : display.firstRight)
+                                                       : (leftHand ? display.thirdLeft : display.thirdRight);
+        if (!display.found || !t.present)
+            return false;
+        attachables.Configure(ui::UiAssets::Instance().VanillaRoot());
+        if (!attachables.Has(item.name))
+            return false;
+        attachable::ItemState st;
+        st.identifier = item.name;
+        st.mainHand = true;
+        st.firstPerson = firstPerson;
+        st.enchanted = item.enchanted;
+        st.bindPose = true;
+        const attachable::Frame frame = attachables.Evaluate(st, firstPerson ? 2 : 3);
+        if (!frame.valid || frame.parts.empty())
+            return false;
+        const glm::mat4 m = base * itemdisplay::Apply(t, leftHand) * S(1.0f / 16.0f) * T(0.0f, -24.0f, 0.0f);
+        for (const attachable::Part& part : frame.parts) {
+            const uint32_t texture = AttachableTexture(part.texture);
+            if (texture)
+                DrawModel(part.quads, texture, m, light, 0.1f, frame.glint || item.enchanted);
+        }
+        return true;
+    }
+
+    HandRenderer::RigState HandRenderer::Rig(float partial) const {
+        RigState r;
+        r.attackTime = SwingProgress(partial);
+        r.armHeight = oMainHandHeight + (mainHandHeight - oMainHandHeight) * partial;
+        r.offArmHeight = oOffHandHeight + (offHandHeight - oOffHandHeight) * partial;
+        r.main = mainShown.Empty() ? std::string() : mainShown.name;
+        r.off = offShown.Empty() ? std::string() : offShown.name;
+        r.using_ = useHeld;
+        r.blocking = blocking;
+        r.usedTicks = static_cast<float>(usedTicks) + (useHeld ? partial : 0.0f);
+        return r;
+    }
+
+    bool HandRenderer::RigItem(const std::string& name) {
+        if (name != "minecraft:bow")
+            return false;
+        attachables.Configure(ui::UiAssets::Instance().VanillaRoot());
+        return attachables.Has(name);
+    }
+
+    bool HandRenderer::ThirdPersonAttachable(const std::string& item, bool left, bool firstPerson, bool sneaking, bool using_,
+                                             float usedTicks, bool blocking, double life, const std::string& mainItem,
+                                             const std::string& offItem, attachable::Frame& out) {
+        attachables.Configure(ui::UiAssets::Instance().VanillaRoot());
+        if (!attachables.Has(item))
+            return false;
+        attachable::ItemState st;
+        st.identifier = item;
+        st.mainHand = !left;
+        st.firstPerson = firstPerson;
+        st.lifeSeconds = life;
+        st.using_ = using_;
+        st.usedTicks = usedTicks;
+        st.blocking = blocking;
+        st.mainHandItem = mainItem;
+        st.offHandItem = offItem;
+        (void)sneaking;
+        if (using_) {
+            if (item == "minecraft:bow") {
+                const float pull = usedTicks / 20.0f;
+                st.animationFrame = pull >= 0.9f ? 3 : pull >= 0.65f ? 2 : 1;
+            } else if (item == "minecraft:crossbow") {
+                const float charge = usedTicks / 25.0f;
+                st.animationFrame = charge >= 1.0f ? 3 : charge >= 0.58f ? 2 : 1;
+            }
+        }
+        out = attachables.Evaluate(st, left ? 11 : 10);
+        return out.valid && !out.parts.empty();
+    }
+
+    bool HandRenderer::ArmorAttachable(const std::string& identifier, std::string& geometry, std::string& texture) {
+        attachables.Configure(ui::UiAssets::Instance().VanillaRoot());
+        return attachables.ArmorInfo(identifier, geometry, texture);
+    }
+
     bool HandRenderer::RenderAttachable(const FrameIn& in, const HandSettings& s, const ui::HudItem& item, bool rightArm,
                                         const glm::mat4& hand) {
         attachables.Configure(ui::UiAssets::Instance().VanillaRoot());
-        static const bool debug = std::getenv("PERLIN_ATTACH_DEBUG") != nullptr;
+        static const bool debug = PERLIN_ENV("PERLIN_ATTACH_DEBUG") != nullptr;
         if (!attachables.Has(item.name)) {
             if (debug)
                 std::cout << "[attach] no attachable for " << item.name << " root=" << ui::UiAssets::Instance().VanillaRoot() << std::endl;
             return false;
         }
-
-        if (item.name != "minecraft:bow" && item.name != "minecraft:crossbow")
+        if (!(item.name == "minecraft:bow" && PERLIN_ENV("PERLIN_BOW_ATTACHABLE")) && !(item.name == "minecraft:crossbow" && PERLIN_ENV("PERLIN_CROSSBOW_ATTACHABLE")))
             return false;
         attachable::ItemState st;
         st.identifier = item.name;
@@ -841,10 +1109,8 @@ namespace perlin {
         }
         if (!frame.valid)
             return false;
-
         static const glm::mat4 kCrossbow = T(0.2f, 0.3f, -0.3f) * Ry(90.0f) * S(0.5f);
-        glm::mat4 m = hand * (item.name == "minecraft:crossbow" && !std::getenv("PERLIN_ATTACH_K") ? kCrossbow : kAttachableAttach) * glm::scale(glm::mat4(1.0f), glm::vec3(s.scale / 16.0f));
-
+        glm::mat4 m = hand * (item.name == "minecraft:crossbow" && !PERLIN_ENV("PERLIN_ATTACH_K") ? kCrossbow : kAttachableAttach) * glm::scale(glm::mat4(1.0f), glm::vec3(s.scale / 16.0f));
         if (!frame.parts.empty() && frame.parts[0].texture.rfind("textures/entity/", 0) == 0) {
             glm::vec3 lo(1e9f), hi(-1e9f);
             for (const auto& p : frame.parts)
@@ -865,11 +1131,10 @@ namespace perlin {
     void HandRenderer::Render(const FrameIn& in, const HandSettings& s) {
         if (!renderer)
             return;
-
         for (uint32_t mesh : pendingMeshes)
             renderer->UiDestroyMesh(mesh);
         pendingMeshes.clear();
-        if (!s.show || firstTick)
+        if (!s.show || firstTick || scoping)
             return;
 
         const float yaw = Unwrap(in.yaw);
@@ -882,11 +1147,14 @@ namespace perlin {
         const float mainEquip = 1.0f - Lerp(in.partial, oMainHandHeight, mainHandHeight);
         const float offEquip = 1.0f - Lerp(in.partial, oOffHandHeight, offHandHeight);
         const bool mainRight = !s.leftHanded;
-        if (mainShown.Empty())
-            RenderArm(local, s, mainRight, swing, mainEquip);
-        else
+        const bool rig = s.bedrockRig && PERLIN_ENV("PERLIN_BEDROCK_RIG");
+        if (mainShown.Empty()) {
+            if (!rig)
+                RenderArm(local, s, mainRight, swing, mainEquip);
+        } else if (!(rig && RigItem(mainShown.name))) {
             RenderItem(local, s, mainShown, mainRight, swing, mainEquip);
-        if (s.showOffhand && !offShown.Empty())
+        }
+        if (s.showOffhand && !offShown.Empty() && !(rig && RigItem(offShown.name)))
             RenderItem(local, s, offShown, !mainRight, 0.0f, offEquip);
     }
 }

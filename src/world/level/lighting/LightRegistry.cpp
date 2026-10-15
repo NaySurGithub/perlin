@@ -54,7 +54,6 @@ namespace perlin {
     void LightRegistry::SetOcclusion(OcclusionFn fn) {
         std::unique_lock lock(mutex);
         occlusionFn = std::move(fn);
-
         for (auto& slot : occlusion)
             slot.store(0, std::memory_order_relaxed);
     }

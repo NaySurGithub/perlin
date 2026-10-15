@@ -11,6 +11,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <mutex>
 #include <unordered_map>
 #include <string>
 
@@ -143,13 +144,11 @@ namespace perlin {
     }
 
     const LevelCollision::Info& LevelCollision::Lookup(uint16_t id, const BlockLibrary* blocks) {
-
         static std::array<std::atomic<Info*>, 65536> table{};
         Info* slot = table[id].load(std::memory_order_acquire);
         if (slot)
             return *slot;
         Info info = Classify(id, blocks);
-
         if (id != 0 && BlockPalette::Instance().Name(id).empty()) {
             static thread_local Info transient;
             transient = std::move(info);
@@ -173,7 +172,6 @@ namespace perlin {
 
         std::string n = BlockPalette::Instance().Name(id);
         if (n.empty()) {
-
             Add(s, 0, 0, 0, 1, 1, 1);
             info.full = true;
             return info;
@@ -233,7 +231,6 @@ namespace perlin {
             const double base0 = flip ? 0.5 : 0.0, base1 = flip ? 1.0 : 0.5;
             const double step0 = flip ? 0.0 : 0.5, step1 = flip ? 0.5 : 1.0;
             Add(s, 0, base0, 0, 1, base1, 1);
-
             switch (dir & 3) {
             case 0: Add(s, 0.5, step0, 0, 1, step1, 1); break;
             case 1: Add(s, 0, step0, 0, 0.5, step1, 1); break;
@@ -244,7 +241,6 @@ namespace perlin {
         }
         if (Ends(n, "_trapdoor")) {
             if (State(id, "open_bit", 0)) {
-
                 switch (State(id, "direction", 0) & 3) {
                 case 0: Add(s, 0, 0, 0, 0.1875, 1, 1); break;
                 case 1: Add(s, 0.8125, 0, 0, 1, 1, 1); break;
@@ -358,10 +354,35 @@ namespace perlin {
         return info;
     }
 
+    namespace {
+        std::mutex gEntityBoxMutex;
+        std::shared_ptr<const std::vector<physics::Box>> gEntityBoxes = std::make_shared<const std::vector<physics::Box>>();
+    }
+
+    void SetEntityCollisionBoxes(std::vector<physics::Box> boxes) {
+        auto fresh = std::make_shared<const std::vector<physics::Box>>(std::move(boxes));
+        std::lock_guard lock(gEntityBoxMutex);
+        gEntityBoxes = std::move(fresh);
+    }
+
+    LevelCollision::LevelCollision(const Level& l, const BlockLibrary* b) : level(l), blocks(b) {
+        std::lock_guard lock(gEntityBoxMutex);
+        entityBoxes = gEntityBoxes;
+    }
+
     physics::BlockShape LevelCollision::Query(int x, int y, int z) const {
         BlockShape s = QueryMain(x, y, z);
+        if (entityBoxes && !entityBoxes->empty()) {
+            for (const physics::Box& b : *entityBoxes) {
+                if (b.x1 <= x || b.x0 >= x + 1 || b.y1 <= y || b.y0 >= y + 1 || b.z1 <= z || b.z0 >= z + 1)
+                    continue;
+                if (s.count >= physics::kMaxShapeBoxes)
+                    break;
+                s.boxes[s.count++] = {std::max<double>(b.x0, x) - x, std::max<double>(b.y0, y) - y, std::max<double>(b.z0, z) - z,
+                                      std::min<double>(b.x1, x + 1) - x, std::min<double>(b.y1, y + 1) - y, std::min<double>(b.z1, z + 1) - z};
+            }
+        }
         if (s.fluid == 0 && y >= Chunk::MIN_Y && y < Chunk::MIN_Y + Chunk::HEIGHT) {
-
             const uint16_t liquid = level.GetLiquid(x, y, z);
             if (liquid != 0) {
                 const Info& li = Lookup(liquid, blocks);

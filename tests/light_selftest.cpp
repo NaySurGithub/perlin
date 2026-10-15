@@ -90,6 +90,7 @@ int main() {
         CHECK(grid.sky[grid.Index(24, 4, 24)] == 14);
     }
 
+    // Slabs light by face shape: id 5 is a bottom slab, id 6 a top slab.
     LightRegistry::Instance().SetOcclusion([](uint16_t id, FaceOcclusion& f) {
         if (id != 5 && id != 6)
             return false;
@@ -109,8 +110,8 @@ int main() {
         grid.ids[slab] = 5;
         grid.shaped[slab] = 1;
         ChunkLighting::Propagate(grid, {});
-        CHECK(grid.sky[slab] == 15);
-        CHECK(grid.sky[grid.Index(24, 3, 24)] == 14);
+        CHECK(grid.sky[slab] == 15);                 // open top face lets the column in
+        CHECK(grid.sky[grid.Index(24, 3, 24)] == 14); // full bottom face blocks it; light bends in from the side
     }
     {
         ChunkLighting::Grid grid = MakeGrid(8);
@@ -118,7 +119,7 @@ int main() {
         grid.ids[slab] = 6;
         grid.shaped[slab] = 1;
         ChunkLighting::Propagate(grid, {});
-        CHECK(grid.sky[slab] == 14);
+        CHECK(grid.sky[slab] == 14);                 // full top face blocks the column
         CHECK(grid.sky[grid.Index(24, 3, 24)] == 14);
     }
 

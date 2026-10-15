@@ -4,7 +4,6 @@
 #include <vector>
 
 namespace perlin {
-
     enum class RenderLayer : uint8_t { Solid, Cutout, Translucent, CutoutCull, TranslucentCull };
     constexpr int kRenderLayerCount = 5;
 

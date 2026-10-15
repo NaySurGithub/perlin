@@ -9,5 +9,6 @@ namespace perlin::sysinfo {
     uint64_t ProcessMemory();
     uint64_t ProcessPeakMemory();
     std::string Compiler();
+    std::string GpuName(unsigned vendorId, unsigned deviceId);
     std::string VendorName(unsigned vendorId);
 }

@@ -26,18 +26,15 @@ namespace perlin::ui {
         bool Ready() const { return ready; }
 
         void Resize(int guiW, int guiH, int scale);
-
         bool SetDocument(const std::string& rml, std::string& error);
-
         bool SetOverlay(const std::string& rml, std::string& error);
         void ClearOverlay();
         bool HasOverlay() const { return overlay != nullptr; }
-
         void MouseMove(float guiX, float guiY);
         std::string OverlayHover() const;
+        std::string HoverLink() const;
         void Update();
         void Render();
-
         void ReloadTextures();
 
     private:

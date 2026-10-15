@@ -32,7 +32,6 @@ namespace perlin::i18n {
                 Lang::Parse(text, out);
                 files++;
             }
-
             if (code == "en_US") {
                 Lang::Parse(BuiltinEnglish(), out);
                 files++;

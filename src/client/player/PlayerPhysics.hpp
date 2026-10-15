@@ -1,5 +1,4 @@
 #pragma once
-
 #include <cstdint>
 
 namespace perlin::physics {
@@ -20,7 +19,6 @@ namespace perlin::physics {
         double x0 = 0, y0 = 0, z0 = 0, x1 = 0, y1 = 0, z1 = 0;
 
         Box Offset(double dx, double dy, double dz) const { return {x0 + dx, y0 + dy, z0 + dz, x1 + dx, y1 + dy, z1 + dz}; }
-
         Box Expand(double dx, double dy, double dz) const;
         Box Inflate(double d) const { return {x0 - d, y0 - d, z0 - d, x1 + d, y1 + d, z1 + d}; }
         bool Intersects(const Box& o) const;

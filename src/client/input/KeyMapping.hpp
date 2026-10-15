@@ -36,6 +36,8 @@ namespace perlin {
         PickBlock,
         Drop,
         PlayerList,
+        Inventory,
+        Pause,
         Count
     };
 

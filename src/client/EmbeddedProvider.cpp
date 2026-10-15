@@ -34,7 +34,6 @@ namespace perlin {
     void RegisterEmbeddedResources() { resources::SetProvider(&Find); }
 }
 #else
-
 struct PerlinEmbeddedFile {
     const char* name;
     const uint8_t* begin;

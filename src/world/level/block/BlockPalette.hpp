@@ -24,14 +24,12 @@ namespace perlin {
                                  const std::vector<std::pair<std::string, StateValue>>& sortedStates);
 
         bool LoadVanillaDefinitions(const std::string& mojangBlocksJsonPath);
-
         bool LoadServerStates(const std::string& path);
         bool LoadServerStatesText(const std::string& text, const std::string& source);
         bool NamesLoaded() const { return namesLoaded; }
         size_t StateCount() const { return nameByHash.size(); }
 
         uint16_t Intern(int32_t networkId);
-
         bool LearnName(int32_t networkId, const std::string& name);
         int32_t NetworkId(uint16_t local) const;
         std::string Name(uint16_t local) const;

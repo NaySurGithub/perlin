@@ -38,6 +38,8 @@ namespace perlin {
         void UiDestroyTexture(uint32_t texture) override;
         uint32_t UiCreateMesh(const UiVertex* vertices, uint32_t vertexCount, const uint32_t* indices,
                               uint32_t indexCount) override;
+        uint32_t UiCreateFrameMesh(const UiVertex* vertices, uint32_t vertexCount, const uint32_t* indices,
+                                   uint32_t indexCount) override;
         void UiDestroyMesh(uint32_t mesh) override;
         void UiSubmit(UiLayer layer, const UiDraw& draw) override;
         void FramebufferSize(int& w, int& h) const override { w = width; h = height; }
@@ -61,7 +63,6 @@ namespace perlin {
         };
         struct Page {
             bgfx::DynamicVertexBufferHandle vb = BGFX_INVALID_HANDLE;
-
             std::array<bgfx::DynamicIndexBufferHandle, kRenderLayerCount> ib;
             RangeAllocator vAlloc;
             std::array<RangeAllocator, kRenderLayerCount> iAlloc;
@@ -198,6 +199,7 @@ namespace perlin {
 
         int width = 0, height = 0;
 
+        std::unordered_map<const uint8_t*, std::vector<std::vector<uint8_t>>> animatedTiles;
         int atlasLayers = 0;
         int tileSize = 16;
         bgfx::TextureHandle crosshairTexture = BGFX_INVALID_HANDLE;
@@ -215,7 +217,11 @@ namespace perlin {
             bgfx::IndexBufferHandle ib = BGFX_INVALID_HANDLE;
             uint32_t indexCount = 0;
             bool used = false;
+            bool transient = false;
+            bgfx::TransientVertexBuffer tvb{};
+            bgfx::TransientIndexBuffer tib{};
         };
+        std::vector<uint32_t> freeUiMeshes;
         struct UiTextureGpu {
             bgfx::TextureHandle handle = BGFX_INVALID_HANDLE;
             bool linear = false;

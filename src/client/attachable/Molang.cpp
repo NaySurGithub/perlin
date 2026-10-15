@@ -14,6 +14,11 @@ namespace perlin::molang {
         std::string text;
         char op = 0;
         std::vector<std::shared_ptr<Node>> kids;
+        enum VarKind : int8_t { VUnset = -1, VVariable, VTemp, VQuery, VContext, VThis, VPi, VTrue, VFalse, VOther };
+        mutable int8_t varKind = VUnset;
+        mutable int8_t cacheable = -1;
+        mutable int8_t isMath = -1;
+        mutable std::string key;
     };
 
     namespace {
@@ -358,14 +363,31 @@ namespace perlin::molang {
 
         Value Eval(const Node& n, Scope& s, ReturnSignal& ret);
 
+        double EvalNum(const Node& n, Scope& s, ReturnSignal& ret);
+
         Value Call(const Node& n, Scope& s, ReturnSignal& ret) {
-            Args args;
-            for (const auto& k : n.kids)
-                args.push_back(Eval(*k, s, ret));
-            const auto a = [&](size_t i) { return i < args.size() ? args[i].n : 0.0; };
             const std::string& name = n.text;
-            if (name.rfind("math.", 0) == 0) {
-                const std::string f = name.substr(5);
+            if (n.isMath < 0) {
+                n.isMath = name.rfind("math.", 0) == 0 ? 1 : 0;
+                if (n.isMath)
+                    n.key = name.substr(5);
+            }
+            double av[4] = {0, 0, 0, 0};
+            Args args;
+            if (n.isMath) {
+                for (size_t i = 0; i < n.kids.size(); i++) {
+                    const double v = EvalNum(*n.kids[i], s, ret);
+                    if (i < 4)
+                        av[i] = v;
+                }
+            } else {
+                args.reserve(n.kids.size());
+                for (const auto& k : n.kids)
+                    args.push_back(Eval(*k, s, ret));
+            }
+            const auto a = [&](size_t i) { return i < 4 ? av[i] : 0.0; };
+            if (n.isMath) {
+                const std::string& f = n.key;
                 const double deg = kPi / 180.0;
                 if (f == "sin") return Value::Num(std::sin(a(0) * deg));
                 if (f == "cos") return Value::Num(std::cos(a(0) * deg));
@@ -418,7 +440,6 @@ namespace perlin::molang {
                 if (f == "cosh") return Value::Num(std::cosh(a(0)));
                 if (f == "tanh") return Value::Num(std::tanh(a(0)));
                 if (f.rfind("ease_", 0) == 0) {
-
                     const double t = std::clamp(a(2), 0.0, 1.0);
                     const std::string k = f.substr(5);
                     auto in = [&](const std::string& n, double x) {
@@ -459,12 +480,44 @@ namespace perlin::molang {
                 }
                 return Value::Num(0);
             }
-            if (name.rfind("query.", 0) == 0 && s.host) {
+            if (s.host && name.rfind("query.", 0) == 0) {
                 Value out;
                 if (s.host->Query(name.substr(6), args, out))
                     return out;
             }
             return Value::Num(0);
+        }
+
+        double EvalNum(const Node& n, Scope& s, ReturnSignal& ret) {
+            switch (n.kind) {
+            case Node::Num:
+                return n.number;
+            case Node::Binary: {
+                switch (n.op) {
+                case '+': return EvalNum(*n.kids[0], s, ret) + EvalNum(*n.kids[1], s, ret);
+                case '-': return EvalNum(*n.kids[0], s, ret) - EvalNum(*n.kids[1], s, ret);
+                case '*': return EvalNum(*n.kids[0], s, ret) * EvalNum(*n.kids[1], s, ret);
+                case '/': {
+                    const double l = EvalNum(*n.kids[0], s, ret);
+                    const double r = EvalNum(*n.kids[1], s, ret);
+                    return r != 0 ? l / r : 0.0;
+                }
+                case '<': { const double l = EvalNum(*n.kids[0], s, ret); return l < EvalNum(*n.kids[1], s, ret) ? 1.0 : 0.0; }
+                case '>': { const double l = EvalNum(*n.kids[0], s, ret); return l > EvalNum(*n.kids[1], s, ret) ? 1.0 : 0.0; }
+                case 'l': { const double l = EvalNum(*n.kids[0], s, ret); return l <= EvalNum(*n.kids[1], s, ret) ? 1.0 : 0.0; }
+                case 'g': { const double l = EvalNum(*n.kids[0], s, ret); return l >= EvalNum(*n.kids[1], s, ret) ? 1.0 : 0.0; }
+                default: return Eval(n, s, ret).n;
+                }
+            }
+            case Node::Unary:
+                if (n.op == '-')
+                    return -EvalNum(*n.kids[0], s, ret);
+                return Eval(n, s, ret).n;
+            case Node::Call:
+                return Call(n, s, ret).n;
+            default:
+                return Eval(n, s, ret).n;
+            }
         }
 
         Value Eval(const Node& n, Scope& s, ReturnSignal& ret) {
@@ -474,37 +527,63 @@ namespace perlin::molang {
             case Node::Str:
                 return Value::Str(n.text);
             case Node::Var: {
-                const std::string& id = n.text;
-                if (id.rfind("variable.", 0) == 0) {
-                    const auto it = s.variables.find(id.substr(9));
+                if (n.varKind == Node::VUnset) {
+                    const std::string& id = n.text;
+                    if (id.rfind("variable.", 0) == 0) { n.varKind = Node::VVariable; n.key = id.substr(9); }
+                    else if (id.rfind("temp.", 0) == 0) { n.varKind = Node::VTemp; n.key = id.substr(5); }
+                    else if (id.rfind("query.", 0) == 0) { n.varKind = Node::VQuery; n.key = id.substr(6); }
+                    else if (id.rfind("context.", 0) == 0) { n.varKind = Node::VContext; n.key = id.substr(8); }
+                    else if (id == "this") n.varKind = Node::VThis;
+                    else if (id == "math.pi") n.varKind = Node::VPi;
+                    else if (id == "true") n.varKind = Node::VTrue;
+                    else if (id == "false") n.varKind = Node::VFalse;
+                    else n.varKind = Node::VOther;
+                }
+                switch (n.varKind) {
+                case Node::VVariable: {
+                    const auto it = s.variables.find(n.key);
                     return it != s.variables.end() ? it->second : Value::Num(0);
                 }
-                if (id.rfind("temp.", 0) == 0) {
-                    const auto it = s.temps.find(id.substr(5));
+                case Node::VTemp: {
+                    const auto it = s.temps.find(n.key);
                     return it != s.temps.end() ? it->second : Value::Num(0);
                 }
-                if (id.rfind("query.", 0) == 0 && s.host) {
+                case Node::VQuery: {
+                    if (!s.host)
+                        return Value::Str(n.text);
+                    if (s.cacheQueries) {
+                        if (n.cacheable < 0)
+                            n.cacheable = s.host->Volatile(n.key) ? 0 : 1;
+                        if (n.cacheable == 1) {
+                            const auto it = s.queryCache.find(&n);
+                            if (it != s.queryCache.end())
+                                return it->second;
+                            Value out;
+                            if (!s.host->Query(n.key, {}, out))
+                                out = Value::Num(0);
+                            s.queryCache.emplace(&n, out);
+                            return out;
+                        }
+                    }
                     Value out;
-                    if (s.host->Query(id.substr(6), {}, out))
+                    if (s.host->Query(n.key, {}, out))
                         return out;
                     return Value::Num(0);
                 }
-                if (id.rfind("context.", 0) == 0 && s.host) {
+                case Node::VContext: {
+                    if (!s.host)
+                        return Value::Str(n.text);
                     Value out;
-                    if (s.host->Context(id.substr(8), out))
+                    if (s.host->Context(n.key, out))
                         return out;
                     return Value::Num(0);
                 }
-                if (id == "this")
-                    return Value::Num(s.thisValue);
-                if (id == "math.pi")
-                    return Value::Num(kPi);
-                if (id == "true")
-                    return Value::Num(1);
-                if (id == "false")
-                    return Value::Num(0);
-
-                return Value::Str(id);
+                case Node::VThis: return Value::Num(s.thisValue);
+                case Node::VPi: return Value::Num(kPi);
+                case Node::VTrue: return Value::Num(1);
+                case Node::VFalse: return Value::Num(0);
+                default: return Value::Str(n.text);
+                }
             }
             case Node::Call:
                 return Call(n, s, ret);
@@ -627,6 +706,13 @@ namespace perlin::molang {
             return Value::Num(0);
         ReturnSignal ret;
         return molang::Eval(*root, scope, ret);
+    }
+
+    double Expr::Number(Scope& scope) const {
+        if (!root)
+            return 0.0;
+        ReturnSignal ret;
+        return molang::EvalNum(*root, scope, ret);
     }
 
     bool Expr::IsConstant() const {

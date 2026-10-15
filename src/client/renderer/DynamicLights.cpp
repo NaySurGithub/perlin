@@ -57,7 +57,6 @@ namespace perlin::dynlight {
 
     void Select(std::vector<Light>& lights, const glm::dvec3& camera, size_t max) {
         std::sort(lights.begin(), lights.end(), [&](const Light& a, const Light& b) {
-
             const double sa = a.level - glm::distance(a.pos, camera), sb = b.level - glm::distance(b.pos, camera);
             return sa > sb;
         });

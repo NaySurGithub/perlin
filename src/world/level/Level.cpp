@@ -182,7 +182,6 @@ namespace perlin {
 
     void Level::SetLiquid(int x, int y, int z, uint16_t id) {
         std::lock_guard lock(mutex);
-
         const auto it = chunks.find({x >> 4, z >> 4});
         if (it == chunks.end())
             return;
@@ -347,7 +346,6 @@ namespace perlin {
             return;
 
         std::lock_guard lock(mutex);
-
         const auto found = chunks.find({cx, cz});
         if (found == chunks.end())
             return;

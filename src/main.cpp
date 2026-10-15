@@ -46,7 +46,6 @@ namespace {
     }
 
     void StartLogCapture(const std::vector<std::string>& paths) {
-
         std::vector<FILE*> logs;
         for (const std::string& path : paths)
             if (FILE* f = std::fopen(path.c_str(), "wb")) {
@@ -59,7 +58,6 @@ namespace {
         std::fflush(stdout);
         std::fflush(stderr);
 #ifdef _WIN32
-
         for (FILE* f : logs)
             std::fclose(f);
         const std::string& primary = paths.front();

@@ -1,7 +1,9 @@
 #include <functional>
+#include "util/Env.hpp"
 #include "client/entity/EntityAssets.hpp"
 
 #include "client/ui/Json.hpp"
+#include "util/Paths.hpp"
 
 #include <algorithm>
 #include <chrono>
@@ -88,7 +90,6 @@ namespace perlin::entity {
                                 dest.push_back(Expr::Parse(s.string));
                 };
                 readScripts("initialize", d.initialize);
-
                 if (const Json* l = scripts->Find("pre_animation"); l && l->IsArray()) {
                     std::string joined;
                     for (const Json& s : l->array)
@@ -107,6 +108,16 @@ namespace perlin::entity {
                 if (const Json* s = scripts->Find("scale"))
                     d.scale = ParseValue(*s);
             }
+            if (d.animate.empty())
+                if (const Json* acs = desc->Find("animation_controllers"); acs && acs->IsArray())
+                    for (const Json& a : acs->array)
+                        if (a.IsObject())
+                            for (const auto& [shortName, id] : a.object)
+                                if (id.IsString()) {
+                                    const std::string key = LowerCase(shortName);
+                                    d.controllers[key] = id.string;
+                                    d.animate.push_back({"ctrl:" + key, nullptr});
+                                }
             if (const Json* rcs = desc->Find("render_controllers"); rcs && rcs->IsArray())
                 for (const Json& r : rcs->array) {
                     if (r.IsString())
@@ -182,9 +193,106 @@ namespace perlin::entity {
         loaded = true;
     }
 
+    namespace {
+        const char* kBuiltinGeometry = R"GEO({
+  "format_version": "1.8.0",
+  "geometry.boat": {
+    "texturewidth": 128, "textureheight": 64,
+    "bones": [
+      {"name": "root", "pivot": [0, 0, 0], "rotation": [0, -90, 0]},
+      {"name": "bottom", "parent": "root", "pivot": [0, 3, 1], "rotation": [90, 0, 0],
+       "cubes": [{"origin": [-14, -4, -2], "size": [28, 16, 3], "uv": [0, 0]}]},
+      {"name": "back", "parent": "root", "pivot": [15, 2, 4], "rotation": [0, 270, 0],
+       "cubes": [{"origin": [10, 3, 3], "size": [18, 6, 2], "uv": [0, 19]}]},
+      {"name": "front", "parent": "root", "pivot": [-15, 2, 0], "rotation": [0, 90, 0],
+       "cubes": [{"origin": [-23, 3, -1], "size": [16, 6, 2], "uv": [0, 27]}]},
+      {"name": "right", "parent": "root", "pivot": [0, 2, -9], "rotation": [0, 180, 0],
+       "cubes": [{"origin": [-14, 3, -10], "size": [28, 6, 2], "uv": [0, 35]}]},
+      {"name": "left", "parent": "root", "pivot": [0, 2, 9],
+       "cubes": [{"origin": [-14, 3, 8], "size": [28, 6, 2], "uv": [0, 43]}]},
+      {"name": "paddle_left", "parent": "root", "pivot": [-3, 11, 9], "rotation": [-11.25, 0, -22.5],
+       "cubes": [{"origin": [-4, 9, 4], "size": [2, 2, 18], "uv": [62, 0]}, {"origin": [-4.001, 8, 17], "size": [1, 6, 7], "uv": [62, 20]}]},
+      {"name": "paddle_right", "parent": "root", "pivot": [-3, 11, -9], "rotation": [-11.25, 180, -22.5],
+       "cubes": [{"origin": [-4, 9, -14], "size": [2, 2, 18], "uv": [62, 0]}, {"origin": [-4.001, 8, -24], "size": [1, 6, 7], "uv": [62, 20]}]}
+    ]
+  }
+})GEO";
+    }
+
+    namespace {
+        const char* kJavaAnimations = R"JAVA({
+  "format_version": "1.8.0",
+  "animations": {
+    "animation.humanoid.bob": {
+      "loop": true,
+      "bones": {
+        "rightarm": {"rotation": ["math.sin(query.life_time * 76.8) * 2.865", 0.0, "(math.cos(query.life_time * 103.2) * 2.865) + 2.865"]},
+        "leftarm": {"rotation": ["-math.sin(query.life_time * 76.8) * 2.865", 0.0, "((math.cos(query.life_time * 103.2) * 2.865) + 2.865) * -1.0"]}
+      }
+    },
+    "animation.humanoid.move": {
+      "loop": true,
+      "bones": {
+        "leftarm": {"rotation": ["variable.tcos0", 0.0, 0.0]},
+        "rightarm": {"rotation": ["-variable.tcos0", 0.0, 0.0]},
+        "leftleg": {"rotation": ["variable.tcos0 * -1.4", -0.29, -0.29]},
+        "rightleg": {"rotation": ["variable.tcos0 * 1.4", 0.29, 0.29]}
+      }
+    },
+    "animation.polarbear.move": {
+      "loop": true,
+      "bones": {
+        "body": {"rotation": ["(query.standing_scale * 63) - this", 0.0, 0.0]}
+      }
+    },
+    "animation.humanoid.attack.rotations": {
+      "loop": true,
+      "bones": {
+        "body": {"rotation": [0.0, "variable.attack_time > 0 ? math.sin(math.sqrt(variable.attack_time) * 360) * 11.46 - this : 0.0", 0.0]},
+        "leftarm": {"rotation": ["variable.attack_time > 0 ? math.sin(math.sqrt(variable.attack_time) * 360) * 11.46 : 0.0", "variable.attack_time > 0 ? math.sin(math.sqrt(variable.attack_time) * 360) * 11.46 : 0.0", 0.0]},
+        "rightarm": {"rotation": [
+          "variable.attack_time > 0 ? -((math.sin((1.0 - math.pow(1.0 - variable.attack_time, 4.0)) * 180.0) * 1.2 + math.sin(variable.attack_time * 180.0) * -((query.target_x_rotation * 0.017453) - 0.7) * 0.75) * 57.2958) : 0.0",
+          "variable.attack_time > 0 ? math.sin(math.sqrt(variable.attack_time) * 360) * 11.46 * 3.0 : 0.0",
+          "variable.attack_time > 0 ? math.sin(variable.attack_time * 180.0) * -22.92 : 0.0"]}
+      }
+    }
+  }
+})JAVA";
+        void LoadJavaOverrides(attachable::AnimationLibrary& animations) {
+            if (PERLIN_ENV("PERLIN_NO_JAVA_ANIMATIONS"))
+                return;
+            const fs::path dir = fs::path(paths::DataDir()) / "animation_overrides";
+            std::error_code ec;
+            const fs::path file = dir / "java.animation.json";
+            {
+                bool current = false;
+                if (std::ifstream in(file, std::ios::binary); in) {
+                    std::stringstream ss;
+                    ss << in.rdbuf();
+                    current = ss.str().find("animation.polarbear.move") != std::string::npos;
+                }
+                if (!current) {
+                    fs::create_directories(dir, ec);
+                    std::ofstream out(file, std::ios::binary);
+                    out << kJavaAnimations;
+                }
+            }
+            std::string text;
+            for (const fs::path& p : fs::directory_iterator(dir, ec))
+                if (p.extension() == ".json") {
+                    std::ifstream in(p, std::ios::binary);
+                    std::stringstream ss;
+                    ss << in.rdbuf();
+                    animations.LoadAnimations(ss.str());
+                    std::cout << "[entity] animation override " << p.filename().string() << std::endl;
+                }
+        }
+    }
+
     void EntityAssets::LoadAll() {
         const auto start = std::chrono::steady_clock::now();
         std::string text;
+        geometries.Load(kBuiltinGeometry);
         for (const fs::path& p : JsonFiles(fs::path(root) / "models" / "entity"))
             if (ReadAll(p, text))
                 geometries.Load(text);
@@ -193,6 +301,8 @@ namespace perlin::entity {
         for (const fs::path& p : JsonFiles(fs::path(root) / "animations"))
             if (ReadAll(p, text))
                 animations.LoadAnimations(text);
+        geometries.Detach("geometry.polarbear", {"head", "leg0", "leg1", "leg2", "leg3"});
+        LoadJavaOverrides(animations);
         for (const fs::path& p : JsonFiles(fs::path(root) / "animation_controllers"))
             if (ReadAll(p, text))
                 animations.LoadControllers(text);
@@ -208,7 +318,6 @@ namespace perlin::entity {
             if (ReadAll(p, text) && Json::Parse(text, doc, error))
                 ParseEntity(doc, entities);
         }
-
         {
             std::function<const Json*(const Json&)> findBox = [&](const Json& j) -> const Json* {
                 if (j.IsObject()) {
@@ -230,6 +339,26 @@ namespace perlin::entity {
                 const Json* id = desc ? desc->Find("identifier") : nullptr;
                 if (!id || !id->IsString() || !entity)
                     continue;
+                {
+                    std::function<const Json*(const Json&)> findRide = [&](const Json& j) -> const Json* {
+                        if (j.IsObject()) {
+                            if (const Json* r = j.Find("minecraft:rideable"); r && r->IsObject())
+                                return r;
+                            for (const auto& [k, v] : j.object)
+                                if (const Json* r = findRide(v))
+                                    return r;
+                        }
+                        return nullptr;
+                    };
+                    if (const Json* ride = findRide(*entity))
+                        if (const Json* seat = ride->Find("seats")) {
+                            const Json* first = seat->IsArray() && !seat->array.empty() ? &seat->array[0] : seat;
+                            if (const Json* pos = first->IsObject() ? first->Find("position") : nullptr)
+                                if (pos->IsArray() && pos->array.size() >= 3 && pos->array[0].IsNumber())
+                                    seats[id->string] = {static_cast<float>(pos->array[0].number), static_cast<float>(pos->array[1].number),
+                                                         static_cast<float>(pos->array[2].number)};
+                        }
+                }
                 if (const Json* box = findBox(*entity)) {
                     const Json* w = box->Find("width");
                     const Json* hgt = box->Find("height");
@@ -238,7 +367,9 @@ namespace perlin::entity {
                 }
             }
         }
-
+        for (auto& [id, def] : entities)
+            if (def.renderControllers.empty() && !def.geometries.empty())
+                def.renderControllers.push_back({"controller.render.perlin_implicit_default", nullptr});
         for (const auto& [id, def] : entities)
             for (const auto& ref : def.renderControllers)
                 if (!controllers.count(ref.id)) {
@@ -255,6 +386,16 @@ namespace perlin::entity {
     const ClientEntityDef* EntityAssets::Entity(const std::string& identifier) const {
         const auto it = entities.find(identifier);
         return it == entities.end() ? nullptr : &it->second;
+    }
+
+    bool EntityAssets::Seat(const std::string& identifier, float& x, float& y, float& z) const {
+        const auto it = seats.find(identifier);
+        if (it == seats.end())
+            return false;
+        x = it->second[0];
+        y = it->second[1];
+        z = it->second[2];
+        return true;
     }
 
     bool EntityAssets::CollisionBox(const std::string& identifier, float& width, float& height) const {

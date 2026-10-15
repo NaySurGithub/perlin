@@ -1,3 +1,5 @@
+// Builds a synthetic 64x texture pack and checks that BlockLibrary resamples everything to one tile size,
+// keeps flipbooks per-frame, and that zip packs unpack. Needs the vanilla assets: argv[1] = resource_pack dir.
 #include "client/renderer/block/BlockLibrary.hpp"
 #include "client/resources/TextureLoader.hpp"
 #include "client/resources/TexturePack.hpp"
@@ -13,7 +15,7 @@
 using namespace perlin;
 namespace fs = std::filesystem;
 
-namespace perlin {
+namespace perlin { // key-name tables live in SDL code; the options loader only needs them to link
     std::string KeyName(int) { return {}; }
     int KeyFromName(const std::string&) { return 0; }
     std::string MouseName(int) { return {}; }
@@ -38,6 +40,7 @@ int main(int argc, char** argv) {
     fs::remove_all(tmp);
     fs::create_directories(tmp / "packs/Fake 64x/textures/blocks");
 
+    // stone.png: 64x64 solid red. Written as PNG via miniz.
     auto writePng = [](const fs::path& p, int w, int h, unsigned r, unsigned g, unsigned b) {
         std::vector<unsigned char> px((size_t)w * h * 4);
         for (size_t i = 0; i < px.size(); i += 4) {
@@ -56,6 +59,7 @@ int main(int argc, char** argv) {
     writePng(tmp / "packs/Fake 64x/textures/blocks/stone.png", 64, 64, 200, 10, 10);
     writePng(tmp / "packs/Fake 64x/textures/blocks/dirt.png", 64, 64, 10, 200, 10);
 
+    // zip it with a nested top folder, like a downloaded pack
     {
         mz_zip_archive zip{};
         const std::string zipPath = (tmp / "packs/Zipped.mcpack").string();
@@ -75,10 +79,10 @@ int main(int argc, char** argv) {
     Texture probe;
     CHECK(pack.Load("textures/blocks/stone.png", probe) && probe.width == 64);
     CHECK(!pack.Load("textures/blocks/nope.png", probe));
-    CHECK(pack.Open((tmp / "packs").string(), "Zipped.mcpack", error));
+    CHECK(pack.Open((tmp / "packs").string(), "Zipped.mcpack", error)); // read in place, nothing is extracted
     CHECK(!fs::exists(tmp / "packs/.cache"));
     CHECK(pack.Load("textures/blocks/dirt.png", probe) && probe.width == 64);
-    CHECK(pack.Load("Textures/Blocks/DIRT.png", probe));
+    CHECK(pack.Load("Textures/Blocks/DIRT.png", probe)); // case-insensitive like Windows paths
     CHECK(!pack.Open((tmp / "packs").string(), "missing", error) && !error.empty());
     CHECK(pack.Open((tmp / "packs").string(), "Zipped.mcpack", error));
 
@@ -92,7 +96,7 @@ int main(int argc, char** argv) {
     const int tiles = lib.TilesLoaded();
     CHECK(tiles > 100);
     CHECK(lib.AtlasPixels().size() == (size_t)tiles * 64 * 64 * 4);
-
+    // stone from the pack is red, a texture only in vanilla (16x16) was scaled up to 64
     int stoneTile = 0;
     for (int t = 1; t < tiles; t++)
         if (lib.TilePathOf(t) == "textures/blocks/stone")
@@ -106,7 +110,7 @@ int main(int argc, char** argv) {
     }
     int animated = 0;
     lib.PollAnimation(1, [&](int, const uint8_t*) { animated++; });
-    CHECK(animated > 0);
+    CHECK(animated > 0); // vanilla water/lava/fire flipbooks still animate at 64px
     float u0, v0, u1, v1;
     BlockLibrary::TileUV(1, u0, v0, u1, v1);
     CHECK(u1 > u0 && v1 > v0);

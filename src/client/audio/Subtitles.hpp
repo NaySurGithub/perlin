@@ -1,12 +1,10 @@
 #pragma once
-
 #include <glm/glm.hpp>
 
 #include <string>
 #include <vector>
 
 namespace perlin::audio {
-
     std::string SubtitleText(const std::string& soundDefinition);
 
     class Subtitles {
@@ -19,7 +17,6 @@ namespace perlin::audio {
         };
 
         void Add(const std::string& soundDefinition, const glm::dvec3& position, float volume, bool global, double now);
-
         std::vector<Line> Visible(const glm::dvec3& listener, float listenerYawDegrees, double now);
         void Clear() { entries.clear(); }
         size_t Count() const { return entries.size(); }

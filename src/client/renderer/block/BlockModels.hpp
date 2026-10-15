@@ -36,7 +36,6 @@ namespace perlin {
     public:
         bool Load(const std::string& path);
         bool LoadFromMemory(const std::string& bytes);
-
         bool Loaded() const { return loaded; }
         const std::vector<std::string>& Textures() const { return textures; }
         const ModelEntry* Find(int32_t hash) const {

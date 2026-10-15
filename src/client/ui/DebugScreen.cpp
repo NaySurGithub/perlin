@@ -47,7 +47,6 @@ namespace perlin::ui {
     }
 
     std::string FacingText(float javaYaw) {
-
         const int index = static_cast<int>(std::floor(javaYaw / 90.0f + 0.5f)) & 3;
         static const char* kKeys[4] = {"perlin.debug.facing.south", "perlin.debug.facing.west", "perlin.debug.facing.north",
                                        "perlin.debug.facing.east"};

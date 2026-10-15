@@ -32,6 +32,8 @@ namespace perlin {
             bool fovEffects = true;
             float motionBlur = 0.0f;
             bool thirdPersonCrosshair = false;
+            std::string glass = "normal";
+            bool thirdPersonNametag = false;
             int damageTilt = 100;
             bool damageTint = false;
             std::string texturePack;
@@ -93,6 +95,8 @@ namespace perlin {
                       o.fovEffects,
                       o.motionBlur,
                       o.thirdPersonCrosshair,
+                      o.glass,
+                      o.thirdPersonNametag,
                       o.damageTilt,
                       o.damageTint,
                       o.texturePack,
@@ -141,6 +145,8 @@ namespace perlin {
         o.fovEffects = stored.fovEffects;
         o.motionBlur = std::clamp(stored.motionBlur, 0.0f, 1.0f);
         o.thirdPersonCrosshair = stored.thirdPersonCrosshair;
+        o.glass = (stored.glass == "connected" || stored.glass == "connectedClear" || stored.glass == "clear") ? stored.glass : std::string("normal");
+        o.thirdPersonNametag = stored.thirdPersonNametag;
         o.damageTilt = std::clamp(stored.damageTilt, 0, 100);
         o.damageTint = stored.damageTint;
         o.texturePack = stored.texturePack;
@@ -167,7 +173,6 @@ namespace perlin {
         o.zoom.scrollStep = std::clamp(o.zoom.scrollStep, 0.0f, 0.9f);
         o.zoom.smoothing = std::clamp(o.zoom.smoothing, 0.0f, 100.0f);
         if (stored.version < kOptionsVersion) {
-
             o.vsync = Options().vsync;
             o.maxFps = Options().maxFps;
             o.damageTint = Options().damageTint;
@@ -204,6 +209,8 @@ namespace perlin {
                       fovEffects,
                       motionBlur,
                       thirdPersonCrosshair,
+                      glass,
+                      thirdPersonNametag,
                       damageTilt,
                       damageTint,
                       texturePack,

@@ -1,4 +1,5 @@
 #include <cstdio>
+#include "util/Env.hpp"
 #include "client/renderer/LevelRenderer.hpp"
 #include "client/resources/BedrockSamples.hpp"
 #include "util/Resources.hpp"
@@ -31,7 +32,6 @@ namespace perlin {
         : context(context), options(options) {
         blocks.SetFancy(options.fancyGraphics);
         const unsigned cores = std::max(1u, std::thread::hardware_concurrency());
-
         const unsigned threads = std::clamp(cores > 4 ? cores - 3 : 2u, 2u, 8u);
         meshPool = std::make_unique<ThreadPool>(threads);
         maxInFlight = threads * 3;
@@ -117,7 +117,6 @@ namespace perlin {
         }
         context.ClearChunkMeshes();
         shown.clear();
-
         lod.InvalidateColours();
         lodTiles.clear();
         lodDirty.clear();
@@ -151,7 +150,7 @@ namespace perlin {
         const std::string packDir = options.resourcePackDir + "/Perlin";
         const std::string vanillaDir = options.bedrockSamplesDir + "/repo/resource_pack";
         if (!BedrockSamples::Available(options.bedrockSamplesDir)) {
-            if (std::getenv("PERLIN_PREVIEW"))
+            if (PERLIN_ENV("PERLIN_PREVIEW"))
                 std::cout << "[preview] samples not available at " << options.bedrockSamplesDir << std::endl;
             return;
         }
@@ -176,7 +175,7 @@ namespace perlin {
                       << std::chrono::duration_cast<std::chrono::milliseconds>(end - blocksDone).count() << " ms"
                       << std::endl;
         }
-        if (std::getenv("PERLIN_PREVIEW"))
+        if (PERLIN_ENV("PERLIN_PREVIEW"))
             std::cout << "[preview] blocksOk=" << blocksOk << " tintsOk=" << tintsOk << std::endl;
         if (!blocksOk)
             return;
@@ -202,7 +201,6 @@ namespace perlin {
             finished.swap(done);
         }
         const uint32_t current = generation.load();
-
         const auto uploadStart = std::chrono::steady_clock::now();
         size_t consumed = 0;
         for (MeshResult& r : finished) {
@@ -269,7 +267,6 @@ namespace perlin {
         touched.reserve(drained.size() * 3);
         for (const DirtyChunk& d : drained) {
             if (d.exists && d.lodOnly) {
-
                 if (LodEnabled() && !d.streaming && capSet.insert(d.pos).second)
                     capQueue.push_back(d.pos);
                 continue;
@@ -283,7 +280,6 @@ namespace perlin {
                 if (meshKey.erase(d.pos))
                     context.RemoveChunkMesh(d.pos.x, d.pos.z);
                 wantKey.erase(d.pos);
-
                 if (shown.erase(d.pos))
                     MarkLodTile(d.pos);
             }
@@ -305,7 +301,6 @@ namespace perlin {
                     continue;
                 const auto n = info.find(ChunkPos{pos.x + dx, pos.z + dz});
                 if (n == info.end()) {
-
                     if (now - self.readyAt < 500)
                         return false;
                 } else if (n->second.streaming && now - n->second.firstSeen < 2500) {
@@ -326,7 +321,7 @@ namespace perlin {
         const uint64_t now = Level::NowMs();
         pending.clear();
         pending.reserve(wantKey.size());
-        static const int debugNear = std::getenv("PERLIN_LOD_NEAR") ? std::atoi(std::getenv("PERLIN_LOD_NEAR")) : -1;
+        static const int debugNear = PERLIN_ENV("PERLIN_LOD_NEAR") ? std::atoi(PERLIN_ENV("PERLIN_LOD_NEAR")) : -1;
         const int camChunkX = static_cast<int>(std::floor(camX / 16.0f)), camChunkZ = static_cast<int>(std::floor(camZ / 16.0f));
         for (const auto& [pos, key] : wantKey) {
             if (debugNear >= 0 && std::max(std::abs(pos.x - camChunkX), std::abs(pos.z - camChunkZ)) > debugNear)
@@ -349,7 +344,6 @@ namespace perlin {
                           [](const Pending& a, const Pending& b) { return a.distance < b.distance; });
 
         if (!async) {
-
             const auto waitNow = std::chrono::steady_clock::now();
             if (firstWaitAt.time_since_epoch().count() == 0)
                 firstWaitAt = waitNow;
@@ -399,7 +393,6 @@ namespace perlin {
     }
 
     namespace {
-
         int LodStride(int tx, int tz, int ccx, int ccz) {
             const int d = std::max(std::abs(tx * LodStore::kTileChunks + 2 - ccx),
                                    std::abs(tz * LodStore::kTileChunks + 2 - ccz));
@@ -443,7 +436,7 @@ namespace perlin {
             level.RemoveLodOnly(pos.x, pos.z);
         }
         capQueue.erase(capQueue.begin(), capQueue.begin() + static_cast<std::ptrdiff_t>(taken));
-        if (taken && std::getenv("PERLIN_STATS")) {
+        if (taken && PERLIN_ENV("PERLIN_STATS")) {
             captureMs += elapsed();
             if (captured >= 100) {
                 std::printf("[lod] %zu captures, %.3f ms each\n", captured, captureMs / static_cast<double>(captured));
@@ -471,7 +464,6 @@ namespace perlin {
                 const int tx = LodStore::TileOf(p.x), tz = LodStore::TileOf(p.z);
                 wanted[TileKey(tx, tz)] = LodStride(tx, tz, ccx, ccz);
             }
-
             for (const auto& [key, stride] : wanted) {
                 const int tx = static_cast<int>(key >> 32), tz = static_cast<int>(static_cast<uint32_t>(key));
                 auto span = [](int tile, int centre, int& lo, int& hi) {

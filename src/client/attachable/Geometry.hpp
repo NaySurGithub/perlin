@@ -22,7 +22,6 @@ namespace perlin::attachable {
         float inflate = 0;
         bool mirror = false;
         bool hasRotation = false;
-
         bool boxUv = true;
         glm::vec2 uv{0.0f};
         struct FaceUv {
@@ -46,6 +45,7 @@ namespace perlin::attachable {
         std::string parentName;
         float inflate = 0;
         bool neverRender = false;
+        bool reset = false, hasInflate = false, hasNeverRender = false;
     };
 
     struct Geometry {
@@ -61,6 +61,7 @@ namespace perlin::attachable {
         void Load(const std::string& text);
         const Geometry* Find(const std::string& id) const;
         size_t Size() const { return geometries.size(); }
+        void Detach(const std::string& id, const std::vector<std::string>& bones);
 
     private:
         void Link();
@@ -76,10 +77,9 @@ namespace perlin::attachable {
         std::vector<Extra> extras;
     };
     using TextureLookup = std::function<const Texture*(const std::string& shortName)>;
-
     using BoneFilter = std::function<bool(const std::string&)>;
     void BuildMesh(const Geometry& geometry, const Pose& pose, const TextureLookup& textures, BuiltMesh& out,
-                   const BoneFilter& visible = nullptr);
+                   const BoneFilter& visible = nullptr, const glm::mat4* rootParent = nullptr);
 
     glm::mat4 EulerZYX(const glm::vec3& degrees);
 

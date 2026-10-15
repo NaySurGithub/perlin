@@ -1,5 +1,4 @@
 #pragma once
-
 #include "client/audio/Pcm.hpp"
 
 #include <glm/glm.hpp>
@@ -13,11 +12,9 @@
 struct SDL_AudioStream;
 
 namespace perlin::audio {
-
     enum class Category : int { Master, Music, Record, Weather, Block, Hostile, Neutral, Player, Ambient, Voice, Count };
     constexpr int kCategoryCount = static_cast<int>(Category::Count);
     const char* CategoryName(Category c);
-
     Category CategoryFor(const std::string& definitionCategory, const std::string& soundName);
 
     struct Volumes {

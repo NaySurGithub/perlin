@@ -5,15 +5,18 @@
 #include <cstdint>
 #include <vector>
 
+#include <memory>
+
 namespace perlin {
     class BlockLibrary;
 
+    void SetEntityCollisionBoxes(std::vector<physics::Box> boxes);
+
     class LevelCollision final : public physics::World {
     public:
-        LevelCollision(const Level& level, const BlockLibrary* blocks) : level(level), blocks(blocks) {}
+        LevelCollision(const Level& level, const BlockLibrary* blocks);
 
         physics::BlockShape Query(int x, int y, int z) const override;
-
         static const physics::BlockShape& ShapeOf(uint16_t id);
 
     private:
@@ -31,5 +34,6 @@ namespace perlin {
 
         const Level& level;
         const BlockLibrary* blocks;
+        std::shared_ptr<const std::vector<physics::Box>> entityBoxes;
     };
 }

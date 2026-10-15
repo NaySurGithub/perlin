@@ -33,7 +33,6 @@ namespace perlin {
         }
         uint16_t Get(int x, int y, int z) const;
         void Set(int x, int y, int z, uint16_t id);
-
         uint16_t GetLiquid(int x, int y, int z) const;
         void SetLiquid(int x, int y, int z, uint16_t id);
         void ReadLiquid(int x, int z, int yLo, int yHi, uint16_t* out, size_t stride) const;
@@ -44,19 +43,16 @@ namespace perlin {
                         size_t stride) const;
 
         void ReadBlocks(int x, int z, int yLo, int yHi, uint16_t* blocks, size_t stride) const;
-
         void CopyRun(int y, int z, int x0, int n, uint16_t* blocks, uint8_t* biomes, uint16_t* liquid) const;
 
         void SetSection(int section, const uint16_t* cells, const uint16_t* liquidCells = nullptr);
         void SetBiomeSection(int section, const uint8_t* cells);
 
         uint64_t version = 0;
-
         bool streaming = false;
         uint64_t readyAt = 0;
         uint64_t firstSeen = 0;
         bool queued = false;
-
         bool lodOnly = false;
 
     private:
@@ -88,28 +84,21 @@ namespace perlin {
 
     class Level {
     public:
-
         void DrainDirty(std::vector<DirtyChunk>& out);
-
         void MarkAllDirty();
         static uint64_t NowMs();
 
         uint16_t GetBlock(int x, int y, int z) const;
-
         uint16_t GetBlock(int x, int y, int z, bool& loaded) const;
         uint16_t GetLiquid(int x, int y, int z) const;
         void SetLiquid(int x, int y, int z, uint16_t id);
         uint8_t GetBiome(int x, int y, int z) const;
         void SetBlock(int x, int y, int z, uint16_t id);
-
         void EnsureChunk(int cx, int cz, bool streaming = false, bool lodOnly = false);
-
         bool PromoteLodOnly(int cx, int cz);
-
         bool RemoveLodOnly(int cx, int cz);
         void MarkComplete(int cx, int cz);
         bool HasChunk(int cx, int cz) const;
-
         bool HasSectionAt(int x, int y, int z) const;
         bool RemoveChunk(int cx, int cz);
         void SetSubChunk(int cx, int cz, int absSubY, const uint16_t* cells, const uint16_t* liquidCells = nullptr);

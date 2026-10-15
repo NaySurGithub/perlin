@@ -1,8 +1,10 @@
+#include <algorithm>
+#include "util/Env.hpp"
+#include <cstdlib>
 #include "client/attachable/Geometry.hpp"
 
 #include <glm/gtc/matrix_transform.hpp>
 
-#include <algorithm>
 #include <cmath>
 #include <functional>
 
@@ -39,12 +41,17 @@ namespace perlin::attachable {
                     bone.binding = binding->StringOr("");
                 if (const Json* parent = b.Find("parent"))
                     bone.parentName = Lower(parent->StringOr(""));
-                if (const Json* n = b.Find("neverRender"))
+                if (const Json* n = b.Find("neverRender")) {
                     bone.neverRender = n->BoolOr(false);
-
+                    bone.hasNeverRender = true;
+                }
+                if (const Json* r = b.Find("reset"))
+                    bone.reset = r->BoolOr(false);
                 const Json* bind = b.Find("bind_pose_rotation");
-                if (const Json* inf = b.Find("inflate"))
+                if (const Json* inf = b.Find("inflate")) {
                     bone.inflate = static_cast<float>(inf->NumberOr(0));
+                    bone.hasInflate = true;
+                }
                 if (const Json* cubes = b.Find("cubes"); cubes && cubes->IsArray()) {
                     for (const Json& c : cubes->array) {
                         Cube cube;
@@ -53,7 +60,6 @@ namespace perlin::attachable {
                         cube.pivot = Vec3(c.Find("pivot"));
                         cube.rotation = Vec3(c.Find("rotation"));
                         cube.hasRotation = c.Find("rotation") != nullptr;
-
                         if (cube.hasRotation && !c.Find("pivot"))
                             cube.pivot = cube.origin + cube.size * 0.5f;
                         if (bind && !cube.hasRotation) {
@@ -97,9 +103,16 @@ namespace perlin::attachable {
     }
 
     glm::mat4 EulerZYX(const glm::vec3& d) {
-
         glm::mat4 m(1.0f);
-        m = glm::rotate(m, glm::radians(d.z), glm::vec3(0, 0, 1));
+        static const float zs = PERLIN_ENV("PERLIN_ZSIGN") ? static_cast<float>(std::atof(PERLIN_ENV("PERLIN_ZSIGN"))) : -1.0f;
+        static const bool alt = PERLIN_ENV("PERLIN_EULER_ORDER") != nullptr;
+        if (alt) {
+            m = glm::rotate(m, glm::radians(-d.x), glm::vec3(1, 0, 0));
+            m = glm::rotate(m, glm::radians(-d.y), glm::vec3(0, 1, 0));
+            m = glm::rotate(m, glm::radians(d.z * zs), glm::vec3(0, 0, 1));
+            return m;
+        }
+        m = glm::rotate(m, glm::radians(d.z * zs), glm::vec3(0, 0, 1));
         m = glm::rotate(m, glm::radians(-d.y), glm::vec3(0, 1, 0));
         m = glm::rotate(m, glm::radians(-d.x), glm::vec3(1, 0, 0));
         return m;
@@ -128,7 +141,6 @@ namespace perlin::attachable {
                 geometries[g.id] = std::move(g);
             }
         }
-
         for (const auto& [key, value] : doc.object) {
             if (key.rfind("geometry.", 0) != 0 || !value.IsObject())
                 continue;
@@ -138,6 +150,10 @@ namespace perlin::attachable {
                 g.parentId = key.substr(colon + 1);
             g.textureWidth = value.Find("texturewidth") ? static_cast<float>(value.Find("texturewidth")->NumberOr(64)) : 64.0f;
             g.textureHeight = value.Find("textureheight") ? static_cast<float>(value.Find("textureheight")->NumberOr(64)) : 64.0f;
+            if (!g.parentId.empty()) {
+                if (!value.Find("texturewidth")) g.textureWidth = 0;
+                if (!value.Find("textureheight")) g.textureHeight = 0;
+            }
             if (const Json* bones = value.Find("bones"); bones && bones->IsArray())
                 ParseBones(*bones, g);
             geometries[g.id] = std::move(g);
@@ -146,7 +162,6 @@ namespace perlin::attachable {
     }
 
     namespace {
-
         void LinkBones(Geometry& g) {
             std::unordered_map<std::string, size_t> byName;
             for (size_t i = 0; i < g.bones.size(); i++)
@@ -196,7 +211,17 @@ namespace perlin::attachable {
                         bool replaced = false;
                         for (Bone& m : merged)
                             if (m.name == b.name) {
-
+                                if (b.cubes.empty() && (b.reset || b.hasInflate || b.hasNeverRender) && b.meshes.empty()) {
+                                    if (b.reset)
+                                        m.cubes.clear();
+                                    if (b.hasInflate)
+                                        for (Cube& c : m.cubes)
+                                            c.inflate = b.inflate;
+                                    if (b.hasNeverRender)
+                                        m.neverRender = b.neverRender;
+                                    replaced = true;
+                                    continue;
+                                }
                                 const bool overlay = !b.cubes.empty() && !m.cubes.empty() &&
                                                      std::all_of(b.cubes.begin(), b.cubes.end(), [](const Cube& c) { return c.inflate > 0.0f; });
                                 if (overlay)
@@ -211,6 +236,8 @@ namespace perlin::attachable {
                     g.bones = std::move(merged);
                     if (g.textureWidth <= 0)
                         g.textureWidth = p->second.textureWidth;
+                    if (g.textureHeight <= 0)
+                        g.textureHeight = p->second.textureHeight;
                 }
                 LinkBones(g);
                 changed = true;
@@ -238,7 +265,6 @@ namespace perlin::attachable {
                 glm::vec3 tl, tr, br, bl;
                 glm::vec3 n;
             };
-
             const FaceDef faces[6] = {
                 {{x1, y1, z1}, {x1, y1, z0}, {x1, y0, z0}, {x1, y0, z1}, {1, 0, 0}},
                 {{x0, y1, z0}, {x0, y1, z1}, {x0, y0, z1}, {x0, y0, z0}, {-1, 0, 0}},
@@ -261,6 +287,8 @@ namespace perlin::attachable {
                 for (int i = 0; i < 6; i++) {
                     uvOrigin[i] = c.faces[i].uv;
                     uvSize[i] = c.faces[i].size;
+                    if (uvSize[i].x == 0.0f && uvSize[i].y == 0.0f)
+                        uvSize[i] = i < 2 ? glm::vec2(d, h) : i < 4 ? glm::vec2(w, h) : glm::vec2(w, d);
                 }
             }
             for (int i = 0; i < 6; i++) {
@@ -332,8 +360,19 @@ namespace perlin::attachable {
         }
     }
 
+    void GeometryLibrary::Detach(const std::string& id, const std::vector<std::string>& bones) {
+        const auto it = geometries.find(id);
+        if (it == geometries.end())
+            return;
+        for (Bone& b : it->second.bones)
+            if (std::find(bones.begin(), bones.end(), b.name) != bones.end()) {
+                b.parent = -1;
+                b.parentName.clear();
+            }
+    }
+
     void BuildMesh(const Geometry& g, const Pose& pose, const TextureLookup& textures, BuiltMesh& out,
-                   const BoneFilter& visible) {
+                   const BoneFilter& visible, const glm::mat4* rootParent) {
         std::vector<glm::mat4> world(g.bones.size(), glm::mat4(1.0f));
         for (size_t i = 0; i < g.bones.size(); i++) {
             const Bone& b = g.bones[i];
@@ -343,7 +382,7 @@ namespace perlin::attachable {
             glm::mat4 local = glm::translate(glm::mat4(1.0f), x.position) * glm::translate(glm::mat4(1.0f), b.pivot) *
                               EulerZYX(b.rotation + x.rotation) * glm::scale(glm::mat4(1.0f), x.scale) *
                               glm::translate(glm::mat4(1.0f), -b.pivot);
-            world[i] = (b.parent >= 0 ? world[static_cast<size_t>(b.parent)] : glm::mat4(1.0f)) * local;
+            world[i] = (b.parent >= 0 ? world[static_cast<size_t>(b.parent)] : (rootParent ? *rootParent : glm::mat4(1.0f))) * local;
             if (b.neverRender || (visible && !visible(b.name)))
                 continue;
             for (const Cube& c : b.cubes)

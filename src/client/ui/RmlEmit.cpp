@@ -55,7 +55,6 @@ namespace perlin::ui {
                 chunk.clear();
             };
             const std::string& full = line;
-
             while (i < full.size()) {
                 const unsigned char c = static_cast<unsigned char>(full[i]);
                 if (c == 0xC2 && i + 2 < full.size() && static_cast<unsigned char>(full[i + 1]) == 0xA7) {
@@ -63,7 +62,6 @@ namespace perlin::ui {
                     flush();
                     if (const char* color = LegacyColor(code)) {
                         closeAll();
-
                         std::string rgba = color;
                         const int a = std::clamp(static_cast<int>(std::lround(style.a * 255.0f)), 0, 255);
                         char hex[4];
@@ -132,6 +130,23 @@ namespace perlin::ui {
         if (st.keepRatio)
             body += " keep=\"1\"";
         body += "/>\n";
+    }
+
+    void RmlWriter::Link(float ax, float ay, float w, float h, int z, const std::string& command) {
+        count++;
+        body += "  <div class=\"link\" id=\"link:" + EscapeRml(command) + "\" style=\"left:" + Num(ax) + "px;top:" + Num(ay) + "px;width:" +
+                Num(w) + "px;height:" + Num(h) + "px;z-index:" + std::to_string(z) + ";\"><div class=\"ul\"></div></div>\n";
+    }
+
+    void RmlWriter::BeginSection() {
+        saved = std::move(body);
+        body.clear();
+    }
+
+    void RmlWriter::EndSection(const std::string& name) {
+        sections[name] = std::move(body);
+        body = std::move(saved);
+        saved.clear();
     }
 
     void RmlWriter::Rect(float ax, float ay, float w, float h, int z, float r, float g, float b, float a) {
@@ -274,23 +289,111 @@ namespace perlin::ui {
             Visit(*kid, out);
     }
 
+    std::string DefaultHudTemplate() {
+        return R"PERLINRML(<rml>
+<head>
+<title>hud</title>
+<style>
+/* Edit this file while the game runs: it is reloaded when it changes. {{name}} placeholders are filled in by Perlin. */
+body { position: absolute; left: 0px; top: 0px; width: {{w}}px; height: {{h}}px; margin: 0; padding: 0; background: transparent; }
+mcimg, mcitem { display: block; position: absolute; }
+.t { display: block; position: absolute; font-family: minecraft; white-space: nowrap; overflow: visible; }
+.t.s { font-family: minecraft-shadow; }
+.t.o { font-family: minecraft-outline; }
+{{chat_style}}
+{{rcss}}
+</style>
+</head>
+<body>
+{{hud}}
+{{chat}}
+</body>
+</rml>
+)PERLINRML";
+    }
+
+    std::string DefaultChatTemplate() {
+        return R"PERLINRML(<rml>
+<head>
+<title>chat</title>
+<style>
+/* The chat. Lines are generated (newest at the bottom) inside #chat-lines; change {{chat_top}} to move the whole block
+   (it sits above the hearts / armor row by default). #chat-input is the bar shown while typing. */
+#chat-lines { display: block; position: absolute; left: 0px; top: {{chat_top}}px; width: {{chat_w}}px; height: 180px; z-index: 30; }
+.link { display: block; position: absolute; }
+.link .ul { display: none; position: absolute; left: 0px; bottom: 0px; width: 100%; height: 1px; background-color: #ffff55; }
+.link:hover .ul { display: block; }
+#chat-scroll { display: block; position: absolute; left: 0px; top: {{chat_top}}px; width: 2px; height: 180px; z-index: 31; }
+#chat-input { display: block; position: absolute; left: 2px; top: {{input_top}}px; width: {{input_w}}px; height: 12px; z-index: 32; }
+</style>
+</head>
+<body>
+  <div id="chat-lines">{{lines}}</div>
+  <div id="chat-scroll">{{scrollbar}}</div>
+  <div id="chat-input">{{input}}</div>
+</body>
+</rml>
+)PERLINRML";
+    }
+
+    namespace {
+        void Replace(std::string& text, const std::string& key, const std::string& value) {
+            const std::string needle = "{{" + key + "}}";
+            for (size_t at = text.find(needle); at != std::string::npos; at = text.find(needle, at + value.size()))
+                text.replace(at, needle.size(), value);
+        }
+        std::string Between(const std::string& doc, const std::string& tag) {
+            const size_t open = doc.find("<" + tag);
+            if (open == std::string::npos)
+                return {};
+            const size_t start = doc.find('>', open);
+            const size_t end = doc.find("</" + tag + ">", start == std::string::npos ? open : start);
+            if (start == std::string::npos || end == std::string::npos)
+                return {};
+            return doc.substr(start + 1, end - start - 1);
+        }
+    }
+
     std::string RmlEmitter::Emit(const LNode& root, float guiW, float guiH, const std::string& extraRcss, bool comments) {
         RmlWriter writer(comments);
         unknown.clear();
         Visit(root, writer);
-        std::string doc;
-        doc.reserve(writer.Body().size() + 1024);
-        doc += "<rml>\n<head>\n<title>hud</title>\n<style>\n";
-        doc += "body { position: absolute; left: 0px; top: 0px; width: " + Num(guiW) + "px; height: " + Num(guiH) +
-               "px; margin: 0; padding: 0; background: transparent; }\n";
-        doc += "mcimg, mcitem { display: block; position: absolute; }\n";
-        doc += ".t { display: block; position: absolute; font-family: minecraft; white-space: nowrap; overflow: visible; }\n";
-        doc += ".t.s { font-family: minecraft-shadow; }\n";
-        doc += ".t.o { font-family: minecraft-outline; }\n";
-        doc += extraRcss;
-        doc += "\n</style>\n</head>\n<body>\n";
-        doc += writer.Body();
-        doc += "</body>\n</rml>\n";
+
+        std::string chatStyle, chatBody;
+        const auto& sec = writer.Sections();
+        if (sec.count("chat_lines")) {
+            std::string chat = chatTemplate.empty() ? DefaultChatTemplate() : chatTemplate;
+            chatStyle = Between(chat, "style");
+            chatBody = Between(chat, "body");
+            const auto get = [&](const char* name) { const auto it = sec.find(name); return it == sec.end() ? std::string() : it->second; };
+            for (std::string* part : {&chatStyle, &chatBody}) {
+                Replace(*part, "w", Num(guiW));
+                Replace(*part, "h", Num(guiH));
+                Replace(*part, "chat_top", Num(guiH - 60.0f - 180.0f));
+                Replace(*part, "chat_w", Num(328.0f));
+                Replace(*part, "input_top", Num(guiH - 14.0f));
+                Replace(*part, "input_w", Num(guiW - 4.0f));
+            }
+            Replace(chatBody, "lines", get("chat_lines"));
+            Replace(chatBody, "scrollbar", get("chat_scroll"));
+            Replace(chatBody, "input", get("chat_input"));
+        }
+        std::string doc = hudTemplate.empty() ? DefaultHudTemplate() : hudTemplate;
+        Replace(doc, "w", Num(guiW));
+        Replace(doc, "h", Num(guiH));
+        Replace(doc, "chat_style", chatStyle);
+        Replace(doc, "rcss", extraRcss);
+        Replace(doc, "chat", chatBody);
+        Replace(doc, "hud", writer.Body());
+        static const char* kEngineCss =
+            "\nmcimg, mcitem { display: block; position: absolute; }\n"
+            ".t { display: block; position: absolute; font-family: minecraft; white-space: nowrap; overflow: visible; }\n"
+            ".t.s { font-family: minecraft-shadow; }\n.t.o { font-family: minecraft-outline; }\n"
+            ".link { display: block; position: absolute; }\n"
+            ".link .ul { display: none; position: absolute; left: 0px; bottom: 0px; width: 100%; height: 1px; background-color: #ffff55; }\n"
+            ".link:hover .ul { display: block; }\n";
+        if (const size_t at = doc.find("<style>"); at != std::string::npos)
+            doc.insert(at + 7, kEngineCss);
         return doc;
     }
 }

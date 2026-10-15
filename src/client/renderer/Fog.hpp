@@ -12,7 +12,6 @@ namespace perlin {
         float rain = 0.0f;
         float thunder = 0.0f;
         float rainFogMultiplier = 0.0f;
-
         bool underwater = false;
         float waterVision = 0.0f;
         glm::vec3 waterFogColor{0.0196f, 0.0196f, 0.2f};

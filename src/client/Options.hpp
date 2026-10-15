@@ -4,7 +4,6 @@
 #include <string>
 
 namespace perlin {
-
     struct ZoomSettings {
         float inSeconds = 0.2f;
         float outSeconds = 0.2f;
@@ -32,6 +31,7 @@ namespace perlin {
         bool leftHanded = false;
         bool showOffhand = true;
         bool slimArm = false;
+        bool bedrockRig = true;
         bool attachables = true;
         float scale = 1.0f;
     };
@@ -66,6 +66,8 @@ namespace perlin {
         bool rgss = false;
         float motionBlur = 0.0f;
         bool thirdPersonCrosshair = false;
+        std::string glass = "normal";
+        bool thirdPersonNametag = false;
         bool fovEffects = true;
         int damageTilt = 100;
         bool damageTint = false;

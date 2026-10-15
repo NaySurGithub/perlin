@@ -2,7 +2,6 @@
 #include <string>
 
 namespace perlin::destroy {
-
     struct BlockInfo {
         bool known = false;
         float hardness = 1.5f;
@@ -12,7 +11,6 @@ namespace perlin::destroy {
     BlockInfo Lookup(const std::string& blockName);
 
     bool NeedsSupportBelow(const std::string& blockName);
-
     bool BreaksWholeStack(const std::string& blockName);
 
     struct Conditions {
@@ -23,6 +21,5 @@ namespace perlin::destroy {
         int haste = 0, miningFatigue = 0;
         int efficiency = 0;
     };
-
     float ProgressPerTick(const BlockInfo& block, const Conditions& c);
 }

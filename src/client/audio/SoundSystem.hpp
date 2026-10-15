@@ -1,5 +1,4 @@
 #pragma once
-
 #include "client/audio/AudioEngine.hpp"
 
 #include <functional>
@@ -38,14 +37,11 @@ namespace perlin::audio {
 
         using SubtitleHook = std::function<void(const std::string& sound, const glm::dvec3& position, float volume, bool global)>;
         void SetSubtitleHook(SubtitleHook hook) { subtitles = std::move(hook); }
-
         void SetBlockNamer(std::function<std::string(int32_t)> namer) { blockNamer = std::move(namer); }
 
         bool PlayNamed(const std::string& name, const glm::dvec3& position, float volume, float pitch, bool positional = true);
-
         bool PlayLevelSound(const std::string& eventId, const glm::dvec3& position, int32_t extra, const std::string& entityType,
                             bool baby, bool global);
-
         bool PlayBlockEvent(const std::string& blockName, const std::string& event, const glm::dvec3& position, float volumeScale = 1.0f);
         bool PlayEntityEvent(const std::string& entityType, const std::string& event, const glm::dvec3& position, bool baby = false);
         void Stop(const std::string& name) { engine.StopName(name); }
@@ -53,7 +49,6 @@ namespace perlin::audio {
         std::string BlockSoundType(const std::string& blockName) const;
         bool FindEntityEvent(const std::string& entityType, const std::string& event, EventSound& out) const;
         bool FindBlockEvent(const std::string& soundType, const std::string& event, EventSound& out) const;
-
         void LoadDefinitionsText(const std::string& text);
         void LoadSoundsText(const std::string& text);
         void LoadBlocksText(const std::string& text);

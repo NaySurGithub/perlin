@@ -36,7 +36,6 @@ namespace perlin {
                 continue;
             }
             if (ev.type == InputEvent::KeyDown) {
-
                 if (ev.key != Key::F3 && input.IsKeyDown(Key::F3))
                     continue;
                 Dispatch(Binding::KeyboardKey(ev.key));

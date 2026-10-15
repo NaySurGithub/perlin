@@ -39,22 +39,41 @@ int main() {
         CommandRequestPacket p;
         p.command = "/time query daytime";
         p.origin.uuid = net::RandomUuidV4();
-        p.version = 52;
+        p.origin.type = "player";
+        p.version = "52";
         const std::vector<uint8_t> body = net::Encode(p);
-        CHECK(body.size() == 1 + p.command.size() + 1 + 16 + 1 + 1 + 1);
+        // command | origin: type string, uuid, request id string, player id (i64) | internal | version string
+        CHECK(body.size() == 1 + p.command.size() + (1 + 6) + 16 + 1 + 8 + 1 + (1 + 2));
         CHECK(body[0] == p.command.size());
-        CHECK(body[1 + p.command.size()] == 0);
-        CHECK(body.back() == 104);
+        CHECK(body[1 + p.command.size()] == 6);
+        CHECK(body.back() == '2');
         CommandRequestPacket q;
         CHECK(Decode(body, q));
         CHECK(q.command == p.command && q.origin.uuid == p.origin.uuid);
-        CHECK(q.version == 52 && !q.internal && !q.origin.playerId);
+        CHECK(q.version == "52" && !q.internal && q.origin.type == "player" && q.origin.playerEntityId == 0);
 
-        p.origin.type = CommandOriginType::Test;
-        p.origin.playerId = -9;
+        p.origin.type = "test";
+        p.origin.playerEntityId = -9;
         CommandRequestPacket r;
-        CHECK(Decode(net::Encode(p), r) && r.origin.playerId == -9 &&
-              r.origin.type == CommandOriginType::Test);
+        CHECK(Decode(net::Encode(p), r) && r.origin.playerEntityId == -9 && r.origin.type == "test");
+    }
+    {
+        // PlayerAuthInput as the generated codec writes it: the size matches the layout that is known to work on BDS.
+        PlayerAuthInputPacket p;
+        p.inputData = {InputData::Up, InputData::BlockAction};
+        p.inputMode = PlayerAuthInputPacketInputMode::Mouse;
+        p.interactionModel = PlayerAuthInputPacketInteractionModel::Crosshair;
+        p.tick = 5;
+        const auto plain = net::Encode(p);
+        CHECK(plain.size() == 4 + 4 + 12 + 8 + 4 + (1 + 2) + 1 + 1 + 1 + 8 + 1 + 12 + 5 + 8 + 12 + 8);
+        PlayerAuthInputPacketBlockActionEntry e;
+        e.action = Action::StartBreak;
+        e.position = {1, 64, 2};
+        e.face = 1;
+        p.blockAction = std::vector<PlayerAuthInputPacketBlockActionEntry>{e};
+        PlayerAuthInputPacket q;
+        CHECK(Decode(net::Encode(p), q) && q.blockAction && q.blockAction->size() == 1 &&
+              (*q.blockAction)[0].position.y == 64 && q.inputData.size() == 2 && q.tick == 5);
     }
     {
         TextPacket p;
@@ -89,7 +108,7 @@ int main() {
     {
         PlayerActionPacket p;
         p.runtimeEntityId = 3;
-        p.position = {10, static_cast<uint32_t>(-64), -20};
+        p.position = {10, -64, -20};
         PlayerActionPacket q;
         CHECK(Decode(net::Encode(p), q) && q.position.x == 10 && static_cast<int32_t>(q.position.y) == -64 &&
               q.position.z == -20);
@@ -97,10 +116,10 @@ int main() {
     {
         MovePlayerPacket p;
         p.mode = MovePlayerPacketMode::Teleport;
-        p.teleport = MovePlayerPacketTeleport{3, 0};
+        p.teleport = MovePlayerPacketTeleport{MovePlayerPacketTeleportCause::Command, LegacyEntityType{}};
         p.tick = 99;
         MovePlayerPacket q;
-        CHECK(Decode(net::Encode(p), q) && q.teleport && q.teleport->cause == 3 && q.tick == 99);
+        CHECK(Decode(net::Encode(p), q) && q.teleport && q.teleport->cause == MovePlayerPacketTeleportCause::Command && q.tick == 99);
 
         p.mode = MovePlayerPacketMode::Normal;
         p.teleport.reset();

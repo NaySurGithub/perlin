@@ -3,7 +3,6 @@
 #include <string>
 
 namespace perlin {
-
     struct DeviceProfile {
         std::string id;
         std::string model;

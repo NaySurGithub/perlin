@@ -115,7 +115,6 @@ namespace perlin::ui {
                     return 0;
             } else if (!UiAssets::Instance().Image(source, t)) {
                 std::cout << "[ui] missing texture " << source << std::endl;
-
                 t.width = t.height = 2;
                 t.pixels = {248, 0, 248, 255, 0, 0, 0, 255, 0, 0, 0, 255, 248, 0, 248, 255};
             }
@@ -254,7 +253,6 @@ namespace perlin::ui {
                 return c;
             };
             const Rml::ColourbPremultiplied main = scaleAlpha(colour);
-
             const Rml::ColourbPremultiplied shade(static_cast<Rml::byte>(main.red / 4), static_cast<Rml::byte>(main.green / 4),
                                                   static_cast<Rml::byte>(main.blue / 4), main.alpha);
 
@@ -409,7 +407,6 @@ namespace perlin::ui {
                 const auto quad = [&](float x, float y, float w, float h, float u0, float v0, float u1, float v1) {
                     if (w <= 0 || h <= 0)
                         return;
-
                     const float vx0 = dx + dw * cu0, vx1 = dx + dw * cu1, vy0 = dy + dh * cv0, vy1 = dy + dh * cv1;
                     float x0 = std::max(x, vx0), x1 = std::min(x + w, vx1);
                     float y0 = std::max(y, vy0), y1 = std::min(y + h, vy1);
@@ -440,7 +437,6 @@ namespace perlin::ui {
                 const float tileScale = HasAttribute("tilescale") ? GetAttribute<float>("tilescale", 1.0f) : 1.0f;
 
                 if (nine && !tiled) {
-
                     const float l = slice[0] * sliceScale, t = slice[1] * sliceScale, r = slice[2] * sliceScale, b = slice[3] * sliceScale;
                     const float dl = slice[0], dt = slice[1], dr = slice[2], db = slice[3];
                     const float xs[4] = {dx, dx + dl, dx + dw - dr, dx + dw};
@@ -622,6 +618,15 @@ namespace perlin::ui {
             return {};
         for (Rml::Element* e = context->GetHoverElement(); e; e = e->GetParentNode())
             if (!e->GetId().empty() && e->GetOwnerDocument() == overlay)
+                return e->GetId();
+        return {};
+    }
+
+    std::string RmlBackend::HoverLink() const {
+        if (!context)
+            return {};
+        for (Rml::Element* e = context->GetHoverElement(); e; e = e->GetParentNode())
+            if (e->GetId().rfind("link:", 0) == 0)
                 return e->GetId();
         return {};
     }

@@ -45,7 +45,8 @@ namespace perlin {
     enum class UiLayer : uint8_t {
         World,
         Hand,
-        Gui
+        Gui,
+        Doll
     };
 
     struct UiDraw {
@@ -61,7 +62,6 @@ namespace perlin {
         uint8_t blend = 0;
         float overlay[4] = {0, 0, 0, 0};
         uint8_t emissive = 0;
-
         uint32_t glintTexture = 0;
         float glintMatrix[4] = {1, 0, 0, 1};
         float glintOffset[2] = {0, 0};
@@ -105,9 +105,7 @@ namespace perlin {
 
         virtual bool Initialize(AppPlatform& platform, const Options& options) = 0;
         virtual void Shutdown() = 0;
-
         virtual std::string RendererName() const { return {}; }
-
         virtual std::string GpuVendor() const { return {}; }
         virtual std::string GpuDescription() const { return {}; }
 
@@ -116,7 +114,6 @@ namespace perlin {
         virtual void RequestScreenshot(const std::string& path) = 0;
 
         virtual void UploadCrosshair(const Texture& icons) = 0;
-
         virtual void DrawHudCursor(float x, float y, float w, float h) = 0;
         virtual void UploadSkyTextures(const Texture& sun, const Texture& moon, const Texture& clouds) = 0;
         virtual void UploadAtlas(const uint8_t* rgba, int tilePx, int tiles) = 0;
@@ -126,13 +123,16 @@ namespace perlin {
         virtual void UiDestroyTexture(uint32_t texture) = 0;
         virtual uint32_t UiCreateMesh(const UiVertex* vertices, uint32_t vertexCount, const uint32_t* indices,
                                       uint32_t indexCount) = 0;
+        virtual uint32_t UiCreateFrameMesh(const UiVertex* vertices, uint32_t vertexCount, const uint32_t* indices,
+                                           uint32_t indexCount) {
+            return UiCreateMesh(vertices, vertexCount, indices, indexCount);
+        }
         virtual void UiDestroyMesh(uint32_t mesh) = 0;
         virtual void UiSubmit(UiLayer layer, const UiDraw& draw) = 0;
         virtual void FramebufferSize(int& width, int& height) const = 0;
 
         virtual void UpdateChunkMesh(int cx, int cz, const Tessellator& tess, uint64_t version) = 0;
         virtual void RemoveChunkMesh(int cx, int cz) = 0;
-
         virtual void UpdateLodTile(int tx, int tz, int size, const Tessellator& tess, uint64_t version) = 0;
         virtual void RemoveLodTile(int tx, int tz) = 0;
         virtual void ClearChunkMeshes() = 0;

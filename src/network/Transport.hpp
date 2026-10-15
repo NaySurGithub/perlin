@@ -24,7 +24,6 @@ namespace perlin {
 
         virtual void Disconnect() = 0;
         virtual bool SendReliable(const std::vector<uint8_t>& data) = 0;
-
         virtual bool SendUnreliable(const std::vector<uint8_t>& data) = 0;
         virtual bool TryReceive(std::vector<uint8_t>& out) = 0;
         virtual bool IsConnected() const = 0;

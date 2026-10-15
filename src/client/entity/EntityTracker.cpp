@@ -102,7 +102,10 @@ namespace perlin::entity {
         if (it == entities.end())
             return;
         Entity& e = it->second;
-        e.pos = e.isPlayer ? glm::dvec3(pos.x, pos.y - kPlayerEye, pos.z) : pos;
+        const glm::dvec3 next = e.isPlayer ? glm::dvec3(pos.x, pos.y - kPlayerEye, pos.z) : pos;
+        if (e.dying && e.isPlayer && glm::dot(next - e.pos, next - e.pos) > 2.25)
+            e.dying = false;
+        e.pos = next;
         e.pitch = pitch;
         e.yaw = yaw;
         e.headYaw = headYaw;
@@ -127,6 +130,16 @@ namespace perlin::entity {
         e.moveSerial++;
     }
 
+    void EntityTracker::SetVehicle(int64_t riderUid, int64_t vehicleUid) {
+        std::lock_guard lock(mutex);
+        const auto u = byUnique.find(riderUid);
+        if (u == byUnique.end())
+            return;
+        const auto it = entities.find(u->second);
+        if (it != entities.end())
+            it->second.vehicleUid = vehicleUid;
+    }
+
 #define PERLIN_ENTITY_SET(name, body)                                                                                  \
     void EntityTracker::name {                                                                                         \
         std::lock_guard lock(mutex);                                                                                   \
@@ -138,9 +151,12 @@ namespace perlin::entity {
     }
     PERLIN_ENTITY_SET(SetFlags(uint64_t rid, uint64_t flags), e.flags = flags)
     PERLIN_ENTITY_SET(SetScale(uint64_t rid, float scale), e.scale = scale)
+    PERLIN_ENTITY_SET(SetNameTag(uint64_t rid, const std::string& nameTag), e.nameTag = nameTag)
     PERLIN_ENTITY_SET(SetVariant(uint64_t rid, int variant, int markVariant, int color),
                       e.variant = variant; e.markVariant = markVariant; e.color = color)
-    PERLIN_ENTITY_SET(SetHealth(uint64_t rid, float health), e.health = health; if (health <= 0.0f && !e.isItem) e.dying = true)
+    PERLIN_ENTITY_SET(SetHealth(uint64_t rid, float health), e.health = health; if (health <= 0.0f && !e.isItem) e.dying = true; else if (health > 0.0f) e.dying = false)
+    PERLIN_ENTITY_SET(SetTarget(uint64_t rid, int64_t targetUid), e.targetUid = targetUid)
+    PERLIN_ENTITY_SET(SetOwner(uint64_t rid, int64_t ownerUid), e.ownerUid = ownerUid)
     PERLIN_ENTITY_SET(Die(uint64_t rid), e.dying = true)
     PERLIN_ENTITY_SET(SetHeld(uint64_t rid, const std::string& item), e.mainHand = item)
     PERLIN_ENTITY_SET(SetArmor(uint64_t rid, int slot, const std::string& item), if (slot >= 0 && slot < 4) e.armor[slot] = item)
@@ -160,6 +176,18 @@ namespace perlin::entity {
     bool EntityTracker::Find(uint64_t rid, Entity& out) const {
         std::lock_guard lock(mutex);
         const auto it = entities.find(rid);
+        if (it == entities.end())
+            return false;
+        out = it->second;
+        return true;
+    }
+
+    bool EntityTracker::FindUnique(int64_t uid, Entity& out) const {
+        std::lock_guard lock(mutex);
+        const auto u = byUnique.find(uid);
+        if (u == byUnique.end())
+            return false;
+        const auto it = entities.find(u->second);
         if (it == entities.end())
             return false;
         out = it->second;

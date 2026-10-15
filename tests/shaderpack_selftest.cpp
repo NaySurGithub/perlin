@@ -32,7 +32,7 @@ int main() {
     const std::string zipPath = (root / "Zipped.zip").string();
     CHECK(mz_zip_add_mem_to_archive_file_in_place(zipPath.c_str(), "Top/dxbc/vs_terrain.bin", "XYZW", 4, nullptr, 0, 0));
     CHECK(mz_zip_add_mem_to_archive_file_in_place(zipPath.c_str(), "Top/glsl/vs_terrain.bin", "Q", 1, nullptr, 0, 0));
-    CHECK(pack.Open(root.string(), "Zipped", error));
+    CHECK(pack.Open(root.string(), "Zipped", error)); // ".zip" optional
     CHECK(pack.HasBackend("dxbc") && pack.HasBackend("glsl") && !pack.HasBackend("spirv"));
     CHECK(pack.Read("dxbc", "vs_terrain", bytes) && bytes.size() == 4 && bytes[3] == 'W');
 

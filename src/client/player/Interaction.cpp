@@ -6,7 +6,6 @@
 
 namespace perlin {
     namespace {
-
         bool RayBox(const glm::dvec3& o, const glm::dvec3& d, const glm::dvec3& lo, const glm::dvec3& hi, double maxT, double& tOut, int& face) {
             double t0 = 0.0, t1 = maxT;
             int f = -1;
@@ -68,7 +67,6 @@ namespace perlin {
             const physics::BlockShape shape = world.Query(cell.x, cell.y, cell.z);
             bool loaded = false;
             const uint16_t id = level.GetBlock(cell.x, cell.y, cell.z, loaded);
-
             const bool targetable = loaded && (!shape.Empty() || (id != 0 && shape.fluid == 0));
             if (targetable) {
                 double bestT = std::numeric_limits<double>::infinity();
@@ -110,7 +108,6 @@ namespace perlin {
                     break;
                 }
             }
-
             int axis = tMax.x < tMax.y ? (tMax.x < tMax.z ? 0 : 2) : (tMax.y < tMax.z ? 1 : 2);
             traveled = tMax[axis];
             cell[axis] += step[axis];
@@ -122,18 +119,24 @@ namespace perlin {
                 continue;
             const glm::vec2 wh = bounds(e);
             const double hw = wh.x * 0.5 * (e.scale > 0 ? e.scale : 1.0f);
-            const glm::dvec3 lo(e.pos.x - hw, e.pos.y, e.pos.z - hw), hi(e.pos.x + hw, e.pos.y + wh.y * (e.scale > 0 ? e.scale : 1.0f), e.pos.z + hw);
+            const double pad = 0.1;
+            const glm::dvec3 lo(e.pos.x - hw - pad, e.pos.y - pad, e.pos.z - hw - pad),
+                hi(e.pos.x + hw + pad, e.pos.y + wh.y * (e.scale > 0 ? e.scale : 1.0f) + pad, e.pos.z + hw + pad);
             double t;
             int f;
-            const double limit = entityReach >= 0.0 ? std::min(best.distance, entityReach) : best.distance;
+            const double blockDist = best.kind == AimHit::Kind::Block ? best.distance + 0.75 : best.distance;
+            const double cap = entityReach >= 0.0 ? entityReach : reach;
+            const double limit = best.kind == AimHit::Kind::Entity ? std::min(best.distance, cap) : std::min(blockDist, cap);
             if (RayBox(eye, dir, lo, hi, limit, t, f) && t <= limit) {
                 best.kind = AimHit::Kind::Entity;
                 best.entity = e.runtimeId;
                 best.distance = t;
                 best.point = eye + dir * t;
                 best.face = f;
-                best.boxLo = lo;
-                best.boxHi = hi;
+                best.boxLo = lo + glm::dvec3(pad);
+                best.boxHi = hi - glm::dvec3(pad);
+                best.shape.clear();
+                best.shape.emplace_back(best.boxLo, best.boxHi);
             }
         }
         return best;

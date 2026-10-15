@@ -1,6 +1,5 @@
 #pragma once
 namespace perlin::ui {
-
     inline constexpr const char* kJavaHudOverrides = R"JSON({
   "namespace": "hud",
 

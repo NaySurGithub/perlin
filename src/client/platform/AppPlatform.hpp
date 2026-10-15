@@ -29,6 +29,8 @@ public:
         height = 720;
     }
 
+    virtual void SetCursorCaptured(bool captured) { (void)captured; }
+
     virtual void SetTitle(const std::string& title) { (void)title; }
 
     virtual bool ConfirmDialog(const std::string& title, const std::string& message) {

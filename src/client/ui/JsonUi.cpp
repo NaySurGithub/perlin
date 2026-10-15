@@ -204,7 +204,6 @@ namespace perlin::ui {
     }
 
     bool UiLibrary::Changed() const {
-
         for (const auto& s : stamps)
             if (Stamp(s.first) != s.second)
                 return true;
@@ -222,7 +221,6 @@ namespace perlin::ui {
     const Vars& UiLibrary::GlobalVariables() {
         if (!globalsLoaded) {
             globalsLoaded = true;
-
             for (size_t r = roots.size(); r-- > 0;) {
                 const std::string path = (fs::path(roots[r]) / "_global_variables.json").string();
                 std::string text;
@@ -277,7 +275,6 @@ namespace perlin::ui {
                     Json patched = *existing->second.json;
                     for (const Json& mod : mods->array)
                         ApplyModification(patched, mod);
-
                     for (const auto& prop : member.second.object)
                         if (prop.first != "modifications" && prop.first != "controls")
                             patched.Set(prop.first, prop.second);
@@ -323,7 +320,6 @@ namespace perlin::ui {
                 const std::string& s = value.string;
                 if (s.find('$') == std::string::npos)
                     return value;
-
                 if (s.size() > 1 && s[0] == '$' &&
                     std::all_of(s.begin() + 1, s.end(), [](char c) { return IsNameChar(c); })) {
                     auto it = vars.find(s);
@@ -405,7 +401,6 @@ namespace perlin::ui {
                     return nullptr;
                 std::string ref;
                 std::string name = SplitName(key, &ref);
-
                 if (!ref.empty() && ref.find('$') != std::string::npos) {
                     const Json resolved = Substitute(Json(ref), parentVars, &report.unresolvedVariables);
                     ref = resolved.StringOr("");
@@ -419,7 +414,6 @@ namespace perlin::ui {
                 layers.push_back({&overrides, ns});
 
                 Vars vars = parentVars;
-
                 for (const Layer& layer : layers) {
                     if (!layer.json->IsObject())
                         continue;
@@ -483,7 +477,6 @@ namespace perlin::ui {
                 report.nodes++;
 
                 Json substituted = Substitute(props, vars, &report.unresolvedVariables);
-
                 if (const Json* ignored = substituted.Find("ignored")) {
                     Json value = *ignored;
                     if (value.IsString() && IsExpression(value.string) && !UsesBindings(value.string)) {
@@ -523,7 +516,6 @@ namespace perlin::ui {
                     }
                 }
                 if (node->type == "factory") {
-
                     if (const Json* ids = node->props.Find("control_ids"); ids && ids->IsObject()) {
                         for (const auto& member : ids->object) {
                             if (!member.second.IsString())
@@ -580,7 +572,6 @@ namespace perlin::ui {
                 }
                 if (onlyDefault && vars.count(name))
                     return;
-
                 if (value.IsString() && value.string.find('$') != std::string::npos) {
                     vars[name] = Substitute(value, vars, nullptr);
                     return;

@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cstdio>
 #include <cstdlib>
 #include <fstream>
 #include <sstream>
@@ -25,7 +26,6 @@ namespace perlin::sysinfo {
             const auto notSpace = [](unsigned char c) { return !std::isspace(c); };
             s.erase(s.begin(), std::find_if(s.begin(), s.end(), notSpace));
             s.erase(std::find_if(s.rbegin(), s.rend(), notSpace).base(), s.end());
-
             std::string out;
             for (char c : s) {
                 if (c == ' ' && !out.empty() && out.back() == ' ')
@@ -168,5 +168,76 @@ namespace perlin::sysinfo {
         case 0x10005: return "Mesa";
         default: return {};
         }
+    }
+
+    std::string GpuName(unsigned vendorId, unsigned deviceId) {
+#if defined(_WIN32)
+        char want[32];
+        std::snprintf(want, sizeof(want), "VEN_%04X&DEV_%04X", vendorId, deviceId);
+        HKEY key = nullptr;
+        if (RegOpenKeyExA(HKEY_LOCAL_MACHINE, "SYSTEM\\CurrentControlSet\\Control\\Class\\{4d36e968-e325-11ce-bfc1-08002be10318}", 0,
+                          KEY_READ, &key) != ERROR_SUCCESS)
+            return {};
+        std::string found;
+        for (DWORD i = 0; found.empty(); i++) {
+            char name[64];
+            DWORD len = sizeof(name);
+            if (RegEnumKeyExA(key, i, name, &len, nullptr, nullptr, nullptr, nullptr) != ERROR_SUCCESS)
+                break;
+            char id[512] = {};
+            DWORD size = sizeof(id);
+            std::string sub = std::string(name);
+            if (RegGetValueA(key, sub.c_str(), "MatchingDeviceId", RRF_RT_REG_SZ, nullptr, id, &size) != ERROR_SUCCESS)
+                continue;
+            std::string upper = id;
+            for (char& c : upper)
+                c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+            if (upper.find(want) == std::string::npos)
+                continue;
+            char desc[256] = {};
+            size = sizeof(desc);
+            if (RegGetValueA(key, sub.c_str(), "DriverDesc", RRF_RT_REG_SZ, nullptr, desc, &size) == ERROR_SUCCESS)
+                found = Trim(desc);
+        }
+        RegCloseKey(key);
+        return found;
+#elif defined(__linux__)
+        char vendor[8], device[8];
+        std::snprintf(vendor, sizeof(vendor), "%04x", vendorId);
+        std::snprintf(device, sizeof(device), "%04x", deviceId);
+        for (const char* path : {"/usr/share/hwdata/pci.ids", "/usr/share/misc/pci.ids", "/usr/share/pci.ids"}) {
+            std::ifstream f(path);
+            if (!f.good())
+                continue;
+            std::string line;
+            bool inVendor = false;
+            while (std::getline(f, line)) {
+                if (line.empty() || line[0] == '#')
+                    continue;
+                if (line[0] != '\t') {
+                    inVendor = line.compare(0, 4, vendor) == 0;
+                    continue;
+                }
+                if (inVendor && line.size() > 6 && line[1] != '\t' && line.compare(1, 4, device) == 0) {
+                    std::string name = Trim(line.substr(5));
+                    const size_t open = name.find('[');
+                    const size_t close = name.rfind(']');
+                    if (open != std::string::npos && close != std::string::npos && close > open)
+                        name = name.substr(open + 1, close - open - 1);
+                    return name;
+                }
+            }
+        }
+        return {};
+#elif defined(__APPLE__)
+        if (vendorId == 0x106B) {
+            std::string cpu = CpuName();
+            if (cpu.compare(0, 5, "Apple") == 0)
+                return cpu;
+        }
+        return {};
+#else
+        return {};
+#endif
     }
 }

@@ -29,7 +29,6 @@
 #endif
 
 namespace perlin::xbox {
-
     namespace persist {
         struct Cache {
             std::string refreshToken;
@@ -44,13 +43,11 @@ namespace perlin::xbox {
     using persist::Cache;
 
     namespace {
-
         constexpr const char* kMsaClientId = "0000000048183522";
         constexpr const char* kMsaScope = "service::user.auth.xboxlive.com::MBI_SSL";
         constexpr const char* kUserAgent = "XAL Android 2025.04.20250326.000";
         constexpr const char* kSandbox = "RETAIL";
         constexpr int64_t kTitleId = 1739947436;
-
         constexpr const char* kFallbackServiceUri = "https://authorization.franchise.minecraft-services.net";
         constexpr const char* kFallbackPlayFabTitle = "20CA2";
         constexpr const char* kPlayFabRelyingParty = "rp://playfabapi.com/";
@@ -758,7 +755,6 @@ namespace perlin::xbox {
                 else
                     error = NetworkError(r, "the Xbox token service");
                 if (r.status == 401 && !(doc && doc->root()["XErr"].isNumber())) {
-
                     title = {};
                     user = {};
                 }
@@ -937,7 +933,6 @@ namespace perlin::xbox {
         std::cout << "[auth] multiplayer token ok" << std::endl;
         std::string chainError;
         if (!s.LegacyChain(publicKeyB64, gameVersion, out.chainJson, out.gamertag, out.xuid, chainError)) {
-
             std::cout << "[auth] legacy certificate chain unavailable: " << chainError << std::endl;
             out.chainJson = "{\"chain\":[]}";
         }

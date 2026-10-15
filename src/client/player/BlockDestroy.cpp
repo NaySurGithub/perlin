@@ -62,7 +62,6 @@ namespace perlin::destroy {
         std::string held = c.heldItem;
         if (held.rfind("minecraft:", 0) == 0)
             held.erase(0, 10);
-
         int heldTool = 0;
         if (Ends(held, "_pickaxe")) heldTool = 1;
         else if (Ends(held, "_axe")) heldTool = 2;

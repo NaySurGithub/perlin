@@ -12,7 +12,6 @@ namespace perlin::ui {
     namespace fs = std::filesystem;
 
     namespace {
-
         std::string StripCodes(const std::string& in) {
             std::string out;
             for (size_t i = 0; i < in.size(); i++) {

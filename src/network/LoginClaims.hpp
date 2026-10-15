@@ -102,11 +102,10 @@ namespace perlin::claims {
         bool FilterProfanity = false;
         std::string GameVersion;
         int GraphicsMode = 1;
-        int GuiScale = -1;
-        bool IsEditorMode = false;
+        int GuiScale = 0;
         std::string LanguageCode = "en_US";
         int MaxViewDistance = 32;
-        int MemoryTier = 0;
+        int MemoryTier = 4;
         bool OverrideSkin = false;
         std::vector<std::string> PersonaPieces;
         bool PersonaSkin = false;
@@ -119,7 +118,7 @@ namespace perlin::claims {
         std::string SelfSignedId;
         std::string ServerAddress;
         std::string SkinAnimationData;
-        std::string SkinColor = "#0";
+        std::string SkinColor = "#b37b62";
         std::string SkinData;
         std::string SkinGeometryData;
         std::string SkinGeometryDataEngineVersion;

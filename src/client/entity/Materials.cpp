@@ -24,7 +24,6 @@ namespace perlin::entity {
     MaterialInfo MaterialLibrary::Builtin(const std::string& rawName) {
         const std::string name = Lower(rawName);
         MaterialInfo m;
-
         if (Has(name, "additive")) {
             m.blend = MaterialInfo::Blend::Additive;
             m.depthWrite = false;
@@ -47,8 +46,11 @@ namespace perlin::entity {
             m.blend = MaterialInfo::Blend::AlphaTest;
         } else if (name == "entity" || name == "entity_static" || name == "entity_multitexture" || name == "entity_change_color" ||
                    name == "entity_lightning" || name == "entity_custom") {
-
             m.blend = MaterialInfo::Blend::AlphaTest;
+        }
+        if (name == "arrow") {
+            m.blend = MaterialInfo::Blend::AlphaTest;
+            m.noCull = true;
         }
         if (Has(name, "nocull") || Has(name, "double_sided") || Has(name, "two_sided"))
             m.noCull = true;
@@ -66,7 +68,6 @@ namespace perlin::entity {
         const Json* list = doc.Find("materials");
         if (!list || !list->IsObject())
             return;
-
         std::vector<std::pair<std::string, const Json*>> pending;
         for (const auto& [key, value] : list->object)
             if (key != "version" && value.IsObject())
@@ -84,7 +85,6 @@ namespace perlin::entity {
                     else if (const auto it2 = known.find(parent); it2 != known.end())
                         info = it2->second;
                     else if (pass + 1 < 6) {
-
                         bool inFile = false;
                         for (const auto& [k2, v2] : pending)
                             if (Lower(k2.substr(0, k2.find(':'))) == parent)

@@ -1,5 +1,4 @@
 #pragma once
-
 #include <cstdint>
 #include <string>
 #include <unordered_map>
@@ -16,12 +15,10 @@ namespace perlin::entity {
 
     class MaterialLibrary {
     public:
-
         void Load(const std::string& root);
         MaterialInfo Find(const std::string& name) const;
         size_t CustomCount() const { return custom.size(); }
         static MaterialInfo Builtin(const std::string& name);
-
         static void ApplyJson(const std::string& text, std::unordered_map<std::string, MaterialInfo>& out,
                               const std::unordered_map<std::string, MaterialInfo>& known);
 

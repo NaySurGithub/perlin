@@ -32,7 +32,6 @@ namespace perlin::audio {
                 Fail(error, "truncated FSB5 file");
                 return false;
             }
-
             static const int kRates[] = {4000, 8000, 11000, 11025, 16000, 22050, 24000, 32000, 44100, 48000};
             const uint8_t* sh = &b[headerSize];
             const uint64_t mode = static_cast<uint64_t>(U32(sh)) | (static_cast<uint64_t>(U32(sh + 4)) << 32);
@@ -182,7 +181,6 @@ namespace perlin::audio {
                 return false;
             }
             if (channels > 2) {
-
                 out.samples.resize(static_cast<size_t>(frames) * 2);
                 for (int i = 0; i < frames; i++) {
                     out.samples[static_cast<size_t>(i) * 2] = decoded[static_cast<size_t>(i) * channels];

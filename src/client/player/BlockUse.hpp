@@ -2,11 +2,9 @@
 #include <string>
 
 namespace perlin::blockuse {
-
     enum class Use { Nothing, Interact, Place };
 
     bool IsReplaceable(const std::string& blockName);
-
     bool IsInteractive(const std::string& blockName);
 
     struct Result {

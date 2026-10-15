@@ -123,7 +123,6 @@ namespace perlin {
                         const Rgb w = ColourOf(waterId, biome, true, blocks, tints);
                         Rgb f = floorId ? ColourOf(floorId, biome, true, blocks, tints) : Rgb{0, 0, 0};
                         const int depth = floorId ? std::max(1, waterTop - floorY) : 16;
-
                         const float a = std::min(0.85f, 0.45f + depth * 0.06f);
                         cell.r = static_cast<uint8_t>(w.r * a + f.r * (1 - a));
                         cell.g = static_cast<uint8_t>(w.g * a + f.g * (1 - a));
@@ -172,7 +171,6 @@ namespace perlin {
         constexpr int kSide = LodStore::kTileChunks * LodColumn::kCells;
         const int cellsPerSide = kSide / stride;
         const int blockSize = LodColumn::kCellSize * stride;
-
         struct Cell { int y; uint8_t r, g, b; uint8_t water; bool present; };
         std::vector<Cell> grid(static_cast<size_t>(cellsPerSide) * cellsPerSide, Cell{0, 0, 0, 0, 0, false});
         const int chunkX0 = tileX * kTileChunks, chunkZ0 = tileZ * kTileChunks;
@@ -227,14 +225,12 @@ namespace perlin {
                     shade(c, 1.0f, col);
                     out.AddQuad(v, col, uv, false, 0.0f, 15.0f);
                 }
-
                 static const int kDir[4][2] = {{0, -1}, {0, 1}, {-1, 0}, {1, 0}};
                 static const float kShade[4] = {0.8f, 0.8f, 0.65f, 0.65f};
                 for (int d = 0; d < 4; d++) {
                     const int nx = gx + kDir[d][0], nz = gz + kDir[d][1];
                     int ny;
                     if (nx < 0 || nz < 0 || nx >= cellsPerSide || nz >= cellsPerSide) {
-
                         const int cxw = chunkX0 * LodColumn::kCells + nx * stride;
                         const int czw = chunkZ0 * LodColumn::kCells + nz * stride;
                         const int ccx = cxw >= 0 ? cxw / LodColumn::kCells : -((-cxw + LodColumn::kCells - 1) / LodColumn::kCells);

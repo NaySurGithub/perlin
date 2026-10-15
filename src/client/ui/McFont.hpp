@@ -4,7 +4,6 @@
 #include <vector>
 
 namespace perlin::ui {
-
     class McFont {
     public:
         struct Glyph {
@@ -21,7 +20,6 @@ namespace perlin::ui {
         void UseBuiltin();
 
         const Glyph& Get(uint32_t codepoint) const;
-
         float Width(const std::string& utf8, float scale = 1.0f) const;
         static constexpr int kLineHeight = 9;
         static constexpr int kCell = 8;

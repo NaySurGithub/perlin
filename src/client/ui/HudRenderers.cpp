@@ -75,7 +75,6 @@ namespace perlin::ui {
                     y += random.NextInt(2);
                 if (i < normalHearts && i == regen)
                     y -= 2;
-
                 Tex(w, n, x, y, 9, blinking ? "heart_blink" : "heart_background", 0);
                 const int twice = i * 2;
                 if (i >= normalHearts) {
@@ -97,7 +96,6 @@ namespace perlin::ui {
                 }
             }
             if (s.hardcore) {
-
             }
         }
 
@@ -174,7 +172,6 @@ namespace perlin::ui {
             const double damage = max - current->number;
             const double ratio = std::max(0.0, (max - damage) / max);
             const int width = static_cast<int>(std::lround(13.0 - damage * 13.0 / max));
-
             const double h = ratio / 3.0 * 6.0;
             const double f = h - std::floor(h);
             double r = 0, g = 0, b = 0;
@@ -191,7 +188,6 @@ namespace perlin::ui {
     }
 
     namespace {
-
         void Debug(const HudState& s, const LNode& n, RmlWriter& w) {
             if (!s.debug)
                 return;
@@ -278,53 +274,97 @@ namespace perlin::ui {
         void Chat(const HudState& s, const LNode& n, RmlWriter& w) {
             TabList(s, n, w);
             const McFont& font = McFont::Instance();
-            const float base = s.guiH - 40.0f;
             const float width = 320.0f;
+            w.BeginSection();
             for (const HudState::ChatLine& l : s.chatLines) {
                 if (l.alpha * 255.0f <= 3.0f)
                     continue;
-                const float bottom = base - static_cast<float>(l.row) * 9.0f;
-                w.Rect(0, bottom - 9, width + 8, 9, n.layer, 0, 0, 0, 0.5f * l.alpha);
+                const float top = 171.0f - static_cast<float>(l.row) * 9.0f;
+                if (top < 0.0f)
+                    continue;
+                w.Rect(0, top, width + 8, 9, 1, 0, 0, 0, 0.5f * l.alpha);
+                for (const HudState::ChatLine::Click& c : l.clicks)
+                    w.Link(4 + c.x, top, c.w, 9, 3, c.command);
                 TextStyle st;
                 st.shadow = true;
                 st.a = l.alpha;
-                w.Text(4, bottom - 8, width, 9, n.layer + 1, {l.text}, st);
+                w.Text(4, top + 1, width, 9, 2, {l.text}, st);
             }
+            w.EndSection("chat_lines");
+            w.BeginSection();
             if (s.chatScrolled && s.chatTotalLines > 0) {
-
                 const float track = 180.0f;
                 const float thumb = std::max(4.0f, track * 20.0f / static_cast<float>(std::max(20, s.chatTotalLines)));
                 const float pos = (track - thumb) * static_cast<float>(s.chatScroll) /
                                   static_cast<float>(std::max(1, s.chatTotalLines - 20));
-                w.Rect(0, base - 9 - pos - thumb + 9, 2, thumb, n.layer + 2, 0.8f, 0.8f, 0.8f, 0.9f);
+                w.Rect(0, 180.0f - pos - thumb, 2, thumb, 1, 0.8f, 0.8f, 0.8f, 0.9f);
             }
-            if (!s.chatOpen)
-                return;
-            w.Rect(2, s.guiH - 14, s.guiW - 4, 12, n.layer + 1, 0, 0, 0, 0.5f);
-
-            const std::string& in = s.chatInput;
-            const size_t caret = std::min(static_cast<size_t>(std::max(0, s.chatCaret)), in.size());
-            const float room = s.guiW - 12.0f;
-            size_t start = 0;
-            while (start < caret && font.Width(in.substr(start, caret - start)) > room - 6) {
-                start++;
-                while (start < caret && (static_cast<unsigned char>(in[start]) & 0xC0) == 0x80)
+            w.EndSection("chat_scroll");
+            w.BeginSection();
+            if (s.chatOpen) {
+                const float barW = s.guiW - 4.0f;
+                w.Rect(0, 0, barW, 12, 1, 0, 0, 0, 0.5f);
+                const std::string& in = s.chatInput;
+                const size_t caret = std::min(static_cast<size_t>(std::max(0, s.chatCaret)), in.size());
+                const float room = s.guiW - 12.0f;
+                size_t start = 0;
+                while (start < caret && font.Width(in.substr(start, caret - start)) > room - 6) {
                     start++;
+                    while (start < caret && (static_cast<unsigned char>(in[start]) & 0xC0) == 0x80)
+                        start++;
+                }
+                const std::string before = in.substr(start, caret - start);
+                const std::string after = in.substr(caret);
+                TextStyle st;
+                st.shadow = true;
+                st.r = st.g = st.b = 224.0f / 255.0f;
+                w.Text(2, 2, room, 9, 2, {before + after}, st);
+                const float cx = 2.0f + font.Width(before);
+                if (s.chatCaretVisible) {
+                    if (caret >= in.size())
+                        w.Text(cx, 2, 8, 9, 3, {"_"}, st);
+                    else
+                        w.Rect(cx, 1, 1, 10, 3, 0.82f, 0.82f, 0.82f, 1.0f);
+                }
             }
-            const std::string before = in.substr(start, caret - start);
-            const std::string after = in.substr(caret);
-            TextStyle st;
-            st.shadow = true;
-            st.r = st.g = st.b = 224.0f / 255.0f;
-            const float y = s.guiH - 12.0f;
-            w.Text(4, y, room, 9, n.layer + 2, {before + after}, st);
-            const float cx = 4.0f + font.Width(before);
-            if (s.chatCaretVisible) {
-                if (caret >= in.size())
-                    w.Text(cx, y, 8, 9, n.layer + 3, {"_"}, st);
-                else
-                    w.Rect(cx, y - 1, 1, 10, n.layer + 3, 0.82f, 0.82f, 0.82f, 1.0f);
+            if (s.chatOpen && !s.chatGhost.empty()) {
+                TextStyle gs;
+                gs.shadow = true;
+                gs.r = gs.g = gs.b = 128.0f / 255.0f;
+                const std::string& in = s.chatInput;
+                w.Text(2.0f + font.Width(in), 2, 200, 9, 2, {s.chatGhost}, gs);
             }
+            if (s.chatOpen && !s.chatSuggestions.empty()) {
+                float boxW = 0;
+                for (const std::string& g : s.chatSuggestions)
+                    boxW = std::max(boxW, font.Width(g));
+                float x = 2.0f + font.Width(s.chatInput.substr(0, std::min(static_cast<size_t>(s.chatSuggestStart), s.chatInput.size())));
+                x = std::clamp(x, 0.0f, std::max(0.0f, s.guiW - 4.0f - boxW - 1.0f));
+                const float rows = static_cast<float>(s.chatSuggestions.size());
+                w.Rect(x - 1.0f, -rows * 12.0f - 2.0f, boxW + 3.0f, rows * 12.0f + 2.0f, 4, 0, 0, 0, 208.0f / 255.0f);
+                for (size_t i = 0; i < s.chatSuggestions.size(); i++) {
+                    TextStyle ts;
+                    ts.shadow = true;
+                    const bool sel = static_cast<int>(i) == s.chatSuggestSelected;
+                    if (sel) { ts.r = 1.0f; ts.g = 1.0f; ts.b = 0.0f; }
+                    else ts.r = ts.g = ts.b = 170.0f / 255.0f;
+                    w.Text(x + 1.0f - 1.0f + 0.0f, -rows * 12.0f + 1.0f + static_cast<float>(i) * 12.0f, boxW + 1.0f, 9, 5, {s.chatSuggestions[i]}, ts);
+                }
+                const auto dots = [&](float y) {
+                    for (float dx = 0; dx < boxW + 1.0f; dx += 2.0f)
+                        w.Rect(x + dx, y, 1, 1, 6, 1, 1, 1, 1);
+                };
+                if (s.chatSuggestMore[0])
+                    dots(-rows * 12.0f - 1.0f);
+                if (s.chatSuggestMore[1])
+                    dots(-1.0f);
+            } else if (s.chatOpen && !s.chatHint.empty()) {
+                TextStyle ts;
+                ts.shadow = true;
+                ts.r = ts.g = ts.b = 119.0f / 255.0f;
+                w.Text(2.0f + font.Width(s.chatInput) + font.Width(" "), 2, 160, 9, 2, {s.chatHint}, ts);
+            }
+            w.EndSection("chat_input");
         }
     }
 
@@ -340,7 +380,6 @@ namespace perlin::ui {
         emitter.Register("chat_renderer", [s](const LNode& n, RmlWriter& w) { Chat(*s, n, w); });
         emitter.Register("subtitle_renderer", [s](const LNode& n, RmlWriter& w) { Subtitles(*s, n, w); });
         emitter.Register("progress_bar_renderer", [s](const LNode& n, RmlWriter& w) { ProgressBar(*s, n, w); });
-
         for (const char* name : {"horse_jump_renderer", "dash_renderer", "locator_bar", "mob_effects_renderer",
                                  "vignette_renderer", "camera_renderer", "hud_player_renderer", "horse_heart_renderer",
                                  "cooldown_renderer", "editor_gizmo_renderer", "editor_compass_renderer",

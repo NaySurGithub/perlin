@@ -5,7 +5,6 @@
 #include <vector>
 
 namespace perlin::audio {
-
     struct Pcm {
         int rate = 44100;
         int channels = 1;

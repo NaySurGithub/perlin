@@ -11,6 +11,5 @@ namespace perlin {
     };
 
     bool LoadTexture(const std::string& path, Texture& out);
-
     bool LoadTextureMemory(const unsigned char* data, size_t size, Texture& out);
 }

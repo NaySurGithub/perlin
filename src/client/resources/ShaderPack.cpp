@@ -225,7 +225,6 @@ namespace perlin {
     }
 
     namespace {
-
         std::string RawValue(const std::string& text, const std::string& key) {
             const size_t k = text.find("\"" + key + "\"");
             if (k == std::string::npos)

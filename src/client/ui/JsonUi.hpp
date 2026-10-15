@@ -20,9 +20,7 @@ namespace perlin::ui {
         };
 
         void SetRoots(std::vector<std::string> roots);
-
         bool Scan();
-
         bool Changed() const;
 
         const Def* Find(const std::string& ns, const std::string& name);

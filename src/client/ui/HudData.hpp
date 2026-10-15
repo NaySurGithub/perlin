@@ -3,7 +3,6 @@
 #include "client/ui/UiLayout.hpp"
 
 namespace perlin::ui {
-
     class HudData final : public UiData {
     public:
         explicit HudData(const HudState& state) : s(state) {}

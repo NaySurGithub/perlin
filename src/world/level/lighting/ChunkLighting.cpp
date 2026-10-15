@@ -192,7 +192,6 @@ namespace perlin {
                 out.packed.assign(static_cast<size_t>(out.rows) * kPadded * kPadded, Result::kSkyOnly);
                 return;
             }
-
             grid.yBase = std::max(std::max(Chunk::MIN_Y, std::min(lo, yLo) - 1), yLo - 16);
             const int top = std::min(Chunk::MIN_Y + Chunk::HEIGHT - 1, std::max(hi, yHi) + 1);
             grid.rows = top - grid.yBase + 1;

@@ -4,7 +4,6 @@
 #include <vector>
 
 namespace perlin {
-
     class ShaderPack {
     public:
         static ShaderPack& Instance();
@@ -13,10 +12,8 @@ namespace perlin {
         void Close();
         bool Active() const;
         bool HasBackend(const std::string& backend) const;
-
         bool Read(const std::string& backend, const std::string& shader, std::vector<char>& out) const;
         std::string Description() const;
-
         bool Feature(const std::string& name) const;
         bool Flag(const std::string& name, bool fallback) const;
         double Number(const std::string& name, double fallback) const;

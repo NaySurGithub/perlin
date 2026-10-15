@@ -50,7 +50,6 @@ namespace perlin {
     }
 
     void BlockLibrary::SetTexturePack(bool active) {
-
         int widest = 16;
         if (active) {
             static const char* const kProbe[] = {"stone", "dirt", "cobblestone", "planks_oak", "sand", "grass_side",
@@ -74,7 +73,6 @@ namespace perlin {
     }
 
     namespace {
-
         void ResampleFrame(const unsigned char* data, int w, int h, size_t stride, int size, uint8_t* out) {
             for (int y = 0; y < size; y++) {
                 for (int x = 0; x < size; x++) {
@@ -117,6 +115,77 @@ namespace perlin {
         }
     }
 
+    int BlockLibrary::GlassTile(int baseTile, int mode, int mask) const {
+        const auto it = glassTiles.find(baseTile);
+        if (it == glassTiles.end() || it->second.empty())
+            return baseTile;
+        int t = 0;
+        if (mode == 1)
+            t = it->second[mask & 15];
+        else if (mode == 2)
+            t = it->second[16 + (mask & 15)];
+        else if (mode == 3)
+            t = it->second[32];
+        return t > 0 ? t : baseTile;
+    }
+
+    void BlockLibrary::BuildGlassVariants() {
+        if (glassBuilt)
+            return;
+        glassBuilt = true;
+        glassTiles.clear();
+        const int T = tilePxValue;
+        const int fw = std::max(1, T / 16);
+        std::vector<int> bases;
+        for (const auto& [path, tile] : tileByPng)
+            if (path.find("textures/blocks/glass.") != std::string::npos || path == "textures/blocks/glass")
+                bases.push_back(tile);
+        std::sort(bases.begin(), bases.end());
+        bases.erase(std::unique(bases.begin(), bases.end()), bases.end());
+        const bool all = T <= 64;
+        const int current = glassMode.load();
+        for (int base : bases) {
+            if (nextTile + 33 >= kAtlasTiles * kAtlasTiles)
+                break;
+            const std::vector<uint8_t> src(atlas.begin() + (size_t)base * T * T * 4, atlas.begin() + ((size_t)base + 1) * T * T * 4);
+            const TileAlpha baseAlpha = AlphaOf(base);
+            std::vector<int> list(33, 0);
+            const auto make = [&](int mode, int mask) {
+                const int t = NewTile();
+                uint8_t* out = atlas.data() + (size_t)t * T * T * 4;
+                std::copy(src.begin(), src.end(), out);
+                for (int y = 0; y < T; y++)
+                    for (int x = 0; x < T; x++) {
+                        const bool l = x < fw, r = x >= T - fw, tp = y < fw, bt = y >= T - fw;
+                        const bool frame = l || r || tp || bt;
+                        uint8_t* px = out + ((size_t)y * T + x) * 4;
+                        if (!frame) {
+                            if (mode >= 2)
+                                px[3] = 0;
+                            continue;
+                        }
+                        if (mode == 3)
+                            continue;
+                        const bool exposed = (l && (mask & 1)) || (r && (mask & 2)) || (tp && (mask & 4)) || (bt && (mask & 8));
+                        if (!exposed)
+                            px[3] = 0;
+                    }
+                alphaByTile[t] = baseAlpha;
+                pathByTile[t] = "__glass_variant";
+                return t;
+            };
+            if (all || current == 1)
+                for (int m = 0; m < 16; m++)
+                    list[m] = make(1, m);
+            if (all || current == 2)
+                for (int m = 0; m < 16; m++)
+                    list[16 + m] = make(2, m);
+            if (all || current == 3)
+                list[32] = make(3, 0);
+            glassTiles[base] = std::move(list);
+        }
+    }
+
     int BlockLibrary::TileContaining(const std::string& part) const {
         for (const auto& [path, tile] : tileByPng)
             if (path.find(part) != std::string::npos)
@@ -141,13 +210,11 @@ namespace perlin {
             stem.resize(stem.size() - suffix.size());
         const std::string order[2] = {fancy ? stem : stem + suffix, fancy ? stem + suffix : stem};
         for (const std::string& base : order) {
-
             tries.push_back(base + ".tga");
             tries.push_back(base + ".png");
         }
         int tile = 0;
         bool ok = false;
-
         TexturePack& pack = TexturePack::Instance();
         if (pack.Active())
             for (auto& t : tries)
@@ -187,7 +254,6 @@ namespace perlin {
             }
         }
         const unsigned char* data = tex.pixels.data();
-
         const bool strip = h > w && h % w == 0;
         const int fw = w, fh = strip ? w : h;
         const int frames = strip ? h / w : 1;
@@ -277,10 +343,10 @@ namespace perlin {
     }
 
     void BlockLibrary::Reset() {
-
         std::lock_guard<std::mutex> lock(lookMutex);
         ready = false;
         complete = false;
+        glassBuilt = false;
         fetchFails = 0;
         lastFileMisses = -1;
         stallStreak = 0;
@@ -335,7 +401,7 @@ namespace perlin {
         }
         const json::View blocksJ = blocksDocumentLocal ? blocksDocumentLocal->root() : json::View();
 
-        std::unordered_map<std::string, std::string> aliases;
+        std::unordered_map<std::string, std::string> aliases = {{"iron_chain", "chain"}};
         std::unordered_map<std::string, std::array<float, 3>> tints;
         for (const auto [k, v] : blocksJ["aliases"].members())
             aliases[k] = v.str();
@@ -797,7 +863,6 @@ namespace perlin {
                                             }
                                         }
                                     }
-
                                 for (int xx = 0; xx < kTilePx; xx++)
                                     for (int yy = 0; yy < kTilePx; yy++) {
                                         if (!grassPx(yy, xx))
@@ -895,11 +960,11 @@ namespace perlin {
         }
 
         if (fetchFails > 0) {
-
             std::cout << "[blocks] " << fetchFails << " textures missing; continuing without them" << std::endl;
         }
         lastFileMisses = 0;
         stallStreak = 0;
+        BuildGlassVariants();
         complete = true;
         ready = true;
         for (auto& [name, app] : appearances) {
@@ -1039,7 +1104,6 @@ namespace perlin {
     }
 
     void BlockLibrary::TileUV(int tile, float& u0, float& v0, float& u1, float& v1) {
-
         const int tx = tile % kAtlasTiles, ty = tile / kAtlasTiles;
         const float inv = 1.0f / (float)kAtlasTiles;
         const float half = 0.5f * inv / (float)tilePxValue;

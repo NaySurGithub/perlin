@@ -59,7 +59,6 @@ namespace perlin::audio {
         if (parts.empty())
             return {};
         const std::string& p0 = parts[0];
-
         if (p0 == "step" || p0 == "fall" || p0 == "land" || p0 == "jump")
             return first({"subtitles.block.generic.footsteps"});
         if (p0 == "dig" || p0 == "break")
@@ -159,7 +158,6 @@ namespace perlin::audio {
                 return first({"subtitles.entity.generic.hurt"});
             if (event == "death")
                 return first({"subtitles.entity.generic.death"});
-
             static const std::map<std::string, std::string> kEnglish = {
                 {"ambient", "makes a noise"}, {"angry", "growls"}, {"shoot", "shoots"}, {"attack", "attacks"},
                 {"eat", "eats"}, {"spawn", "appears"}, {"pop", "pops"}, {"plop", "pops"}, {"fuse", "fuses"},

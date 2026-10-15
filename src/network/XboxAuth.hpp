@@ -24,7 +24,6 @@ namespace perlin::xbox {
         Account& operator=(const Account&) = delete;
 
         bool HasSavedLogin() const;
-
         void Cancel();
 
         bool SignIn(const PromptFn& prompt, std::string& error);
@@ -40,15 +39,12 @@ namespace perlin::xbox {
     };
 
     namespace detail {
-
         std::string SignRequest(void* ecKeyP256, const std::string& method, const std::string& pathAndQuery,
                                 const std::string& authorization, const std::string& body, int64_t unixNanos,
                                 size_t maxBodyBytes = 0);
-
         std::string RequestDigest(const std::string& method, const std::string& pathAndQuery,
                                   const std::string& authorization, const std::string& body, int64_t unixNanos,
                                   size_t maxBodyBytes = 0);
-
         void SetTestEndpoint(const std::string& host, uint16_t port);
         int64_t ParseIsoTime(const std::string& iso);
         int64_t ParseHttpDate(const std::string& date);

@@ -6,7 +6,6 @@
 #include <cmath>
 
 namespace perlin {
-
     class Zoom {
     public:
         explicit Zoom(const ZoomSettings& settings) : cfg(settings), level(settings.level) {}
@@ -17,7 +16,6 @@ namespace perlin {
             wasHeld = held;
             if (held && scroll != 0.0f)
                 level = std::clamp(level * std::pow(1.0f - cfg.scrollStep, scroll), cfg.minLevel, cfg.maxLevel);
-
             shownLevel += (level - shownLevel) * (1.0f - std::exp(-dt * 16.0f));
             if (!active)
                 shownLevel = level;
@@ -26,7 +24,6 @@ namespace perlin {
             const float step = seconds <= 0.0001f ? 1.0f : dt / seconds;
             progress = std::clamp(progress + (held ? step : -step), 0.0f, 1.0f);
             const float eased = Ease(progress);
-
             factor = std::exp(std::log(std::max(shownLevel, 1e-4f)) * eased);
             active = progress > 0.0f;
 

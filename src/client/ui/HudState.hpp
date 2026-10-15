@@ -12,7 +12,6 @@ namespace perlin::ui {
         int maxDamage = 0;
         bool enchanted = false;
         bool Empty() const { return name.empty() || count <= 0; }
-
         std::string Key() const { return name + ";" + std::to_string(maxDamage > 0 ? 0 : aux); }
         bool operator==(const HudItem& o) const {
             return name == o.name && count == o.count && aux == o.aux && blockRuntimeId == o.blockRuntimeId &&
@@ -62,8 +61,12 @@ namespace perlin::ui {
             std::string text;
             float alpha = 1.0f;
             int row = 0;
+            struct Click {
+                float x = 0, w = 0;
+                std::string command;
+            };
+            std::vector<Click> clicks;
         };
-
         struct SubtitleLine {
             std::string text;
             int direction = 0;
@@ -71,7 +74,6 @@ namespace perlin::ui {
         };
         std::vector<SubtitleLine> subtitles;
         std::vector<ChatLine> chatLines;
-
         struct TabEntry {
             std::string name;
             std::string headKey;
@@ -84,7 +86,12 @@ namespace perlin::ui {
         std::string chatInput;
         int chatCaret = 0;
         bool chatCaretVisible = true;
-
+        std::vector<std::string> chatSuggestions;
+        int chatSuggestSelected = -1;
+        int chatSuggestStart = 0;
+        std::string chatGhost;
+        bool chatSuggestMore[2] = {false, false};
+        std::string chatHint;
         bool debug = false;
         bool advancedTooltips = false;
         std::string gameModeSwitcher;

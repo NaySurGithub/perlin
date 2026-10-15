@@ -61,7 +61,6 @@ namespace perlin::ui {
         if (slot < 0)
             return 0;
         if (n == "turtle_helmet") return 2;
-
         static const int leather[4] = {1, 3, 2, 1}, golden[4] = {2, 5, 3, 1}, chain[4] = {2, 5, 4, 1},
                          iron[4] = {2, 6, 5, 2}, diamond[4] = {3, 8, 6, 3}, copper[4] = {2, 4, 3, 1};
         if (Starts(n, "leather")) return leather[slot];

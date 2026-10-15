@@ -3,7 +3,6 @@
 #include "client/ui/RmlEmit.hpp"
 
 namespace perlin::ui {
-
     class JavaRandom {
     public:
         explicit JavaRandom(int64_t seed) { SetSeed(seed); }

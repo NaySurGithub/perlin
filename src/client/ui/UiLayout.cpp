@@ -36,9 +36,7 @@ namespace perlin::ui {
                 skip();
                 if (i >= s.size())
                     break;
-
                 if (s[i] == '-' && (dim.empty() || sign != 1 || true)) {
-
                     if (dim.empty()) {
                         sign = -1;
                         i++;
@@ -308,7 +306,6 @@ namespace perlin::ui {
                     cw.children = (isStack && !vertical) ? sumW : maxW;
                     ch.children = (isStack && vertical) ? sumH : maxH;
                     if (isStack) {
-
                         if (!vertical) { cw.children = sumW; ch.children = maxH; }
                         else { cw.children = maxW; ch.children = sumH; }
                     }
@@ -318,7 +315,6 @@ namespace perlin::ui {
                     if (!Known(w)) { float t = kUnknown; if (EvalDim(wd, cw, t)) w = t; }
                     if (!Known(h)) { float t = kUnknown; if (EvalDim(hd, ch, t)) h = t; }
                 }
-
                 if (!Known(w)) w = 0;
                 if (!Known(h)) h = 0;
                 ClampSize(n, pw, ph, w, h);
@@ -333,7 +329,6 @@ namespace perlin::ui {
                     if (redo)
                         MeasureChildren(n, live, n.w, n.h, isStack, vertical, isGrid);
                 }
-
             }
 
             void Place(LNode& n, float ax, float ay) {
@@ -393,7 +388,6 @@ namespace perlin::ui {
                 n.lines.clear();
                 if (n.text.empty())
                     return;
-
                 const float wrap = n.w + 0.01f;
                 WrapLines(n.text, scale, wrap, n.lines);
                 (void)lines;
@@ -556,7 +550,6 @@ namespace perlin::ui {
                     text = t->string;
                 else if (t && t->IsNumber())
                     text = t->Dump();
-
                 if (t && t->IsNull()) {
                     Json b;
                     if (Lookup(n, "#text", vars, b))
@@ -569,9 +562,7 @@ namespace perlin::ui {
             }
 
             float AnimatedAlpha(const std::string& reference) const {
-
                 Json v;
-
                 float backdrop = 1.0f;
                 if (reference.find("background") != std::string::npos && data.Global("#hud_text_background_alpha", v) && v.IsNumber())
                     backdrop = static_cast<float>(v.number);
@@ -624,7 +615,6 @@ namespace perlin::ui {
                 if (w.empty() || h.empty()) {
                     Term hundred{Term::Pct, 100, 1};
                     Term def{Term::Default, 0, 1};
-
                     const bool intrinsic = (n.type == "label" || (n.type == "image" && !fill));
                     if (n.type == "grid") hundred.kind = Term::PctChildren;
                     if (w.empty()) w.push_back(intrinsic ? def : hundred);
@@ -637,7 +627,6 @@ namespace perlin::ui {
                     float scale = FontScale(n);
                     const std::string plain = StripFormatting(n.text);
                     float wrap = kUnknown;
-
                     DimContext c;
                     c.parent = pw;
                     float fixed = kUnknown;
@@ -700,7 +689,6 @@ namespace perlin::ui {
                     return;
                 const auto measure = [&](const std::string& s) { return services.textWidth ? services.textWidth(s, scale) : 6.0f * s.size() * scale; };
                 if (!Known(wrapWidth) || wrapWidth <= 0) {
-
                     size_t start = 0;
                     lines = 0;
                     while (start <= text.size()) {
@@ -772,10 +760,8 @@ namespace perlin::ui {
 
             void MeasureChildren(LNode& n, std::vector<LNode*>& live, float w, float h, bool isStack, bool vertical,
                                  bool isGrid) {
-
                 float fillW = kUnknown, fillH = kUnknown;
                 if (isStack) {
-
                     size_t fillCount = 0;
                     float used = 0;
                     std::vector<LNode*> fillKids;
@@ -802,7 +788,6 @@ namespace perlin::ui {
                         Measure(*k, w, h, kUnknown, kUnknown, kUnknown, kUnknown);
                 }
                 (void)isGrid;
-
                 bool anySibling = false;
                 for (LNode* k : live)
                     if (k->needSibW || k->needSibH)
@@ -918,7 +903,6 @@ namespace perlin::ui {
         std::string out;
         out.reserve(text.size());
         for (size_t i = 0; i < text.size(); i++) {
-
             if (static_cast<unsigned char>(text[i]) == 0xC2 && i + 2 < text.size() + 0 &&
                 static_cast<unsigned char>(text[i + 1]) == 0xA7) {
                 i += 2;
@@ -936,7 +920,6 @@ namespace perlin::ui {
         if (!tree)
             return nullptr;
         evaluator.Measure(*tree, guiW, guiH, kUnknown, kUnknown, kUnknown, kUnknown);
-
         tree->w = guiW;
         tree->h = guiH;
         evaluator.Place(*tree, 0, 0);

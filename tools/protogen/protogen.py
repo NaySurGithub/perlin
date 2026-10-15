@@ -894,7 +894,21 @@ def main():
         report.extend(f"  {n}: {why}" for n, why in opaque)
     sys.stdout.write("\n".join(report) + "\n")
 
+CODEC_PATCHES = [(
+    "static void Serialize(S& s, ItemV4& v) {",
+    "    if constexpr (S::kReading) v.extra = {};\n    if (v.networkId == net::context::ShieldItemID()) {",
+    "    if constexpr (S::kReading) v.extra = {};\n"
+    "    if constexpr (!S::kReading) { if (v.networkId == 0) { uint32_t zero = 0; s.varint(zero); return; } }\n"
+    "    if (v.networkId == net::context::ShieldItemID()) {",
+)]
+
 def write_if_changed(path, text):
+    for anchor, old, new in CODEC_PATCHES:
+        i = text.find(anchor)
+        if i >= 0:
+            j = text.find(old, i)
+            if j >= 0:
+                text = text[:j] + new + text[j + len(old):]
     if os.path.exists(path) and open(path).read() == text:
         return
     with open(path, "w", newline="\n") as f:

@@ -14,7 +14,6 @@ namespace perlin {
 }
 
 namespace perlin::ui {
-
     class Hud {
     public:
         Hud();
@@ -33,9 +32,7 @@ namespace perlin::ui {
             return true;
         }
         bool Ready() const { return backend.Ready() && tree != nullptr; }
-
         RmlBackend& Overlay() { return backend; }
-
         void UpdateOverlay(int framebufferW, int framebufferH, int guiScaleOption);
         int OverlayScale() const { return scale; }
         float GuiWidth() const { return guiW; }
@@ -43,7 +40,6 @@ namespace perlin::ui {
         int Scale() const { return scale; }
         const std::string& LastDocument() const { return lastRml; }
         size_t Rebuilds() const { return rebuilds; }
-
         void Reload() { reloadRequested = true; }
 
     private:
@@ -74,6 +70,9 @@ namespace perlin::ui {
         double sinceCheck = 0;
         size_t rebuilds = 0;
         bool reloadRequested = false;
+        bool templatesStale = true, emitterDefault = false;
+        double templateCheck = 0;
+        uint64_t hudTemplateVersion = 0, chatTemplateVersion = 0;
         bool dumped = false;
         uint64_t fontVersion = 0;
     };

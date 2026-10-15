@@ -5,7 +5,6 @@
 
 namespace perlin::ui {
     namespace {
-
         const uint8_t kFont5x7[95][5] = {
             {0x00, 0x00, 0x00, 0x00, 0x00}, {0x00, 0x00, 0x5F, 0x00, 0x00}, {0x00, 0x07, 0x00, 0x07, 0x00},
             {0x14, 0x7F, 0x14, 0x7F, 0x14}, {0x24, 0x2A, 0x7F, 0x2A, 0x12}, {0x23, 0x13, 0x08, 0x64, 0x62},
@@ -83,7 +82,6 @@ namespace perlin::ui {
         const int stride = cellsAcross * cellPx;
         for (int ch = 0x20; ch <= 0x7E; ch++) {
             const uint8_t* columns = kFont5x7[ch - 0x20];
-
             int first = 0, last = 4;
             while (first < 5 && columns[first] == 0) first++;
             while (last >= 0 && columns[last] == 0) last--;
@@ -98,7 +96,6 @@ namespace perlin::ui {
             }
         }
         Build(cells, cellsAcross, cellPx);
-
         glyphs[0x20].width = 3;
         glyphs[0x20].advance = 4;
         version++;
@@ -111,7 +108,6 @@ namespace perlin::ui {
         std::vector<uint8_t> copy(rgba, rgba + static_cast<size_t>(width) * height * 4);
         Build(copy, 16, cellPx);
         builtin = false;
-
         glyphs[0x20].width = 3;
         glyphs[0x20].advance = 4;
         version++;
@@ -133,7 +129,6 @@ namespace perlin::ui {
                         break;
                     }
             Glyph& g = glyphs[static_cast<size_t>(ch)];
-
             const int scale = std::max(1, cellPx / 8);
             g.width = (ink + scale - 1) / scale;
             g.advance = ink == 0 ? 0 : g.width + 1;

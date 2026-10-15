@@ -137,7 +137,6 @@ namespace perlin {
 #ifdef _WIN32
             DWORD tv = static_cast<DWORD>(timeoutMs);
             setsockopt(s, SOL_SOCKET, SO_RCVTIMEO, reinterpret_cast<const char*>(&tv), sizeof(tv));
-
             DWORD off = 0;
             DWORD bytes = 0;
             WSAIoctl(s, _WSAIOW(IOC_VENDOR, 12), &off, sizeof(off), nullptr, 0, &bytes, nullptr, nullptr);
@@ -271,7 +270,6 @@ namespace perlin {
             if (sock == kInvalid || n == 0)
                 return false;
             std::lock_guard<std::mutex> lock(sendMutex);
-
             const size_t whole = size_t(mtu) - 28 - 14;
             const size_t chunk = whole - 10;
             const uint32_t ord = IsOrdered(rel) ? (orderIndex++ & 0xFFFFFF) : 0;
@@ -495,7 +493,6 @@ namespace perlin {
             case IdConnectionAccepted: {
                 if (accepted)
                     return;
-
                 size_t off = 1;
                 off += AddrSize(c.data() + off, c.size() - off) + 2;
                 int count = 0;
@@ -641,7 +638,6 @@ namespace perlin {
         info.version = kBedrockVersion;
 
         uint8_t buf[2048];
-
         bool gotReply1 = false;
         bool security = false;
         uint32_t cookie = 0;
@@ -757,7 +753,6 @@ namespace perlin {
             CloseSocket(s.sock);
             s.sock = kInvalid;
         }
-
     }
 
     bool RakNet::SendReliable(const std::vector<uint8_t>& data) {

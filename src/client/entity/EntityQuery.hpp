@@ -1,13 +1,12 @@
 #pragma once
-
 #include "client/attachable/Molang.hpp"
 #include "client/entity/EntityTracker.hpp"
 
+#include <functional>
 #include <string>
 #include <vector>
 
 namespace perlin::entity {
-
     struct QueryContext {
         const Entity* e = nullptr;
         float dt = 0, partial = 0;
@@ -23,8 +22,12 @@ namespace perlin::entity {
         double timeOfDay = 0.0;
         double day = 0.0;
         bool inWater = false, inRain = false;
-
         bool allFinished = false, anyFinished = false;
+        float usedTicks = 0, maxUseTicks = 1;
+        bool using_ = false, blocking = false;
+        float offArmHeight = 1;
+        float deathTicks = 0;
+        std::function<bool(const std::string&, int, double&)> bonePivot;
     };
 
     bool EvalEntityQuery(const QueryContext& c, const std::string& name, const molang::Args& args, molang::Value& out);

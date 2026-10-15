@@ -23,13 +23,14 @@ static bool Identity(const glm::mat4& m) {
     return true;
 }
 
+// Rotation angle (degrees) of the view matrix.
 static float Angle(const glm::mat4& m) {
     const float trace = m[0][0] + m[1][1] + m[2][2];
     return std::acos(std::fmax(-1.0f, std::fmin(1.0f, (trace - 1.0f) * 0.5f))) * 57.29578f;
 }
 
 int main() {
-
+    // Mth.sin table sanity.
     CHECK(std::fabs(JavaSin(0.0f)) < 1e-6f);
     CHECK(std::fabs(JavaSin(1.5707964f) - 1.0f) < 1e-3f);
 
@@ -39,15 +40,16 @@ int main() {
 
     fx.Hurt(0.0f);
     CHECK(fx.Active());
-    CHECK(fx.TintAlpha() > 0.29f && fx.TintAlpha() < 0.31f);
-
+    CHECK(fx.TintAlpha() > 0.29f && fx.TintAlpha() < 0.31f); // vanilla overlay: 30% red
+    // Tick 0, partial 0: hurtTime=10 -> f=1 -> sin(pi)=0 -> no tilt yet.
     CHECK(Angle(fx.ViewMatrix(0.0f, 100)) < 0.01f);
 
+    // Peak tilt over the 10 ticks stays within 14 degrees and gets close to it.
     float peak = 0.0f;
     for (int tick = 0; tick < 10; tick++) {
         for (float partial = 0.0f; partial < 1.0f; partial += 0.1f)
             peak = std::fmax(peak, Angle(fx.ViewMatrix(partial, 100)));
-        CHECK(fx.TintAlpha() > 0.0f);
+        CHECK(fx.TintAlpha() > 0.0f); // constant until it ends
         fx.Tick();
     }
     CHECK(peak > 11.0f && peak <= 14.01f);
@@ -55,6 +57,7 @@ int main() {
     CHECK(fx.TintAlpha() == 0.0f);
     CHECK(Identity(fx.ViewMatrix(0.0f, 100)));
 
+    // Strength option scales the tilt; 0 disables it.
     DamageEffect half, full, none;
     half.Hurt(90.0f);
     full.Hurt(90.0f);
@@ -68,6 +71,7 @@ int main() {
     CHECK(a100 > 1.0f && std::fabs(a50 - a100 * 0.5f) < 0.05f);
     CHECK(Identity(none.ViewMatrix(0.5f, 0)));
 
+    // The tilt axis follows hurtDir: dir 0 rolls about the view axis (Z), dir 90 pitches (about X).
     DamageEffect ahead, side;
     ahead.Hurt(0.0f);
     side.Hurt(90.0f);
@@ -76,9 +80,10 @@ int main() {
         side.Tick();
     }
     const glm::mat4 r0 = ahead.ViewMatrix(0.0f, 100), r90 = side.ViewMatrix(0.0f, 100);
-    CHECK(std::fabs(r0[0][1]) > 0.05f && std::fabs(r0[1][2]) < 1e-5f);
-    CHECK(std::fabs(r90[1][2]) > 0.05f && std::fabs(r90[0][1]) < 1e-5f);
+    CHECK(std::fabs(r0[0][1]) > 0.05f && std::fabs(r0[1][2]) < 1e-5f);   // roll: x/y mix
+    CHECK(std::fabs(r90[1][2]) > 0.05f && std::fabs(r90[0][1]) < 1e-5f); // pitch: y/z mix
 
+    // Late knockback can redirect a fresh hit, but not an old one.
     DamageEffect late;
     late.Hurt(0.0f);
     late.Redirect(90.0f);

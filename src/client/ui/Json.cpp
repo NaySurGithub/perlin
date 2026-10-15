@@ -223,7 +223,6 @@ namespace perlin::ui {
                 if (text.compare(pos, 4, "true") == 0) { pos += 4; out = Json(true); return true; }
                 if (text.compare(pos, 5, "false") == 0) { pos += 5; out = Json(false); return true; }
                 if (text.compare(pos, 4, "null") == 0) { pos += 4; out = Json(); return true; }
-
                 const size_t start = pos;
                 if (text[pos] == '-' || text[pos] == '+')
                     pos++;
@@ -311,7 +310,6 @@ namespace perlin::ui {
     }
 
     bool Json::Parse(std::string_view text, Json& out, std::string& error) {
-
         if (text.size() >= 3 && static_cast<unsigned char>(text[0]) == 0xEF && static_cast<unsigned char>(text[1]) == 0xBB &&
             static_cast<unsigned char>(text[2]) == 0xBF)
             text.remove_prefix(3);

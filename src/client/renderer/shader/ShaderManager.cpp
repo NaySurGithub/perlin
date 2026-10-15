@@ -105,7 +105,6 @@ namespace perlin {
             programs[i] = BGFX_INVALID_HANDLE;
             if (i >= kPackOnlyFrom && !packActive)
                 continue;
-
             if (packActive) {
                 bgfx::ShaderHandle vertex = Load(source.vertex, true);
                 bgfx::ShaderHandle fragment = Load(source.fragment, true);

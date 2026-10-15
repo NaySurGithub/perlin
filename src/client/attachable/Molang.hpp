@@ -1,5 +1,4 @@
 #pragma once
-
 #include <functional>
 #include <memory>
 #include <string>
@@ -20,6 +19,7 @@ namespace perlin::molang {
     struct Host {
         virtual ~Host() = default;
         virtual bool Query(const std::string& name, const Args& args, Value& out) { (void)name; (void)args; (void)out; return false; }
+        virtual bool Volatile(const std::string&) const { return true; }
         virtual bool Context(const std::string& name, Value& out) { (void)name; (void)out; return false; }
     };
 
@@ -28,18 +28,19 @@ namespace perlin::molang {
         std::unordered_map<std::string, Value> variables;
         std::unordered_map<std::string, Value> temps;
         std::unordered_map<std::string, std::vector<Value>> arrays;
+        bool cacheQueries = false;
+        std::unordered_map<const void*, Value> queryCache;
         double thisValue = 0;
         double thisVec[3] = {0, 0, 0};
     };
 
     class Expr {
     public:
-
         static std::shared_ptr<Expr> Parse(const std::string& text);
         static std::shared_ptr<Expr> Constant(double v);
 
         Value Eval(Scope& scope) const;
-        double Number(Scope& scope) const { return Eval(scope).n; }
+        double Number(Scope& scope) const;
         bool IsConstant() const;
         bool Ok() const { return ok; }
 

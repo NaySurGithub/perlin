@@ -1,4 +1,5 @@
 #pragma once
+#include "client/ui/CommandInfo.hpp"
 #include "world/level/Level.hpp"
 #include "network/PacketDispatcher.hpp"
 #include "protocol/Packets.hpp"
@@ -52,26 +53,20 @@ namespace perlin {
         BedrockSession(const BedrockSession&) = delete;
         BedrockSession& operator=(const BedrockSession&) = delete;
 
+        const std::string& PlayerName() const { return playerName; }
         void SetPlayerName(const std::string& name) { playerName = name.empty() ? std::string("Perlin") : name; }
-
         void SetTransport(const std::string& mode) { transportMode = mode; }
         void SetSkin(LoadedSkin loaded) { skin = std::move(loaded); }
         const LoadedSkin& Skin() const { return skin; }
-
         entity::EntityTracker& Entities() { return entities; }
-
         void SetAccount(std::shared_ptr<xbox::Account> a) { account = std::move(a); }
         void SetChunkRadius(int r) { chunkRadius = r; }
-
         void SetNearRadius(int r) { nearRadius = r; }
-
         void SetMaxViewDistance(int r) { maxViewDistance = r; }
 
         bool Connect(const std::string& host, uint16_t port);
         void Disconnect();
-
         void SetPackDirectory(const std::string& dir) { packs.SetDirectory(dir); }
-
         bool Transferring() const { return transferring; }
 
         void Update();
@@ -96,7 +91,6 @@ namespace perlin {
         uint64_t GetRuntimeId() const { return runtimeId; }
         bool SendPlayerAuthInput();
         bool SendPlayerAuthInputBlockAction(uint32_t action, int bx, int by, int bz, int face);
-
         void EndItemUseOn();
         bool TakeBlockNamesLearned() { return blockNamesLearned.exchange(false); }
         bool ServerAuthoritativeBlockBreaking() const { return serverAuthBreaking.load(); }
@@ -106,7 +100,6 @@ namespace perlin {
             uint32_t action = 0;
             int x = 0, y = 0, z = 0, face = 0;
         };
-
         struct MoveInput {
             std::vector<uint32_t> flags;
             float moveX = 0, moveZ = 0;
@@ -128,7 +121,6 @@ namespace perlin {
             bool hasRotation = false;
             float velocity[3] = {0, 0, 0};
             float yaw = 0, pitch = 0;
-
             bool correction = false;
             uint64_t tick = 0;
             bool onGround = false;
@@ -137,7 +129,6 @@ namespace perlin {
         uint64_t LastAuthTick() const { return authTick; }
         bool TakeServerMotion(ServerMotion& out);
         float MovementSpeedAttribute() const { return movementSpeed; }
-
         bool Initialized() const { return initializedSent; }
         void PruneChunks(int centerChunkX, int centerChunkZ, int radiusChunks);
         bool SendLoadingScreen(bool start, std::optional<uint32_t> id = std::nullopt);
@@ -147,9 +138,7 @@ namespace perlin {
         bool SendChat(const std::string& message);
         uint64_t PacketsSent() const { return txPackets; }
         uint64_t PacketsReceived() const { return diagPackets; }
-
         std::vector<std::string> TakeChat();
-
         struct SoundRequest {
             enum class Kind { Named, Level, Stop } kind = Kind::Named;
             std::string name;
@@ -160,7 +149,13 @@ namespace perlin {
             bool baby = false, global = false, stopAll = false;
         };
         std::vector<SoundRequest> TakeSounds();
-
+        struct ParticleEvent {
+            int event = 0;
+            double x = 0, y = 0, z = 0;
+            int32_t data = 0;
+            std::string name;
+        };
+        std::vector<ParticleEvent> TakeParticles();
         struct PendingPlace {
             int x = 0, y = 0, z = 0;
             std::chrono::steady_clock::time_point at{};
@@ -168,7 +163,8 @@ namespace perlin {
             int32_t held = 0;
         };
         bool SendCommand(const std::string& command);
-
+        uint32_t CommandsVersion() const { std::lock_guard<std::mutex> lk(commandMutex); return commandVersion; }
+        std::vector<ui::CommandInfo> Commands() const { std::lock_guard<std::mutex> lk(commandMutex); return commands; }
         struct TabPlayer {
             std::string uuid, name;
             std::shared_ptr<const entity::SkinData> skin;
@@ -177,18 +173,15 @@ namespace perlin {
             std::lock_guard<std::mutex> lk(tabMutex);
             return tabPlayers;
         }
-
         void ReloadChunks();
         bool SendTickSync(uint64_t timestamp);
-
         struct BlockCrack {
             int x, y, z, stage;
         };
         std::vector<BlockCrack> Cracks();
+        void ClearCrack(int x, int y, int z);
         bool SendPlayerAction(uint32_t action, int bx, int by, int bz, int face = 1);
-
 void RequestRespawn();
-
         bool DeathPending() const {
             std::lock_guard<std::mutex> lk(deathMutex);
             return deathPending;
@@ -207,9 +200,7 @@ void RequestRespawn();
         bool GetWorldTicks(double& outTicks) const;
         void SetDayCycle(bool running);
         int DimensionId() const { return dimensionId; }
-
         uint32_t HurtCount() const { return hurtCounter.load(); }
-
         struct HurtSource {
             bool known = false;
             float dx = 0, dz = 0;
@@ -241,6 +232,17 @@ void RequestRespawn();
 
         State GetState() const { return state; }
         std::string LastError() const { return lastError; }
+        struct DisconnectInfo {
+            bool happened = false;
+            int reason = -1;
+            std::string message;
+            bool connectionLost = false;
+        };
+        DisconnectInfo GetDisconnectInfo() const {
+            std::lock_guard<std::mutex> lk(disconnectMutex);
+            return disconnectInfo;
+        }
+        bool RequestReconnect();
         int ServerProtocol() const { return serverProtocol; }
         bool MayFly() const { return mayFly; }
         bool IsFlying() const { return isFlying; }
@@ -288,8 +290,20 @@ void RequestRespawn();
             ItemStackInfo main[27];
             ItemStackInfo offhand;
             ItemStackInfo armor[4];
+            ItemStackInfo craft[4];
+            ItemStackInfo output;
+            ItemStackInfo cursor;
             int selected = 0;
         };
+        static constexpr int kInvArmor0 = 36, kInvOffhand = 40, kInvCraft0 = 41, kInvOutput = 45, kInvCursor = 46, kInvSlots = 47;
+        void InvClick(int addr, bool right);
+        void InvShiftClick(int addr);
+        void InvHotbarKey(int addr, int hotbar);
+        void InvDropCursor(bool whole);
+        void InvDropSlot(int addr, bool whole);
+        void InvReturnCursor();
+        void InvPump();
+        bool InvBusy() const;
         struct TitleText {
             std::string title, subtitle, actionBar;
             std::chrono::steady_clock::time_point titleAt{}, actionAt{};
@@ -299,18 +313,24 @@ void RequestRespawn();
         Vitals GetVitals() const;
         InventoryView GetInventory() const;
         TitleText GetTitleText() const;
-
         bool SelectHotbarSlot(int slot);
-
         bool SendSwingArm(const char* source = "build");
 
         bool SendUseItemOnBlock(int bx, int by, int bz, int face, const float click[3], const float eye[3], int use, const int dest[3]);
         bool SendUseItemInAir(const float eye[3]);
         bool SendReleaseItem(const float eye[3]);
         bool SendAttackEntity(uint64_t targetRuntimeId, const float eye[3], const float click[3]);
+        bool SendInteractEntity(uint64_t targetRuntimeId, const float eye[3], const float click[3]);
+        bool SendLeaveVehicle();
+        int64_t RidingUid() const { return ridingUid.load(); }
         bool SendPickBlock(int bx, int by, int bz);
-
         bool SendDropSelected(int count);
+        bool OpenInventory();
+        bool CloseInventory();
+        bool SwapInventorySlots(int a, int b);
+        bool DropInventorySlot(int slot, bool whole);
+        bool InventoryIsOpen() const { std::lock_guard lock(statusMutex); return inventoryOpen; }
+        bool TakeServerClosedInventory();
 
         Level& NetLevel() { return netLevel; }
         bool HasSpawn() const { return gotSpawn; }
@@ -337,7 +357,6 @@ void RequestRespawn();
         void HandleSubChunk(const proto::SubchunkPacket& packet);
         void QueueSubChunkRequests(int dim, int cx, int cz, int firstSubY, int count, bool far = false);
         void UpdateColumnLod();
-
         void FillUnstreamedColumns();
         bool clientGen = false;
         int maxViewDistance = 32;
@@ -370,6 +389,11 @@ void RequestRespawn();
         std::mutex updateMutex;
         std::string transferHost;
         uint16_t transferPort = 0;
+        std::string lastHost;
+        uint16_t lastPort = 0;
+        mutable std::mutex disconnectMutex;
+        DisconnectInfo disconnectInfo;
+        void SetDisconnectInfo(int reason, const std::string& message, bool lost);
         bool usedRak = false;
 
         std::unique_ptr<Transport> net;
@@ -398,6 +422,9 @@ void RequestRespawn();
         std::string deathCause;
         bool deathPending = false;
         std::vector<TabPlayer> tabPlayers;
+        mutable std::mutex commandMutex;
+        std::vector<ui::CommandInfo> commands;
+        uint32_t commandVersion = 0;
         struct CrackState {
             int x = 0, y = 0, z = 0;
             double progress = 0.0;
@@ -409,7 +436,6 @@ void RequestRespawn();
         std::set<std::tuple<int, int, int, int>> requestedSlots;
         std::queue<std::tuple<int, int, int, int>> reqQueue;
         std::queue<std::tuple<int, int, int, int>> reqQueueFar;
-
         struct ColumnInfo {
             int dim = 0, firstSubY = 0, slots = 0;
             std::vector<uint8_t> biomes;
@@ -420,7 +446,6 @@ void RequestRespawn();
         std::map<std::tuple<int, int, int, int>, std::chrono::steady_clock::time_point> inflight;
         std::map<std::tuple<int, int, int, int>, int> retries;
         void CompleteRequest(const std::tuple<int, int, int, int>& key, bool retry);
-
         void DropSlot(const std::tuple<int, int, int, int>& key, std::vector<std::pair<int, int>>& completed);
         void FinishColumns(const std::vector<std::pair<int, int>>& columns);
         std::map<std::pair<int, int>, int> colPending;
@@ -489,7 +514,6 @@ void RequestRespawn();
         HurtSource hurtSource;
         float knockX = 0, knockZ = 0;
         std::chrono::steady_clock::time_point knockAt{};
-
         std::atomic<bool> dimAckPending{false};
         std::chrono::steady_clock::time_point dimAckSince{};
         std::optional<uint32_t> dimLoadingId;
@@ -499,6 +523,8 @@ void RequestRespawn();
         std::atomic<float> thunderTarget{0.0f};
         std::atomic<bool> dayCycleRunning{true};
         std::atomic<uint64_t> diagPackets{0};
+        std::atomic<int64_t> lastPacketMs{0};
+        std::string lastViolation;
         std::atomic<uint64_t> txPackets{0};
         std::mutex idCountMutex;
         std::map<uint32_t, uint64_t> idCounts;
@@ -514,7 +540,33 @@ void RequestRespawn();
         Vitals vitals;
         InventoryView inventory;
         proto::ItemV4 inventoryRaw[36];
+        std::atomic<int64_t> ridingUid{0};
+        proto::ItemV4 extraRaw[11];
+        struct RecipeIngredientInfo { bool empty = true; std::string name, tag; int meta = 0; };
+        struct RecipeInfo {
+            bool shaped = false; int w = 0, h = 0;
+            std::vector<RecipeIngredientInfo> in;
+            proto::ItemV4 out; ItemStackInfo outInfo;
+            uint32_t netId = 0;
+        };
+        std::vector<RecipeInfo> recipes;
+        int craftedRecipe = -1;
+        std::deque<std::function<bool(proto::ItemStackRequest&)>> invQueue;
+        bool invCloseWanted = false;
+        int32_t invPendingRequest = 0;
+        std::chrono::steady_clock::time_point invPendingAt{};
+        void InvRecomputeOutputLocked();
+        ItemStackInfo& InvInfoLocked(int addr);
+        proto::ItemV4& InvRawLocked(int addr);
+        void InvEnqueue(std::function<bool(proto::ItemStackRequest&)> op);
+        bool SendCloseNow();
+        bool inventoryOpen = false, serverClosedInventory = false;
+        int inventoryWindow = 0;
         int32_t nextStackRequestId = -1;
+        struct PendingDrop { int slot; int count; int attempt; };
+        std::map<int32_t, PendingDrop> pendingDrops;
+        int dropForm = 0;
+        bool SendDropRequest(int slot, int count, int attempt);
         std::map<int, std::string> itemNames;
         TitleText titleText;
         void PushChat(const std::string& line);
@@ -523,6 +575,9 @@ void RequestRespawn();
         void PushSound(SoundRequest request);
         std::mutex soundMutex;
         std::vector<SoundRequest> soundInbox;
+        std::mutex particleMutex;
+        std::vector<ParticleEvent> particleInbox;
+        void PushParticle(ParticleEvent event);
 
         bool compressEnabled = false;
         uint16_t compressThreshold = 0;

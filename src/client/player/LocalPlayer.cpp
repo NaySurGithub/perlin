@@ -45,6 +45,8 @@ namespace perlin {
             constexpr uint32_t Sprinting = 20;
             constexpr uint32_t StartSprinting = 25;
             constexpr uint32_t StopSprinting = 26;
+            constexpr uint32_t StartSwimming = 29;
+            constexpr uint32_t StopSwimming = 30;
             constexpr uint32_t StartSneaking = 27;
             constexpr uint32_t StopSneaking = 28;
             constexpr uint32_t StartJumping = 31;
@@ -73,7 +75,6 @@ namespace perlin {
                 Record& r = history.front();
                 const double dx = r.after.x - motion.pos[0], dy = r.after.y - motion.pos[1],
                              dz = r.after.z - motion.pos[2];
-
                 const double ex = r.after.vx - motion.velocity[0];
                 const double ey = r.after.vy - motion.velocity[1];
                 const double ez = r.after.vz - motion.velocity[2];
@@ -82,7 +83,6 @@ namespace perlin {
                 if (posErr > 1e-5 || velErr > 1e-5) {
                     const physics::State shown = state;
                     if (correctionReplays < 40 || correctionReplays % 100 == 0) {
-
                         const Level& lv = session.NetLevel();
                         auto name = [&](int bx, int by, int bz) { return BlockPalette::Instance().Name(lv.GetBlock(bx, by, bz)); };
                         const int fx = static_cast<int>(std::floor(r.before.x)), fz = static_cast<int>(std::floor(r.before.z));
@@ -135,7 +135,6 @@ namespace perlin {
                 }
                 history.pop_front();
                 handled = true;
-
                 motion.hasVelocity = false;
             }
         }
@@ -170,14 +169,19 @@ namespace perlin {
         previous = state;
         const physics::State before = state;
 
-        const float forward = input.Axis(Action::Forward, Action::Back);
-        const float strafe = input.Axis(Action::Right, Action::Left);
-        const bool jump = input.IsDown(Action::Jump);
+        const float useScale = itemSlow ? 0.2f : 1.0f;
+        const float forwardKeys = rideLock ? 0.0f : input.Axis(Action::Forward, Action::Back);
+        const float strafeKeys = rideLock ? 0.0f : input.Axis(Action::Right, Action::Left);
+        const float forward = forwardKeys * useScale;
+        const float strafe = strafeKeys * useScale;
+        const bool jump = !rideLock && input.IsDown(Action::Jump);
         const bool sneakKey = input.IsDown(Action::Sneak);
+        if (rideLock && sneakKey && !sneakHeld)
+            session.SendLeaveVehicle();
         const bool sprintKey = input.IsDown(Action::Sprint);
 
         const bool wasSprinting = sprinting;
-        if (forward <= 0.0f || sneakKey || state.horizontalCollision)
+        if (forward <= 0.0f || sneakKey || itemSlow || state.horizontalCollision)
             sprinting = false;
         else if (sprintKey)
             sprinting = true;
@@ -217,6 +221,14 @@ namespace perlin {
             state.vx = state.vy = state.vz = 0;
         }
 
+        if (rideLock) {
+            state.x = rideX;
+            state.y = rideY;
+            state.z = rideZ;
+            state.vx = state.vy = state.vz = 0;
+            state.onGround = true;
+            flying = false;
+        }
         walkBob.Tick(std::hypot(state.x - before.x, state.z - before.z), state.onGround && !flying,
                      state.inWater && sprinting);
         ++tickCounter;
@@ -279,6 +291,11 @@ namespace perlin {
         if (!sprinting && wasSprinting)
             f.push_back(Flag::StopSprinting);
         sprintHeld = sprintKey;
+        if (swimming && !sentSwimming)
+            f.push_back(Flag::StartSwimming);
+        if (!swimming && sentSwimming)
+            f.push_back(Flag::StopSwimming);
+        sentSwimming = swimming;
 
         if (sendStartFlying) {
             f.push_back(InputFlag::StartFlying);
@@ -296,15 +313,14 @@ namespace perlin {
         const float slowFactor = sneaking ? 0.3f : 1.0f;
         packet.moveX = -std::clamp(strafe, -slowFactor, slowFactor);
         packet.moveZ = std::clamp(forward, -slowFactor, slowFactor);
-        packet.rawX = -strafe;
-        packet.rawZ = forward;
+        packet.rawX = -strafeKeys;
+        packet.rawZ = forwardKeys;
         packet.yaw = BedrockYaw(camera.yaw);
         packet.pitch = BedrockPitch(camera.pitch);
         packet.eyeHeight = kPlayerEyeHeight;
         packet.position[0] = static_cast<float>(state.x);
         packet.position[1] = static_cast<float>(state.y);
         packet.position[2] = static_cast<float>(state.z);
-
         packet.delta[0] = static_cast<float>(state.vx);
         packet.delta[1] = static_cast<float>(state.vy);
         packet.delta[2] = static_cast<float>(state.vz);
@@ -336,7 +352,13 @@ namespace perlin {
             flying = session.IsFlying();
         }
         blocksPtr = &blocks;
-        ApplyServerMotion(session, camera);
+        if (rideLock) {
+            BedrockSession::ServerMotion ignored;
+            while (session.TakeServerMotion(ignored)) {}
+            history.clear();
+        } else {
+            ApplyServerMotion(session, camera);
+        }
 
         const auto now = std::chrono::steady_clock::now();
         const bool spectator = session.NoClip() || session.Spectator();
@@ -349,7 +371,6 @@ namespace perlin {
             flying = false;
             sendStopFlying = true;
         }
-
         if (session.IsFlying() != serverFlying) {
             serverFlying = session.IsFlying();
             if (serverFlying && session.MayFly() && !flying) {
@@ -374,7 +395,6 @@ namespace perlin {
         }
 
         LevelCollision world(session.NetLevel(), &blocks);
-
         if (!session.Initialized()) {
             accumulator = 0.0;
             previous = state;
@@ -398,7 +418,6 @@ namespace perlin {
             const float speed = session.MovementSpeedAttribute() * (sprinting ? 1.3f : 1.0f);
             target *= (speed / 0.1f + 1.0f) / 2.0f;
             target = std::clamp(target, 0.1f, 1.5f);
-
             const float keep = std::pow(0.5f, dt * 20.0f);
             fovModifier = target + (fovModifier - target) * keep;
         }
@@ -407,7 +426,7 @@ namespace perlin {
         const double x = previous.x + (state.x - previous.x) * t;
         const double y = previous.y + (state.y - previous.y) * t;
         const double z = previous.z + (state.z - previous.z) * t;
-        const float targetEye = sneaking ? static_cast<float>(physics::kSneakEye) : static_cast<float>(physics::kStandEye);
+        const float targetEye = rideLock ? 1.2f : sneaking ? static_cast<float>(physics::kSneakEye) : static_cast<float>(physics::kStandEye);
         eyeOffset += (targetEye - eyeOffset) * (1.0f - std::exp(-dt * 20.0f));
         const double decay = std::exp(-dt * 12.0);
         for (double& o : smoothOffset)

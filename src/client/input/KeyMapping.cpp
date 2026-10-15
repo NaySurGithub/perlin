@@ -69,6 +69,10 @@ namespace perlin {
             return "key.pickItem";
         case Action::Drop:
             return "key.drop";
+        case Action::Inventory:
+            return "key.inventory";
+        case Action::Pause:
+            return "key.pause";
         case Action::PlayerList:
             return "key.playerlist";
         default:
@@ -100,6 +104,8 @@ namespace perlin {
         set(Action::DebugScreen, Binding::KeyboardKey(Key::F1 + 2));
         set(Action::PickBlock, Binding::MouseButton(Mouse::Middle));
         set(Action::Drop, Binding::KeyboardKey('Q'));
+        set(Action::Inventory, Binding::KeyboardKey('E'));
+        set(Action::Pause, Binding::KeyboardKey(Key::Escape));
         set(Action::PlayerList, Binding::KeyboardKey(Key::Tab));
         return b;
     }

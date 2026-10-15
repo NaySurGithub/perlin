@@ -62,6 +62,8 @@ namespace perlin {
         int wallArm[4] = {0, 0, 0, 0};
         bool wallPost = false;
         int cakeBites = -1;
+        bool fire = false;
+        bool flammable = false;
     };
     const GeomInfo& GeomFor(uint16_t id) {
         struct Slot {
@@ -82,6 +84,21 @@ namespace perlin {
         GeomInfo g;
         {
             auto& pal = BlockPalette::Instance();
+            {
+                const std::string nm = pal.Name(id);
+                g.fire = nm == "minecraft:fire";
+                static const char* kBurn[] = {"planks", "_log", "_wood", "leaves", "wool", "carpet", "hay_block", "bookshelf",
+                                              "tnt", "vine", "coal_block", "dried_kelp_block", "bamboo_block", "scaffolding",
+                                              "azalea", "lectern", "loom", "composter", "beehive", "bee_nest", "target",
+                                              "wooden_", "fence", "stripped_", "bamboo_mosaic", "moss_", "hanging_roots",
+                                              "glow_lichen", "cherry", "mangrove", "crafting_table", "chiseled_bookshelf"};
+                for (const char* k : kBurn)
+                    if (nm.find(k) != std::string::npos && nm.find("nether") == std::string::npos &&
+                        nm.find("crimson") == std::string::npos && nm.find("warped") == std::string::npos) {
+                        g.flammable = true;
+                        break;
+                    }
+            }
             if (pal.HasState(id, "minecraft:vertical_half")) {
                 g.slab = true;
                 g.slabTop = pal.StateString(id, "minecraft:vertical_half", "bottom") == "top";
@@ -338,6 +355,50 @@ namespace perlin {
         return slot;
     }
 
+    static uint16_t ResolveDoor(uint16_t self, uint16_t other, bool selfUpper) {
+        thread_local std::unordered_map<uint32_t, uint16_t> memo;
+        const uint32_t key = (static_cast<uint32_t>(self) << 17) | (static_cast<uint32_t>(other) << 1) | (selfUpper ? 1u : 0u);
+        if (const auto it = memo.find(key); it != memo.end())
+            return it->second;
+        BlockPalette& pal = BlockPalette::Instance();
+        uint16_t result = self;
+        const std::string name = pal.Name(self);
+        if (pal.Name(other) == name) {
+            const uint16_t lower = selfUpper ? other : self;
+            const uint16_t upper = selfUpper ? self : other;
+            auto states = pal.States(self);
+            const auto lowerStates = pal.States(lower);
+            const auto upperStates = pal.States(upper);
+            const auto find = [](const std::vector<std::pair<std::string, BlockPalette::StateValue>>& v, const char* k) -> const BlockPalette::StateValue* {
+                for (const auto& e : v)
+                    if (e.first == k)
+                        return &e.second;
+                return nullptr;
+            };
+            for (auto& e : states) {
+                const auto& src = e.first == "door_hinge_bit" ? upperStates : lowerStates;
+                if (e.first == "door_hinge_bit" || e.first == "open_bit" || e.first == "minecraft:cardinal_direction")
+                    if (const auto* v = find(src, e.first.c_str()))
+                        e.second = *v;
+            }
+            std::sort(states.begin(), states.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
+            result = pal.Intern(BlockPalette::HashState(name, states));
+        }
+        memo[key] = result;
+        return result;
+    }
+
+    static bool IsDoorId(uint16_t id) {
+        thread_local std::vector<int8_t> memo(65536, -1);
+        int8_t& m = memo[id];
+        if (m < 0) {
+            BlockPalette& pal = BlockPalette::Instance();
+            const std::string name = pal.Name(id);
+            m = name.size() > 5 && name.compare(name.size() - 5, 5, "_door") == 0 && pal.BlockHasProperty(name, "door_hinge_bit") ? 1 : 0;
+        }
+        return m == 1;
+    }
+
     static const ModelEntry* ModelFor(BlockLibrary* library, uint16_t id) {
         if (!library)
             return nullptr;
@@ -361,7 +422,6 @@ namespace perlin {
         if (slot < 0) {
             const BlockAppearance* a = library ? LookupApp(library, id) : nullptr;
             slot = a && (IsWaterTex(a->texTop) || IsWaterTex(a->texSide)) ? 1 : (a && IsLavaName(id) ? 2 : 0);
-
             if (!slot && BlockPalette::Instance().Name(id) == "minecraft:bubble_column")
                 slot = 1;
         }
@@ -417,7 +477,6 @@ namespace perlin {
                 const int a2 = axis == 2 ? 1 : 2;
                 for (int r = 0; r < 16; r++)
                     for (int q = 0; q < 16; q++) {
-
                         if (lo[a1] <= q / 16.0 + eps && hi[a1] >= (q + 1) / 16.0 - eps &&
                             lo[a2] <= r / 16.0 + eps && hi[a2] >= (r + 1) / 16.0 - eps) {
                             const int bit = r * 16 + q;
@@ -463,7 +522,6 @@ namespace perlin {
         for (int i = 0; i < 3; i++)
             if (tiles[i] && library.AlphaOf(tiles[i]).holes && !(i == 1 && a.overlayFrac > 0 && a.overlayTile))
                 return 1;
-
         {
             const physics::BlockShape& shape = LevelCollision::ShapeOf(id);
             bool full = false;
@@ -575,7 +633,6 @@ namespace perlin {
             BlockLibrary::TileAlpha at = library->AlphaOf(a.top);
             BlockLibrary::TileAlpha as = library->AlphaOf(a.side);
             BlockLibrary::TileAlpha ab = library->AlphaOf(a.bottom);
-
             if ((a.top && at.translucent) || (a.side && as.translucent) || (a.bottom && ab.translucent))
                 return false;
             if (IsWaterTex(a.texTop) || IsWaterTex(a.texSide) || IsLavaName(id))
@@ -754,7 +811,6 @@ namespace perlin {
         else
             for (size_t i = 0; i < cache.cells.size(); i++)
                 cache.solid[i] = cache.cells[i] != 0;
-
         int lowAir = cache.yBase + cache.yRows;
         {
             const size_t layer = (size_t)18 * 18;
@@ -808,14 +864,12 @@ namespace perlin {
                   for (int pass = 0; pass < 2; pass++) {
                     uint16_t id = cache.Get(x, y, z);
                     if (pass == 1 && y > cache.yBase && y < cache.yBase + cache.yRows - 1) {
-
                         const size_t c = cache.Idx(x, y, z);
                         if (cache.solid[c] && cache.solid[c - 1] && cache.solid[c + 1] && cache.solid[c - 18] &&
                             cache.solid[c + 18] && cache.solid[c - 324] && cache.solid[c + 324])
                             continue;
                     }
                     if (pass == 0) {
-
                         id = cache.Liquid(x, y, z);
                         if (id == 0 || !library || !IsLiquidId(library, id) ||
                             IsLiquidId(library, cache.Get(x, y, z)))
@@ -823,12 +877,17 @@ namespace perlin {
                     }
                     if (id == 0)
                         continue;
+                    if (pass == 1 && textured && IsDoorId(id)) {
+                        const bool upperHalf = BlockPalette::Instance().StateInt(id, "upper_block_bit", 0) != 0;
+                        const int oy = upperHalf ? y - 1 : y + 1;
+                        if (oy >= cache.yBase && oy < cache.yBase + cache.yRows)
+                            id = ResolveDoor(id, cache.Get(x, oy, z), upperHalf);
+                    }
                     tess.SetLayer(RenderLayer::Cutout);
                     const CellLight cellLight = ownLight(x, y, z, id);
                     const BlockAppearance* app = nullptr;
                     if (textured)
                         app = LookupApp(library, id);
-
                     const ModelEntry* modelEntry = textured ? ModelFor(library, id) : nullptr;
                     if (app && !modelEntry && (app->top | app->side | app->bottom) == 0) {
                         static std::mutex logMutex;
@@ -1089,16 +1148,45 @@ namespace perlin {
                             return Packed{(n1.block + n2.block + n3.block + c.block) >> 2,
                                           (n1.sky + n2.sky + n3.sky + c.sky) >> 2};
                         };
-
                         bool memoHave[12] = {};
                         float memoAo[12][2][2], memoBlock[12][2][2], memoSky[12][2][2];
                         auto emitQuad = [&](const ModelQuad& q) {
                             if (!q.tile && (q.tex == 0xFFFF || q.tex >= bm.tiles.size()))
                                 return;
-                            const int tile = q.tile ? q.tile : bm.tiles[q.tex];
+                            int tile = q.tile ? q.tile : bm.tiles[q.tex];
                             if (!tile)
                                 return;
                             const BlockLibrary::TileAlpha ta = library->AlphaOf(tile);
+                            if (const int glassMode = library->GlassMode(); glassMode && !q.tile && library->IsGlassBase(tile)) {
+                                int ia = -1, ib = -1, ic = -1;
+                                for (int k = 0; k < 4; k++) {
+                                    const bool u0z = std::fabs(q.uv[k][0]) < 0.01f, u16 = std::fabs(q.uv[k][0] - 16.0f) < 0.01f;
+                                    const bool v0z = std::fabs(q.uv[k][1]) < 0.01f, v16 = std::fabs(q.uv[k][1] - 16.0f) < 0.01f;
+                                    if (u0z && v0z) ia = k;
+                                    else if (u16 && v0z) ib = k;
+                                    else if (u0z && v16) ic = k;
+                                }
+                                if (ia >= 0 && ib >= 0 && ic >= 0) {
+                                    int mask = 0;
+                                    const auto exposed = [&](const float* from, const float* to, bool negate) {
+                                        int d[3];
+                                        for (int a = 0; a < 3; a++) {
+                                            const float diff = to[a] - from[a];
+                                            d[a] = std::fabs(diff) < 0.5f ? 0 : (diff > 0 ? 1 : -1);
+                                            if (negate)
+                                                d[a] = -d[a];
+                                        }
+                                        return cache.Get(x + d[0], y + d[1], z + d[2]) != id;
+                                    };
+                                    if (exposed(q.pos[ia], q.pos[ib], true)) mask |= 1;
+                                    if (exposed(q.pos[ia], q.pos[ib], false)) mask |= 2;
+                                    if (exposed(q.pos[ia], q.pos[ic], true)) mask |= 4;
+                                    if (exposed(q.pos[ia], q.pos[ic], false)) mask |= 8;
+                                    tile = library->GlassTile(tile, glassMode, mask);
+                                } else if (glassMode == 3) {
+                                    tile = library->GlassTile(tile, glassMode, 0);
+                                }
+                            }
                             if (q.cull >= 0) {
                                 const int* nb = kDV[q.cull];
                                 const uint16_t nid = cache.Get(x + nb[0], y + nb[1], z + nb[2]);
@@ -1174,6 +1262,11 @@ namespace perlin {
                             }
 
                             float base[3] = {1, 1, 1};
+                            {
+                                const std::string& tn0 = bm.Textures()[q.tex];
+                                if (tn0.find("bamboo_leaf") != std::string::npos || tn0.find("bamboo_small_leaf") != std::string::npos)
+                                    base[0] = base[1] = base[2] = 0.63f;
+                            }
                             if (q.tint >= 0 && !q.tile) {
                                 const std::string& tn = bm.Textures()[q.tex];
                                 const auto tc = biomeTintFor(tn, tile, dir == 1);
@@ -1190,7 +1283,6 @@ namespace perlin {
                             float u0, v0uv, u1, v1uv;
                             BlockLibrary::TileUV(tile, u0, v0uv, u1, v1uv);
                             const float dirShade = q.shade ? kDirShade[q.shadeDir] : 1.0f;
-
                             static constexpr int kOrder[4] = {0, 3, 2, 1};
                             float v[4][3], col[4][3], uv[4][2], lt[4][2];
                             for (int k = 0; k < 4; k++) {
@@ -1440,6 +1532,106 @@ namespace perlin {
                         continue;
                     }
 
+                    if (gi.fire && app) {
+                        const uint16_t nIds[5] = {cache.Get(x, y, z - 1), cache.Get(x + 1, y, z), cache.Get(x, y, z + 1),
+                                                  cache.Get(x - 1, y, z), cache.Get(x, y + 1, z)};
+                        bool flag[5];
+                        bool any = false;
+                        for (int i = 0; i < 5; i++) {
+                            flag[i] = nIds[i] != 0 && GeomFor(nIds[i]).flammable;
+                            any = any || flag[i];
+                        }
+                        const float white[4][3] = {{1, 1, 1}, {1, 1, 1}, {1, 1, 1}, {1, 1, 1}};
+                        const float fireBlock = 15.0f;
+                        auto tileFor = [&](int variant) { return variant ? (app->bottom ? app->bottom : app->top) : app->top; };
+                        auto rotate = [](float p[3], int axis, float deg, const float o[3], bool rescale) {
+                            const float r = deg * 3.14159265f / 180.0f, c = std::cos(r), sn = std::sin(r);
+                            const int a = (axis + 1) % 3, b = (axis + 2) % 3;
+                            const float da = p[a] - o[a], db = p[b] - o[b];
+                            float na = da * c - db * sn, nb = da * sn + db * c;
+                            if (rescale) {
+                                na /= std::fabs(c);
+                                nb /= std::fabs(c);
+                            }
+                            p[a] = o[a] + na;
+                            p[b] = o[b] + nb;
+                        };
+                        auto plane = [&](const float A[3], const float R[3], const float Uv[3], int axis, float deg,
+                                         const float origin[3], int variant, bool flipU) {
+                            const int tile = tileFor(variant);
+                            float u0, v0, u1, v1;
+                            BlockLibrary::TileUV(tile, u0, v0, u1, v1);
+                            if (flipU)
+                                std::swap(u0, u1);
+                            float pts[4][3];
+                            for (int k = 0; k < 3; k++) {
+                                pts[0][k] = A[k];
+                                pts[1][k] = A[k] + R[k];
+                                pts[2][k] = A[k] + R[k] + Uv[k];
+                                pts[3][k] = A[k] + Uv[k];
+                            }
+                            float out[4][3];
+                            for (int i = 0; i < 4; i++) {
+                                if (axis >= 0)
+                                    rotate(pts[i], axis, deg, origin, true);
+                                out[i][0] = bx + pts[i][0] / 16.0f;
+                                out[i][1] = by + pts[i][1] / 16.0f;
+                                out[i][2] = bz + pts[i][2] / 16.0f;
+                            }
+                            float flipped[4][3];
+                            for (int i = 0; i < 4; i++)
+                                for (int k = 0; k < 3; k++)
+                                    flipped[i][k] = out[(4 - i) % 4][k];
+                            float uv[4][2] = {{u0, v1}, {u0, v0}, {u1, v0}, {u1, v1}};
+                            tess.AddQuad(flipped, white, uv, false, fireBlock, cellLight.sky);
+                        };
+                        tess.SetLayer(RenderLayer::CutoutCull);
+                        const int pick0 = static_cast<int>(bhash & 1), pick1 = static_cast<int>((bhash >> 1) & 1);
+                        const float none[3] = {0, 0, 0}, o8[3] = {8, 8, 8};
+                        const float up224[3] = {0, 22.4f, 0};
+                        if (!any) {
+                            const float sA[3] = {0, 0, 8.8f}, sR[3] = {16, 0, 0};
+                            const float nA[3] = {16, 0, 7.2f}, nR[3] = {-16, 0, 0};
+                            const float wA[3] = {8.8f, 0, 0}, wR[3] = {0, 0, 16};
+                            const float eA[3] = {7.2f, 0, 16}, eR[3] = {0, 0, -16};
+                            plane(sA, sR, up224, 0, -22.5f, o8, pick0, false);
+                            plane(nA, nR, up224, 0, 22.5f, o8, pick1, false);
+                            plane(wA, wR, up224, 2, -22.5f, o8, pick1, false);
+                            plane(eA, eR, up224, 2, 22.5f, o8, pick0, false);
+                        }
+                        const float eps = 0.01f, far = 15.99f;
+                        for (int d = 0; d < 4; d++) {
+                            if (!flag[d])
+                                continue;
+                            float A1[3], R1[3], A2[3], R2[3];
+                            if (d == 0) {
+                                A1[0] = 0; A1[1] = 0; A1[2] = eps; R1[0] = 16; R1[1] = 0; R1[2] = 0;
+                                A2[0] = 16; A2[1] = 0; A2[2] = eps; R2[0] = -16; R2[1] = 0; R2[2] = 0;
+                            } else if (d == 2) {
+                                A1[0] = 0; A1[1] = 0; A1[2] = far; R1[0] = 16; R1[1] = 0; R1[2] = 0;
+                                A2[0] = 16; A2[1] = 0; A2[2] = far; R2[0] = -16; R2[1] = 0; R2[2] = 0;
+                            } else if (d == 1) {
+                                A1[0] = far; A1[1] = 0; A1[2] = 0; R1[0] = 0; R1[1] = 0; R1[2] = 16;
+                                A2[0] = far; A2[1] = 0; A2[2] = 16; R2[0] = 0; R2[1] = 0; R2[2] = -16;
+                            } else {
+                                A1[0] = eps; A1[1] = 0; A1[2] = 0; R1[0] = 0; R1[1] = 0; R1[2] = 16;
+                                A2[0] = eps; A2[1] = 0; A2[2] = 16; R2[0] = 0; R2[1] = 0; R2[2] = -16;
+                            }
+                            const bool alt = ((bhash >> (2 + d)) & 1) != 0;
+                            plane(A1, R1, up224, -1, 0, none, pick0, alt);
+                            plane(A2, R2, up224, -1, 0, none, pick1, alt);
+                        }
+                        if (flag[4]) {
+                            const float uvec[3] = {0, 0, 16}, rvec[3] = {16, 0, 0};
+                            const float a[3] = {0, 16, 0};
+                            const float oA[3] = {16, 16, 8}, oB[3] = {0, 16, 8};
+                            plane(a, rvec, uvec, 2, 22.5f, oA, pick0, false);
+                            plane(a, rvec, uvec, 2, -22.5f, oB, pick1, false);
+                        }
+                        tess.SetLayer(RenderLayer::Cutout);
+                        continue;
+                    }
+
                     if (app && app->shape == BlockAppearance::Shape::Cross) {
                         const std::vector<int>& cvv = app->varSide.empty() ? app->varTop : app->varSide;
                         int tile = PickTile(cvv, app->side ? app->side : app->top, bhash);
@@ -1477,7 +1669,6 @@ namespace perlin {
                         }
                         float ox, oy, oz;
                         PlantOffset(baseX + x, baseZ + z, tex, gi.dblPlant, ox, oy, oz);
-
                         const float lo = 0.05f, hi = 0.95f;
                         const float px = bx + ox, py = by + oy, pz = bz + oz;
                         float va[4][3] = {
@@ -1503,10 +1694,21 @@ namespace perlin {
                         if (neighborId != 0 && translucent && neighborId == id)
                             return;
                         if (isWater) {
-
                             const uint16_t other = EffLiquid(cache, library, x + nx, y + ny, z + nz);
                             if (other != 0 && LiquidKind(library, other) == liquidKind)
                                 return;
+                        }
+                        if (const int glassMode = library ? library->GlassMode() : 0; glassMode && library->IsGlassBase(tile)) {
+                            int du[3] = {0, 0, 0}, dv[3] = {0, 0, 0};
+                            if (nx != 0) { du[2] = nx > 0 ? -1 : 1; dv[1] = -1; }
+                            else if (nz != 0) { du[0] = nz < 0 ? -1 : 1; dv[1] = -1; }
+                            else { du[0] = 1; dv[2] = ny > 0 ? 1 : -1; }
+                            int mask = 0;
+                            if (cache.Get(x - du[0], y - du[1], z - du[2]) != id) mask |= 1;
+                            if (cache.Get(x + du[0], y + du[1], z + du[2]) != id) mask |= 2;
+                            if (cache.Get(x - dv[0], y - dv[1], z - dv[2]) != id) mask |= 4;
+                            if (cache.Get(x + dv[0], y + dv[1], z + dv[2]) != id) mask |= 8;
+                            tile = library->GlassTile(tile, glassMode, mask);
                         }
                         float u0, v0uv, u1, v1uv;
                         BlockLibrary::TileUV(tile, u0, v0uv, u1, v1uv);
@@ -1556,7 +1758,6 @@ namespace perlin {
                         const int axis1 = nx != 0 ? 1 : 0;
                         const int axis2 = nz != 0 ? 1 : 2;
                         const int normal[3] = {nx, ny, nz};
-
                         int first[3] = {0, 0, 0};
                         if (ny < 0)
                             first[0] = -1;
@@ -1630,7 +1831,6 @@ namespace perlin {
                             col[i][1] = base[1] * kv[i];
                             col[i][2] = base[2] * kv[i];
                         }
-
                         const bool flip = nx != 0;
                         tess.AddQuad(v, col, uv, flip, lt);
                         if (ovTile && ny == 0) {

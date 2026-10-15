@@ -12,7 +12,6 @@ void main()
     vec2 light = floor(a_texcoord1.xy * 255.0 + 0.5);
     if (u_dynParams.x > 0.5 && u_dynParams.x < 1.5)
     {
-        // Fast: whole light levels per block, as if the lights changed the light of the blocks around them.
         vec3 cell = floor(a_position) + vec3_splat(0.5) - u_camera.xyz;
         light.x = max(light.x, floor(dynamicLevel(cell)) * 16.0);
     }

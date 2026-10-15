@@ -39,12 +39,18 @@ namespace perlin::ui {
         void Rect(float ax, float ay, float w, float h, int z, float r, float g, float b, float a);
         void Text(float ax, float ay, float w, float h, int z, const std::vector<std::string>& lines, const TextStyle& style);
         void Comment(const std::string& text);
+        void Link(float ax, float ay, float w, float h, int z, const std::string& command);
+
+        void BeginSection();
+        void EndSection(const std::string& name);
+        const std::unordered_map<std::string, std::string>& Sections() const { return sections; }
 
         const std::string& Body() const { return body; }
         size_t Elements() const { return count; }
 
     private:
-        std::string body;
+        std::string body, saved;
+        std::unordered_map<std::string, std::string> sections;
         bool comments;
         size_t count = 0;
     };
@@ -54,8 +60,8 @@ namespace perlin::ui {
     class RmlEmitter {
     public:
         void Register(const std::string& name, CustomRenderer renderer) { renderers[name] = std::move(renderer); }
-
         std::string Emit(const LNode& root, float guiW, float guiH, const std::string& extraRcss, bool comments);
+        void SetTemplates(std::string hud, std::string chat) { hudTemplate = std::move(hud); chatTemplate = std::move(chat); }
         const std::vector<std::string>& UnknownRenderers() const { return unknown; }
 
     private:
@@ -64,8 +70,11 @@ namespace perlin::ui {
         void EmitLabel(const LNode& n, RmlWriter& out);
 
         std::unordered_map<std::string, CustomRenderer> renderers;
+        std::string hudTemplate, chatTemplate;
         std::vector<std::string> unknown;
     };
 
     std::string EscapeRml(const std::string& text);
+    std::string DefaultHudTemplate();
+    std::string DefaultChatTemplate();
 }

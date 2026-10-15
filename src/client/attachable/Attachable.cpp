@@ -12,7 +12,6 @@ namespace perlin::attachable {
         using molang::Value;
 
         std::string Shorten(const std::string& id) {
-
             const size_t c = id.find(':');
             return c == std::string::npos ? id : id.substr(c + 1);
         }
@@ -49,7 +48,6 @@ namespace perlin::attachable {
                 return true;
             }
             if (name == "is_item_name_any") {
-
                 if (args.empty())
                     return num(0);
                 const std::string slot = args[0].s;
@@ -94,6 +92,19 @@ namespace perlin::attachable {
             return;
         root = vanillaRoot;
         Clear();
+    }
+
+    bool Attachables::ArmorInfo(const std::string& identifier, std::string& geometry, std::string& texture) {
+        Entry* e = Load(identifier);
+        if (!e)
+            return false;
+        const auto g = e->geometries.find("default");
+        const auto t = e->textures.find("default");
+        if (g == e->geometries.end() || t == e->textures.end())
+            return false;
+        geometry = g->second;
+        texture = t->second;
+        return true;
     }
 
     void Attachables::Clear() {
@@ -216,7 +227,6 @@ namespace perlin::attachable {
             if (ReadFile(rel, text))
                 apply(text);
         };
-
         for (const auto& [shortName, id] : e.animations) {
             (void)shortName;
             std::vector<std::string> parts;
@@ -235,7 +245,6 @@ namespace perlin::attachable {
         }
         for (const auto& [shortName, id] : e.geometries) {
             (void)shortName;
-
             std::string stem = id.substr(id.find('.') + 1);
             const size_t cut = stem.find_first_of("_.");
             if (cut != std::string::npos)
@@ -313,6 +322,8 @@ namespace perlin::attachable {
         };
 
         for (const auto& [shortName, cond] : e->animate) {
+            if (state.bindPose)
+                break;
             if (cond && !cond->Eval(in.scope).Truthy())
                 continue;
             const auto found = e->animations.find(shortName);
@@ -326,7 +337,6 @@ namespace perlin::attachable {
                     cs.state = controller->initial;
                     cs.entered = in.now;
                 }
-
                 for (int guard = 0; guard < 4; guard++) {
                     const auto st = controller->states.find(cs.state);
                     if (st == controller->states.end())
@@ -364,7 +374,6 @@ namespace perlin::attachable {
                 play(id, activate(id));
             }
         }
-
         for (auto it = in.animStart.begin(); it != in.animStart.end();)
             it = active.count(it->first) ? std::next(it) : in.animStart.erase(it);
 

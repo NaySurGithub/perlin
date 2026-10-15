@@ -4,6 +4,8 @@
 #include <algorithm>
 #include <cctype>
 #include <cmath>
+#include <cstdlib>
+#include <set>
 
 namespace perlin::ui {
     namespace {
@@ -65,8 +67,8 @@ namespace perlin::ui {
                 out.push_back(full);
                 break;
             }
-
             size_t fit = 0, lastSpace = std::string::npos;
+            int bracket = 0;
             for (size_t i = 0; i < rest.size();) {
                 size_t next;
                 if (rest.compare(i, 2, "\xC2\xA7") == 0 && i + 2 < rest.size()) {
@@ -78,7 +80,11 @@ namespace perlin::ui {
                 if (font.Width(candidate) > static_cast<float>(width))
                     break;
                 fit = next;
-                if (rest[i] == ' ') {
+                if (rest[i] == '[')
+                    bracket++;
+                else if (rest[i] == ']' && bracket > 0)
+                    bracket--;
+                if (rest[i] == ' ' && bracket == 0) {
                     lastSpace = next;
                 }
                 i = next;
@@ -90,7 +96,6 @@ namespace perlin::ui {
                 cut = lastSpace;
             const std::string head = rest.substr(0, cut);
             out.push_back(carry + head);
-
             std::string state = carry;
             for (size_t i = 0; i + 2 < head.size(); i++) {
                 if (head.compare(i, 2, "\xC2\xA7") != 0)
@@ -112,9 +117,14 @@ namespace perlin::ui {
         return out;
     }
 
-    void ChatLog::AddMessage(const std::string& text, uint64_t tick) {
+    void ChatLog::AddMessage(const std::string& original, uint64_t tick) {
+        std::string text = original;
+        if (text.find(" is at ") != std::string::npos && text.rfind('<', 0) != 0 && text.find("\xC2\xA7" "a[") == std::string::npos) {
+            const auto found = FindCoordinates(text);
+            for (auto it = found.rbegin(); it != found.rend(); ++it)
+                text.replace(it->begin, it->end - it->begin, "\xC2\xA7" "a[" + it->x + ", " + it->y + ", " + it->z + "]\xC2\xA7" "r");
+        }
         for (const std::string& piece : Wrap(text, kWidth)) {
-
             if (scroll > 0)
                 scroll++;
             lines.push_back({piece, tick});
@@ -131,6 +141,7 @@ namespace perlin::ui {
         caret = input.size();
         historyIndex = -1;
         scroll = 0;
+        Recompute();
     }
 
     void ChatLog::Close() {
@@ -139,6 +150,8 @@ namespace perlin::ui {
         caret = 0;
         scroll = 0;
         historyIndex = -1;
+        suggestions.clear();
+        hint.clear();
     }
 
     void ChatLog::Insert(uint32_t cp) {
@@ -206,16 +219,183 @@ namespace perlin::ui {
         caret = input.size();
     }
 
+    std::vector<ChatLog::Coordinate> ChatLog::FindCoordinates(const std::string& line) {
+        std::vector<Coordinate> out;
+        const size_t n = line.size();
+        const auto isDigit = [&](size_t i) { return i < n && std::isdigit(static_cast<unsigned char>(line[i])); };
+        const auto skipSpace = [&](size_t i) { while (i < n && line[i] == ' ') i++; return i; };
+        const auto number = [&](size_t i, std::string& text) -> size_t {
+            size_t j = i;
+            if (j < n && line[j] == '-')
+                j++;
+            if (!isDigit(j))
+                return std::string::npos;
+            while (isDigit(j))
+                j++;
+            text = line.substr(i, j - i);
+            return j;
+        };
+        for (size_t i = 0; i < n;) {
+            if (!(isDigit(i) || (line[i] == '-' && isDigit(i + 1))) || (i > 0 && (isDigit(i - 1) || std::isalpha(static_cast<unsigned char>(line[i - 1]))))) {
+                i++;
+                continue;
+            }
+            std::string x, y = "~", z;
+            size_t j = number(i, x);
+            size_t k = skipSpace(j);
+            if (k >= n || line[k] != ',') { i = j; continue; }
+            k = skipSpace(k + 1);
+            size_t m = std::string::npos;
+            std::string mid;
+            if (k < n && line.compare(k, 4, "(y?)") == 0) { m = k + 4; }
+            else if (k < n && line[k] == '~') { m = k + 1; }
+            else { m = number(k, mid); if (m != std::string::npos) y = mid; }
+            if (m == std::string::npos) { i = j; continue; }
+            size_t q = skipSpace(m);
+            if (q >= n || line[q] != ',') { i = j; continue; }
+            q = skipSpace(q + 1);
+            const size_t e = number(q, z);
+            if (e == std::string::npos) { i = j; continue; }
+            Coordinate c;
+            c.begin = i;
+            c.end = e;
+            c.x = x; c.y = y; c.z = z;
+            c.command = "/tp @s " + x + " " + y + " " + z;
+            out.push_back(std::move(c));
+            i = e;
+        }
+        return out;
+    }
+
+    namespace {
+        std::string Lower(std::string s) {
+            for (char& c : s)
+                c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+            return s;
+        }
+        bool Matches(const std::string& candidateLower, const std::string& prefixLower) {
+            if (candidateLower.rfind(prefixLower, 0) == 0)
+                return true;
+            const size_t colon = candidateLower.find(':');
+            return colon != std::string::npos && candidateLower.compare(colon + 1, prefixLower.size(), prefixLower) == 0;
+        }
+    }
+
+    void ChatLog::Recompute() {
+        suggestions.clear();
+        hint.clear();
+        suggestIndex = 0;
+        suggestOffset = 0;
+        suggestWordStart = caret;
+        if (!open || input.empty() || input[0] != '/' || caret == 0)
+            return;
+        const size_t sp = caret > 0 ? input.find_last_of(' ', caret - 1) : std::string::npos;
+        const size_t ws = sp == std::string::npos ? 1 : sp + 1;
+        if (ws > caret)
+            return;
+        suggestWordStart = ws;
+        const std::string prefix = Lower(input.substr(ws, caret - ws));
+        std::vector<std::string> found;
+        if (ws == 1) {
+            for (const CommandInfo& c : commands)
+                if (Matches(Lower(c.name), prefix))
+                    found.push_back(c.name);
+        } else {
+            std::vector<std::string> tokens;
+            {
+                size_t i = 1;
+                while (i < ws) {
+                    while (i < ws && input[i] == ' ') i++;
+                    const size_t b = i;
+                    while (i < ws && input[i] != ' ') i++;
+                    if (i > b)
+                        tokens.push_back(input.substr(b, i - b));
+                }
+            }
+            if (tokens.empty())
+                return;
+            const size_t argIndex = tokens.size() - 1;
+            const std::string name = Lower(tokens[0]);
+            std::set<std::string> seen;
+            for (const CommandInfo& c : commands) {
+                if (Lower(c.name) != name)
+                    continue;
+                for (const auto& overload : c.overloads) {
+                    if (argIndex >= overload.size())
+                        continue;
+                    const CommandParam& p = overload[argIndex];
+                    if (hint.empty())
+                        hint = p.optional ? "[" + p.name + "]" : "<" + p.name + ">";
+                    auto offer = [&](const std::string& v) {
+                        if (Matches(Lower(v), prefix) && seen.insert(v).second)
+                            found.push_back(v);
+                    };
+                    for (const std::string& v : p.values)
+                        offer(v);
+                    if (p.target) {
+                        for (const char* sel : {"@s", "@p", "@a", "@r", "@e", "@initiator"})
+                            offer(sel);
+                        for (const std::string& pl : players)
+                            offer(pl.find(' ') == std::string::npos ? pl : "\"" + pl + "\"");
+                    }
+                }
+            }
+        }
+        std::sort(found.begin(), found.end(), [&](const std::string& a, const std::string& b) {
+            const bool pa = Lower(a).rfind(prefix, 0) == 0, pb = Lower(b).rfind(prefix, 0) == 0;
+            if (pa != pb)
+                return pa;
+            return Lower(a) < Lower(b);
+        });
+        if (found.size() > 300)
+            found.resize(300);
+        if (found.size() == 1 && Lower(found[0]) == prefix)
+            found.clear();
+        suggestions = std::move(found);
+        if (!suggestions.empty())
+            hint.clear();
+    }
+
+    void ChatLog::ApplySuggestion(size_t index) {
+        if (index >= suggestions.size())
+            return;
+        const std::string& value = suggestions[index];
+        input.replace(suggestWordStart, caret - suggestWordStart, value);
+        caret = suggestWordStart + value.size();
+    }
+
     ChatLog::Result ChatLog::Type(const std::vector<InputManager::Typed>& typed, float wheel) {
         Result r;
         if (wheel != 0.0f) {
-
             const int step = static_cast<int>(std::lround(wheel > 0 ? std::max(1.0f, wheel) : std::min(-1.0f, wheel)));
             scroll = std::clamp(scroll + step, 0, std::max(0, static_cast<int>(lines.size()) - 20));
         }
         for (const auto& t : typed) {
+            if (!t.character && (t.key == Key::Tab) && !suggestions.empty()) {
+                if (cycling)
+                    suggestIndex = (suggestIndex + 1) % suggestions.size();
+                else
+                    cycleBase = input;
+                if (cycling) {
+                    const std::string saved = suggestions[suggestIndex];
+                    input.replace(suggestWordStart, caret - suggestWordStart, saved);
+                    caret = suggestWordStart + saved.size();
+                } else {
+                    ApplySuggestion(suggestIndex);
+                }
+                cycling = true;
+                continue;
+            }
+            if (!t.character && (t.key == Key::Up || t.key == Key::Down) && suggestions.size() > 1) {
+                const size_t n = suggestions.size();
+                suggestIndex = t.key == Key::Down ? (suggestIndex + 1) % n : (suggestIndex + n - 1) % n;
+                cycling = false;
+                continue;
+            }
+            cycling = false;
             if (t.character) {
                 Insert(static_cast<uint32_t>(t.key));
+                Recompute();
                 continue;
             }
             switch (t.key) {
@@ -246,6 +426,7 @@ namespace perlin::ui {
             case Key::PageDown: scroll = std::clamp(scroll - 19, 0, std::max(0, static_cast<int>(lines.size()) - 20)); break;
             default: break;
             }
+            Recompute();
         }
         return r;
     }
@@ -269,6 +450,15 @@ namespace perlin::ui {
             v.text = l.text;
             v.alpha = d;
             v.row = i;
+            if (open) {
+                const McFont& font = McFont::Instance();
+                for (const Coordinate& c : FindCoordinates(l.text)) {
+                    size_t b = c.begin, e = c.end;
+                    if (b > 0 && l.text[b - 1] == '[') b--;
+                    if (e < l.text.size() && l.text[e] == ']') e++;
+                    v.clicks.push_back({font.Width(l.text.substr(0, b)), font.Width(l.text.substr(b, e - b)), c.command});
+                }
+            }
             s.chatLines.push_back(std::move(v));
         }
         s.chatScrolled = scroll > 0;
@@ -277,5 +467,31 @@ namespace perlin::ui {
         s.chatInput = input;
         s.chatCaret = static_cast<int>(caret);
         s.chatCaretVisible = ((nowMs - openedAt) / 300) % 2 == 0;
+        s.chatSuggestions.clear();
+        s.chatSuggestSelected = -1;
+        s.chatSuggestStart = static_cast<int>(suggestWordStart);
+        s.chatHint = hint;
+        s.chatGhost.clear();
+        s.chatSuggestMore[0] = s.chatSuggestMore[1] = false;
+        if (open && !suggestions.empty()) {
+            const size_t window = 10;
+            if (suggestIndex < suggestOffset)
+                suggestOffset = suggestIndex;
+            else if (suggestIndex >= suggestOffset + window)
+                suggestOffset = suggestIndex - window + 1;
+            suggestOffset = std::min(suggestOffset, suggestions.size() > window ? suggestions.size() - window : 0);
+            const size_t first = suggestOffset;
+            for (size_t i = first; i < suggestions.size() && i < first + window; i++)
+                s.chatSuggestions.push_back(suggestions[i]);
+            s.chatSuggestMore[0] = first > 0;
+            s.chatSuggestMore[1] = first + window < suggestions.size();
+            const std::string typed = input.substr(suggestWordStart, caret - suggestWordStart);
+            const std::string& chosen = suggestions[suggestIndex];
+            if (chosen.size() > typed.size() && Lower(chosen.substr(0, typed.size())) == Lower(typed) && caret == input.size())
+                s.chatGhost = chosen.substr(typed.size());
+            else
+                s.chatGhost.clear();
+            s.chatSuggestSelected = static_cast<int>(suggestIndex - first);
+        }
     }
 }

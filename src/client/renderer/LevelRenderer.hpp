@@ -26,9 +26,14 @@ namespace perlin {
         void Stop();
 
         void ReloadAssetsIfNeeded();
-
         void ReloadResources();
         void RemeshAll() { InvalidateMeshes(); }
+        void SetGlassMode(int mode) {
+            if (blocks.GlassMode() != mode) {
+                blocks.SetGlassMode(mode);
+                InvalidateMeshes();
+            }
+        }
         void Update(Level* level, float camX, float camZ, const Frustum& frustum);
         void Render(const Frustum& frustum, float camX, float camZ);
         void TickAnimation(uint64_t step);

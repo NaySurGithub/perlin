@@ -12,6 +12,7 @@
 #include <vector>
 
 namespace perlin::attachable {
+    inline thread_local bool gFirstPersonPose = false;
     using Json = ui::Json;
 
     struct BoneXform {
@@ -54,7 +55,6 @@ namespace perlin::attachable {
 
     class AnimationLibrary {
     public:
-
         void LoadAnimations(const std::string& text);
         const Animation* Find(const std::string& id) const;
 

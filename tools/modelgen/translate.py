@@ -27,7 +27,7 @@ ALIASES = {
     "lit_pumpkin": "jack_o_lantern", "trip_wire": "tripwire", "undyed_shulker_box": "shulker_box",
     "dirt_with_roots": "rooted_dirt", "hardened_clay": "terracotta", "glowingobsidian": "crying_obsidian",
     "powered_comparator": "comparator", "unpowered_comparator": "comparator",
-    "powered_repeater": "repeater", "unpowered_repeater": "repeater", "snow_layer": "snow",
+    "powered_repeater": "repeater", "unpowered_repeater": "repeater", "snow_layer": "snow", "snow": "snow_block",
     "quartz_ore": "nether_quartz_ore", "silver_glazed_terracotta": "light_gray_glazed_terracotta",
     "lit_furnace": "furnace", "lit_blast_furnace": "blast_furnace", "lit_smoker": "smoker",
     "lit_redstone_lamp": "redstone_lamp", "lit_redstone_ore": "redstone_ore",

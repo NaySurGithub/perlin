@@ -5,7 +5,6 @@
 #include <vector>
 
 namespace perlin::ui {
-
     struct DebugInfo {
         std::string version;
         int fps = 0;

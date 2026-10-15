@@ -112,7 +112,6 @@ namespace perlin {
         }
         impl->zipOpen = true;
         impl->zipMode = true;
-
         std::string prefix;
         bool prefixFound = false;
         const mz_uint count = mz_zip_reader_get_num_files(&impl->zip);

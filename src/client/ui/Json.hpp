@@ -6,7 +6,6 @@
 #include <vector>
 
 namespace perlin::ui {
-
     class Json {
     public:
         enum class Type : uint8_t { Null, Bool, Number, String, Array, Object };
@@ -37,7 +36,6 @@ namespace perlin::ui {
         const Json* Find(std::string_view key) const;
         Json* Find(std::string_view key);
         bool Has(std::string_view key) const { return Find(key) != nullptr; }
-
         Json& Set(std::string_view key, Json value);
         bool Erase(std::string_view key);
         void Push(Json value) { array.push_back(std::move(value)); }

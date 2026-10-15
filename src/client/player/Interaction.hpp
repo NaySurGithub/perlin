@@ -1,5 +1,4 @@
 #pragma once
-
 #include "client/entity/EntityTracker.hpp"
 #include "client/player/BlockCollision.hpp"
 
@@ -16,7 +15,6 @@ namespace perlin {
         double distance = 0;
         uint64_t entity = 0;
         glm::dvec3 boxLo{0.0}, boxHi{0.0};
-
         std::vector<std::pair<glm::dvec3, glm::dvec3>> shape;
     };
 

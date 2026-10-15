@@ -4,7 +4,11 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
+#include <cstdlib>
 #include <fstream>
+#include <iostream>
+#include <vector>
 #include <iterator>
 #include <map>
 #include <regex>
@@ -14,7 +18,6 @@
 
 namespace perlin {
     namespace {
-
         class Ids {
         public:
             Ids() {
@@ -67,9 +70,96 @@ namespace perlin {
         }
     }
 
+    namespace {
+        bool BuildGallery(Level& level, int radius, const char* spec) {
+            int page = 0, columns = 12, rows = 7;
+            std::sscanf(spec, "%d,%d,%d", &page, &columns, &rows);
+            std::string text;
+            resources::Read("block_states.json", text);
+            std::vector<std::pair<int32_t, std::string>> blocks;
+            std::string last;
+            for (size_t at = 0; (at = text.find(",\"minecraft:", at)) != std::string::npos;) {
+                const size_t end = text.find('"', at + 13);
+                const size_t open = text.rfind('[', at);
+                if (end == std::string::npos || open == std::string::npos)
+                    break;
+                const std::string name = text.substr(at + 2, end - at - 2);
+                const char first = text[open + 1];
+                const bool entry = (first == '-' || (first >= '0' && first <= '9')) && text.find(',', open) == at;
+                if (entry && name != last) {
+                    blocks.push_back({std::stoi(text.substr(open + 1)), name});
+                    last = name;
+                }
+                at = end;
+            }
+            std::vector<std::string> partners;
+            if (const char* only = std::getenv("PERLIN_PREVIEW_ONLY")) {
+                std::vector<std::pair<int32_t, std::string>> picked;
+                std::string list = only;
+                for (size_t from = 0; from <= list.size();) {
+                    size_t comma = list.find(',', from);
+                    if (comma == std::string::npos)
+                        comma = list.size();
+                    std::string item = list.substr(from, comma - from), partner;
+                    if (const size_t bar = item.find('|'); bar != std::string::npos) {
+                        partner = item.substr(bar + 1);
+                        item = item.substr(0, bar);
+                    }
+                    for (const auto& b : blocks)
+                        if (b.second == "minecraft:" + item) {
+                            picked.push_back(b);
+                            partners.push_back(partner);
+                            break;
+                        }
+                    from = comma + 1;
+                }
+                blocks = picked;
+                page = 0;
+            }
+            for (int cx = -radius; cx < radius; cx++)
+                for (int cz = -radius; cz < radius; cz++)
+                    level.EnsureChunk(cx, cz);
+            Ids ids;
+            const uint16_t stone = ids.Get("stone"), bedrock = ids.Get("bedrock");
+            const int span = radius * 16;
+            for (int x = -span; x < span; x++)
+                for (int z = -span; z < span; z++) {
+                    level.SetBlock(x, -64, z, bedrock);
+                    for (int y = -63; y <= 60; y++)
+                        level.SetBlock(x, y, z, stone);
+                }
+            const int perPage = columns * rows;
+            std::string names;
+            for (int i = 0; i < perPage; i++) {
+                const size_t index = static_cast<size_t>(page) * perPage + i;
+                if (index >= blocks.size())
+                    break;
+                const int col = i % columns, row = i / columns;
+                const int x = col * 3, z = row * 3;
+                level.SetBlock(x, 61, z, BlockPalette::Instance().Intern(blocks[index].first));
+                if (index < partners.size() && !partners[index].empty())
+                    for (const auto& b : blocks)
+                        (void)b;
+                if (index < partners.size() && !partners[index].empty()) {
+                    std::string pt;
+                    resources::Read("block_states.json", pt);
+                    const size_t at = pt.find(",\"minecraft:" + partners[index] + "\"");
+                    if (at != std::string::npos)
+                        level.SetBlock(x + 1, 61, z, BlockPalette::Instance().Intern(std::stoi(pt.substr(pt.rfind('[', at) + 1))));
+                }
+                names += std::to_string(row) + "," + std::to_string(col) + " " + blocks[index].second + "\n";
+            }
+            std::cout << "[gallery] page " << page << " of " << (blocks.size() + perPage - 1) / perPage << " (" << blocks.size()
+                      << " blocks)\n" << names << std::flush;
+            return true;
+        }
+    }
+
     bool BuildPreviewWorld(Level& level, int radius) {
         if (!BlockPalette::Instance().NamesLoaded())
             return false;
+        if (const char* g = std::getenv("PERLIN_PREVIEW_GALLERY"))
+            return BuildGallery(level, radius, g);
         Ids ids;
         const uint16_t stone = ids.Get("stone"), dirt = ids.Get("dirt"), grass = ids.Get("grass_block"),
                        sand = ids.Get("sand"), water = ids.Get("water", "\"liquid_depth\":[\"i\",0]"),
@@ -112,7 +202,6 @@ namespace perlin {
         for (int x = 20; x <= 24; x++)
             for (int z = -3; z <= 0; z++)
                 set(x, 29, z, lava);
-
         for (int y = 30; y <= 33; y++)
             set(20, y, 0, stone);
         set(19, 32, 0, ids.Get("torch", "\"torch_facing_direction\":[\"s\",\"west\"]"));

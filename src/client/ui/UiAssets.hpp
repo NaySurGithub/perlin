@@ -13,7 +13,6 @@ namespace perlin {
 }
 
 namespace perlin::ui {
-
     struct ItemSprite {
         bool ok = false;
         bool block = false;
@@ -44,14 +43,11 @@ namespace perlin::ui {
         TextureSidecar Sidecar(const std::string& rel);
 
         const ItemSprite* Item(const std::string& key);
-
         bool ItemIcon(const std::string& key, Texture& out);
-
         bool HasHead(const std::string& key);
         void SetHead(const std::string& key, Texture head);
         bool Head(const std::string& key, Texture& out);
         void ClearItemCache();
-
         std::string LoadFont(const std::string& dataDir);
         uint32_t Generation() const { return generation; }
 

@@ -1,3 +1,8 @@
+#include <set>
+#include <unordered_map>
+#include "util/Env.hpp"
+#include <iostream>
+#include <cstdlib>
 #include "client/entity/EntityQuery.hpp"
 
 #include <algorithm>
@@ -63,9 +68,14 @@ namespace perlin::entity {
             {"is_laying_down", flag::LayingDown}, {"has_collision", flag::HasCollision}, {"has_gravity", flag::Gravity},
             {"is_lingering", 0}, {"is_rearing", flag::Rearing},
         };
-        for (const auto& f : kFlags)
-            if (name == f.name)
-                return f.bit ? has(f.bit) : yes(false);
+        static const std::unordered_map<std::string, uint64_t> kFlagMap = [] {
+            std::unordered_map<std::string, uint64_t> m;
+            for (const auto& f : kFlags)
+                m.emplace(f.name, f.bit);
+            return m;
+        }();
+        if (const auto f = kFlagMap.find(name); f != kFlagMap.end())
+            return f->second ? has(f->second) : yes(false);
 
         if (name == "is_alive") return yes(e.health != 0);
         if (name == "is_on_ground") return yes(e.onGround);
@@ -82,9 +92,9 @@ namespace perlin::entity {
         if (name == "is_persona_or_premium_skin") return yes(false);
         if (name == "has_head_gear") return yes(!e.armor[0].empty());
         if (name == "has_cape") return yes(e.skin && e.skin->capeWidth > 0);
-        if (name == "has_rider" || name == "has_target" || name == "has_owner" || name == "is_attached_to_entity") return yes(e.Has(flag::Tamed) && name == "has_owner");
-        if (name == "is_shield_powered" || name == "is_blocking" || name == "blocking") return yes(false);
-
+        if (name == "has_target") return yes(e.targetUid > 0);
+        if (name == "has_rider" || name == "has_owner" || name == "is_attached_to_entity") return yes(e.Has(flag::Tamed) && name == "has_owner");
+        if (name == "is_shield_powered" || name == "is_blocking" || name == "blocking") return yes(c.blocking);
         if (name == "is_charging" || name == "is_roaring" || name == "is_stunned" || name == "is_delayed_attacking" ||
             name == "is_playing_dead" || name == "is_casting" || name == "is_celebrating" || name == "is_celebrating_special" ||
             name == "is_croaking" || name == "is_digging" || name == "is_emerging" || name == "is_emoting" ||
@@ -175,20 +185,41 @@ namespace perlin::entity {
             return num(0);
         if (name == "cardinal_facing_2d" || name == "cardinal_facing" || name == "cardinal_player_facing") {
             const float y = WrapDeg(c.bodyYaw);
-
             if (y >= -45 && y < 45) return num(3);
             if (y >= 45 && y < 135) return num(4);
             if (y >= -135 && y < -45) return num(5);
             return num(2);
         }
 
+        if (name == "model_scale") return num(e.scale > 0.0f ? e.scale : 1.0f);
+        if (name == "death_ticks") return num(e.dying ? c.deathTicks : 0.0f);
+        if (name == "swelling_dir") return num(e.Has(flag::Ignited) ? 1.0 : -1.0);
+        if (name == "fuse_time") return num(e.Has(flag::Ignited) ? c.swellAmount * 30.0 : -1.0);
+        if (name == "ticks_since_last_kinetic_weapon_hit") return num(-1);
+        if (name == "owner_identifier") { out = Value::Str(""); return true; }
+        if (name == "life_span") return num(22);
+        if (name == "is_in_lava" || name == "is_crawling" || name == "is_searching" || name == "is_sniffing" ||
+            name == "is_sonic_boom" || name == "is_shaking_wetness" || name == "has_dash_cooldown" || name == "has_player_rider" ||
+            name == "can_damage_nearby_mobs" || name == "is_riding_any_entity_of_type" || name == "has_any_leashed_entity_of_type" ||
+            name == "timer_flag_1" || name == "timer_flag_2" || name == "timer_flag_3")
+            return yes(false);
+        if (name == "kinetic_weapon_delay" || name == "kinetic_weapon_dismount_duration" || name == "kinetic_weapon_knockback_duration" ||
+            name == "kinetic_weapon_damage_duration" || name == "key_frame_lerp_time" || name == "shake_time" ||
+            name == "heartbeat_phase" || name == "overlay_alpha" || name == "previous_squish_value" ||
+            name == "current_squish_value" || name == "time_since_last_vibration_detection" || name == "trade_tier" ||
+            name == "surface_particle_texture_coordinate" || name == "surface_particle_texture_size" ||
+            name == "bone_origin" || name == "bone_rotation" || name == "bone_aabb")
+            return num(0);
+
         if (name == "is_item_equipped") {
             const std::string item = args.empty() ? e.mainHand : (args[0].n == 1.0 ? e.offHand : e.mainHand);
             return yes(!item.empty());
         }
-        if (name == "main_hand_item_max_duration" || name == "item_max_use_duration") return num(1.0);
-        if (name == "main_hand_item_use_duration" || name == "item_in_use_duration" || name == "item_remaining_use_duration")
-            return num(0.0);
+        if (name == "main_hand_item_max_duration" || name == "item_max_use_duration") return num(c.maxUseTicks);
+        if (name == "main_hand_item_use_duration" || name == "item_in_use_duration")
+            return num(c.using_ ? std::max(0.0f, c.maxUseTicks - c.usedTicks) : 0.0f);
+        if (name == "item_remaining_use_duration")
+            return num(c.using_ ? std::max(0.0f, c.maxUseTicks - c.usedTicks) / 20.0f : 0.0f);
         if (name == "get_equipped_item_name") {
             bool off = false;
             if (!args.empty())
@@ -267,10 +298,21 @@ namespace perlin::entity {
         if (name == "all_animations_finished") return yes(c.allFinished);
         if (name == "any_animation_finished") return yes(c.anyFinished);
         if (name == "log" || name == "debug_output") return num(0);
-        if (name == "get_root_locator_offset" || name == "get_locator_offset" || name == "get_default_bone_pivot" ||
+        if (name == "get_default_bone_pivot") {
+            double value = 0;
+            if (c.bonePivot && args.size() >= 2 && args[0].isString && c.bonePivot(args[0].s, static_cast<int>(args[1].n), value))
+                return num(value);
+            return num(0);
+        }
+        if (name == "get_root_locator_offset" || name == "get_locator_offset" ||
             name == "bone_orientation_matrix" || name == "bone_orientation_trs" || name == "get_animation_frame" ||
             name == "combine_player_texture")
             return num(0);
+        if (PERLIN_ENV("PERLIN_MOLANG_LOG")) {
+            static std::set<std::string> logged;
+            if (logged.insert(name).second)
+                std::cout << "[molang] unhandled query." << name << " (" << e.type << ")" << std::endl;
+        }
         return false;
     }
 }

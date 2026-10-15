@@ -31,7 +31,6 @@ namespace perlin {
 
         std::string BuildMultiplayerToken(const std::string& playerName, const std::string& uuid);
         const std::string& MultiplayerToken() const { return mpToken; }
-
         void SetMultiplayerToken(std::string token) { mpToken = std::move(token); }
 
         std::string AssertOffer(const std::string& sdp) const;
