@@ -6,7 +6,7 @@ $input v_fog, v_dir
 float hg(float cosA, float g)
 {
     float g2 = g * g;
-    return (1.0 - g2) / (4.0 * 3.14159 * pow(max(1.0 + g2 - 2.0 * g * cosA, 0.0001), 1.5));
+    return (1.0 - g2) / (4.0 * 3.14159 * pow(abs(max(1.0 + g2 - 2.0 * g * cosA, 0.0001)), 1.5));
 }
 
 // Cloud density at a world position: an fbm field shaped by a cumulus height profile.
@@ -32,7 +32,7 @@ void main()
     // Gradient: horizon takes the fog colour, the zenith deepens.
     float h = smoothstep(0.0, 0.95, dir.y);
     vec3 zenith = base * mix(vec3(0.92, 0.95, 1.0), vec3(0.55, 0.72, 1.08), day);
-    vec3 color = mix(base, zenith, pow(h, 0.65));
+    vec3 color = mix(base, zenith, pow(abs(max(h, 0.0)), 0.65));
     vec3 horizonColor = mix(base, u_fogColor.rgb, 0.7);
     color = mix(horizonColor, color, smoothstep(-0.02, 0.35, dir.y));
     color = mix(color, u_fogColor.rgb, linearFog(v_fog.y, 0.0, max(u_fogSky.x, 0.001)) * u_fogColor.a * 0.5);
@@ -45,13 +45,13 @@ void main()
         float above = smoothstep(-0.12, 0.05, dir.y);
 
         // Mie glow around the sun and a low scattering band at dawn and dusk.
-        float glow = pow(toSun, 6.0) * 0.12 + pow(toSun, 60.0) * 0.38 + pow(toSun, 800.0) * 1.4;
+        float glow = pow(abs(max(toSun, 0.0)), 6.0) * 0.12 + pow(abs(max(toSun, 0.0)), 60.0) * 0.38 + pow(abs(max(toSun, 0.0)), 800.0) * 1.4;
         color += sunColor() * glow * u_time.y * smoothstep(-0.2, 0.08, sun.y);
         float twilight = (1.0 - smoothstep(0.0, 0.32, sun.y)) * smoothstep(-0.25, 0.0, sun.y);
         float band = exp(-abs(dir.y) * 5.5);
-        float side = 0.25 + 0.75 * pow(toSun, 2.0);
+        float side = 0.25 + 0.75 * pow(abs(max(toSun, 0.0)), 2.0);
         color += vec3(1.0, 0.42, 0.14) * band * side * twilight * 0.62 * u_time.y;
-        color += vec3(0.30, 0.38, 0.62) * (pow(toMoon, 40.0) * 0.28 + pow(toMoon, 5.0) * 0.045) * (1.0 - u_sunDir.w) * above;
+        color += vec3(0.30, 0.38, 0.62) * (pow(abs(max(toMoon, 0.0)), 40.0) * 0.28 + pow(abs(max(toMoon, 0.0)), 5.0) * 0.045) * (1.0 - u_sunDir.w) * above;
 
         // Sun and moon discs (the vanilla quads are discarded in fs_celestial).
         float sunCos = dot(dir, sun);

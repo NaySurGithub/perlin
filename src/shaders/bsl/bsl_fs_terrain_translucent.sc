@@ -46,7 +46,7 @@ void main()
         vec3 r = reflect(viewDir, wn);
         r.y = abs(r.y);
         float cosT = clamp(dot(-viewDir, wn), 0.0, 1.0);
-        float fresnel = 0.03 + 0.97 * pow(1.0 - cosT, 5.0);
+        float fresnel = 0.03 + 0.97 * pow(abs(clamp(1.0 - cosT, 0.0, 1.0)), 5.0);
 
         // Reflected sky: horizon colour rising to a deeper zenith.
         vec3 zenith = u_fogColor.rgb * vec3(0.62, 0.78, 1.05);
@@ -57,8 +57,8 @@ void main()
         sky = mix(sky, vec3_splat(luma(sky) * 1.25 + 0.08), cloud * 0.35 * u_sunDir.w);
 
         // Sun and moon glints.
-        float sunSpec = pow(max(dot(r, u_sunDir.xyz), 0.0), 700.0) * 14.0 + pow(max(dot(r, u_sunDir.xyz), 0.0), 38.0) * 0.45;
-        float moonSpec = pow(max(dot(r, -u_sunDir.xyz), 0.0), 500.0) * 4.0;
+        float sunSpec = pow(abs(max(dot(r, u_sunDir.xyz), 0.0)), 700.0) * 14.0 + pow(abs(max(dot(r, u_sunDir.xyz), 0.0)), 38.0) * 0.45;
+        float moonSpec = pow(abs(max(dot(r, -u_sunDir.xyz), 0.0)), 500.0) * 4.0;
         vec3 spec = (sunColor() * sunSpec * u_sunDir.w + vec3(0.65, 0.78, 1.0) * moonSpec * (1.0 - u_sunDir.w)) *
                     u_time.y * step(0.4, v_light.y);
 

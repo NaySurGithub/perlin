@@ -103,7 +103,7 @@ vec3 sunColor()
 {
     // Warm at the horizon, near white overhead.
     float h = clamp(u_sunDir.y, 0.0, 1.0);
-    return mix(vec3(1.0, 0.55, 0.28), vec3(1.0, 0.93, 0.80), pow(h, 0.45));
+    return mix(vec3(1.0, 0.55, 0.28), vec3(1.0, 0.93, 0.80), pow(abs(max(h, 0.0)), 0.45));
 }
 
 // The renderer's shadow map follows the sun, or the moon while the sun is below the horizon.
@@ -155,7 +155,7 @@ float bslRain()
 vec3 bslLightColor()
 {
     float tb = clamp(u_sunDir.y, 0.0, 1.0);
-    float dfade = 1.0 - pow(1.0 - tb, 1.5);
+    float dfade = 1.0 - pow(abs(clamp(1.0 - tb, 0.0, 1.0)), 1.5);
     vec3 morning = vec3(255.0, 160.0, 80.0) / 255.0 * 1.2;
     vec3 day = vec3(196.0, 220.0, 255.0) / 255.0 * 1.4;
     vec3 night = vec3(96.0, 192.0, 255.0) / 255.0 * 0.3;
@@ -168,7 +168,7 @@ vec3 bslLightColor()
 vec3 bslAmbientColor()
 {
     float tb = clamp(u_sunDir.y, 0.0, 1.0);
-    float dfade = 1.0 - pow(1.0 - tb, 1.5);
+    float dfade = 1.0 - pow(abs(clamp(1.0 - tb, 0.0, 1.0)), 1.5);
     vec3 morning = vec3(255.0, 204.0, 144.0) / 255.0 * 0.35;
     vec3 day = vec3(120.0, 172.0, 255.0) / 255.0 * 0.6;
     vec3 night = vec3(96.0, 192.0, 255.0) / 255.0 * 0.6 * 0.3;
@@ -196,7 +196,7 @@ vec3 bslTonemap(vec3 color)
                       color.r * a + color.g * d + color.b * a,
                       color.r * b + color.g * a + color.b * c);
     desat = max(desat, vec3_splat(0.0));
-    desat = desat / pow(pow(desat, vec3_splat(2.0)) + 1.0, vec3_splat(0.5));
+    desat = desat / sqrt((desat * desat) + 1.0);
     float inv = 1.0 / (c * d * c + a * a * b * 2.0 - b * d * b - a * a * c * 2.0);
     vec3 resat = vec3(
         (desat.r * (d * c - a * a) + desat.g * (b * a - a * c) + desat.b * (a * a - b * d)),
@@ -222,6 +222,6 @@ vec3 bslColorGrade(vec3 color)
 vec3 bslFinish(vec3 linearHdr)
 {
     vec3 mapped = bslTonemap(linearHdr);
-    mapped = pow(mapped, vec3_splat(1.0 / 2.2));
+    mapped = pow(abs(max(mapped, vec3_splat(0.0))), vec3_splat(1.0 / 2.2));
     return bslColorGrade(mapped);
 }

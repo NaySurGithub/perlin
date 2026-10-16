@@ -47,7 +47,7 @@ vec3 bslLit(vec3 texRgb, vec3 tint, vec3 n, vec3 rel, vec2 light, float backligh
 {
     float shade = vanillaShade(n);
     vec3 biomeAo = clamp(tint / max(shade, 0.01), 0.0, 1.5);
-    vec3 albedo = pow(clamp(texRgb * biomeAo, 0.0, 1.0), vec3_splat(2.2));
+    vec3 albedo = pow(abs(clamp(texRgb * biomeAo, 0.0, 1.0)), vec3_splat(2.2));
     vec3 viewDir = normalize(rel);
     float dist = length(rel);
     float overworld = u_skyParams.z;
@@ -70,7 +70,7 @@ vec3 bslLit(vec3 texRgb, vec3 tint, vec3 n, vec3 rel, vec2 light, float backligh
             shadow = s * sky;
         }
         float VoL = clamp(dot(viewDir, L) * 0.5 + 0.5, 0.0, 1.0);
-        scatter = pow(VoL, 16.0) * (1.0 - bslRain()) * backlight * S_FOLIAGE;
+        scatter = pow(abs(max(VoL, 0.0)), 16.0) * (1.0 - bslRain()) * backlight * S_FOLIAGE;
         float nol = clamp(ndl * 1.01 - 0.01, 0.0, 1.0);
         nol = mix(nol, 1.0, sqrt(backlight) * 0.7 * clamp(S_FOLIAGE, 0.0, 1.0));
         nol = mix(nol, 1.0, scatter);
@@ -92,12 +92,12 @@ vec3 bslLit(vec3 texRgb, vec3 tint, vec3 n, vec3 rel, vec2 light, float backligh
         float att = clamp(1.0 - dist / reach, 0.0, 1.0);
         bl = max(bl, att * att * held * (0.35 + 0.65 * max(dot(n, -viewDir), 0.0)));
     }
-    float newLight = pow(bl, 10.0) * 1.6 + bl * 0.6;
+    float newLight = pow(abs(max(bl, 0.0)), 10.0) * 1.6 + bl * 0.6;
     vec3 block = bslBlockColor() * newLight * newLight;
     vec3 minLight = vec3_splat(0.0025) * (1.0 - skylSqr);
     vec3 albedoNorm = normalize(albedo + 0.00001);
     vec3 emissiveLight = mix(albedoNorm, vec3_splat(1.0), emissive * 0.5) * emissive * 2.0;
-    float flatten = clamp(1.0 - pow(1.0 - clamp(emissive, 0.0, 1.0), 128.0), 0.0, 1.0);
+    float flatten = clamp(1.0 - pow(abs(1.0 - clamp(emissive, 0.0, 1.0)), 128.0), 0.0, 1.0);
     float diffuse = mix(shade, 1.0, flatten);
     vec3 total = max(scene + block + emissiveLight + minLight, vec3_splat(0.0));
     vec3 hdr = albedo * total * diffuse;
@@ -108,7 +108,7 @@ vec3 bslFog(vec3 color, vec2 fogDistance, vec3 viewDir)
 {
     float f = fogAmount(fogDistance.x, fogDistance.y);
     float toSun = max(dot(viewDir, u_sunDir.xyz), 0.0);
-    float scatter = (pow(toSun, 6.0) * 0.22 + pow(toSun, 36.0) * 0.35) * u_sunDir.w * u_time.y;
+    float scatter = (pow(abs(max(toSun, 0.0)), 6.0) * 0.22 + pow(abs(max(toSun, 0.0)), 36.0) * 0.35) * u_sunDir.w * u_time.y;
     vec3 fogTint = u_fogColor.rgb + sunColor() * scatter * f * f * (1.0 - u_fogColor.rgb * 0.5);
     return mix(color, fogTint, f);
 }
