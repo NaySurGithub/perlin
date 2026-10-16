@@ -30,6 +30,14 @@ namespace perlin {
         size_t StateCount() const { return nameByHash.size(); }
 
         uint16_t Intern(int32_t networkId);
+        // Sequential runtime ids (StartGame blockNetworkIdsAreHashes=false): the id is an index into the
+        // canonical block-state list (resources/block_states.json order, custom blocks appended).
+        void SetSequential(bool on);
+        bool Sequential() const { return sequential.load(std::memory_order_acquire); }
+        void AppendSequence(int32_t hash);
+        void TruncateSequence();
+        uint16_t InternRuntime(int32_t runtimeId);
+        int32_t RuntimeId(uint16_t local) const;
         bool LearnName(int32_t networkId, const std::string& name);
         void LearnState(int32_t networkId, const std::string& name, std::vector<std::pair<std::string, StateValue>> states);
         int32_t NetworkId(uint16_t local) const;
@@ -58,6 +66,11 @@ namespace perlin {
         std::unordered_map<int32_t, std::string> learned;
         std::unordered_map<int32_t, std::vector<std::pair<std::string, StateValue>>> learnedStates;
         std::unordered_map<int32_t, uint16_t> localByNet;
+        std::atomic<bool> sequential{false};
+        std::vector<int32_t> sequence;
+        std::unordered_map<int32_t, int32_t> sequenceIndex;
+        bool sequenceFrozen = false;
+        size_t vanillaSequence = 0;
         std::vector<int32_t> netByLocal;
         std::atomic<size_t> count{1};
     };

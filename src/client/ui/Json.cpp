@@ -309,6 +309,48 @@ namespace perlin::ui {
         }
     }
 
+    namespace {
+        std::string Relax(std::string_view in) {
+            std::string out;
+            out.reserve(in.size());
+            bool inString = false;
+            for (size_t i = 0; i < in.size(); i++) {
+                const char c = in[i];
+                if (inString) {
+                    out += c;
+                    if (c == '\\' && i + 1 < in.size())
+                        out += in[++i];
+                    else if (c == '"')
+                        inString = false;
+                    continue;
+                }
+                if (c == '"') {
+                    inString = true;
+                    out += c;
+                } else if (c == '/' && i + 1 < in.size() && in[i + 1] == '/') {
+                    while (i < in.size() && in[i] != '\n')
+                        i++;
+                    out += '\n';
+                } else if (c == '/' && i + 1 < in.size() && in[i + 1] == '*') {
+                    i += 2;
+                    while (i + 1 < in.size() && !(in[i] == '*' && in[i + 1] == '/'))
+                        i++;
+                    i++;
+                } else if (c == ',') {
+                    size_t j = i + 1;
+                    while (j < in.size() && (in[j] == ' ' || in[j] == '\t' || in[j] == '\r' || in[j] == '\n'))
+                        j++;
+                    if (j < in.size() && (in[j] == '}' || in[j] == ']'))
+                        continue;
+                    out += c;
+                } else {
+                    out += c;
+                }
+            }
+            return out;
+        }
+    }
+
     bool Json::Parse(std::string_view text, Json& out, std::string& error) {
         if (text.size() >= 3 && static_cast<unsigned char>(text[0]) == 0xEF && static_cast<unsigned char>(text[1]) == 0xBB &&
             static_cast<unsigned char>(text[2]) == 0xBF)
@@ -317,8 +359,16 @@ namespace perlin::ui {
         parser.text = text;
         Json value;
         if (!parser.ParseValue(value)) {
-            error = parser.error;
-            return false;
+            const std::string relaxed = Relax(text);
+            Parser retry;
+            retry.text = relaxed;
+            Json again;
+            if (!retry.ParseValue(again)) {
+                error = parser.error;
+                return false;
+            }
+            out = std::move(again);
+            return true;
         }
         out = std::move(value);
         return true;

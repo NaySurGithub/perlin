@@ -2,6 +2,7 @@
 
 #include "client/i18n/BuiltinEnglish.hpp"
 #include "client/ui/Json.hpp"
+#include "client/resources/ServerPacks.hpp"
 #include "util/Resources.hpp"
 
 #include <algorithm>
@@ -36,6 +37,11 @@ namespace perlin::i18n {
                 Lang::Parse(BuiltinEnglish(), out);
                 files++;
             }
+            for (const std::string& dir : ServerPacks::Instance().Directories())
+                if (ReadFile(fs::path(dir) / "texts" / (code + ".lang"), text)) {
+                    Lang::Parse(text, out);
+                    files++;
+                }
             if (!data.empty() && ReadFile(fs::path(data) / "lang" / (code + ".lang"), text)) {
                 Lang::Parse(text, out);
                 files++;

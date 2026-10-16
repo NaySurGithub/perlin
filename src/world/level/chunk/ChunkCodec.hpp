@@ -2,6 +2,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <string>
 #include <vector>
 
 namespace perlin {
@@ -13,10 +14,25 @@ namespace perlin {
         int MinSubChunk() const { return minY >> 4; }
     };
 
+    struct PersistentBlockState {
+        struct Entry {
+            std::string key;
+            int kind = 0;
+            int32_t number = 0;
+            std::string text;
+        };
+        std::string name;
+        std::vector<Entry> states;
+    };
+
+    using PersistentResolver = int32_t (*)(const PersistentBlockState&);
+    void SetPersistentResolver(PersistentResolver resolver);
+
     struct PaletteStorage {
         int bitsPerBlock = 0;
         std::vector<uint32_t> words;
         std::vector<int32_t> palette;
+        bool persistent = false;
     };
 
     struct SubChunkData {

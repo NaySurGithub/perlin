@@ -2,6 +2,7 @@
 
 #include "client/i18n/Lang.hpp"
 #include "client/ui/InventoryScreen.hpp"
+#include "client/ui/FormatCodes.hpp"
 #include "client/ui/McFont.hpp"
 #include "client/ui/RmlEmit.hpp"
 #include "client/ui/UiAssets.hpp"
@@ -194,18 +195,27 @@ namespace perlin::ui {
             y = 4;
     }
 
-    std::string TooltipRml(const std::vector<TooltipLine>& lines, int mouseX, int mouseY, int guiW, int guiH) {
+    std::string TooltipRml(const std::vector<TooltipLine>& input, int mouseX, int mouseY, int guiW, int guiH) {
+        std::vector<TooltipLine> lines;
+        for (const TooltipLine& l : input) {
+            size_t start = 0;
+            for (;;) {
+                const size_t nl = l.text.find('\n', start);
+                TooltipLine part = l;
+                part.text = l.text.substr(start, nl == std::string::npos ? std::string::npos : nl - start);
+                while (!part.text.empty() && part.text.back() == '\r')
+                    part.text.pop_back();
+                lines.push_back(std::move(part));
+                if (nl == std::string::npos)
+                    break;
+                start = nl + 1;
+            }
+        }
         if (lines.empty())
             return {};
         int widest = 0;
-        for (const TooltipLine& l : lines) {
-            int w = 0;
-            size_t i = 0;
-            uint32_t cp;
-            while (McFont::Next(l.text, i, cp))
-                w += McFont::Instance().Get(cp).advance;
-            widest = std::max(widest, w);
-        }
+        for (const TooltipLine& l : lines)
+            widest = std::max(widest, static_cast<int>(McFont::Instance().Width(l.text, 1.0f)));
         const int estW = widest + 10;
         const int estH = static_cast<int>(lines.size()) * 10 + (lines.size() > 1 ? 2 : 0) + 8;
         gTipW = estW;
@@ -218,7 +228,7 @@ namespace perlin::ui {
             const TooltipLine& l = lines[i];
             std::snprintf(color, sizeof color, "#%06X", l.color & 0xFFFFFFu);
             body += std::string("<div class=\"ln\" style=\"color:") + color + ";" + (l.italic ? "font-style:italic;" : "") + (i == 0 && lines.size() > 1 ? "margin-bottom:2px;" : "") + "\">" +
-                    (l.text.empty() ? std::string("&nbsp;") : EscapeRml(l.text)) + "</div>";
+                    (l.text.empty() ? std::string("&nbsp;") : FormatCodesToRml(l.text)) + "</div>";
         }
         return "  <div id=\"tip\" style=\"left:" + std::to_string(x) + "px;top:" + std::to_string(y) +
                "px;width:" + std::to_string(estW) + "px;height:" + std::to_string(estH) + "px;\"><mcimg class=\"tipb\" src=\"textures/ui/purpleBorder\" nine=\"4 4 4 4\" style=\"width:" + std::to_string(estW) + "px;height:" + std::to_string(estH) + "px;\"/><div class=\"txt\" style=\"width:" + std::to_string(estW - 10) + "px;\">" + body + "</div></div>\n";

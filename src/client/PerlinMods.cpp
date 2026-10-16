@@ -468,7 +468,7 @@ namespace perlin {
             info.loaded = loaded;
             if (loaded) {
                 BlockPalette& palette = BlockPalette::Instance();
-                info.runtimeId = static_cast<uint32_t>(palette.NetworkId(id));
+                info.runtimeId = static_cast<uint32_t>(palette.RuntimeId(id));
                 info.name = palette.Name(id);
                 for (const auto& s : palette.States(id))
                     info.states.emplace_back(s.first, StateText(s.second));

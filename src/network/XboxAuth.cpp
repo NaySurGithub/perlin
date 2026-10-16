@@ -1,4 +1,5 @@
 #include "network/XboxAuth.hpp"
+#include <future>
 
 #include "network/ClientIdentity.hpp"
 #include "network/Http.hpp"
@@ -923,17 +924,41 @@ namespace perlin::xbox {
         out = {};
         Impl& s = *impl;
         std::cout << "[auth] contacting Xbox Live..." << std::endl;
-        const Impl::ServiceEnv env = s.Discover(gameVersion);
+        auto discovery = std::async(std::launch::async, [&s, &gameVersion] { return s.Discover(gameVersion); });
+        std::string ensureError;
+        const bool tokensReady = s.EnsureUserAndTitle(ensureError);
+        struct Chain {
+            std::string json, gamertag, xuid, error;
+            bool ok = false;
+        };
+        std::future<Chain> chainTask;
+        if (tokensReady)
+            chainTask = std::async(std::launch::async, [&s, &publicKeyB64, &gameVersion] {
+                Chain c;
+                c.ok = s.LegacyChain(publicKeyB64, gameVersion, c.json, c.gamertag, c.xuid, c.error);
+                return c;
+            });
+        const Impl::ServiceEnv env = discovery.get();
         std::string ticket;
-        if (!s.PlayFabTicket(env, ticket, out.playFabId, error))
+        const bool playFabOk = s.PlayFabTicket(env, ticket, out.playFabId, error);
+        if (playFabOk)
+            std::cout << "[auth] PlayFab login ok" << std::endl;
+        const bool tokenOk = playFabOk && s.MinecraftToken(env, ticket, gameVersion, publicKeyB64, out.multiplayerToken, error);
+        Chain chain;
+        if (chainTask.valid())
+            chain = chainTask.get();
+        if (!playFabOk || !tokenOk) {
+            if (!playFabOk && error.empty())
+                error = ensureError;
             return false;
-        std::cout << "[auth] PlayFab login ok" << std::endl;
-        if (!s.MinecraftToken(env, ticket, gameVersion, publicKeyB64, out.multiplayerToken, error))
-            return false;
+        }
         std::cout << "[auth] multiplayer token ok" << std::endl;
-        std::string chainError;
-        if (!s.LegacyChain(publicKeyB64, gameVersion, out.chainJson, out.gamertag, out.xuid, chainError)) {
-            std::cout << "[auth] legacy certificate chain unavailable: " << chainError << std::endl;
+        out.gamertag = chain.gamertag;
+        out.xuid = chain.xuid;
+        if (chain.ok) {
+            out.chainJson = chain.json;
+        } else {
+            std::cout << "[auth] legacy certificate chain unavailable: " << (tokensReady ? chain.error : ensureError) << std::endl;
             out.chainJson = "{\"chain\":[]}";
         }
         std::cout << "[auth] signed in as " << out.gamertag << std::endl;

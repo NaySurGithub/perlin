@@ -2,6 +2,7 @@
 #include "util/Env.hpp"
 #include "client/multiplayer/BedrockSession.hpp"
 #include "client/multiplayer/CustomBlocks.hpp"
+#include "client/i18n/Lang.hpp"
 #include "client/player/VoxelShapes.hpp"
 #include "network/ClientIdentity.hpp"
 #include "network/PacketDump.hpp"
@@ -152,6 +153,7 @@ namespace perlin {
     }
 
     void BedrockSession::RegisterPacketHandlers() {
+        InstallPersistentChunkResolver();
         dispatcher.OnFailure([](uint32_t id, const char* name, size_t size) {
             std::cout << "[net] failed to decode " << name << " (id " << id << ", " << size << " bytes)"
                       << std::endl;
@@ -240,6 +242,7 @@ namespace perlin {
             std::vector<std::string> wanted = packs.Plan(info.texturePacks);
             if (wanted.empty()) {
                 packs.MountAll();
+                i18n::Lang::Get().Invalidate();
                 SendResourcePackResponse(PackStatus::HaveAllPacks);
             } else {
                 packsExpected = wanted.size();
@@ -277,9 +280,14 @@ namespace perlin {
             } else if (step.step == PackDownloader::Step::Failed) {
                 lastError = "resource pack download failed: " + step.message;
                 state = State::Failed;
-            } else if (step.step == PackDownloader::Step::PackDone && packs.AllReceived()) {
-                packs.MountAll();
-                SendResourcePackResponse(PackStatus::HaveAllPacks);
+            } else if (step.step == PackDownloader::Step::PackDone) {
+                if (step.hasNext)
+                    Send(proto::ResourcePackChunkRequestPacket{.packId = step.nextPackId, .chunkIndex = 0});
+                if (packs.AllReceived()) {
+                    packs.MountAll();
+                i18n::Lang::Get().Invalidate();
+                    SendResourcePackResponse(PackStatus::HaveAllPacks);
+                }
             } else if (step.step == PackDownloader::Step::Ignore && !step.message.empty()) {
                 std::cout << "[packs] " << step.message << std::endl;
             }
@@ -292,9 +300,14 @@ namespace perlin {
             } else if (step.step == PackDownloader::Step::Failed) {
                 lastError = "resource pack download failed: " + step.message;
                 state = State::Failed;
-            } else if (step.step == PackDownloader::Step::PackDone && packs.AllReceived()) {
-                packs.MountAll();
-                SendResourcePackResponse(PackStatus::HaveAllPacks);
+            } else if (step.step == PackDownloader::Step::PackDone) {
+                if (step.hasNext)
+                    Send(proto::ResourcePackChunkRequestPacket{.packId = step.nextPackId, .chunkIndex = 0});
+                if (packs.AllReceived()) {
+                    packs.MountAll();
+                i18n::Lang::Get().Invalidate();
+                    SendResourcePackResponse(PackStatus::HaveAllPacks);
+                }
             }
         });
 
@@ -382,6 +395,7 @@ namespace perlin {
             clientGen = p.clientSideGeneration;
             serverAuthBreaking = p.serverAuthoritativeBlockBreaking;
             std::cout << "[bedrock] serverAuthoritativeBlockBreaking=" << (p.serverAuthoritativeBlockBreaking ? "true" : "false") << std::endl;
+            BlockPalette::Instance().SetSequential(!p.blockNetworkIdsAreHashes);
             std::cout << "[bedrock] blockNetworkIdsAreHashes=" << (p.blockNetworkIdsAreHashes ? "true" : "false")
                       << std::endl;
             std::cout << "[bedrock] client_side_generation=" << (clientGen ? "true" : "false")
@@ -439,6 +453,7 @@ namespace perlin {
         });
 
         On<ItemRegistryPacket>([this](const ItemRegistryPacket& p) {
+            std::cout << "[items] server defines " << RegisterCustomItems(p.itemstates) << " custom items" << std::endl;
             {
                 std::lock_guard lock(statusMutex);
                 itemNames.clear();
@@ -718,16 +733,16 @@ namespace perlin {
             if (blockLogs < 400 && (PERLIN_ENV("PERLIN_BLOCK_DEBUG") || blockLogs++ < 400))
                 std::cout << "[block] update_block (" << p.position.x << "," << p.position.y << "," << p.position.z << ") layer " << p.layer
                           << " id " << static_cast<int32_t>(p.blockRuntimeId) << " "
-                          << BlockPalette::Instance().Name(BlockPalette::Instance().Intern(static_cast<int32_t>(p.blockRuntimeId))) << std::endl;
+                          << BlockPalette::Instance().Name(BlockPalette::Instance().InternRuntime(static_cast<int32_t>(p.blockRuntimeId))) << std::endl;
             NoteUnknownBlock(static_cast<int32_t>(p.blockRuntimeId));
             if (p.layer == 0)
                 ConfirmPlace(p.position.x, static_cast<int32_t>(p.position.y), p.position.z, static_cast<int32_t>(p.blockRuntimeId));
             if (p.layer == 0)
                 netLevel.SetBlock(lastBlockPos[0], lastBlockPos[1], lastBlockPos[2],
-                                  BlockPalette::Instance().Intern(static_cast<int32_t>(p.blockRuntimeId)));
+                                  BlockPalette::Instance().InternRuntime(static_cast<int32_t>(p.blockRuntimeId)));
             else if (p.layer == 1)
                 netLevel.SetLiquid(lastBlockPos[0], lastBlockPos[1], lastBlockPos[2],
-                                   BlockPalette::Instance().Intern(static_cast<int32_t>(p.blockRuntimeId)));
+                                   BlockPalette::Instance().InternRuntime(static_cast<int32_t>(p.blockRuntimeId)));
         });
 
         On<UpdateSubchunkBlocksPacket>([this](const UpdateSubchunkBlocksPacket& p) {
@@ -755,17 +770,17 @@ namespace perlin {
                 NoteUnknownBlock(static_cast<int32_t>(b.runtimeId));
                 ConfirmPlace(b.position.x, static_cast<int32_t>(b.position.y), b.position.z, static_cast<int32_t>(b.runtimeId));
                 netLevel.SetBlock(b.position.x, static_cast<int32_t>(b.position.y), b.position.z,
-                                  BlockPalette::Instance().Intern(static_cast<int32_t>(b.runtimeId)));
+                                  BlockPalette::Instance().InternRuntime(static_cast<int32_t>(b.runtimeId)));
             }
             for (const BlockUpdate& b : p.extra)
                 if (sane(b))
                     netLevel.SetLiquid(b.position.x, static_cast<int32_t>(b.position.y), b.position.z,
-                                       BlockPalette::Instance().Intern(static_cast<int32_t>(b.runtimeId)));
+                                       BlockPalette::Instance().InternRuntime(static_cast<int32_t>(b.runtimeId)));
         });
 
         On<UpdateBlockSyncedPacket>([this](const UpdateBlockSyncedPacket& p) {
             const int x = p.position.x, y = static_cast<int32_t>(p.position.y), z = p.position.z;
-            const uint16_t id = BlockPalette::Instance().Intern(static_cast<int32_t>(p.blockRuntimeId));
+            const uint16_t id = BlockPalette::Instance().InternRuntime(static_cast<int32_t>(p.blockRuntimeId));
             if (p.layer == 0)
                 ConfirmPlace(x, y, z, static_cast<int32_t>(p.blockRuntimeId));
             if (p.layer == 0)

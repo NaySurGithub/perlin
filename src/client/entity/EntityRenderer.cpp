@@ -5,12 +5,14 @@
 #include "client/ui/ItemData.hpp"
 
 #include "client/ui/UiAssets.hpp"
+#include "client/ui/FormatCodes.hpp"
 #include "client/ui/McFont.hpp"
 
 #include <chrono>
 #include <glm/gtc/matrix_transform.hpp>
 
 #include <algorithm>
+#include <deque>
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
@@ -52,6 +54,14 @@ namespace perlin::entity {
     struct EntityRenderer::View {
         bool init = false;
         glm::dvec3 pos{0.0}, lastPos{0.0};
+        struct Sample {
+            double t = 0;
+            glm::dvec3 pos{0.0};
+            float yaw = 0, headYaw = 0, pitch = 0;
+        };
+        std::deque<Sample> samples;
+        double interval = 0.05, jitter = 0.0, delay = 0.1;
+        double lastArrival = 0;
         float yaw = 0, headYaw = 0, pitch = 0;
         uint32_t moveSerial = 0, hurtSerial = 0, swingSerial = 0;
         float limbSwing = 0, limbAmount = 0;
@@ -258,16 +268,69 @@ namespace perlin::entity {
             v.hurtSerial = e.hurtSerial;
             v.swingSerial = e.swingSerial;
         }
+        const bool projectile = e.type == "minecraft:arrow" || e.type == "minecraft:thrown_trident";
+        const bool buffered = !e.isSelf && !projectile;
         const double follow = e.isSelf ? 1.0 : 1.0 - std::exp(-static_cast<double>(dt) / 0.06);
         v.lastPos = v.pos;
-        const glm::dvec3 d = e.pos - v.pos;
-        v.pos = glm::length(d) > 24.0 ? e.pos : v.pos + d * follow;
-        const auto turn = [&](float cur, float target) { return cur + WrapDegrees(target - cur) * static_cast<float>(follow); };
         const float prevYaw = v.yaw;
-        v.yaw = turn(v.yaw, e.yaw);
-        v.yawSpeed = WrapDegrees(v.yaw - prevYaw) / dt;
-        v.headYaw = turn(v.headYaw, e.headYaw);
-        v.pitch = v.pitch + (e.pitch - v.pitch) * static_cast<float>(follow);
+        glm::dvec3 d = e.pos - v.pos;
+        if (buffered) {
+            if (v.samples.empty() || v.samples.back().pos != e.pos || v.samples.back().yaw != e.yaw ||
+                v.samples.back().headYaw != e.headYaw || v.samples.back().pitch != e.pitch) {
+                if (!v.samples.empty() && glm::length(e.pos - v.samples.back().pos) > 12.0) {
+                    v.samples.clear();
+                    v.pos = e.pos;
+                    v.lastPos = e.pos;
+                    v.yaw = e.yaw;
+                    v.headYaw = e.headYaw;
+                    v.pitch = e.pitch;
+                    v.lastArrival = 0;
+                }
+                if (v.lastArrival > 0) {
+                    const double gap = std::clamp(in.time - v.lastArrival, 0.005, 0.5);
+                    const double dev = std::fabs(gap - v.interval);
+                    v.interval += (gap - v.interval) * 0.1;
+                    v.jitter += (dev - v.jitter) * 0.1;
+                }
+                v.lastArrival = in.time;
+                v.samples.push_back({in.time, e.pos, e.yaw, e.headYaw, e.pitch});
+                while (v.samples.size() > 64)
+                    v.samples.pop_front();
+            }
+            const double wantDelay = std::clamp(v.interval * 1.25 + v.jitter * 2.0, 0.06, 0.25);
+            v.delay += (wantDelay - v.delay) * std::min(1.0, static_cast<double>(dt) * 2.0);
+            const double renderT = in.time - v.delay;
+            while (v.samples.size() > 2 && v.samples[1].t <= renderT)
+                v.samples.pop_front();
+            if (v.samples.size() >= 2 && renderT >= v.samples[0].t) {
+                const auto& a = v.samples[0];
+                const auto& b = v.samples[1];
+                const double span = b.t - a.t;
+                const double f = span > 1e-6 ? std::clamp((renderT - a.t) / span, 0.0, 1.0) : 1.0;
+                v.pos = a.pos + (b.pos - a.pos) * f;
+                const auto mix = [&](float x, float y) { return x + WrapDegrees(y - x) * static_cast<float>(f); };
+                v.yaw = mix(a.yaw, b.yaw);
+                v.headYaw = mix(a.headYaw, b.headYaw);
+                v.pitch = a.pitch + (b.pitch - a.pitch) * static_cast<float>(f);
+            } else if (v.samples.size() >= 2) {
+                v.pos = v.samples[0].pos;
+            } else if (!v.samples.empty()) {
+                const double catchUp = 1.0 - std::exp(-static_cast<double>(dt) / 0.06);
+                v.pos += (v.samples.back().pos - v.pos) * catchUp;
+                const auto turnTo = [&](float cur, float target) { return cur + WrapDegrees(target - cur) * static_cast<float>(catchUp); };
+                v.yaw = turnTo(v.yaw, v.samples.back().yaw);
+                v.headYaw = turnTo(v.headYaw, v.samples.back().headYaw);
+                v.pitch += (v.samples.back().pitch - v.pitch) * static_cast<float>(catchUp);
+            }
+            v.yawSpeed = WrapDegrees(v.yaw - prevYaw) / dt;
+        } else {
+            v.pos = glm::length(d) > 24.0 ? e.pos : v.pos + d * follow;
+            const auto turn = [&](float cur, float target) { return cur + WrapDegrees(target - cur) * static_cast<float>(follow); };
+            v.yaw = turn(v.yaw, e.yaw);
+            v.yawSpeed = WrapDegrees(v.yaw - prevYaw) / dt;
+            v.headYaw = turn(v.headYaw, e.headYaw);
+            v.pitch = v.pitch + (e.pitch - v.pitch) * static_cast<float>(follow);
+        }
         if (e.type == "minecraft:arrow" || e.type == "minecraft:thrown_trident") {
             const double len = glm::length(d);
             if (len > 0.04) {
@@ -1309,8 +1372,14 @@ namespace perlin::entity {
         const glm::vec3 up = glm::cross(right, forward);
         constexpr float kScale = 0.025f;
         for (const Tag& tag : tags) {
-            const float width = font.Width(tag.text);
-            const float left = -width * 0.5f;
+            std::vector<std::string> rows;
+            for (size_t start = 0;;) {
+                const size_t nl = tag.text.find('\n', start);
+                rows.push_back(tag.text.substr(start, nl == std::string::npos ? std::string::npos : nl - start));
+                if (nl == std::string::npos)
+                    break;
+                start = nl + 1;
+            }
             std::vector<UiVertex> bgV, textV;
             std::vector<uint32_t> bgI, textI;
             const auto corner = [&](float x, float y) { return right * (x * kScale) + up * (-y * kScale); };
@@ -1325,23 +1394,25 @@ namespace perlin::entity {
                 for (uint32_t i : {0u, 1u, 2u, 0u, 2u, 3u, 0u, 2u, 1u, 0u, 3u, 2u})
                     ii.push_back(base + i);
             };
-            quad(bgV, bgI, left - 1.0f, -1.0f, left + width + 1.0f, 8.0f, 0, 0, 0, 0, PackColor(glm::vec3(0.0f), 0.25f));
             glm::vec3 col(1.0f);
-            float pen = left;
             bool bold = false;
-            for (size_t i = 0; i < tag.text.size();) {
+            for (size_t row = 0; row < rows.size(); row++) {
+            const std::string& text = rows[row];
+            const float rowY = (static_cast<float>(row) - static_cast<float>(rows.size() - 1)) * 10.0f;
+            const float width = font.Width(text);
+            const float left = -width * 0.5f;
+            if (!text.empty())
+                quad(bgV, bgI, left - 1.0f, rowY - 1.0f, left + width + 1.0f, rowY + 8.0f, 0, 0, 0, 0, PackColor(glm::vec3(0.0f), 0.25f));
+            float pen = left;
+            for (size_t i = 0; i < text.size();) {
                 uint32_t cp = 0;
-                if (!ui::McFont::Next(tag.text, i, cp))
+                if (!ui::McFont::Next(text, i, cp))
                     break;
-                if (cp == 0xA7 && i < tag.text.size()) {
-                    const char c = static_cast<char>(std::tolower(static_cast<unsigned char>(tag.text[i++])));
-                    static const char* kHex = "0123456789abcdef";
-                    static const uint8_t kRgb[16][3] = {{0, 0, 0}, {0, 0, 170}, {0, 170, 0}, {0, 170, 170}, {170, 0, 0}, {170, 0, 170},
-                                                        {255, 170, 0}, {170, 170, 170}, {85, 85, 85}, {85, 85, 255}, {85, 255, 85},
-                                                        {85, 255, 255}, {255, 85, 85}, {255, 85, 255}, {255, 255, 85}, {255, 255, 255}};
-                    if (const char* at = std::strchr(kHex, c); at && c != 0) {
-                        const int idx = static_cast<int>(at - kHex);
-                        col = glm::vec3(kRgb[idx][0], kRgb[idx][1], kRgb[idx][2]) / 255.0f;
+                if (cp == 0xA7 && i < text.size()) {
+                    const char c = static_cast<char>(std::tolower(static_cast<unsigned char>(text[i++])));
+                    uint32_t rgb = 0;
+                    if (ui::FormatCodeColor(c, rgb)) {
+                        col = glm::vec3(static_cast<float>((rgb >> 16) & 0xFF), static_cast<float>((rgb >> 8) & 0xFF), static_cast<float>(rgb & 0xFF)) / 255.0f;
                         bold = false;
                     } else if (c == 'l') {
                         bold = true;
@@ -1351,10 +1422,13 @@ namespace perlin::entity {
                     }
                     continue;
                 }
+                if (cp < 0x20)
+                    continue;
                 const ui::McFont::Glyph& g = font.Get(cp);
                 if (g.width > 0)
-                    quad(textV, textI, pen, 0.0f, pen + static_cast<float>(g.width), 8.0f, g.u0, g.v0, g.u1, g.v1, PackColor(col));
+                    quad(textV, textI, pen, rowY, pen + static_cast<float>(g.width), rowY + 8.0f, g.u0, g.v0, g.u1, g.v1, PackColor(col));
                 pen += static_cast<float>(g.advance) + (bold ? 1.0f : 0.0f);
+            }
             }
             glm::mat4 model = glm::translate(glm::mat4(1.0f), glm::vec3(tag.at.x, tag.at.y, tag.at.z));
             const auto submit = [&](std::vector<UiVertex> vv, const std::vector<uint32_t>& ii, uint32_t texture, bool seeThrough, float alpha) {

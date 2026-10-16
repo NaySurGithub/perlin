@@ -47,6 +47,8 @@ namespace perlin {
         void LoadBehaviorPack(const std::string& blocksDir);
         void SetDerivedOpacity(OpacityFn fn);
         void SetOcclusion(OcclusionFn fn);
+        void SetCustom(const std::string& name, int emission, int opacity);
+        void ClearCustom();
         const FaceOcclusion* Occlusion(uint16_t id) const;
         void Invalidate();
         bool HasRules() const;
@@ -90,6 +92,7 @@ namespace perlin {
         std::vector<Rule> emissionRules, opacityRules;
         std::unordered_map<std::string, size_t> emissionExact, opacityExact;
         std::unordered_map<std::string, int> packEmission, packOpacity;
+        std::unordered_map<std::string, int> customEmission, customOpacity;
         OpacityFn derivedOpacity;
         bool rulesLoaded = false;
     };

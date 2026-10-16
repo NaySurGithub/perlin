@@ -25,6 +25,7 @@
 #include "client/ui/InventoryScreen.hpp"
 #include "client/ui/CreativeScreen.hpp"
 #include "client/ui/DisconnectScreen.hpp"
+#include "client/ui/LoadingScreen.hpp"
 #include "client/ui/UiLayout.hpp"
 #include "client/ui/PauseScreen.hpp"
 #include "client/resources/MojangFonts.hpp"
@@ -235,7 +236,7 @@ namespace perlin {
         if (!renderer)
             return false;
 
-        workers = std::make_unique<ThreadPool>(2);
+        workers = std::make_unique<ThreadPool>(4);
         workers->Submit([this] { BedrockSamples::Ensure(options.bedrockSamplesDir); });
         workers->Submit([this] {
             if (MojangFonts::Ensure(paths::DataDir()))
@@ -266,6 +267,9 @@ namespace perlin {
     }
 
     void Perlin::Connect() {
+        loadingDone = false;
+        loadingStartAt = {};
+        loadingReadyArmed = false;
         std::string host;
         uint16_t port = 0;
         std::string serverText = options.server;
@@ -381,6 +385,12 @@ namespace perlin {
     }
 
     void Perlin::ApplyTexturePacks() {
+        {
+            std::string error;
+            TexturePack::Instance().OpenStack(paths::DataDir() + "/texturepacks", options.texturePacks, error);
+            if (!error.empty())
+                std::cout << "[textures] " << error << " (using default textures)" << std::endl;
+        }
         if (levelRenderer)
             levelRenderer->ReloadResources();
         entityRenderer.ClearCaches();
@@ -787,7 +797,7 @@ namespace perlin {
             hooked = true;
             sounds.SetBlockNamer([](int32_t runtimeId) {
                 BlockPalette& palette = BlockPalette::Instance();
-                return palette.Name(palette.Intern(runtimeId));
+                return palette.Name(palette.InternRuntime(runtimeId));
             });
             sounds.SetSubtitleHook([this](const std::string& sound, const glm::dvec3& position, float volume, bool global) {
                 if (options.sound.subtitles)
@@ -3105,6 +3115,131 @@ namespace perlin {
         pauseLeftDown = down;
     }
 
+    bool Perlin::UpdateLoadingScreen(ui::Hud& hud, int fbW, int fbH) {
+        const auto now = Clock::now();
+        const bool preview = PERLIN_ENV("PERLIN_PREVIEW_LOADING") != nullptr;
+        const auto tr = [](const char* key, const char* fallback, const std::vector<std::string>& args = {}) {
+            std::string s = args.empty() ? i18n::Tr(key) : i18n::Tr(key, args);
+            if (s == key || s.empty()) {
+                s = fallback;
+                for (size_t i = 0; i < args.size(); i++) {
+                    const std::string token = "%" + std::to_string(i + 1);
+                    for (size_t at = s.find(token); at != std::string::npos; at = s.find(token, at))
+                        s.replace(at, token.size(), args[i]);
+                }
+            }
+            return s;
+        };
+        ui::LoadingScreenText t;
+        t.title = tr("progressScreen.title.connectingExternal", "Connecting to external server");
+        bool show = false;
+        const bool transferring = session && session->Transferring();
+        if (preview) {
+            show = true;
+            t.message = tr("progressScreen.title.downloading", "Downloading packs %1", {"3/25"});
+            t.progress = 0.4f;
+        } else if (!session || (!sessionReady && session->GetState() != BedrockSession::State::Failed) || transferring) {
+            show = true;
+            if (transferring)
+                loadingDone = false;
+            const BedrockSession::State st = session ? session->GetState() : BedrockSession::State::Disconnected;
+            const auto progress = session ? session->PackProgress() : PackDownloader::Progress{};
+            std::string hint;
+            {
+                std::lock_guard lock(statusMutex);
+                hint = statusHint;
+            }
+            if (!hint.empty()) {
+                t.message = tr("connect.authorizing", "Logging in...");
+                t.detail = hint;
+            } else if (!session || st == BedrockSession::State::Disconnected) {
+                t.message = tr("progressScreen.message.resourceLoading", "Loading Resources");
+            } else if (st == BedrockSession::State::Connecting) {
+                t.message = onlineThisRun ? tr("connect.authorizing", "Logging in...") : tr("progressScreen.message.locating", "Locating server");
+            } else if (st == BedrockSession::State::ResourcePacks) {
+                if (progress.total > 0 && progress.done < progress.total) {
+                    const int pct = progress.bytesTotal > 0 ? static_cast<int>(100.0 * static_cast<double>(progress.bytes) / static_cast<double>(progress.bytesTotal)) : 0;
+                    t.message = tr("progressScreen.title.downloading", "Downloading packs %1", {std::to_string(progress.done + 1) + "/" + std::to_string(progress.total)});
+                    t.progress = progress.bytesTotal > 0 ? static_cast<float>(progress.bytes) / static_cast<float>(progress.bytesTotal)
+                                                          : static_cast<float>(progress.done) / static_cast<float>(progress.total);
+                    t.detail = std::to_string(pct) + "%";
+                } else {
+                    t.message = tr("progressScreen.title.applyingPacks", "Loading resource packs");
+                }
+            } else {
+                t.message = tr("connect.connecting", "Connecting to the server...");
+            }
+        } else if (sessionReady && !loadingDone) {
+            show = true;
+            if (!loadingStartAt.time_since_epoch().count())
+                loadingStartAt = now;
+            const int chunks = session->ChunksReceived();
+            const bool assets = levelRenderer && levelRenderer->Blocks().Complete();
+            const bool meshed = levelRenderer && levelRenderer->PendingMeshes() == 0 && levelRenderer->MeshesInFlight() == 0;
+            const bool enough = chunks >= 9 && assets && meshed;
+            if (enough) {
+                if (!loadingReadyArmed) {
+                    loadingReadyArmed = true;
+                    loadingReadyAt = now;
+                }
+            } else {
+                loadingReadyArmed = false;
+            }
+            const bool timeout = now - loadingStartAt > std::chrono::seconds(12);
+            if ((loadingReadyArmed && now - loadingReadyAt > std::chrono::milliseconds(250)) || timeout) {
+                loadingDone = true;
+                show = false;
+            } else {
+                t.message = tr("progressScreen.message.building", "Building terrain");
+                const float fraction = std::min(1.0f, static_cast<float>(chunks) / 49.0f);
+                t.progress = std::min(0.98f, fraction);
+            }
+        }
+        if (!show) {
+            if (loadingShown) {
+                hud.Overlay().ClearOverlay();
+                loadingShown = false;
+                loadingSignature.clear();
+                loadingStartAt = {};
+                loadingReadyArmed = false;
+            }
+            return false;
+        }
+        if (!loadingShown) {
+            loadingShown = true;
+            pauseShown = invShown = deathShown = false;
+            pauseSignature.clear();
+            deathSignature.clear();
+        }
+        if (now - loadingCheckAt > std::chrono::milliseconds(400) || loadingTemplate.empty()) {
+            loadingCheckAt = now;
+            uint64_t version = 0;
+            std::string text = ui::LoadUiTemplate(paths::DataDir(), "loading_screen.rml", ui::DefaultLoadingScreenTemplate(), version);
+            if (version != loadingTemplateVersion || loadingTemplate.empty()) {
+                loadingTemplateVersion = version;
+                loadingTemplate = std::move(text);
+                loadingSignature.clear();
+            }
+        }
+        const int scale = hud.OverlayScale();
+        const int guiW = static_cast<int>(std::ceil(static_cast<float>(fbW) / static_cast<float>(scale)));
+        const int guiH = static_cast<int>(std::ceil(static_cast<float>(fbH) / static_cast<float>(scale)));
+        const double time = std::chrono::duration<double>(now.time_since_epoch()).count();
+        const int bucket = t.progress < 0.0f ? static_cast<int>(time * 20.0) : static_cast<int>(t.progress * 200.0f);
+        const std::string signature = std::to_string(guiW) + "x" + std::to_string(guiH) + "|" + t.title + "|" + t.message + "|" + t.detail + "|" + std::to_string(bucket);
+        if (signature != loadingSignature || !hud.Overlay().HasOverlay()) {
+            loadingSignature = signature;
+            std::string error;
+            if (!hud.Overlay().SetOverlay(ui::BuildLoadingScreenRml(loadingTemplate, t, guiW, guiH, time), error)) {
+                std::cout << "[ui] loading_screen.rml: " << error << std::endl;
+                loadingTemplate = ui::DefaultLoadingScreenTemplate();
+                hud.Overlay().SetOverlay(ui::BuildLoadingScreenRml(loadingTemplate, t, guiW, guiH, time), error);
+            }
+        }
+        hud.UpdateOverlay(fbW, fbH, options.guiScale);
+        return true;
+    }
+
     bool Perlin::UpdateDisconnectScreen(ui::Hud& hud, int fbW, int fbH) {
         const bool preview = PERLIN_ENV("PERLIN_PREVIEW_DISCONNECT") != nullptr;
         const bool failed = preview || (session && session->GetState() == BedrockSession::State::Failed && !session->Transferring());
@@ -5055,7 +5190,7 @@ namespace perlin {
                                 const bool mine = lastLocalBreak.x == bx && lastLocalBreak.y == by && lastLocalBreak.z == bz &&
                                                   std::chrono::steady_clock::now() - lastLocalBreak.at < std::chrono::milliseconds(800);
                                 if (!mine)
-                                    particles.Destroy(bx, by, bz, BlockPalette::Instance().Intern(pe.data));
+                                    particles.Destroy(bx, by, bz, BlockPalette::Instance().InternRuntime(pe.data));
                             } else {
                                 particles.SpawnLevelEvent(pe.event, at, pe.data);
                             }
@@ -5192,7 +5327,9 @@ namespace perlin {
                     ProfScope hudScope(5);
                     hud->Update(hudState, fbW, fbH, options.guiScale);
                     UpdateModLayer(*hud);
-                    if (!UpdateDisconnectScreen(*hud, fbW, fbH)) {
+                    const bool disconnectUp = UpdateDisconnectScreen(*hud, fbW, fbH);
+                    const bool loadingUp = !disconnectUp && UpdateLoadingScreen(*hud, fbW, fbH);
+                    if (!disconnectUp && !loadingUp) {
                         UpdateDeathScreen(*hud, live, hudState, fbW, fbH);
                         UpdateInventoryScreen(*hud, live, hudState, fbW, fbH);
                         UpdatePauseScreen(*hud, live, fbW, fbH);
@@ -5230,13 +5367,13 @@ namespace perlin {
                                                   (centerY + (1.8f / 2.0f + 0.0625f) * dollScale) * scale, dollScale * scale, clip);
                     }
                     float cx, cy, cw, ch;
-                    if (options.showHud && !deathShown && !invShown && !pauseShown && !disconnectShown && (camera.mode == PerspectiveMode::FirstPerson || options.thirdPersonCrosshair) &&
+                    if (options.showHud && !deathShown && !invShown && !pauseShown && !disconnectShown && !loadingShown && (camera.mode == PerspectiveMode::FirstPerson || options.thirdPersonCrosshair) &&
                         hudState.mode != ui::GameMode::Spectator &&
                         hud->Cursor(cx, cy, cw, ch))
                         renderer->DrawHudCursor(cx, cy, cw, ch);
                 }
             }
-            if (!deathShown && !pauseShown && !invShown && !disconnectShown)
+            if (!deathShown && !pauseShown && !invShown && !disconnectShown && !loadingShown)
                 platform->DrawTouchOverlay(*renderer);
             if (inputManager.Pressed(Action::Screenshot))
                 TakeScreenshot();

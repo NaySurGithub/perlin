@@ -89,6 +89,24 @@ namespace perlin {
             slot.store(0, std::memory_order_relaxed);
     }
 
+    void LightRegistry::SetCustom(const std::string& name, int emission, int opacity) {
+        std::unique_lock lock(mutex);
+        if (emission >= 0)
+            customEmission[name] = emission;
+        if (opacity >= 0)
+            customOpacity[name] = opacity;
+        for (auto& slot : memo)
+            slot.store(kUnresolved, std::memory_order_relaxed);
+    }
+
+    void LightRegistry::ClearCustom() {
+        std::unique_lock lock(mutex);
+        customEmission.clear();
+        customOpacity.clear();
+        for (auto& slot : memo)
+            slot.store(kUnresolved, std::memory_order_relaxed);
+    }
+
     void LightRegistry::SetDerivedOpacity(OpacityFn fn) {
         std::unique_lock lock(mutex);
         derivedOpacity = std::move(fn);
@@ -262,6 +280,10 @@ namespace perlin {
         if (const auto it = packEmission.find(name); it != packEmission.end())
             emission = it->second;
         if (const auto it = packOpacity.find(name); it != packOpacity.end())
+            opacity = it->second;
+        if (const auto it = customEmission.find(name); it != customEmission.end())
+            emission = it->second;
+        if (const auto it = customOpacity.find(name); it != customOpacity.end())
             opacity = it->second;
         if (emission < 0)
             emission = RuleValue(emissionRules, emissionExact, name, id);

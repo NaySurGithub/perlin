@@ -18,6 +18,7 @@
 #include <deque>
 #include <optional>
 #include <atomic>
+#include <future>
 #include <iostream>
 #include <chrono>
 #include <cstdint>
@@ -269,6 +270,7 @@ void RequestRespawn();
         bool SendRaw(uint32_t id, const std::vector<uint8_t>& body) { return Transmit(id, body, true); }
 
         State GetState() const { return state; }
+        PackDownloader::Progress PackProgress() const { return packs.GetProgress(); }
         std::string LastError() const { return lastError; }
         struct DisconnectInfo {
             bool happened = false;
@@ -475,6 +477,7 @@ void RequestRespawn();
         void BeginTransfer();
         void ResetForTransfer();
         PackDownloader packs;
+        std::future<std::pair<bool, std::string>> authTask;
         size_t packsExpected = 0;
         std::atomic<bool> transferring{false};
         std::atomic<bool> transferRequested{false};

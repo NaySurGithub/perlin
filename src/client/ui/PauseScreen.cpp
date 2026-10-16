@@ -7,7 +7,7 @@
 
 namespace perlin::ui {
     std::string DefaultPauseScreenTemplate() {
-        return R"PERLINRML(<!--perlin-ui:pause-9-->
+        return R"PERLINRML(<!--perlin-ui:pause-10-->
 <rml>
 <head>
 <title>pause</title>

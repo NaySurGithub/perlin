@@ -484,28 +484,41 @@ namespace perlin {
         playerUuid = RandomUuid();
         if (account) {
             constexpr const char* kServiceGameVersion = "1.26.50";
-            std::string authError;
-            if (!account->LoginMinecraft(identity->PublicKeyB64(), kServiceGameVersion, onlineCreds, authError)) {
-                lastError = "online login failed: " + authError;
-                state = State::Failed;
-                return false;
-            }
-            identity->SetMultiplayerToken(onlineCreds.multiplayerToken);
-            if (!onlineCreds.gamertag.empty())
-                playerName = onlineCreds.gamertag;
+            ClientIdentity* identityPtr = identity.get();
+            const std::string publicKey = identity->PublicKeyB64();
+            authTask = std::async(std::launch::async, [this, publicKey, kServiceGameVersion] {
+                std::string authError;
+                const bool ok = account->LoginMinecraft(publicKey, kServiceGameVersion, onlineCreds, authError);
+                return std::make_pair(ok, authError);
+            });
+            (void)identityPtr;
         } else if (identity->BuildMultiplayerToken(playerName, playerUuid).empty()) {
             lastError = "multiplayer token build failed";
             state = State::Failed;
             return false;
         }
         }
+        const auto finishAuth = [this]() -> bool {
+            if (!authTask.valid())
+                return true;
+            const auto result = authTask.get();
+            if (!result.first) {
+                lastError = "online login failed: " + result.second;
+                state = State::Failed;
+                return false;
+            }
+            identity->SetMultiplayerToken(onlineCreds.multiplayerToken);
+            if (!onlineCreds.gamertag.empty())
+                playerName = onlineCreds.gamertag;
+            return true;
+        };
         bool useRak = transportMode == "raknet";
         if (transfer && transportMode == "auto") {
             useRak = usedRak;
         } else if (transportMode == "auto") {
             NetherNetServerInfo probe;
             std::string probeError;
-            useRak = !NetherNet::Probe(host, port, probe, probeError, 4);
+            useRak = !NetherNet::Probe(host, port, probe, probeError, 3);
             std::cout << "[perlin] transport: " << (useRak ? "raknet (no NetherNet endpoint found)" : "nethernet")
                       << std::endl;
         }
@@ -519,6 +532,8 @@ namespace perlin {
             }
             net = std::move(rak);
         } else {
+            if (!finishAuth())
+                return false;
             auto nether = std::make_unique<NetherNet>();
             if (!nether->Connect(host, port, *identity)) {
                 lastError = "transport: " + nether->LastError();
@@ -544,6 +559,8 @@ namespace perlin {
             return false;
         }
         state = State::WaitingNetworkSettings;
+        if (!finishAuth())
+            return false;
 
         auto start = std::chrono::steady_clock::now();
         uint64_t seenPackets = diagPackets;
@@ -723,6 +740,11 @@ namespace perlin {
                     line += " " + std::string(PacketName(pid)) + "=" + std::to_string(c);
                 std::cout << "[net] totals by packet:" << line << std::endl;
             }
+        }
+        if (state == State::ResourcePacks) {
+            const auto retry = packs.Tick();
+            if (retry.step == PackDownloader::Step::RequestChunk)
+                Send(proto::ResourcePackChunkRequestPacket{.packId = retry.packId, .chunkIndex = retry.chunkIndex});
         }
         std::vector<uint8_t> msg;
         while (net->TryReceive(msg)) {
@@ -1606,7 +1628,9 @@ namespace perlin {
         }
         std::vector<uint16_t> local(st.palette.size());
         for (size_t i = 0; i < local.size(); i++) {
-            local[i] = st.palette[i] == 0 ? uint16_t(0) : BlockPalette::Instance().Intern(st.palette[i]);
+            local[i] = st.persistent ? BlockPalette::Instance().Intern(st.palette[i])
+                       : (st.palette[i] == 0 && !BlockPalette::Instance().Sequential()) ? uint16_t(0)
+                                                                                       : BlockPalette::Instance().InternRuntime(st.palette[i]);
             static std::atomic<int> unknownLogged{0};
             if (local[i] != 0 && unknownLogged < 20 && BlockPalette::Instance().NamesLoaded() &&
                 BlockPalette::Instance().Name(local[i]).empty()) {
@@ -1626,7 +1650,7 @@ namespace perlin {
             if (ChunkCodec::ExpandIndices(ls, lidx)) {
                 std::vector<uint16_t> llocal(ls.palette.size());
                 for (size_t i = 0; i < llocal.size(); i++)
-                    llocal[i] = BlockPalette::Instance().Intern(ls.palette[i]);
+                    llocal[i] = ls.persistent ? BlockPalette::Instance().Intern(ls.palette[i]) : BlockPalette::Instance().InternRuntime(ls.palette[i]);
                 bool any = false;
                 for (int i = 0; i < ChunkCodec::kCells; i++) {
                     liquid[(size_t)i] = llocal[lidx[(size_t)i]];

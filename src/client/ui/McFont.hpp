@@ -1,5 +1,6 @@
 #pragma once
 #include <array>
+#include <memory>
 #include <cstdint>
 #include <string>
 #include <unordered_map>
@@ -22,6 +23,8 @@ namespace perlin::ui {
         void UseBuiltin();
         bool LoadUnihexFile(const std::string& path);
         bool HasUnihex() const { return !hex.empty(); }
+        bool AddTtf(const std::string& path);
+        size_t TtfCount() const { return ttfs.size(); }
 
         const Glyph& Get(uint32_t codepoint) const;
         float Width(const std::string& utf8, float scale = 1.0f) const;
@@ -39,6 +42,10 @@ namespace perlin::ui {
     private:
         void Build(const std::vector<uint8_t>& cells, int cellsAcross, int cellPx);
         const Glyph* Dynamic(uint32_t cp) const;
+        struct TtfFont;
+        bool RasterTtf(uint32_t cp, int cx, int cy, Glyph& out) const;
+        std::vector<std::shared_ptr<TtfFont>> ttfs;
+        std::vector<std::string> ttfPaths;
         struct HexGlyph {
             std::array<uint8_t, 32> rows{};
             bool wide = false;

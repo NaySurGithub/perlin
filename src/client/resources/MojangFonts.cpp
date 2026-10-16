@@ -189,7 +189,11 @@ namespace perlin {
         if (!ok && !indexUrl.empty() && ReadJson(indexUrl, root / "assets.tmp", assets)) {
             if (const ui::Json* objects = assets.Find("objects"); objects && objects->IsObject())
                 for (const auto& [key, value] : objects->object) {
-                    if (key.find("font/unifont_all_no_pua") == std::string::npos || key.size() < 4 || key.compare(key.size() - 4, 4, ".zip") != 0)
+                    const bool zipped = key.size() > 4 && key.compare(key.size() - 4, 4, ".zip") == 0;
+                    const bool raw = key.size() > 4 && key.compare(key.size() - 4, 4, ".hex") == 0;
+                    if (key.find("unifont") == std::string::npos || key.find("_pua") != std::string::npos && key.find("no_pua") == std::string::npos || (!zipped && !raw))
+                        continue;
+                    if (key.find("unifont_jp") != std::string::npos)
                         continue;
                     const ui::Json* hash = value.Find("hash");
                     if (!hash || hash->StringOr("").size() < 2)
@@ -197,8 +201,17 @@ namespace perlin {
                     const std::string h = hash->StringOr("");
                     const fs::path zip = root / "unifont.zip";
                     std::string bytes;
-                    if (Download(std::string(kResources) + h.substr(0, 2) + "/" + h, zip) && ReadFile(zip, bytes))
-                        ok = ExtractHexFromZipMemory(bytes.data(), bytes.size(), hexOut);
+                    if (Download(std::string(kResources) + h.substr(0, 2) + "/" + h, zip) && ReadFile(zip, bytes)) {
+                        if (raw) {
+                            std::ofstream out(hexOut, std::ios::binary);
+                            out.write(bytes.data(), static_cast<std::streamsize>(bytes.size()));
+                            ok = out.good();
+                        } else {
+                            ok = ExtractHexFromZipMemory(bytes.data(), bytes.size(), hexOut);
+                        }
+                    } else {
+                        std::cout << "[fonts] could not download " << key << std::endl;
+                    }
                     fs::remove(zip, ec);
                     if (ok)
                         break;

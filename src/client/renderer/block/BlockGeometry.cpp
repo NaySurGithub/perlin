@@ -470,11 +470,82 @@ namespace perlin {
         return out;
     }
 
+    void BlockGeometry::Clear() {
+        std::unique_lock lock(mutex);
+        blocks.clear();
+        geometries.clear();
+        byId.clear();
+        loadedPacks.clear();
+        terrainKey.clear();
+        customTerrain.clear();
+    }
+
+    bool EvaluateBlockCondition(const std::string& condition, uint16_t localId) {
+        return EvalCondition(condition, BlockPalette::Instance().States(localId));
+    }
+
+    void BlockGeometry::AddCustom(const std::string& name, const std::string& definitionJson, const std::vector<std::string>& packRoots,
+                                  const std::string& textureRoot, const FetchFn& fetch) {
+        const auto doc = json::Document::Parse(definitionJson, true);
+        if (!doc)
+            return;
+        std::unique_lock lock(mutex);
+        std::string key;
+        for (const std::string& root : packRoots)
+            key += root + "|";
+        for (const std::string& root : packRoots) {
+            if (std::find(loadedPacks.begin(), loadedPacks.end(), root) == loadedPacks.end()) {
+                loadedPacks.push_back(root);
+                LoadGeometries(root + "/models");
+            }
+        }
+        if (key != terrainKey) {
+            terrainKey = key;
+            customTerrain.clear();
+            for (const std::string& root : packRoots) {
+                const auto terrainDoc = json::Document::Parse(ReadAll(root + "/textures/terrain_texture.json"), true);
+                if (!terrainDoc)
+                    continue;
+                const json::View troot = terrainDoc->root();
+                const json::View data = troot.contains("texture_data") ? troot["texture_data"] : troot;
+                for (const auto m : data.members()) {
+                    std::string path;
+                    const json::View t = m.value["textures"];
+                    if (t.isString())
+                        path = t.str();
+                    else if (t.isArray() && t.size() > 0)
+                        path = t[(size_t)0].isString() ? t[(size_t)0].str() : t[(size_t)0]["path"].str();
+                    if (!path.empty())
+                        customTerrain[m.key] = path;
+                }
+            }
+        }
+        const json::View root = doc->root();
+        Block block;
+        ParseComponentSet(root["components"], customTerrain, textureRoot, fetch, block.base.geometry, block.base.hasGeometry,
+                          block.base.hasMaterials, block.base.tiles, block.base.dimming, block.base.hasTransform, block.base.rot,
+                          block.base.trans, block.base.scale);
+        bool any = block.base.hasGeometry;
+        for (const json::View p : root["permutations"].items()) {
+            Components c;
+            if (ParseComponentSet(p["components"], customTerrain, textureRoot, fetch, c.geometry, c.hasGeometry, c.hasMaterials, c.tiles,
+                                  c.dimming, c.hasTransform, c.rot, c.trans, c.scale)) {
+                any = any || c.hasGeometry;
+                block.perms.emplace_back(p["condition"].str(), std::move(c));
+            }
+        }
+        if (any)
+            blocks[name] = std::move(block);
+        else
+            blocks.erase(name);
+        byId.clear();
+    }
+
     const ModelEntry* BlockGeometry::Find(uint16_t localId) {
+        std::shared_lock readLock(mutex);
         if (blocks.empty())
             return nullptr;
         {
-            std::shared_lock lock(mutex);
             auto it = byId.find(localId);
             if (it != byId.end())
                 return it->second;
@@ -482,6 +553,8 @@ namespace perlin {
         auto& pal = BlockPalette::Instance();
         const std::string name = pal.Name(localId);
         const ModelEntry* result = nullptr;
+        ModelEntry pending;
+        bool havePending = false;
         auto bit = blocks.find(name);
         if (bit != blocks.end()) {
             const Block& block = bit->second;
@@ -520,14 +593,18 @@ namespace perlin {
                     entry.direct = true;
                     entry.quads = Bake(git->second, eff);
                     if (!entry.quads.empty()) {
-                        std::unique_lock lock(mutex);
-                        storage.push_back(std::move(entry));
-                        result = &storage.back();
+                        pending = std::move(entry);
+                        havePending = true;
                     }
                 }
             }
         }
+        readLock.unlock();
         std::unique_lock lock(mutex);
+        if (havePending) {
+            storage.push_back(std::move(pending));
+            result = &storage.back();
+        }
         byId[localId] = result;
         return result;
     }

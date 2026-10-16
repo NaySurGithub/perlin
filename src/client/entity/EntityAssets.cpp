@@ -45,7 +45,7 @@ namespace perlin::entity {
         std::vector<fs::path> JsonFiles(const fs::path& dir) {
             std::vector<fs::path> files;
             std::error_code ec;
-            for (const auto& e : fs::directory_iterator(dir, ec))
+            for (const auto& e : fs::recursive_directory_iterator(dir, fs::directory_options::skip_permission_denied, ec))
                 if (e.is_regular_file() && e.path().extension() == ".json")
                     files.push_back(e.path());
             const auto legacy = [](const fs::path& p) { return p.filename().string().find(".v1.") != std::string::npos; };
@@ -450,11 +450,16 @@ namespace perlin::entity {
             if (ReadAll(p, text) && Json::Parse(text, doc, error))
                 ParseRenderControllers(doc, controllers);
         }
+        size_t failed = 0;
         for (const fs::path& p : JsonFiles(fs::path(dir) / "entity")) {
             Json doc;
             std::string error;
-            if (ReadAll(p, text) && Json::Parse(text, doc, error))
+            if (!ReadAll(p, text))
+                continue;
+            if (Json::Parse(text, doc, error))
                 ParseEntity(doc, entities);
+            else if (failed++ < 3)
+                std::cout << "[entity] cannot parse " << p.string() << ": " << error << std::endl;
         }
         for (auto& [id, def] : entities)
             if (def.renderControllers.empty() && !def.geometries.empty())

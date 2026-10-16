@@ -78,9 +78,13 @@ namespace perlin {
 
     void PackDownloader::Reset() {
         awaiting.clear();
+        currentKey.clear();
+        queuedKeys.clear();
         fileFor.clear();
         active.clear();
         downloaded = cached = 0;
+        totalPacks = donePacks = 0;
+        receivedBytes = expectedBytes = 0;
     }
 
     bool PackDownloader::Have(const std::string& fileName, uint64_t size) const {
@@ -111,12 +115,17 @@ namespace perlin {
     std::vector<std::string> PackDownloader::Plan(const std::vector<proto::TexturePackInfosEntry>& offered) {
         std::vector<std::string> request;
         offeredPacks.clear();
+        totalPacks = offered.size();
+        donePacks = 0;
+        receivedBytes = 0;
+        expectedBytes = 0;
         for (const auto& pack : offered) {
             const std::string uuid = UuidString(pack.uuid);
             const std::string fileName = SafeName(uuid + "_" + pack.version) + ".zip";
             offeredPacks.push_back({fileName, uuid, pack.contentKey});
             if (Have(fileName, pack.size)) {
                 cached++;
+                donePacks++;
                 std::cout << "[packs] " << uuid << " " << pack.version << " already downloaded" << std::endl;
                 continue;
             }
@@ -131,6 +140,7 @@ namespace perlin {
                         std::vector<uint8_t> bytes(resp.body.begin(), resp.body.end());
                         if (Store(fileName, bytes)) {
                             downloaded++;
+                            donePacks++;
                             std::cout << "[packs] " << uuid << " downloaded (" << bytes.size() << " bytes)"
                                       << std::endl;
                             continue;
@@ -175,6 +185,7 @@ namespace perlin {
                 a.chunkCount = static_cast<uint32_t>(computed);
         }
         a.size = info.size;
+        expectedBytes += info.size;
         a.hash = info.hash;
         a.fileName = fileFor.count(key) ? fileFor[key] : SafeName(key) + ".zip";
         a.data.reserve(static_cast<size_t>(std::min<uint64_t>(info.size, 512ull << 20)));
@@ -192,10 +203,37 @@ namespace perlin {
             downloaded++;
             return r;
         }
-        r.step = Step::RequestChunk;
         r.packId = a.packId;
         r.chunkIndex = 0;
         active[key] = std::move(a);
+        if (currentKey.empty()) {
+            currentKey = key;
+            requestedAt = std::chrono::steady_clock::now();
+            retries = 0;
+            r.step = Step::RequestChunk;
+            std::cout << "[packs] requesting " << r.packId << " chunk 0" << std::endl;
+        } else {
+            queuedKeys.push_back(key);
+            r.step = Step::Ignore;
+        }
+        return r;
+    }
+
+    PackDownloader::Result PackDownloader::Tick() {
+        Result r;
+        if (currentKey.empty())
+            return r;
+        const auto it = active.find(currentKey);
+        if (it == active.end())
+            return r;
+        if (std::chrono::steady_clock::now() - requestedAt < std::chrono::seconds(4) || retries >= 6)
+            return r;
+        retries++;
+        requestedAt = std::chrono::steady_clock::now();
+        r.step = Step::RequestChunk;
+        r.packId = it->second.packId;
+        r.chunkIndex = it->second.next;
+        std::cout << "[packs] no reply, asking again for " << r.packId << " chunk " << r.chunkIndex << " (try " << retries << ")" << std::endl;
         return r;
     }
 
@@ -212,7 +250,10 @@ namespace perlin {
             return r;
         }
         a.data.insert(a.data.end(), chunk.payload.begin(), chunk.payload.end());
+        receivedBytes += chunk.payload.size();
         a.next++;
+        requestedAt = std::chrono::steady_clock::now();
+        retries = 0;
         if (a.next < a.chunkCount) {
             r.step = Step::RequestChunk;
             r.packId = a.packId;
@@ -233,9 +274,22 @@ namespace perlin {
         std::cout << "[packs] " << a.packId << " saved as " << a.fileName << " (" << a.data.size() << " bytes)"
                   << std::endl;
         downloaded++;
+        donePacks++;
         r.step = Step::PackDone;
         r.packId = a.packId;
         active.erase(it);
+        currentKey.clear();
+        if (!queuedKeys.empty()) {
+            currentKey = queuedKeys.front();
+            queuedKeys.erase(queuedKeys.begin());
+            const auto next = active.find(currentKey);
+            if (next != active.end()) {
+                r.hasNext = true;
+                r.nextPackId = next->second.packId;
+                requestedAt = std::chrono::steady_clock::now();
+                retries = 0;
+            }
+        }
         return r;
     }
 

@@ -427,6 +427,8 @@ namespace perlin {
         tileByPng.clear();
         animByTile.clear();
         baseTints.clear();
+        geometry.Clear();
+        geometryTried = false;
     }
 
     bool BlockLibrary::EnsureLoaded(const std::string& perlinPackDir, const std::string& vanillaRpRoot) {
@@ -1166,7 +1168,13 @@ namespace perlin {
             }
         }
         bool any = false;
+        const std::vector<std::string> serverDirs = ServerPacks::Instance().Directories();
+        const BlockGeometry::FetchFn fetchGeometry = [this](const std::string& p, const std::string& root) { return FetchTile(p, root); };
         for (const CustomBlockDef& def : defs) {
+            if (!def.json.empty()) {
+                geometry.AddCustom(def.name, def.json, serverDirs, vanillaRpRoot, fetchGeometry);
+                any = true;
+            }
             const auto resolve = [&](std::initializer_list<const char*> faces, std::string& pathOut) -> int {
                 for (const char* face : faces) {
                     const auto f = def.faceTexture.find(face);

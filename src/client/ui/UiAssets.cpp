@@ -1,5 +1,6 @@
 #include "client/ui/UiAssets.hpp"
 #include "client/resources/ServerPacks.hpp"
+#include "client/resources/ServerBlocks.hpp"
 #include "client/i18n/Lang.hpp"
 #include "client/ui/McFont.hpp"
 #include "util/Resources.hpp"
@@ -9,6 +10,8 @@
 #include "client/ui/Json.hpp"
 
 #include <algorithm>
+#include <cctype>
+#include <iostream>
 #include <cmath>
 #include <cstring>
 #include <filesystem>
@@ -82,12 +85,66 @@ namespace perlin::ui {
         sidecars.clear();
     }
 
+    namespace {
+        void LoadTtfFallbacks(McFont& font, const std::string& dataDir) {
+            namespace fs = std::filesystem;
+            std::vector<fs::path> dirs = {fs::path(dataDir) / "fonts", fs::path(dataDir) / "font"};
+            for (const std::string& pack : ServerPacks::Instance().Directories())
+                dirs.push_back(fs::path(pack) / "font");
+            std::error_code ec;
+#ifdef _WIN32
+            for (const char* root : {"C:/XboxGames/Minecraft for Windows/Content/data", "C:/XboxGames/Minecraft Preview for Windows/Content/data"})
+                dirs.push_back(fs::path(root) / "fonts");
+            if (const char* pf = std::getenv("ProgramFiles")) {
+                const fs::path apps = fs::path(pf) / "WindowsApps";
+                for (fs::directory_iterator it(apps, ec), end; !ec && it != end; it.increment(ec))
+                    if (it->path().filename().string().rfind("Microsoft.MinecraftUWP", 0) == 0)
+                        dirs.push_back(it->path() / "data" / "fonts");
+            }
+#else
+            if (const char* home = std::getenv("HOME")) {
+                const fs::path versions = fs::path(home) / ".local/share/mcpelauncher/versions";
+                for (fs::directory_iterator it(versions, ec), end; !ec && it != end; it.increment(ec))
+                    dirs.push_back(it->path() / "assets" / "fonts");
+            }
+#endif
+            std::vector<fs::path> found;
+            for (const fs::path& dir : dirs) {
+                std::error_code walk;
+                for (fs::directory_iterator it(dir, walk), end; !walk && it != end; it.increment(walk)) {
+                    std::string ext = it->path().extension().string();
+                    std::transform(ext.begin(), ext.end(), ext.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+                    if (ext == ".ttf" || ext == ".otf")
+                        found.push_back(it->path());
+                }
+            }
+            const auto rank = [](const fs::path& path) {
+                std::string n = path.filename().string();
+                std::transform(n.begin(), n.end(), n.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+                if (n.find("mojangles") != std::string::npos)
+                    return 0;
+                if (n.find("minecraft") != std::string::npos)
+                    return 1;
+                if (n.find("unifont") != std::string::npos)
+                    return 3;
+                return 2;
+            };
+            std::stable_sort(found.begin(), found.end(), [&](const fs::path& a, const fs::path& b) { return rank(a) < rank(b); });
+            for (const fs::path& path : found)
+                if (font.AddTtf(path.string()))
+                    std::cout << "[font] fallback font " << path.string() << std::endl;
+        }
+    }
+
     std::string UiAssets::LoadFont(const std::string& dataDir) {
         McFont& font = McFont::Instance();
         struct HexLoader {
             McFont& font;
             const std::string& dataDir;
-            ~HexLoader() { font.LoadUnihexFile(dataDir + "/fonts/unifont.hex"); }
+            ~HexLoader() {
+                LoadTtfFallbacks(font, dataDir);
+                font.LoadUnihexFile(dataDir + "/fonts/unifont.hex");
+            }
         } hexLoader{font, dataDir};
         auto apply = [&](const Texture& t) {
             return t.width > 0 && font.LoadSheet(t.pixels.data(), t.width, t.height);
@@ -110,14 +167,6 @@ namespace perlin::ui {
         std::string base = rel;
         const bool hasExt = base.size() > 4 && base[base.size() - 4] == '.';
         const char* exts[] = {".png", ".tga"};
-        for (const std::string& dir : ServerPacks::Instance().Directories()) {
-            if (hasExt && LoadTexture(dir + "/" + base, out))
-                return true;
-            if (!hasExt)
-                for (const char* e : exts)
-                    if (LoadTexture(dir + "/" + base + e, out))
-                        return true;
-        }
         auto& pack = TexturePack::Instance();
         if (pack.Active()) {
             if (hasExt && pack.Load(base, out))
@@ -125,6 +174,14 @@ namespace perlin::ui {
             for (const char* e : exts)
                 if (!hasExt && pack.Load(base + e, out))
                     return true;
+        }
+        for (const std::string& dir : ServerPacks::Instance().Directories()) {
+            if (hasExt && LoadTexture(dir + "/" + base, out))
+                return true;
+            if (!hasExt)
+                for (const char* e : exts)
+                    if (LoadTexture(dir + "/" + base + e, out))
+                        return true;
         }
         if (root.empty())
             return false;
@@ -228,6 +285,15 @@ namespace perlin::ui {
         const std::string name = Short(identifier);
         std::string text;
         for (const char* prefix : {"item.", "tile."})
+            if (i18n::Lang::Get().Find(std::string(prefix) + identifier + ".name", text))
+                return text;
+        CustomItemDef custom;
+        if (ServerBlocks::Instance().Item(identifier, custom) && !custom.displayName.empty()) {
+            if (i18n::Lang::Get().Find(custom.displayName, text))
+                return text;
+            return custom.displayName;
+        }
+        for (const char* prefix : {"item.", "tile."})
             if (i18n::Lang::Get().Find(std::string(prefix) + name + ".name", text))
                 return text;
         static const std::unordered_map<std::string, std::string> legacy = [] {
@@ -252,43 +318,57 @@ namespace perlin::ui {
     }
 
     void UiAssets::LoadItemTextureTable() {
-        if (itemTableLoaded)
+        const uint32_t generation = ServerPacks::Instance().Generation();
+        if (itemTableLoaded && generation == itemTableGeneration)
             return;
+        if (itemTableLoaded) {
+            items.clear();
+            itemTextures.clear();
+        }
         itemTableLoaded = true;
-        std::string text;
-        if (!Slurp(root + "/textures/item_texture.json", text))
-            return;
-        Json json;
-        std::string error;
-        if (!Json::Parse(text, json, error) || !json.IsObject())
-            return;
-        const Json* data = json.Find("texture_data");
-        if (!data || !data->IsObject())
-            return;
-        for (const auto& entry : data->object) {
-            const Json* textures = entry.second.Find("textures");
-            if (!textures)
+        itemTableGeneration = generation;
+        std::vector<std::string> files = {root + "/textures/item_texture.json"};
+        for (const std::string& dir : ServerPacks::Instance().Directories())
+            files.push_back(dir + "/textures/item_texture.json");
+        for (const std::string& file : files) {
+            std::string text;
+            if (!Slurp(file, text))
                 continue;
-            std::vector<std::string> paths;
-            const auto add = [&](const Json& v) {
-                if (v.IsString())
-                    paths.push_back(v.string);
-                else if (v.IsObject())
-                    if (const Json* p = v.Find("path"); p && p->IsString())
-                        paths.push_back(p->string);
-            };
-            if (textures->IsArray())
-                for (const Json& v : textures->array) add(v);
-            else
-                add(*textures);
-            if (!paths.empty())
-                itemTextures[entry.first] = std::move(paths);
+            Json json;
+            std::string error;
+            if (!Json::Parse(text, json, error) || !json.IsObject())
+                continue;
+            const Json* data = json.Find("texture_data");
+            if (!data || !data->IsObject())
+                continue;
+            for (const auto& entry : data->object) {
+                const Json* textures = entry.second.Find("textures");
+                if (!textures)
+                    continue;
+                std::vector<std::string> paths;
+                const auto add = [&](const Json& v) {
+                    if (v.IsString())
+                        paths.push_back(v.string);
+                    else if (v.IsObject())
+                        if (const Json* p = v.Find("path"); p && p->IsString())
+                            paths.push_back(p->string);
+                };
+                if (textures->IsArray())
+                    for (const Json& v : textures->array) add(v);
+                else
+                    add(*textures);
+                if (!paths.empty())
+                    itemTextures[entry.first] = std::move(paths);
+            }
         }
     }
 
-    bool UiAssets::FlatSprite(const std::string& name, int aux, ItemSprite& out, int64_t dyeColor) {
+    bool UiAssets::FlatSprite(const std::string& name, int aux, ItemSprite& out, int64_t dyeColor, const std::string& iconKey) {
         LoadItemTextureTable();
-        std::vector<std::string> candidates{name};
+        std::vector<std::string> candidates;
+        if (!iconKey.empty())
+            candidates.push_back(iconKey);
+        candidates.push_back(name);
         const auto replaceWord = [&](const std::string& from, const std::string& to) {
             std::string s;
             for (const std::string& w : Words(name)) {
@@ -443,7 +523,9 @@ namespace perlin::ui {
         std::string name = Short(id);
         if (name == "tallgrass") name = "short_grass";
 
-        if (!FlatSprite(name, aux, sprite, dye) && blocks && blocks->Ready()) {
+        CustomItemDef custom;
+        const bool customItem = ServerBlocks::Instance().Item(id, custom);
+        if (!FlatSprite(name, aux, sprite, dye, customItem ? custom.icon : std::string()) && blocks && blocks->Ready()) {
             if (const BlockAppearance* a = blocks->LookByName("minecraft:" + name)) {
                 const int px = BlockLibrary::TilePx();
                 sprite.tile = px;

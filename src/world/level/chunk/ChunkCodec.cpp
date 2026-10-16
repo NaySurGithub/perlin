@@ -19,6 +19,137 @@ namespace perlin {
             return (4096 + perWord - 1) / perWord;
         }
 
+        PersistentResolver gResolver = nullptr;
+
+        bool NbtString(wire::Reader& r, std::string& out) {
+            return r.ReadString(out);
+        }
+
+        bool SkipPayload(wire::Reader& r, uint8_t type, int depth);
+
+        bool SkipCompound(wire::Reader& r, int depth) {
+            for (;;) {
+                uint8_t t = 0;
+                if (!r.ReadByte(t))
+                    return false;
+                if (t == 0)
+                    return true;
+                std::string k;
+                if (!NbtString(r, k) || !SkipPayload(r, t, depth + 1))
+                    return false;
+            }
+        }
+
+        bool SkipPayload(wire::Reader& r, uint8_t type, int depth) {
+            if (depth > 32)
+                return false;
+            switch (type) {
+                case 1: { uint8_t v; return r.ReadByte(v); }
+                case 2: { uint16_t v; return r.ReadLE16(v); }
+                case 3: { int32_t v; return r.ReadZigzag32(v); }
+                case 4: { int64_t v; return r.ReadZigzag64(v); }
+                case 5: { float v; return r.ReadLEFloat(v); }
+                case 6: { for (int i = 0; i < 8; i++) { uint8_t b; if (!r.ReadByte(b)) return false; } return true; }
+                case 7: {
+                    int32_t n;
+                    if (!r.ReadZigzag32(n) || n < 0)
+                        return false;
+                    for (int32_t i = 0; i < n; i++) { uint8_t b; if (!r.ReadByte(b)) return false; }
+                    return true;
+                }
+                case 8: { std::string s; return NbtString(r, s); }
+                case 9: {
+                    uint8_t e;
+                    int32_t n;
+                    if (!r.ReadByte(e) || !r.ReadZigzag32(n) || n < 0 || (n > 0 && e == 0))
+                        return false;
+                    for (int32_t i = 0; i < n; i++)
+                        if (!SkipPayload(r, e, depth + 1))
+                            return false;
+                    return true;
+                }
+                case 10: return SkipCompound(r, depth);
+                case 11: {
+                    int32_t n;
+                    if (!r.ReadZigzag32(n) || n < 0)
+                        return false;
+                    for (int32_t i = 0; i < n; i++) { int32_t v; if (!r.ReadZigzag32(v)) return false; }
+                    return true;
+                }
+                case 12: {
+                    int32_t n;
+                    if (!r.ReadZigzag32(n) || n < 0)
+                        return false;
+                    for (int32_t i = 0; i < n; i++) { int64_t v; if (!r.ReadZigzag64(v)) return false; }
+                    return true;
+                }
+                default: return false;
+            }
+        }
+
+        bool ReadStates(wire::Reader& r, PersistentBlockState& out) {
+            for (;;) {
+                uint8_t t = 0;
+                if (!r.ReadByte(t))
+                    return false;
+                if (t == 0)
+                    return true;
+                PersistentBlockState::Entry e;
+                if (!NbtString(r, e.key))
+                    return false;
+                if (t == 1) {
+                    uint8_t v;
+                    if (!r.ReadByte(v))
+                        return false;
+                    e.kind = 0;
+                    e.number = v;
+                } else if (t == 3) {
+                    int32_t v;
+                    if (!r.ReadZigzag32(v))
+                        return false;
+                    e.kind = 1;
+                    e.number = v;
+                } else if (t == 8) {
+                    e.kind = 2;
+                    if (!NbtString(r, e.text))
+                        return false;
+                } else if (!SkipPayload(r, t, 1)) {
+                    return false;
+                } else {
+                    continue;
+                }
+                out.states.push_back(std::move(e));
+            }
+        }
+
+        bool ReadPersistentEntry(wire::Reader& r, PersistentBlockState& out) {
+            uint8_t root = 0;
+            if (!r.ReadByte(root) || root != 10)
+                return false;
+            std::string rootName;
+            if (!NbtString(r, rootName))
+                return false;
+            for (;;) {
+                uint8_t t = 0;
+                if (!r.ReadByte(t))
+                    return false;
+                if (t == 0)
+                    return true;
+                std::string k;
+                if (!NbtString(r, k))
+                    return false;
+                if (k == "name" && t == 8) {
+                    if (!NbtString(r, out.name))
+                        return false;
+                } else if (k == "states" && t == 10) {
+                    if (!ReadStates(r, out))
+                        return false;
+                } else if (!SkipPayload(r, t, 1)) {
+                    return false;
+                }
+            }
+        }
+
         bool ParseStorage(wire::Reader& r, PaletteStorage& st, const char** err) {
             auto fail = [&](const char* m) {
                 if (err)
@@ -28,8 +159,7 @@ namespace perlin {
             uint8_t hdr = 0;
             if (!r.ReadByte(hdr))
                 return fail("storage header truncated");
-            if (!(hdr & 1))
-                return fail("storage is persistent (NBT) encoded, expected network runtime ids");
+            const bool runtimeFlag = (hdr & 1) != 0;
             unsigned bpb = hdr >> 1;
             if (!ValidBits(bpb))
                 return fail("invalid bits-per-block");
@@ -39,9 +169,30 @@ namespace perlin {
             for (size_t i = 0; i < nwords; i++)
                 if (!r.ReadLE32(st.words[i]))
                     return fail("storage words truncated");
+            const auto nbtAhead = [&]() {
+                if (runtimeFlag)
+                    return false;
+                wire::Reader peek = r;
+                int32_t n = 0;
+                uint8_t first = 0;
+                if (bpb != 0 && !peek.ReadZigzag32(n))
+                    return false;
+                return peek.ReadByte(first) && first == 10;
+            };
+            const bool persistent = nbtAhead();
+            st.persistent = persistent;
+            const auto readOne = [&](int32_t& value) {
+                if (!persistent)
+                    return r.ReadZigzag32(value);
+                PersistentBlockState block;
+                if (!ReadPersistentEntry(r, block) || !gResolver)
+                    return false;
+                value = gResolver(block);
+                return true;
+            };
             if (bpb == 0) {
                 int32_t v = 0;
-                if (!r.ReadZigzag32(v))
+                if (!readOne(v))
                     return fail("uniform palette entry truncated");
                 st.palette.assign(1, v);
                 return true;
@@ -51,12 +202,14 @@ namespace perlin {
                 return fail("bad palette size");
             st.palette.resize((size_t)count);
             for (int32_t i = 0; i < count; i++)
-                if (!r.ReadZigzag32(st.palette[(size_t)i]))
+                if (!readOne(st.palette[(size_t)i]))
                     return fail("palette truncated");
             return true;
         }
 
     }
+
+    void SetPersistentResolver(PersistentResolver resolver) { gResolver = resolver; }
 
     const DimensionInfo& ChunkCodec::Dimension(int id) {
         static const DimensionInfo kOverworld{0, -64, 24};

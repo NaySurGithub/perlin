@@ -36,7 +36,7 @@ namespace perlin {
         {
             bool loaded = false;
             const uint16_t clicked = netLevel.GetBlock(bx, by, bz, loaded);
-            u.blockRuntimeId = loaded ? static_cast<uint32_t>(BlockPalette::Instance().NetworkId(clicked)) : 0;
+            u.blockRuntimeId = loaded ? static_cast<uint32_t>(BlockPalette::Instance().RuntimeId(clicked)) : 0;
         }
         haveLoggedInteraction = true;
         std::cout << "[place] use item on (" << bx << "," << by << "," << bz << ") face " << face << " clicked id " << u.blockRuntimeId
@@ -230,8 +230,8 @@ namespace perlin {
         }
         {
             auto& pal = BlockPalette::Instance();
-            std::cout << "[place] server put block " << runtimeId << " (" << pal.Name(pal.Intern(runtimeId)) << ") at (" << x << "," << y << ","
-                      << z << "), we placed with block id " << held << " (" << pal.Name(pal.Intern(held)) << ")"
+            std::cout << "[place] server put block " << runtimeId << " (" << pal.Name(pal.InternRuntime(runtimeId)) << ") at (" << x << "," << y << ","
+                      << z << "), we placed with block id " << held << " (" << pal.Name(pal.InternRuntime(held)) << ")"
                       << (runtimeId != held ? "  <-- different" : "") << std::endl;
         }
     }
@@ -242,7 +242,7 @@ namespace perlin {
         static std::mutex m;
         static std::vector<int32_t> seen;
         auto& pal = BlockPalette::Instance();
-        if (!pal.Name(pal.Intern(networkId)).empty())
+        if (!pal.Name(pal.InternRuntime(networkId)).empty())
             return;
         std::lock_guard lock(m);
         if (std::find(seen.begin(), seen.end(), networkId) != seen.end() || seen.size() > 200)

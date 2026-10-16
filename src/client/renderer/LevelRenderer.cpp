@@ -4,6 +4,7 @@
 #include "client/resources/BedrockSamples.hpp"
 #include "util/Resources.hpp"
 #include "client/resources/TextureLoader.hpp"
+#include "client/resources/ServerBlocks.hpp"
 #include "client/resources/TexturePack.hpp"
 #include <iostream>
 #include "client/renderer/chunk/ChunkMesher.hpp"
@@ -131,6 +132,7 @@ namespace perlin {
 
     void LevelRenderer::ReloadResources() {
         blocks.Reset();
+        ServerBlocks::Instance().Requeue();
         biomeTints.Reset();
         texturePackResolved = false;
         atlasUploaded = false;

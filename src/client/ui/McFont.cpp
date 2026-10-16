@@ -1,8 +1,15 @@
 #include "client/ui/McFont.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <cstring>
 #include <fstream>
+
+#define STB_TRUETYPE_IMPLEMENTATION
+#include <stb_truetype.h>
+
+#include <fstream>
+#include <iterator>
 
 namespace perlin::ui {
     namespace {
@@ -222,9 +229,99 @@ namespace perlin::ui {
         return true;
     }
 
+    struct McFont::TtfFont {
+        std::vector<unsigned char> data;
+        stbtt_fontinfo info{};
+    };
+
+    bool McFont::AddTtf(const std::string& path) {
+        for (const std::string& known : ttfPaths)
+            if (known == path)
+                return true;
+        std::ifstream in(path, std::ios::binary);
+        if (!in)
+            return false;
+        auto font = std::make_shared<TtfFont>();
+        font->data.assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
+        if (font->data.size() < 1024)
+            return false;
+        const int offset = stbtt_GetFontOffsetForIndex(font->data.data(), 0);
+        if (offset < 0 || !stbtt_InitFont(&font->info, font->data.data(), offset))
+            return false;
+        ttfs.push_back(std::move(font));
+        ttfPaths.push_back(path);
+        dyn.clear();
+        dynNext = 0;
+        for (int y = dynY0; y < atlasHeight; y++)
+            std::memset(&atlas[static_cast<size_t>(y) * static_cast<size_t>(atlasWidth) * 4], 0, static_cast<size_t>(atlasWidth) * 4);
+        version++;
+        return true;
+    }
+
+    bool McFont::RasterTtf(uint32_t cp, int cx, int cy, Glyph& out) const {
+        for (const std::shared_ptr<TtfFont>& font : ttfs) {
+            const int index = stbtt_FindGlyphIndex(&font->info, static_cast<int>(cp));
+            if (index == 0)
+                continue;
+            int ascent = 0, descent = 0, gap = 0;
+            stbtt_GetFontVMetrics(&font->info, &ascent, &descent, &gap);
+            const float total = static_cast<float>(ascent - descent);
+            const float scale = total > 0 ? std::min(stbtt_ScaleForPixelHeight(&font->info, 14.0f), 15.0f / total) : stbtt_ScaleForPixelHeight(&font->info, 14.0f);
+            const int baseline = static_cast<int>(std::lround(static_cast<float>(ascent) * scale)) + 1;
+            int x0, y0, x1, y1;
+            stbtt_GetGlyphBitmapBox(&font->info, index, scale, scale, &x0, &y0, &x1, &y1);
+            const int w = x1 - x0, h = y1 - y0;
+            int advance = 0, bearing = 0;
+            stbtt_GetGlyphHMetrics(&font->info, index, &advance, &bearing);
+            int ink = 0;
+            if (w > 0 && h > 0 && w <= 32 && h <= 32) {
+                std::vector<unsigned char> bitmap(static_cast<size_t>(w) * static_cast<size_t>(h));
+                stbtt_MakeGlyphBitmap(&font->info, bitmap.data(), w, h, w, scale, scale, index);
+                for (int row = 0; row < h; row++)
+                    for (int col = 0; col < w; col++) {
+                        const int px = x0 + col, py = baseline + y0 + row;
+                        if (px < 0 || px >= 16 || py < 0 || py >= 16)
+                            continue;
+                        if (bitmap[static_cast<size_t>(row) * static_cast<size_t>(w) + static_cast<size_t>(col)] < 110)
+                            continue;
+                        uint8_t* dst = &atlas[(static_cast<size_t>(cy + py) * static_cast<size_t>(atlasWidth) + static_cast<size_t>(cx + px)) * 4];
+                        dst[0] = dst[1] = dst[2] = dst[3] = 255;
+                        ink = std::max(ink, px + 1);
+                    }
+            }
+            if (ink == 0) {
+                out.width = 0;
+                out.advance = std::max(2, static_cast<int>(std::lround(static_cast<float>(advance) * scale / 2.0f)));
+            } else {
+                out.width = (ink + 1) / 2;
+                out.advance = std::max(out.width + 1, static_cast<int>(std::lround(static_cast<float>(advance) * scale / 2.0f)));
+            }
+            return true;
+        }
+        return false;
+    }
+
     const McFont::Glyph* McFont::Dynamic(uint32_t cp) const {
         if (const auto it = dyn.find(cp); it != dyn.end())
             return &it->second;
+        if (!ttfs.empty()) {
+            const int perRow = atlasWidth / 16;
+            const int rows = (atlasHeight - dynY0) / 16;
+            if (dynNext < perRow * rows) {
+                const int cx = (dynNext % perRow) * 16, cy = dynY0 + (dynNext / perRow) * 16;
+                Glyph g;
+                if (RasterTtf(cp, cx, cy, g)) {
+                    dynNext++;
+                    g.cell = kCell;
+                    g.u0 = static_cast<float>(cx) / static_cast<float>(atlasWidth);
+                    g.v0 = static_cast<float>(cy) / static_cast<float>(atlasHeight);
+                    g.u1 = static_cast<float>(cx + g.width * 2) / static_cast<float>(atlasWidth);
+                    g.v1 = static_cast<float>(cy + 16) / static_cast<float>(atlasHeight);
+                    version++;
+                    return &dyn.emplace(cp, g).first->second;
+                }
+            }
+        }
         const auto src = hex.find(cp);
         if (src == hex.end())
             return nullptr;

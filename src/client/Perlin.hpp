@@ -99,6 +99,12 @@ namespace perlin {
         uint64_t invTemplateVersion = 0;
         void UpdatePauseScreen(ui::Hud& hud, BedrockSession* live, int fbW, int fbH);
         bool UpdateDisconnectScreen(ui::Hud& hud, int fbW, int fbH);
+        bool UpdateLoadingScreen(ui::Hud& hud, int fbW, int fbH);
+        bool loadingShown = false, loadingDone = false;
+        std::string loadingSignature, loadingTemplate;
+        uint64_t loadingTemplateVersion = 0;
+        std::chrono::steady_clock::time_point loadingCheckAt{}, loadingReadyAt{}, loadingStartAt{};
+        bool loadingReadyArmed = false;
         bool disconnectShown = false, disconnectLeftDown = false, disconnectTextMode = false;
         std::chrono::steady_clock::time_point disconnectOpenedAt{}, disconnectCheckAt{};
         std::string disconnectSignature, disconnectTemplate;

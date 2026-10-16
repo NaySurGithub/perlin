@@ -18,8 +18,17 @@ namespace perlin {
         using FetchFn = std::function<int(const std::string& relPath, const std::string& root)>;
 
         void ScanPack(const std::string& packRoot, const std::string& blocksDir, const FetchFn& fetch);
-        bool Empty() const { return blocks.empty(); }
-        size_t Count() const { return blocks.size(); }
+        void AddCustom(const std::string& name, const std::string& definitionJson, const std::vector<std::string>& packRoots,
+                       const std::string& textureRoot, const FetchFn& fetch);
+        void Clear();
+        bool Empty() const {
+            std::shared_lock lock(mutex);
+            return blocks.empty();
+        }
+        size_t Count() const {
+            std::shared_lock lock(mutex);
+            return blocks.size();
+        }
 
         const ModelEntry* Find(uint16_t localId);
 
@@ -66,9 +75,13 @@ namespace perlin {
         std::unordered_map<std::string, Geometry> geometries;
         std::unordered_map<std::string, Block> blocks;
 
-        std::shared_mutex mutex;
+        mutable std::shared_mutex mutex;
+        std::vector<std::string> loadedPacks;
+        std::string terrainKey;
+        std::unordered_map<std::string, std::string> customTerrain;
         std::unordered_map<uint16_t, const ModelEntry*> byId;
         std::deque<ModelEntry> storage;
     };
 
+    bool EvaluateBlockCondition(const std::string& condition, uint16_t localId);
 }

@@ -228,6 +228,10 @@ namespace perlin {
                 replaced++;
             nameByHash[hash] = name;
             statesByHash[hash] = std::move(st);
+            if (path == "block_states.json" && !sequenceFrozen) {
+                sequenceIndex.emplace(hash, static_cast<int32_t>(sequence.size()));
+                sequence.push_back(hash);
+            }
             auto& props = propsByName[name];
             for (const auto& [k, v] : statesByHash[hash]) {
                 (void)v;
@@ -235,10 +239,54 @@ namespace perlin {
                     props.push_back(k);
             }
         }
+        if (path == "block_states.json")
+        { sequenceFrozen = true; vanillaSequence = sequence.size(); }
         namesLoaded = namesLoaded || !nameByHash.empty();
         std::cout << "[blocks] server registry: " << added << " ids added, " << replaced << " renamed from " << path
                   << std::endl;
         return added + replaced > 0 || !nameByHash.empty();
+    }
+
+    void BlockPalette::SetSequential(bool on) { sequential.store(on, std::memory_order_release); }
+
+    void BlockPalette::TruncateSequence() {
+        std::lock_guard<std::mutex> lk(mutex);
+        while (sequence.size() > vanillaSequence) {
+            sequenceIndex.erase(sequence.back());
+            sequence.pop_back();
+        }
+    }
+
+    void BlockPalette::AppendSequence(int32_t hash) {
+        std::lock_guard<std::mutex> lk(mutex);
+        if (sequenceIndex.emplace(hash, static_cast<int32_t>(sequence.size())).second)
+            sequence.push_back(hash);
+    }
+
+    uint16_t BlockPalette::InternRuntime(int32_t runtimeId) {
+        if (sequential.load(std::memory_order_acquire)) {
+            int32_t hash = 0;
+            bool found = false;
+            {
+                std::lock_guard<std::mutex> lk(mutex);
+                if (runtimeId >= 0 && static_cast<size_t>(runtimeId) < sequence.size()) {
+                    hash = sequence[static_cast<size_t>(runtimeId)];
+                    found = true;
+                }
+            }
+            if (found)
+                return Intern(hash);
+        }
+        return Intern(runtimeId);
+    }
+
+    int32_t BlockPalette::RuntimeId(uint16_t local) const {
+        const int32_t hash = NetworkId(local);
+        if (!sequential.load(std::memory_order_acquire))
+            return hash;
+        std::lock_guard<std::mutex> lk(mutex);
+        const auto it = sequenceIndex.find(hash);
+        return it == sequenceIndex.end() ? hash : it->second;
     }
 
     uint16_t BlockPalette::Intern(int32_t networkId) {

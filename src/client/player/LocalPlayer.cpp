@@ -468,7 +468,9 @@ namespace perlin {
         const double z = previous.z + (state.z - previous.z) * t;
         const float targetEye = rideLock ? 1.2f : sneaking ? static_cast<float>(physics::kSneakEye) : static_cast<float>(physics::kStandEye);
         eyeOffset += (targetEye - eyeOffset) * (1.0f - std::exp(-dt * 20.0f));
-        const double decay = std::exp(-dt * 12.0);
+        const double offsetSize = std::sqrt(smoothOffset[0] * smoothOffset[0] + smoothOffset[1] * smoothOffset[1] +
+                                            smoothOffset[2] * smoothOffset[2]);
+        const double decay = std::exp(-dt * (offsetSize < 0.4 ? 7.0 : 14.0));
         for (double& o : smoothOffset)
             o = std::fabs(o) < 1e-4 ? 0.0 : o * decay;
         camera.x = static_cast<float>(x + smoothOffset[0]);

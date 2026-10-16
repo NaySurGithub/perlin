@@ -1,6 +1,8 @@
 #pragma once
 #include "protocol/Packets.hpp"
 
+#include <atomic>
+#include <chrono>
 #include <cstdint>
 #include <map>
 #include <set>
@@ -22,13 +24,23 @@ namespace perlin {
             std::string packId;
             uint32_t chunkIndex = 0;
             std::string message;
+            bool hasNext = false;
+            std::string nextPackId;
         };
+        Result Tick();
         Result OnDataInfo(const proto::ResourcePackDataInfoPacket& info);
         Result OnChunk(const proto::ResourcePackChunkDataPacket& chunk);
 
         void MountAll();
         bool AllReceived() const { return awaiting.empty() && active.empty(); }
         size_t Downloaded() const { return downloaded; }
+        struct Progress {
+            size_t total = 0, done = 0;
+            uint64_t bytes = 0, bytesTotal = 0;
+        };
+        Progress GetProgress() const {
+            return {totalPacks.load(), donePacks.load(), receivedBytes.load(), expectedBytes.load()};
+        }
         size_t Cached() const { return cached; }
 
         static std::string UuidString(const net::Uuid& id);
@@ -47,6 +59,12 @@ namespace perlin {
             std::string fileName, uuid, key;
         };
         std::vector<Offered> offeredPacks;
+        std::string currentKey;
+        std::vector<std::string> queuedKeys;
+        std::chrono::steady_clock::time_point requestedAt{};
+        int retries = 0;
+        std::atomic<size_t> totalPacks{0}, donePacks{0};
+        std::atomic<uint64_t> receivedBytes{0}, expectedBytes{0};
         std::string directory;
         std::set<std::string> awaiting;
         std::map<std::string, std::string> fileFor;

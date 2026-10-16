@@ -1,0 +1,128 @@
+#include "client/ui/FormatCodes.hpp"
+
+#include "client/ui/RmlEmit.hpp"
+
+#include <cctype>
+#include <cstdio>
+
+namespace perlin::ui {
+    bool FormatCodeColor(char code, uint32_t& rgb) {
+        switch (std::tolower(static_cast<unsigned char>(code))) {
+        case '0': rgb = 0x000000; return true;
+        case '1': rgb = 0x0000AA; return true;
+        case '2': rgb = 0x00AA00; return true;
+        case '3': rgb = 0x00AAAA; return true;
+        case '4': rgb = 0xAA0000; return true;
+        case '5': rgb = 0xAA00AA; return true;
+        case '6': rgb = 0xFFAA00; return true;
+        case '7': rgb = 0xAAAAAA; return true;
+        case '8': rgb = 0x555555; return true;
+        case '9': rgb = 0x5555FF; return true;
+        case 'a': rgb = 0x55FF55; return true;
+        case 'b': rgb = 0x55FFFF; return true;
+        case 'c': rgb = 0xFF5555; return true;
+        case 'd': rgb = 0xFF55FF; return true;
+        case 'e': rgb = 0xFFFF55; return true;
+        case 'f': rgb = 0xFFFFFF; return true;
+        case 'g': rgb = 0xDDD605; return true;
+        case 'h': rgb = 0xE3D4D1; return true;
+        case 'i': rgb = 0xCECACA; return true;
+        case 'j': rgb = 0x443A3B; return true;
+        case 'm': rgb = 0x971607; return true;
+        case 'n': rgb = 0xB4684D; return true;
+        case 'p': rgb = 0xDEB12D; return true;
+        case 'q': rgb = 0x47A036; return true;
+        case 's': rgb = 0x2CBAA8; return true;
+        case 't': rgb = 0x21497B; return true;
+        case 'u': rgb = 0x9A5CC6; return true;
+        case 'v': rgb = 0xEB7114; return true;
+        default: return false;
+        }
+    }
+
+    namespace {
+        bool IsSection(const std::string& s, size_t i) {
+            return i + 2 < s.size() && static_cast<unsigned char>(s[i]) == 0xC2 && static_cast<unsigned char>(s[i + 1]) == 0xA7;
+        }
+    }
+
+    std::string StripFormatCodes(const std::string& text) {
+        std::string out;
+        out.reserve(text.size());
+        for (size_t i = 0; i < text.size();) {
+            if (IsSection(text, i)) {
+                i += 3;
+                continue;
+            }
+            out += text[i++];
+        }
+        return out;
+    }
+
+    std::string FormatCodesToRml(const std::string& text) {
+        std::string out;
+        std::string chunk;
+        bool bold = false, italic = false, underline = false, strike = false;
+        bool haveColor = false;
+        uint32_t color = 0;
+        bool open = false;
+        const auto close = [&] {
+            if (open)
+                out += "</span>";
+            open = false;
+        };
+        const auto flush = [&] {
+            if (chunk.empty())
+                return;
+            const bool styled = haveColor || bold || italic || underline || strike;
+            if (styled) {
+                char buf[32];
+                std::string style;
+                if (haveColor) {
+                    std::snprintf(buf, sizeof buf, "color:#%06X;", color & 0xFFFFFFu);
+                    style += buf;
+                }
+                if (bold)
+                    style += "font-weight:bold;";
+                if (italic)
+                    style += "font-style:italic;";
+                if (underline || strike)
+                    style += std::string("text-decoration:") + (underline ? "underline" : "") + (underline && strike ? " " : "") +
+                             (strike ? "line-through" : "") + ";";
+                out += "<span style=\"" + style + "\">";
+                open = true;
+            }
+            out += EscapeRml(chunk);
+            chunk.clear();
+            close();
+        };
+        for (size_t i = 0; i < text.size();) {
+            if (IsSection(text, i)) {
+                flush();
+                const char code = text[i + 2];
+                i += 3;
+                uint32_t rgb;
+                if (FormatCodeColor(code, rgb)) {
+                    haveColor = true;
+                    color = rgb;
+                    bold = italic = underline = strike = false;
+                } else {
+                    switch (std::tolower(static_cast<unsigned char>(code))) {
+                    case 'l': bold = true; break;
+                    case 'o': italic = true; break;
+                    case 'k': break;
+                    case 'r': haveColor = bold = italic = underline = strike = false; break;
+                    default: break;
+                    }
+                }
+                continue;
+            }
+            const char c = text[i++];
+            if (c == '\r' || c == '\n')
+                continue;
+            chunk += c;
+        }
+        flush();
+        return out;
+    }
+}

@@ -1,5 +1,7 @@
 #include "client/player/BlockCollision.hpp"
 #include "client/player/VoxelShapes.hpp"
+#include "client/renderer/block/BlockGeometry.hpp"
+#include "client/resources/ServerBlocks.hpp"
 
 #include "client/renderer/block/BlockLibrary.hpp"
 #include "util/Paths.hpp"
@@ -252,6 +254,23 @@ namespace perlin {
     }
 
     LevelCollision::Info LevelCollision::Classify(uint16_t id, const BlockLibrary* blocks) {
+        if (id != 0) {
+            CustomBlockCollision custom;
+            if (ServerBlocks::Instance().Collision(BlockPalette::Instance().Name(id), custom)) {
+                const CollisionSet* chosen = custom.base.defined ? &custom.base : nullptr;
+                for (const auto& [condition, set] : custom.permutations)
+                    if (EvaluateBlockCondition(condition, id))
+                        chosen = &set;
+                if (chosen) {
+                    Info info;
+                    for (const CollisionBox& b : chosen->boxes)
+                        Add(info.shape, b[0], b[1], b[2], b[3], b[4], b[5]);
+                    info.full = info.shape.count == 1 && info.shape.boxes[0].x0 <= 0 && info.shape.boxes[0].y0 <= 0 &&
+                                info.shape.boxes[0].z0 <= 0 && info.shape.boxes[0].x1 >= 1 && info.shape.boxes[0].y1 >= 1 && info.shape.boxes[0].z1 >= 1;
+                    return info;
+                }
+            }
+        }
         Info info = ClassifyVanilla(id, blocks);
         if (id == 0 || !info.shape.Empty() || info.shape.fluid != 0 || info.shape.climbable || info.shape.web)
             return info;
