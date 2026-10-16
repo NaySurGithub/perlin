@@ -217,6 +217,11 @@ void RequestRespawn();
         bool GetWorldTime(int64_t& outDay, int& outTicksOfDay) const;
         bool GetWorldTicks(double& outTicks) const;
         void SetDayCycle(bool running);
+        int OwnPermission() const {
+            std::lock_guard<std::mutex> lk(tabMutex);
+            const auto it = permByUid.find(uniqueId);
+            return it == permByUid.end() ? -1 : it->second;
+        }
         int DimensionId() const { return dimensionId; }
         uint32_t HurtCount() const { return hurtCounter.load(); }
         struct HurtSource {

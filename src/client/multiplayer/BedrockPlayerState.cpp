@@ -245,7 +245,7 @@ namespace perlin {
             const bool uiWindow = window == WindowIDVarint::Ui || type == ContainerSlotType::Cursor || type == ContainerSlotType::CraftingInput ||
                                   type == ContainerSlotType::CraftingOutput || type == ContainerSlotType::CreativeOutput;
             for (size_t i = 0; i < items.size(); i++) {
-                const int slot = firstSlot + static_cast<int>(i);
+                const int slot = firstSlot + static_cast<int>(i) + (type == ContainerSlotType::Inventory && !whole && firstSlot < 27 ? 9 : 0);
                 const ItemStackInfo info = convert(items[i]);
                 if (uiWindow) {
                     int addr = -1;
@@ -327,7 +327,7 @@ namespace perlin {
                         switch (type) {
                         case ContainerSlotType::HotbarAndInventory:
                         case ContainerSlotType::Hotbar: slot = s.slot; break;
-                        case ContainerSlotType::Inventory: slot = s.slot; break;
+                        case ContainerSlotType::Inventory: slot = s.slot < 27 ? s.slot + 9 : s.slot; break;
                         case ContainerSlotType::Armor: slot = kInvArmor0 + s.slot; break;
                         case ContainerSlotType::Offhand: slot = kInvOffhand; break;
                         case ContainerSlotType::CraftingInput: slot = s.slot >= 28 && s.slot <= 31 ? kInvCraft0 + s.slot - 28 : (s.slot >= 32 && s.slot <= 40 ? kInvWork0 + s.slot - 32 : -1); break;

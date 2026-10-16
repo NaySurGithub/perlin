@@ -44,6 +44,9 @@
 #include <glm/gtc/matrix_inverse.hpp>
 
 #include <algorithm>
+#include <functional>
+#include <map>
+#include <cctype>
 #include <chrono>
 #include <stdexcept>
 #include <cstdio>
@@ -114,6 +117,7 @@ namespace perlin {
 
     namespace {
         AimHit gAim;
+        uint32_t gSelfSwing = 0;
         bool gItemSlow = false;
         struct LocalCrack { bool active = false; int x = 0, y = 0, z = 0, stage = 0; };
         LocalCrack gLocalCrack;
@@ -853,6 +857,10 @@ namespace perlin {
         const bool searching = creativeMode && creativeTab == ui::kCreativeSearchTab;
         if (deathShown || (live && live->TakeServerClosedInventory()))
             close = true;
+        const auto typedIs = [&](const InputManager::Typed& t, Action a) {
+            const Binding& b = options.GetKey(a);
+            return t.character && b.device == Binding::Device::Keyboard && std::toupper(t.key) == b.code;
+        };
         for (const auto& t : inputManager.TakeTyped()) {
             if (now - invOpenedAt < std::chrono::milliseconds(150))
                 continue;
@@ -862,12 +870,17 @@ namespace perlin {
                 creativeSearch += static_cast<char>(t.key);
             else if (searching && !t.character && t.key == Key::Backspace && !creativeSearch.empty())
                 creativeSearch.pop_back();
-            else if (t.character && (t.key == 'e' || t.key == 'E') && !searching)
+            else if (typedIs(t, Action::Inventory) && !searching)
                 close = true;
-            else if (t.character && (t.key == 'q' || t.key == 'Q') && live && invHoverAddr >= 0)
+            else if (typedIs(t, Action::Drop) && live && invHoverAddr >= 0)
                 live->InvDropSlot(invHoverAddr, t.ctrl);
-            else if (t.character && t.key >= '1' && t.key <= '9' && live && invHoverAddr >= 0)
-                live->InvHotbarKey(invHoverAddr, t.key - '1');
+            else if (live && invHoverAddr >= 0) {
+                for (int h = 0; h < 9; h++)
+                    if (typedIs(t, static_cast<Action>(static_cast<int>(Action::Hotbar1) + h))) {
+                        live->InvHotbarKey(invHoverAddr, h);
+                        break;
+                    }
+            }
         }
         if (close) {
             if (live)
@@ -1120,7 +1133,8 @@ namespace perlin {
         if (!pauseShown && canOpen && (inputManager.Pressed(Action::Pause) || (preview && !pausePreviewOpened))) {
             pausePreviewOpened = true;
             pauseShown = true;
-            pauseView = PERLIN_ENV("PERLIN_PREVIEW_OPTIONS") ? 1 : 0;
+            pauseView = PERLIN_ENV("PERLIN_PREVIEW_OPTIONS") ? (PERLIN_ENV("PERLIN_PREVIEW_OPTIONS")[0] == 0x77 ? 3 : 1) : 0;
+            optionsPage = PERLIN_ENV("PERLIN_PREVIEW_OPTIONS") ? std::atoi(PERLIN_ENV("PERLIN_PREVIEW_OPTIONS")) : 0;
             pauseOpenedAt = now;
             pauseSignature.clear();
             inputManager.TakeTyped();
@@ -1131,9 +1145,17 @@ namespace perlin {
         if (!pauseShown)
             return;
         bool resume = deathShown || invShown || chat.IsOpen();
+        if (bindCapture < 0)
         for (const auto& t : inputManager.TakeTyped())
             if (!t.character && t.key == Key::Escape && now - pauseOpenedAt > std::chrono::milliseconds(100)) {
-                if (pauseView == 1) {
+                if (pauseView == 1 && optionsPage != 0) {
+                    options.Save();
+                    optionsPage = optionsPage == 5 ? 3 : 0;
+                    optionsSub = 0;
+                    kbScroll = 0;
+                    optionsSignature.clear();
+                    hud.Overlay().ClearOverlay();
+                } else if (pauseView != 0) {
                     options.Save();
                     pauseView = 0;
                     optionsSignature.clear();
@@ -1176,110 +1198,483 @@ namespace perlin {
         const bool down = input.IsMouseDown(0);
         const bool clickReady = now - pauseOpenedAt > std::chrono::milliseconds(150);
 
-        if (pauseView == 1) {
+        if (pauseView == 1 && optionsPage == 5) {
+            struct Cat {
+                const char* name;
+                std::vector<std::pair<Action, const char*>> items;
+            };
+            static const Cat kCats[] = {
+                {"Movement", {{Action::Jump, "Jump"}, {Action::Sneak, "Sneak"}, {Action::Sprint, "Sprint"}, {Action::Left, "Strafe Left"},
+                              {Action::Right, "Strafe Right"}, {Action::Back, "Walk Backwards"}, {Action::Forward, "Walk Forwards"}}},
+                {"Gameplay", {{Action::Attack, "Attack/Destroy"}, {Action::PickBlock, "Pick Block"}, {Action::Use, "Use Item/Place Block"}}},
+                {"Inventory", {{Action::Drop, "Drop Selected Item"}, {Action::Hotbar1, "Hotbar Slot 1"}, {Action::Hotbar2, "Hotbar Slot 2"},
+                               {Action::Hotbar3, "Hotbar Slot 3"}, {Action::Hotbar4, "Hotbar Slot 4"}, {Action::Hotbar5, "Hotbar Slot 5"},
+                               {Action::Hotbar6, "Hotbar Slot 6"}, {Action::Hotbar7, "Hotbar Slot 7"}, {Action::Hotbar8, "Hotbar Slot 8"},
+                               {Action::Hotbar9, "Hotbar Slot 9"}, {Action::Inventory, "Open/Close Inventory"}}},
+                {"Multiplayer", {{Action::PlayerList, "List Players"}, {Action::Chat, "Open Chat"}, {Action::Command, "Open Command"}}},
+                {"Miscellaneous", {{Action::DebugScreen, "Debug Screen"}, {Action::ToggleHud, "Hide GUI"}, {Action::Screenshot, "Take Screenshot"},
+                                   {Action::CyclePerspective, "Toggle Perspective"}, {Action::Zoom, "Zoom"}}}};
+            const auto keyText = [](const Binding& b) {
+                std::string v = b.Serialize();
+                for (const char* prefix : {"key.keyboard.", "key.mouse."}) {
+                    const std::string pre = prefix;
+                    if (v.rfind(pre, 0) == 0)
+                        v = v.substr(pre.size());
+                }
+                if (v == "left" || v == "right" || v == "middle")
+                    v += " button";
+                else if (v == "shift" || v == "control" || v == "alt")
+                    v = "left " + v;
+                if (v.empty())
+                    return std::string("Not bound");
+                if (v.size() > 1) {
+                    bool word = true;
+                    for (char& c : v) {
+                        if (c == '_')
+                            c = ' ';
+                        if (word && c >= 'a' && c <= 'z')
+                            c = static_cast<char>(c - 32);
+                        word = c == ' ';
+                    }
+                }
+                return v;
+            };
+            const KeyBindings defaults = DefaultBindings();
+            std::vector<ui::KeybindRow> rows;
+            std::vector<int> rowAction;
+            for (const Cat& c : kCats) {
+                ui::KeybindRow h;
+                h.header = true;
+                h.label = c.name;
+                rows.push_back(h);
+                rowAction.push_back(-1);
+                for (const auto& it : c.items) {
+                    ui::KeybindRow r;
+                    r.label = it.second;
+                    const Binding& b = options.GetKey(it.first);
+                    const bool waiting = bindCapture == static_cast<int>(it.first);
+                    bool conflict = false;
+                    for (size_t o = 0; o < kActionCount; o++)
+                        if (o != static_cast<size_t>(it.first) && b.device != Binding::Device::None && options.keys[o] == b &&
+                            !((it.first == Action::Attack || it.first == Action::Look) && static_cast<Action>(o) == Action::Look) &&
+                            !(it.first == Action::Look))
+                            conflict = true;
+                    r.value = waiting ? "> " + keyText(b) + " <" : conflict ? "[ " + keyText(b) + " ]" : keyText(b);
+                    r.color = waiting ? 2 : conflict ? 1 : 0;
+                    r.canReset = !(b == defaults[static_cast<size_t>(it.first)]);
+                    rows.push_back(r);
+                    rowAction.push_back(static_cast<int>(it.first));
+                }
+            }
+            const ui::KeybindLayout kl = ui::ComputeKeybindLayout(static_cast<int>(rows.size()), guiW, guiH);
+            if (bindCapture < 0)
+                kbScroll = std::clamp(kbScroll - inputManager.Scroll() * 20.0f, 0.0f, kl.maxScroll);
+            else
+                kbScroll = std::clamp(kbScroll, 0.0f, kl.maxScroll);
+            std::string signature = std::to_string(guiW) + "x" + std::to_string(guiH) + "k" + std::to_string(static_cast<int>(kbScroll));
+            for (const ui::KeybindRow& r : rows)
+                signature += "|" + r.value + (r.canReset ? "r" : "");
+            if (signature != optionsSignature || !hud.Overlay().HasOverlay()) {
+                optionsSignature = signature;
+                std::string error;
+                if (!hud.Overlay().SetOverlay(ui::BuildKeybindsScreenRml(rows, tr("controls.keybinds.title", "Key Binds"), tr("gui.done", "Done"), tr("controls.reset", "Reset"), kbScroll, guiW, guiH), error))
+                    std::cout << "[ui] keybinds screen: " << error << std::endl;
+            }
+            const float gx = mx / static_cast<float>(scale), gy = my / static_cast<float>(scale);
+            hud.Overlay().MouseMove(gx, gy);
+            hud.UpdateOverlay(fbW, fbH, options.guiScale);
+            if (bindCapture >= 0) {
+                bool captured = false;
+                for (const auto& t : inputManager.TakeTyped()) {
+                    if (t.character || Clock::now() - bindStartedAt < std::chrono::milliseconds(120))
+                        continue;
+                    if (t.key != Key::Escape)
+                        options.SetKey(static_cast<Action>(bindCapture), Binding::KeyboardKey(t.key));
+                    captured = true;
+                }
+                for (int b = 1; b <= 2 && !captured; b++)
+                    if (input.IsMouseDown(b) && Clock::now() - bindStartedAt > std::chrono::milliseconds(120)) {
+                        options.SetKey(static_cast<Action>(bindCapture), Binding::MouseButton(b));
+                        captured = true;
+                    }
+                if (captured) {
+                    bindCapture = -1;
+                    options.Save();
+                    optionsSignature.clear();
+                }
+                pauseLeftDown = down;
+                return;
+            }
+            const auto inside = [&](float x, float y, float w, float h) { return gx >= x && gx < x + w && gy >= y && gy < y + h; };
+            if (down && !pauseLeftDown && clickReady) {
+                if (inside(kl.doneX, kl.doneY, kl.doneW, 20.0f)) {
+                    options.Save();
+                    optionsPage = 3;
+                    kbScroll = 0;
+                    optionsSignature.clear();
+                    hud.Overlay().ClearOverlay();
+                } else if (gy >= kl.listTop && gy < kl.listBottom) {
+                    for (int i = 0; i < static_cast<int>(rows.size()); i++) {
+                        const int action = rowAction[static_cast<size_t>(i)];
+                        if (action < 0)
+                            continue;
+                        const float y = kl.RowY(i, kbScroll);
+                        if (inside(kl.keyX, y, kl.keyW, 20.0f)) {
+                            bindCapture = action;
+                            bindStartedAt = Clock::now();
+                            optionsSignature.clear();
+                            break;
+                        }
+                        if (inside(kl.resetX, y, kl.resetW, 20.0f) && rows[static_cast<size_t>(i)].canReset) {
+                            options.SetKey(static_cast<Action>(action), defaults[static_cast<size_t>(action)]);
+                            options.Save();
+                            optionsSignature.clear();
+                            break;
+                        }
+                    }
+                }
+            }
+            pauseLeftDown = down;
+            return;
+        }
+
+        if (pauseView == 1 || pauseView == 3) {
+            struct OptRow {
+                std::string label, value;
+                float fraction;
+                std::function<void(float, bool)> apply;
+            };
             static const int kFps[] = {0, 30, 60, 90, 120, 144, 165, 240};
             static const int kGuiScales[] = {0, 1, 2, 3, 4};
             const auto percent = [](float v) { return std::to_string(static_cast<int>(std::lround(v * 100.0f))) + "%"; };
             const auto onOff = [&](bool on) { return on ? tr("options.on", "ON") : tr("options.off", "OFF"); };
-            const auto rows = [&] {
-                std::vector<ui::OptionsRow> r;
-                r.push_back({tr("options.fov", "FOV"), std::to_string(static_cast<int>(std::lround(options.fov))), (options.fov - 30.0f) / 80.0f});
-                r.push_back({tr("options.renderDistance", "Render Distance"), std::to_string(options.renderDistance) + " " + tr("options.chunks", "chunks"),
-                             static_cast<float>(options.renderDistance - 2) / 30.0f});
-                r.push_back({tr("options.sensitivity", "Sensitivity"), percent(options.mouseSensitivity / 0.15f), options.mouseSensitivity / 0.30f});
-                r.push_back({tr("options.gamma", "Brightness"), options.gamma <= 0.01f ? tr("options.gamma.min", "Moody") : options.gamma >= 0.99f ? tr("options.gamma.max", "Bright") : percent(options.gamma), options.gamma});
-                r.push_back({tr("soundCategory.master", "Master Volume"), percent(options.sound.master), options.sound.master});
-                r.push_back({tr("options.framerateLimit", "Max Framerate"), options.maxFps == 0 ? tr("options.framerateLimit.max", "Unlimited") : std::to_string(options.maxFps) + " fps", -1.0f});
-                r.push_back({std::string("GUI Scale"), options.guiScale == 0 ? tr("options.guiScale.auto", "Auto") : std::to_string(options.guiScale), -1.0f});
-                r.push_back({tr("options.viewBobbing", "View Bobbing"), onOff(options.hand.viewBobbing), -1.0f});
-                r.push_back({tr("options.invertMouse", "Invert Mouse"), onOff(options.invertMouse), -1.0f});
-                r.push_back({tr("options.showSubtitles", "Show Subtitles"), onOff(options.sound.subtitles), -1.0f});
-                r.push_back({tr("options.fovEffectScale", "FOV Effects"), onOff(options.fovEffects), -1.0f});
-                r.push_back({tr("options.showHand", "Show Hand"), onOff(options.hand.show), -1.0f});
-                return r;
+            const auto snap = [](float f, float steps) { return std::round(std::clamp(f, 0.0f, 1.0f) * steps) / steps; };
+            std::vector<OptRow> model;
+            std::string title = tr("options.title", "Options");
+            const auto nav = [&](const std::string& label, int page) {
+                model.push_back({label, "", -1.0f, [this, page](float, bool click) {
+                                     if (click) {
+                                         optionsPage = page;
+                                         optionsSub = 0;
+                                         optionsSignature.clear();
+                                         bindCapture = -1;
+                                     }
+                                 }});
             };
-            const std::vector<ui::OptionsRow> model = rows();
-            const ui::OptionsLayout layout = ui::ComputeOptionsLayout(static_cast<int>(model.size()), guiW, guiH);
-            std::string signature = std::to_string(guiW) + "x" + std::to_string(guiH);
-            for (const ui::OptionsRow& r : model)
+            const auto toggle = [&](const std::string& label, bool& ref) {
+                model.push_back({label, onOff(ref), -1.0f, [&ref](float, bool click) { if (click) ref = !ref; }});
+            };
+            const auto slider = [&](const std::string& label, const std::string& value, float fraction, std::function<void(float)> set) {
+                model.push_back({label, value, fraction, [set](float f, bool) { set(f); }});
+            };
+            const auto choice = [&](const std::string& label, std::string& ref, std::vector<std::pair<std::string, std::string>> values) {
+                std::string shown = ref;
+                for (const auto& v : values)
+                    if (v.first == ref)
+                        shown = v.second;
+                model.push_back({label, shown, -1.0f, [&ref, values](float, bool click) {
+                                     if (!click)
+                                         return;
+                                     size_t at = 0;
+                                     for (size_t i = 0; i < values.size(); i++)
+                                         if (values[i].first == ref)
+                                             at = i;
+                                     ref = values[(at + 1) % values.size()].first;
+                                 }});
+            };
+            const auto volume = [&](const char* key, const char* fallback, float& ref) {
+                slider(tr(key, fallback), ref <= 0.001f ? tr("options.off", "OFF") : percent(ref), ref, [&ref, snap](float f) { ref = snap(f, 100.0f); });
+            };
+            if (pauseView == 3) {
+                title = tr("perlin.worldOptions", "World Options");
+                static std::map<std::string, bool> rules = {{"keepInventory", false}, {"doDaylightCycle", true}, {"doWeatherCycle", true},
+                                                            {"doMobSpawning", true}, {"mobGriefing", true},
+                                                            {"showCoordinates", false}, {"pvp", true}};
+                static int modeAt = 0, timeAt = 0, weatherAt = 0, diffAt = 2;
+                const int perm = live ? live->OwnPermission() : 2;
+                model.push_back({tr("perlin.cheats", "Cheats"), perm >= 2 ? tr("perlin.cheats.on", "Allowed (Operator)") : tr("perlin.cheats.off", "No Permission"), -1.0f,
+                                 [](float, bool) {}});
+                const auto run = [live](const std::string& cmd) {
+                    if (live)
+                        live->SendCommand(cmd);
+                };
+                static const char* const kModes[] = {"survival", "creative", "adventure", "spectator"};
+                static const char* const kModeNames[] = {"Survival", "Creative", "Adventure", "Spectator"};
+                model.push_back({tr("perlin.gamemode", "Game Mode"), kModeNames[modeAt], -1.0f, [run](float, bool click) {
+                                     if (click) {
+                                         modeAt = (modeAt + 1) % 4;
+                                         run(std::string("/gamemode ") + kModes[modeAt]);
+                                     }
+                                 }});
+                static const char* const kTimes[] = {"day", "noon", "night", "midnight"};
+                static const char* const kTimeNames[] = {"Day", "Noon", "Night", "Midnight"};
+                model.push_back({tr("perlin.time", "Time"), kTimeNames[timeAt], -1.0f, [run](float, bool click) {
+                                     if (click) {
+                                         timeAt = (timeAt + 1) % 4;
+                                         run(std::string("/time set ") + kTimes[timeAt]);
+                                     }
+                                 }});
+                static const char* const kWeather[] = {"clear", "rain", "thunder"};
+                static const char* const kWeatherNames[] = {"Clear", "Rain", "Thunder"};
+                model.push_back({tr("perlin.weather", "Weather"), kWeatherNames[weatherAt], -1.0f, [run](float, bool click) {
+                                     if (click) {
+                                         weatherAt = (weatherAt + 1) % 3;
+                                         run(std::string("/weather ") + kWeather[weatherAt]);
+                                     }
+                                 }});
+                static const char* const kDiff[] = {"peaceful", "easy", "normal", "hard"};
+                static const char* const kDiffNames[] = {"Peaceful", "Easy", "Normal", "Hard"};
+                model.push_back({tr("options.difficulty", "Difficulty"), kDiffNames[diffAt], -1.0f, [run](float, bool click) {
+                                     if (click) {
+                                         diffAt = (diffAt + 1) % 4;
+                                         run(std::string("/difficulty ") + kDiff[diffAt]);
+                                     }
+                                 }});
+                static const std::pair<const char*, const char*> kRules[] = {
+                    {"keepInventory", "Keep Inventory"}, {"doDaylightCycle", "Daylight Cycle"}, {"doWeatherCycle", "Weather Cycle"},
+                    {"doMobSpawning", "Mob Spawning"}, {"mobGriefing", "Mob Griefing"},
+                    {"showCoordinates", "Show Coordinates"}, {"pvp", "PvP"}};
+                for (const auto& r : kRules) {
+                    const std::string id = r.first;
+                    model.push_back({r.second, onOff(rules[id]), -1.0f, [run, id](float, bool click) {
+                                         if (click) {
+                                             rules[id] = !rules[id];
+                                             run("/gamerule " + id + (rules[id] ? " true" : " false"));
+                                         }
+                                     }});
+                }
+                model.push_back({tr("perlin.setSpawn", "Set World Spawn Here"), "", -1.0f, [run](float, bool click) {
+                                     if (click)
+                                         run("/setworldspawn ~ ~ ~");
+                                 }});
+            } else if (optionsPage == 0) {
+                nav(tr("options.videoTitle", "Video Settings..."), 1);
+                nav(tr("options.sounds.title", "Music & Sounds..."), 2);
+                nav(tr("options.controls", "Controls..."), 3);
+                nav(tr("perlin.options.hand", "Hand & Camera..."), 4);
+                nav(tr("controls.keybinds", "Key Binds..."), 5);
+            } else if (optionsPage == 1) {
+                title = tr("options.videoTitle", "Video Settings");
+                slider(tr("options.fov", "FOV"), std::to_string(static_cast<int>(std::lround(options.fov))), (options.fov - 30.0f) / 80.0f,
+                       [this](float f) { options.fov = std::round(30.0f + std::clamp(f, 0.0f, 1.0f) * 80.0f); });
+                slider(tr("options.renderDistance", "Render Distance"), std::to_string(options.renderDistance) + " " + tr("options.chunks", "chunks"),
+                       static_cast<float>(options.renderDistance - 2) / 30.0f, [this, live](float f) {
+                           const int distance = 2 + static_cast<int>(std::lround(std::clamp(f, 0.0f, 1.0f) * 30.0f));
+                           if (distance != options.renderDistance) {
+                               options.renderDistance = distance;
+                               if (live) {
+                                   live->SetChunkRadius(options.renderDistance);
+                                   live->SetMaxViewDistance(std::max(32, options.renderDistance));
+                                   live->SetNearRadius(options.renderDistance > LodStore::kRealChunks ? LodStore::kRealChunks : 1 << 20);
+                               }
+                           }
+                       });
+                slider(tr("options.gamma", "Brightness"),
+                       options.gamma <= 0.01f ? tr("options.gamma.min", "Moody") : options.gamma >= 0.99f ? tr("options.gamma.max", "Bright") : percent(options.gamma),
+                       options.gamma, [this, snap](float f) { options.gamma = snap(f, 100.0f); });
+                model.push_back({tr("options.framerateLimit", "Max Framerate"), options.maxFps == 0 ? tr("options.framerateLimit.max", "Unlimited") : std::to_string(options.maxFps) + " fps", -1.0f,
+                                 [this](float, bool click) {
+                                     if (!click)
+                                         return;
+                                     size_t at = 0;
+                                     for (size_t i = 0; i < std::size(kFps); i++)
+                                         if (kFps[i] == options.maxFps)
+                                             at = i;
+                                     options.maxFps = kFps[(at + 1) % std::size(kFps)];
+                                 }});
+                toggle(tr("options.vsync", "VSync"), options.vsync);
+                model.push_back({std::string("GUI Scale"), options.guiScale == 0 ? tr("options.guiScale.auto", "Auto") : std::to_string(options.guiScale), -1.0f,
+                                 [this](float, bool click) {
+                                     if (!click)
+                                         return;
+                                     size_t at = 0;
+                                     for (size_t i = 0; i < std::size(kGuiScales); i++)
+                                         if (kGuiScales[i] == options.guiScale)
+                                             at = i;
+                                     options.guiScale = kGuiScales[(at + 1) % std::size(kGuiScales)];
+                                 }});
+                toggle(tr("options.graphics.fancy", "Fancy Graphics"), options.fancyGraphics);
+                slider(tr("options.motionBlur", "Motion Blur"), options.motionBlur <= 0.001f ? tr("options.off", "OFF") : percent(options.motionBlur), options.motionBlur,
+                       [this, snap](float f) { options.motionBlur = snap(f, 100.0f); });
+                slider(tr("options.accessibility.menu_background_blurriness", "Menu Blur"), std::to_string(options.menuBlur), static_cast<float>(options.menuBlur) / 10.0f,
+                       [this](float f) { options.menuBlur = static_cast<int>(std::lround(std::clamp(f, 0.0f, 1.0f) * 10.0f)); });
+                toggle(tr("options.entityShadows", "Entity Shadows"), options.shadows);
+                toggle(tr("options.fovEffectScale", "FOV Effects"), options.fovEffects);
+                slider(tr("options.damageTilt", "Damage Tilt"), percent(static_cast<float>(options.damageTilt) / 100.0f), static_cast<float>(options.damageTilt) / 100.0f,
+                       [this](float f) { options.damageTilt = static_cast<int>(std::lround(std::clamp(f, 0.0f, 1.0f) * 100.0f)); });
+                toggle(tr("perlin.options.damageTint", "Damage Tint"), options.damageTint);
+                toggle(tr("options.rgss", "Supersampling"), options.rgss);
+            } else if (optionsPage == 2) {
+                title = tr("options.sounds.title", "Music & Sounds");
+                volume("soundCategory.master", "Master Volume", options.sound.master);
+                volume("soundCategory.music", "Music", options.sound.music);
+                volume("soundCategory.record", "Jukebox/Note Blocks", options.sound.record);
+                volume("soundCategory.weather", "Weather", options.sound.weather);
+                volume("soundCategory.block", "Blocks", options.sound.block);
+                volume("soundCategory.hostile", "Hostile Creatures", options.sound.hostile);
+                volume("soundCategory.neutral", "Friendly Creatures", options.sound.neutral);
+                volume("soundCategory.player", "Players", options.sound.player);
+                volume("soundCategory.ambient", "Ambient/Environment", options.sound.ambient);
+                volume("soundCategory.voice", "Voice/Speech", options.sound.voice);
+                toggle(tr("options.showSubtitles", "Show Subtitles"), options.sound.subtitles);
+            } else if (optionsPage == 3) {
+                title = tr("options.controls", "Controls");
+                slider(tr("options.sensitivity", "Sensitivity"), percent(options.mouseSensitivity / 0.15f), options.mouseSensitivity / 0.30f,
+                       [this](float f) { options.mouseSensitivity = std::round(std::clamp(f, 0.0f, 1.0f) * 200.0f) / 100.0f * 0.15f; });
+                toggle(tr("options.invertMouse", "Invert Mouse"), options.invertMouse);
+                choice(tr("key.sprint", "Sprint"), options.sprintMode, {{"hold", tr("options.key.hold", "Hold")}, {"toggle", tr("options.key.toggle", "Toggle")}});
+                choice(tr("key.sneak", "Sneak"), options.sneakMode, {{"hold", tr("options.key.hold", "Hold")}, {"toggle", tr("options.key.toggle", "Toggle")}});
+                nav(tr("controls.keybinds", "Key Binds..."), 5);
+            } else if (optionsPage == 4) {
+                title = tr("perlin.options.hand", "Hand & Camera");
+                toggle(tr("options.showHand", "Show Hand"), options.hand.show);
+                toggle(tr("options.viewBobbing", "View Bobbing"), options.hand.viewBobbing);
+                toggle(tr("perlin.options.bobCamera", "Camera Bobbing"), options.hand.bobCamera);
+                toggle(tr("perlin.options.bobHand", "Hand Bobbing"), options.hand.bobHand);
+                toggle(tr("perlin.options.swing", "Swing Animation"), options.hand.swing);
+                toggle(tr("perlin.options.equip", "Equip Animation"), options.hand.equipAnimation);
+                toggle(tr("perlin.options.sway", "Hand Sway"), options.hand.sway);
+                toggle(tr("options.mainHand.left", "Left Handed"), options.hand.leftHanded);
+                toggle(tr("perlin.options.offhand", "Show Offhand"), options.hand.showOffhand);
+                toggle(tr("perlin.options.slim", "Slim Arms"), options.hand.slimArm);
+                toggle(tr("perlin.options.thirdCrosshair", "Third Person Crosshair"), options.thirdPersonCrosshair);
+                toggle(tr("perlin.options.thirdNametag", "Third Person Nametag"), options.thirdPersonNametag);
+                slider(tr("perlin.options.handScale", "Hand Size"), percent(options.hand.scale), (options.hand.scale - 0.5f) / 1.5f,
+                       [this](float f) { options.hand.scale = 0.5f + std::round(std::clamp(f, 0.0f, 1.0f) * 150.0f) / 100.0f; });
+            } else {
+                title = tr("controls.keybinds.title", "Key Binds");
+                static const std::pair<Action, const char*> kBinds[] = {
+                    {Action::Forward, "Forward"}, {Action::Left, "Left"}, {Action::Back, "Back"}, {Action::Right, "Right"},
+                    {Action::Jump, "Jump"}, {Action::Sneak, "Sneak"}, {Action::Sprint, "Sprint"}, {Action::Attack, "Attack"},
+                    {Action::Use, "Use Item"}, {Action::PickBlock, "Pick Block"}, {Action::Inventory, "Inventory"},
+                    {Action::Drop, "Drop Item"}, {Action::Hotbar1, "Hotbar 1"},
+                    {Action::Hotbar2, "Hotbar 2"}, {Action::Hotbar3, "Hotbar 3"}, {Action::Hotbar4, "Hotbar 4"},
+                    {Action::Hotbar5, "Hotbar 5"}, {Action::Hotbar6, "Hotbar 6"}, {Action::Hotbar7, "Hotbar 7"},
+                    {Action::Hotbar8, "Hotbar 8"}, {Action::Hotbar9, "Hotbar 9"}, {Action::Chat, "Chat"},
+                    {Action::Command, "Command"}, {Action::PlayerList, "Player List"}, {Action::Screenshot, "Screenshot"},
+                    {Action::CyclePerspective, "Perspective"}, {Action::ToggleHud, "Hide GUI"}, {Action::DebugScreen, "Debug Screen"},
+                    {Action::Zoom, "Zoom"}};
+                constexpr int kPerPage = 12;
+                const int total = static_cast<int>(std::size(kBinds));
+                const int pages = (total + kPerPage - 1) / kPerPage;
+                optionsSub = std::clamp(optionsSub, 0, pages - 1);
+                for (int i = optionsSub * kPerPage; i < std::min(total, (optionsSub + 1) * kPerPage); i++) {
+                    const Action a = kBinds[i].first;
+                    const std::string name = kBinds[i].second;
+                    const bool waiting = bindCapture == static_cast<int>(a);
+                    std::string value = waiting ? "> ? <" : options.GetKey(a).Serialize();
+                    for (const char* prefix : {"key.keyboard.", "key.mouse."}) {
+                        const std::string pre = prefix;
+                        if (value.rfind(pre, 0) == 0)
+                            value = value.substr(pre.size());
+                    }
+                    if (value == "left" || value == "right" || value == "middle")
+                        value += " button";
+                    if (!waiting && !value.empty()) {
+                        bool word = true;
+                        for (char& c : value) {
+                            if (word && c >= 'a' && c <= 'z')
+                                c = static_cast<char>(c - 32);
+                            word = c == ' ' || c == '.' || c == '_';
+                            if (c == '_')
+                                c = ' ';
+                        }
+                    }
+                    if (value.empty())
+                        value = "Not bound";
+                    model.push_back({name, value, -1.0f, [this, a](float, bool click) {
+                                         if (click) {
+                                             bindCapture = static_cast<int>(a);
+                                             bindStartedAt = Clock::now();
+                                             optionsSignature.clear();
+                                         }
+                                     }});
+                }
+                model.push_back({tr("controls.resetAll", "Reset Keys"), "", -1.0f, [this](float, bool click) {
+                                     if (click) {
+                                         options.keys = DefaultBindings();
+                                         bindCapture = -1;
+                                     }
+                                 }});
+                model.push_back({tr("perlin.options.page", "Page") + " " + std::to_string(optionsSub + 1) + "/" + std::to_string(pages), "", -1.0f,
+                                 [this, pages](float, bool click) {
+                                     if (click) {
+                                         optionsSub = (optionsSub + 1) % pages;
+                                         bindCapture = -1;
+                                         optionsSignature.clear();
+                                     }
+                                 }});
+            }
+
+            std::vector<ui::OptionsRow> view;
+            for (const OptRow& r : model)
+                view.push_back({r.label, r.value, r.fraction});
+            const ui::OptionsLayout layout = ui::ComputeOptionsLayout(static_cast<int>(view.size()), guiW, guiH);
+            std::string signature = std::to_string(guiW) + "x" + std::to_string(guiH) + title;
+            for (const ui::OptionsRow& r : view)
                 signature += "|" + r.label + r.value;
             if (signature != optionsSignature || !hud.Overlay().HasOverlay()) {
                 optionsSignature = signature;
                 std::string error;
-                if (!hud.Overlay().SetOverlay(ui::BuildOptionsScreenRml(model, tr("options.title", "Options"), tr("gui.done", "Done"), guiW, guiH), error))
+                if (!hud.Overlay().SetOverlay(ui::BuildOptionsScreenRml(view, title, tr("gui.done", "Done"), guiW, guiH), error))
                     std::cout << "[ui] options screen: " << error << std::endl;
             }
             const float gx = mx / static_cast<float>(scale), gy = my / static_cast<float>(scale);
             hud.Overlay().MouseMove(gx, gy);
             hud.UpdateOverlay(fbW, fbH, options.guiScale);
             const auto inside = [&](float x, float y, float w, float h) { return gx >= x && gx < x + w && gy >= y && gy < y + h; };
-            const auto apply = [&](int row, float fraction, bool click) {
-                const float f = std::clamp(fraction, 0.0f, 1.0f);
-                switch (row) {
-                case 0: options.fov = std::round(30.0f + f * 80.0f); break;
-                case 1: {
-                    const int distance = 2 + static_cast<int>(std::lround(f * 30.0f));
-                    if (distance != options.renderDistance) {
-                        options.renderDistance = distance;
-                        if (live) {
-                            live->SetChunkRadius(options.renderDistance);
-                            live->SetMaxViewDistance(std::max(32, options.renderDistance));
-                            live->SetNearRadius(options.renderDistance > LodStore::kRealChunks ? LodStore::kRealChunks : 1 << 20);
-                        }
-                    }
-                    break;
-                }
-                case 2: options.mouseSensitivity = std::round(f * 200.0f) / 100.0f * 0.15f; break;
-                case 3: options.gamma = std::round(f * 100.0f) / 100.0f; break;
-                case 4: options.sound.master = std::round(f * 100.0f) / 100.0f; break;
-                case 5:
-                    if (click) {
-                        size_t at = 0;
-                        for (size_t i = 0; i < std::size(kFps); i++)
-                            if (kFps[i] == options.maxFps)
-                                at = i;
-                        options.maxFps = kFps[(at + 1) % std::size(kFps)];
-                    }
-                    break;
-                case 6:
-                    if (click) {
-                        size_t at = 0;
-                        for (size_t i = 0; i < std::size(kGuiScales); i++)
-                            if (kGuiScales[i] == options.guiScale)
-                                at = i;
-                        options.guiScale = kGuiScales[(at + 1) % std::size(kGuiScales)];
-                    }
-                    break;
-                case 7: if (click) options.hand.viewBobbing = !options.hand.viewBobbing; break;
-                case 8: if (click) options.invertMouse = !options.invertMouse; break;
-                case 9: if (click) options.sound.subtitles = !options.sound.subtitles; break;
-                case 10: if (click) options.fovEffects = !options.fovEffects; break;
-                case 11: if (click) options.hand.show = !options.hand.show; break;
-                default: break;
-                }
-            };
             const auto sliderFraction = [&](int row) { return (gx - layout.x[row] - 4.0f) / (layout.w - 8.0f); };
+            if (bindCapture >= 0) {
+                bool captured = false;
+                for (const auto& t : inputManager.TakeTyped()) {
+                    if (t.character || Clock::now() - bindStartedAt < std::chrono::milliseconds(120))
+                        continue;
+                    if (t.key != Key::Escape)
+                        options.SetKey(static_cast<Action>(bindCapture), Binding::KeyboardKey(t.key));
+                    captured = true;
+                }
+                for (int b = 1; b <= 2 && !captured; b++)
+                    if (input.IsMouseDown(b) && Clock::now() - bindStartedAt > std::chrono::milliseconds(120)) {
+                        options.SetKey(static_cast<Action>(bindCapture), Binding::MouseButton(b));
+                        captured = true;
+                    }
+                if (captured) {
+                    bindCapture = -1;
+                    bindWasCapturing = true;
+                    options.Save();
+                    optionsSignature.clear();
+                }
+                pauseLeftDown = down;
+                return;
+            }
+            bindWasCapturing = false;
             if (down && !pauseLeftDown && clickReady) {
                 for (int i = 0; i < layout.count; i++)
                     if (inside(layout.x[i], layout.y[i], layout.w, layout.h)) {
-                        if (model[static_cast<size_t>(i)].fraction >= 0.0f) {
+                        const OptRow& row = model[static_cast<size_t>(i)];
+                        if (row.fraction >= 0.0f) {
                             optionsDrag = i;
-                            apply(i, sliderFraction(i), true);
+                            row.apply(sliderFraction(i), true);
                         } else {
-                            apply(i, 0.0f, true);
+                            row.apply(0.0f, true);
                         }
                         break;
                     }
-            } else if (down && optionsDrag >= 0) {
-                apply(optionsDrag, sliderFraction(optionsDrag), false);
+            } else if (down && optionsDrag >= 0 && optionsDrag < static_cast<int>(model.size())) {
+                model[static_cast<size_t>(optionsDrag)].apply(sliderFraction(optionsDrag), false);
             }
             if (!down && pauseLeftDown) {
                 if (optionsDrag >= 0 || clickReady) {
                     if (inside(layout.doneX, layout.doneY, layout.doneW, layout.h) && optionsDrag < 0) {
                         options.Save();
-                        pauseView = 0;
+                        if (pauseView == 1 && optionsPage != 0) {
+                            optionsPage = optionsPage == 5 ? 3 : 0;
+                            optionsSub = 0;
+                        } else {
+                            pauseView = 0;
+                            pauseSignature.clear();
+                        }
                         optionsSignature.clear();
-                        pauseSignature.clear();
                         hud.Overlay().ClearOverlay();
                     }
                 }
@@ -1295,6 +1690,7 @@ namespace perlin {
         t.title = i18n::Tr("menu.game");
         t.back = i18n::Tr("menu.returnToGame");
         t.options = i18n::Tr("menu.options");
+        t.world = tr("perlin.worldOptions", "World Options");
         t.quit = i18n::Tr("menu.disconnect");
         t.advancements = tr("gui.advancements", "Advancements");
         t.stats = tr("gui.stats", "Statistics");
@@ -1320,7 +1716,7 @@ namespace perlin {
         std::string panelSig;
         for (const auto& r : t.panel)
             panelSig += r.name + ":" + std::to_string(r.perm) + ",";
-        const std::string signature = std::to_string(guiW) + "x" + std::to_string(guiH) + (t.showPanel ? "P" : "p") + panelSig + t.title + t.back + t.options + t.quit + t.advancements + t.stats + t.feedback + t.bugs + t.lan + t.players;
+        const std::string signature = std::to_string(guiW) + "x" + std::to_string(guiH) + (t.showPanel ? "P" : "p") + panelSig + t.title + t.back + t.options + t.quit + t.advancements + t.stats + t.feedback + t.bugs + t.lan + t.players + t.world;
         if (signature != pauseSignature || !hud.Overlay().HasOverlay()) {
             pauseSignature = signature;
             std::string error;
@@ -1346,8 +1742,14 @@ namespace perlin {
                 pausePlayers = !pausePlayers;
             } else if (hover == ui::kPauseBugsId) {
                 platform->OpenUrl("https://github.com/theselauraproject/perlin/issues/new?labels=bug");
+            } else if (hover == ui::kPauseWorldId) {
+                pauseView = 3;
+                optionsSignature.clear();
+                hud.Overlay().ClearOverlay();
             } else if (hover == ui::kPauseOptionsId) {
                 pauseView = 1;
+                optionsPage = 0;
+                optionsSub = 0;
                 optionsSignature.clear();
                 hud.Overlay().ClearOverlay();
             }
@@ -2258,6 +2660,7 @@ namespace perlin {
                     const bool attackHeld = inputManager.IsDown(Action::Attack);
                     if (inputManager.Pressed(Action::Attack)) {
                         handRenderer.Attack(options.hand, hudState.Survival());
+                        gSelfSwing++;
                         swingClock = 0;
                         if (live) {
                             live->SendSwingArm(gAim.kind == AimHit::Kind::Block ? "mine" : "attack");
@@ -2307,7 +2710,7 @@ namespace perlin {
                                 breakDelayTicks--;
                                 continue;
                             }
-                            handRenderer.Swing(options.hand);
+                            { handRenderer.Swing(options.hand); gSelfSwing++; }
                             bool loaded = false;
                             const uint16_t id = live->NetLevel().GetBlock(bkx, bky, bkz, loaded);
                             const std::string blockName = loaded ? BlockPalette::Instance().Name(id) : std::string();
@@ -2362,7 +2765,7 @@ namespace perlin {
                                 breakProgress = 0.0f;
                                 gLocalCrack.active = false;
                                 live->ClearCrack(bkx, bky, bkz);
-                                handRenderer.Swing(options.hand);
+                                { handRenderer.Swing(options.hand); gSelfSwing++; }
                                 breakDelayTicks = 5;
                             } else {
                                 gLocalCrack = {breakProgress > 0.0f, bkx, bky, bkz, std::clamp(static_cast<int>(breakProgress * 10.0f), 0, 9)};
@@ -2419,7 +2822,7 @@ namespace perlin {
                             if (live->Entities().Find(gAim.entity, target) && IsInteractable(target.type)) {
                                 float click[3] = {static_cast<float>(gAim.point.x - target.pos.x), static_cast<float>(gAim.point.y - target.pos.y),
                                                   static_cast<float>(gAim.point.z - target.pos.z)};
-                                handRenderer.Swing(options.hand);
+                                { handRenderer.Swing(options.hand); gSelfSwing++; }
                                 live->SendSwingArm("interact");
                                 live->SendInteractEntity(gAim.entity, eyeF, click);
                                 interactedEntity = true;
@@ -2428,7 +2831,7 @@ namespace perlin {
                         const bool allowed = usePressed || (use == blockuse::Use::Place);
                         if (gAim.kind == AimHit::Kind::Block && allowed) {
                             if (use != blockuse::Use::Nothing && usePressed)
-                                handRenderer.Swing(options.hand);
+                                { handRenderer.Swing(options.hand); gSelfSwing++; }
                             if (live) {
                                 float click[3];
                                 clickOf(click);
@@ -3064,6 +3467,7 @@ namespace perlin {
                     }
                     self.pitch = -camera.pitch;
                     self.moveSerial = 1;
+                    self.swingSerial = gSelfSwing;
                     self.mainHand = hudState.hotbar[std::clamp(hudState.selectedSlot, 0, 8)].name;
                     for (int i = 0; i < 4; i++)
                         self.armor[i] = hudState.armorItems[i].name;

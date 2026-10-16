@@ -100,7 +100,10 @@ namespace perlin {
         uint64_t disconnectTemplateVersion = 0;
         bool pauseShown = false, pauseLeftDown = false, pausePreviewOpened = false;
         bool pausePlayers = false;
-        int pauseView = 0, optionsDrag = -1;
+        int pauseView = 0, optionsDrag = -1, optionsPage = 0, optionsSub = 0, bindCapture = -1;
+        bool bindWasCapturing = false;
+        float kbScroll = 0.0f;
+        std::chrono::steady_clock::time_point bindStartedAt{};
         std::string optionsSignature;
         std::chrono::steady_clock::time_point pauseOpenedAt{}, pauseCheckAt{};
         std::string pauseSignature, pauseTemplate;

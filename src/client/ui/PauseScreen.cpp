@@ -7,7 +7,7 @@
 
 namespace perlin::ui {
     std::string DefaultPauseScreenTemplate() {
-        return R"PERLINRML(<!--perlin-ui:pause-5-->
+        return R"PERLINRML(<!--perlin-ui:pause-6-->
 <rml>
 <head>
 <title>pause</title>
@@ -47,9 +47,13 @@ div { display: block; position: absolute; }
     <div class="rim" style="width: 97px;"></div><div class="face" style="width: 96px;"></div><div class="shade" style="width: 98px;"></div><div class="edge" style="left: 98px;"></div>
     <div class="lbl" style="width: 100px;">{{players}}</div>
   </div>
-  <div id="options" class="btn" style="left: {{x1}}px; top: {{y3}}px; width: 204px;">
-    <div class="rim" style="width: 201px;"></div><div class="face" style="width: 200px;"></div><div class="shade" style="width: 202px;"></div><div class="edge" style="left: 202px;"></div>
-    <div class="lbl" style="width: 204px;">{{options}}</div>
+  <div id="options" class="btn" style="left: {{x1}}px; top: {{y3}}px; width: 100px;">
+    <div class="rim" style="width: 97px;"></div><div class="face" style="width: 96px;"></div><div class="shade" style="width: 98px;"></div><div class="edge" style="left: 98px;"></div>
+    <div class="lbl" style="width: 100px;">{{options}}</div>
+  </div>
+  <div id="world" class="btn" style="left: {{x2}}px; top: {{y3}}px; width: 100px;">
+    <div class="rim" style="width: 97px;"></div><div class="face" style="width: 96px;"></div><div class="shade" style="width: 98px;"></div><div class="edge" style="left: 98px;"></div>
+    <div class="lbl" style="width: 100px;">{{world}}</div>
   </div>
   <div id="quit" class="btn" style="left: {{x1}}px; top: {{y4}}px; width: 204px;">
     <div class="rim" style="width: 201px;"></div><div class="face" style="width: 200px;"></div><div class="shade" style="width: 202px;"></div><div class="edge" style="left: 202px;"></div>
@@ -147,6 +151,99 @@ div { display: block; position: absolute; }
         return d;
     }
 
+    KeybindLayout ComputeKeybindLayout(int rows, int guiW, int guiH) {
+        KeybindLayout l;
+        l.listBottom = static_cast<float>(guiH) - 32.0f;
+        const float cx = static_cast<float>(guiW) / 2.0f;
+        l.labelX = cx - 160.0f;
+        l.keyX = cx + 20.0f;
+        l.resetX = cx + 100.0f;
+        l.doneW = 200.0f;
+        l.doneX = cx - 100.0f;
+        l.doneY = static_cast<float>(guiH) - 26.0f;
+        l.contentH = static_cast<float>(rows) * l.pitch + 12.0f;
+        l.maxScroll = std::max(0.0f, l.contentH - (l.listBottom - l.listTop));
+        return l;
+    }
+
+    std::string BuildKeybindsScreenRml(const std::vector<KeybindRow>& rows, const std::string& title, const std::string& done,
+                                       const std::string& reset, float scroll, int guiW, int guiH) {
+        const KeybindLayout l = ComputeKeybindLayout(static_cast<int>(rows.size()), guiW, guiH);
+        const auto px = [](float v) { return std::to_string(static_cast<int>(std::lround(v))); };
+        const float listH = l.listBottom - l.listTop;
+        std::string d = R"PERLINRML(<rml>
+<head>
+<title>keybinds</title>
+<style>
+body { position: absolute; left: 0px; top: 0px; width: )PERLINRML" + px(guiW) + "px; height: " + px(guiH) + R"PERLINRML(px; margin: 0; padding: 0; background: transparent; }
+div { display: block; position: absolute; }
+#dim { left: 0px; top: 0px; width: )PERLINRML" + px(guiW) + "px; height: " + px(guiH) + R"PERLINRML(px; background-color: rgba(0,0,0,128); }
+#heading { left: 0px; top: 12px; width: )PERLINRML" + px(guiW) + R"PERLINRML(px; height: 9px; font-family: minecraft-shadow; font-size: 8px; line-height: 9px; text-align: center; color: #ffffff; white-space: nowrap; z-index: 3; }
+#list { overflow: hidden; background-color: rgba(0,0,0,112); }
+.btn { height: 20px; background-color: #000000; z-index: 5; }
+.btn div { position: absolute; }
+.btn .rim { left: 1px; top: 1px; height: 16px; background-color: #aaaaaa; }
+.btn .face { left: 2px; top: 2px; height: 15px; background-color: #6f6f6f; }
+.btn .shade { left: 1px; top: 17px; height: 2px; background-color: #565656; }
+.btn .edge { top: 1px; width: 1px; height: 16px; background-color: #565656; }
+.btn .lbl { font-family: minecraft-shadow; left: 0px; top: 6px; height: 9px; font-size: 8px; line-height: 9px; text-align: center; color: #ffffff; white-space: nowrap; }
+.btn:hover { background-color: #ffffff; }
+.btn:hover .rim { background-color: #afafaf; }
+.btn:hover .face { background-color: #757575; }
+.btn:hover .shade, .btn:hover .edge { background-color: #5c5c5c; }
+.btn.off, .btn.off:hover { background-color: #000000; }
+.btn.off .rim, .btn.off .face, .btn.off .shade, .btn.off .edge { background-color: #2c2c2c; }
+.btn.off .lbl { color: #a0a0a0; }
+.row { font-family: minecraft-shadow; font-size: 8px; line-height: 9px; height: 9px; color: #ffffff; white-space: nowrap; }
+.head { text-align: center; }
+.sep { height: 1px; background-color: rgba(255,255,255,51); }
+.sepb { height: 1px; background-color: rgba(0,0,0,191); }
+.track { background-color: rgba(0,0,0,255); width: 6px; }
+.thumb { background-color: #808080; width: 6px; }
+</style>
+</head>
+<body>
+<div id="dim"></div>
+<div id="heading">)PERLINRML" + EscapeRml(title) + "</div>\n";
+        d += "<div id=\"list\" style=\"left: 0px; top: " + px(l.listTop) + "px; width: " + px(guiW) + "px; height: " + px(listH) + "px;\">\n";
+        const auto key = [&](int i, int which, float x, float w, const std::string& label, bool off, const char* color) {
+            const std::string id = "kb" + std::to_string(which) + "_" + std::to_string(i);
+            const float y = l.RowY(i, scroll) - l.listTop;
+            std::string b = "<div id=\"" + id + "\" class=\"btn" + (off ? " off" : "") + "\" style=\"left: " + px(x) + "px; top: " + px(y) + "px; width: " + px(w) + "px;\">";
+            b += "<div class=\"rim\" style=\"width: " + px(w - 3) + "px;\"></div><div class=\"face\" style=\"width: " + px(w - 4) + "px;\"></div>";
+            b += "<div class=\"shade\" style=\"width: " + px(w - 2) + "px;\"></div><div class=\"edge\" style=\"left: " + px(w - 2) + "px;\"></div>";
+            b += "<div class=\"lbl\" style=\"width: " + px(w) + "px;" + (color ? std::string(" color: ") + color + ";" : std::string()) + "\">" + EscapeRml(label) + "</div></div>\n";
+            return b;
+        };
+        for (int i = 0; i < static_cast<int>(rows.size()); i++) {
+            const KeybindRow& r = rows[static_cast<size_t>(i)];
+            const float y = l.RowY(i, scroll) - l.listTop;
+            if (y < 0.0f || y + 20.0f > listH)
+                continue;
+            if (r.header) {
+                d += "<div class=\"row head\" style=\"left: 0px; top: " + px(y + 6.0f) + "px; width: " + px(guiW) + "px;\">" + EscapeRml(r.label) + "</div>\n";
+                continue;
+            }
+            d += "<div class=\"row\" style=\"left: " + px(l.labelX) + "px; top: " + px(y + 6.0f) + "px; width: 175px;\">" + EscapeRml(r.label) + "</div>\n";
+            d += key(i, 0, l.keyX, l.keyW, r.value, false, r.color == 1 ? "#ff5555" : r.color == 2 ? "#ffff55" : nullptr);
+            d += key(i, 1, l.resetX, l.resetW, reset, !r.canReset, nullptr);
+        }
+        d += "</div>\n";
+        d += "<div class=\"sepb\" style=\"left: 0px; top: " + px(l.listTop - 1.0f) + "px; width: " + px(guiW) + "px;\"></div>\n";
+        d += "<div class=\"sep\" style=\"left: 0px; top: " + px(l.listTop - 2.0f) + "px; width: " + px(guiW) + "px;\"></div>\n";
+        d += "<div class=\"sepb\" style=\"left: 0px; top: " + px(l.listBottom) + "px; width: " + px(guiW) + "px;\"></div>\n";
+        d += "<div class=\"sep\" style=\"left: 0px; top: " + px(l.listBottom + 1.0f) + "px; width: " + px(guiW) + "px;\"></div>\n";
+        if (l.maxScroll > 0.0f) {
+            const float th = std::max(16.0f, listH * listH / l.contentH);
+            const float ty = l.listTop + (listH - th) * (scroll / l.maxScroll);
+            d += "<div class=\"track\" style=\"left: " + px(guiW / 2 + 160) + "px; top: " + px(l.listTop) + "px; height: " + px(listH) + "px;\"></div>\n";
+            d += "<div class=\"thumb\" style=\"left: " + px(guiW / 2 + 160) + "px; top: " + px(ty) + "px; height: " + px(th) + "px;\"></div>\n";
+        }
+        d += Button(kKeybindDoneId, l.doneX, l.doneY, l.doneW, done, false);
+        d += "</body>\n</rml>\n";
+        return d;
+    }
+
     std::string BuildPauseScreenRml(const std::string& templateText, const PauseScreenText& t, int guiW, int guiH) {
         std::string d = templateText;
         const int top = (guiH - 130) / 4;
@@ -164,6 +261,7 @@ div { display: block; position: absolute; }
         ReplaceAll(d, "feedback", EscapeRml(t.feedback));
         ReplaceAll(d, "players", EscapeRml(t.players));
         ReplaceAll(d, "options", EscapeRml(t.options));
+        ReplaceAll(d, "world", EscapeRml(t.world));
         ReplaceAll(d, "quit", EscapeRml(t.quit));
         if (t.showPanel) {
             const int pw = 150;
