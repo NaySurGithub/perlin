@@ -910,6 +910,13 @@ namespace perlin {
             entity::Entity item;
             if (runtimeId != 0 && p.target == runtimeId && entities.Find(p.runtimeEntityId, item) && item.isItem && item.itemCount > 0) {
                 std::lock_guard lock(statusMutex);
+                const auto stampNow = std::chrono::steady_clock::now();
+                for (int i = 0; i < 36; i++)
+                    if (stampNow - invServerAt[i] < std::chrono::milliseconds(400)) {
+                        droppedRaw.erase(p.runtimeEntityId);
+                        entities.RemoveRuntime(p.runtimeEntityId);
+                        return;
+                    }
                 int left = item.itemCount;
                 ItemV4 dropped;
                 if (const auto found = droppedRaw.find(p.runtimeEntityId); found != droppedRaw.end())
@@ -922,6 +929,8 @@ namespace perlin {
                     const int add = std::min(left, 64 - s.count);
                     s.count += add;
                     inventoryRaw[i].count = static_cast<uint16_t>(s.count);
+                    inventoryRaw[i].hasStackId = false;
+                    inventoryRaw[i].stackId.reset();
                     left -= add;
                 }
                 for (int i = 0; i < 36 && left > 0; i++) {

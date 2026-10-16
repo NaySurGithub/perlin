@@ -83,6 +83,11 @@ namespace perlin::ui {
 
     std::string UiAssets::LoadFont(const std::string& dataDir) {
         McFont& font = McFont::Instance();
+        struct HexLoader {
+            McFont& font;
+            const std::string& dataDir;
+            ~HexLoader() { font.LoadUnihexFile(dataDir + "/fonts/unifont.hex"); }
+        } hexLoader{font, dataDir};
         auto apply = [&](const Texture& t) {
             return t.width > 0 && font.LoadSheet(t.pixels.data(), t.width, t.height);
         };
@@ -190,6 +195,29 @@ namespace perlin::ui {
         return i18n::Lang::Get().Tr(key);
     }
 
+    std::string UiAssets::ItemName(const std::string& identifier, int aux) {
+        const std::string name = Short(identifier);
+        const bool splash = name == "splash_potion", linger = name == "lingering_potion";
+        if (name == "potion" || splash || linger) {
+            static const char* kBase[] = {"emptyPotion", "mundane", "mundane", "thick", "awkward", "nightVision", "nightVision", "invisibility", "invisibility",
+                                          "jump", "jump", "jump", "fireResistance", "fireResistance", "moveSpeed", "moveSpeed", "moveSpeed",
+                                          "moveSlowdown", "moveSlowdown", "waterBreathing", "waterBreathing", "heal", "heal", "harm", "harm",
+                                          "poison", "poison", "poison", "regeneration", "regeneration", "regeneration", "damageBoost", "damageBoost",
+                                          "damageBoost", "weakness", "weakness", "wither", "turtleMaster", "turtleMaster", "turtleMaster",
+                                          "slowFalling", "slowFalling", "moveSlowdown", "windCharged", "weaving", "oozing", "infested"};
+            if (aux >= 0 && aux < static_cast<int>(sizeof(kBase) / sizeof(kBase[0]))) {
+                std::string key = std::string("potion.") + kBase[aux];
+                if (aux == 2)
+                    key += ".extended";
+                key += splash ? ".splash.name" : linger ? ".linger.name" : ".name";
+                std::string text;
+                if (i18n::Lang::Get().Find(key, text))
+                    return text;
+            }
+        }
+        return ItemName(identifier);
+    }
+
     std::string UiAssets::ItemName(const std::string& identifier) {
         std::lock_guard lock(mutex);
         const std::string name = Short(identifier);
@@ -271,7 +299,7 @@ namespace perlin::ui {
             static const std::pair<const char*, const char*> kAlias[] = {
                 {"beef", "beef_raw"}, {"porkchop", "porkchop_raw"}, {"chicken", "chicken_raw"}, {"mutton", "mutton_raw"},
                 {"cod", "fish"}, {"cooked_cod", "cooked_fish"}, {"tropical_fish", "clownfish"},
-                {"enchanted_golden_apple", "apple_golden"}, {"melon_slice", "melon"}, {"potion", "potion_bottle_drinkable"},
+                {"enchanted_golden_apple", "apple_golden"}, {"melon_slice", "melon"}, {"potion", "potion_bottle_drinkable"}, {"glass_bottle", "potion_bottle_empty"},
                 {"milk_bucket", "bucket"}, {"totem_of_undying", "totem"}, {"fire_charge", "fireball"},
                 {"firework_rocket", "fireworks"}, {"splash_potion", "potion_bottle_splash"}, {"lingering_potion", "potion_bottle_lingering"}, {"oak_sign", "sign"}, {"popped_chorus_fruit", "chorus_fruit_popped"},
                 {"sugar_cane", "reeds"}, {"compass", "compass_item"}, {"clock", "clock_item"}, {"recovery_compass", "recovery_compass_item"}, {"turtle_scute", "turtle_shell_piece"}};
@@ -497,6 +525,10 @@ namespace perlin::ui {
     void UiAssets::SetHead(const std::string& key, Texture head) {
         std::lock_guard lock(mutex);
         heads[key] = std::move(head);
+    }
+    void UiAssets::EraseHead(const std::string& key) {
+        std::lock_guard lock(mutex);
+        heads.erase(key);
     }
     bool UiAssets::Head(const std::string& key, Texture& out) {
         std::lock_guard lock(mutex);

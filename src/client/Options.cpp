@@ -9,12 +9,12 @@
 
 namespace perlin {
     namespace {
-        constexpr int kOptionsVersion = 3;
+        constexpr int kOptionsVersion = 4;
     }
     namespace stored {
         struct Stored {
-            int maxFps = 0;
-            bool vsync = false;
+            int maxFps = 120;
+            bool vsync = true;
             bool eulaAccepted = false;
             int renderDistance = 0;
             float fov = 0;
@@ -59,7 +59,7 @@ namespace perlin {
             std::vector<std::string> texturePacks;
             std::vector<std::string> disabledMods;
             bool hotReload = true;
-            bool betterGrass = true;
+            bool betterGrass = false;
         };
     }
 
@@ -177,6 +177,8 @@ namespace perlin {
         o.hand.bobStrength = std::clamp(o.hand.bobStrength, 0.0f, 3.0f);
         o.hand.swingSpeed = std::clamp(o.hand.swingSpeed, 0.1f, 5.0f);
         o.hand.scale = std::clamp(o.hand.scale, 0.25f, 2.0f);
+        o.hand.armScale = std::clamp(o.hand.armScale, 0.1f, 4.0f);
+        o.hand.itemScale = std::clamp(o.hand.itemScale, 0.1f, 4.0f);
         o.guiScale = std::clamp(stored.guiScale, 0, 16);
         o.sound = stored.sound;
         o.menuBlur = std::clamp(stored.menuBlur, 0, 10);
@@ -199,6 +201,7 @@ namespace perlin {
             o.vsync = Options().vsync;
             o.maxFps = Options().maxFps;
             o.damageTint = Options().damageTint;
+            o.betterGrass = Options().betterGrass;
         }
 
         for (size_t i = 0; i < kActionCount; i++) {

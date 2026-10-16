@@ -20,6 +20,7 @@
 #include "util/ThreadPool.hpp"
 
 #include <atomic>
+#include "client/resources/PackInfo.hpp"
 #include <memory>
 #include <map>
 #include <mutex>
@@ -104,13 +105,39 @@ namespace perlin {
         int pauseView = 0, optionsDrag = -1, optionsPage = 0, optionsSub = 0, bindCapture = -1;
         bool bindWasCapturing = false;
         float kbScroll = 0.0f, optScroll = 0.0f;
+        std::atomic<bool> fontsDownloaded{false};
         int optScrollKey = -1;
+        int wardLine = 0;
+        bool wardSkinOpen = false, wardCapeOpen = false, wardDrag = false;
+        float wardYaw = -25.0f, wardPitch = 0.0f, wardDragX = 0.0f, wardDragY = 0.0f;
+        int wardPreviewSerial = 0;
+        std::string wardPreviewKey;
+        std::vector<std::string> wardSkins, wardCapes;
+        std::chrono::steady_clock::time_point wardListedAt{};
+        std::unordered_map<std::string, std::string> wardStamp;
+        std::unordered_map<std::string, bool> wardSlimGuess;
+        int optHoverRow = -1;
+        std::chrono::steady_clock::time_point optHoverSince{};
         std::map<std::string, std::pair<int, double>> worldOverride;
+        float packScrollA = 0.0f, packScrollS = 0.0f, shaderScroll = 0.0f, modScroll = 0.0f, modDetailScroll = 0.0f;
+        std::string modSelected, modSearch, shaderPendingPack, packMetaStampDir;
+        bool shaderPendingEnabled = false, shaderPendingInit = false;
+        struct PackMetaCacheEntry {
+            std::string stamp;
+            PackMeta meta;
+        };
+        std::map<std::string, PackMetaCacheEntry> packMetaCache;
+        std::map<std::string, std::string> modIconStamp;
+        std::vector<std::string> packFoundCache;
+        std::chrono::steady_clock::time_point packFoundAt{};
+        int packRowsHover = -1;
         void ApplyTexturePacks();
         void ApplyShaderPack();
         void PollHotReload();
         std::chrono::steady_clock::time_point hotPollAt{};
-        std::string hotTexStamp, hotShaderStamp;
+        std::string hotTexStamp, hotShaderStamp, hotSrcStamp, shaderBuildReport;
+        std::atomic<bool> shaderBuilding{false};
+        std::thread shaderBuildThread;
         std::chrono::steady_clock::time_point bindStartedAt{};
         std::string optionsSignature;
         std::chrono::steady_clock::time_point pauseOpenedAt{}, pauseCheckAt{};

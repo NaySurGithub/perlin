@@ -2,6 +2,8 @@
 
 #include <wasm3.h>
 
+#include "client/ui/Json.hpp"
+
 #include <algorithm>
 #include <chrono>
 #include <cstring>
@@ -25,9 +27,15 @@ namespace perlin::mods {
         int loads = 0;
         IM3Environment env = nullptr;
         IM3Runtime runtime = nullptr;
-        IM3Function onTick = nullptr, onUnload = nullptr, onChat = nullptr, alloc = nullptr;
+        IM3Function onTick = nullptr, onUnload = nullptr, onChat = nullptr, alloc = nullptr, onConnect = nullptr, onDisconnect = nullptr;
         std::vector<uint8_t> bytes;
+        bool onLoadFound = false;
         std::atomic<int64_t> busySince{0};
+        std::string pubError;
+        ModInfo pubMeta;
+        ModInfo meta;
+        int pubLoads = 0;
+        bool pubLoaded = false;
     };
 
     struct Host {
@@ -119,6 +127,28 @@ namespace perlin::mods {
             m3ApiReturn(v);
         }
 
+        template <int Axis>
+        m3ApiRawFunction(HostVel) {
+            m3ApiReturnType(double);
+            double v = 0;
+            if (Host::manager) {
+                std::lock_guard lock(Host::manager->mutex);
+                v = Axis == 0 ? Host::manager->host.vx : Axis == 1 ? Host::manager->host.vy : Host::manager->host.vz;
+            }
+            m3ApiReturn(v);
+        }
+
+        template <int Flag>
+        m3ApiRawFunction(HostFlag) {
+            m3ApiReturnType(int32_t);
+            int v = 0;
+            if (Host::manager) {
+                std::lock_guard lock(Host::manager->mutex);
+                v = Flag == 0 ? Host::manager->host.onGround : Flag == 1 ? Host::manager->host.sprinting : Host::manager->host.sneaking;
+            }
+            m3ApiReturn(v);
+        }
+
         m3ApiRawFunction(HostTime) {
             m3ApiReturnType(int64_t);
             m3ApiReturn(std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now() - Host::start).count());
@@ -197,22 +227,78 @@ namespace perlin::mods {
         wake.notify_all();
     }
 
+    void ModManager::ReloadMod(const std::string& name) {
+        std::lock_guard lock(mutex);
+        reloadNames.push_back(name);
+        wake.notify_all();
+    }
+
     std::vector<ModInfo> ModManager::List() const {
         std::lock_guard lock(mutex);
         std::vector<ModInfo> out;
         for (const auto& mod : mods) {
             ModInfo info;
+            info = mod->pubMeta;
             info.name = mod->name;
             info.enabled = mod->enabled;
-            info.loads = mod->loads;
-            info.error = mod->error;
+            info.loads = mod->pubLoads;
+            info.error = mod->pubError;
             const int64_t busy = mod->busySince.load();
-            if (busy != 0 && NowMs() - busy > 3000)
-                mod->stuck = true;
-            info.state = !mod->enabled ? "disabled" : mod->stuck ? "unresponsive" : !mod->error.empty() ? "error" : mod->loaded ? "running" : "loading";
+            const bool stuck = busy != 0 && NowMs() - busy > 3000;
+            info.state = !mod->enabled ? "disabled" : stuck ? "unresponsive" : !mod->pubError.empty() ? "error" : mod->pubLoaded ? "running" : "loading";
             out.push_back(std::move(info));
         }
         return out;
+    }
+
+    void ModManager::ReadMeta(Mod& mod) {
+        ModInfo meta;
+        meta.path = mod.path;
+        meta.size = mod.size;
+        meta.displayName = mod.name;
+        const fs::path base = fs::path(mod.path).replace_extension("");
+        std::error_code ec;
+        std::ifstream in(base.string() + ".json", std::ios::binary);
+        if (in) {
+            const std::string text((std::istreambuf_iterator<char>(in)), {});
+            ui::Json json;
+            std::string error;
+            if (ui::Json::Parse(text, json, error) && json.IsObject()) {
+                const auto get = [&](const char* key) {
+                    const ui::Json* v = json.Find(key);
+                    return v ? v->StringOr("") : std::string();
+                };
+                if (!get("name").empty())
+                    meta.displayName = get("name");
+                meta.description = get("description");
+                meta.version = get("version");
+                meta.author = get("author");
+                meta.website = get("website");
+            }
+        }
+        if (fs::exists(base.string() + ".png", ec))
+            meta.iconPath = base.string() + ".png";
+        if (mod.onLoadFound)
+            meta.hooks.push_back("on_load");
+        if (mod.onTick)
+            meta.hooks.push_back("on_tick");
+        if (mod.onChat)
+            meta.hooks.push_back("on_chat");
+        if (mod.onConnect)
+            meta.hooks.push_back("on_connect");
+        if (mod.onDisconnect)
+            meta.hooks.push_back("on_disconnect");
+        if (mod.onUnload)
+            meta.hooks.push_back("on_unload");
+        mod.meta = std::move(meta);
+    }
+
+    void ModManager::Publish(Mod& mod) {
+        std::lock_guard lock(mutex);
+        mod.pubError = mod.error;
+        mod.pubLoads = mod.loads;
+        mod.pubLoaded = mod.loaded;
+        mod.pubMeta = mod.meta;
     }
 
     void ModManager::Unload(Mod& mod) {
@@ -225,7 +311,8 @@ namespace perlin::mods {
             m3_FreeEnvironment(mod.env);
         mod.runtime = nullptr;
         mod.env = nullptr;
-        mod.onTick = mod.onUnload = mod.onChat = mod.alloc = nullptr;
+        mod.onTick = mod.onUnload = mod.onChat = mod.alloc = mod.onConnect = mod.onDisconnect = nullptr;
+        mod.onLoadFound = false;
         mod.loaded = false;
     }
 
@@ -264,8 +351,15 @@ namespace perlin::mods {
         link("game_mode", "i()", HostGameMode);
         link("connected", "i()", HostConnected);
         link("time_ms", "I()", HostTime);
+        link("vel_x", "F()", HostVel<0>);
+        link("vel_y", "F()", HostVel<1>);
+        link("vel_z", "F()", HostVel<2>);
+        link("on_ground", "i()", HostFlag<0>);
+        link("sprinting", "i()", HostFlag<1>);
+        link("sneaking", "i()", HostFlag<2>);
         IM3Function onLoad = nullptr;
         if (!m3_FindFunction(&onLoad, mod.runtime, "on_load") && onLoad) {
+            mod.onLoadFound = true;
             mod.busySince = NowMs();
             result = m3_CallV(onLoad);
             mod.busySince = 0;
@@ -282,6 +376,12 @@ namespace perlin::mods {
             mod.onChat = nullptr;
         if (m3_FindFunction(&mod.alloc, mod.runtime, "alloc"))
             mod.alloc = nullptr;
+        if (m3_FindFunction(&mod.onConnect, mod.runtime, "on_connect"))
+            mod.onConnect = nullptr;
+        if (m3_FindFunction(&mod.onDisconnect, mod.runtime, "on_disconnect"))
+            mod.onDisconnect = nullptr;
+        if (lastConnected && mod.onConnect)
+            m3_CallV(mod.onConnect);
         mod.loaded = true;
         mod.loads++;
         std::cout << "[mods] loaded " << mod.name << (mod.loads > 1 ? " (reloaded)" : "") << std::endl;
@@ -297,6 +397,7 @@ namespace perlin::mods {
             mod.error = std::string("on_tick: ") + result;
             mod.loaded = false;
             std::cout << "[mods] " << mod.name << " stopped: " << mod.error << std::endl;
+            Publish(mod);
         }
     }
 
@@ -325,12 +426,14 @@ namespace perlin::mods {
                 }
                 mod->enabled = std::find(disabled.begin(), disabled.end(), name) == disabled.end();
             }
-            const bool changed = stamp != mod->stamp || size != mod->size;
+            const bool changed = (stamp != mod->stamp || size != mod->size) && (autoReload || mod->stamp == fs::file_time_type::min() || !mod->loaded);
             if (!mod->enabled) {
                 if (mod->loaded || mod->runtime)
                     Unload(*mod);
                 mod->stamp = stamp;
                 mod->size = size;
+                ReadMeta(*mod);
+                Publish(*mod);
                 continue;
             }
             if (changed || (!mod->loaded && mod->error.empty() && !mod->runtime)) {
@@ -339,6 +442,8 @@ namespace perlin::mods {
                 mod->stamp = stamp;
                 mod->size = size;
                 Load(*mod);
+                ReadMeta(*mod);
+                Publish(*mod);
                 if (!mod->error.empty())
                     std::cout << "[mods] " << name << ": " << mod->error << std::endl;
             }
@@ -373,12 +478,36 @@ namespace perlin::mods {
                 reloadAll = false;
                 chat.swap(pendingChat);
             }
+            std::vector<std::string> names;
+            {
+                std::lock_guard lock(mutex);
+                names.swap(reloadNames);
+            }
             if (force)
                 for (auto& mod : mods)
                     mod->stamp = fs::file_time_type::min();
+            for (const std::string& name : names)
+                for (auto& mod : mods)
+                    if (mod->name == name)
+                        mod->stamp = fs::file_time_type::min();
+            force = force || !names.empty();
             if (force || now - lastScan > std::chrono::milliseconds(500)) {
                 lastScan = now;
                 Scan();
+            }
+            bool connected;
+            {
+                std::lock_guard lock(mutex);
+                connected = host.connected;
+            }
+            if (connected != lastConnected) {
+                lastConnected = connected;
+                for (auto& mod : mods)
+                    if (mod->loaded && mod->error.empty()) {
+                        IM3Function fn = connected ? mod->onConnect : mod->onDisconnect;
+                        if (fn)
+                            m3_CallV(fn);
+                    }
             }
             for (const std::string& line : chat)
                 for (auto& mod : mods)

@@ -264,22 +264,36 @@ namespace perlin::physics {
             bool water = false, lava = false, web = false;
         };
 
-        Environment Scan(const World& world, const Box& box) {
-            Environment env;
-            const Box shrunk = box.Inflate(-0.001);
+        Box Shrink(const Box& b, double dx, double dy, double dz) {
+            Box r{b.x0 + dx, b.y0 + dy, b.z0 + dz, b.x1 - dx, b.y1 - dy, b.z1 - dz};
+            if (r.x0 > r.x1) r.x0 = r.x1 = (b.x0 + b.x1) * 0.5;
+            if (r.y0 > r.y1) r.y0 = r.y1 = (b.y0 + b.y1) * 0.5;
+            if (r.z0 > r.z1) r.z0 = r.z1 = (b.z0 + b.z1) * 0.5;
+            return r;
+        }
+
+        bool TouchesFluid(const World& world, const Box& shrunk, int kind) {
             const CellRange c = Cells(shrunk);
             for (int y = c.y0; y <= c.y1; y++)
                 for (int x = c.x0; x <= c.x1; x++)
                     for (int z = c.z0; z <= c.z1; z++) {
                         const BlockShape s = world.Query(x, y, z);
-                        if (s.fluid && y + s.fluidLevel > shrunk.y0) {
-                            if (s.fluid == 1)
-                                env.water = true;
-                            else
-                                env.lava = true;
-                        }
-                        env.web = env.web || s.web;
+                        if (s.fluid == kind && shrunk.y1 > y && shrunk.y0 < y + s.fluidLevel)
+                            return true;
                     }
+            return false;
+        }
+
+        Environment Scan(const World& world, const Box& box) {
+            Environment env;
+            env.water = TouchesFluid(world, Shrink(box, 0.001, 0.401, 0.001), 1);
+            env.lava = TouchesFluid(world, Shrink(box, 0.1, 0.4, 0.1), 2);
+            const Box shrunk = box.Inflate(-0.001);
+            const CellRange c = Cells(shrunk);
+            for (int y = c.y0; y <= c.y1; y++)
+                for (int x = c.x0; x <= c.x1; x++)
+                    for (int z = c.z0; z <= c.z1; z++)
+                        env.web = env.web || world.Query(x, y, z).web;
             return env;
         }
 
@@ -399,6 +413,20 @@ namespace perlin::physics {
             }
         }
 
+        const float* SinTable() {
+            static const std::vector<float> table = [] {
+                std::vector<float> t(65536);
+                for (int i = 0; i < 65536; i++)
+                    t[static_cast<size_t>(i)] = static_cast<float>(std::sin(static_cast<double>(i) * 3.14159265358979323846 * 2.0 / 65536.0));
+                return t;
+            }();
+            return table.data();
+        }
+
+        float McSin(float v) { return SinTable()[static_cast<uint16_t>(static_cast<int32_t>(v * 10430.378f))]; }
+
+        float McCos(float v) { return SinTable()[static_cast<uint16_t>(static_cast<int32_t>(v * 10430.378f + 16384.0f))]; }
+
         void MoveRelative(State& s, double strafeIn, double forwardIn, double speed) {
             const float strafe = static_cast<float>(strafeIn), forward = static_cast<float>(forwardIn);
             const float forceSq = forward * forward + strafe * strafe;
@@ -448,6 +476,7 @@ namespace perlin::physics {
     void Step(State& s, const Input& in, const Attributes& attr, const World& world) {
         thread_local std::vector<Box> scratch;
         const bool sneaking = in.sneak && !in.flying;
+        const bool prevWater = s.inWater;
 
         s.x = F(s.x); s.y = F(s.y); s.z = F(s.z);
         s.vx = F(s.vx); s.vy = F(s.vy); s.vz = F(s.vz);
@@ -473,14 +502,23 @@ namespace perlin::physics {
         const BlockShape& under = Below(world, s, frictionStorage);
         const float blockFriction = under.Empty() && !under.fluid && under.friction <= 0 ? 0.6f : under.friction;
 
-        const float slow = sneaking ? 0.3f : 1.0f;
-        const double forward = static_cast<float>(std::clamp<double>(in.forward, -slow, slow)) * 0.98f;
-        const double strafe = static_cast<float>(std::clamp<double>(in.strafe, -slow, slow)) * 0.98f;
+        float nf = in.forward, ns = in.strafe;
+        {
+            const float lengthSq = nf * nf + ns * ns;
+            if (lengthSq > 1.0f) {
+                const float length = std::sqrt(lengthSq);
+                nf /= length;
+                ns /= length;
+            }
+        }
+        const float slow = sneaking && !prevWater ? 0.3f : 1.0f;
+        const double forward = static_cast<float>(nf * slow) * 0.98f;
+        const double strafe = static_cast<float>(ns * slow) * 0.98f;
 
         if (in.flying) {
             const bool hovering = std::max(std::fabs(forward), std::fabs(strafe)) < 0.01f * 0.98f + 1e-9;
             const float hoverMod = hovering ? (in.creativeFlight ? 0.375f : 0.75f) : 1.0f;
-            const double fwd = static_cast<float>(in.forward) * 0.98f, str = static_cast<float>(in.strafe) * 0.98f;
+            const double fwd = nf * 0.98f, str = ns * 0.98f;
             const bool hover = std::max(std::fabs(in.forward), std::fabs(in.strafe)) < 0.01f;
             (void)hoverMod;
             MoveRelative(s, str, fwd, static_cast<double>(attr.flySpeed) * (in.sprint ? 2.0 : 1.0));
@@ -597,12 +635,12 @@ namespace perlin::physics {
         const bool climbJump = in.jump && s.onClimbable;
         const bool jumpInitiated = in.jump && !glide && !climbJump && s.onGround && s.jumpDelay == 0 && !water && !lava;
         if (jumpInitiated) {
-            s.vy = F(std::max(static_cast<float>(s.vy), 0.42f));
+            s.vy = F(std::max(static_cast<float>(s.vy), (attr.jumpHeight > 0.0f ? attr.jumpHeight : 0.42f) + static_cast<float>(attr.jumpBoost) * 0.1f));
             s.jumpDelay = 10;
             if (in.sprint) {
-                const float yaw = static_cast<float>(s.yaw) * static_cast<float>(kPi / 180.0);
-                s.vx = F(static_cast<float>(s.vx) - std::sin(yaw) * 0.2f);
-                s.vz = F(static_cast<float>(s.vz) + std::cos(yaw) * 0.2f);
+                const float force = static_cast<float>(s.yaw) * 0.017453292f;
+                s.vx = F(static_cast<float>(s.vx) - McSin(force) * 0.2f);
+                s.vz = F(static_cast<float>(s.vz) + McCos(force) * 0.2f);
             }
         }
 
@@ -617,11 +655,12 @@ namespace perlin::physics {
             s.vy = F(static_cast<float>(s.vy) - 0.04f);
 
         Vec3 req{s.vx, s.vy, s.vz};
-        const bool stuck = env.web;
+        const bool stuck = s.stuckX * s.stuckX + s.stuckY * s.stuckY + s.stuckZ * s.stuckZ > 1.0e-7f;
         if (stuck) {
-            req.x = F(static_cast<float>(req.x) * 0.25f);
-            req.y = F(static_cast<float>(req.y) * 0.05f);
-            req.z = F(static_cast<float>(req.z) * 0.25f);
+            req.x = F(static_cast<float>(req.x) * s.stuckX);
+            req.y = F(static_cast<float>(req.y) * s.stuckY);
+            req.z = F(static_cast<float>(req.z) * s.stuckZ);
+            s.stuckX = s.stuckY = s.stuckZ = 0;
         }
         Vec3 edgeVel = req;
         bool hasEdge = false;
@@ -682,10 +721,15 @@ namespace perlin::physics {
                 v.y = F(static_cast<float>(v.y) * 0.5f);
                 v.z = F(static_cast<float>(v.z) * 0.5f);
             }
-            v.y = F(static_cast<float>(v.y) - (water ? 0.005f : 0.02f));
+            if (attr.levitation > 0)
+                v.y = F(static_cast<float>(v.y) + (0.05f * static_cast<float>(attr.levitation) - static_cast<float>(v.y)) * 0.2f);
+            else
+                v.y = F(static_cast<float>(v.y) - (water ? 0.005f : 0.02f));
         } else if (!glide) {
-            if (!autoClimb)
-                v.y = F((static_cast<float>(v.y) - 0.08f) * 0.98f);
+            if (attr.levitation > 0)
+                v.y = F(static_cast<float>(v.y) + (0.05f * static_cast<float>(attr.levitation) - static_cast<float>(v.y)) * 0.2f);
+            else if (!autoClimb)
+                v.y = F((static_cast<float>(v.y) - (attr.slowFalling && v.y < 0.0 ? 0.01f : 0.08f)) * 0.98f);
             v.x = DampHorizontal(v.x, friction);
             v.z = DampHorizontal(v.z, friction);
         }
@@ -707,6 +751,23 @@ namespace perlin::physics {
             }
         }
         s.vx = v.x; s.vy = v.y; s.vz = v.z;
+        {
+            const Box inside = BoundingBox(s, sneaking);
+            const int x0 = static_cast<int>(std::floor(static_cast<float>(inside.x0) + 0.001f)), x1 = static_cast<int>(std::floor(static_cast<float>(inside.x1) - 0.001f));
+            const int y0 = static_cast<int>(std::floor(static_cast<float>(inside.y0) + 0.001f)), y1 = static_cast<int>(std::floor(static_cast<float>(inside.y1) - 0.001f));
+            const int z0 = static_cast<int>(std::floor(static_cast<float>(inside.z0) + 0.001f)), z1 = static_cast<int>(std::floor(static_cast<float>(inside.z1) - 0.001f));
+            bool web = false;
+            for (int cx = x0; cx <= x1 && !web; cx++)
+                for (int cy = y0; cy <= y1 && !web; cy++)
+                    for (int cz = z0; cz <= z1 && !web; cz++)
+                        web = world.Query(cx, cy, cz).web;
+            if (web) {
+                const bool any = s.stuckX * s.stuckX + s.stuckY * s.stuckY + s.stuckZ * s.stuckZ > 1.0e-7f;
+                s.stuckX = any ? std::min(s.stuckX, 0.25f) : 0.25f;
+                s.stuckY = any ? std::min(s.stuckY, 0.05f) : 0.05f;
+                s.stuckZ = any ? std::min(s.stuckZ, 0.25f) : 0.25f;
+            }
+        }
         if (s.jumpDelay > 0)
             s.jumpDelay--;
     }

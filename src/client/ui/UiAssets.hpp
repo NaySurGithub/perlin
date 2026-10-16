@@ -47,6 +47,7 @@ namespace perlin::ui {
         bool ItemIcon(const std::string& key, Texture& out);
         bool HasHead(const std::string& key);
         void SetHead(const std::string& key, Texture head);
+        void EraseHead(const std::string& key);
         bool Head(const std::string& key, Texture& out);
         void ClearItemCache();
         std::string LoadFont(const std::string& dataDir);
@@ -54,6 +55,7 @@ namespace perlin::ui {
 
         std::string Localize(const std::string& key);
         std::string ItemName(const std::string& identifier);
+        std::string ItemName(const std::string& identifier, int aux);
 
     private:
         bool ReadFile(const std::string& rel, std::string& out) const;

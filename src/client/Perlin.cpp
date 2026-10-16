@@ -7,6 +7,7 @@
 #include "client/multiplayer/SkinLoader.hpp"
 #include "client/mods/ModManager.hpp"
 #include "client/resources/ShaderPack.hpp"
+#include "client/resources/PackInfo.hpp"
 #include "client/resources/TexturePack.hpp"
 #include "network/XboxAuth.hpp"
 #include "client/renderer/chunk/ChunkMesher.hpp"
@@ -25,6 +26,10 @@
 #include "client/ui/DisconnectScreen.hpp"
 #include "client/ui/UiLayout.hpp"
 #include "client/ui/PauseScreen.hpp"
+#include "client/resources/MojangFonts.hpp"
+#include "client/ui/SettingInfo.hpp"
+#include "client/ui/McFont.hpp"
+#include "client/ui/SkinPreview.hpp"
 #include "client/ui/UiTemplate.hpp"
 #include "client/player/DamageEffect.hpp"
 #include "client/PreviewWorld.hpp"
@@ -230,6 +235,10 @@ namespace perlin {
 
         workers = std::make_unique<ThreadPool>(2);
         workers->Submit([this] { BedrockSamples::Ensure(options.bedrockSamplesDir); });
+        workers->Submit([this] {
+            if (MojangFonts::Ensure(paths::DataDir()))
+                fontsDownloaded = true;
+        });
         if (!PERLIN_ENV("PERLIN_PREVIEW"))
             Connect();
 
@@ -388,17 +397,97 @@ namespace perlin {
             std::cout << "[hot-reload] texture packs changed" << std::endl;
             ApplyTexturePacks();
         }
-        const std::string shader = options.shaderPack.empty() ? std::string("none") : TreeStamp(paths::DataDir() + "/shaderpacks/" + options.shaderPack);
+        std::string shader = "none";
+        if (!options.shaderPack.empty()) {
+            const std::string root = paths::DataDir() + "/shaderpacks/" + options.shaderPack;
+            std::error_code isDir;
+            if (std::filesystem::is_directory(root, isDir)) {
+                shader.clear();
+                for (const char* sub : {"dxbc", "glsl", "spirv", "essl", "metal", "pack.json"})
+                    shader += TreeStamp(root + "/" + sub) + ";";
+            } else {
+                shader = TreeStamp(root);
+            }
+        }
         if (hotShaderStamp.empty())
             hotShaderStamp = shader;
-        else if (shader != hotShaderStamp) {
+        else if (shader != hotShaderStamp && !shaderBuilding) {
             hotShaderStamp = shader;
             std::cout << "[hot-reload] shader pack changed" << std::endl;
             ApplyShaderPack();
         }
+#if !defined(__EMSCRIPTEN__) && !defined(__ANDROID__)
+        const std::string packDir = paths::DataDir() + "/shaderpacks/" + options.shaderPack;
+        std::error_code ec;
+        if (!options.shaderPack.empty() && std::filesystem::is_directory(packDir + "/src", ec)) {
+            const std::string src = TreeStamp(packDir + "/src");
+            if (hotSrcStamp.empty())
+                hotSrcStamp = src;
+            else if (src != hotSrcStamp && !shaderBuilding.exchange(true)) {
+                hotSrcStamp = src;
+                std::cout << "[hot-reload] shader sources changed, rebuilding" << std::endl;
+                if (shaderBuildThread.joinable())
+                    shaderBuildThread.join();
+                shaderBuildThread = std::thread([this, packDir] {
+                    std::string script;
+                    std::error_code e;
+                    for (const std::string& candidate : {packDir + "/build_shaderpack.py", std::string(PERLIN_SOURCE_DIR) + "/shaderpacks/build_shaderpack.py",
+                                                         paths::DataDir() + "/shaderpacks/build_shaderpack.py"})
+                        if (script.empty() && std::filesystem::exists(candidate, e))
+                            script = candidate;
+                    std::string report;
+                    if (script.empty()) {
+                        report = "shader rebuild: build_shaderpack.py not found";
+                    } else {
+#ifdef _WIN32
+                        const std::string cmd = "python \"" + script + "\" \"" + packDir + "\" 2>&1";
+                        FILE* pipe = _popen(cmd.c_str(), "r");
+#else
+                        const std::string cmd = "python3 \"" + script + "\" \"" + packDir + "\" 2>&1";
+                        FILE* pipe = popen(cmd.c_str(), "r");
+#endif
+                        std::string output;
+                        int code = -1;
+                        if (pipe) {
+                            char buffer[512];
+                            while (fgets(buffer, sizeof(buffer), pipe))
+                                output += buffer;
+#ifdef _WIN32
+                            code = _pclose(pipe);
+#else
+                            code = pclose(pipe);
+#endif
+                        }
+                        if (code != 0) {
+                            const size_t at = output.find("[FAIL]");
+                            report = "shader rebuild failed: " + (at == std::string::npos ? output.substr(0, 200) : output.substr(at, 300));
+                            std::cout << output << std::endl;
+                        } else {
+                            report = "shaders rebuilt";
+                        }
+                    }
+                    std::cout << "[hot-reload] " << report << std::endl;
+                    {
+                        std::lock_guard lock(statusMutex);
+                        shaderBuildReport = report;
+                    }
+                    shaderBuilding = false;
+                });
+            }
+        }
+#endif
+        std::string report;
+        {
+            std::lock_guard lock(statusMutex);
+            report.swap(shaderBuildReport);
+        }
+        if (!report.empty())
+            chat.AddMessage(report, hudAnim.ticks);
     }
 
     void Perlin::Shutdown() {
+        if (shaderBuildThread.joinable())
+            shaderBuildThread.join();
         mods::ModManager::Instance().Stop();
         renderRunning = false;
         if (renderThread.joinable())
@@ -1211,7 +1300,7 @@ namespace perlin {
         if (!pauseShown && canOpen && (inputManager.Pressed(Action::Pause) || (preview && !pausePreviewOpened))) {
             pausePreviewOpened = true;
             pauseShown = true;
-            pauseView = PERLIN_ENV("PERLIN_PREVIEW_OPTIONS") ? (PERLIN_ENV("PERLIN_PREVIEW_OPTIONS")[0] == 0x77 ? 3 : 1) : 0;
+            pauseView = PERLIN_ENV("PERLIN_PREVIEW_OPTIONS") ? (PERLIN_ENV("PERLIN_PREVIEW_OPTIONS")[0] == 0x77 ? 3 : PERLIN_ENV("PERLIN_PREVIEW_OPTIONS")[0] == 0x6d ? 4 : PERLIN_ENV("PERLIN_PREVIEW_OPTIONS")[0] == 0x64 ? 5 : 1) : 0;
             optionsPage = PERLIN_ENV("PERLIN_PREVIEW_OPTIONS") ? std::atoi(PERLIN_ENV("PERLIN_PREVIEW_OPTIONS")) : 0;
             pauseOpenedAt = now;
             pauseSignature.clear();
@@ -1224,10 +1313,17 @@ namespace perlin {
             return;
         bool resume = deathShown || invShown || chat.IsOpen();
         if (bindCapture < 0)
-        for (const auto& t : inputManager.TakeTyped())
+        for (const auto& t : inputManager.TakeTyped()) {
+            if (pauseView == 4) {
+                if (t.character && t.key >= 32 && t.key < 127 && modSearch.size() < 40)
+                    modSearch += static_cast<char>(t.key);
+                else if (!t.character && t.key == Key::Backspace && !modSearch.empty())
+                    modSearch.pop_back();
+            }
             if (!t.character && t.key == Key::Escape && now - pauseOpenedAt > std::chrono::milliseconds(100)) {
                 if (pauseView == 1 && optionsPage != 0) {
                     options.Save();
+                    shaderPendingInit = false;
                     optionsPage = optionsPage == 5 ? 3 : 0;
                     optionsSub = 0;
                     kbScroll = 0;
@@ -1243,6 +1339,7 @@ namespace perlin {
                     resume = true;
                 }
             }
+        }
         if (resume) {
             pauseView = 0;
             hud.Overlay().ClearOverlay();
@@ -1273,7 +1370,25 @@ namespace perlin {
         float mx = input.MouseX(), my = input.MouseY();
         if (const char* m = PERLIN_ENV("PERLIN_PREVIEW_MOUSE"))
             std::sscanf(m, "%f,%f", &mx, &my);
-        const bool down = input.IsMouseDown(0);
+        bool down = input.IsMouseDown(0);
+        if (const char* spec = PERLIN_ENV("PERLIN_PREVIEW_CLICK")) {
+            const double elapsed = std::chrono::duration<double>(now - pauseOpenedAt).count();
+            std::string rest = spec;
+            size_t pos = 0;
+            while (pos < rest.size()) {
+                size_t end = rest.find(',', pos);
+                if (end == std::string::npos)
+                    end = rest.size();
+                double at = 0;
+                float cx = 0, cy = 0;
+                if (std::sscanf(rest.substr(pos, end - pos).c_str(), "%lf:%f:%f", &at, &cx, &cy) == 3 && elapsed >= at && elapsed < at + 0.25) {
+                    mx = cx;
+                    my = cy;
+                    down = true;
+                }
+                pos = end + 1;
+            }
+        }
         const bool clickReady = now - pauseOpenedAt > std::chrono::milliseconds(150);
 
         if (pauseView == 1 && optionsPage == 5) {
@@ -1418,12 +1533,711 @@ namespace perlin {
             return;
         }
 
-        if (pauseView == 1 || pauseView == 3 || pauseView == 4 || pauseView == 5) {
+        if (pauseView == 5) {
+            const float gx = mx / static_cast<float>(scale), gy = my / static_cast<float>(scale);
+            const auto inside = [&](float x, float y, float w, float h) { return gx >= x && gx < x + w && gy >= y && gy < y + h; };
+            const bool click = down && !pauseLeftDown && clickReady;
+            namespace fsys = std::filesystem;
+            const std::string skinDir = paths::DataDir() + "/skins", capeDir = paths::DataDir() + "/capes";
+            std::error_code ec;
+            fsys::create_directories(skinDir, ec);
+            fsys::create_directories(capeDir, ec);
+            if (now - wardListedAt > std::chrono::milliseconds(1000)) {
+                wardListedAt = now;
+                const auto pngs = [](const std::string& dir) {
+                    std::vector<std::string> out;
+                    std::error_code e;
+                    for (const auto& entry : fsys::directory_iterator(dir, e))
+                        if (entry.is_regular_file(e) && entry.path().extension() == ".png")
+                            out.push_back(entry.path().generic_string());
+                    std::sort(out.begin(), out.end());
+                    return out;
+                };
+                wardSkins = pngs(skinDir);
+                wardCapes = pngs(capeDir);
+            }
+            const auto stampOf = [](const std::string& path) {
+                std::error_code e;
+                return std::to_string(fsys::file_size(path, e)) + ":" + std::to_string(fsys::last_write_time(path, e).time_since_epoch().count());
+            };
+            const auto stem = [](const std::string& path) { return fsys::path(path).stem().string(); };
+            const auto defaultSkin = [&](Texture& t) { return ui::UiAssets::Instance().Image("textures/entity/steve.png", t); };
+            const auto renderCard = [&](const std::string& key, const std::vector<unsigned char>* skin, int sw, int sh, bool slim, const std::vector<unsigned char>* cape, int cw, int ch, float yaw) {
+                ui::SkinView v;
+                v.skin = skin;
+                v.skinW = sw;
+                v.skinH = sh;
+                v.cape = cape;
+                v.capeW = cw;
+                v.capeH = ch;
+                v.slim = slim;
+                v.yaw = yaw;
+                ui::UiAssets::Instance().SetHead(key, ui::RenderSkin3D(v, 108, 156));
+            };
+            const auto ensureSkin = [&](const std::string& path) {
+                const std::string stamp = stampOf(path);
+                auto& slot = wardStamp["skin:" + path];
+                if (slot == stamp)
+                    return;
+                slot = stamp;
+                SkinConfig cfg;
+                cfg.skinPath = path;
+                LoadedSkin loaded;
+                std::string err;
+                if (!LoadSkinConfig(cfg, loaded, err))
+                    return;
+                const bool guess = ui::GuessSlimSkin(loaded.skinRgba, loaded.skinWidth, loaded.skinHeight);
+                wardSlimGuess[path] = guess;
+                renderCard("skin:" + path, &loaded.skinRgba, loaded.skinWidth, loaded.skinHeight, guess, nullptr, 0, 0, -32.0f);
+            };
+            Texture steve;
+            const bool haveSteve = defaultSkin(steve);
+            const auto ensureCape = [&](const std::string& path) {
+                const std::string stamp = stampOf(path);
+                auto& slot = wardStamp["cape:" + path];
+                if (slot == stamp || !haveSteve)
+                    return;
+                slot = stamp;
+                Texture t;
+                if (LoadTexture(path, t))
+                    renderCard("cape:" + path, &steve.pixels, steve.width, steve.height, false, &t.pixels, t.width, t.height, 180.0f);
+            };
+            if (wardStamp.find("default") == wardStamp.end() && haveSteve) {
+                wardStamp["default"] = "1";
+                renderCard("skin:default", &steve.pixels, steve.width, steve.height, false, nullptr, 0, 0, -32.0f);
+                renderCard("cape:none", &steve.pixels, steve.width, steve.height, false, nullptr, 0, 0, 180.0f);
+            }
+            const auto wear = [this, live]() {
+                options.Save();
+                SkinConfig cfg;
+                cfg.skinPath = options.skin;
+                cfg.capePath = options.cape;
+                cfg.slimArms = options.slimArms;
+                LoadedSkin loaded;
+                std::string err;
+                if (!LoadSkinConfig(cfg, loaded, err)) {
+                    std::cout << "[wardrobe] " << err << std::endl;
+                    return;
+                }
+                if (live) {
+                    live->SetSkin(std::move(loaded));
+                    live->SendSkinUpdate();
+                }
+            };
+            std::vector<ui::WardrobeCard> skinCards, capeCards;
+            std::vector<std::string> skinPaths, capePaths;
+            const std::string defaultName = tr("perlin.wardrobe.default", "Default");
+            skinCards.push_back({defaultName, "mchead:skin:default", options.skin.empty()});
+            skinPaths.push_back("");
+            for (const std::string& path : wardSkins) {
+                ensureSkin(path);
+                skinCards.push_back({stem(path), "mchead:skin:" + path, options.skin == path});
+                skinPaths.push_back(path);
+            }
+            capeCards.push_back({tr("perlin.wardrobe.noCape", "No Cape"), "mchead:cape:none", options.cape.empty()});
+            capePaths.push_back("");
+            for (const std::string& path : wardCapes) {
+                ensureCape(path);
+                capeCards.push_back({stem(path), "mchead:cape:" + path, options.cape == path});
+                capePaths.push_back(path);
+            }
+            if (!options.skin.empty())
+                ensureSkin(options.skin);
+            ui::WardrobeLayout l = ui::ComputeWardrobeLayout(static_cast<int>(skinCards.size()), static_cast<int>(capeCards.size()), wardSkinOpen, wardCapeOpen, wardLine, guiW, guiH);
+            if (gx >= l.listX && gx < l.listX + l.listW + 6.0f && gy >= l.listTop && gy < l.listBottom) {
+                const float wheel = inputManager.Scroll();
+                if (wheel > 0.0f)
+                    wardLine--;
+                else if (wheel < 0.0f)
+                    wardLine++;
+            }
+            wardLine = std::clamp(wardLine, 0, l.maxFirst);
+            if (wardLine != l.firstLine)
+                l = ui::ComputeWardrobeLayout(static_cast<int>(skinCards.size()), static_cast<int>(capeCards.size()), wardSkinOpen, wardCapeOpen, wardLine, guiW, guiH);
+            const bool overPreview = inside(l.prevX, l.prevY, l.prevW, l.prevH);
+            if (click && overPreview) {
+                wardDrag = true;
+                wardDragX = gx;
+                wardDragY = gy;
+            }
+            if (!down)
+                wardDrag = false;
+            if (wardDrag) {
+                wardYaw += (gx - wardDragX) * 1.6f;
+                wardPitch = std::clamp(wardPitch + (gy - wardDragY) * 1.2f, -85.0f, 85.0f);
+                wardDragX = gx;
+                wardDragY = gy;
+            }
+            wardYaw = std::fmod(wardYaw, 360.0f);
+            const std::string previewKey = options.skin + "|" + options.cape + "|" + std::to_string(options.slimArms) + "|" + std::to_string(static_cast<int>(wardYaw)) + "|" +
+                                           std::to_string(static_cast<int>(wardPitch)) + "|" + wardStamp["skin:" + options.skin] + "|" + wardStamp["cape:" + options.cape];
+            if (previewKey != wardPreviewKey) {
+                wardPreviewKey = previewKey;
+                SkinConfig cfg;
+                cfg.skinPath = options.skin;
+                cfg.capePath = options.cape;
+                cfg.slimArms = options.slimArms;
+                LoadedSkin loaded;
+                std::string err;
+                if (LoadSkinConfig(cfg, loaded, err)) {
+                    ui::UiAssets::Instance().EraseHead("ward:cur" + std::to_string(wardPreviewSerial));
+                    wardPreviewSerial++;
+                    ui::SkinView v;
+                    v.skin = options.skin.empty() ? &steve.pixels : &loaded.skinRgba;
+                    v.skinW = options.skin.empty() ? steve.width : loaded.skinWidth;
+                    v.skinH = options.skin.empty() ? steve.height : loaded.skinHeight;
+                    v.cape = loaded.capeRgba.empty() ? nullptr : &loaded.capeRgba;
+                    v.capeW = loaded.capeWidth;
+                    v.capeH = loaded.capeHeight;
+                    v.slim = options.slimArms;
+                    v.yaw = wardYaw;
+                    v.pitch = wardPitch;
+                    ui::UiAssets::Instance().SetHead("ward:cur" + std::to_string(wardPreviewSerial),
+                                                     ui::RenderSkin3D(v, static_cast<int>(l.prevW * 3.0f), static_cast<int>(l.prevH * 3.0f)));
+                }
+            }
+            ui::WardrobeText wt;
+            wt.title = tr("perlin.wardrobe", "Wardrobe");
+            wt.skins = tr("perlin.wardrobe.skins", "Skins");
+            wt.capes = tr("perlin.wardrobe.capes", "Capes");
+            wt.addSkin = "    " + tr("perlin.wardrobe.addSkin", "Add Skin");
+            wt.addCape = "    " + tr("perlin.wardrobe.addCape", "Add Cape");
+            wt.slim = tr("perlin.wardrobe.slim", "Slim Arms");
+            wt.slimOn = tr("options.on", "ON");
+            wt.slimOff = tr("options.off", "OFF");
+            wt.done = tr("gui.done", "Done");
+            wt.dropHint = tr("perlin.wardrobe.drop", "Drop .png files here to add skins and capes");
+            wt.dragHint = tr("perlin.wardrobe.drag", "Drag to rotate");
+            const std::string previewName = options.skin.empty() ? defaultName : stem(options.skin);
+            const std::string signature = std::to_string(guiW) + "x" + std::to_string(guiH) + "w" + std::to_string(l.firstLine) + "|" + previewKey + "|" + std::to_string(wardPreviewSerial) +
+                                          "|" + std::to_string(skinCards.size()) + "," + std::to_string(capeCards.size()) + "|" + options.skin + options.cape + std::to_string(wardSkinOpen) +
+                                          std::to_string(wardCapeOpen);
+            if (signature != optionsSignature || !hud.Overlay().HasOverlay()) {
+                optionsSignature = signature;
+                std::string error;
+                if (!hud.Overlay().SetOverlay(ui::BuildWardrobeRml(skinCards, capeCards, wardSkinOpen, wardCapeOpen, wardLine, "mchead:ward:cur" + std::to_string(wardPreviewSerial), previewName,
+                                                                   options.slimArms, !options.skin.empty(), !options.cape.empty(), wt, guiW, guiH),
+                                              error))
+                    std::cout << "[ui] wardrobe screen: " << error << std::endl;
+            }
+            hud.Overlay().MouseMove(gx, gy);
+            hud.UpdateOverlay(fbW, fbH, options.guiScale);
+            if (click && !overPreview) {
+                const auto folder = [&](const std::string& dir) {
+                    std::error_code e;
+                    platform->OpenUrl("file://" + fsys::absolute(dir, e).generic_string());
+                };
+                const auto removeFile = [&](std::string& current) {
+                    std::error_code e;
+                    fsys::rename(current, current + ".removed", e);
+                    current.clear();
+                    wardListedAt = {};
+                    wear();
+                };
+                if (inside(l.doneX, l.doneY, l.doneW, 20.0f)) {
+                    options.Save();
+                    pauseView = 0;
+                    pauseSignature.clear();
+                    optionsSignature.clear();
+                    hud.Overlay().ClearOverlay();
+                } else if (inside(l.slimX, l.slimY, l.slimW, 20.0f)) {
+                    options.slimArms = !options.slimArms;
+                    wear();
+                } else {
+                    for (const ui::WardrobeLine& line : l.lines) {
+                        const bool isSkin = line.kind < 2;
+                        if (line.kind % 2 == 0) {
+                            if (inside(l.AddX(), line.y, l.addW, l.headH))
+                                folder(isSkin ? skinDir : capeDir);
+                            else if (inside(l.TrashX(), line.y, l.trashW, l.headH)) {
+                                if (isSkin && !options.skin.empty())
+                                    removeFile(options.skin);
+                                else if (!isSkin && !options.cape.empty())
+                                    removeFile(options.cape);
+                            } else if (inside(l.listX, line.y, l.ToggleW(), l.headH)) {
+                                bool& open = isSkin ? wardSkinOpen : wardCapeOpen;
+                                open = !open;
+                            }
+                        } else {
+                            const int count = static_cast<int>(isSkin ? skinCards.size() : capeCards.size());
+                            for (int c = 0; c < l.cols; c++) {
+                                const int i = line.row * l.cols + c;
+                                if (i >= count)
+                                    break;
+                                if (!inside(l.CardX(i), line.y, l.cardW, l.cardH))
+                                    continue;
+                                if (isSkin) {
+                                    options.skin = skinPaths[static_cast<size_t>(i)];
+                                    options.slimArms = options.skin.empty() ? false : wardSlimGuess[options.skin];
+                                } else {
+                                    options.cape = capePaths[static_cast<size_t>(i)];
+                                }
+                                wear();
+                            }
+                        }
+                    }
+                }
+            }
+            pauseLeftDown = down;
+            return;
+        }
+
+        if ((pauseView == 1 && (optionsPage == 6 || optionsPage == 7 || optionsPage == 8)) || pauseView == 4) {
+            const float gx = mx / static_cast<float>(scale), gy = my / static_cast<float>(scale);
+            const auto inside = [&](float x, float y, float w, float h) { return gx >= x && gx < x + w && gy >= y && gy < y + h; };
+            const bool click = down && !pauseLeftDown && clickReady;
+            const float wheel = inputManager.Scroll() * 20.0f;
+            const auto lower = [](std::string s) {
+                std::transform(s.begin(), s.end(), s.begin(), [](unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
+                return s;
+            };
+            const auto openFolder = [&](const std::string& dir) {
+                std::error_code e;
+                std::filesystem::create_directories(dir, e);
+                platform->OpenUrl("file://" + std::filesystem::absolute(dir, e).generic_string());
+            };
+            const auto leave = [&]() {
+                options.Save();
+                shaderPendingInit = false;
+                if (pauseView == 4)
+                    pauseView = 0;
+                else
+                    optionsPage = 0;
+                optionsSignature.clear();
+                pauseSignature.clear();
+                hud.Overlay().ClearOverlay();
+            };
+            const auto submit = [&](const std::string& rml, const char* label) {
+                std::string error;
+                if (!hud.Overlay().SetOverlay(rml, error))
+                    std::cout << "[ui] " << label << " screen: " << error << std::endl;
+            };
+            const auto listPacks = [&](const std::string& dir, bool allowMcpack) {
+                if (now - packFoundAt < std::chrono::milliseconds(1000) && packMetaStampDir == dir)
+                    return;
+                packFoundAt = now;
+                packMetaStampDir = dir;
+                packFoundCache.clear();
+                std::error_code e;
+                std::filesystem::create_directories(dir, e);
+                for (const auto& entry : std::filesystem::directory_iterator(dir, e)) {
+                    const std::string ext = lower(entry.path().extension().string());
+                    if (entry.is_directory(e) || ext == ".zip" || (allowMcpack && ext == ".mcpack"))
+                        packFoundCache.push_back(entry.path().filename().string());
+                }
+                std::sort(packFoundCache.begin(), packFoundCache.end());
+            };
+            const auto packMeta = [&](const std::string& dir, const std::string& name) -> const PackMeta& {
+                const std::string path = dir + "/" + name;
+                std::error_code e;
+                std::string stamp = std::to_string(std::filesystem::is_directory(path, e) ? 0 : std::filesystem::file_size(path, e)) + ":" +
+                                    std::to_string(std::filesystem::last_write_time(path, e).time_since_epoch().count());
+                auto& slot = packMetaCache[path];
+                if (slot.stamp != stamp) {
+                    slot.stamp = stamp;
+                    slot.meta = ReadPackMeta(path);
+                    if (slot.meta.hasIcon)
+                        ui::UiAssets::Instance().SetHead("pack:" + path, slot.meta.icon);
+                }
+                return slot.meta;
+            };
+            const auto packIcon = [&](const std::string& dir, const std::string& name, const PackMeta& meta, const char* fallback) {
+                return meta.hasIcon ? "mchead:pack:" + dir + "/" + name : std::string(fallback);
+            };
+            if (pauseView == 1 && optionsPage == 7) {
+                const std::string dir = paths::DataDir() + "/texturepacks";
+                listPacks(dir, true);
+                std::vector<ui::PackEntry> avail, sel;
+                std::vector<std::string> availNames;
+                for (const std::string& name : options.texturePacks) {
+                    const PackMeta& m = packMeta(dir, name);
+                    ui::PackEntry e;
+                    e.name = m.name.empty() ? name : m.name;
+                    e.desc = m.description;
+                    e.icon = packIcon(dir, name, m, "textures/blocks/stone");
+                    e.movable = true;
+                    sel.push_back(e);
+                }
+                {
+                    ui::PackEntry e;
+                    e.name = tr("perlin.packs.defaultName", "Default");
+                    e.desc = tr("perlin.packs.defaultDesc", "The default look and feel of Minecraft (built-in)");
+                    e.icon = "textures/blocks/grass_side_carried";
+                    sel.push_back(e);
+                }
+                for (const std::string& name : packFoundCache) {
+                    if (std::find(options.texturePacks.begin(), options.texturePacks.end(), name) != options.texturePacks.end())
+                        continue;
+                    const PackMeta& m = packMeta(dir, name);
+                    ui::PackEntry e;
+                    e.name = m.name.empty() ? name : m.name;
+                    e.desc = m.description;
+                    e.icon = packIcon(dir, name, m, "textures/blocks/stone");
+                    avail.push_back(e);
+                    availNames.push_back(name);
+                }
+                const ui::PackScreenLayout l = ui::ComputePackScreenLayout(static_cast<int>(avail.size()), static_cast<int>(sel.size()), guiW, guiH);
+                const bool overLeft = inside(l.leftX, l.top, l.panelW, l.bottom - l.top);
+                const bool overRight = inside(l.rightX, l.top, l.panelW, l.bottom - l.top);
+                if (overLeft)
+                    packScrollA -= wheel;
+                else if (overRight)
+                    packScrollS -= wheel;
+                packScrollA = std::clamp(packScrollA, 0.0f, l.maxScrollA);
+                packScrollS = std::clamp(packScrollS, 0.0f, l.maxScrollB);
+                std::string signature = std::to_string(guiW) + "x" + std::to_string(guiH) + "p" + std::to_string(static_cast<int>(packScrollA)) + "," +
+                                        std::to_string(static_cast<int>(packScrollS));
+                for (const auto& e : avail)
+                    signature += "|" + e.name + e.desc + e.icon;
+                signature += "#";
+                for (const auto& e : sel)
+                    signature += "|" + e.name + e.desc + e.icon;
+                if (signature != optionsSignature || !hud.Overlay().HasOverlay()) {
+                    optionsSignature = signature;
+                    submit(ui::BuildPackScreenRml(avail, sel, tr("perlin.packs.title", "Select Resource Packs"),
+                                                  tr("perlin.packs.hint", "Drag and drop files into this window to add packs"),
+                                                  tr("perlin.packs.available", "Available"), tr("perlin.packs.selected", "Selected"),
+                                                  tr("perlin.packs.openFolder", "Open Pack Folder"), tr("gui.done", "Done"), packScrollA, packScrollS, guiW, guiH),
+                           "resource packs");
+                }
+                hud.Overlay().MouseMove(gx, gy);
+                hud.UpdateOverlay(fbW, fbH, options.guiScale);
+                if (click) {
+                    const float sbA = l.maxScrollA > 0 ? 6.0f : 0.0f, sbS = l.maxScrollB > 0 ? 6.0f : 0.0f;
+                    bool changed = false;
+                    if (inside(l.openX, l.btnY, l.btnW, 20.0f)) {
+                        openFolder(dir);
+                    } else if (inside(l.doneX, l.btnY, l.btnW, 20.0f)) {
+                        leave();
+                        pauseLeftDown = down;
+                        return;
+                    } else if (gy >= l.top && gy < l.bottom) {
+                        for (int i = 0; i < static_cast<int>(sel.size()) && !changed; i++) {
+                            const float y = l.RowY(i, packScrollS);
+                            if (!inside(l.rightX, y, l.panelW - sbS, l.rowH - 2.0f) || i >= static_cast<int>(options.texturePacks.size()))
+                                continue;
+                            if (inside(l.rightX + l.panelW - 38.0f - sbS, y + 10.0f, 16.0f, 14.0f)) {
+                                if (i > 0)
+                                    std::swap(options.texturePacks[static_cast<size_t>(i)], options.texturePacks[static_cast<size_t>(i - 1)]);
+                            } else if (inside(l.rightX + l.panelW - 20.0f - sbS, y + 10.0f, 16.0f, 14.0f)) {
+                                if (i + 1 < static_cast<int>(options.texturePacks.size()))
+                                    std::swap(options.texturePacks[static_cast<size_t>(i)], options.texturePacks[static_cast<size_t>(i + 1)]);
+                            } else {
+                                options.texturePacks.erase(options.texturePacks.begin() + i);
+                            }
+                            changed = true;
+                        }
+                        for (int i = 0; i < static_cast<int>(avail.size()) && !changed; i++)
+                            if (inside(l.leftX, l.RowY(i, packScrollA), l.panelW - sbA, l.rowH - 2.0f)) {
+                                options.texturePacks.insert(options.texturePacks.begin(), availNames[static_cast<size_t>(i)]);
+                                changed = true;
+                            }
+                    }
+                    if (changed) {
+                        options.Save();
+                        ApplyTexturePacks();
+                        optionsSignature.clear();
+                    }
+                }
+                pauseLeftDown = down;
+                return;
+            }
+            if (pauseView == 1 && optionsPage == 6) {
+                const auto langs = i18n::Lang::Get().Languages();
+                std::vector<std::string> rows;
+                int selectedRow = -1;
+                for (size_t i = 0; i < langs.size(); i++) {
+                    rows.push_back(langs[i].name.empty() ? langs[i].code : langs[i].name);
+                    if (langs[i].code == options.language)
+                        selectedRow = static_cast<int>(i);
+                }
+                const ui::ShaderScreenLayout l = ui::ComputeShaderScreenLayout(static_cast<int>(rows.size()), guiW, guiH);
+                shaderScroll = std::clamp(shaderScroll - wheel, 0.0f, l.maxScroll);
+                std::string signature = std::to_string(guiW) + "x" + std::to_string(guiH) + "l" + std::to_string(static_cast<int>(shaderScroll)) + "|" +
+                                        std::to_string(selectedRow) + "|" + std::to_string(ui::McFont::Instance().Version()) + "|";
+                for (const auto& r : rows)
+                    signature += r + ";";
+                if (signature != optionsSignature || !hud.Overlay().HasOverlay()) {
+                    optionsSignature = signature;
+                    submit(ui::BuildLanguageScreenRml(rows, selectedRow, tr("options.language", "Language"),
+                                                      tr("perlin.language.subtitle", "Language translations may not be 100% accurate"), tr("gui.done", "Done"),
+                                                      shaderScroll, guiW, guiH),
+                           "language");
+                }
+                hud.Overlay().MouseMove(gx, gy);
+                hud.UpdateOverlay(fbW, fbH, options.guiScale);
+                if (click) {
+                    const float doneX = l.colX + (l.colW - 200.0f) / 2.0f;
+                    if (inside(doneX, l.row1Y + 12.0f, 200.0f, 20.0f)) {
+                        leave();
+                        pauseLeftDown = down;
+                        return;
+                    }
+                    if (gy >= l.listTop && gy < l.listBottom && gx >= l.colX && gx < l.colX + l.colW)
+                        for (int i = 0; i < static_cast<int>(rows.size()); i++) {
+                            if (!inside(l.colX, l.RowY(i, shaderScroll), l.colW, 18.0f))
+                                continue;
+                            options.language = langs[static_cast<size_t>(i)].code;
+                            i18n::Lang::Get().Configure(ui::UiAssets::Instance().VanillaRoot(), paths::DataDir(), options.language);
+                            options.Save();
+                            pauseSignature.clear();
+                            optionsSignature.clear();
+                            break;
+                        }
+                }
+                pauseLeftDown = down;
+                return;
+            }
+            if (pauseView == 1 && optionsPage == 8) {
+                const std::string dir = paths::DataDir() + "/shaderpacks";
+                listPacks(dir, false);
+                if (!shaderPendingInit) {
+                    shaderPendingInit = true;
+                    shaderPendingPack = options.shaderPack;
+                    shaderPendingEnabled = !options.shaderPack.empty();
+                }
+                std::vector<std::string> rows;
+                rows.push_back(tr("perlin.shaders.title", "Shaders") + ": " + (shaderPendingEnabled ? tr("perlin.shaders.enabled", "Enabled") : tr("perlin.shaders.disabled", "Disabled")));
+                int selectedRow = -1;
+                for (size_t i = 0; i < packFoundCache.size(); i++) {
+                    rows.push_back(packFoundCache[i]);
+                    if (shaderPendingEnabled && packFoundCache[i] == shaderPendingPack)
+                        selectedRow = static_cast<int>(i) + 1;
+                }
+                const ui::ShaderScreenLayout l = ui::ComputeShaderScreenLayout(static_cast<int>(rows.size()) + 1, guiW, guiH);
+                shaderScroll = std::clamp(shaderScroll - wheel, 0.0f, l.maxScroll);
+                const std::string signature = std::to_string(guiW) + "x" + std::to_string(guiH) + "s" + std::to_string(static_cast<int>(shaderScroll)) + "|" +
+                                              std::to_string(selectedRow) + "|" + std::to_string(shaderPendingEnabled) + "|" + [&] {
+                                                  std::string s;
+                                                  for (const auto& r : rows)
+                                                      s += r + ";";
+                                                  return s;
+                                              }();
+                if (signature != optionsSignature || !hud.Overlay().HasOverlay()) {
+                    optionsSignature = signature;
+                    submit(ui::BuildShaderScreenRml(rows, selectedRow, 0, tr("perlin.shaderPacks", "Shader Packs"), tr("perlin.shaders.select", "Select"),
+                                                    "+ " + tr("perlin.shaders.drag", "Drag and Drop Shader Packs to add"),
+                                                    tr("perlin.shaders.openFolder", "Open Shader Pack Folder..."),
+                                                    tr("perlin.shaders.settings", "Shader Pack Settings..."), tr("perlin.shaders.cancel", "Cancel"),
+                                                    tr("perlin.shaders.apply", "Apply"), tr("gui.done", "Done"), shaderScroll, guiW, guiH),
+                           "shader packs");
+                }
+                hud.Overlay().MouseMove(gx, gy);
+                hud.UpdateOverlay(fbW, fbH, options.guiScale);
+                const auto apply = [&]() {
+                    options.shaderPack = shaderPendingEnabled ? shaderPendingPack : std::string();
+                    options.Save();
+                    ApplyShaderPack();
+                };
+                if (click) {
+                    if (inside(l.openX, l.row1Y, l.btnW1, 20.0f)) {
+                        openFolder(dir);
+                    } else if (inside(l.settingsX, l.row1Y, l.btnW1, 20.0f)) {
+                        shaderPendingInit = false;
+                        optionsPage = 1;
+                        optionsSub = 0;
+                        optionsSignature.clear();
+                        hud.Overlay().ClearOverlay();
+                    } else if (inside(l.cancelX, l.row2Y, l.thirdW, 20.0f)) {
+                        leave();
+                        pauseLeftDown = down;
+                        return;
+                    } else if (inside(l.applyX, l.row2Y, l.thirdW, 20.0f)) {
+                        apply();
+                    } else if (inside(l.doneX, l.row2Y, l.thirdW, 20.0f)) {
+                        apply();
+                        leave();
+                        pauseLeftDown = down;
+                        return;
+                    } else if (gy >= l.listTop && gy < l.listBottom && gx >= l.colX && gx < l.colX + l.colW) {
+                        for (int i = 0; i < static_cast<int>(rows.size()); i++) {
+                            if (!inside(l.colX, l.RowY(i, shaderScroll), l.colW, 18.0f))
+                                continue;
+                            if (i == 0) {
+                                shaderPendingEnabled = !shaderPendingEnabled;
+                                if (shaderPendingEnabled && shaderPendingPack.empty() && !packFoundCache.empty())
+                                    shaderPendingPack = packFoundCache.front();
+                                if (shaderPendingEnabled && shaderPendingPack.empty())
+                                    shaderPendingEnabled = false;
+                            } else {
+                                shaderPendingPack = packFoundCache[static_cast<size_t>(i - 1)];
+                                shaderPendingEnabled = true;
+                            }
+                            optionsSignature.clear();
+                            break;
+                        }
+                    }
+                }
+                pauseLeftDown = down;
+                return;
+            }
+            const std::string modDir = paths::DataDir() + "/mods";
+            auto& mm = mods::ModManager::Instance();
+            const std::vector<mods::ModInfo> all = mm.List();
+            ui::ModEntry unused;
+            (void)unused;
+            if (modIconStamp.find("*default") == modIconStamp.end()) {
+                modIconStamp["*default"] = "1";
+                Texture t;
+                t.width = t.height = 16;
+                t.pixels.assign(16 * 16 * 4, 0);
+                for (int y = 0; y < 16; y++)
+                    for (int x = 0; x < 16; x++) {
+                        unsigned char* p = &t.pixels[static_cast<size_t>((y * 16 + x) * 4)];
+                        const bool bar = (y == 4 || y == 5 || y == 8 || y == 9 || y == 12 || y == 13) && x >= 3 && x <= 12;
+                        const bool dot = (x == 2 || x == 3) && (y == 4 || y == 5 || y == 8 || y == 9 || y == 12 || y == 13);
+                        p[0] = bar || dot ? 255 : 14;
+                        p[1] = bar || dot ? 255 : 82;
+                        p[2] = bar || dot ? 255 : 255;
+                        p[3] = 255;
+                    }
+                ui::UiAssets::Instance().SetHead("mod:default", t);
+            }
+            const std::string needle = lower(modSearch);
+            std::vector<const mods::ModInfo*> shown;
+            for (const mods::ModInfo& info : all) {
+                if (!needle.empty() && lower(info.displayName).find(needle) == std::string::npos && lower(info.name).find(needle) == std::string::npos &&
+                    lower(info.description).find(needle) == std::string::npos)
+                    continue;
+                shown.push_back(&info);
+            }
+            const auto badgeFor = [&](const mods::ModInfo& info, int& color) {
+                const std::string state = info.enabled ? info.state : std::string("disabled");
+                color = state == "running" ? 2 : state == "disabled" ? 3 : state == "loading" ? 0 : 1;
+                if (state == "running")
+                    return tr("perlin.mods.running", "Running");
+                if (state == "disabled")
+                    return tr("perlin.mods.disabled", "Disabled");
+                if (state == "loading")
+                    return tr("perlin.mods.loading", "Loading");
+                if (state == "unresponsive")
+                    return tr("perlin.mods.stuck", "Stuck");
+                return tr("perlin.mods.error", "Error");
+            };
+            const auto iconFor = [&](const mods::ModInfo& info) {
+                if (info.iconPath.empty())
+                    return std::string("mchead:mod:default");
+                std::error_code e;
+                const std::string stamp = std::to_string(std::filesystem::last_write_time(info.iconPath, e).time_since_epoch().count());
+                std::string& seen = modIconStamp["mod:" + info.name];
+                if (seen != stamp) {
+                    seen = stamp;
+                    Texture t;
+                    if (LoadTexture(info.iconPath, t))
+                        ui::UiAssets::Instance().SetHead("mod:" + info.name, t);
+                }
+                return "mchead:mod:" + info.name;
+            };
+            int selectedIndex = -1;
+            for (size_t i = 0; i < shown.size(); i++)
+                if (shown[i]->name == modSelected)
+                    selectedIndex = static_cast<int>(i);
+            if (selectedIndex < 0 && !shown.empty()) {
+                selectedIndex = 0;
+                modSelected = shown[0]->name;
+            }
+            std::vector<ui::ModEntry> entries;
+            for (const mods::ModInfo* info : shown) {
+                ui::ModEntry e;
+                e.name = info->displayName.empty() ? info->name : info->displayName;
+                e.desc = info->description.empty() ? tr("perlin.mods.noDescription", "A WebAssembly mod.") : info->description;
+                e.badge = badgeFor(*info, e.badgeColor);
+                e.icon = iconFor(*info);
+                entries.push_back(e);
+            }
+            ui::ModDetail detail;
+            if (selectedIndex >= 0) {
+                const mods::ModInfo& info = *shown[static_cast<size_t>(selectedIndex)];
+                detail.valid = true;
+                detail.name = entries[static_cast<size_t>(selectedIndex)].name;
+                detail.badge = entries[static_cast<size_t>(selectedIndex)].badge;
+                detail.badgeColor = entries[static_cast<size_t>(selectedIndex)].badgeColor;
+                detail.icon = entries[static_cast<size_t>(selectedIndex)].icon;
+                detail.version = info.version.empty() ? std::string() : "v" + info.version;
+                detail.author = info.author.empty() ? std::string() : tr("perlin.mods.by", "By ") + info.author;
+                detail.toggleEnabled = info.enabled;
+                detail.toggleLabel = info.enabled ? tr("perlin.mods.disable", "Disable") : tr("perlin.mods.enable", "Enable");
+                detail.reloadLabel = tr("perlin.mods.reload", "Reload");
+                std::string body = info.description.empty() ? tr("perlin.mods.noDescription", "A WebAssembly mod.") : info.description;
+                if (!info.error.empty())
+                    body += "\n\n" + tr("perlin.mods.errorLabel", "Error") + ": " + info.error;
+                body += "\n\n" + tr("perlin.mods.file", "File") + ": " + info.name + ".wasm (" + std::to_string(info.size) + " bytes)";
+                if (!info.hooks.empty()) {
+                    body += "\n" + tr("perlin.mods.hooks", "Hooks") + ": ";
+                    for (size_t i = 0; i < info.hooks.size(); i++)
+                        body += (i ? ", " : "") + info.hooks[i];
+                }
+                body += "\n" + tr("perlin.mods.loads", "Loads") + ": " + std::to_string(info.loads);
+                if (!info.website.empty())
+                    body += "\n\n" + info.website;
+                detail.body = body;
+            }
+            const ui::ModScreenLayout l = ui::ComputeModScreenLayout(static_cast<int>(entries.size()), detail, guiW, guiH);
+            if (inside(l.rightX, l.detailTextTop, l.rightW, l.detailTextBottom - l.detailTextTop))
+                modDetailScroll -= wheel;
+            else if (inside(l.leftX, l.listTop, l.leftW, l.listBottom - l.listTop))
+                modScroll -= wheel;
+            modScroll = std::clamp(modScroll, 0.0f, l.maxScroll);
+            modDetailScroll = std::clamp(modDetailScroll, 0.0f, l.maxDetailScroll);
+            const bool caret = (std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count() / 500) % 2 == 0;
+            std::string signature = std::to_string(guiW) + "x" + std::to_string(guiH) + "m" + std::to_string(static_cast<int>(modScroll)) + "," +
+                                    std::to_string(static_cast<int>(modDetailScroll)) + "|" + modSearch + (caret ? "_" : "") + "|" + modSelected;
+            for (const auto& e : entries)
+                signature += "|" + e.name + e.badge + e.desc;
+            signature += "#" + detail.body + detail.toggleLabel;
+            if (signature != optionsSignature || !hud.Overlay().HasOverlay()) {
+                optionsSignature = signature;
+                const std::string showing = tr("perlin.mods.showing", "Showing ") + std::to_string(entries.size()) + (entries.size() == 1 ? tr("perlin.mods.mod", " mod") : tr("perlin.mods.mods", " mods"));
+                submit(ui::BuildModScreenRml(entries, selectedIndex, detail, tr("perlin.mods.title", "Mods"), modSearch, caret, showing,
+                                             tr("perlin.mods.search", "Search..."), tr("perlin.mods.openFolder", "Open Mods Folder"), tr("gui.done", "Done"),
+                                             modScroll, modDetailScroll, guiW, guiH),
+                       "mods");
+            }
+            hud.Overlay().MouseMove(gx, gy);
+            hud.UpdateOverlay(fbW, fbH, options.guiScale);
+            if (click) {
+                if (inside(l.doneX, l.btnY, l.btnW, 20.0f)) {
+                    leave();
+                    pauseLeftDown = down;
+                    return;
+                }
+                if (inside(l.openX, l.btnY, l.btnW, 20.0f)) {
+                    openFolder(modDir);
+                } else if (detail.valid && inside(l.toggleX, l.detailBtnY - 1.0f, l.toggleW, 20.0f)) {
+                    auto& d = options.disabledMods;
+                    const auto it = std::find(d.begin(), d.end(), modSelected);
+                    if (it == d.end())
+                        d.push_back(modSelected);
+                    else
+                        d.erase(it);
+                    mm.SetDisabled(d);
+                    options.Save();
+                    optionsSignature.clear();
+                } else if (detail.valid && detail.toggleEnabled && inside(l.reloadX, l.detailBtnY - 1.0f, l.reloadW, 20.0f)) {
+                    mm.ReloadMod(modSelected);
+                    optionsSignature.clear();
+                } else if (gy >= l.listTop && gy < l.listBottom && gx >= l.leftX && gx < l.leftX + l.leftW) {
+                    for (int i = 0; i < static_cast<int>(shown.size()); i++)
+                        if (inside(l.leftX, l.RowY(i, modScroll), l.leftW - (l.maxScroll > 0 ? 8.0f : 0.0f), l.rowH - 2.0f)) {
+                            modSelected = shown[static_cast<size_t>(i)]->name;
+                            modDetailScroll = 0;
+                            optionsSignature.clear();
+                            break;
+                        }
+                }
+            }
+            pauseLeftDown = down;
+            return;
+        }
+
+        if (pauseView == 1 || pauseView == 3 || pauseView == 4) {
             struct OptRow {
                 std::string label, value;
                 float fraction;
                 std::function<void(float, bool)> apply;
                 bool header = false;
+                bool locked = false;
+                bool wide = false;
             };
             static const int kFps[] = {0, 30, 60, 90, 120, 144, 165, 240};
             static const int kGuiScales[] = {0, 1, 2, 3, 4};
@@ -1507,17 +2321,19 @@ namespace perlin {
                 };
                 const auto cyc = [&](const std::string& label, const std::vector<std::string>& names, int at, bool enabled, std::function<void(int)> pick) {
                     const int safe = std::clamp(at, 0, static_cast<int>(names.size()) - 1);
-                    model.push_back({label, names[static_cast<size_t>(safe)] + (enabled ? "" : " (locked)"), -1.0f, [=](float, bool click) {
+                    model.push_back({label, names[static_cast<size_t>(safe)], -1.0f, [=](float, bool click) {
                                          if (click && enabled)
                                              pick((safe + 1) % static_cast<int>(names.size()));
                                      }});
+                    model.back().locked = !enabled;
                 };
                 const auto rule = [&](const std::string& label, const std::string& key, bool enabled) {
                     const bool on = ruleValue(key) != 0;
-                    model.push_back({label, onOff(on) + (enabled ? "" : " (locked)"), -1.0f, [=](float, bool click) {
+                    model.push_back({label, onOff(on), -1.0f, [=](float, bool click) {
                                          if (click && enabled)
                                              setRule(key, on ? 0 : 1, true);
                                      }});
+                    model.back().locked = !enabled;
                 };
                 const auto ruleSlider = [&](const std::string& label, const std::string& key, int maxValue, const char* suffix, bool enabled) {
                     const int v = std::clamp(ruleValue(key), 0, maxValue);
@@ -1553,21 +2369,26 @@ namespace perlin {
                 ruleSlider("Respawn Radius", "spawnradius", 128, " blocks", isOp);
                 head("Cheats");
                 {
-                    const bool on = !live || ws.commandsEnabled;
-                    model.push_back({"Activate Cheats", onOff(on) + (isOp ? "" : " (operators only)"), -1.0f, [=](float, bool click) {
-                                         if (click && isOp)
+                    const auto co = worldOverride.find("commandsenabled");
+                    const bool on = (co != worldOverride.end() && nowSec - co->second.second < 3.0) ? co->second.first != 0 : (!live || ws.commandsEnabled);
+                    model.push_back({"Activate Cheats", onOff(on), -1.0f, [=](float, bool click) {
+                                         if (click && isOp) {
+                                             worldOverride["commandsenabled"] = {on ? 0 : 1, nowSec};
                                              run(std::string("changesetting allow-cheats ") + (on ? "false" : "true"));
+                                         }
                                      }});
+                    model.back().locked = !isOp;
                 }
                 rule("Normal Day/Night Cycle", "dodaylightcycle", cheats);
                 {
                     const bool always = ruleValue("dodaylightcycle") == 0;
-                    model.push_back({"Always Day", onOff(always) + (cheats ? "" : " (locked)"), -1.0f, [=](float, bool click) {
+                    model.push_back({"Always Day", onOff(always), -1.0f, [=](float, bool click) {
                                          if (click && cheats) {
                                              worldOverride["dodaylightcycle"] = {always ? 1 : 0, nowSec};
                                              run(always ? "alwaysday false" : "alwaysday true");
                                          }
                                      }});
+                    model.back().locked = !cheats;
                 }
                 rule("Keep Inventory", "keepinventory", cheats);
                 rule("Mob Spawn Normally", "domobspawning", cheats);
@@ -1609,92 +2430,28 @@ namespace perlin {
                                          options.Save();
                                      }});
                 }
-            } else if (pauseView == 5) {
-                title = tr("perlin.wardrobe", "Wardrobe");
-                const std::string skinDir = paths::DataDir() + "/skins", capeDir = paths::DataDir() + "/capes";
-                std::error_code ec;
-                std::filesystem::create_directories(skinDir, ec);
-                std::filesystem::create_directories(capeDir, ec);
-                const auto pngs = [](const std::string& dir) {
-                    std::vector<std::string> out;
-                    std::error_code e;
-                    for (const auto& entry : std::filesystem::directory_iterator(dir, e))
-                        if (entry.is_regular_file(e) && entry.path().extension() == ".png")
-                            out.push_back(entry.path().filename().string());
-                    std::sort(out.begin(), out.end());
-                    return out;
-                };
-                const auto wear = [this, live]() {
-                    options.Save();
-                    SkinConfig cfg;
-                    cfg.skinPath = options.skin;
-                    cfg.capePath = options.cape;
-                    cfg.slimArms = options.slimArms;
-                    LoadedSkin loaded;
-                    std::string err;
-                    if (!LoadSkinConfig(cfg, loaded, err)) {
-                        std::cout << "[wardrobe] " << err << std::endl;
-                        return;
-                    }
-                    if (live) {
-                        live->SetSkin(std::move(loaded));
-                        live->SendSkinUpdate();
-                    }
-                };
-                model.push_back({"Skin", "", -1.0f, [](float, bool) {}});
-                model.back().header = true;
-                model.push_back({"Default Skin", options.skin.empty() ? "Worn" : "Wear", -1.0f, [this, wear](float, bool click) {
-                                     if (click) {
-                                         options.skin.clear();
-                                         wear();
-                                     }
-                                 }});
-                for (const std::string& name : pngs(skinDir)) {
-                    const std::string full = skinDir + "/" + name;
-                    model.push_back({name, options.skin == full ? "Worn" : "Wear", -1.0f, [this, wear, full](float, bool click) {
-                                         if (click) {
-                                             options.skin = full;
-                                             wear();
-                                         }
-                                     }});
-                }
-                model.push_back({"Slim Arms", onOff(options.slimArms), -1.0f, [this, wear](float, bool click) {
-                                     if (click) {
-                                         options.slimArms = !options.slimArms;
-                                         wear();
-                                     }
-                                 }});
-                model.push_back({"Cape", "", -1.0f, [](float, bool) {}});
-                model.back().header = true;
-                model.push_back({"No Cape", options.cape.empty() ? "Worn" : "Wear", -1.0f, [this, wear](float, bool click) {
-                                     if (click) {
-                                         options.cape.clear();
-                                         wear();
-                                     }
-                                 }});
-                for (const std::string& name : pngs(capeDir)) {
-                    const std::string full = capeDir + "/" + name;
-                    model.push_back({name, options.cape == full ? "Worn" : "Wear", -1.0f, [this, wear, full](float, bool click) {
-                                         if (click) {
-                                             options.cape = full;
-                                             wear();
-                                         }
-                                     }});
-                }
-                model.push_back({"Skins:", skinDir, -1.0f, [](float, bool) {}});
             } else if (optionsPage == 0) {
-                nav(tr("options.videoTitle", "Video Settings..."), 1);
+                slider(tr("options.fov", "FOV"), std::to_string(static_cast<int>(std::lround(options.fov))), (options.fov - 30.0f) / 80.0f,
+                       [this](float f) { options.fov = std::round(30.0f + std::clamp(f, 0.0f, 1.0f) * 80.0f); });
+                model.back().wide = true;
+                model.push_back({tr("perlin.wardrobe.skinCustomization", "Skin Customization..."), "", -1.0f, [this, &hud](float, bool click) {
+                                     if (click) {
+                                         options.Save();
+                                         pauseView = 5;
+                                         optionsSignature.clear();
+                                         hud.Overlay().ClearOverlay();
+                                     }
+                                 }});
                 nav(tr("options.sounds.title", "Music & Sounds..."), 2);
+                nav(tr("options.videoTitle", "Video Settings..."), 1);
                 nav(tr("options.controls", "Controls..."), 3);
-                nav(tr("perlin.options.hand", "Hand & Camera..."), 4);
-                nav(tr("controls.keybinds", "Key Binds..."), 5);
                 nav(tr("options.language", "Language..."), 6);
+                nav(tr("perlin.options.hand", "Hand & Camera..."), 4);
                 nav(tr("resourcePack.title", "Resource Packs..."), 7);
                 nav(tr("perlin.shaderPacks", "Shader Packs..."), 8);
             } else if (optionsPage == 1) {
                 title = tr("options.videoTitle", "Video Settings");
-                slider(tr("options.fov", "FOV"), std::to_string(static_cast<int>(std::lround(options.fov))), (options.fov - 30.0f) / 80.0f,
-                       [this](float f) { options.fov = std::round(30.0f + std::clamp(f, 0.0f, 1.0f) * 80.0f); });
+                toggle(tr("options.graphics.fancy", "Fancy Graphics"), options.fancyGraphics);
                 slider(tr("options.renderDistance", "Render Distance"), std::to_string(options.renderDistance) + " " + tr("options.chunks", "chunks"),
                        static_cast<float>(options.renderDistance - 2) / 30.0f, [this, live](float f) {
                            const int distance = 2 + static_cast<int>(std::lround(std::clamp(f, 0.0f, 1.0f) * 30.0f));
@@ -1707,9 +2464,6 @@ namespace perlin {
                                }
                            }
                        });
-                slider(tr("options.gamma", "Brightness"),
-                       options.gamma <= 0.01f ? tr("options.gamma.min", "Moody") : options.gamma >= 0.99f ? tr("options.gamma.max", "Bright") : percent(options.gamma),
-                       options.gamma, [this, snap](float f) { options.gamma = snap(f, 100.0f); });
                 model.push_back({tr("options.framerateLimit", "Max Framerate"), options.maxFps == 0 ? tr("options.framerateLimit.max", "Unlimited") : std::to_string(options.maxFps) + " fps", -1.0f,
                                  [this](float, bool click) {
                                      if (!click)
@@ -1731,7 +2485,11 @@ namespace perlin {
                                              at = i;
                                      options.guiScale = kGuiScales[(at + 1) % std::size(kGuiScales)];
                                  }});
-                toggle(tr("options.graphics.fancy", "Fancy Graphics"), options.fancyGraphics);
+                slider(tr("options.gamma", "Brightness"),
+                       options.gamma <= 0.01f ? tr("options.gamma.min", "Moody") : options.gamma >= 0.99f ? tr("options.gamma.max", "Bright") : percent(options.gamma),
+                       options.gamma, [this, snap](float f) { options.gamma = snap(f, 100.0f); });
+                slider(tr("options.fov", "FOV"), std::to_string(static_cast<int>(std::lround(options.fov))), (options.fov - 30.0f) / 80.0f,
+                       [this](float f) { options.fov = std::round(30.0f + std::clamp(f, 0.0f, 1.0f) * 80.0f); });
                 slider(tr("options.motionBlur", "Motion Blur"), options.motionBlur <= 0.001f ? tr("options.off", "OFF") : percent(options.motionBlur), options.motionBlur,
                        [this, snap](float f) { options.motionBlur = snap(f, 100.0f); });
                 slider(tr("options.accessibility.menu_background_blurriness", "Menu Blur"), std::to_string(options.menuBlur), static_cast<float>(options.menuBlur) / 10.0f,
@@ -1780,19 +2538,6 @@ namespace perlin {
                     model.push_back(h);
                 }
                 toggle("Hot Reload On Save", options.hotReload);
-            } else if (optionsPage == 6) {
-                title = tr("options.language", "Language");
-                for (const auto& lang : i18n::Lang::Get().Languages()) {
-                    const std::string code = lang.code;
-                    model.push_back({lang.name.empty() ? code : lang.name, code == options.language ? "Selected" : "", -1.0f, [this, code](float, bool click) {
-                                         if (!click)
-                                             return;
-                                         options.language = code;
-                                         i18n::Lang::Get().Configure(ui::UiAssets::Instance().VanillaRoot(), paths::DataDir(), code);
-                                         options.Save();
-                                         pauseSignature.clear();
-                                     }});
-                }
             } else if (optionsPage == 7) {
                 title = tr("resourcePack.title", "Resource Packs");
                 const std::string dir = paths::DataDir() + "/texturepacks";
@@ -1906,11 +2651,53 @@ namespace perlin {
                 toggle(tr("perlin.options.sway", "Hand Sway"), options.hand.sway);
                 toggle(tr("options.mainHand.left", "Left Handed"), options.hand.leftHanded);
                 toggle(tr("perlin.options.offhand", "Show Offhand"), options.hand.showOffhand);
-                toggle(tr("perlin.options.slim", "Slim Arms"), options.hand.slimArm);
                 toggle(tr("perlin.options.thirdCrosshair", "Third Person Crosshair"), options.thirdPersonCrosshair);
                 toggle(tr("perlin.options.thirdNametag", "Third Person Nametag"), options.thirdPersonNametag);
                 slider(tr("perlin.options.handScale", "Hand Size"), percent(options.hand.scale), (options.hand.scale - 0.5f) / 1.5f,
                        [this](float f) { options.hand.scale = 0.5f + std::round(std::clamp(f, 0.0f, 1.0f) * 150.0f) / 100.0f; });
+                const auto fieldSlider = [&](const std::string& label, float& ref, float lo, float hi, float step, const char* unit) {
+                    char buf[32];
+                    std::snprintf(buf, sizeof(buf), step < 0.5f ? "%.2f%s" : "%.0f%s", ref, unit);
+                    slider(label, buf, (ref - lo) / (hi - lo), [&ref, lo, hi, step](float f) {
+                        ref = std::round((lo + std::clamp(f, 0.0f, 1.0f) * (hi - lo)) / step) * step;
+                        if (std::fabs(ref) < step * 0.5f && lo < 0.0f)
+                            ref = 0.0f;
+                    });
+                };
+                {
+                    OptRow h{tr("perlin.options.handCustom", "Hand Position"), "", -1.0f, [](float, bool) {}};
+                    h.header = true;
+                    model.push_back(h);
+                }
+                auto& hs = options.hand;
+                fieldSlider("Hand X", hs.armX, -1.0f, 1.0f, 0.01f, "");
+                fieldSlider("Hand Y", hs.armY, -1.0f, 1.0f, 0.01f, "");
+                fieldSlider("Hand Z", hs.armZ, -1.0f, 1.0f, 0.01f, "");
+                fieldSlider("Hand Pitch", hs.armRotX, -180.0f, 180.0f, 1.0f, "\xC2\xB0");
+                fieldSlider("Hand Yaw", hs.armRotY, -180.0f, 180.0f, 1.0f, "\xC2\xB0");
+                fieldSlider("Hand Roll", hs.armRotZ, -180.0f, 180.0f, 1.0f, "\xC2\xB0");
+                fieldSlider("Hand Scale", hs.armScale, 0.25f, 2.0f, 0.01f, "");
+                {
+                    OptRow h{tr("perlin.options.itemCustom", "Held Item Position"), "", -1.0f, [](float, bool) {}};
+                    h.header = true;
+                    model.push_back(h);
+                }
+                fieldSlider("Item X", hs.itemX, -1.0f, 1.0f, 0.01f, "");
+                fieldSlider("Item Y", hs.itemY, -1.0f, 1.0f, 0.01f, "");
+                fieldSlider("Item Z", hs.itemZ, -1.0f, 1.0f, 0.01f, "");
+                fieldSlider("Item Pitch", hs.itemRotX, -180.0f, 180.0f, 1.0f, "\xC2\xB0");
+                fieldSlider("Item Yaw", hs.itemRotY, -180.0f, 180.0f, 1.0f, "\xC2\xB0");
+                fieldSlider("Item Roll", hs.itemRotZ, -180.0f, 180.0f, 1.0f, "\xC2\xB0");
+                fieldSlider("Item Scale", hs.itemScale, 0.25f, 2.0f, 0.01f, "");
+                model.push_back({tr("perlin.options.handReset", "Reset Hand Position"), "", -1.0f, [this](float, bool click) {
+                                     if (click) {
+                                         HandSettings d;
+                                         auto& h = options.hand;
+                                         h.armX = d.armX; h.armY = d.armY; h.armZ = d.armZ; h.armRotX = d.armRotX; h.armRotY = d.armRotY; h.armRotZ = d.armRotZ; h.armScale = d.armScale;
+                                         h.itemX = d.itemX; h.itemY = d.itemY; h.itemZ = d.itemZ; h.itemRotX = d.itemRotX; h.itemRotY = d.itemRotY; h.itemRotZ = d.itemRotZ; h.itemScale = d.itemScale;
+                                         options.Save();
+                                     }
+                                 }});
             } else {
                 title = tr("controls.keybinds.title", "Key Binds");
                 static const std::pair<Action, const char*> kBinds[] = {
@@ -1980,6 +2767,13 @@ namespace perlin {
             for (const OptRow& r : model) {
                 ui::OptionsRow row{r.label, r.value, r.fraction};
                 row.header = r.header;
+                row.locked = r.locked;
+                row.wide = r.wide;
+                ui::SettingInfo info;
+                if (!r.header && ui::FindSettingInfo(r.label, info)) {
+                    row.tip = info.description;
+                    row.impact = info.impact;
+                }
                 view.push_back(row);
             }
             const int scrollKey = pauseView * 100 + optionsPage;
@@ -1993,20 +2787,32 @@ namespace perlin {
             else if (!probe.scrolling)
                 optScroll = 0.0f;
             const ui::OptionsLayout layout = ui::ComputeOptionsLayout(view, guiW, guiH, optScroll);
-            std::string signature = std::to_string(guiW) + "x" + std::to_string(guiH) + title + std::to_string(static_cast<int>(optScroll));
+            const float gx = mx / static_cast<float>(scale), gy = my / static_cast<float>(scale);
+            int hoverRow = -1;
+            for (int i = 0; i < layout.count; i++)
+                if (layout.visible[static_cast<size_t>(i)] && !view[static_cast<size_t>(i)].header && gx >= layout.x[i] && gx < layout.x[i] + layout.rowW[static_cast<size_t>(i)] &&
+                    gy >= layout.y[i] && gy < layout.y[i] + layout.h && gy >= layout.listTop - 2.0f && gy < layout.listBottom) {
+                    hoverRow = i;
+                    break;
+                }
+            if (hoverRow != optHoverRow) {
+                optHoverRow = hoverRow;
+                optHoverSince = Clock::now();
+            }
+            const bool showTip = hoverRow >= 0 && Clock::now() - optHoverSince > std::chrono::milliseconds(350);
+            std::string signature = std::to_string(guiW) + "x" + std::to_string(guiH) + title + std::to_string(static_cast<int>(optScroll)) + (showTip ? "T" + std::to_string(hoverRow) : "");
             for (const ui::OptionsRow& r : view)
                 signature += "|" + r.label + r.value;
             if (signature != optionsSignature || !hud.Overlay().HasOverlay()) {
                 optionsSignature = signature;
                 std::string error;
-                if (!hud.Overlay().SetOverlay(ui::BuildOptionsScreenRml(view, title, tr("gui.done", "Done"), optScroll, guiW, guiH), error))
+                if (!hud.Overlay().SetOverlay(ui::BuildOptionsScreenRml(view, title, tr("gui.done", "Done"), optScroll, guiW, guiH, showTip ? hoverRow : -1), error))
                     std::cout << "[ui] options screen: " << error << std::endl;
             }
-            const float gx = mx / static_cast<float>(scale), gy = my / static_cast<float>(scale);
             hud.Overlay().MouseMove(gx, gy);
             hud.UpdateOverlay(fbW, fbH, options.guiScale);
             const auto inside = [&](float x, float y, float w, float h) { return gx >= x && gx < x + w && gy >= y && gy < y + h; };
-            const auto sliderFraction = [&](int row) { return (gx - layout.x[row] - 4.0f) / (layout.w - 8.0f); };
+            const auto sliderFraction = [&](int row) { return (gx - layout.x[row] - 4.0f) / (layout.rowW[static_cast<size_t>(row)] - 8.0f); };
             if (bindCapture >= 0) {
                 bool captured = false;
                 for (const auto& t : inputManager.TakeTyped()) {
@@ -2033,7 +2839,7 @@ namespace perlin {
             bindWasCapturing = false;
             if (down && !pauseLeftDown && clickReady) {
                 for (int i = 0; i < layout.count; i++)
-                    if (layout.visible[static_cast<size_t>(i)] && !model[static_cast<size_t>(i)].header && inside(layout.x[i], layout.y[i], layout.w, layout.h)) {
+                    if (layout.visible[static_cast<size_t>(i)] && !model[static_cast<size_t>(i)].header && inside(layout.x[i], layout.y[i], layout.rowW[static_cast<size_t>(i)], layout.h)) {
                         const OptRow& row = model[static_cast<size_t>(i)];
                         if (row.fraction >= 0.0f) {
                             optionsDrag = i;
@@ -2552,7 +3358,7 @@ namespace perlin {
             if (held.enchanted && shortName != "enchanted_book" && shortName != "enchanted_golden_apple")
                 rarity = rarity <= 1 ? 2 : 3;
             static const char* const kRarityCode[] = {"f", "e", "b", "d"};
-            s.itemName = held.customName.empty() ? ui::UiAssets::Instance().ItemName(held.name) : held.customName;
+            s.itemName = held.customName.empty() ? ui::UiAssets::Instance().ItemName(held.name, held.aux) : held.customName;
             s.itemName = std::string("\xC2\xA7") + kRarityCode[rarity] + (held.customName.empty() ? "" : "\xC2\xA7o") + s.itemName;
             s.itemNameAlpha = std::min(255.0f, static_cast<float>(hudAnim.toolTimer) * 256.0f / 10.0f) / 255.0f;
         } else {
@@ -2846,6 +3652,31 @@ namespace perlin {
                 camera.CycleMode();
             zoom.SetConfig(options.zoom);
             PollHotReload();
+            if (fontsDownloaded.exchange(false))
+                ui::UiAssets::Instance().LoadFont(paths::DataDir());
+            for (const std::string& dropped : platform->TakeDropped()) {
+                namespace fsys = std::filesystem;
+                std::error_code e;
+                const fsys::path src(dropped);
+                std::string ext = src.extension().string();
+                std::transform(ext.begin(), ext.end(), ext.begin(), [](unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
+                const bool onShaders = pauseShown && pauseView == 1 && optionsPage == 8;
+                const bool onWardrobe = pauseShown && pauseView == 5 && ext == ".png";
+                std::string lowerName = src.filename().string();
+                std::transform(lowerName.begin(), lowerName.end(), lowerName.begin(), [](unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
+                const bool dropIsCape = lowerName.find("cape") != std::string::npos;
+                const char* sub = onWardrobe ? (dropIsCape ? "capes" : "skins") : ext == ".wasm" ? "mods" : onShaders ? "shaderpacks" : "texturepacks";
+                if (!onWardrobe && ext != ".wasm" && ext != ".zip" && ext != ".mcpack" && !fsys::is_directory(src, e))
+                    continue;
+                const fsys::path destDir = fsys::path(paths::DataDir()) / sub;
+                fsys::create_directories(destDir, e);
+                fsys::copy(src, destDir / src.filename(), fsys::copy_options::overwrite_existing | fsys::copy_options::recursive, e);
+                chat.AddMessage(e ? "Could not add " + src.filename().string() : "Added " + src.filename().string() + " to " + sub, hudAnim.ticks);
+                packFoundAt = {};
+                wardListedAt = {};
+                optionsSignature.clear();
+            }
+            mods::ModManager::Instance().SetAutoReload(options.hotReload);
             {
                 auto& mm = mods::ModManager::Instance();
                 mods::HostState hs;
@@ -2856,6 +3687,12 @@ namespace perlin {
                 hs.pitch = camera.pitch;
                 hs.gameMode = session ? session->GameType() : 0;
                 hs.connected = session && session->GetState() == BedrockSession::State::InGame;
+                hs.onGround = player.State().onGround;
+                hs.sprinting = player.Sprinting();
+                hs.sneaking = player.Sneaking();
+                hs.vx = player.State().vx;
+                hs.vy = player.State().vy;
+                hs.vz = player.State().vz;
                 mm.SetHostState(hs);
                 for (mods::Outbound out : mm.TakeOutbound()) {
                     if (out.kind == mods::Outbound::Kind::Hud)
@@ -2926,17 +3763,7 @@ namespace perlin {
                     SetEntityCollisionBoxes(std::move(solid));
                 }
                 player.SetToggleModes(options.sprintMode == "toggle", options.sneakMode == "toggle");
-                {
-                    std::string status;
-                    if (player.Sneaking() || player.SneakLatched())
-                        status += std::string("Sneaking (") + (player.SneakLatched() ? "Toggled" : "Held") + ")";
-                    if (player.Sprinting() || player.SprintLatched()) {
-                        if (!status.empty())
-                            status += "\n";
-                        status += std::string("Sprinting (") + (player.SprintLatched() ? "Toggled" : "Held") + ")";
-                    }
-                    hudState.moveStatus = (options.sprintMode == "toggle" || options.sneakMode == "toggle") ? status : std::string();
-                }
+                hudState.moveStatus.clear();
                 player.SetItemSlow(gItemSlow);
                 player.Update(*live, inputManager, camera, levelRenderer->Blocks(), dt);
             }
@@ -3910,7 +4737,7 @@ namespace perlin {
                             sd->capeWidth = ls.capeWidth;
                             sd->capeHeight = ls.capeHeight;
                             sd->capeRgba = ls.capeRgba;
-                            sd->slim = ls.slimArms || options.hand.slimArm;
+                            sd->slim = ls.slimArms;
                             selfSkinData = sd;
                             selfSkinKey = key;
                         }
@@ -4155,10 +4982,9 @@ namespace perlin {
                 handFrame.viewEffect = handViewEffect;
                 if (session) {
                     handFrame.skin = &session->Skin();
-                    handFrame.skinSerial = std::hash<std::string>{}(session->Skin().skinId) * 2 + ((session->Skin().slimArms || options.hand.slimArm) ? 1 : 0);
+                    handFrame.skinSerial = std::hash<std::string>{}(session->Skin().skinId) * 2 + (session->Skin().slimArms ? 1 : 0);
                     handFrame.slimArm = session->Skin().slimArms;
                 }
-                handFrame.slimArm = handFrame.slimArm || options.hand.slimArm;
                 { ProfScope p(4); handRenderer.Render(handFrame, options.hand); }
                 {
                     int sw = 0, sh = 0;

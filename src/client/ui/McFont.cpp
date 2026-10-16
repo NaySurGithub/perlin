@@ -2,9 +2,19 @@
 
 #include <algorithm>
 #include <cstring>
+#include <fstream>
 
 namespace perlin::ui {
     namespace {
+        const uint32_t kCp437High[128] = {
+            0x00C7, 0x00FC, 0x00E9, 0x00E2, 0x00E4, 0x00E0, 0x00E5, 0x00E7, 0x00EA, 0x00EB, 0x00E8, 0x00EF, 0x00EE, 0x00EC, 0x00C4, 0x00C5,
+            0x00C9, 0x00E6, 0x00C6, 0x00F4, 0x00F6, 0x00F2, 0x00FB, 0x00F9, 0x00FF, 0x00D6, 0x00DC, 0x00F8, 0x00A3, 0x00D8, 0x00D7, 0x0192,
+            0x00E1, 0x00ED, 0x00F3, 0x00FA, 0x00F1, 0x00D1, 0x00AA, 0x00BA, 0x00BF, 0x00AE, 0x00AC, 0x00BD, 0x00BC, 0x00A1, 0x00AB, 0x00BB,
+            0x2591, 0x2592, 0x2593, 0x2502, 0x2524, 0x2561, 0x2562, 0x2556, 0x2555, 0x2563, 0x2551, 0x2557, 0x255D, 0x255C, 0x255B, 0x2510,
+            0x2514, 0x2534, 0x252C, 0x251C, 0x2500, 0x253C, 0x255E, 0x255F, 0x255A, 0x2554, 0x2569, 0x2566, 0x2560, 0x2550, 0x256C, 0x2567,
+            0x2568, 0x2564, 0x2565, 0x2559, 0x2558, 0x2552, 0x2553, 0x256B, 0x256A, 0x2518, 0x250C, 0x2588, 0x2584, 0x258C, 0x2590, 0x2580,
+            0x03B1, 0x03B2, 0x0393, 0x03C0, 0x03A3, 0x03C3, 0x03BC, 0x03C4, 0x03A6, 0x0398, 0x03A9, 0x03B4, 0x221E, 0x2205, 0x2208, 0x2229,
+            0x2261, 0x00B1, 0x2265, 0x2264, 0x2320, 0x2321, 0x00F7, 0x2248, 0x00B0, 0x2219, 0x00B7, 0x221A, 0x207F, 0x00B2, 0x25A0, 0x0000};
         const uint8_t kFont5x7[95][5] = {
             {0x00, 0x00, 0x00, 0x00, 0x00}, {0x00, 0x00, 0x5F, 0x00, 0x00}, {0x00, 0x07, 0x00, 0x07, 0x00},
             {0x14, 0x7F, 0x14, 0x7F, 0x14}, {0x24, 0x2A, 0x7F, 0x2A, 0x12}, {0x23, 0x13, 0x08, 0x64, 0x62},
@@ -115,8 +125,15 @@ namespace perlin::ui {
     }
 
     void McFont::Build(const std::vector<uint8_t>& cells, int cellsAcross, int cellPx) {
-        atlasWidth = atlasHeight = cellsAcross * cellPx;
-        atlas = cells;
+        const int sheet = cellsAcross * cellPx;
+        atlasWidth = atlasHeight = std::max(1024, sheet);
+        atlas.assign(static_cast<size_t>(atlasWidth) * static_cast<size_t>(atlasHeight) * 4, 0);
+        for (int y = 0; y < sheet; y++)
+            std::memcpy(&atlas[static_cast<size_t>(y) * static_cast<size_t>(atlasWidth) * 4], &cells[static_cast<size_t>(y) * static_cast<size_t>(sheet) * 4],
+                        static_cast<size_t>(sheet) * 4);
+        dynY0 = ((sheet + 15) / 16) * 16;
+        dynNext = 0;
+        dyn.clear();
         glyphs.assign(256, Glyph{});
         const int stride = atlasWidth;
         for (int ch = 0; ch < 256; ch++) {
@@ -138,13 +155,127 @@ namespace perlin::ui {
             g.u1 = static_cast<float>(cx + (ink == 0 ? cellPx : ink)) / atlasWidth;
             g.v1 = static_cast<float>(cy + cellPx) / atlasHeight;
         }
+        mapped.clear();
+        for (int i = 0x80; i < 0x100; i++) {
+            const Glyph g = glyphs[static_cast<size_t>(i)];
+            glyphs[static_cast<size_t>(i)] = Glyph{};
+            if (g.advance > 0 && kCp437High[i - 0x80] != 0)
+                mapped[kCp437High[i - 0x80]] = g;
+        }
         fallback = glyphs['?'];
+    }
+
+    bool McFont::LoadUnihexFile(const std::string& path) {
+        if (!hex.empty() && path == hexPath) {
+            dyn.clear();
+            dynNext = 0;
+            version++;
+            return true;
+        }
+        std::ifstream in(path, std::ios::binary);
+        if (!in)
+            return false;
+        std::unordered_map<uint32_t, HexGlyph> parsed;
+        std::string line;
+        const auto digit = [](char ch) -> int {
+            if (ch >= '0' && ch <= '9') return ch - '0';
+            if (ch >= 'A' && ch <= 'F') return ch - 'A' + 10;
+            if (ch >= 'a' && ch <= 'f') return ch - 'a' + 10;
+            return -1;
+        };
+        while (std::getline(in, line)) {
+            const size_t colon = line.find(':');
+            if (colon == std::string::npos || colon == 0)
+                continue;
+            uint32_t cp = 0;
+            bool ok = true;
+            for (size_t i = 0; i < colon && ok; i++) {
+                const int d = digit(line[i]);
+                if (d < 0) ok = false;
+                else cp = cp * 16 + static_cast<uint32_t>(d);
+            }
+            size_t len = line.size();
+            while (len > colon + 1 && (line[len - 1] == '\r' || line[len - 1] == '\n' || line[len - 1] == ' '))
+                len--;
+            const size_t digits = len - colon - 1;
+            if (!ok || (digits != 32 && digits != 64))
+                continue;
+            HexGlyph g;
+            g.wide = digits == 64;
+            for (size_t i = 0; i < digits / 2 && ok; i++) {
+                const int hi = digit(line[colon + 1 + i * 2]), lo = digit(line[colon + 2 + i * 2]);
+                if (hi < 0 || lo < 0) ok = false;
+                else g.rows[i] = static_cast<uint8_t>(hi * 16 + lo);
+            }
+            if (ok)
+                parsed[cp] = g;
+        }
+        if (parsed.empty())
+            return false;
+        hex = std::move(parsed);
+        hexPath = path;
+        dyn.clear();
+        dynNext = 0;
+        for (int y = dynY0; y < atlasHeight; y++)
+            std::memset(&atlas[static_cast<size_t>(y) * static_cast<size_t>(atlasWidth) * 4], 0, static_cast<size_t>(atlasWidth) * 4);
+        version++;
+        return true;
+    }
+
+    const McFont::Glyph* McFont::Dynamic(uint32_t cp) const {
+        if (const auto it = dyn.find(cp); it != dyn.end())
+            return &it->second;
+        const auto src = hex.find(cp);
+        if (src == hex.end())
+            return nullptr;
+        const int perRow = atlasWidth / 16;
+        const int rows = (atlasHeight - dynY0) / 16;
+        if (dynNext >= perRow * rows)
+            return nullptr;
+        const int cx = (dynNext % perRow) * 16, cy = dynY0 + (dynNext / perRow) * 16;
+        dynNext++;
+        const HexGlyph& hg = src->second;
+        const int bytesPerRow = hg.wide ? 2 : 1;
+        int ink = 0;
+        for (int row = 0; row < 16; row++) {
+            for (int col = 0; col < bytesPerRow * 8; col++) {
+                const uint8_t byte = hg.rows[static_cast<size_t>(row * bytesPerRow + col / 8)];
+                if (byte & (0x80 >> (col % 8))) {
+                    uint8_t* px = &atlas[(static_cast<size_t>(cy + row) * static_cast<size_t>(atlasWidth) + static_cast<size_t>(cx + col)) * 4];
+                    px[0] = px[1] = px[2] = px[3] = 255;
+                    ink = std::max(ink, col + 1);
+                }
+            }
+        }
+        Glyph g;
+        if (ink == 0) {
+            g.width = 0;
+            g.advance = 4;
+        } else {
+            g.width = (ink + 1) / 2;
+            g.advance = g.width + 1;
+        }
+        g.cell = kCell;
+        g.u0 = static_cast<float>(cx) / static_cast<float>(atlasWidth);
+        g.v0 = static_cast<float>(cy) / static_cast<float>(atlasHeight);
+        g.u1 = static_cast<float>(cx + g.width * 2) / static_cast<float>(atlasWidth);
+        g.v1 = static_cast<float>(cy + 16) / static_cast<float>(atlasHeight);
+        version++;
+        return &dyn.emplace(cp, g).first->second;
     }
 
     const McFont::Glyph& McFont::Get(uint32_t cp) const {
         if (cp < glyphs.size() && (glyphs[cp].advance > 0 || cp == ' '))
             return glyphs[cp];
-        return cp == ' ' ? glyphs[' '] : fallback;
+        if (cp == ' ')
+            return glyphs[' '];
+        if (cp >= 0x80) {
+            if (const auto it = mapped.find(cp); it != mapped.end())
+                return it->second;
+            if (const Glyph* g = Dynamic(cp))
+                return *g;
+        }
+        return fallback;
     }
 
     float McFont::Width(const std::string& s, float scale) const {

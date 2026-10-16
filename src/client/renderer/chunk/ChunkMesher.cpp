@@ -1157,6 +1157,7 @@ namespace perlin {
                             if (!tile)
                                 return;
                             const BlockLibrary::TileAlpha ta = library->AlphaOf(tile);
+                            const bool glassTile = library->IsGlassBase(tile);
                             if (const int glassMode = library->GlassMode(); glassMode && !q.tile && library->IsGlassBase(tile)) {
                                 int ia = -1, ib = -1, ic = -1;
                                 for (int k = 0; k < 4; k++) {
@@ -1177,7 +1178,7 @@ namespace perlin {
                                                 d[a] = -d[a];
                                         }
                                         const uint16_t nn = cache.Get(x + d[0], y + d[1], z + d[2]);
-                                        return !(nn == id || (nn != 0 && library->IsGlassBase(library->Look(nn).side)));
+                                        return nn != id;
                                     };
                                     if (exposed(q.pos[ia], q.pos[ib], true)) mask |= 1;
                                     if (exposed(q.pos[ia], q.pos[ib], false)) mask |= 2;
@@ -1193,7 +1194,7 @@ namespace perlin {
                                 const uint16_t nid = cache.Get(x + nb[0], y + nb[1], z + nb[2]);
                                 if (nid != 0 && cache.Occ(x + nb[0], y + nb[1], z + nb[2]))
                                     return;
-                                if ((nid == id || (library->GlassMode() && nid != 0 && library->IsGlassBase(library->Look(nid).side))) && ta.translucent)
+                                if ((nid == id || (library->GlassMode() && nid != 0 && library->IsGlassBase(library->Look(nid).side))) && (ta.translucent || glassTile))
                                     return;
                             }
                             const int dir = q.dir;
@@ -1692,7 +1693,7 @@ namespace perlin {
                         const uint16_t neighborId = cache.Get(x + nx, y + ny, z + nz);
                         if (neighborId != 0 && cache.Occ(x + nx, y + ny, z + nz))
                             return;
-                        if (neighborId != 0 && translucent && (neighborId == id || (!isWater && library && library->GlassMode() && library->IsGlassBase(library->Look(neighborId).side))))
+                        if (neighborId != 0 && (translucent || (library && library->IsGlassBase(tile))) && (neighborId == id || (!isWater && library && library->GlassMode() && library->IsGlassBase(library->Look(neighborId).side))))
                             return;
                         if (isWater) {
                             const uint16_t other = EffLiquid(cache, library, x + nx, y + ny, z + nz);
@@ -1704,7 +1705,7 @@ namespace perlin {
                             if (nx != 0) { du[2] = nx > 0 ? -1 : 1; dv[1] = -1; }
                             else if (nz != 0) { du[0] = nz < 0 ? -1 : 1; dv[1] = -1; }
                             else { du[0] = 1; dv[2] = ny > 0 ? 1 : -1; }
-                            const auto sameGlass = [&](uint16_t nn) { return nn == id || (nn != 0 && library->IsGlassBase(library->Look(nn).side)); };
+                            const auto sameGlass = [&](uint16_t nn) { return nn == id; };
                             int mask = 0;
                             if (!sameGlass(cache.Get(x - du[0], y - du[1], z - du[2]))) mask |= 1;
                             if (!sameGlass(cache.Get(x + du[0], y + du[1], z + du[2]))) mask |= 2;

@@ -14,6 +14,8 @@ namespace perlin::mods {
         float yaw = 0, pitch = 0;
         int gameMode = 0;
         bool connected = false;
+        bool onGround = false, sprinting = false, sneaking = false;
+        double vx = 0, vy = 0, vz = 0;
     };
 
     struct Outbound {
@@ -27,6 +29,9 @@ namespace perlin::mods {
         std::string state;
         std::string error;
         int loads = 0;
+        std::string displayName, description, version, author, website, iconPath, path;
+        std::vector<std::string> hooks;
+        uint64_t size = 0;
     };
 
     class ModManager {
@@ -42,6 +47,8 @@ namespace perlin::mods {
         std::vector<ModInfo> List() const;
         std::string Directory() const { return directory; }
         void ReloadAll();
+        void ReloadMod(const std::string& name);
+        void SetAutoReload(bool value) { autoReload = value; }
 
         mutable std::mutex mutex;
         HostState host;
@@ -55,6 +62,8 @@ namespace perlin::mods {
         void Scan();
         void Load(Mod& mod);
         void Unload(Mod& mod);
+        void Publish(Mod& mod);
+        void ReadMeta(Mod& mod);
         void Tick(Mod& mod, float dt);
 
         std::string directory;
@@ -65,6 +74,9 @@ namespace perlin::mods {
         std::vector<std::string> disabled;
         std::vector<std::string> pendingChat;
         bool reloadAll = false;
+        std::vector<std::string> reloadNames;
+        bool lastConnected = false;
+        std::atomic<bool> autoReload{true};
         friend struct Host;
     };
 }

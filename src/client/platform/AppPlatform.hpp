@@ -1,4 +1,6 @@
 #pragma once
+#include <mutex>
+#include <vector>
 #include <atomic>
 #include <cstdint>
 #include <memory>
@@ -53,5 +55,20 @@ public:
 
     virtual std::unique_ptr<perlin::RenderContext> CreateRenderContext() = 0;
 
+    void PushDropped(const std::string& path) {
+        std::lock_guard lock(dropMutex);
+        droppedFiles.push_back(path);
+    }
+    std::vector<std::string> TakeDropped() {
+        std::lock_guard lock(dropMutex);
+        std::vector<std::string> out;
+        out.swap(droppedFiles);
+        return out;
+    }
+
     std::atomic<bool> isRunning{true};
+
+private:
+    std::mutex dropMutex;
+    std::vector<std::string> droppedFiles;
 };

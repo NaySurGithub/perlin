@@ -71,6 +71,9 @@ int main(int argc, char** argv) {
     Input input;
     bool scenarioBad = false;
     Attributes attr;
+    int stepIndex = 0;
+    bool reported = false;
+    std::string lastInput;
     while (std::getline(file, line)) {
         std::istringstream in(line);
         std::string tag;
@@ -79,6 +82,8 @@ int main(int argc, char** argv) {
             if (scenarioBad)
                 scenariosFailed++;
             scenarioBad = false;
+            stepIndex = 0;
+            reported = false;
             int onGround;
             state = State{};
             int cx0 = 0, cy0 = 0, cz0 = 0;
@@ -101,10 +106,17 @@ int main(int argc, char** argv) {
             in >> r.mn[0] >> r.mn[1] >> r.mn[2] >> r.mx[0] >> r.mx[1] >> r.mx[2];
             r.facts = ReadFacts(in);
             world.regions.push_back(r);
+        } else if (tag == "A") {
+            int jb, lv, sf;
+            in >> jb >> lv >> sf;
+            attr.jumpBoost = jb;
+            attr.levitation = lv;
+            attr.slowFalling = sf != 0;
         } else if (tag == "I") {
             double fwd, strafe, yaw;
             int jump, jumpPressed, sprint, sneak;
             in >> fwd >> strafe >> yaw >> jump >> jumpPressed >> sprint >> sneak;
+            lastInput = line;
             input = Input{};
             input.forward = static_cast<float>(fwd);
             input.strafe = static_cast<float>(-strafe);
@@ -122,7 +134,10 @@ int main(int argc, char** argv) {
                 if (std::fabs(got - want) > eps) {
                     failed++;
                     scenarioBad = true;
-                    std::printf("FAIL %s: %s got %.9f want %.9f\n", scenario.c_str(), what, got, want);
+                    if (!reported || verbose) {
+                        reported = true;
+                        std::printf("FAIL %s step %d (%s): %s got %.9f want %.9f\n", scenario.c_str(), stepIndex, lastInput.c_str(), what, got, want);
+                    }
                 }
             };
             static const char* const kSkip[] = {"bed_bounce", "soul_sand", "slime_walk", "sneak_north", "sneak_south",
@@ -142,8 +157,7 @@ int main(int argc, char** argv) {
             bad("onGround", state.onGround, og, 0.5);
             bad("collideY", state.verticalCollision, cy, 0.5);
             bad("collideH", state.horizontalCollision, (cx || cz) ? 1 : 0, 0.5);
-            if (verbose)
-                std::printf("ok? %s step done\n", scenario.c_str());
+            stepIndex++;
         }
     }
     if (scenarioBad)

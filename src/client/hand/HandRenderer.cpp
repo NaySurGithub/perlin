@@ -52,6 +52,9 @@ namespace perlin {
         glm::mat4 Ry(float deg) { return glm::rotate(glm::mat4(1.0f), deg * kDeg, {0, 1, 0}); }
         glm::mat4 Rz(float deg) { return glm::rotate(glm::mat4(1.0f), deg * kDeg, {0, 0, 1}); }
         glm::mat4 S(float s) { return glm::scale(glm::mat4(1.0f), {s, s, s}); }
+        glm::mat4 Custom(float x, float y, float z, float rx, float ry, float rz, float scale, float side) {
+            return T(side * x, y, z) * Rx(rx) * Ry(side * ry) * Rz(side * rz) * S(scale);
+        }
 
         float Lerp(float t, float a, float b) { return a + (b - a) * t; }
 
@@ -807,6 +810,7 @@ namespace perlin {
         const float f3 = 0.4f * std::sin(f1 * kPi * 2.0f);
         const float f4 = -0.4f * std::sin(swing * kPi);
         glm::mat4 m = in.viewEffect;
+        m = m * Custom(s.armX, s.armY, s.armZ, s.armRotX, s.armRotY, s.armRotZ, s.armScale, f);
         m = m * T(f * (f2 + 0.64000005f), f3 - 0.6f + equip * -0.6f, f4 - 0.71999997f);
         m = m * Ry(f * 45.0f);
         const float f5 = std::sin(swing * swing * kPi);
@@ -833,6 +837,7 @@ namespace perlin {
                                   float swing, float equip) {
         const float side = rightArm ? 1.0f : -1.0f;
         glm::mat4 m = in.viewEffect;
+        m = m * Custom(s.itemX, s.itemY, s.itemZ, s.itemRotX, s.itemRotY, s.itemRotZ, s.itemScale, side);
         const bool isMain = &item == &mainShown;
         const bool isBow = item.name == "minecraft:bow", isTrident = item.name == "minecraft:trident",
                    isCrossbow = item.name == "minecraft:crossbow";

@@ -138,7 +138,7 @@ namespace perlin::ui {
         static const uint32_t kRarityColor[] = {0xFFFFFF, 0xFFFF55, 0x55FFFF, 0xFF55FF};
         const std::string shortName = Short(item.name);
         const bool custom = !item.customName.empty();
-        std::string title = custom ? item.customName : (!nameOverride.empty() ? nameOverride : UiAssets::Instance().ItemName(item.name));
+        std::string title = custom ? item.customName : (!nameOverride.empty() ? nameOverride : UiAssets::Instance().ItemName(item.name, item.aux));
         lines.push_back({title, kRarityColor[ItemRarity(item)], custom});
 
         for (const auto& [id, level] : item.enchants) {

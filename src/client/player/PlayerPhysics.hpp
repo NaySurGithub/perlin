@@ -50,6 +50,10 @@ namespace perlin::physics {
         float speed = 0.1f;
         float flySpeed = 0.05f;
         float verticalFlySpeed = 1.0f;
+        float jumpHeight = 0.42f;
+        int jumpBoost = 0;
+        int levitation = 0;
+        bool slowFalling = false;
     };
 
     struct Input {
@@ -81,6 +85,7 @@ namespace perlin::physics {
         bool inLava = false;
         bool onClimbable = false;
         int jumpDelay = 0;
+        float stuckX = 0, stuckY = 0, stuckZ = 0;
 
         double Height(bool sneaking) const { return sneaking ? kSneakHeight : kStandHeight; }
     };

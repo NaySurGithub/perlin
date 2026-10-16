@@ -7,7 +7,7 @@
 
 namespace perlin::ui {
     std::string DefaultPauseScreenTemplate() {
-        return R"PERLINRML(<!--perlin-ui:pause-7-->
+        return R"PERLINRML(<!--perlin-ui:pause-8-->
 <rml>
 <head>
 <title>pause</title>
@@ -47,9 +47,9 @@ div, mcimg { display: block; position: absolute; }
     <div class="rim" style="width: 97px;"></div><div class="face" style="width: 96px;"></div><div class="shade" style="width: 98px;"></div><div class="edge" style="left: 98px;"></div>
     <div class="lbl" style="width: 100px;">{{players}}</div>
   </div>
-  <div id="options" class="btn" style="left: {{x1}}px; top: {{y3}}px; width: 76px;">
-    <div class="rim" style="width: 73px;"></div><div class="face" style="width: 72px;"></div><div class="shade" style="width: 74px;"></div><div class="edge" style="left: 74px;"></div>
-    <div class="lbl" style="width: 76px;">{{options}}</div>
+  <div id="options" class="btn" style="left: {{x1}}px; top: {{y3}}px; width: 100px;">
+    <div class="rim" style="width: 97px;"></div><div class="face" style="width: 96px;"></div><div class="shade" style="width: 98px;"></div><div class="edge" style="left: 98px;"></div>
+    <div class="lbl" style="width: 100px;">{{options}}</div>
   </div>
   <div id="wardrobe" class="btn" style="left: {{xw}}px; top: {{y3}}px; width: 20px;">
     <div class="rim" style="width: 17px;"></div><div class="face" style="width: 16px;"></div><div class="shade" style="width: 18px;"></div><div class="edge" style="left: 18px;"></div>
@@ -98,6 +98,7 @@ div, mcimg { display: block; position: absolute; }
         l.count = static_cast<int>(rows.size());
         l.x.assign(rows.size(), 0.0f);
         l.y.assign(rows.size(), 0.0f);
+        l.rowW.assign(rows.size(), l.w);
         l.visible.assign(rows.size(), 1);
         const float start = std::max(36.0f, static_cast<float>(guiH) / 6.0f - 12.0f);
         const float cx = static_cast<float>(guiW) / 2.0f;
@@ -112,6 +113,17 @@ div, mcimg { display: block; position: absolute; }
                 l.x[i] = cx - 155.0f;
                 l.y[i] = y + 4.0f;
                 y += 22.0f;
+                continue;
+            }
+            if (rows[i].wide) {
+                if (col == 1) {
+                    y += 24.0f;
+                    col = 0;
+                }
+                l.x[i] = cx - 155.0f;
+                l.rowW[i] = 310.0f;
+                l.y[i] = y;
+                y += 24.0f;
                 continue;
             }
             l.x[i] = cx - 155.0f + static_cast<float>(col) * 160.0f;
@@ -142,7 +154,7 @@ div, mcimg { display: block; position: absolute; }
     }
 
     std::string BuildOptionsScreenRml(const std::vector<OptionsRow>& rows, const std::string& title, const std::string& done,
-                                      float scroll, int guiW, int guiH) {
+                                      float scroll, int guiW, int guiH, int hover) {
         const OptionsLayout l = ComputeOptionsLayout(rows, guiW, guiH, scroll);
         std::string d = R"PERLINRML(<rml>
 <head>
@@ -190,9 +202,61 @@ div { display: block; position: absolute; }
             }
             const std::string label = row.value.empty() ? row.label : row.label + ": " + row.value;
             if (row.fraction >= 0.0f)
-                d += Slider("row" + std::to_string(i), l.x[static_cast<size_t>(i)], l.y[static_cast<size_t>(i)], l.w, label, row.fraction);
+                d += Slider("row" + std::to_string(i), l.x[static_cast<size_t>(i)], l.y[static_cast<size_t>(i)], l.rowW[static_cast<size_t>(i)], label, row.fraction);
             else
-                d += Button("row" + std::to_string(i), l.x[static_cast<size_t>(i)], l.y[static_cast<size_t>(i)], l.w, label, false);
+                d += Button("row" + std::to_string(i), l.x[static_cast<size_t>(i)], l.y[static_cast<size_t>(i)], l.rowW[static_cast<size_t>(i)], label, row.locked);
+        }
+        if (hover >= 0 && hover < l.count && l.visible[static_cast<size_t>(hover)]) {
+            const OptionsRow& row = rows[static_cast<size_t>(hover)];
+            if (!row.tip.empty() || row.impact > 0) {
+                const float tw = 190.0f;
+                const int perLine = static_cast<int>((tw - 8.0f) / 5.0f);
+                int lines = 0;
+                {
+                    int col = 0;
+                    lines = 1;
+                    size_t p = 0;
+                    while (p < row.tip.size()) {
+                        size_t e = row.tip.find(' ', p);
+                        if (e == std::string::npos)
+                            e = row.tip.size();
+                        const int len = static_cast<int>(e - p);
+                        if (col > 0 && col + 1 + len > perLine) {
+                            lines++;
+                            col = len;
+                        } else {
+                            col += (col > 0 ? 1 : 0) + len;
+                        }
+                        p = e + 1;
+                    }
+                    if (row.tip.empty())
+                        lines = 0;
+                }
+                const float th = static_cast<float>(lines) * 10.0f + (row.impact > 0 ? 12.0f : 0.0f) + 8.0f;
+                float tx = std::min(l.x[static_cast<size_t>(hover)] + l.rowW[static_cast<size_t>(hover)] / 2.0f - tw / 2.0f, static_cast<float>(guiW) - tw - 4.0f);
+                tx = std::max(tx, 4.0f);
+                float ty = l.y[static_cast<size_t>(hover)] + l.h + 2.0f;
+                if (ty + th > static_cast<float>(guiH) - 2.0f)
+                    ty = l.y[static_cast<size_t>(hover)] - th - 2.0f;
+                const auto px = [](float v) { return std::to_string(static_cast<int>(std::lround(v))); };
+                d += "<div style=\"left: " + px(tx) + "px; top: " + px(ty) + "px; width: " + px(tw) + "px; height: " + px(th) +
+                     "px; background-color: #100010; z-index: 20;\"></div>\n";
+                d += "<div style=\"left: " + px(tx + 1) + "px; top: " + px(ty + 1) + "px; width: " + px(tw - 2) + "px; height: " + px(th - 2) +
+                     "px; background-color: #2d0a63; z-index: 21;\"></div>\n";
+                d += "<div style=\"left: " + px(tx + 2) + "px; top: " + px(ty + 2) + "px; width: " + px(tw - 4) + "px; height: " + px(th - 4) +
+                     "px; background-color: #100010; z-index: 22;\"></div>\n";
+                if (lines > 0)
+                    d += "<div style=\"left: " + px(tx + 4) + "px; top: " + px(ty + 4) + "px; width: " + px(tw - 8) +
+                         "px; font-family: minecraft-shadow; font-size: 8px; line-height: 10px; color: #ffffff; z-index: 23;\">" + EscapeRml(row.tip) + "</div>\n";
+                if (row.impact > 0) {
+                    static const char* kNames[] = {"", "Low", "Medium", "High"};
+                    static const char* kColors[] = {"#ffffff", "#55ff55", "#ffff55", "#ff5555"};
+                    const int im = std::clamp(row.impact, 1, 3);
+                    d += "<div style=\"left: " + px(tx + 4) + "px; top: " + px(ty + 4 + static_cast<float>(lines) * 10.0f + (lines > 0 ? 2.0f : 0.0f)) + "px; width: " + px(tw - 8) +
+                         "px; font-family: minecraft-shadow; font-size: 8px; line-height: 10px; color: #aaaaaa; white-space: nowrap; z-index: 23;\">Performance Impact: <span style=\"color: " +
+                         kColors[im] + ";\">" + kNames[im] + "</span></div>\n";
+                }
+            }
         }
         if (l.scrolling && l.maxScroll > 0.0f) {
             const float listH = l.listBottom - l.listTop;
@@ -537,7 +601,7 @@ div { display: block; position: absolute; }
         ReplaceAll(d, "y3", std::to_string(top + 102));
         ReplaceAll(d, "y4", std::to_string(top + 126));
         ReplaceAll(d, "y5", std::to_string(top + 150));
-        ReplaceAll(d, "xw", std::to_string(x1 + 80));
+        ReplaceAll(d, "xw", std::to_string(x1 + 208));
         ReplaceAll(d, "xr", std::to_string(x1 + 104));
         ReplaceAll(d, "mods", EscapeRml(t.mods));
         ReplaceAll(d, "title", EscapeRml(t.title));

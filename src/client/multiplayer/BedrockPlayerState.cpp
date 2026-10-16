@@ -268,14 +268,17 @@ namespace perlin {
                 } else if (armor) {
                     if (slot >= 0 && slot < 4) { inventory.armor[slot] = info; extraRaw[kInvArmor0 - 36 + slot] = items[i]; }
                 } else if (playerInventory && window != WindowIDVarint::Ui) {
+                    const auto stamp = std::chrono::steady_clock::now();
                     if (mainOnly) {
-                        if (slot >= 0 && slot < 27) { inventory.main[slot] = info; inventoryRaw[slot + 9] = items[i]; }
+                        if (slot >= 0 && slot < 27) { inventory.main[slot] = info; inventoryRaw[slot + 9] = items[i]; invServerAt[slot + 9] = stamp; }
                     } else if (slot >= 0 && slot < 9) {
                         inventory.hotbar[slot] = info;
                         inventoryRaw[slot] = items[i];
+                        invServerAt[slot] = stamp;
                     } else if (slot >= 9 && slot < 36) {
                         inventory.main[slot - 9] = info;
                         inventoryRaw[slot] = items[i];
+                        invServerAt[slot] = stamp;
                     }
                 }
             }

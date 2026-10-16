@@ -31,10 +31,11 @@ namespace perlin {
         bool sway = true;
         bool leftHanded = false;
         bool showOffhand = true;
-        bool slimArm = false;
         bool bedrockRig = true;
         bool attachables = true;
         float scale = 1.0f;
+        float armX = 0, armY = 0, armZ = 0, armRotX = 0, armRotY = 0, armRotZ = 0, armScale = 1.0f;
+        float itemX = 0, itemY = 0, itemZ = 0, itemRotX = 0, itemRotY = 0, itemRotZ = 0, itemScale = 1.0f;
     };
 
     struct SoundSettings {
@@ -44,8 +45,8 @@ namespace perlin {
     };
 
     struct Options {
-        int maxFps = 0;
-        bool vsync = false;
+        int maxFps = 120;
+        bool vsync = true;
         bool eulaAccepted = false;
         int renderDistance = 8;
         float fov = 70.0f;
@@ -89,7 +90,7 @@ namespace perlin {
         std::vector<std::string> texturePacks;
         std::vector<std::string> disabledMods;
         bool hotReload = true;
-        bool betterGrass = true;
+        bool betterGrass = false;
         KeyBindings keys = DefaultBindings();
 
         const Binding& GetKey(Action action) const { return keys[static_cast<size_t>(action)]; }

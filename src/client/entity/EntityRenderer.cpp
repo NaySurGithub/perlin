@@ -742,7 +742,7 @@ namespace perlin::entity {
                     return materialOf(bone) == group && (!filter || filter(bone));
                 });
                 attachable::BuiltMesh mesh;
-                attachable::BuildMesh(*geometry, pose, nullptr, mesh, groupFilter);
+                attachable::BuildMesh(*geometry, pose, nullptr, mesh, groupFilter, nullptr, true);
                 if (mesh.body.empty())
                     continue;
                 static const bool debug = PERLIN_ENV("PERLIN_ENTITY_DEBUG") != nullptr;
@@ -868,7 +868,7 @@ namespace perlin::entity {
                 bool haveRoot = false;
                 if (bindGeometry && e.isPlayer)
                     haveRoot = attachable::BoneWorld(*bindGeometry, pose, "root", rootWorld, rootPivot);
-                attachable::BuildMesh(*geometry, *meshPose, nullptr, mesh, attachable::BoneFilter(), haveRoot ? &rootWorld : nullptr);
+                attachable::BuildMesh(*geometry, *meshPose, nullptr, mesh, attachable::BoneFilter(), haveRoot ? &rootWorld : nullptr, true);
                 if (PERLIN_ENV("PERLIN_ARMOR_DEBUG"))
                 {
                     glm::vec3 lo(1e9f), hi(-1e9f);

@@ -268,7 +268,7 @@ namespace perlin {
         if (n == "water" || n == "flowing_water" || n == "lava" || n == "flowing_lava") {
             const int depth = State(id, "liquid_depth", 0);
             s.fluid = Has(n, "lava") ? 2 : 1;
-            s.fluidLevel = depth >= 8 ? 1.0f : static_cast<float>(8 - depth) / 9.0f;
+            s.fluidLevel = depth >= 8 ? 1.0f : static_cast<float>(9 - depth) / 9.0f;
             s.fluidDepth = static_cast<uint8_t>(depth);
             return info;
         }

@@ -144,7 +144,7 @@ namespace perlin {
         } else if (creativeTab == ui::kCreativeSearchTab) {
             const std::string needle = Lower(creativeSearch);
             for (const auto& c : catalog.items) {
-                if (needle.empty() || Lower(ui::UiAssets::Instance().ItemName(c.info.name)).find(needle) != std::string::npos ||
+                if (needle.empty() || Lower(ui::UiAssets::Instance().ItemName(c.info.name, c.info.aux)).find(needle) != std::string::npos ||
                     Lower(c.info.name).find(needle) != std::string::npos)
                     shown.push_back(&c);
             }
@@ -185,7 +185,7 @@ namespace perlin {
             if (idx < shown.size()) {
                 v.grid[static_cast<size_t>(i)] = Convert(shown[idx]->info);
                 v.grid[static_cast<size_t>(i)].count = 1;
-                v.gridNames[static_cast<size_t>(i)] = shown[idx]->info.customName.empty() ? ui::UiAssets::Instance().ItemName(shown[idx]->info.name) : shown[idx]->info.customName;
+                v.gridNames[static_cast<size_t>(i)] = shown[idx]->info.customName.empty() ? ui::UiAssets::Instance().ItemName(shown[idx]->info.name, shown[idx]->info.aux) : shown[idx]->info.customName;
                 entry[static_cast<size_t>(i)] = shown[idx]->entryId;
             }
         }

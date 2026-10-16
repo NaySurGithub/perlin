@@ -253,7 +253,7 @@ namespace perlin::attachable {
     }
 
     namespace {
-        void AddCube(const Cube& c, const Geometry& g, const glm::mat4& m, std::vector<Quad>& out) {
+        void AddCube(const Cube& c, const Geometry& g, const glm::mat4& m, std::vector<Quad>& out, bool mirrorTextures) {
             const float inf = c.inflate;
             const glm::vec3 lo = c.origin - glm::vec3(inf), hi = c.origin + c.size + glm::vec3(inf);
             const float x0 = lo.x, y0 = lo.y, z0 = lo.z, x1 = hi.x, y1 = hi.y, z1 = hi.z;
@@ -295,8 +295,9 @@ namespace perlin::attachable {
                 if (!c.boxUv && !c.faces[i].present)
                     continue;
                 int fi = i;
-                bool flip = c.mirror;
-                if (c.mirror && i < 2)
+                const bool mirrored = c.mirror != mirrorTextures;
+                bool flip = mirrored;
+                if (mirrored && i < 2)
                     fi = 1 - i;
                 const FaceDef& f = faces[i];
                 const glm::vec2 o = uvOrigin[fi], s = uvSize[fi];
@@ -372,7 +373,7 @@ namespace perlin::attachable {
     }
 
     void BuildMesh(const Geometry& g, const Pose& pose, const TextureLookup& textures, BuiltMesh& out,
-                   const BoneFilter& visible, const glm::mat4* rootParent) {
+                   const BoneFilter& visible, const glm::mat4* rootParent, bool mirrorTextures) {
         std::vector<glm::mat4> world(g.bones.size(), glm::mat4(1.0f));
         for (size_t i = 0; i < g.bones.size(); i++) {
             const Bone& b = g.bones[i];
@@ -386,7 +387,7 @@ namespace perlin::attachable {
             if (b.neverRender || (visible && !visible(b.name)))
                 continue;
             for (const Cube& c : b.cubes)
-                AddCube(c, g, world[i], out.body);
+                AddCube(c, g, world[i], out.body, mirrorTextures);
             for (const TextureMesh& tm : b.meshes) {
                 const Texture* tex = textures ? textures(tm.texture) : nullptr;
                 if (!tex)

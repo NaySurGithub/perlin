@@ -277,6 +277,10 @@ void AppPlatform_SDL::HandleEvent(const SDL_Event& e) {
     case SDL_EVENT_WINDOW_CLOSE_REQUESTED:
         isRunning = false;
         break;
+    case SDL_EVENT_DROP_FILE:
+        if (e.drop.data)
+            PushDropped(e.drop.data);
+        break;
     case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED:
         if (e.window.data1 > 0 && e.window.data2 > 0) {
             framebufferWidth = e.window.data1;

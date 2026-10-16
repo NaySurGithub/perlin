@@ -646,6 +646,7 @@ void RequestRespawn();
         proto::ItemV4 inventoryRaw[36];
         std::atomic<int64_t> ridingUid{0};
         proto::ItemV4 extraRaw[20];
+        std::chrono::steady_clock::time_point invServerAt[36]{};
         struct RecipeIngredientInfo { bool empty = true; std::string name, tag; int meta = 0; };
         struct RecipeInfo {
             bool shaped = false; int w = 0, h = 0;

@@ -223,6 +223,14 @@ namespace perlin {
         attributes.speed = session.MovementSpeedAttribute();
         attributes.flySpeed = session.FlySpeed();
         attributes.verticalFlySpeed = session.VFlySpeed();
+        for (const auto& effect : session.GetEffects()) {
+            if (effect.id == 8)
+                attributes.jumpBoost = effect.amplifier + 1;
+            else if (effect.id == 24)
+                attributes.levitation = effect.amplifier + 1;
+            else if (effect.id == 27)
+                attributes.slowFalling = true;
+        }
 
         state.yaw = BedrockYaw(camera.yaw);
         Record rec;

@@ -1,4 +1,5 @@
 #include "client/renderer/block/BlockLibrary.hpp"
+#include <unordered_set>
 #include <algorithm>
 #include "world/level/block/BlockPalette.hpp"
 #include "client/resources/TextureLoader.hpp"
@@ -139,10 +140,16 @@ namespace perlin {
         const int T = tilePxValue;
         const int fw = std::max(1, T / 16);
         std::vector<int> bases;
-        for (const auto& [path, tile] : tileByPng)
-            if (path.find("textures/blocks/glass.") != std::string::npos || path == "textures/blocks/glass" ||
-                (path.find("textures/blocks/glass_") != std::string::npos && path.find("pane") == std::string::npos))
+        std::unordered_set<int> tinted;
+        for (const auto& [path, tile] : tileByPng) {
+            const bool tintedGlass = path.find("textures/blocks/tinted_glass") != std::string::npos && path.find("pane") == std::string::npos;
+            const bool plain = path.find("textures/blocks/glass.") != std::string::npos || path == "textures/blocks/glass";
+            if (plain || tintedGlass || (path.find("textures/blocks/glass_") != std::string::npos && path.find("pane") == std::string::npos)) {
                 bases.push_back(tile);
+                if (!plain)
+                    tinted.insert(tile);
+            }
+        }
         std::sort(bases.begin(), bases.end());
         bases.erase(std::unique(bases.begin(), bases.end()), bases.end());
         const bool all = T <= 64;
@@ -152,6 +159,7 @@ namespace perlin {
                 break;
             const std::vector<uint8_t> src(atlas.begin() + (size_t)base * T * T * 4, atlas.begin() + ((size_t)base + 1) * T * T * 4);
             const TileAlpha baseAlpha = AlphaOf(base);
+            const bool keepInterior = tinted.count(base) > 0;
             std::vector<int> list(33, 0);
             const auto make = [&](int mode, int mask) {
                 const int t = NewTile();
@@ -163,7 +171,7 @@ namespace perlin {
                         const bool frame = l || r || tp || bt;
                         uint8_t* px = out + ((size_t)y * T + x) * 4;
                         if (!frame) {
-                            if (mode >= 2)
+                            if (mode >= 2 && !keepInterior)
                                 px[3] = 0;
                             continue;
                         }

@@ -1,6 +1,8 @@
 #pragma once
+#include <array>
 #include <cstdint>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 namespace perlin::ui {
@@ -18,6 +20,8 @@ namespace perlin::ui {
 
         bool LoadSheet(const uint8_t* rgba, int width, int height);
         void UseBuiltin();
+        bool LoadUnihexFile(const std::string& path);
+        bool HasUnihex() const { return !hex.empty(); }
 
         const Glyph& Get(uint32_t codepoint) const;
         float Width(const std::string& utf8, float scale = 1.0f) const;
@@ -34,11 +38,23 @@ namespace perlin::ui {
 
     private:
         void Build(const std::vector<uint8_t>& cells, int cellsAcross, int cellPx);
-        std::vector<uint8_t> atlas;
+        const Glyph* Dynamic(uint32_t cp) const;
+        struct HexGlyph {
+            std::array<uint8_t, 32> rows{};
+            bool wide = false;
+        };
+        std::unordered_map<uint32_t, HexGlyph> hex;
+        std::string hexPath;
+        std::unordered_map<uint32_t, Glyph> mapped;
+        mutable std::unordered_map<uint32_t, Glyph> dyn;
+        mutable int dynNext = 0;
+        int dynY0 = 0;
+        mutable uint32_t dynVersion = 0;
+        mutable std::vector<uint8_t> atlas;
         int atlasWidth = 0, atlasHeight = 0;
         std::vector<Glyph> glyphs;
         Glyph fallback;
-        uint32_t version = 1;
+        mutable uint32_t version = 1;
         bool builtin = true;
     };
 }

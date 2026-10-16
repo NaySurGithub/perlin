@@ -412,7 +412,7 @@ if(NOT EMSCRIPTEN)
     target_include_directories(Perlin PRIVATE "${httplib_SOURCE_DIR}" "${libdatachannel_SOURCE_DIR}/include")
 endif()
 
-target_compile_definitions(Perlin PRIVATE ${PERLIN_SHADER_DEFS}
+target_compile_definitions(Perlin PRIVATE PERLIN_SOURCE_DIR="${CMAKE_SOURCE_DIR}" ${PERLIN_SHADER_DEFS}
     GLM_FORCE_DEPTH_ZERO_TO_ONE
     OPENSSL_SUPPRESS_DEPRECATED
 )
@@ -541,6 +541,13 @@ if(PERLIN_BUILD_TESTS AND NOT EMSCRIPTEN AND NOT ANDROID)
         src/client/ui/HudRenderers.cpp src/client/ui/EffectData.cpp src/client/i18n/Lang.cpp src/client/i18n/BuiltinEnglish.cpp src/util/Resources.cpp src/util/Paths.cpp)
     target_include_directories(hud_dump PRIVATE src)
     target_compile_features(hud_dump PRIVATE cxx_std_23)
+    add_executable(mod_selftest tests/mod_selftest.cpp src/client/mods/ModManager.cpp src/client/ui/Json.cpp)
+    target_include_directories(mod_selftest PRIVATE src)
+    target_link_libraries(mod_selftest PRIVATE wasm3_core)
+    target_compile_features(mod_selftest PRIVATE cxx_std_23)
+    find_package(Threads REQUIRED)
+    target_link_libraries(mod_selftest PRIVATE Threads::Threads)
+    add_test(NAME mod_selftest COMMAND mod_selftest "${CMAKE_SOURCE_DIR}/mods/prebuilt/speedometer.wasm")
     add_executable(attachable_selftest tests/attachable_selftest.cpp
         src/client/attachable/Molang.cpp src/client/attachable/Animation.cpp src/client/attachable/Geometry.cpp
         src/client/ui/Json.cpp)

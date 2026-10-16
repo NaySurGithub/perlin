@@ -79,7 +79,7 @@ namespace perlin::attachable {
     using TextureLookup = std::function<const Texture*(const std::string& shortName)>;
     using BoneFilter = std::function<bool(const std::string&)>;
     void BuildMesh(const Geometry& geometry, const Pose& pose, const TextureLookup& textures, BuiltMesh& out,
-                   const BoneFilter& visible = nullptr, const glm::mat4* rootParent = nullptr);
+                   const BoneFilter& visible = nullptr, const glm::mat4* rootParent = nullptr, bool mirrorTextures = false);
 
     glm::mat4 EulerZYX(const glm::vec3& degrees);
 
