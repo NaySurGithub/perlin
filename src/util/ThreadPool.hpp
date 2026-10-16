@@ -11,7 +11,11 @@
 
 namespace perlin {
     inline unsigned HardwareThreads() {
+#ifdef __EMSCRIPTEN__
+        return std::clamp(std::thread::hardware_concurrency(), 1u, 4u);
+#else
         return std::max(1u, std::thread::hardware_concurrency());
+#endif
     }
 
     class ThreadPool {

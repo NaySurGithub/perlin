@@ -160,6 +160,37 @@ int main() {
         CHECK(calls == 2);
     }
     {
+        MobEquipmentPacket air;
+        air.runtimeEntityId = 1;
+        air.windowId = static_cast<WindowID>(0);
+        std::vector<uint8_t> body;
+        CHECK(net::EncodeChecked(air, body));
+        CHECK((body == std::vector<uint8_t>{0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}));
+
+        MobEquipmentPacket stick;
+        stick.runtimeEntityId = 1;
+        stick.item.networkId = 5;
+        stick.item.count = 3;
+        stick.item.blockRuntimeId = 0;
+        stick.slot = 2;
+        stick.selectedSlot = 2;
+        std::vector<uint8_t> encoded;
+        CHECK(net::EncodeChecked(stick, encoded));
+        const std::vector<uint8_t> expected{0x01, 0x05, 0x00, 0x03, 0x00, 0x00, 0x00, 0x00,
+                                            0x0A, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                                            0x02, 0x02, 0x00};
+        CHECK(encoded == expected);
+        MobEquipmentPacket back;
+        CHECK(Decode(encoded, back) && back.item.networkId == 5 && back.item.count == 3 && back.slot == 2);
+
+        stick.item.stackId = 9;
+        stick.item.hasStackId = true;
+        std::vector<uint8_t> withStack;
+        CHECK(net::EncodeChecked(stick, withStack));
+        MobEquipmentPacket backStack;
+        CHECK(Decode(withStack, backStack) && backStack.item.hasStackId && backStack.item.stackId && *backStack.item.stackId == 9);
+    }
+    {
         std::string failed;
         int skipped = 0;
         CHECK(RoundTripAll(failed, skipped) == 0);

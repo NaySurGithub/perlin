@@ -444,7 +444,7 @@ if(EMSCRIPTEN)
         -sMAXIMUM_MEMORY=4GB
         -sSTACK_SIZE=8MB
         -sDEFAULT_PTHREAD_STACK_SIZE=2MB
-        -sPTHREAD_POOL_SIZE=navigator.hardwareConcurrency+6
+        -sPTHREAD_POOL_SIZE=20
         -sPTHREAD_POOL_SIZE_STRICT=0
         -sFETCH=1
         -sEXIT_RUNTIME=0

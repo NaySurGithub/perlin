@@ -16,7 +16,7 @@
 
 namespace fs = std::filesystem;
 
-namespace {
+namespace perlin::sample_manifest {
     struct ManifestFiles {
         std::vector<std::string> core;
         std::vector<std::string> sounds;
@@ -28,6 +28,11 @@ namespace {
         std::string baseUrl;
         ManifestFiles files;
     };
+}
+
+namespace {
+    using perlin::sample_manifest::Manifest;
+    using perlin::sample_manifest::ManifestFiles;
 
     std::string Encode(const std::string& path) {
         static const char* hex = "0123456789ABCDEF";
