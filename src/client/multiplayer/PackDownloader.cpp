@@ -1,4 +1,5 @@
 #include "client/multiplayer/PackDownloader.hpp"
+#include "client/resources/ServerPacks.hpp"
 #include "network/Http.hpp"
 
 #include <openssl/evp.h>
@@ -109,9 +110,11 @@ namespace perlin {
 
     std::vector<std::string> PackDownloader::Plan(const std::vector<proto::TexturePackInfosEntry>& offered) {
         std::vector<std::string> request;
+        offeredPacks.clear();
         for (const auto& pack : offered) {
             const std::string uuid = UuidString(pack.uuid);
             const std::string fileName = SafeName(uuid + "_" + pack.version) + ".zip";
+            offeredPacks.push_back({fileName, uuid, pack.contentKey});
             if (Have(fileName, pack.size)) {
                 cached++;
                 std::cout << "[packs] " << uuid << " " << pack.version << " already downloaded" << std::endl;
@@ -144,6 +147,16 @@ namespace perlin {
         return request;
     }
 
+    void PackDownloader::MountAll() {
+        ServerPacks::Instance().Clear();
+        for (const Offered& o : offeredPacks) {
+            const auto path = std::filesystem::path(directory) / o.fileName;
+            std::error_code ec;
+            if (std::filesystem::exists(path, ec))
+                ServerPacks::Instance().Mount(path.string(), o.uuid, o.key);
+        }
+    }
+
     PackDownloader::Result PackDownloader::OnDataInfo(const proto::ResourcePackDataInfoPacket& info) {
         Result r;
         const std::string key = BareId(info.packId);
@@ -156,18 +169,23 @@ namespace perlin {
         Active a;
         a.packId = info.packId;
         a.chunkCount = info.chunkCount;
+        if (info.maxChunkSize > 0) {
+            const uint64_t computed = (info.size + info.maxChunkSize - 1) / info.maxChunkSize;
+            if (computed <= 0xFFFFFFFFull)
+                a.chunkCount = static_cast<uint32_t>(computed);
+        }
         a.size = info.size;
         a.hash = info.hash;
         a.fileName = fileFor.count(key) ? fileFor[key] : SafeName(key) + ".zip";
         a.data.reserve(static_cast<size_t>(std::min<uint64_t>(info.size, 512ull << 20)));
-        std::cout << "[packs] " << info.packId << ": " << info.size << " bytes in " << info.chunkCount << " chunks"
+        std::cout << "[packs] " << info.packId << ": " << info.size << " bytes in " << a.chunkCount << " chunks"
                   << std::endl;
         if (info.size > (512ull << 20)) {
             r.step = Step::Failed;
             r.message = "pack " + info.packId + " is larger than 512 MB";
             return r;
         }
-        if (info.chunkCount == 0) {
+        if (a.chunkCount == 0) {
             r.step = Step::PackDone;
             r.packId = info.packId;
             Store(a.fileName, a.data);

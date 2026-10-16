@@ -31,6 +31,7 @@ namespace perlin {
 
         uint16_t Intern(int32_t networkId);
         bool LearnName(int32_t networkId, const std::string& name);
+        void LearnState(int32_t networkId, const std::string& name, std::vector<std::pair<std::string, StateValue>> states);
         int32_t NetworkId(uint16_t local) const;
         std::string Name(uint16_t local) const;
         std::vector<std::pair<std::string, StateValue>> States(uint16_t local) const;
@@ -55,6 +56,7 @@ namespace perlin {
         mutable std::mutex mutex;
         mutable std::mutex learnedMutex;
         std::unordered_map<int32_t, std::string> learned;
+        std::unordered_map<int32_t, std::vector<std::pair<std::string, StateValue>>> learnedStates;
         std::unordered_map<int32_t, uint16_t> localByNet;
         std::vector<int32_t> netByLocal;
         std::atomic<size_t> count{1};

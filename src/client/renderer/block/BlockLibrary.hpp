@@ -44,6 +44,7 @@ namespace perlin {
         bool Ready() const { return ready; }
         void SetFancy(bool value) { fancy = value; }
         bool Complete() const { return complete; }
+        bool ApplyCustom(const std::string& vanillaRpRoot);
 
         const BlockAppearance& Look(int32_t localId) const;
         const BlockAppearance* LookByName(const std::string& name) const;

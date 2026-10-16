@@ -1,4 +1,7 @@
 #include "client/renderer/block/BlockLibrary.hpp"
+#include "client/resources/ServerBlocks.hpp"
+#include "client/resources/ServerPacks.hpp"
+#include "client/ui/Json.hpp"
 #include "client/renderer/block/BiomeTints.hpp"
 #include <unordered_set>
 #include <algorithm>
@@ -278,6 +281,18 @@ namespace perlin {
                     ok = true;
                     break;
                 }
+        if (!ok)
+            for (const std::string& dir : ServerPacks::Instance().Directories()) {
+                for (auto& t : tries)
+                    if (LoadTexture(dir + "/" + t, tex) && tex.width > 0 && tex.height > 0) {
+                        w = tex.width;
+                        h = tex.height;
+                        ok = true;
+                        break;
+                    }
+                if (ok)
+                    break;
+            }
         if (!ok)
             for (auto& t : tries) {
                 full = vanillaRpRoot + "/" + t;
@@ -1107,6 +1122,95 @@ namespace perlin {
             }
         }
         return true;
+    }
+
+    namespace {
+        std::string AfterColon(const std::string& s) {
+            const size_t c = s.find(':');
+            return c == std::string::npos ? s : s.substr(c + 1);
+        }
+    }
+
+    bool BlockLibrary::ApplyCustom(const std::string& vanillaRpRoot) {
+        if (!ServerBlocks::Instance().Pending())
+            return false;
+        std::vector<CustomBlockDef> defs = ServerBlocks::Instance().Take();
+        std::unordered_map<std::string, std::string> pathByKey;
+        for (const std::string& dir : ServerPacks::Instance().Directories()) {
+            std::string text;
+            {
+                std::ifstream in(dir + "/textures/terrain_texture.json", std::ios::binary);
+                if (!in)
+                    continue;
+                std::stringstream ss;
+                ss << in.rdbuf();
+                text = ss.str();
+            }
+            ui::Json doc;
+            std::string error;
+            if (!ui::Json::Parse(text, doc, error))
+                continue;
+            const ui::Json* data = doc.Find("texture_data");
+            if (!data || !data->IsObject())
+                continue;
+            for (const auto& [key, value] : data->object) {
+                const ui::Json* tex = value.Find("textures");
+                if (!tex)
+                    continue;
+                if (tex->IsArray() && !tex->array.empty())
+                    tex = &tex->array[0];
+                if (tex->IsObject())
+                    tex = tex->Find("path");
+                if (tex && tex->IsString())
+                    pathByKey[key] = tex->string;
+            }
+        }
+        bool any = false;
+        for (const CustomBlockDef& def : defs) {
+            const auto resolve = [&](std::initializer_list<const char*> faces, std::string& pathOut) -> int {
+                for (const char* face : faces) {
+                    const auto f = def.faceTexture.find(face);
+                    if (f == def.faceTexture.end())
+                        continue;
+                    const auto p = pathByKey.find(f->second);
+                    const std::string path = p != pathByKey.end() ? p->second : "textures/blocks/" + f->second;
+                    pathOut = path;
+                    return FetchTile(path, vanillaRpRoot);
+                }
+                return -1;
+            };
+            BlockAppearance a;
+            std::string pTop, pSide, pBottom;
+            int top = resolve({"up", "*"}, pTop);
+            int side = resolve({"side", "north", "south", "east", "west", "*"}, pSide);
+            int bottom = resolve({"down", "*"}, pBottom);
+            if (top < 0 && side < 0 && bottom < 0) {
+                const std::string guess = "textures/blocks/" + AfterColon(def.name);
+                side = FetchTile(guess, vanillaRpRoot);
+                pSide = guess;
+                if (side == 0)
+                    continue;
+            }
+            if (side < 0)
+                side = top >= 0 ? top : bottom;
+            if (top < 0)
+                top = side;
+            if (bottom < 0)
+                bottom = side;
+            a.top = top;
+            a.side = side;
+            a.bottom = bottom;
+            a.texTop = pTop.empty() ? pSide : pTop;
+            a.texSide = pSide;
+            a.texBottom = pBottom.empty() ? pSide : pBottom;
+            a.cutout = def.cutout;
+            {
+                std::lock_guard<std::mutex> lock(lookMutex);
+                appearances[def.name] = std::move(a);
+            }
+            any = true;
+        }
+        return any;
     }
 
     const BlockAppearance& BlockLibrary::Look(int32_t localId) const {

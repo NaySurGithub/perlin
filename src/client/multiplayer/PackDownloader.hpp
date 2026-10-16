@@ -26,6 +26,7 @@ namespace perlin {
         Result OnDataInfo(const proto::ResourcePackDataInfoPacket& info);
         Result OnChunk(const proto::ResourcePackChunkDataPacket& chunk);
 
+        void MountAll();
         bool AllReceived() const { return awaiting.empty() && active.empty(); }
         size_t Downloaded() const { return downloaded; }
         size_t Cached() const { return cached; }
@@ -42,6 +43,10 @@ namespace perlin {
             std::vector<uint8_t> data;
             std::string fileName;
         };
+        struct Offered {
+            std::string fileName, uuid, key;
+        };
+        std::vector<Offered> offeredPacks;
         std::string directory;
         std::set<std::string> awaiting;
         std::map<std::string, std::string> fileFor;

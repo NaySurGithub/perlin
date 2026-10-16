@@ -635,7 +635,8 @@ if(PERLIN_BUILD_TESTS AND NOT EMSCRIPTEN AND NOT ANDROID)
         tests/texture_selftest.cpp ${TEXTURE_TEST_SOURCES}
         src/client/Options.cpp src/client/input/KeyMapping.cpp
         src/util/Json.cpp src/util/Paths.cpp
-        src/world/level/block/BlockPalette.cpp src/util/Resources.cpp)
+        src/world/level/block/BlockPalette.cpp src/util/Resources.cpp
+        src/client/resources/ServerPackRegistry.cpp src/client/resources/ServerBlocks.cpp src/client/ui/Json.cpp)
     target_include_directories(texture_selftest PRIVATE src "${stb_SOURCE_DIR}")
     target_link_libraries(texture_selftest PRIVATE glaze::glaze miniz Threads::Threads)
     target_compile_features(texture_selftest PRIVATE cxx_std_23)

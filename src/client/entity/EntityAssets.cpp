@@ -3,6 +3,7 @@
 #include "client/entity/EntityAssets.hpp"
 
 #include "client/ui/Json.hpp"
+#include "client/resources/ServerPacks.hpp"
 #include "util/Paths.hpp"
 #include "util/ThreadPool.hpp"
 
@@ -179,10 +180,14 @@ namespace perlin::entity {
     }
 
     void EntityAssets::Configure(const std::string& newRoot) {
-        if (loaded && root == newRoot)
+        if (loaded && root == newRoot) {
+            SyncOverlays();
             return;
+        }
         root = newRoot;
         loaded = false;
+        overlaysLoaded = 0;
+        overlayGeneration = 0;
         entities.clear();
         controllers.clear();
         animations = attachable::AnimationLibrary();
@@ -192,6 +197,25 @@ namespace perlin::entity {
         materialLibrary.Load(root);
         LoadAll();
         loaded = true;
+        SyncOverlays();
+    }
+
+    void EntityAssets::SyncOverlays() {
+        const uint32_t gen = ServerPacks::Instance().Generation();
+        if (gen == overlayGeneration)
+            return;
+        const std::vector<std::string> dirs = ServerPacks::Instance().Directories();
+        if (dirs.size() < overlaysLoaded) {
+            const std::string keep = root;
+            loaded = false;
+            root.clear();
+            Configure(keep);
+            return;
+        }
+        overlayGeneration = gen;
+        for (size_t i = overlaysLoaded; i < dirs.size(); i++)
+            LoadDirectory(dirs[i], true);
+        overlaysLoaded = dirs.size();
     }
 
     namespace {
@@ -400,6 +424,51 @@ namespace perlin::entity {
         const double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
         std::cout << "[entity] loaded " << entities.size() << " entity definitions, " << geometries.Size() << " geometries, "
                   << controllers.size() << " render controllers in " << static_cast<int>(ms) << " ms" << std::endl;
+    }
+
+    void EntityAssets::LoadDirectory(const std::string& dir, bool overlay) {
+        (void)overlay;
+        std::string text;
+        size_t before = entities.size();
+        for (const fs::path& p : JsonFiles(fs::path(dir) / "models" / "entity"))
+            if (ReadAll(p, text))
+                geometries.Load(text);
+        if (ReadAll(fs::path(dir) / "models" / "mobs.json", text))
+            geometries.Load(text);
+        for (const fs::path& p : JsonFiles(fs::path(dir) / "models" / "blocks"))
+            if (ReadAll(p, text))
+                geometries.Load(text);
+        for (const fs::path& p : JsonFiles(fs::path(dir) / "animations"))
+            if (ReadAll(p, text))
+                animations.LoadAnimations(text);
+        for (const fs::path& p : JsonFiles(fs::path(dir) / "animation_controllers"))
+            if (ReadAll(p, text))
+                animations.LoadControllers(text);
+        for (const fs::path& p : JsonFiles(fs::path(dir) / "render_controllers")) {
+            Json doc;
+            std::string error;
+            if (ReadAll(p, text) && Json::Parse(text, doc, error))
+                ParseRenderControllers(doc, controllers);
+        }
+        for (const fs::path& p : JsonFiles(fs::path(dir) / "entity")) {
+            Json doc;
+            std::string error;
+            if (ReadAll(p, text) && Json::Parse(text, doc, error))
+                ParseEntity(doc, entities);
+        }
+        for (auto& [id, def] : entities)
+            if (def.renderControllers.empty() && !def.geometries.empty())
+                def.renderControllers.push_back({"controller.render.perlin_implicit_default", nullptr});
+        for (const auto& [id, def] : entities)
+            for (const auto& ref : def.renderControllers)
+                if (!controllers.count(ref.id)) {
+                    RenderControllerDef rc;
+                    rc.geometry = Expr::Parse("Geometry.default");
+                    rc.textures.push_back(Expr::Parse("Texture.default"));
+                    controllers[ref.id] = std::move(rc);
+                }
+        std::cout << "[entity] server pack " << dir << ": " << (entities.size() - before) << " new entity definitions, "
+                  << geometries.Size() << " geometries total" << std::endl;
     }
 
     const ClientEntityDef* EntityAssets::Entity(const std::string& identifier) const {

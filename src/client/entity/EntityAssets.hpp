@@ -55,6 +55,7 @@ namespace perlin::entity {
     class EntityAssets {
     public:
         void Configure(const std::string& root);
+        void SyncOverlays();
         bool Loaded() const { return loaded; }
         const ClientEntityDef* Entity(const std::string& identifier) const;
         const RenderControllerDef* RenderController(const std::string& id) const;
@@ -69,6 +70,9 @@ namespace perlin::entity {
         bool Seat(const std::string& identifier, float& x, float& y, float& z) const;
     private:
         void LoadAll();
+        void LoadDirectory(const std::string& dir, bool overlay);
+        uint32_t overlayGeneration = 0;
+        size_t overlaysLoaded = 0;
         std::string root;
         bool loaded = false;
         std::unordered_map<std::string, ClientEntityDef> entities;

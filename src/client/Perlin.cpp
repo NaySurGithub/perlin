@@ -3,6 +3,7 @@
 #include "util/Env.hpp"
 #include "client/Zoom.hpp"
 #include "client/Perlin.hpp"
+#include "client/resources/ServerPacks.hpp"
 #include "client/i18n/Lang.hpp"
 #include "client/multiplayer/SkinLoader.hpp"
 #include "client/mods/ModManager.hpp"
@@ -322,6 +323,7 @@ namespace perlin {
         }
         session->SetSkin(std::move(loadedSkin));
         session->SetPackDirectory(paths::DataDir() + "/server_packs");
+        ServerPacks::Instance().SetRoot(paths::DataDir() + "/server_packs_extracted");
 
         if (onlineThisRun) {
             account = std::make_shared<xbox::Account>(paths::DataDir() + "/auth.json");

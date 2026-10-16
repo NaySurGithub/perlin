@@ -273,6 +273,15 @@ namespace perlin {
         return true;
     }
 
+    void BlockPalette::LearnState(int32_t networkId, const std::string& name,
+                                  std::vector<std::pair<std::string, StateValue>> states) {
+        if (name.empty())
+            return;
+        std::lock_guard<std::mutex> lk(learnedMutex);
+        learned.emplace(networkId, name);
+        learnedStates[networkId] = std::move(states);
+    }
+
     std::string BlockPalette::Name(uint16_t local) const {
         if (local == 0)
             return "minecraft:air";
@@ -289,10 +298,16 @@ namespace perlin {
     }
 
     std::vector<std::pair<std::string, BlockPalette::StateValue>> BlockPalette::States(uint16_t local) const {
-        if (local == 0 || !namesLoaded || local >= count.load(std::memory_order_acquire))
+        if (local == 0 || local >= count.load(std::memory_order_acquire))
             return {};
-        auto it = statesByHash.find(netByLocal[local]);
-        return it == statesByHash.end() ? std::vector<std::pair<std::string, StateValue>>{} : it->second;
+        if (namesLoaded) {
+            auto it = statesByHash.find(netByLocal[local]);
+            if (it != statesByHash.end())
+                return it->second;
+        }
+        std::lock_guard<std::mutex> lk(learnedMutex);
+        auto it = learnedStates.find(netByLocal[local]);
+        return it == learnedStates.end() ? std::vector<std::pair<std::string, StateValue>>{} : it->second;
     }
 
     int BlockPalette::StateInt(uint16_t local, const std::string& key, int fallback) const {

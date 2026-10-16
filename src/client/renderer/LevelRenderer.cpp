@@ -140,8 +140,14 @@ namespace perlin {
 
     void LevelRenderer::ReloadAssetsIfNeeded() {
         const bool complete = atlasUploaded && blocks.Complete() && biomeTints.Ready();
-        if (complete)
+        if (complete) {
+            if (blocks.ApplyCustom(options.bedrockSamplesDir + "/repo/resource_pack")) {
+                uploadedTiles = blocks.TilesLoaded();
+                context.UploadAtlas(blocks.AtlasPixels().data(), BlockLibrary::TilePx(), blocks.TilesLoaded());
+                InvalidateMeshes();
+            }
             return;
+        }
 
         const auto now = std::chrono::steady_clock::now();
         if (now - lastAssetAttempt < kAssetRetry)

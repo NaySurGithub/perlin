@@ -1,6 +1,7 @@
 #include "client/ui/ChatFormat.hpp"
 #include "util/Env.hpp"
 #include "client/multiplayer/BedrockSession.hpp"
+#include "client/multiplayer/CustomBlocks.hpp"
 #include "client/player/VoxelShapes.hpp"
 #include "network/ClientIdentity.hpp"
 #include "network/PacketDump.hpp"
@@ -238,6 +239,7 @@ namespace perlin {
             state = State::ResourcePacks;
             std::vector<std::string> wanted = packs.Plan(info.texturePacks);
             if (wanted.empty()) {
+                packs.MountAll();
                 SendResourcePackResponse(PackStatus::HaveAllPacks);
             } else {
                 packsExpected = wanted.size();
@@ -276,6 +278,7 @@ namespace perlin {
                 lastError = "resource pack download failed: " + step.message;
                 state = State::Failed;
             } else if (step.step == PackDownloader::Step::PackDone && packs.AllReceived()) {
+                packs.MountAll();
                 SendResourcePackResponse(PackStatus::HaveAllPacks);
             } else if (step.step == PackDownloader::Step::Ignore && !step.message.empty()) {
                 std::cout << "[packs] " << step.message << std::endl;
@@ -290,6 +293,7 @@ namespace perlin {
                 lastError = "resource pack download failed: " + step.message;
                 state = State::Failed;
             } else if (step.step == PackDownloader::Step::PackDone && packs.AllReceived()) {
+                packs.MountAll();
                 SendResourcePackResponse(PackStatus::HaveAllPacks);
             }
         });
@@ -342,6 +346,10 @@ namespace perlin {
         });
 
         OnPartial<StartGamePacket>([this](const StartGamePacket& p) {
+            if (!p.blockProperties.empty()) {
+                const size_t n = RegisterCustomBlocks(p.blockProperties);
+                std::cout << "[blocks] server defines " << p.blockProperties.size() << " custom blocks (" << n << " states)" << std::endl;
+            }
             const float x = p.playerPosition.x, y = p.playerPosition.y, z = p.playerPosition.z;
             runtimeId = p.runtimeEntityId;
             uniqueId = p.entityId;

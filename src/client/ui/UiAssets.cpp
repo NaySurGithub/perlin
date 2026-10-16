@@ -1,4 +1,5 @@
 #include "client/ui/UiAssets.hpp"
+#include "client/resources/ServerPacks.hpp"
 #include "client/i18n/Lang.hpp"
 #include "client/ui/McFont.hpp"
 #include "util/Resources.hpp"
@@ -109,6 +110,14 @@ namespace perlin::ui {
         std::string base = rel;
         const bool hasExt = base.size() > 4 && base[base.size() - 4] == '.';
         const char* exts[] = {".png", ".tga"};
+        for (const std::string& dir : ServerPacks::Instance().Directories()) {
+            if (hasExt && LoadTexture(dir + "/" + base, out))
+                return true;
+            if (!hasExt)
+                for (const char* e : exts)
+                    if (LoadTexture(dir + "/" + base + e, out))
+                        return true;
+        }
         auto& pack = TexturePack::Instance();
         if (pack.Active()) {
             if (hasExt && pack.Load(base, out))
