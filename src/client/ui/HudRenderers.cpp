@@ -1,8 +1,10 @@
 #include "client/ui/HudRenderers.hpp"
 #include "client/ui/UiExpr.hpp"
+#include "client/ui/EffectData.hpp"
 #include "client/ui/McFont.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 
 namespace perlin::ui {
@@ -415,6 +417,95 @@ namespace perlin::ui {
         }
     }
 
+    namespace {
+        uint32_t BrightnessNinety(uint32_t rgb) {
+            const float r = static_cast<float>((rgb >> 16) & 255) / 255.0f, g = static_cast<float>((rgb >> 8) & 255) / 255.0f,
+                        b = static_cast<float>(rgb & 255) / 255.0f;
+            const float mx = std::max({r, g, b}), mn = std::min({r, g, b});
+            const float d = mx - mn;
+            float h = 0.0f;
+            if (d > 0.0f) {
+                if (mx == r) h = std::fmod((g - b) / d, 6.0f);
+                else if (mx == g) h = (b - r) / d + 2.0f;
+                else h = (r - g) / d + 4.0f;
+                h /= 6.0f;
+                if (h < 0.0f) h += 1.0f;
+            }
+            const float sat = mx > 0.0f ? d / mx : 0.0f;
+            const float v = 0.9f;
+            const float c = v * sat;
+            const float hp = h * 6.0f;
+            const float x = c * (1.0f - std::fabs(std::fmod(hp, 2.0f) - 1.0f));
+            float rr = 0, gg = 0, bb = 0;
+            if (hp < 1) { rr = c; gg = x; }
+            else if (hp < 2) { rr = x; gg = c; }
+            else if (hp < 3) { gg = c; bb = x; }
+            else if (hp < 4) { gg = x; bb = c; }
+            else if (hp < 5) { rr = x; bb = c; }
+            else { rr = c; bb = x; }
+            const float m = v - c;
+            const auto to8 = [&](float q) { return static_cast<uint32_t>(std::clamp(std::lround((q + m) * 255.0f), 0l, 255l)); };
+            return (to8(rr) << 16) | (to8(gg) << 8) | to8(bb);
+        }
+
+        void MobEffects(const HudState& s, const LNode& n, RmlWriter& w) {
+            int beneficial = 0, harmful = 0;
+            for (const HudEffect& e : s.effects) {
+                EffectInfo info;
+                if (!GetEffectInfo(e.id, info))
+                    continue;
+                const int slot = info.harmful ? harmful++ : beneficial++;
+                const float x = n.ax + n.w - 25.0f * static_cast<float>(slot + 1);
+                const float y = info.harmful ? 26.0f : 1.0f;
+                ImageStyle bg;
+                bg.u = e.ambient ? 24.0f : 0.0f;
+                bg.v = 0.0f;
+                bg.uw = 24.0f;
+                bg.vh = 24.0f;
+                w.Image(x, y, 24, 24, n.layer, "mcres:ui_hud_effect.png", bg);
+                ImageStyle icon;
+                w.Image(x + 3.0f, y + 3.0f, 18, 18, n.layer + 1, std::string("mcres:effect_") + info.texture + ".png", icon);
+            }
+        }
+
+        void LocatorBar(const HudState& s, const LNode& n, RmlWriter& w) {
+            if (!s.locatorActive)
+                return;
+            const float x0 = n.ax + std::floor((n.w - 182.0f) / 2.0f);
+            const float y0 = n.ay + n.h - 5.0f;
+            ImageStyle bg;
+            bg.hasNine = true;
+            bg.nine[0] = 5; bg.nine[1] = 1; bg.nine[2] = 5; bg.nine[3] = 1;
+            w.Image(x0, y0, 182, 5, n.layer, "textures/ui/locator_bg", bg);
+            const float center = std::ceil((n.w - 9.0f) / 2.0f) + n.ax;
+            for (const LocatorMarker& m : s.locator) {
+                const int index = m.distance < 128.0f ? 0 : m.distance >= 332.0f ? 3 : 1 + std::min(1, static_cast<int>((m.distance - 128.0f) / (332.0f - 128.0f) * 2.0f));
+                const float x = center + std::floor(m.angle * 173.0f / 2.0f / 60.0f);
+                ImageStyle dot;
+                dot.r = static_cast<float>((m.color >> 16) & 255) / 255.0f;
+                dot.g = static_cast<float>((m.color >> 8) & 255) / 255.0f;
+                dot.b = static_cast<float>(m.color & 255) / 255.0f;
+                w.Image(x, y0 - 2.0f, 9, 9, n.layer + 1, "textures/ui/locator_bar_dot_" + std::to_string(index), dot);
+                if (m.pitch != 0) {
+                    ImageStyle arrow;
+                    w.Image(x + 1.0f, y0 + (m.pitch > 0 ? -6.0f : 6.0f), 7, 5, n.layer + 2,
+                            m.pitch > 0 ? "textures/ui/locator_arrow_up" : "textures/ui/locator_arrow_down", arrow);
+                }
+            }
+        }
+    }
+
+    uint32_t LocatorColorFor(const std::array<uint8_t, 16>& id) {
+        uint64_t msb = 0, lsb = 0;
+        for (int i = 0; i < 8; i++)
+            msb = (msb << 8) | id[static_cast<size_t>(i)];
+        for (int i = 8; i < 16; i++)
+            lsb = (lsb << 8) | id[static_cast<size_t>(i)];
+        const uint64_t hilo = msb ^ lsb;
+        const uint32_t hash = static_cast<uint32_t>(hilo >> 32) ^ static_cast<uint32_t>(hilo);
+        return BrightnessNinety(hash & 0xFFFFFFu);
+    }
+
     void RegisterHudRenderers(RmlEmitter& emitter, const HudState& state, const UiServices&) {
         const HudState* s = &state;
         emitter.Register("heart_renderer", [s](const LNode& n, RmlWriter& w) { Hearts(*s, n, w); });
@@ -428,7 +519,9 @@ namespace perlin::ui {
         emitter.Register("subtitle_renderer", [s](const LNode& n, RmlWriter& w) { Subtitles(*s, n, w); });
         emitter.Register("fire_renderer", [s](const LNode& n, RmlWriter& w) { Fire(*s, n, w); });
         emitter.Register("progress_bar_renderer", [s](const LNode& n, RmlWriter& w) { ProgressBar(*s, n, w); });
-        for (const char* name : {"horse_jump_renderer", "dash_renderer", "locator_bar", "mob_effects_renderer",
+        emitter.Register("locator_bar", [s](const LNode& n, RmlWriter& w) { LocatorBar(*s, n, w); });
+        emitter.Register("mob_effects_renderer", [s](const LNode& n, RmlWriter& w) { MobEffects(*s, n, w); });
+        for (const char* name : {"horse_jump_renderer", "dash_renderer",
                                  "vignette_renderer", "camera_renderer", "hud_player_renderer", "horse_heart_renderer",
                                  "cooldown_renderer", "editor_gizmo_renderer", "editor_compass_renderer",
                                  "editor_volume_highlight_renderer", "progress_indicator_renderer"})

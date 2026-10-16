@@ -679,6 +679,7 @@ namespace perlin {
         std::copy_n(&model[0][0], 16, draw.model);
         draw.premultiplied = false;
         draw.alphaCutoff = alphaCutoff;
+        draw.blend = 1;
         draw.depth = true;
         renderer->UiSubmit(worldPass ? UiLayer::World : UiLayer::Hand, draw);
         if (glint) {

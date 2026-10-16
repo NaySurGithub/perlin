@@ -113,6 +113,7 @@ namespace perlin {
             if (a >= BedrockSession::kInvArmor0 && a < BedrockSession::kInvOffhand) { type = C::Armor; slot = a - BedrockSession::kInvArmor0; }
             else if (a == BedrockSession::kInvOffhand) { type = C::Offhand; slot = 1; }
             else if (a >= BedrockSession::kInvCraft0 && a < BedrockSession::kInvOutput) { type = C::CraftingInput; slot = 28 + a - BedrockSession::kInvCraft0; }
+            else if (a >= BedrockSession::kInvWork0 && a < BedrockSession::kInvSlots) { type = C::CraftingInput; slot = 32 + a - BedrockSession::kInvWork0; }
             else if (a == BedrockSession::kInvOutput) { type = C::CreativeOutput; slot = 50; }
             else if (a == BedrockSession::kInvCursor) { type = C::Cursor; slot = 0; }
             s.slotType.containerId = type;
@@ -129,6 +130,7 @@ namespace perlin {
         if (a == kInvOffhand) return inventory.offhand;
         if (a < kInvOutput) return inventory.craft[a - kInvCraft0];
         if (a == kInvOutput) return inventory.output;
+        if (a >= kInvWork0) return inventory.work[a - kInvWork0];
         return inventory.cursor;
     }
 
@@ -157,20 +159,25 @@ namespace perlin {
         craftedRecipe = -1;
         inventory.output = ItemStackInfo{};
         extraRaw[kInvOutput - 36] = ItemV4{};
+        const int side = workbenchOpen ? 3 : 2;
+        const int cells = side * side;
+        const auto cell = [&](int i) -> const ItemStackInfo& { return workbenchOpen ? inventory.work[i] : inventory.craft[i]; };
         int filled = 0;
-        for (const auto& c : inventory.craft)
-            filled += c.Empty() ? 0 : 1;
+        for (int i = 0; i < cells; i++)
+            filled += cell(i).Empty() ? 0 : 1;
         if (filled == 0)
             return;
         for (size_t ri = 0; ri < recipes.size(); ri++) {
             const RecipeInfo& r = recipes[ri];
             bool ok = false;
             if (r.shaped) {
-                int x0 = 2, y0 = 2, x1 = -1, y1 = -1;
-                for (int i = 0; i < 4; i++)
-                    if (!inventory.craft[i].Empty()) {
-                        x0 = std::min(x0, i % 2); x1 = std::max(x1, i % 2);
-                        y0 = std::min(y0, i / 2); y1 = std::max(y1, i / 2);
+                if (r.w > side || r.h > side)
+                    continue;
+                int x0 = side, y0 = side, x1 = -1, y1 = -1;
+                for (int i = 0; i < cells; i++)
+                    if (!cell(i).Empty()) {
+                        x0 = std::min(x0, i % side); x1 = std::max(x1, i % side);
+                        y0 = std::min(y0, i / side); y1 = std::max(y1, i / side);
                     }
                 if (x1 - x0 + 1 != r.w || y1 - y0 + 1 != r.h)
                     continue;
@@ -182,7 +189,7 @@ namespace perlin {
                             if (idx >= r.in.size()) { good = false; break; }
                             const auto& src = r.in[idx];
                             Ing ing{src.empty, src.name, src.tag, src.meta};
-                            good = IngMatches(ing, inventory.craft[(y0 + y) * 2 + (x0 + x)]);
+                            good = IngMatches(ing, cell((y0 + y) * side + (x0 + x)));
                         }
                     ok = good;
                 }
@@ -193,12 +200,12 @@ namespace perlin {
                         need.push_back(Ing{i.empty, i.name, i.tag, i.meta});
                 if (static_cast<int>(need.size()) != filled)
                     continue;
-                std::array<bool, 4> used{};
+                std::array<bool, 9> used{};
                 std::function<bool(size_t)> place = [&](size_t k) {
                     if (k == need.size())
                         return true;
-                    for (int c = 0; c < 4; c++) {
-                        if (used[static_cast<size_t>(c)] || inventory.craft[c].Empty() || !IngMatches(need[k], inventory.craft[c]))
+                    for (int c = 0; c < cells; c++) {
+                        if (used[static_cast<size_t>(c)] || cell(c).Empty() || !IngMatches(need[k], cell(c)))
                             continue;
                         used[static_cast<size_t>(c)] = true;
                         if (place(k + 1))
@@ -392,8 +399,8 @@ namespace perlin {
         res.resultItems.push_back(d);
         res.timesCrafted = 1;
         m.r.actions.push_back(res);
-        for (int i = 0; i < 4; i++) {
-            const int a = BedrockSession::kInvCraft0 + i;
+        for (int i = 0; i < 13; i++) {
+            const int a = i < 4 ? BedrockSession::kInvCraft0 + i : BedrockSession::kInvWork0 + i - 4;
             if (m.info(a).Empty())
                 continue;
             ItemStackRequestActionsEntry c;
@@ -472,7 +479,7 @@ namespace perlin {
                     m.Swap(kInvCursor, addr);
                 }
             }
-            if (addr >= kInvCraft0 && addr < kInvOutput)
+            if (IsCraftAddr(addr))
                 InvRecomputeOutputLocked();
             return !r.actions.empty();
         });
@@ -513,7 +520,7 @@ namespace perlin {
             } else {
                 ok = QuickMove(m, addr, mainThenHotbar);
             }
-            if (addr >= kInvCraft0 && addr < kInvOutput)
+            if (IsCraftAddr(addr))
                 InvRecomputeOutputLocked();
             return ok;
         });
@@ -626,7 +633,7 @@ namespace perlin {
     }
 
     void BedrockSession::InvReturnCursor() {
-        for (int src : {kInvCursor, kInvCraft0, kInvCraft0 + 1, kInvCraft0 + 2, kInvCraft0 + 3}) {
+        for (int src : {kInvCursor, kInvCraft0, kInvCraft0 + 1, kInvCraft0 + 2, kInvCraft0 + 3, kInvWork0, kInvWork0 + 1, kInvWork0 + 2, kInvWork0 + 3, kInvWork0 + 4, kInvWork0 + 5, kInvWork0 + 6, kInvWork0 + 7, kInvWork0 + 8}) {
             InvEnqueue([this, src](ItemStackRequest& r) {
                 Mover m{*this, r, [this](int a) -> ItemStackInfo& { return InvInfoLocked(a); }, [this](int a) -> ItemV4& { return InvRawLocked(a); }};
                 const bool ok = QuickMove(m, src, {{0, 8}, {9, 35}});
@@ -635,5 +642,125 @@ namespace perlin {
                 return ok;
             });
         }
+    }
+}
+
+namespace perlin {
+    bool BedrockSession::TakeWorkbenchOpened() {
+        std::lock_guard lock(statusMutex);
+        const bool v = workbenchJustOpened;
+        workbenchJustOpened = false;
+        return v;
+    }
+
+    std::vector<BedrockSession::RecipeEntry> BedrockSession::GetRecipes(int side) const {
+        std::lock_guard lock(statusMutex);
+        std::vector<RecipeEntry> out;
+        for (size_t ri = 0; ri < recipes.size(); ri++) {
+            const RecipeInfo& r = recipes[ri];
+            if (r.shaped ? (r.w > side || r.h > side) : (static_cast<int>(r.in.size()) > side * side))
+                continue;
+            int counts[36];
+            for (int i = 0; i < 36; i++)
+                counts[i] = (i < 9 ? inventory.hotbar[i] : inventory.main[i - 9]).count;
+            bool craftable = true;
+            for (const auto& src : r.in) {
+                if (src.empty)
+                    continue;
+                const Ing ing{src.empty, src.name, src.tag, src.meta};
+                bool found = false;
+                for (int i = 0; i < 36 && !found; i++) {
+                    const ItemStackInfo& it = i < 9 ? inventory.hotbar[i] : inventory.main[i - 9];
+                    if (counts[i] > 0 && !it.Empty() && IngMatches(ing, it)) {
+                        counts[i]--;
+                        found = true;
+                    }
+                }
+                if (!found) {
+                    craftable = false;
+                    break;
+                }
+            }
+            RecipeEntry e;
+            e.index = static_cast<int>(ri);
+            e.craftable = craftable;
+            e.out = r.outInfo;
+            out.push_back(std::move(e));
+        }
+        return out;
+    }
+
+    void BedrockSession::InvFillRecipe(int index) {
+        bool big;
+        {
+            std::lock_guard lock(statusMutex);
+            if (index < 0 || index >= static_cast<int>(recipes.size()))
+                return;
+            big = workbenchOpen;
+        }
+        const int side = big ? 3 : 2;
+        for (int c = 0; c < side * side; c++) {
+            const int addr = big ? kInvWork0 + c : kInvCraft0 + c;
+            InvEnqueue([this, addr](ItemStackRequest& r) {
+                Mover m{*this, r, [this](int a) -> ItemStackInfo& { return InvInfoLocked(a); }, [this](int a) -> ItemV4& { return InvRawLocked(a); }};
+                if (InvInfoLocked(addr).Empty())
+                    return false;
+                const bool ok = QuickMove(m, addr, {{0, 8}, {9, 35}});
+                InvRecomputeOutputLocked();
+                return ok;
+            });
+        }
+        const RecipeInfo recipe = [&] {
+            std::lock_guard lock(statusMutex);
+            return recipes[static_cast<size_t>(index)];
+        }();
+        const int w = recipe.shaped ? recipe.w : side;
+        std::vector<int> usedSources;
+        for (size_t k = 0; k < recipe.in.size(); k++) {
+            const auto& src = recipe.in[k];
+            if (src.empty)
+                continue;
+            const int cx = recipe.shaped ? static_cast<int>(k) % w : static_cast<int>(k) % side;
+            const int cy = recipe.shaped ? static_cast<int>(k) / w : static_cast<int>(k) / side;
+            const int addr = big ? kInvWork0 + cy * side + cx : kInvCraft0 + cy * side + cx;
+            InvEnqueue([this, src, addr](ItemStackRequest& r) {
+                Mover m{*this, r, [this](int a) -> ItemStackInfo& { return InvInfoLocked(a); }, [this](int a) -> ItemV4& { return InvRawLocked(a); }};
+                const Ing ing{src.empty, src.name, src.tag, src.meta};
+                for (int i = 0; i < 36; i++) {
+                    const ItemStackInfo& it = InvInfoLocked(i);
+                    if (it.Empty() || !IngMatches(ing, it))
+                        continue;
+                    m.Move(i, addr, 1);
+                    InvRecomputeOutputLocked();
+                    return true;
+                }
+                return false;
+            });
+        }
+    }
+}
+
+namespace perlin {
+    std::vector<BedrockSession::EffectState> BedrockSession::GetEffects() const {
+        std::lock_guard lock(statusMutex);
+        std::vector<EffectState> out;
+        const auto now = std::chrono::steady_clock::now();
+        for (const ActiveEffect& e : activeEffects) {
+            EffectState s;
+            s.id = e.id;
+            s.amplifier = e.amplifier;
+            s.ambient = e.ambient;
+            s.particles = e.particles;
+            if (e.infinite) {
+                s.ticks = -1;
+            } else {
+                const auto left = std::chrono::duration_cast<std::chrono::milliseconds>(e.expires - now).count();
+                if (left <= 0)
+                    continue;
+                s.ticks = static_cast<int>(left / 50);
+            }
+            out.push_back(s);
+        }
+        return out;
     }
 }

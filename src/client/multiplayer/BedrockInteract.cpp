@@ -291,6 +291,7 @@ namespace perlin {
             std::lock_guard lock(statusMutex);
             window = inventoryOpen ? inventoryWindow : 0;
             inventoryOpen = false;
+            workbenchOpen = false;
         }
         ContainerClosePacket p;
         p.windowId = static_cast<WindowID>(window);

@@ -1,3 +1,5 @@
+#include "util/Resources.hpp"
+#include "client/resources/TextureLoader.hpp"
 #include "client/ui/Glint.hpp"
 #include <chrono>
 #include <algorithm>
@@ -108,6 +110,11 @@ namespace perlin::ui {
                 t.width = f.AtlasWidth();
                 t.height = f.AtlasHeight();
                 t.pixels = f.Atlas();
+            } else if (source.rfind("mcres:", 0) == 0) {
+                std::string bytes;
+                if (!resources::Read(source.substr(6), bytes) ||
+                    !LoadTextureMemory(reinterpret_cast<const unsigned char*>(bytes.data()), bytes.size(), t))
+                    return 0;
             } else if (source.rfind("mchead:", 0) == 0) {
                 if (!UiAssets::Instance().Head(source.substr(7), t))
                     return 0;

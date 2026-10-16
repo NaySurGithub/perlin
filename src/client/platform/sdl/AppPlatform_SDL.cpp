@@ -133,6 +133,15 @@ void AppPlatform_SDL::SetClipboard(const std::string& text) {
         new std::string(text), false);
 }
 
+void AppPlatform_SDL::OpenUrl(const std::string& url) {
+    SDL_RunOnMainThread(
+        [](void* data) {
+            std::unique_ptr<std::string> u(static_cast<std::string*>(data));
+            SDL_OpenURL(u->c_str());
+        },
+        new std::string(url), false);
+}
+
 bool AppPlatform_SDL::ConfirmDialog(const std::string& title, const std::string& message) {
 #ifdef __EMSCRIPTEN__
     return perlin_js_confirm(title.c_str(), message.c_str()) == 1;

@@ -60,7 +60,7 @@ namespace perlin::ui {
         bool FindImage(const std::string& rel, Texture& out) const;
         void LoadItemTextureTable();
         void LoadLang();
-        bool FlatSprite(const std::string& shortName, int aux, ItemSprite& out);
+        bool FlatSprite(const std::string& shortName, int aux, ItemSprite& out, int64_t dyeColor = -1);
         bool BakeModelIcon(const std::string& name, int32_t hash, int size, Texture& out);
 
         std::string root;

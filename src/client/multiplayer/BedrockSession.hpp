@@ -12,6 +12,8 @@
 #include "network/PlayerConstants.hpp"
 #include "client/multiplayer/PackDownloader.hpp"
 
+#include <array>
+#include <utility>
 #include <condition_variable>
 #include <deque>
 #include <optional>
@@ -289,6 +291,11 @@ void RequestRespawn();
             uint32_t blockRuntimeId = 0;
             bool enchanted = false;
             std::string customName;
+            bool hasColor = false;
+            int32_t color = 0;
+            int nbtTags = 0;
+            std::vector<std::pair<int, int>> enchants;
+            std::vector<std::string> lore;
             bool Empty() const { return name.empty() || count <= 0; }
         };
         struct Vitals {
@@ -307,11 +314,13 @@ void RequestRespawn();
             ItemStackInfo offhand;
             ItemStackInfo armor[4];
             ItemStackInfo craft[4];
+            ItemStackInfo work[9];
             ItemStackInfo output;
             ItemStackInfo cursor;
             int selected = 0;
         };
-        static constexpr int kInvArmor0 = 36, kInvOffhand = 40, kInvCraft0 = 41, kInvOutput = 45, kInvCursor = 46, kInvSlots = 47;
+        static constexpr int kInvArmor0 = 36, kInvOffhand = 40, kInvCraft0 = 41, kInvOutput = 45, kInvCursor = 46, kInvWork0 = 47, kInvSlots = 56;
+        static bool IsCraftAddr(int a) { return (a >= kInvCraft0 && a < kInvOutput) || (a >= kInvWork0 && a < kInvSlots); }
         struct CreativeGroup {
             int category = 0;
             std::string name;
@@ -346,6 +355,22 @@ void RequestRespawn();
             uint32_t serial = 0;
         };
         Vitals GetVitals() const;
+
+        struct LocatorWaypoint {
+            std::array<uint8_t, 16> id{};
+            bool visible = true;
+            bool hasPosition = false;
+            double x = 0, y = 0, z = 0;
+            int32_t dimension = 0;
+            bool hasColor = false;
+            int32_t color = 0;
+            bool hasActor = false;
+            int64_t actorId = 0;
+        };
+        std::vector<LocatorWaypoint> GetLocatorWaypoints() const {
+            std::lock_guard lock(locatorMutex);
+            return locatorWaypoints;
+        }
         InventoryView GetInventory() const;
         TitleText GetTitleText() const;
         bool SelectHotbarSlot(int slot);
@@ -364,6 +389,13 @@ void RequestRespawn();
         bool CloseInventory();
         bool SwapInventorySlots(int a, int b);
         bool DropInventorySlot(int slot, bool whole);
+        struct EffectState { int id = 0; int amplifier = 0; int ticks = 0; bool ambient = false; bool particles = true; };
+        std::vector<EffectState> GetEffects() const;
+        bool WorkbenchOpen() const { std::lock_guard lock(statusMutex); return workbenchOpen; }
+        bool TakeWorkbenchOpened();
+        struct RecipeEntry { int index = 0; bool craftable = false; ItemStackInfo out; };
+        std::vector<RecipeEntry> GetRecipes(int side) const;
+        void InvFillRecipe(int index);
         bool InventoryIsOpen() const { std::lock_guard lock(statusMutex); return inventoryOpen; }
         bool TakeServerClosedInventory();
 
@@ -573,11 +605,13 @@ void RequestRespawn();
         void RegisterPlayerStateHandlers();
         void ResetPlayerState();
         mutable std::mutex statusMutex;
+        mutable std::mutex locatorMutex;
+        std::vector<LocatorWaypoint> locatorWaypoints;
         Vitals vitals;
         InventoryView inventory;
         proto::ItemV4 inventoryRaw[36];
         std::atomic<int64_t> ridingUid{0};
-        proto::ItemV4 extraRaw[11];
+        proto::ItemV4 extraRaw[20];
         struct RecipeIngredientInfo { bool empty = true; std::string name, tag; int meta = 0; };
         struct RecipeInfo {
             bool shaped = false; int w = 0, h = 0;
@@ -590,7 +624,7 @@ void RequestRespawn();
         struct InvSnapshot {
             InventoryView view;
             proto::ItemV4 raw[36];
-            proto::ItemV4 extra[11];
+            proto::ItemV4 extra[20];
         };
         std::map<int32_t, InvSnapshot> invSnapshots;
         int craftedRecipe = -1;
@@ -603,7 +637,9 @@ void RequestRespawn();
         proto::ItemV4& InvRawLocked(int addr);
         void InvEnqueue(std::function<bool(proto::ItemStackRequest&)> op);
         bool SendCloseNow();
-        bool inventoryOpen = false, serverClosedInventory = false;
+        struct ActiveEffect { int id = 0; int amplifier = 0; std::chrono::steady_clock::time_point expires{}; bool infinite = false, ambient = false, particles = true; };
+        std::vector<ActiveEffect> activeEffects;
+        bool inventoryOpen = false, serverClosedInventory = false, workbenchOpen = false, workbenchJustOpened = false;
         int inventoryWindow = 0;
         int32_t nextStackRequestId = -3;
         struct PendingDrop { int slot; int count; int attempt; };

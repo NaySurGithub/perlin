@@ -1,4 +1,6 @@
 #pragma once
+#include <array>
+#include <cstdint>
 #include "client/ui/HudState.hpp"
 #include "client/ui/RmlEmit.hpp"
 
@@ -15,5 +17,6 @@ namespace perlin::ui {
         uint64_t state = 0;
     };
 
+    uint32_t LocatorColorFor(const std::array<uint8_t, 16>& id);
     void RegisterHudRenderers(RmlEmitter& emitter, const HudState& state, const UiServices& services);
 }

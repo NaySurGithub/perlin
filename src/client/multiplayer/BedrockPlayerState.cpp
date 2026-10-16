@@ -1,3 +1,4 @@
+#include "client/multiplayer/ItemNbtInfo.hpp"
 #include <array>
 #include "util/Env.hpp"
 #include <cstdlib>
@@ -120,8 +121,13 @@ namespace perlin {
     }
 
     void BedrockSession::ResetPlayerState() {
+        {
+            std::lock_guard locatorLock(locatorMutex);
+            locatorWaypoints.clear();
+        }
         std::lock_guard lock(statusMutex);
         vitals = Vitals{};
+        activeEffects.clear();
         inventory = InventoryView{};
         for (ItemV4& raw : inventoryRaw)
             raw = ItemV4{};
@@ -199,7 +205,19 @@ namespace perlin {
                 FindNbtString(*nbt, "Name", info.customName);
                 if (FindNbtInt(*nbt, "Damage", damage))
                     info.damage = std::max(0, damage);
-                info.enchanted = Contains(*nbt, "ench") || Contains(*nbt, "Enchantments") || Contains(*nbt, "StoredEnchantments") ||
+                const ItemNbtInfo parsed = ParseItemNbt(*nbt);
+                if (parsed.ok) {
+                    info.nbtTags = parsed.tagCount;
+                    info.hasColor = parsed.hasColor;
+                    info.color = parsed.color;
+                    info.enchants = parsed.enchants;
+                    info.lore = parsed.lore;
+                    if (!parsed.customName.empty())
+                        info.customName = parsed.customName;
+                    if (parsed.damage >= 0)
+                        info.damage = parsed.damage;
+                }
+                info.enchanted = !info.enchants.empty() || Contains(*nbt, "ench") || Contains(*nbt, "Enchantments") || Contains(*nbt, "StoredEnchantments") ||
                                  Contains(*nbt, "minecraft:enchantments");
             }
             static const char* const kAlwaysGlint[] = {"minecraft:enchanted_golden_apple", "minecraft:experience_bottle",
@@ -235,12 +253,14 @@ namespace perlin {
                         addr = kInvCursor;
                     else if (slot >= 28 && slot <= 31 && (type == ContainerSlotType::CraftingInput || window == WindowIDVarint::Ui))
                         addr = kInvCraft0 + slot - 28;
+                    else if (slot >= 32 && slot <= 40 && (type == ContainerSlotType::CraftingInput || window == WindowIDVarint::Ui))
+                        addr = kInvWork0 + slot - 32;
                     else if (type == ContainerSlotType::CraftingOutput || type == ContainerSlotType::CreativeOutput)
                         addr = kInvOutput;
                     if (addr >= 0) {
                         InvInfoLocked(addr) = info;
                         InvRawLocked(addr) = items[i];
-                        if (addr >= kInvCraft0 && addr < kInvOutput)
+                        if (IsCraftAddr(addr))
                             InvRecomputeOutputLocked();
                     }
                 } else if (offhand) {
@@ -310,7 +330,7 @@ namespace perlin {
                         case ContainerSlotType::Inventory: slot = s.slot; break;
                         case ContainerSlotType::Armor: slot = kInvArmor0 + s.slot; break;
                         case ContainerSlotType::Offhand: slot = kInvOffhand; break;
-                        case ContainerSlotType::CraftingInput: slot = s.slot >= 28 && s.slot <= 31 ? kInvCraft0 + s.slot - 28 : -1; break;
+                        case ContainerSlotType::CraftingInput: slot = s.slot >= 28 && s.slot <= 31 ? kInvCraft0 + s.slot - 28 : (s.slot >= 32 && s.slot <= 40 ? kInvWork0 + s.slot - 32 : -1); break;
                         case ContainerSlotType::CraftingOutput:
                         case ContainerSlotType::CreativeOutput: slot = kInvOutput; break;
                         case ContainerSlotType::Cursor: slot = kInvCursor; break;
@@ -420,7 +440,7 @@ namespace perlin {
                 return raw;
             };
             for (const ShapedRecipe& r : p.shapedRecipes) {
-                if (r.block != "crafting_table" || r.width > 2 || r.height > 2 || r.output.empty())
+                if (r.block != "crafting_table" || r.width > 3 || r.height > 3 || r.output.empty())
                     continue;
                 RecipeInfo ri;
                 ri.shaped = true;
@@ -434,7 +454,7 @@ namespace perlin {
                 list.push_back(std::move(ri));
             }
             for (const ShapelessRecipe& r : p.shapelessRecipes) {
-                if (r.block != "crafting_table" || r.input.size() > 4 || r.output.empty())
+                if (r.block != "crafting_table" || r.input.size() > 9 || r.output.empty())
                     continue;
                 RecipeInfo ri;
                 for (const auto& in : r.input)
@@ -450,7 +470,7 @@ namespace perlin {
                 recipes.clear();
             for (auto& r : list)
                 recipes.push_back(std::move(r));
-            std::cout << "[inventory] " << recipes.size() << " recipes fit the 2x2 grid" << std::endl;
+            std::cout << "[inventory] " << recipes.size() << " crafting-table recipes" << std::endl;
         });
 
         On<ContainerOpenPacket>([this](const ContainerOpenPacket& p) {
@@ -458,11 +478,21 @@ namespace perlin {
             std::lock_guard lock(statusMutex);
             inventoryWindow = static_cast<int>(p.windowId);
             inventoryOpen = true;
+            workbenchOpen = p.windowType == WindowType::Workbench;
+            if (workbenchOpen) {
+                workbenchJustOpened = true;
+                for (auto& w : inventory.work)
+                    w = ItemStackInfo{};
+                InvRecomputeOutputLocked();
+            }
         });
         On<ContainerClosePacket>([this](const ContainerClosePacket& p) {
             std::cout << "[bedrock] container close window " << static_cast<int>(p.windowId) << (p.server ? " (server)" : "") << std::endl;
             std::lock_guard lock(statusMutex);
             inventoryOpen = false;
+            workbenchOpen = false;
+            for (auto& w : inventory.work)
+                w = ItemStackInfo{};
             if (p.server)
                 serverClosedInventory = true;
         });
@@ -525,6 +555,17 @@ namespace perlin {
                 return;
             const bool on = p.eventId != MobEffectPacketEventId::Remove;
             std::lock_guard lock(statusMutex);
+            activeEffects.erase(std::remove_if(activeEffects.begin(), activeEffects.end(), [&](const ActiveEffect& e) { return e.id == p.effectId; }), activeEffects.end());
+            if (on) {
+                ActiveEffect e;
+                e.id = p.effectId;
+                e.amplifier = p.amplifier;
+                e.ambient = p.ambient;
+                e.particles = p.particles;
+                e.infinite = p.duration < 0 || p.duration >= 32767 * 20;
+                e.expires = std::chrono::steady_clock::now() + std::chrono::milliseconds(static_cast<int64_t>(std::max(0, p.duration)) * 50);
+                activeEffects.push_back(e);
+            }
             switch (p.effectId) {
             case 10: vitals.regeneration = on; break;
             case 17: vitals.hungerEffect = on; break;
@@ -546,6 +587,45 @@ namespace perlin {
                     vitals.air = value;
                 else if (e.key == MetadataDictionaryEntryKey::MaxAirdataMaxAir && IntegerOf(e, value) && value > 0)
                     vitals.maxAir = value;
+            }
+        });
+
+        On<LocatorBarPacket>([this](const LocatorBarPacket& p) {
+            std::lock_guard lock(locatorMutex);
+            for (const LocatorBarWaypoint& entry : p.waypoints) {
+                const auto it = std::find_if(locatorWaypoints.begin(), locatorWaypoints.end(),
+                                             [&](const LocatorWaypoint& w) { return w.id == entry.groupHandle.bytes; });
+                if (entry.action == LocatorBarWaypointAction::Remove) {
+                    if (it != locatorWaypoints.end())
+                        locatorWaypoints.erase(it);
+                    continue;
+                }
+                LocatorWaypoint* target = nullptr;
+                if (it != locatorWaypoints.end()) {
+                    target = &*it;
+                } else {
+                    locatorWaypoints.push_back({});
+                    target = &locatorWaypoints.back();
+                    target->id = entry.groupHandle.bytes;
+                }
+                const Waypoint& w = entry.waypoint;
+                if (w.visible)
+                    target->visible = *w.visible;
+                if (w.worldPosition) {
+                    target->hasPosition = true;
+                    target->x = w.worldPosition->position.x;
+                    target->y = w.worldPosition->position.y;
+                    target->z = w.worldPosition->position.z;
+                    target->dimension = w.worldPosition->dimensionId;
+                }
+                if (w.color) {
+                    target->hasColor = true;
+                    target->color = *w.color;
+                }
+                if (w.actorUniqueId) {
+                    target->hasActor = true;
+                    target->actorId = *w.actorUniqueId;
+                }
             }
         });
 

@@ -1,3 +1,4 @@
+#include "client/ui/ItemTooltip.hpp"
 #include "client/SampleProfiler.hpp"
 #include "util/Env.hpp"
 #include "client/Zoom.hpp"
@@ -30,6 +31,7 @@
 #include "client/ui/DebugScreen.hpp"
 #include "client/ui/GuiScale.hpp"
 #include "client/ui/ItemData.hpp"
+#include "client/ui/HudRenderers.hpp"
 #include "util/SystemInfo.hpp"
 #include "world/level/block/BlockPalette.hpp"
 #include "client/ui/UiAssets.hpp"
@@ -108,13 +110,14 @@ namespace perlin {
         };
     }
 
+    bool gAdvancedTooltips = false;
+
     namespace {
         AimHit gAim;
         bool gItemSlow = false;
         struct LocalCrack { bool active = false; int x = 0, y = 0, z = 0, stage = 0; };
         LocalCrack gLocalCrack;
         bool showChunkBorders = false;
-        bool advancedTooltips = false;
         bool softPaused = false;
         int switcherIndex = -1;
     }
@@ -770,6 +773,11 @@ namespace perlin {
             item.blockRuntimeId = info.blockRuntimeId;
             item.enchanted = info.enchanted;
             item.customName = info.customName;
+            item.hasColor = info.hasColor;
+            item.color = info.color;
+            item.nbtTags = info.nbtTags;
+            item.enchants = info.enchants;
+            item.lore = info.lore;
             item.maxDamage = ui::MaxDurability(info.name);
             item.aux = item.maxDamage > 0 ? std::clamp(info.damage, 0, item.maxDamage) : info.aux;
             return item;
@@ -795,6 +803,15 @@ namespace perlin {
         if (live)
             live->InvPump();
         const bool canOpen = (live || preview) && !deathShown && !pauseShown && !chat.IsOpen() && state.mode != ui::GameMode::Spectator;
+        const bool workbenchOpened = live && live->TakeWorkbenchOpened();
+        if (!invShown && workbenchOpened && !deathShown) {
+            invShown = true;
+            invOpenedAt = now;
+            invPicked = -1;
+            invSignature.clear();
+            inputManager.TakeTyped();
+            input.SetTextMode(true);
+        }
         if (!invShown && canOpen && (inputManager.Pressed(Action::Inventory) || (preview && !invPreviewOpened))) {
             invPreviewOpened = true;
             invShown = true;
@@ -809,7 +826,13 @@ namespace perlin {
         if (!invShown)
             return;
         bool close = false;
-        const bool creativeMode = (live || preview) && state.mode == ui::GameMode::Creative;
+        invWorkbench = live ? live->WorkbenchOpen() : (preview && PERLIN_ENV("PERLIN_PREVIEW_WORKBENCH") != nullptr);
+        static bool bookInit = false;
+        if (preview && !bookInit && PERLIN_ENV("PERLIN_PREVIEW_BOOK")) {
+            bookInit = true;
+            invBook = true;
+        }
+        const bool creativeMode = (live || preview) && state.mode == ui::GameMode::Creative && !invWorkbench;
         const bool searching = creativeMode && creativeTab == ui::kCreativeSearchTab;
         if (deathShown || (live && live->TakeServerClosedInventory()))
             close = true;
@@ -834,6 +857,7 @@ namespace perlin {
                 live->CloseInventory();
             hud.Overlay().ClearOverlay();
             invShown = false;
+            invHoverId.clear();
             invHover = -1;
             invHoverAddr = -1;
             if (!chat.IsOpen() && !deathShown)
@@ -841,12 +865,15 @@ namespace perlin {
             return;
         }
 
-        if (creativeMode || (preview && PERLIN_ENV("PERLIN_PREVIEW_CREATIVE"))) {
+        if (creativeMode || (preview && PERLIN_ENV("PERLIN_PREVIEW_CREATIVE") && !invWorkbench)) {
             UpdateCreativeScreen(hud, live, state, fbW, fbH);
             return;
         }
 
+        if (PERLIN_ENV("PERLIN_PREVIEW_ADV"))
+            gAdvancedTooltips = true;
         ui::InventoryView v;
+        v.advancedTooltips = gAdvancedTooltips;
         if (live) {
             const auto inv = live->GetInventory();
             for (int i = 0; i < 9; i++)
@@ -857,6 +884,8 @@ namespace perlin {
                 v.armor[i] = ToHudItem(inv.armor[i]);
                 v.craft[i] = ToHudItem(inv.craft[i]);
             }
+            for (int i = 0; i < 9; i++)
+                v.work[i] = ToHudItem(inv.work[i]);
             v.offhand = ToHudItem(inv.offhand);
             v.output = ToHudItem(inv.output);
             v.cursor = ToHudItem(inv.cursor);
@@ -870,6 +899,46 @@ namespace perlin {
             for (int i = 0; i < 4; i++)
                 v.armor[i] = state.armorItems[i];
             v.selectedHotbar = state.selectedSlot;
+        }
+
+        v.effects = state.effects;
+        v.workbench = invWorkbench;
+        v.bookOpen = invBook;
+        if (invBook && now - invRecipeAt > std::chrono::milliseconds(300)) {
+            invRecipeAt = now;
+            std::vector<BedrockSession::RecipeEntry> all;
+            if (live) {
+                all = live->GetRecipes(invWorkbench ? 3 : 2);
+            } else {
+                static const char* const kNames[] = {"minecraft:oak_planks", "minecraft:stick", "minecraft:crafting_table", "minecraft:torch", "minecraft:wooden_pickaxe", "minecraft:chest", "minecraft:furnace", "minecraft:bread"};
+                for (int i = 0; i < 26; i++) {
+                    BedrockSession::RecipeEntry e;
+                    e.index = i;
+                    e.craftable = i % 3 != 0;
+                    e.out.name = kNames[i % 8];
+                    e.out.count = i % 5 == 0 ? 4 : 1;
+                    all.push_back(e);
+                }
+            }
+            std::stable_sort(all.begin(), all.end(), [](const auto& a, const auto& b) { return a.craftable && !b.craftable; });
+            invRecipeAll = std::move(all);
+        }
+        if (invBook) {
+            constexpr int perPage = ui::kBookCols * ui::kBookRows;
+            v.bookPages = std::max(1, static_cast<int>((invRecipeAll.size() + perPage - 1) / perPage));
+            invBookPage = std::clamp(invBookPage, 0, v.bookPages - 1);
+            v.bookPage = invBookPage;
+            v.recipes.clear();
+            for (int n = 0; n < perPage; n++) {
+                const size_t at = static_cast<size_t>(invBookPage * perPage + n);
+                if (at >= invRecipeAll.size())
+                    break;
+                ui::RecipeCard c;
+                c.out = ToHudItem(invRecipeAll[at].out);
+                c.craftable = invRecipeAll[at].craftable;
+                c.index = invRecipeAll[at].index;
+                v.recipes.push_back(std::move(c));
+            }
         }
 
         if (now - invCheckAt > std::chrono::milliseconds(2000) || invTemplate.empty()) {
@@ -896,17 +965,23 @@ namespace perlin {
         if (hud.Overlay().HasOverlay()) {
             hud.Overlay().MouseMove(gx, gy);
             hud.UpdateOverlay(fbW, fbH, options.guiScale);
-            invHoverAddr = ui::InventoryAddrFromId(hud.Overlay().OverlayHover());
+            invHoverId = hud.Overlay().OverlayHover();
+            invHoverAddr = ui::InventoryAddrFromId(invHoverId);
         }
         v.hovered = invHoverAddr;
+        v.hoveredId = invHoverId;
         v.mouseX = gx;
         v.mouseY = gy;
 
-        std::string signature = std::to_string(guiW) + "x" + std::to_string(guiH) + "|" + std::to_string(invHoverAddr);
+        std::string signature = std::to_string(guiW) + "x" + std::to_string(guiH) + "|" + std::to_string(invHoverAddr) + invHoverId + (invBook ? "B" : "b") + std::to_string(invBookPage) + (invWorkbench ? "W" : "w") + std::to_string(v.recipes.size());
+        for (const auto& e : v.effects)
+            signature += std::to_string(e.id) + ":" + std::to_string(e.amplifier) + ":" + std::to_string(e.ticks / 20) + ";";
         const auto sig = [&](const ui::HudItem& it) { signature += it.name + ":" + std::to_string(it.count) + ":" + std::to_string(it.aux) + (it.enchanted ? "g" : "") + ";"; };
         for (const auto& it : v.slots) sig(it);
         for (const auto& it : v.armor) sig(it);
         for (const auto& it : v.craft) sig(it);
+        for (const auto& it : v.work) sig(it);
+        for (const auto& c : v.recipes) { signature += c.craftable ? "c" : "n"; sig(c.out); }
         sig(v.offhand);
         sig(v.output);
         sig(v.cursor);
@@ -921,7 +996,11 @@ namespace perlin {
             hud.Overlay().MouseMove(gx, gy);
         }
         hud.Overlay().MoveOverlayElement("cursor", static_cast<int>(gx) - 8, static_cast<int>(gy) - 8);
-        hud.Overlay().MoveOverlayElement("tip", static_cast<int>(gx) + 15, static_cast<int>(gy) - 15);
+        {
+            int tx, ty;
+            ui::PlaceTooltip(static_cast<int>(gx), static_cast<int>(gy), guiW, guiH, tx, ty);
+            hud.Overlay().MoveOverlayElement("tip", tx, ty);
+        }
         hud.UpdateOverlay(fbW, fbH, options.guiScale);
 
         const bool left = input.IsMouseDown(Mouse::Left), right = input.IsMouseDown(Mouse::Right);
@@ -930,7 +1009,23 @@ namespace perlin {
             const int px = (guiW - ui::kInvPanelW) / 2, py = (guiH - ui::kInvPanelH) / 2;
             const bool outside = gx < px || gy < py || gx > px + ui::kInvPanelW || gy > py + ui::kInvPanelH;
             const bool isRight = !(left && !invLeftDown);
-            if (invHoverAddr >= 0) {
+            if (invHoverId == "rb") {
+                invBook = !invBook;
+                invRecipeAt = {};
+                invSignature.clear();
+            } else if (invHoverId == "rp") {
+                invBookPage--;
+                invSignature.clear();
+            } else if (invHoverId == "rn") {
+                invBookPage++;
+                invSignature.clear();
+            } else if (invBook && invHoverId.size() > 1 && invHoverId[0] == 'r' && std::isdigit(static_cast<unsigned char>(invHoverId[1]))) {
+                const size_t n = static_cast<size_t>(std::atoi(invHoverId.c_str() + 1));
+                if (n < v.recipes.size()) {
+                    live->InvFillRecipe(v.recipes[n].index);
+                    invSignature.clear();
+                }
+            } else if (invHoverAddr >= 0) {
                 if (input.IsKeyDown(Key::Shift))
                     live->InvShiftClick(invHoverAddr);
                 else
@@ -950,6 +1045,7 @@ namespace perlin {
         if (!pauseShown && canOpen && (inputManager.Pressed(Action::Pause) || (preview && !pausePreviewOpened))) {
             pausePreviewOpened = true;
             pauseShown = true;
+            pauseView = PERLIN_ENV("PERLIN_PREVIEW_OPTIONS") ? 1 : 0;
             pauseOpenedAt = now;
             pauseSignature.clear();
             inputManager.TakeTyped();
@@ -961,9 +1057,19 @@ namespace perlin {
             return;
         bool resume = deathShown || invShown || chat.IsOpen();
         for (const auto& t : inputManager.TakeTyped())
-            if (!t.character && t.key == Key::Escape && now - pauseOpenedAt > std::chrono::milliseconds(100))
-                resume = true;
+            if (!t.character && t.key == Key::Escape && now - pauseOpenedAt > std::chrono::milliseconds(100)) {
+                if (pauseView == 1) {
+                    options.Save();
+                    pauseView = 0;
+                    optionsSignature.clear();
+                    pauseSignature.clear();
+                    hud.Overlay().ClearOverlay();
+                } else {
+                    resume = true;
+                }
+            }
         if (resume) {
+            pauseView = 0;
             hud.Overlay().ClearOverlay();
             pauseShown = false;
             if (!chat.IsOpen() && !deathShown && !invShown)
@@ -982,24 +1088,146 @@ namespace perlin {
                 std::cout << "[ui] pause screen: loaded " << paths::DataDir() << "/ui/pause_screen.rml" << std::endl;
             }
         }
+        const auto tr = [](const char* key, const char* fallback) {
+            std::string v = i18n::Tr(key);
+            return v == key ? std::string(fallback) : v;
+        };
+        const int scale = hud.OverlayScale();
+        const int guiW = static_cast<int>(std::ceil(static_cast<float>(fbW) / static_cast<float>(scale)));
+        const int guiH = static_cast<int>(std::ceil(static_cast<float>(fbH) / static_cast<float>(scale)));
+        float mx = input.MouseX(), my = input.MouseY();
+        if (const char* m = PERLIN_ENV("PERLIN_PREVIEW_MOUSE"))
+            std::sscanf(m, "%f,%f", &mx, &my);
+        const bool down = input.IsMouseDown(0);
+        const bool clickReady = now - pauseOpenedAt > std::chrono::milliseconds(150);
+
+        if (pauseView == 1) {
+            static const int kFps[] = {0, 30, 60, 90, 120, 144, 165, 240};
+            static const int kGuiScales[] = {0, 1, 2, 3, 4};
+            const auto percent = [](float v) { return std::to_string(static_cast<int>(std::lround(v * 100.0f))) + "%"; };
+            const auto onOff = [&](bool on) { return on ? tr("options.on", "ON") : tr("options.off", "OFF"); };
+            const auto rows = [&] {
+                std::vector<ui::OptionsRow> r;
+                r.push_back({tr("options.fov", "FOV"), std::to_string(static_cast<int>(std::lround(options.fov))), (options.fov - 30.0f) / 80.0f});
+                r.push_back({tr("options.renderDistance", "Render Distance"), std::to_string(options.renderDistance) + " " + tr("options.chunks", "chunks"),
+                             static_cast<float>(options.renderDistance - 2) / 30.0f});
+                r.push_back({tr("options.sensitivity", "Sensitivity"), percent(options.mouseSensitivity / 0.15f), options.mouseSensitivity / 0.30f});
+                r.push_back({tr("options.gamma", "Brightness"), options.gamma <= 0.01f ? tr("options.gamma.min", "Moody") : options.gamma >= 0.99f ? tr("options.gamma.max", "Bright") : percent(options.gamma), options.gamma});
+                r.push_back({tr("soundCategory.master", "Master Volume"), percent(options.sound.master), options.sound.master});
+                r.push_back({tr("options.framerateLimit", "Max Framerate"), options.maxFps == 0 ? tr("options.framerateLimit.max", "Unlimited") : std::to_string(options.maxFps) + " fps", -1.0f});
+                r.push_back({std::string("GUI Scale"), options.guiScale == 0 ? tr("options.guiScale.auto", "Auto") : std::to_string(options.guiScale), -1.0f});
+                r.push_back({tr("options.viewBobbing", "View Bobbing"), onOff(options.hand.viewBobbing), -1.0f});
+                r.push_back({tr("options.invertMouse", "Invert Mouse"), onOff(options.invertMouse), -1.0f});
+                r.push_back({tr("options.showSubtitles", "Show Subtitles"), onOff(options.sound.subtitles), -1.0f});
+                r.push_back({tr("options.fovEffectScale", "FOV Effects"), onOff(options.fovEffects), -1.0f});
+                r.push_back({tr("options.showHand", "Show Hand"), onOff(options.hand.show), -1.0f});
+                return r;
+            };
+            const std::vector<ui::OptionsRow> model = rows();
+            const ui::OptionsLayout layout = ui::ComputeOptionsLayout(static_cast<int>(model.size()), guiW, guiH);
+            std::string signature = std::to_string(guiW) + "x" + std::to_string(guiH);
+            for (const ui::OptionsRow& r : model)
+                signature += "|" + r.label + r.value;
+            if (signature != optionsSignature || !hud.Overlay().HasOverlay()) {
+                optionsSignature = signature;
+                std::string error;
+                if (!hud.Overlay().SetOverlay(ui::BuildOptionsScreenRml(model, tr("options.title", "Options"), tr("gui.done", "Done"), guiW, guiH), error))
+                    std::cout << "[ui] options screen: " << error << std::endl;
+            }
+            const float gx = mx / static_cast<float>(scale), gy = my / static_cast<float>(scale);
+            hud.Overlay().MouseMove(gx, gy);
+            hud.UpdateOverlay(fbW, fbH, options.guiScale);
+            const auto inside = [&](float x, float y, float w, float h) { return gx >= x && gx < x + w && gy >= y && gy < y + h; };
+            const auto apply = [&](int row, float fraction, bool click) {
+                const float f = std::clamp(fraction, 0.0f, 1.0f);
+                switch (row) {
+                case 0: options.fov = std::round(30.0f + f * 80.0f); break;
+                case 1: {
+                    const int distance = 2 + static_cast<int>(std::lround(f * 30.0f));
+                    if (distance != options.renderDistance) {
+                        options.renderDistance = distance;
+                        if (live) {
+                            live->SetChunkRadius(options.renderDistance);
+                            live->SetMaxViewDistance(std::max(32, options.renderDistance));
+                            live->SetNearRadius(options.renderDistance > LodStore::kRealChunks ? LodStore::kRealChunks : 1 << 20);
+                        }
+                    }
+                    break;
+                }
+                case 2: options.mouseSensitivity = std::round(f * 200.0f) / 100.0f * 0.15f; break;
+                case 3: options.gamma = std::round(f * 100.0f) / 100.0f; break;
+                case 4: options.sound.master = std::round(f * 100.0f) / 100.0f; break;
+                case 5:
+                    if (click) {
+                        size_t at = 0;
+                        for (size_t i = 0; i < std::size(kFps); i++)
+                            if (kFps[i] == options.maxFps)
+                                at = i;
+                        options.maxFps = kFps[(at + 1) % std::size(kFps)];
+                    }
+                    break;
+                case 6:
+                    if (click) {
+                        size_t at = 0;
+                        for (size_t i = 0; i < std::size(kGuiScales); i++)
+                            if (kGuiScales[i] == options.guiScale)
+                                at = i;
+                        options.guiScale = kGuiScales[(at + 1) % std::size(kGuiScales)];
+                    }
+                    break;
+                case 7: if (click) options.hand.viewBobbing = !options.hand.viewBobbing; break;
+                case 8: if (click) options.invertMouse = !options.invertMouse; break;
+                case 9: if (click) options.sound.subtitles = !options.sound.subtitles; break;
+                case 10: if (click) options.fovEffects = !options.fovEffects; break;
+                case 11: if (click) options.hand.show = !options.hand.show; break;
+                default: break;
+                }
+            };
+            const auto sliderFraction = [&](int row) { return (gx - layout.x[row] - 4.0f) / (layout.w - 8.0f); };
+            if (down && !pauseLeftDown && clickReady) {
+                for (int i = 0; i < layout.count; i++)
+                    if (inside(layout.x[i], layout.y[i], layout.w, layout.h)) {
+                        if (model[static_cast<size_t>(i)].fraction >= 0.0f) {
+                            optionsDrag = i;
+                            apply(i, sliderFraction(i), true);
+                        } else {
+                            apply(i, 0.0f, true);
+                        }
+                        break;
+                    }
+            } else if (down && optionsDrag >= 0) {
+                apply(optionsDrag, sliderFraction(optionsDrag), false);
+            }
+            if (!down && pauseLeftDown) {
+                if (optionsDrag >= 0 || clickReady) {
+                    if (inside(layout.doneX, layout.doneY, layout.doneW, layout.h) && optionsDrag < 0) {
+                        options.Save();
+                        pauseView = 0;
+                        optionsSignature.clear();
+                        pauseSignature.clear();
+                        hud.Overlay().ClearOverlay();
+                    }
+                }
+                if (optionsDrag >= 0)
+                    options.Save();
+                optionsDrag = -1;
+            }
+            pauseLeftDown = down;
+            return;
+        }
+
         ui::PauseScreenText t;
         t.title = i18n::Tr("menu.game");
         t.back = i18n::Tr("menu.returnToGame");
         t.options = i18n::Tr("menu.options");
         t.quit = i18n::Tr("menu.disconnect");
-        const auto tr = [](const char* key, const char* fallback) {
-            std::string s = i18n::Tr(key);
-            return s == key ? std::string(fallback) : s;
-        };
         t.advancements = tr("gui.advancements", "Advancements");
         t.stats = tr("gui.stats", "Statistics");
         t.feedback = tr("menu.sendFeedback", "Give Feedback");
         t.bugs = tr("menu.reportBugs", "Report Bugs");
         t.lan = tr("menu.shareToLan", "Open to LAN");
-        const int scale = hud.OverlayScale();
-        const int guiW = static_cast<int>(std::ceil(static_cast<float>(fbW) / static_cast<float>(scale)));
-        const int guiH = static_cast<int>(std::ceil(static_cast<float>(fbH) / static_cast<float>(scale)));
-        const std::string signature = std::to_string(guiW) + "x" + std::to_string(guiH) + t.title + t.back + t.options + t.quit + t.advancements + t.stats + t.feedback + t.bugs + t.lan;
+        t.players = tr("gui.playerList", "Player List");
+        const std::string signature = std::to_string(guiW) + "x" + std::to_string(guiH) + t.title + t.back + t.options + t.quit + t.advancements + t.stats + t.feedback + t.bugs + t.lan + t.players;
         if (signature != pauseSignature || !hud.Overlay().HasOverlay()) {
             pauseSignature = signature;
             std::string error;
@@ -1009,13 +1237,9 @@ namespace perlin {
                 hud.Overlay().SetOverlay(ui::BuildPauseScreenRml(pauseTemplate, t, guiW, guiH), error);
             }
         }
-        float mx = input.MouseX(), my = input.MouseY();
-        if (const char* m = PERLIN_ENV("PERLIN_PREVIEW_MOUSE"))
-            std::sscanf(m, "%f,%f", &mx, &my);
         hud.Overlay().MouseMove(mx / static_cast<float>(scale), my / static_cast<float>(scale));
         hud.UpdateOverlay(fbW, fbH, options.guiScale);
-        const bool down = input.IsMouseDown(0);
-        if (!down && pauseLeftDown && now - pauseOpenedAt > std::chrono::milliseconds(150)) {
+        if (!down && pauseLeftDown && clickReady) {
             const std::string hover = hud.Overlay().OverlayHover();
             if (hover == ui::kPauseResumeId) {
                 hud.Overlay().ClearOverlay();
@@ -1023,6 +1247,16 @@ namespace perlin {
                 input.SetTextMode(false);
             } else if (hover == ui::kPauseQuitId && !preview) {
                 platform->isRunning = false;
+            } else if (hover == ui::kPauseFeedbackId) {
+                platform->OpenUrl("https://github.com/theselauraproject/perlin/issues");
+            } else if (hover == ui::kPausePlayersId) {
+                pausePlayers = !pausePlayers;
+            } else if (hover == ui::kPauseBugsId) {
+                platform->OpenUrl("https://github.com/theselauraproject/perlin/issues/new?labels=bug");
+            } else if (hover == ui::kPauseOptionsId) {
+                pauseView = 1;
+                optionsSignature.clear();
+                hud.Overlay().ClearOverlay();
             }
         }
         pauseLeftDown = down;
@@ -1202,6 +1436,9 @@ namespace perlin {
                 s.hotbar[i].maxDamage = kItems[i].maxDamage;
                 s.hotbar[i].aux = kItems[i].aux;
                 s.hotbar[i].enchanted = PERLIN_ENV("PERLIN_PREVIEW_ENCHANT") != nullptr;
+                if (s.hotbar[i].enchanted)
+                    s.hotbar[i].enchants = {{9, 3}, {12, 2}, {17, 3}, {26, 1}};
+                s.hotbar[i].nbtTags = 2;
             }
             s.burning = PERLIN_ENV("PERLIN_PREVIEW_FIRE") != nullptr;
             s.fireFrame = static_cast<int>(s.tick % 32);
@@ -1210,6 +1447,23 @@ namespace perlin {
                 h.name = item;
                 h.count = 1;
                 h.maxDamage = h.aux = 0;
+            }
+            if (const char* list = PERLIN_ENV("PERLIN_PREVIEW_ITEMS")) {
+                std::string all = list;
+                size_t at = 0;
+                for (int slot = 0; slot < 9 && at <= all.size(); slot++) {
+                    size_t comma = all.find(',', at);
+                    if (comma == std::string::npos) comma = all.size();
+                    ui::HudItem& h = s.hotbar[slot];
+                    h = {};
+                    h.name = all.substr(at, comma - at);
+                    h.count = 1;
+                    if (const char* dye = PERLIN_ENV("PERLIN_PREVIEW_DYE")) {
+                        h.hasColor = true;
+                        h.color = static_cast<int32_t>(std::strtoul(dye, nullptr, 16));
+                    }
+                    at = comma + 1;
+                }
             }
             if (const char* tab = PERLIN_ENV("PERLIN_PREVIEW_TAB")) {
                 s.tabOpen = true;
@@ -1229,6 +1483,31 @@ namespace perlin {
                 s.itemNameAlpha = 1.0f;
             }
             s.displayHealth = s.health;
+            s.effects.clear();
+            if (PERLIN_ENV("PERLIN_PREVIEW_EFFECTS")) {
+                s.effects.push_back({13, 0, 200, false});
+                s.effects.push_back({1, 1, 3600, false});
+                s.effects.push_back({10, 0, 1200, true});
+                s.effects.push_back({19, 0, 600, false});
+                s.effects.push_back({2, 2, 90, false});
+            }
+            s.locator.clear();
+            s.locatorActive = false;
+            if (const char* loc = PERLIN_ENV("PERLIN_PREVIEW_LOCATOR")) {
+                s.locatorActive = true;
+                const int count = std::max(1, std::atoi(loc));
+                for (int i = 0; i < count; i++) {
+                    ui::LocatorMarker m;
+                    m.angle = count == 1 ? 0.0f : -55.0f + 110.0f * static_cast<float>(i) / static_cast<float>(count - 1);
+                    m.distance = static_cast<float>(i) * 400.0f / static_cast<float>(std::max(1, count - 1));
+                    m.pitch = i % 4 == 1 ? 1 : (i % 4 == 3 ? -1 : 0);
+                    std::array<uint8_t, 16> id{};
+                    id[0] = static_cast<uint8_t>(37 * (i + 3));
+                    id[9] = static_cast<uint8_t>(91 * (i + 1));
+                    m.color = ui::LocatorColorFor(id);
+                    s.locator.push_back(m);
+                }
+            }
             return;
         }
         if (!live)
@@ -1272,7 +1551,54 @@ namespace perlin {
         s.healthBlinkUntil = hudAnim.blinkUntil;
         s.displayHealth = static_cast<float>(hudAnim.displayHealth);
 
-        s.tabOpen = inputManager.IsDown(Action::PlayerList) && !inputManager.Blocked();
+        s.effects.clear();
+        for (const auto& e : live->GetEffects())
+            s.effects.push_back({e.id, e.amplifier, e.ticks, e.ambient});
+        s.locator.clear();
+        s.locatorActive = false;
+        {
+            const std::vector<BedrockSession::LocatorWaypoint> waypoints = live->GetLocatorWaypoints();
+            const double eyeX = camera.x, eyeY = camera.y, eyeZ = camera.z;
+            const double lookElevation = static_cast<double>(camera.pitch);
+            const double halfFov = static_cast<double>(camera.fov) * 0.5;
+            for (const BedrockSession::LocatorWaypoint& wp : waypoints) {
+                if (!wp.visible)
+                    continue;
+                double tx = wp.x, ty = wp.y, tz = wp.z;
+                bool known = wp.hasPosition;
+                if (wp.hasActor) {
+                    entity::Entity target;
+                    if (live->Entities().FindUnique(wp.actorId, target)) {
+                        if (target.isSelf)
+                            continue;
+                        tx = target.pos.x;
+                        ty = target.pos.y + 1.0;
+                        tz = target.pos.z;
+                        known = true;
+                    }
+                }
+                if (!known)
+                    continue;
+                s.locatorActive = true;
+                const double dx = tx - eyeX, dy = ty - eyeY, dz = tz - eyeZ;
+                const double horizontal = std::sqrt(dx * dx + dz * dz);
+                double angle = std::atan2(dz, dx) * 180.0 / 3.14159265358979323846 - static_cast<double>(camera.yaw);
+                angle = std::fmod(angle + 540.0, 360.0) - 180.0;
+                ui::LocatorMarker m;
+                m.angle = static_cast<float>(angle);
+                m.distance = static_cast<float>(std::sqrt(dx * dx + dy * dy + dz * dz));
+                const double elevation = std::atan2(dy, std::max(horizontal, 1e-6)) * 180.0 / 3.14159265358979323846;
+                const double rel = elevation - lookElevation;
+                m.pitch = std::fabs(rel) <= halfFov ? 0 : (rel > 0 ? 1 : -1);
+                m.color = wp.hasColor ? (static_cast<uint32_t>(wp.color) & 0xFFFFFFu) : ui::LocatorColorFor(wp.id);
+                if (angle > -60.0 && angle <= 60.0)
+                    s.locator.push_back(m);
+            }
+        }
+
+        if (!pauseShown)
+            pausePlayers = false;
+        s.tabOpen = (inputManager.IsDown(Action::PlayerList) && !inputManager.Blocked()) || pausePlayers;
         s.tabEntries.clear();
         if (s.tabOpen) {
             auto players = live->PlayerList();
@@ -1341,11 +1667,6 @@ namespace perlin {
             static const char* const kRarityCode[] = {"f", "e", "b", "d"};
             s.itemName = held.customName.empty() ? ui::UiAssets::Instance().ItemName(held.name) : held.customName;
             s.itemName = std::string("\xC2\xA7") + kRarityCode[rarity] + (held.customName.empty() ? "" : "\xC2\xA7o") + s.itemName;
-            if (advancedTooltips) {
-                s.itemName += " (" + held.name + ")";
-                if (held.maxDamage > 0)
-                    s.itemName += " " + i18n::Tr("perlin.item.durability", {std::to_string(held.maxDamage - held.aux), std::to_string(held.maxDamage)});
-            }
             s.itemNameAlpha = std::min(255.0f, static_cast<float>(hudAnim.toolTimer) * 256.0f / 10.0f) / 255.0f;
         } else {
             s.itemName.clear();
@@ -2223,8 +2544,8 @@ namespace perlin {
                     say(i18n::Tr(showChunkBorders ? "perlin.debug.chunk_borders_on" : "perlin.debug.chunk_borders_off"));
                 }
                 if (edge('H')) {
-                    advancedTooltips = !advancedTooltips;
-                    say(i18n::Tr(advancedTooltips ? "perlin.debug.advanced_tooltips_on" : "perlin.debug.advanced_tooltips_off"));
+                    gAdvancedTooltips = !gAdvancedTooltips;
+                    say(i18n::Tr(gAdvancedTooltips ? "perlin.debug.advanced_tooltips_on" : "perlin.debug.advanced_tooltips_off"));
                 }
                 if (edge('I')) {
                     if (gAim.kind == AimHit::Kind::Block && (live || previewLevel)) {

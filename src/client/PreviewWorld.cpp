@@ -251,6 +251,15 @@ namespace perlin {
             }
         set(0, padY + 3, 0, glow);
         set(-3, padY + 1, -3, torch);
+        if (std::getenv("PERLIN_PREVIEW_GLASSWALL")) {
+            const uint16_t purple = ids.Get("purple_stained_glass"), tinted = ids.Get("tinted_glass");
+            std::cout << "[preview] glass wall pad y=" << padY << std::endl;
+            for (int x = -3; x <= 3; x++)
+                for (int y = padY + 1; y <= padY + 4; y++)
+                    set(x, y, -6, x >= 2 ? purple : (x <= -3 ? tinted : glass));
+            for (int x = -3; x <= 1; x++)
+                set(x, padY + 5, -6, glass);
+        }
         return true;
     }
 }

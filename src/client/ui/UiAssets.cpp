@@ -253,7 +253,7 @@ namespace perlin::ui {
         }
     }
 
-    bool UiAssets::FlatSprite(const std::string& name, int aux, ItemSprite& out) {
+    bool UiAssets::FlatSprite(const std::string& name, int aux, ItemSprite& out, int64_t dyeColor) {
         LoadItemTextureTable();
         std::vector<std::string> candidates{name};
         const auto replaceWord = [&](const std::string& from, const std::string& to) {
@@ -274,7 +274,16 @@ namespace perlin::ui {
                 {"enchanted_golden_apple", "apple_golden"}, {"melon_slice", "melon"}, {"potion", "potion_bottle_drinkable"},
                 {"milk_bucket", "bucket"}, {"totem_of_undying", "totem"}, {"fire_charge", "fireball"},
                 {"firework_rocket", "fireworks"}, {"splash_potion", "potion_bottle_splash"}, {"lingering_potion", "potion_bottle_lingering"}, {"oak_sign", "sign"}, {"popped_chorus_fruit", "chorus_fruit_popped"},
-                {"sugar_cane", "reeds"}, {"turtle_scute", "turtle_shell_piece"}};
+                {"sugar_cane", "reeds"}, {"compass", "compass_item"}, {"clock", "clock_item"}, {"recovery_compass", "recovery_compass_item"}, {"turtle_scute", "turtle_shell_piece"}};
+            if (name.size() > 4 && name.compare(name.size() - 4, 4, "_dye") == 0) {
+                std::string color = name.substr(0, name.size() - 4);
+                if (color == "light_gray")
+                    color = "silver";
+                const bool fresh = color == "black" || color == "brown" || color == "blue" || color == "white";
+                candidates.push_back("dye_powder_" + color + (fresh ? "_new" : ""));
+            }
+            if (name == "glow_ink_sac")
+                candidates.push_back("dye_powder_glow");
             if (name.rfind("music_disc_", 0) == 0)
                 candidates.push_back("record_" + name.substr(11));
             for (const auto& [from, to] : kAlias)
@@ -308,7 +317,7 @@ namespace perlin::ui {
                 path = "textures/items/" + c;
             }
             Texture t;
-            if (!FindImage(path, t)) {
+            if (!FindImage(path, t) && !FindImage("textures/items/spawn_eggs/" + c, t)) {
                 if (it == itemTextures.end() || !FindImage(it->second[static_cast<size_t>(std::clamp(aux, 0, static_cast<int>(it->second.size()) - 1))], t))
                     continue;
             }
@@ -333,10 +342,34 @@ namespace perlin::ui {
                 out.handheld = false;
                 return true;
             }
-            if (name.rfind("leather_", 0) == 0)
+            if (name.rfind("leather_", 0) == 0 && name != "leather_horse_armor") {
+                const uint32_t rgb = dyeColor >= 0 ? static_cast<uint32_t>(dyeColor) & 0xFFFFFFu : 0xA06540u;
+                const float cr = ((rgb >> 16) & 255) / 255.0f, cg = ((rgb >> 8) & 255) / 255.0f, cb = (rgb & 255) / 255.0f;
+                bool anyMask = false;
+                for (size_t i = 3; i < t.pixels.size(); i += 4)
+                    if (t.pixels[i] != 0 && t.pixels[i] < 16)
+                        anyMask = true;
+                for (size_t i = 0; i + 3 < t.pixels.size(); i += 4) {
+                    uint8_t* px = &t.pixels[i];
+                    const bool mask = px[3] != 0 && px[3] < 16;
+                    if (mask)
+                        px[3] = 255;
+                    if (dyeColor < 0 && anyMask)
+                        continue;
+                    if (px[3] == 0 || (anyMask && !mask))
+                        continue;
+                    float l = (px[0] * 0.299f + px[1] * 0.587f + px[2] * 0.114f) / 255.0f;
+                    if (mask)
+                        l = std::min(1.0f, l / 0.42f);
+                    px[0] = static_cast<uint8_t>(std::clamp(l * cr * 255.0f, 0.0f, 255.0f));
+                    px[1] = static_cast<uint8_t>(std::clamp(l * cg * 255.0f, 0.0f, 255.0f));
+                    px[2] = static_cast<uint8_t>(std::clamp(l * cb * 255.0f, 0.0f, 255.0f));
+                }
+            } else if (name.rfind("leather_", 0) == 0) {
                 for (size_t i = 3; i < t.pixels.size(); i += 4)
                     if (t.pixels[i] != 0 && t.pixels[i] < 16)
                         t.pixels[i] = 255;
+            }
             out.ok = true;
             out.block = false;
             out.w = t.width;
@@ -372,10 +405,12 @@ namespace perlin::ui {
         const size_t semi = key.rfind(';');
         const std::string id = semi == std::string::npos ? key : key.substr(0, semi);
         const int aux = semi == std::string::npos ? 0 : std::atoi(key.c_str() + semi + 1);
+        const size_t atAt = key.find('@');
+        const int64_t dye = atAt == std::string::npos ? -1 : static_cast<int64_t>(std::strtoul(key.c_str() + atAt + 1, nullptr, 10));
         std::string name = Short(id);
         if (name == "tallgrass") name = "short_grass";
 
-        if (!FlatSprite(name, aux, sprite) && blocks && blocks->Ready()) {
+        if (!FlatSprite(name, aux, sprite, dye) && blocks && blocks->Ready()) {
             if (const BlockAppearance* a = blocks->LookByName("minecraft:" + name)) {
                 const int px = BlockLibrary::TilePx();
                 sprite.tile = px;
@@ -472,6 +507,36 @@ namespace perlin::ui {
         return true;
     }
 
+    namespace {
+        void CenterIconPixels(Texture& t) {
+            if (t.width <= 0 || t.height <= 0 || t.pixels.size() < static_cast<size_t>(t.width) * t.height * 4)
+                return;
+            int x0 = t.width, x1 = -1, y0 = t.height, y1 = -1;
+            for (int y = 0; y < t.height; y++)
+                for (int x = 0; x < t.width; x++)
+                    if (t.pixels[(static_cast<size_t>(y) * t.width + x) * 4 + 3] > 8) {
+                        x0 = std::min(x0, x);
+                        x1 = std::max(x1, x);
+                        y0 = std::min(y0, y);
+                        y1 = std::max(y1, y);
+                    }
+            if (x1 < 0)
+                return;
+            const int dx = (t.width - 1 - x1 - x0) / 2, dy = (t.height - 1 - y1 - y0) / 2;
+            if (dx == 0 && dy == 0)
+                return;
+            std::vector<uint8_t> shifted(t.pixels.size(), 0);
+            for (int y = 0; y < t.height; y++)
+                for (int x = 0; x < t.width; x++) {
+                    const int nx = x + dx, ny = y + dy;
+                    if (nx < 0 || ny < 0 || nx >= t.width || ny >= t.height)
+                        continue;
+                    std::copy_n(&t.pixels[(static_cast<size_t>(y) * t.width + x) * 4], 4, &shifted[(static_cast<size_t>(ny) * t.width + nx) * 4]);
+                }
+            t.pixels = std::move(shifted);
+        }
+    }
+
     bool UiAssets::ItemIcon(const std::string& key, Texture& out) {
         const ItemSprite* s = Item(key);
         if (!s || s->fromBlock) {
@@ -481,8 +546,10 @@ namespace perlin::ui {
                 std::string name = Short(semi == std::string::npos ? key.substr(0, hashAt) : key.substr(0, semi));
                 if (name == "tallgrass") name = "short_grass";
                 const int32_t hash = static_cast<int32_t>(std::strtoul(key.c_str() + hashAt + 1, nullptr, 10));
-                if (BakeModelIcon(name, hash, 64, out))
+                if (BakeModelIcon(name, hash, 64, out)) {
+                    CenterIconPixels(out);
                     return true;
+                }
             }
         }
         if (!s) {
@@ -501,6 +568,7 @@ namespace perlin::ui {
         }
         if (s->block) {
             BakeCubeIcon(*s, 64, out);
+            CenterIconPixels(out);
             return true;
         }
         out.width = s->w;

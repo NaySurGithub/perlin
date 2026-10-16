@@ -22,6 +22,8 @@ namespace perlin::ui {
         std::string hovered;
         float mouseX = 0, mouseY = 0;
         std::string title;
+        std::vector<HudEffect> effects;
+        bool advancedTooltips = false;
     };
 
     inline constexpr int kCreativeW = 195;

@@ -140,7 +140,8 @@ namespace perlin {
         const int fw = std::max(1, T / 16);
         std::vector<int> bases;
         for (const auto& [path, tile] : tileByPng)
-            if (path.find("textures/blocks/glass.") != std::string::npos || path == "textures/blocks/glass")
+            if (path.find("textures/blocks/glass.") != std::string::npos || path == "textures/blocks/glass" ||
+                (path.find("textures/blocks/glass_") != std::string::npos && path.find("pane") == std::string::npos))
                 bases.push_back(tile);
         std::sort(bases.begin(), bases.end());
         bases.erase(std::unique(bases.begin(), bases.end()), bases.end());

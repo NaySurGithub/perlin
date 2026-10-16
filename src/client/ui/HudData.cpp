@@ -48,9 +48,9 @@ namespace perlin::ui {
         if (name == "#hud_alpha") return set(N(1.0));
         if (name == "#hud_propagate_alpha") return set(B(false));
         if (name == "#hotbar_visible") return set(B(hud));
-        if (name == "#hotbar_with_xp_bar") return set(B(hud && survival));
-        if (name == "#hotbar_no_xp_bar") return set(B(hud && !survival && !spectator));
-        if (name == "#hotbar_with_locator_bar") return set(B(false));
+        if (name == "#hotbar_with_xp_bar") return set(B(hud && survival && !s.locatorActive));
+        if (name == "#hotbar_no_xp_bar") return set(B(hud && !survival && !spectator && !s.locatorActive));
+        if (name == "#hotbar_with_locator_bar") return set(B(hud && !spectator && s.locatorActive));
         if (name == "#show_survival_ui") return set(B(hud && survival));
         if (name == "#is_armor_visible") return set(B(hud && survival && s.armor > 0));
         if (name == "#is_not_riding_bubbles") return set(B(true));
@@ -75,7 +75,7 @@ namespace perlin::ui {
         if (name == "#hud_title_text_string") return set(Json(s.title));
         if (name == "#hud_subtitle_text_string") return set(Json(s.subtitle));
         if (name == "#tooltip_visible") return set(B(!s.itemName.empty()));
-        if (name == "#status_effects_visible") return set(B(false));
+        if (name == "#status_effects_visible") return set(B(hud && !s.effects.empty()));
         if (name == "#scoreboard_sidebar_visible") return set(B(false));
         if (name == "#interact_visible") return set(B(false));
         if (name == "#hud_text_background_alpha") return set(N(0.5));
@@ -136,6 +136,19 @@ namespace perlin::ui {
         mix(s.visible);
         mix(static_cast<uint64_t>(s.mode));
         mixf(s.xpProgress);
+        mix(s.locatorActive);
+        for (const HudEffect& e : s.effects) {
+            mix(static_cast<uint64_t>(e.id));
+            mix(static_cast<uint64_t>(e.amplifier));
+            mix(static_cast<uint64_t>(e.ticks < 0 ? 999999 : e.ticks / 20));
+            mix(e.ambient);
+        }
+        for (const LocatorMarker& m : s.locator) {
+            mixf(m.angle * 4.0f);
+            mix(static_cast<uint64_t>(m.pitch + 2));
+            mix(m.color);
+            mix(static_cast<uint64_t>(std::lround(m.distance / 8.0f)));
+        }
         mix(static_cast<uint64_t>(s.xpLevel));
         mix(static_cast<uint64_t>(s.armor));
         mix(static_cast<uint64_t>(s.selectedSlot));

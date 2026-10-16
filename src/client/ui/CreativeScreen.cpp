@@ -1,6 +1,7 @@
 #include "client/ui/CreativeScreen.hpp"
 
 #include "client/ui/InventoryScreen.hpp"
+#include "client/ui/ItemTooltip.hpp"
 #include "client/ui/RmlEmit.hpp"
 #include "client/ui/UiSprite.hpp"
 #include "client/ui/UiTemplate.hpp"
@@ -10,7 +11,7 @@
 
 namespace perlin::ui {
     std::string DefaultCreativeScreenTemplate() {
-        return R"PERLINRML(<!--perlin-ui:3-->
+        return R"PERLINRML(<!--perlin-ui:6-->
 <rml>
 <head>
 <title>creative</title>
@@ -27,6 +28,9 @@ mcimg { display: block; position: absolute; }
 .ticon { width: 16px; height: 16px; z-index: 4; pointer-events: none; }
 .label { font-family: minecraft; font-size: 8px; line-height: 9px; color: #404040; white-space: nowrap; z-index: 3; }
 .search { font-family: minecraft-shadow; font-size: 8px; line-height: 9px; color: #ffffff; white-space: nowrap; z-index: 3; }
+.fx { z-index: 2; }
+.fxn { font-family: minecraft-shadow; font-size: 8px; line-height: 9px; color: #ffffff; white-space: nowrap; z-index: 4; }
+.fxd { font-family: minecraft-shadow; font-size: 8px; line-height: 9px; color: #7f7f7f; white-space: nowrap; z-index: 4; }
 .slot { width: 18px; height: 18px; z-index: 3; }
 .slot .pb { display: none; left: 0px; top: 0px; width: 18px; height: 18px; z-index: 1; pointer-events: none; }
 .slot:hover .pb { display: block; }
@@ -36,15 +40,13 @@ mcimg { display: block; position: absolute; }
 #sbar { left: {{bx}}px; top: {{by}}px; width: 14px; height: 112px; z-index: 3; }
 #cursor { z-index: 30; pointer-events: none; width: 16px; height: 16px; }
 #cursor .cnt { z-index: 31; }
-#tip { z-index: 40; background-color: rgba(16,0,16,240); padding: 3px 4px 2px 4px; pointer-events: none; }
-#tip .edge { left: -1px; top: 0px; right: -1px; bottom: 0px; background-color: #240056; }
-#tip .txt { position: relative; font-family: minecraft-shadow; font-size: 8px; line-height: 10px; color: #ffffff; white-space: nowrap; }
-</style>
+{{tipstyle}}</style>
 </head>
 <body>
   <div id="dim"></div>
   <div id="panel">{{chrome}}</div>
   {{tabs}}
+  {{effects}}
   <div class="label" style="left: {{lx}}px; top: {{ly}}px;">{{title}}</div>
   {{search}}
   {{scrollbar}}
@@ -137,9 +139,9 @@ mcimg { display: block; position: absolute; }
                     "px;top:" + std::to_string(py + y) + "px;\">" + SpriteRml("ui_creative_tabs.png", col * 26, row * 32, 26, 32, 0, 0) + "</div>\n";
             HudItem icon = v.tabIcons[static_cast<size_t>(t)];
             if (t == kCreativeSearchTab) {
-                tabs += "  <mcimg class=\"ticon\" src=\"textures/ui/magnifyingGlass\" style=\"left:" + std::to_string(px + x + 5) + "px;top:" +
-                        std::to_string(py + y + 9) + "px;width:16px;height:16px;\"/>\n";
-                continue;
+                icon = HudItem{};
+                icon.name = "minecraft:compass";
+                icon.count = 1;
             }
             if (t == kCreativeSurvivalTab)
                 icon.name = "minecraft:grass_block", icon.count = 1, icon.blockRuntimeId = 0, icon.aux = 0;
@@ -200,13 +202,12 @@ mcimg { display: block; position: absolute; }
                 it = &v.offhand;
             else if (v.hovered[0] == 't' && n >= 0 && n < kCreativeTabs)
                 tipText = v.tabTitles[static_cast<size_t>(n)];
-            if (it && !it->Empty() && tipText.empty())
-                tipText = PrettyItemName(it->name);
-            if (!tipText.empty()) {
-                const int x = static_cast<int>(v.mouseX) + 12 + 3, y = static_cast<int>(v.mouseY) - 12 - 3;
-                tip = "  <div id=\"tip\" style=\"left:" + std::to_string(x) + "px;top:" + std::to_string(y) + "px;\"><div class=\"edge\"></div><div class=\"txt\">" +
-                      EscapeRml(tipText) + "</div></div>\n";
-            }
+            std::vector<TooltipLine> lines;
+            if (it && !it->Empty())
+                lines = BuildItemTooltip(*it, v.advancedTooltips, tipText);
+            else if (!tipText.empty())
+                lines.push_back({tipText, 0xFFFFFF, false});
+            tip = TooltipRml(lines, static_cast<int>(v.mouseX), static_cast<int>(v.mouseY), guiW, guiH);
         }
 
         const int thumbY = 18 + static_cast<int>(97.0f * std::clamp(v.scroll, 0.0f, 1.0f));
@@ -224,11 +225,13 @@ mcimg { display: block; position: absolute; }
         ReplaceAll(d, "title", survival ? std::string() : EscapeRml(v.title));
         ReplaceAll(d, "chrome", SpriteRml(ChromeFor(v.tab), 0, 0, kCreativeW, kCreativeH, 0, 0));
         ReplaceAll(d, "tabs", tabs);
+        ReplaceAll(d, "effects", BuildEffectsPanel(v.effects, px + kCreativeW + 2, py, guiW));
         ReplaceAll(d, "search", search);
         ReplaceAll(d, "scrollbar", scrollbar);
         ReplaceAll(d, "slots", slots);
         ReplaceAll(d, "cursor", cursor);
         ReplaceAll(d, "tooltip", tip);
+        ReplaceAll(d, "tipstyle", TooltipStyles());
         return d;
     }
 }

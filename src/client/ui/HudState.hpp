@@ -1,6 +1,8 @@
 #pragma once
+#include "client/ui/EffectData.hpp"
 #include <cstdint>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace perlin::ui {
@@ -12,22 +14,39 @@ namespace perlin::ui {
         int maxDamage = 0;
         bool enchanted = false;
         std::string customName;
+        bool hasColor = false;
+        int32_t color = 0;
+        int nbtTags = 0;
+        std::vector<std::pair<int, int>> enchants;
+        std::vector<std::string> lore;
         bool Empty() const { return name.empty() || count <= 0; }
         std::string Key() const {
             std::string k = name + ";" + std::to_string(maxDamage > 0 ? 0 : aux);
             if (blockRuntimeId != 0)
                 k += "#" + std::to_string(blockRuntimeId);
+            if (hasColor)
+                k += "@" + std::to_string(static_cast<uint32_t>(color) & 0xFFFFFFu);
             return k;
         }
         bool operator==(const HudItem& o) const {
             return name == o.name && count == o.count && aux == o.aux && blockRuntimeId == o.blockRuntimeId &&
-                   maxDamage == o.maxDamage && enchanted == o.enchanted && customName == o.customName;
+                   maxDamage == o.maxDamage && enchanted == o.enchanted && customName == o.customName && hasColor == o.hasColor &&
+                   color == o.color && nbtTags == o.nbtTags && enchants == o.enchants && lore == o.lore;
         }
     };
 
     enum class GameMode : int { Survival = 0, Creative = 1, Adventure = 2, Spectator = 6 };
 
+    struct LocatorMarker {
+        float angle = 0.0f;
+        float distance = 0.0f;
+        int pitch = 0;
+        uint32_t color = 0xFFFFFFu;
+    };
+
     struct HudState {
+        bool locatorActive = false;
+        std::vector<LocatorMarker> locator;
         bool visible = true;
         GameMode mode = GameMode::Survival;
 
@@ -104,6 +123,7 @@ namespace perlin::ui {
         bool debug = false;
         std::string moveStatus;
         bool advancedTooltips = false;
+        std::vector<HudEffect> effects;
         std::string gameModeSwitcher;
         std::vector<std::string> debugLeft, debugRight;
         float guiW = 0, guiH = 0;

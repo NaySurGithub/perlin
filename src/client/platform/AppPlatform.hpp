@@ -47,6 +47,7 @@ public:
     }
 
     virtual void SetClipboard(const std::string& text) { (void)text; }
+    virtual void OpenUrl(const std::string& url) { (void)url; }
 
     virtual void DrawTouchOverlay(perlin::RenderContext& renderer) { (void)renderer; }
 

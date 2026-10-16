@@ -31,6 +31,7 @@ public:
 private:
     void HandleEvent(const SDL_Event& event);
     void SetClipboard(const std::string& text) override;
+    void OpenUrl(const std::string& url) override;
     void SetCursorCaptured(bool captured) override;
     bool cursorCaptured = false;
     bool textActive = false;

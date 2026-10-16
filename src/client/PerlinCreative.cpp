@@ -1,3 +1,4 @@
+#include "client/ui/ItemTooltip.hpp"
 #include "client/Perlin.hpp"
 
 #include "client/i18n/Lang.hpp"
@@ -18,6 +19,8 @@
 #include <iostream>
 
 namespace perlin {
+    extern bool gAdvancedTooltips;
+
     namespace {
         using Clock = std::chrono::steady_clock;
 
@@ -30,6 +33,11 @@ namespace perlin {
             item.blockRuntimeId = info.blockRuntimeId;
             item.enchanted = info.enchanted;
             item.customName = info.customName;
+            item.hasColor = info.hasColor;
+            item.color = info.color;
+            item.nbtTags = info.nbtTags;
+            item.enchants = info.enchants;
+            item.lore = info.lore;
             item.maxDamage = ui::MaxDurability(info.name);
             item.aux = item.maxDamage > 0 ? std::clamp(info.damage, 0, item.maxDamage) : info.aux;
             return item;
@@ -166,6 +174,8 @@ namespace perlin {
         v.tabTitles[ui::kCreativeSearchTab] = Translate("itemGroup.search", "Search Items");
         v.tabTitles[ui::kCreativeSurvivalTab] = Translate("itemGroup.name.inventory", "Survival Inventory");
         v.title = v.tabTitles[static_cast<size_t>(creativeTab)];
+        v.advancedTooltips = gAdvancedTooltips;
+        v.effects = state.effects;
         v.scroll = creativeScroll;
         v.scrollable = scrollable;
         v.search = creativeSearch;
@@ -276,6 +286,8 @@ namespace perlin {
                 live->InvDropCursor(!rightEdge);
             }
         }
+        if (live && fresh && (leftEdge || rightEdge))
+            creativeSignature.clear();
         if (!left)
             creativeDragging = false;
         if (creativeDragging && scrollable) {
@@ -287,6 +299,8 @@ namespace perlin {
 
         std::string signature = std::to_string(guiW) + "x" + std::to_string(guiH) + "|" + hoverId + "|" + std::to_string(creativeTab) + "|" +
                                 std::to_string(static_cast<int>(creativeScroll * 1000)) + "|" + creativeSearch + "|" + std::to_string(catalogVersion);
+        for (const auto& e : v.effects)
+            signature += std::to_string(e.id) + ":" + std::to_string(e.amplifier) + ":" + std::to_string(e.ticks / 20) + ";";
         const auto sig = [&](const ui::HudItem& it) { signature += it.name + ":" + std::to_string(it.count) + ":" + std::to_string(it.aux) + (it.enchanted ? "g" : "") + ";"; };
         for (const auto& it : v.slots) sig(it);
         for (const auto& it : v.armor) sig(it);
@@ -303,7 +317,11 @@ namespace perlin {
             hud.Overlay().MouseMove(gx, gy);
         }
         hud.Overlay().MoveOverlayElement("cursor", static_cast<int>(gx) - 8, static_cast<int>(gy) - 8);
-        hud.Overlay().MoveOverlayElement("tip", static_cast<int>(gx) + 15, static_cast<int>(gy) - 15);
+        {
+            int tx, ty;
+            ui::PlaceTooltip(static_cast<int>(gx), static_cast<int>(gy), guiW, guiH, tx, ty);
+            hud.Overlay().MoveOverlayElement("tip", tx, ty);
+        }
         hud.UpdateOverlay(fbW, fbH, options.guiScale);
     }
 }

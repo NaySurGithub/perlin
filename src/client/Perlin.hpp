@@ -16,6 +16,7 @@
 #include "client/renderer/RenderContext.hpp"
 #include "client/ui/ChatLog.hpp"
 #include "client/ui/Hud.hpp"
+#include "client/ui/InventoryScreen.hpp"
 #include "util/ThreadPool.hpp"
 
 #include <atomic>
@@ -77,6 +78,12 @@ namespace perlin {
         uint64_t creativeTemplateVersion = 0;
         std::optional<entity::Entity> dollSelf;
         int invHoverAddr = -1;
+        bool invWorkbench = false, invBook = false;
+        int invBookPage = 0;
+        std::string invHoverId;
+        std::vector<ui::RecipeCard> invCards;
+        std::vector<BedrockSession::RecipeEntry> invRecipeAll;
+        std::chrono::steady_clock::time_point invRecipeAt{};
         const Level* particleLevel = nullptr;
         int invPicked = -1, invHover = -1;
         std::chrono::steady_clock::time_point invOpenedAt{}, invCheckAt{};
@@ -89,6 +96,9 @@ namespace perlin {
         std::string disconnectSignature, disconnectTemplate;
         uint64_t disconnectTemplateVersion = 0;
         bool pauseShown = false, pauseLeftDown = false, pausePreviewOpened = false;
+        bool pausePlayers = false;
+        int pauseView = 0, optionsDrag = -1;
+        std::string optionsSignature;
         std::chrono::steady_clock::time_point pauseOpenedAt{}, pauseCheckAt{};
         std::string pauseSignature, pauseTemplate;
         uint64_t pauseTemplateVersion = 0;
