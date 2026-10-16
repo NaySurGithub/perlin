@@ -1,4 +1,5 @@
 #pragma once
+#include "client/renderer/RenderStates.hpp"
 #include "client/renderer/Frustum.hpp"
 #include "client/renderer/Lightmap.hpp"
 #include "client/renderer/SkyGeometry.hpp"
@@ -62,6 +63,14 @@ namespace perlin {
         bool depth = false;
         bool depthWrite = true;
         uint8_t blend = 0;
+        bool customBlend = false;
+        BlendFactor blendSrc = BlendFactor::SrcAlpha;
+        BlendFactor blendDst = BlendFactor::InvSrcAlpha;
+        DepthFunc depthFunc = DepthFunc::LessEqual;
+        CullMode cull = CullMode::None;
+        bool colorWrite = true;
+        bool alphaWrite = true;
+        bool alphaToCoverage = false;
         float overlay[4] = {0, 0, 0, 0};
         uint8_t emissive = 0;
         uint32_t glintTexture = 0;

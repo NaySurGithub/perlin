@@ -1,7 +1,9 @@
 #pragma once
+#include "client/renderer/MaterialDb.hpp"
+#include "client/renderer/RenderStates.hpp"
+
 #include <cstdint>
 #include <string>
-#include <unordered_map>
 
 namespace perlin::entity {
     struct MaterialInfo {
@@ -11,18 +13,33 @@ namespace perlin::entity {
         bool noCull = false;
         uint8_t emissive = 0;
         bool hurtTint = true;
+        bool resolved = false;
+        bool customBlend = false;
+        BlendFactor blendSrc = BlendFactor::SrcAlpha;
+        BlendFactor blendDst = BlendFactor::InvSrcAlpha;
+        DepthFunc depthFunc = DepthFunc::LessEqual;
+        bool depthTest = true;
+        bool colorWrite = true;
+        bool alphaWrite = true;
+        bool alphaToCoverage = false;
+        CullMode cull = CullMode::Back;
+        float depthBias = 0.0f;
+        bool glint = false;
+        bool skinning = false;
     };
+
+    MaterialInfo InfoFromDef(const material::Def& def);
 
     class MaterialLibrary {
     public:
         void Load(const std::string& root);
+        void AddDirectory(const std::string& dir);
         MaterialInfo Find(const std::string& name) const;
-        size_t CustomCount() const { return custom.size(); }
+        const material::Def* Def(const std::string& name) const { return db.Find(name); }
+        size_t CustomCount() const { return db.Count(); }
         static MaterialInfo Builtin(const std::string& name);
-        static void ApplyJson(const std::string& text, std::unordered_map<std::string, MaterialInfo>& out,
-                              const std::unordered_map<std::string, MaterialInfo>& known);
 
     private:
-        std::unordered_map<std::string, MaterialInfo> custom;
+        material::Db db;
     };
 }

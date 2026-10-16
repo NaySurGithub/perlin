@@ -213,8 +213,10 @@ namespace perlin::entity {
             return;
         }
         overlayGeneration = gen;
-        for (size_t i = overlaysLoaded; i < dirs.size(); i++)
+        for (size_t i = overlaysLoaded; i < dirs.size(); i++) {
+            materialLibrary.AddDirectory(dirs[i]);
             LoadDirectory(dirs[i], true);
+        }
         overlaysLoaded = dirs.size();
     }
 

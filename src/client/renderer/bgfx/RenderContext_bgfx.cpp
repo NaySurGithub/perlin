@@ -5,6 +5,7 @@
 
 #include "client/platform/AppPlatform.hpp"
 #include "client/renderer/Tessellator.hpp"
+#include "client/renderer/MaterialDb.hpp"
 #include "client/Options.hpp"
 #include "client/resources/ShaderPack.hpp"
 #include "util/Paths.hpp"
@@ -591,6 +592,10 @@ namespace perlin {
         crosshairPx = size;
     }
 
+    namespace {
+        uint64_t MaterialState(const char* name, uint64_t base);
+    }
+
     void RenderContext_bgfx::DrawCrosshair() {
     }
 
@@ -615,9 +620,7 @@ namespace perlin {
                                               BGFX_SAMPLER_V_CLAMP);
         bgfx::setVertexBuffer(0, &tvb);
         bgfx::setIndexBuffer(quadIndices);
-        bgfx::setState(BGFX_STATE_WRITE_RGB |
-                       BGFX_STATE_BLEND_FUNC_SEPARATE(BGFX_STATE_BLEND_INV_DST_COLOR, BGFX_STATE_BLEND_INV_SRC_COLOR,
-                                                      BGFX_STATE_BLEND_ONE, BGFX_STATE_BLEND_ZERO));
+        bgfx::setState(MaterialState("ui_crosshair", BGFX_STATE_WRITE_RGB) & ~BGFX_STATE_WRITE_A);
         bgfx::submit(kViewGui, shaders.Program(ShaderProgram::Celestial));
     }
 
@@ -703,6 +706,60 @@ namespace perlin {
         freeUiMeshes.push_back(id - 1);
     }
 
+    namespace {
+        uint64_t BlendFactorState(BlendFactor f) {
+            switch (f) {
+                case BlendFactor::Zero: return BGFX_STATE_BLEND_ZERO;
+                case BlendFactor::One: return BGFX_STATE_BLEND_ONE;
+                case BlendFactor::SrcColor: return BGFX_STATE_BLEND_SRC_COLOR;
+                case BlendFactor::InvSrcColor: return BGFX_STATE_BLEND_INV_SRC_COLOR;
+                case BlendFactor::SrcAlpha: return BGFX_STATE_BLEND_SRC_ALPHA;
+                case BlendFactor::InvSrcAlpha: return BGFX_STATE_BLEND_INV_SRC_ALPHA;
+                case BlendFactor::DstColor: return BGFX_STATE_BLEND_DST_COLOR;
+                case BlendFactor::InvDstColor: return BGFX_STATE_BLEND_INV_DST_COLOR;
+                case BlendFactor::DstAlpha: return BGFX_STATE_BLEND_DST_ALPHA;
+                case BlendFactor::InvDstAlpha: return BGFX_STATE_BLEND_INV_DST_ALPHA;
+                case BlendFactor::SrcAlphaSaturate: return BGFX_STATE_BLEND_SRC_ALPHA_SAT;
+            }
+            return BGFX_STATE_BLEND_ONE;
+        }
+
+        uint64_t MaterialState(const char* name, uint64_t base) {
+            const material::Def* def = material::Registry::Instance().Get().Find(name);
+            if (!def)
+                return base;
+            constexpr uint64_t kClear = BGFX_STATE_BLEND_MASK | BGFX_STATE_BLEND_EQUATION_MASK | BGFX_STATE_WRITE_RGB |
+                                        BGFX_STATE_WRITE_A | BGFX_STATE_WRITE_Z;
+            uint64_t state = base & ~kClear;
+            if (def->ColorWrite())
+                state |= BGFX_STATE_WRITE_RGB;
+            if (def->AlphaWrite())
+                state |= BGFX_STATE_WRITE_A;
+            if (def->DepthWrite() && (base & BGFX_STATE_WRITE_Z))
+                state |= BGFX_STATE_WRITE_Z;
+            if (def->Blending())
+                state |= BGFX_STATE_BLEND_FUNC_SEPARATE(
+                    BlendFactorState(def->blendSrc), BlendFactorState(def->blendDst),
+                    BlendFactorState(def->blendSrc == BlendFactor::SrcAlpha ? BlendFactor::One : def->blendSrc),
+                    BlendFactorState(def->blendDst));
+            return state;
+        }
+
+        uint64_t DepthFuncState(DepthFunc f) {
+            switch (f) {
+                case DepthFunc::Less: return BGFX_STATE_DEPTH_TEST_LESS;
+                case DepthFunc::Equal: return BGFX_STATE_DEPTH_TEST_EQUAL;
+                case DepthFunc::Always: return BGFX_STATE_DEPTH_TEST_ALWAYS;
+                case DepthFunc::Greater: return BGFX_STATE_DEPTH_TEST_GREATER;
+                case DepthFunc::GreaterEqual: return BGFX_STATE_DEPTH_TEST_GEQUAL;
+                case DepthFunc::NotEqual: return BGFX_STATE_DEPTH_TEST_NOTEQUAL;
+                case DepthFunc::Never: return BGFX_STATE_DEPTH_TEST_NEVER;
+                case DepthFunc::LessEqual: break;
+            }
+            return BGFX_STATE_DEPTH_TEST_LEQUAL;
+        }
+    }
+
     void RenderContext_bgfx::UiSubmit(UiLayer layer, const UiDraw& draw) {
         if (!initialized || draw.mesh == 0 || draw.mesh > uiMeshes.size() || !uiMeshes[draw.mesh - 1].used)
             return;
@@ -732,7 +789,11 @@ namespace perlin {
         const float glintB[4] = {draw.glintOffset[0], draw.glintOffset[1], 0, 0};
         bgfx::setUniform(uiGlintA, glintA);
         bgfx::setUniform(uiGlintB, glintB);
-        uint64_t state = BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A;
+        uint64_t state = 0;
+        if (draw.colorWrite)
+            state |= BGFX_STATE_WRITE_RGB;
+        if (draw.alphaWrite)
+            state |= BGFX_STATE_WRITE_A;
         if (glint) {
             state = BGFX_STATE_WRITE_RGB | BGFX_STATE_BLEND_FUNC(BGFX_STATE_BLEND_ONE, BGFX_STATE_BLEND_ONE);
             if (draw.depth)
@@ -740,16 +801,26 @@ namespace perlin {
         } else if (draw.premultiplied)
             state |= BGFX_STATE_BLEND_FUNC_SEPARATE(BGFX_STATE_BLEND_ONE, BGFX_STATE_BLEND_INV_SRC_ALPHA,
                                                     BGFX_STATE_BLEND_ONE, BGFX_STATE_BLEND_INV_SRC_ALPHA);
+        else if (draw.customBlend)
+            state |= BGFX_STATE_BLEND_FUNC_SEPARATE(BlendFactorState(draw.blendSrc), BlendFactorState(draw.blendDst),
+                                                    BlendFactorState(draw.blendSrc == BlendFactor::SrcAlpha ? BlendFactor::One : draw.blendSrc),
+                                                    BlendFactorState(draw.blendDst));
         else if (draw.blend == 1)
             state |= BGFX_STATE_BLEND_FUNC_SEPARATE(BGFX_STATE_BLEND_SRC_ALPHA, BGFX_STATE_BLEND_INV_SRC_ALPHA,
                                                     BGFX_STATE_BLEND_ONE, BGFX_STATE_BLEND_INV_SRC_ALPHA);
         else if (draw.blend == 2)
             state |= BGFX_STATE_BLEND_FUNC(BGFX_STATE_BLEND_SRC_ALPHA, BGFX_STATE_BLEND_ONE);
         if (draw.depth && !glint) {
-            state |= BGFX_STATE_DEPTH_TEST_LEQUAL;
+            state |= DepthFuncState(draw.depthFunc);
             if (draw.depthWrite)
                 state |= BGFX_STATE_WRITE_Z;
         }
+        if (draw.cull == CullMode::Back)
+            state |= BGFX_STATE_CULL_CCW;
+        else if (draw.cull == CullMode::Front)
+            state |= BGFX_STATE_CULL_CW;
+        if (draw.alphaToCoverage)
+            state |= BGFX_STATE_BLEND_ALPHA_TO_COVERAGE;
         bgfx::setState(state);
         if (draw.scissor)
             bgfx::setScissor(static_cast<uint16_t>(std::max(0, draw.scissorRect[0])),
@@ -1169,9 +1240,6 @@ namespace perlin {
             return out;
         }
 
-        constexpr uint64_t kOverlayBlend =
-            BGFX_STATE_BLEND_FUNC_SEPARATE(BGFX_STATE_BLEND_SRC_ALPHA, BGFX_STATE_BLEND_ONE, BGFX_STATE_BLEND_ONE,
-                                           BGFX_STATE_BLEND_ZERO);
         constexpr uint64_t kTranslucentBlend =
             BGFX_STATE_BLEND_FUNC_SEPARATE(BGFX_STATE_BLEND_SRC_ALPHA, BGFX_STATE_BLEND_INV_SRC_ALPHA,
                                            BGFX_STATE_BLEND_ONE, BGFX_STATE_BLEND_INV_SRC_ALPHA);
@@ -1227,7 +1295,7 @@ namespace perlin {
             shaders.BindSky(sunTexture, spriteFlags);
             bgfx::setVertexBuffer(0, sunBuffer);
             bgfx::setIndexBuffer(quadIndices);
-            bgfx::setState(write | kOverlayBlend);
+            bgfx::setState(MaterialState("sun_moon", write));
             bgfx::submit(0, shaders.Program(ShaderProgram::Celestial));
         }
         if (bgfx::isValid(moonTexture)) {
@@ -1236,7 +1304,7 @@ namespace perlin {
             shaders.BindSky(moonTexture, spriteFlags);
             bgfx::setVertexBuffer(0, moonBuffer, static_cast<uint32_t>(sky.moonPhase) * 4, 4);
             bgfx::setIndexBuffer(quadIndices);
-            bgfx::setState(write | kOverlayBlend);
+            bgfx::setState(MaterialState("sun_moon", write));
             bgfx::submit(0, shaders.Program(ShaderProgram::Celestial));
         }
         if (sky.starBrightness > 0.0f) {
@@ -1244,7 +1312,7 @@ namespace perlin {
             shaders.SetModulator(sky.starBrightness, sky.starBrightness, sky.starBrightness, sky.starBrightness);
             bgfx::setVertexBuffer(0, starBuffer);
             bgfx::setIndexBuffer(starIndices, 0, starIndexCount);
-            bgfx::setState(write | kOverlayBlend);
+            bgfx::setState(MaterialState("stars", write));
             bgfx::submit(0, shaders.Program(ShaderProgram::Star));
         }
         if (sky.darkDisc) {
@@ -1261,6 +1329,7 @@ namespace perlin {
         if (!ShaderPack::Instance().Flag("vanillaClouds", true))
             return;
         const CloudDraw& clouds = frame.cloud;
+        material::Registry::Instance().Configure(clouds.fancy);
         if (!clouds.enabled || cloudTexture.solid.empty())
             return;
 
@@ -1307,8 +1376,7 @@ namespace perlin {
         if (clouds.fancy)
             cull = cullState == BGFX_STATE_CULL_CCW ? BGFX_STATE_CULL_CW
                                                     : (cullState == BGFX_STATE_CULL_CW ? BGFX_STATE_CULL_CCW : 0);
-        bgfx::setState(BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_Z | BGFX_STATE_DEPTH_TEST_LEQUAL | kTranslucentBlend |
-                       cull);
+        bgfx::setState(MaterialState("clouds", BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_Z | BGFX_STATE_DEPTH_TEST_LEQUAL) | cull);
         bgfx::submit(kViewLate, shaders.Program(ShaderProgram::Cloud));
     }
 

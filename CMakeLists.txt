@@ -584,6 +584,11 @@ if(PERLIN_BUILD_TESTS AND NOT EMSCRIPTEN AND NOT ANDROID)
     target_compile_features(lang_selftest PRIVATE cxx_std_23)
     add_test(NAME lang_selftest COMMAND lang_selftest "${CMAKE_SOURCE_DIR}/resources")
 
+    add_executable(material_selftest tests/material_selftest.cpp src/client/renderer/MaterialDb.cpp src/client/entity/Materials.cpp src/client/ui/Json.cpp src/util/Resources.cpp src/util/Paths.cpp)
+    target_include_directories(material_selftest PRIVATE src)
+    target_compile_features(material_selftest PRIVATE cxx_std_23)
+    add_test(NAME material_selftest COMMAND material_selftest "${CMAKE_SOURCE_DIR}/resources")
+
     add_executable(chunk_selftest
         tests/chunk_selftest.cpp
         src/world/level/chunk/ChunkCodec.cpp)

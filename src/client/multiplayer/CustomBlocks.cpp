@@ -26,8 +26,11 @@ namespace perlin {
                 states.emplace_back(e.key, std::move(v));
             }
             std::sort(states.begin(), states.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
-            const int32_t hash = BlockPalette::HashState(block.name, states);
-            BlockPalette::Instance().LearnState(hash, block.name, std::move(states));
+            std::string name = block.name;
+            if (!name.empty() && name.find(':') == std::string::npos)
+                name = "minecraft:" + name;
+            const int32_t hash = BlockPalette::HashState(name, states);
+            BlockPalette::Instance().LearnState(hash, name, std::move(states));
             return hash;
         }
 

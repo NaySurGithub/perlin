@@ -19,6 +19,31 @@
 #include <iostream>
 
 namespace perlin::entity {
+    namespace {
+        void StyleFromMaterial(UiDraw& draw, const char* name) {
+            const material::Def* def = material::Registry::Instance().Get().Find(name);
+            if (!def)
+                return;
+            const MaterialInfo m = InfoFromDef(*def);
+            draw.depth = m.depthTest;
+            draw.depthFunc = m.depthFunc;
+            draw.depthWrite = m.depthWrite;
+            draw.colorWrite = m.colorWrite;
+            draw.alphaWrite = m.alphaWrite;
+            draw.customBlend = false;
+            if (!def->Blending()) {
+                draw.blend = 0;
+                return;
+            }
+            draw.blend = m.blend == MaterialInfo::Blend::Additive ? 2 : 1;
+            if (m.customBlend) {
+                draw.customBlend = true;
+                draw.blendSrc = m.blendSrc;
+                draw.blendDst = m.blendDst;
+            }
+        }
+    }
+
     using attachable::Animation;
     using attachable::Pose;
     using molang::Value;
@@ -1118,7 +1143,15 @@ namespace perlin::entity {
                 draw.overlay[0] = 1.0f; draw.overlay[1] = 0.0f; draw.overlay[2] = 0.0f; draw.overlay[3] = 0.3f;
             }
             draw.depthWrite = layer.material.depthWrite && draw.blend != 2;
-            draw.depth = true;
+            draw.depth = layer.material.depthTest;
+            draw.depthFunc = layer.material.depthFunc;
+            draw.colorWrite = layer.material.colorWrite;
+            draw.alphaWrite = layer.material.alphaWrite;
+            if (layer.material.customBlend && layer.material.blend != Blend::AlphaTest && layer.material.blend != Blend::Opaque) {
+                draw.customBlend = true;
+                draw.blendSrc = layer.material.blendSrc;
+                draw.blendDst = layer.material.blendDst;
+            }
             if (fpModel && PERLIN_ENV("PERLIN_FP_DEBUG"))
                 std::cout << "[fp] submit mesh=" << mesh << " tex=" << texture << " blend=" << draw.blend << " cutoff=" << draw.alphaCutoff << " verts=" << vertices.size() << " c=" << std::hex << vertices[0].abgr << std::dec << std::endl;
             if (dollModel && dollClip) {
@@ -1345,10 +1378,8 @@ namespace perlin::entity {
             draw.texture = texture;
             std::copy_n(&model[0][0], 16, draw.model);
             draw.premultiplied = false;
-            draw.blend = tile < 0 ? 1 : 0;
+            StyleFromMaterial(draw, tile < 0 ? "particles_blend" : "particles_alpha");
             draw.alphaCutoff = tile < 0 ? 0.02f : 0.5f;
-            draw.depth = true;
-            draw.depthWrite = tile >= 0;
             draw.emissive = 2;
             renderer->UiSubmit(UiLayer::World, draw);
         }
@@ -1448,9 +1479,11 @@ namespace perlin::entity {
                 draw.texture = texture;
                 std::copy_n(&model[0][0], 16, draw.model);
                 draw.premultiplied = false;
+                StyleFromMaterial(draw, texture ? (seeThrough ? "name_tag_text" : "name_text_depth_tested")
+                                                : (seeThrough ? "name_tag" : "name_tag_depth_tested"));
                 draw.blend = 1;
+                draw.customBlend = false;
                 draw.alphaCutoff = 0.004f;
-                draw.depth = !seeThrough;
                 draw.depthWrite = false;
                 draw.emissive = 2;
                 renderer->UiSubmit(UiLayer::WorldLate, draw);
@@ -1480,7 +1513,7 @@ namespace perlin::entity {
             if (glm::dot(d, d) > 48.0 * 48.0)
                 continue;
             const float lo = -0.002f, hi = 1.002f;
-            const uint32_t white = 0xFF383838u;
+            const uint32_t white = 0xFFFFFFFFu;
             std::vector<UiVertex> v;
             std::vector<uint32_t> idx;
             const auto face = [&](glm::vec3 a, glm::vec3 b, glm::vec3 cc, glm::vec3 dd) {
@@ -1508,10 +1541,8 @@ namespace perlin::entity {
             draw.texture = it->second;
             std::copy_n(&model[0][0], 16, draw.model);
             draw.premultiplied = false;
-            draw.alphaCutoff = 0.004f;
-            draw.blend = 1;
-            draw.depthWrite = false;
-            draw.depth = true;
+            StyleFromMaterial(draw, "cracks_overlay");
+            draw.alphaCutoff = 0.5f;
             draw.emissive = 2;
             renderer->UiSubmit(UiLayer::World, draw);
         }
