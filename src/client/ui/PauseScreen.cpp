@@ -165,6 +165,31 @@ div { display: block; position: absolute; }
         ReplaceAll(d, "players", EscapeRml(t.players));
         ReplaceAll(d, "options", EscapeRml(t.options));
         ReplaceAll(d, "quit", EscapeRml(t.quit));
+        if (t.showPanel) {
+            const int pw = 150;
+            const int rows = std::max<int>(1, static_cast<int>(t.panel.size()));
+            const int shown = std::min(rows, (guiH - 40) / 14);
+            const int ph = 22 + shown * 14 + 4;
+            const int px = guiW - pw - 6;
+            const int py = std::max(4, (guiH - ph) / 2);
+            std::string b = "<div id=\"pp\" style=\"left: " + std::to_string(px) + "px; top: " + std::to_string(py) + "px; width: " + std::to_string(pw) + "px; height: " + std::to_string(ph) + "px; background-color: #000000; z-index: 6;\">";
+            b += "<div style=\"left: 1px; top: 1px; width: " + std::to_string(pw - 2) + "px; height: " + std::to_string(ph - 2) + "px; background-color: #c6c6c6;\"></div>";
+            b += "<div style=\"left: 1px; top: 1px; width: " + std::to_string(pw - 3) + "px; height: " + std::to_string(ph - 3) + "px; background-color: #ffffff;\"></div>";
+            b += "<div style=\"left: 2px; top: 2px; width: " + std::to_string(pw - 4) + "px; height: " + std::to_string(ph - 4) + "px; background-color: #373737;\"></div>";
+            b += "<div style=\"left: 0px; top: 8px; width: " + std::to_string(pw) + "px; height: 9px; font-family: minecraft-shadow; font-size: 8px; line-height: 9px; text-align: center; color: #ffffff; white-space: nowrap;\">" + EscapeRml(t.panelTitle) + "</div>";
+            for (int i = 0; i < shown && i < static_cast<int>(t.panel.size()); i++) {
+                const PauseScreenText::PanelRow& r = t.panel[static_cast<size_t>(i)];
+                const char* color = r.perm >= 2 ? "#ffaa00" : (r.perm == 0 ? "#aaaaaa" : "#55ff55");
+                const std::string& role = r.perm >= 2 ? t.roleOperator : (r.perm == 0 ? t.roleVisitor : t.roleMember);
+                const int ry = 22 + i * 14;
+                b += "<div style=\"left: 8px; top: " + std::to_string(ry) + "px; width: 80px; height: 9px; font-family: minecraft-shadow; font-size: 8px; line-height: 9px; color: #ffffff; white-space: nowrap; overflow: hidden;\">" + EscapeRml(r.name) + "</div>";
+                b += "<div style=\"left: 88px; top: " + std::to_string(ry) + "px; width: " + std::to_string(pw - 96) + "px; height: 9px; font-family: minecraft-shadow; font-size: 8px; line-height: 9px; text-align: right; color: " + color + "; white-space: nowrap;\">" + EscapeRml(role) + "</div>";
+            }
+            b += "</div>\n";
+            const size_t at = d.rfind("</body>");
+            if (at != std::string::npos)
+                d.insert(at, b);
+        }
         return d;
     }
 }

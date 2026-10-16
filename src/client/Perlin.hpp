@@ -79,6 +79,9 @@ namespace perlin {
         std::optional<entity::Entity> dollSelf;
         int invHoverAddr = -1;
         bool invWorkbench = false, invBook = false;
+        int invDragButton = 0;
+        bool invMiddleDown = false;
+        std::vector<int> invDragSlots;
         int invBookPage = 0;
         std::string invHoverId;
         std::vector<ui::RecipeCard> invCards;

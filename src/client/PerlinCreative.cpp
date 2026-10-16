@@ -280,14 +280,57 @@ namespace perlin {
             } else if (invHoverAddr >= 0) {
                 if (input.IsKeyDown(Key::Shift))
                     live->InvShiftClick(invHoverAddr);
-                else
+                else if (!v.cursor.Empty() && invHoverAddr != ui::kInvAddrOutput && invDragButton == 0) {
+                    invDragButton = leftEdge ? 1 : 2;
+                    invDragSlots.assign(1, invHoverAddr);
+                } else
                     live->InvClick(invHoverAddr, rightEdge);
             } else if (v.cursor.Empty() == false && (gx < px - 30 || gx > px + ui::kCreativeW + 30 || gy < py - 30 || gy > py + ui::kCreativeH + 30)) {
                 live->InvDropCursor(!rightEdge);
             }
         }
-        if (live && fresh && (leftEdge || rightEdge))
-            creativeSignature.clear();
+        bool needRefresh = leftEdge || rightEdge || (!left && invDragButton != 0);
+        const bool middle = input.IsMouseDown(Mouse::Middle);
+        const bool middleEdge = middle && !invMiddleDown;
+        if (live && fresh) {
+            const bool slotTarget = invHoverAddr >= 0 && invHoverAddr != ui::kInvAddrOutput;
+            if (middleEdge) {
+                if (!hoverId.empty() && hoverId[0] == 'g') {
+                    const int n = std::atoi(hoverId.c_str() + 1);
+                    if (n >= 0 && n < 45 && entry[static_cast<size_t>(n)] != 0 && v.cursor.Empty())
+                        live->InvCreativeTake(entry[static_cast<size_t>(n)], 0);
+                } else if (slotTarget) {
+                    if (v.cursor.Empty())
+                        live->InvCreativeClone(invHoverAddr);
+                    else
+                        live->InvCreativePlace(invHoverAddr);
+                    invDragSlots.assign(1, invHoverAddr);
+                }
+            } else if (middle && slotTarget && !v.cursor.Empty() &&
+                       std::find(invDragSlots.begin(), invDragSlots.end(), invHoverAddr) == invDragSlots.end()) {
+                invDragSlots.push_back(invHoverAddr);
+                live->InvCreativePlace(invHoverAddr);
+            }
+            if (!middle && invDragButton == 0)
+                invDragSlots.clear();
+            if (invDragButton != 0) {
+                const bool held = invDragButton == 1 ? left : right;
+                if (held) {
+                    if (slotTarget && std::find(invDragSlots.begin(), invDragSlots.end(), invHoverAddr) == invDragSlots.end())
+                        invDragSlots.push_back(invHoverAddr);
+                } else {
+                    if (invDragSlots.size() >= 2)
+                        live->InvSpread(invDragSlots, invDragButton == 2 ? 1 : 0);
+                    else if (invDragSlots.size() == 1)
+                        live->InvClick(invDragSlots[0], invDragButton == 2);
+                    invDragButton = 0;
+                    invDragSlots.clear();
+                }
+            }
+            if (middleEdge || middle)
+                needRefresh = true;
+        }
+        invMiddleDown = middle;
         if (!left)
             creativeDragging = false;
         if (creativeDragging && scrollable) {
@@ -316,6 +359,8 @@ namespace perlin {
             }
             hud.Overlay().MouseMove(gx, gy);
         }
+        if (needRefresh)
+            creativeSignature.clear();
         hud.Overlay().MoveOverlayElement("cursor", static_cast<int>(gx) - 8, static_cast<int>(gy) - 8);
         {
             int tx, ty;

@@ -6,6 +6,13 @@ namespace perlin::ui {
     struct PauseScreenText {
         std::string title, back, options, quit, advancements, stats, feedback, bugs, lan, players;
         bool optionsEnabled = false;
+        bool showPanel = false;
+        std::string panelTitle, roleOperator, roleMember, roleVisitor;
+        struct PanelRow {
+            std::string name;
+            int perm = -1;
+        };
+        std::vector<PanelRow> panel;
     };
     inline constexpr const char* kPauseResumeId = "resume";
     inline constexpr const char* kPauseOptionsId = "options";

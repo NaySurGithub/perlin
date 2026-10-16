@@ -64,6 +64,18 @@ namespace perlin {
                 case MetadataDictionaryEntryKey::Flags: tracker.SetFlags(rid, static_cast<uint64_t>(static_cast<int64_t>(n))); break;
                 case MetadataDictionaryEntryKey::Scale: tracker.SetScale(rid, static_cast<float>(n)); break;
                 case MetadataDictionaryEntryKey::Variant: variant = static_cast<int>(n); break;
+                case MetadataDictionaryEntryKey::ExperienceValue: {
+                    const int xp = static_cast<int>(n);
+                    static constexpr int kSteps[] = {2477, 1237, 617, 307, 149, 73, 37, 17, 7, 3};
+                    int icon = 0;
+                    for (size_t i = 0; i < std::size(kSteps); i++)
+                        if (xp >= kSteps[i]) {
+                            icon = 10 - static_cast<int>(i);
+                            break;
+                        }
+                    variant = icon;
+                    break;
+                }
                 case MetadataDictionaryEntryKey::MarkVariant: mark = static_cast<int>(n); break;
                 case MetadataDictionaryEntryKey::Color: color = static_cast<int>(n); break;
                 case MetadataDictionaryEntryKey::TargetEid: tracker.SetTarget(rid, static_cast<int64_t>(n)); break;
@@ -822,6 +834,13 @@ namespace perlin {
         On<AddPlayerPacket>([this](const AddPlayerPacket& p) {
             if (runtimeId != 0 && p.runtimeId == runtimeId)
                 return;
+            {
+                std::lock_guard<std::mutex> lk(tabMutex);
+                permByUid[p.uniqueId] = static_cast<int>(p.permissionLevel);
+                for (TabPlayer& t : tabPlayers)
+                    if (t.uid == p.uniqueId)
+                        t.perm = static_cast<int>(p.permissionLevel);
+            }
             std::string held;
             if (const auto it = itemNames.find(p.heldItem.networkId); p.heldItem.networkId != 0 && it != itemNames.end())
                 held = it->second;
@@ -943,8 +962,17 @@ namespace perlin {
                             t.skin = skin;
                             found = true;
                         }
-                    if (!found)
-                        tabPlayers.push_back({key, r.username, skin});
+                    if (!found) {
+                        TabPlayer tp{key, r.username, skin};
+                        tp.uid = r.entityUniqueId;
+                        tabPlayers.push_back(std::move(tp));
+                    }
+                    for (TabPlayer& t : tabPlayers)
+                        if (t.uuid == key) {
+                            t.uid = r.entityUniqueId;
+                            if (const auto pm = permByUid.find(t.uid); pm != permByUid.end())
+                                t.perm = pm->second;
+                        }
                 } else {
                     std::lock_guard<std::mutex> lk(tabMutex);
                     tabPlayers.erase(std::remove_if(tabPlayers.begin(), tabPlayers.end(), [&](const TabPlayer& t) { return t.uuid == key; }),
@@ -1123,6 +1151,13 @@ namespace perlin {
         });
 
         On<UpdateAbilitiesPacket>([this](const UpdateAbilitiesPacket& p) {
+            {
+                std::lock_guard<std::mutex> lk(tabMutex);
+                permByUid[p.entityUniqueId] = static_cast<int>(p.permissionLevel);
+                for (TabPlayer& t : tabPlayers)
+                    if (t.uid == p.entityUniqueId)
+                        t.perm = static_cast<int>(p.permissionLevel);
+            }
             if (runtimeId != 0 && p.entityUniqueId != 0 && uniqueId != 0 && p.entityUniqueId != uniqueId)
                 return;
             bool fly = false, flying = false, clip = false;

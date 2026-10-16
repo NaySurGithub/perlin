@@ -184,6 +184,8 @@ namespace perlin {
         struct TabPlayer {
             std::string uuid, name;
             std::shared_ptr<const entity::SkinData> skin;
+            int64_t uid = 0;
+            int perm = -1;
         };
         std::vector<TabPlayer> PlayerList() const {
             std::lock_guard<std::mutex> lk(tabMutex);
@@ -396,6 +398,10 @@ void RequestRespawn();
         struct RecipeEntry { int index = 0; bool craftable = false; ItemStackInfo out; };
         std::vector<RecipeEntry> GetRecipes(int side) const;
         void InvFillRecipe(int index);
+        void InvSpread(const std::vector<int>& slots, int mode);
+        void InvCreativeClone(int addr);
+        void InvCreativePlace(int addr);
+        uint32_t CreativeEntryFor(const ItemStackInfo& info) const;
         bool InventoryIsOpen() const { std::lock_guard lock(statusMutex); return inventoryOpen; }
         bool TakeServerClosedInventory();
 
@@ -490,6 +496,7 @@ void RequestRespawn();
         std::string deathCause;
         bool deathPending = false;
         std::vector<TabPlayer> tabPlayers;
+        std::map<int64_t, int> permByUid;
         mutable std::mutex commandMutex;
         std::vector<ui::CommandInfo> commands;
         uint32_t commandVersion = 0;

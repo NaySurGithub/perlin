@@ -15,7 +15,7 @@
 
 namespace perlin::ui {
     std::string DefaultInventoryScreenTemplate() {
-        return R"PERLINRML(<!--perlin-ui:9-->
+        return R"PERLINRML(<!--perlin-ui:11-->
 <rml>
 <head>
 <title>inventory</title>
@@ -28,10 +28,10 @@ mcitem { display: block; position: absolute; }
 .r { position: absolute; }
 .label { font-family: minecraft; font-size: 8px; line-height: 9px; color: #404040; white-space: nowrap; }
 .slot { width: 18px; height: 18px; z-index: 2; }
-.slot .pb { display: none; left: 0px; top: 0px; width: 18px; height: 18px; z-index: 1; pointer-events: none; }
-.slot:hover .pb { display: block; }
+.slot .hl { display: none; left: 1px; top: 1px; width: 16px; height: 16px; background-color: rgba(255,255,255,128); z-index: 5; pointer-events: none; }
+.slot:hover .hl { display: block; }
 .slot mcitem { z-index: 4; }
-.cnt { font-family: minecraft-shadow; font-size: 8px; line-height: 9px; color: #ffffff; text-align: right; white-space: nowrap; z-index: 5; }
+.cnt { font-family: minecraft-shadow; font-size: 8px; line-height: 9px; color: #ffffff; text-align: right; white-space: nowrap; z-index: 6; }
 #cursor { z-index: 30; pointer-events: none; width: 16px; height: 16px; }
 #cursor .cnt { z-index: 31; }
 .rbtn { width: 20px; height: 18px; z-index: 6; }
@@ -137,7 +137,7 @@ mcitem { display: block; position: absolute; }
                 if (item.count > 1)
                     s += "<div class=\"cnt\" style=\"left:-1px;top:10px;width:19px;height:9px;\">" + std::to_string(item.count) + "</div>";
             }
-            s += "<mcimg class=\"pb\" src=\"textures/ui/purpleBorder\" nine=\"4 4 4 4\"/></div>\n";
+            s += "<div class=\"hl\"></div></div>\n";
             return s;
         }
     }

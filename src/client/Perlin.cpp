@@ -206,8 +206,14 @@ namespace perlin {
             options.onlineLogin = true;
         onlineThisRun = options.onlineLogin && !args.offline;
 
+        const bool firstSetup = !options.eulaAccepted;
         if (!AcceptEula())
             return false;
+        if (firstSetup && !args.offline && !PERLIN_ENV("PERLIN_PREVIEW")) {
+            options.onlineLogin = true;
+            onlineThisRun = true;
+            options.Save();
+        }
 
         renderer = platform->CreateRenderContext();
         if (!renderer)
@@ -620,6 +626,17 @@ namespace perlin {
         audioEngine.SetListener({camera.x, camera.y, camera.z}, camera.yaw - 90.0f);
         sounds.Tick(now);
 
+        static double nextMusic = 0;
+        if (live && options.sound.music > 0.0f) {
+            if (nextMusic == 0)
+                nextMusic = now + 10.0 + (std::rand() % 2000) / 100.0;
+            if (now >= nextMusic) {
+                const std::string event = live->GameType() == 1 ? "music.game.creative" : "music.game";
+                const bool started = sounds.PlayNamed(event, {camera.x, camera.y, camera.z}, 1.0f, 1.0f, false);
+                nextMusic = now + (started ? 60.0 + (std::rand() % 12000) / 100.0 + 120.0 : 300.0);
+            }
+        }
+
         if (live) {
             for (const BedrockSession::SoundRequest& r : live->TakeSounds()) {
                 const glm::dvec3 at(r.x, r.y, r.z);
@@ -902,6 +919,39 @@ namespace perlin {
         }
 
         v.effects = state.effects;
+        if (invDragButton != 0 && invDragSlots.size() >= 2 && !v.cursor.Empty()) {
+            const auto viewItem = [&](int a) -> ui::HudItem* {
+                if (a < 36) return &v.slots[static_cast<size_t>(a)];
+                if (a < 40) return &v.armor[static_cast<size_t>(a - 36)];
+                if (a == 40) return &v.offhand;
+                if (a < 45) return &v.craft[static_cast<size_t>(a - 41)];
+                if (a >= 47 && a < 56) return &v.work[static_cast<size_t>(a - 47)];
+                return nullptr;
+            };
+            std::vector<ui::HudItem*> targets;
+            for (int a : invDragSlots)
+                if (ui::HudItem* it = viewItem(a); it && (it->Empty() || (it->name == v.cursor.name && it->aux == v.cursor.aux)))
+                    targets.push_back(it);
+            if (targets.size() >= 2) {
+                const int total = v.cursor.count;
+                const int each = invDragButton == 2 ? 1 : std::max(1, total / static_cast<int>(targets.size()));
+                int left = total;
+                for (ui::HudItem* it : targets) {
+                    const int n = std::min(each, left);
+                    if (n <= 0) break;
+                    if (it->Empty()) {
+                        const ui::HudItem proto = v.cursor;
+                        *it = proto;
+                        it->count = n;
+                    } else
+                        it->count += n;
+                    left -= n;
+                }
+                v.cursor.count = left;
+                if (left <= 0)
+                    v.cursor = ui::HudItem{};
+            }
+        }
         v.workbench = invWorkbench;
         v.bookOpen = invBook;
         if (invBook && now - invRecipeAt > std::chrono::milliseconds(300)) {
@@ -976,7 +1026,7 @@ namespace perlin {
         std::string signature = std::to_string(guiW) + "x" + std::to_string(guiH) + "|" + std::to_string(invHoverAddr) + invHoverId + (invBook ? "B" : "b") + std::to_string(invBookPage) + (invWorkbench ? "W" : "w") + std::to_string(v.recipes.size());
         for (const auto& e : v.effects)
             signature += std::to_string(e.id) + ":" + std::to_string(e.amplifier) + ":" + std::to_string(e.ticks / 20) + ";";
-        const auto sig = [&](const ui::HudItem& it) { signature += it.name + ":" + std::to_string(it.count) + ":" + std::to_string(it.aux) + (it.enchanted ? "g" : "") + ";"; };
+        const auto sig = [&](const ui::HudItem& it) { signature += it.name + ":" + std::to_string(it.count) + ":" + std::to_string(it.aux) + (it.enchanted ? "g" : "") + std::to_string(it.enchants.size()) + (it.hasColor ? std::to_string(it.color) : "") + ";"; };
         for (const auto& it : v.slots) sig(it);
         for (const auto& it : v.armor) sig(it);
         for (const auto& it : v.craft) sig(it);
@@ -1005,34 +1055,59 @@ namespace perlin {
 
         const bool left = input.IsMouseDown(Mouse::Left), right = input.IsMouseDown(Mouse::Right);
         const bool fresh = now - invOpenedAt > std::chrono::milliseconds(150);
-        if (live && fresh && ((left && !invLeftDown) || (right && !invRightDown))) {
-            const int px = (guiW - ui::kInvPanelW) / 2, py = (guiH - ui::kInvPanelH) / 2;
-            const bool outside = gx < px || gy < py || gx > px + ui::kInvPanelW || gy > py + ui::kInvPanelH;
-            const bool isRight = !(left && !invLeftDown);
-            if (invHoverId == "rb") {
-                invBook = !invBook;
-                invRecipeAt = {};
+        const bool leftEdge = left && !invLeftDown, rightEdge = right && !invRightDown;
+        if (live && fresh) {
+            const bool slotTarget = invHoverAddr >= 0 && invHoverAddr != ui::kInvAddrOutput;
+            if (invDragButton == 0 && (leftEdge || rightEdge) && !v.cursor.Empty() && slotTarget && !input.IsKeyDown(Key::Shift)) {
+                invDragButton = leftEdge ? 1 : 2;
+                invDragSlots.assign(1, invHoverAddr);
                 invSignature.clear();
-            } else if (invHoverId == "rp") {
-                invBookPage--;
+            } else if (leftEdge || rightEdge) {
+                const int px = ui::InventoryPanelX(v, guiW), py = (guiH - ui::kInvPanelH) / 2;
+                const bool outside = gx < px || gy < py || gx > px + ui::kInvPanelW || gy > py + ui::kInvPanelH;
+                const bool isRight = !leftEdge;
+                const bool overBook = invBook && gx >= (guiW - 147) / 2 - 86 && gx < (guiW - 147) / 2 + 61;
+                if (invHoverId == "rb") {
+                    invBook = !invBook;
+                    invRecipeAt = {};
+                } else if (invHoverId == "rp") {
+                    invBookPage--;
+                } else if (invHoverId == "rn") {
+                    invBookPage++;
+                } else if (invBook && invHoverId.size() > 1 && invHoverId[0] == 'r' && std::isdigit(static_cast<unsigned char>(invHoverId[1]))) {
+                    const size_t n = static_cast<size_t>(std::atoi(invHoverId.c_str() + 1));
+                    if (n < v.recipes.size())
+                        live->InvFillRecipe(v.recipes[n].index);
+                } else if (invHoverAddr >= 0) {
+                    if (input.IsKeyDown(Key::Shift))
+                        live->InvShiftClick(invHoverAddr);
+                    else
+                        live->InvClick(invHoverAddr, isRight);
+                } else if (outside && !overBook) {
+                    live->InvDropCursor(!isRight);
+                }
                 invSignature.clear();
-            } else if (invHoverId == "rn") {
-                invBookPage++;
-                invSignature.clear();
-            } else if (invBook && invHoverId.size() > 1 && invHoverId[0] == 'r' && std::isdigit(static_cast<unsigned char>(invHoverId[1]))) {
-                const size_t n = static_cast<size_t>(std::atoi(invHoverId.c_str() + 1));
-                if (n < v.recipes.size()) {
-                    live->InvFillRecipe(v.recipes[n].index);
+            }
+            if (invDragButton != 0) {
+                const bool held = invDragButton == 1 ? left : right;
+                if (held) {
+                    if (slotTarget && std::find(invDragSlots.begin(), invDragSlots.end(), invHoverAddr) == invDragSlots.end()) {
+                        invDragSlots.push_back(invHoverAddr);
+                        invSignature.clear();
+                    }
+                } else {
+                    if (invDragSlots.size() >= 2)
+                        live->InvSpread(invDragSlots, invDragButton == 2 ? 1 : 0);
+                    else if (invDragSlots.size() == 1)
+                        live->InvClick(invDragSlots[0], invDragButton == 2);
+                    invDragButton = 0;
+                    invDragSlots.clear();
                     invSignature.clear();
                 }
-            } else if (invHoverAddr >= 0) {
-                if (input.IsKeyDown(Key::Shift))
-                    live->InvShiftClick(invHoverAddr);
-                else
-                    live->InvClick(invHoverAddr, isRight);
-            } else if (outside) {
-                live->InvDropCursor(!isRight);
             }
+        } else if (!left && !right) {
+            invDragButton = 0;
+            invDragSlots.clear();
         }
         invLeftDown = left;
         invRightDown = right;
@@ -1227,7 +1302,25 @@ namespace perlin {
         t.bugs = tr("menu.reportBugs", "Report Bugs");
         t.lan = tr("menu.shareToLan", "Open to LAN");
         t.players = tr("gui.playerList", "Player List");
-        const std::string signature = std::to_string(guiW) + "x" + std::to_string(guiH) + t.title + t.back + t.options + t.quit + t.advancements + t.stats + t.feedback + t.bugs + t.lan + t.players;
+        t.showPanel = pausePlayers && live;
+        if (t.showPanel) {
+            t.panelTitle = t.players;
+            t.roleOperator = tr("permissions.level.operator", "Operator");
+            t.roleMember = tr("permissions.level.member", "Member");
+            t.roleVisitor = tr("permissions.level.visitor", "Visitor");
+            auto list = live->PlayerList();
+            std::stable_sort(list.begin(), list.end(), [](const BedrockSession::TabPlayer& a, const BedrockSession::TabPlayer& b) {
+                if (a.perm != b.perm)
+                    return a.perm > b.perm;
+                return a.name < b.name;
+            });
+            for (const BedrockSession::TabPlayer& p : list)
+                t.panel.push_back({p.name, p.perm});
+        }
+        std::string panelSig;
+        for (const auto& r : t.panel)
+            panelSig += r.name + ":" + std::to_string(r.perm) + ",";
+        const std::string signature = std::to_string(guiW) + "x" + std::to_string(guiH) + (t.showPanel ? "P" : "p") + panelSig + t.title + t.back + t.options + t.quit + t.advancements + t.stats + t.feedback + t.bugs + t.lan + t.players;
         if (signature != pauseSignature || !hud.Overlay().HasOverlay()) {
             pauseSignature = signature;
             std::string error;
@@ -1598,7 +1691,7 @@ namespace perlin {
 
         if (!pauseShown)
             pausePlayers = false;
-        s.tabOpen = (inputManager.IsDown(Action::PlayerList) && !inputManager.Blocked()) || pausePlayers;
+        s.tabOpen = inputManager.IsDown(Action::PlayerList) && !inputManager.Blocked();
         s.tabEntries.clear();
         if (s.tabOpen) {
             auto players = live->PlayerList();
@@ -3320,12 +3413,12 @@ namespace perlin {
                     }
                     hud->Render();
                     const bool creativeUi = hudState.mode == ui::GameMode::Creative || PERLIN_ENV("PERLIN_PREVIEW_CREATIVE");
-                    if (invShown && dollSelf && (!creativeUi || creativeDollVisible)) {
+                    if (invShown && dollSelf && !invWorkbench && (!creativeUi || creativeDollVisible)) {
                         const int scale = hud->OverlayScale();
                         const int guiW = static_cast<int>(std::ceil(static_cast<float>(fbW) / static_cast<float>(scale)));
                         const int guiH = static_cast<int>(std::ceil(static_cast<float>(fbH) / static_cast<float>(scale)));
                         const bool creativeDoll = creativeUi;
-                        const float px = static_cast<float>(creativeDoll ? (guiW - ui::kCreativeW) / 2 : (guiW - ui::kInvPanelW) / 2),
+                        const float px = static_cast<float>(creativeDoll ? (guiW - ui::kCreativeW) / 2 : (guiW - ui::kInvPanelW) / 2 + (invBook ? 77 : 0)),
                                     py = static_cast<float>(creativeDoll ? (guiH - ui::kCreativeH) / 2 : (guiH - ui::kInvPanelH) / 2);
                         const float centerX = creativeDoll ? px + 89.0f : px + 51.0f, centerY = creativeDoll ? py + 27.5f : py + 43.0f;
                         const float f = std::atan((centerX - invMouseX) / 40.0f), g = std::atan((centerY - invMouseY) / 40.0f);

@@ -421,7 +421,7 @@ namespace perlin {
     }
 
     void BedrockSession::InvClick(int addr, bool right) {
-        if (addr < 0 || addr >= kInvCursor)
+        if (addr < 0 || addr >= kInvSlots || addr == kInvCursor)
             return;
         InvEnqueue([this, addr, right](ItemStackRequest& r) {
             Mover m{*this, r, [this](int a) -> ItemStackInfo& { return InvInfoLocked(a); }, [this](int a) -> ItemV4& { return InvRawLocked(a); }};
@@ -486,7 +486,7 @@ namespace perlin {
     }
 
     void BedrockSession::InvShiftClick(int addr) {
-        if (addr < 0 || addr >= kInvCursor)
+        if (addr < 0 || addr >= kInvSlots || addr == kInvCursor)
             return;
         InvEnqueue([this, addr](ItemStackRequest& r) {
             Mover m{*this, r, [this](int a) -> ItemStackInfo& { return InvInfoLocked(a); }, [this](int a) -> ItemV4& { return InvRawLocked(a); }};
@@ -546,6 +546,119 @@ namespace perlin {
     uint32_t BedrockSession::CreativeVersion() const {
         std::lock_guard lock(statusMutex);
         return creative.version;
+    }
+
+    void BedrockSession::InvSpread(const std::vector<int>& slots, int mode) {
+        if (slots.empty())
+            return;
+        InvEnqueue([this, slots, mode](ItemStackRequest& r) {
+            Mover m{*this, r, [this](int a) -> ItemStackInfo& { return InvInfoLocked(a); }, [this](int a) -> ItemV4& { return InvRawLocked(a); }};
+            auto& C = InvInfoLocked(kInvCursor);
+            if (C.Empty())
+                return false;
+            const ItemV4 cRaw = InvRawLocked(kInvCursor);
+            const int max = MaxStack(C.name);
+            std::vector<int> valid;
+            for (int a : slots) {
+                if (a < 0 || a >= kInvSlots || a == kInvCursor || a == kInvOutput)
+                    continue;
+                if (a >= kInvArmor0 && a < kInvOffhand && ArmorSlotOf(C.name) != a - kInvArmor0)
+                    continue;
+                if (a == kInvOffhand && !OffhandAllowed(C.name))
+                    continue;
+                const ItemStackInfo& S = InvInfoLocked(a);
+                if (!S.Empty() && !SameStack(InvRawLocked(a), cRaw))
+                    continue;
+                valid.push_back(a);
+            }
+            if (valid.empty())
+                return false;
+            const int total = C.count;
+            const int each = mode == 1 ? 1 : std::max(1, total / static_cast<int>(valid.size()));
+            for (int a : valid) {
+                if (InvInfoLocked(kInvCursor).Empty())
+                    break;
+                const int room = max - InvInfoLocked(a).count;
+                const int n = std::min({each, room, InvInfoLocked(kInvCursor).count});
+                if (n <= 0)
+                    continue;
+                m.Move(kInvCursor, a, n);
+            }
+            for (int a : valid)
+                if (IsCraftAddr(a)) {
+                    InvRecomputeOutputLocked();
+                    break;
+                }
+            return !r.actions.empty();
+        });
+    }
+
+    uint32_t BedrockSession::CreativeEntryFor(const ItemStackInfo& info) const {
+        std::lock_guard lock(statusMutex);
+        for (const CreativeItem& c : creative.items)
+            if (c.info.name == info.name && c.info.aux == info.aux && c.info.blockRuntimeId == info.blockRuntimeId)
+                return c.entryId;
+        for (const CreativeItem& c : creative.items)
+            if (c.info.name == info.name && c.info.aux == info.aux)
+                return c.entryId;
+        return 0;
+    }
+
+    void BedrockSession::InvCreativeClone(int addr) {
+        ItemStackInfo info;
+        {
+            std::lock_guard lock(statusMutex);
+            if (addr < 0 || addr >= kInvSlots)
+                return;
+            info = InvInfoLocked(addr);
+        }
+        if (info.Empty())
+            return;
+        if (const uint32_t entry = CreativeEntryFor(info))
+            InvCreativeTake(entry, 0);
+    }
+
+    void BedrockSession::InvCreativePlace(int addr) {
+        ItemStackInfo info;
+        {
+            std::lock_guard lock(statusMutex);
+            info = inventory.cursor;
+        }
+        if (info.Empty() || addr < 0 || addr >= 36)
+            return;
+        const uint32_t entry = CreativeEntryFor(info);
+        if (!entry)
+            return;
+        InvEnqueue([this, entry, addr](ItemStackRequest& r) {
+            const auto found = std::find_if(creative.items.begin(), creative.items.end(), [&](const CreativeItem& c) { return c.entryId == entry; });
+            const auto rawIt = creativeRaw.find(entry);
+            if (found == creative.items.end() || rawIt == creativeRaw.end())
+                return false;
+            auto& dst = InvInfoLocked(addr);
+            ItemStackInfo out = found->info;
+            out.count = MaxStack(out.name);
+            ItemV4 raw = rawIt->second;
+            raw.count = static_cast<uint16_t>(out.count);
+            if (!dst.Empty() && !SameStack(InvRawLocked(addr), raw))
+                return false;
+            Mover m{*this, r, [this](int a) -> ItemStackInfo& { return InvInfoLocked(a); }, [this](int a) -> ItemV4& { return InvRawLocked(a); }};
+            ItemStackRequestActionsEntry craft;
+            craft.typeId = ItemStackRequestActionsEntryTypeId::CraftCreative;
+            craft.legacyTypeId = LegacyActionId(craft.typeId);
+            craft.itemId = entry;
+            craft.timesCrafted = 1;
+            r.actions.push_back(craft);
+            inventory.output = out;
+            extraRaw[kInvOutput - 36] = raw;
+            extraRaw[kInvOutput - 36].stackId = r.requestId;
+            extraRaw[kInvOutput - 36].hasStackId = true;
+            const int room = out.count - dst.count;
+            if (room > 0)
+                m.Move(kInvOutput, addr, room);
+            inventory.output = ItemStackInfo{};
+            extraRaw[kInvOutput - 36] = ItemV4{};
+            return !r.actions.empty();
+        });
     }
 
     void BedrockSession::InvCreativeTake(uint32_t entryId, int mode) {
@@ -656,6 +769,7 @@ namespace perlin {
     std::vector<BedrockSession::RecipeEntry> BedrockSession::GetRecipes(int side) const {
         std::lock_guard lock(statusMutex);
         std::vector<RecipeEntry> out;
+        std::map<std::string, size_t> byKey;
         for (size_t ri = 0; ri < recipes.size(); ri++) {
             const RecipeInfo& r = recipes[ri];
             if (r.shaped ? (r.w > side || r.h > side) : (static_cast<int>(r.in.size()) > side * side))
@@ -681,6 +795,16 @@ namespace perlin {
                     break;
                 }
             }
+            const std::string key = r.outInfo.name + ";" + std::to_string(r.outInfo.aux) + ";" + std::to_string(r.outInfo.blockRuntimeId) + ";" + std::to_string(r.outInfo.count);
+            if (const auto seen = byKey.find(key); seen != byKey.end()) {
+                RecipeEntry& prev = out[seen->second];
+                if (craftable && !prev.craftable) {
+                    prev.craftable = true;
+                    prev.index = static_cast<int>(ri);
+                }
+                continue;
+            }
+            byKey[key] = out.size();
             RecipeEntry e;
             e.index = static_cast<int>(ri);
             e.craftable = craftable;
