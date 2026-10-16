@@ -128,7 +128,7 @@ namespace perlin::claims {
         std::string SkinResourcePatch = "{}";
         std::string ThirdPartyName;
         bool ThirdPartyNameOnly = false;
-        bool TrustedSkin = false;
+        bool TrustedSkin = true;
         int UIProfile = 0;
     };
 

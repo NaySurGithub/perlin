@@ -101,6 +101,92 @@ namespace perlin {
 
     namespace {
 
+        bool SnappyCompress(const std::vector<uint8_t>& in, std::vector<uint8_t>& out) {
+            out.clear();
+            size_t n = in.size();
+            do {
+                uint8_t b = n & 0x7F;
+                n >>= 7;
+                out.push_back(n ? (b | 0x80) : b);
+            } while (n);
+            size_t pos = 0;
+            while (pos < in.size()) {
+                const size_t chunk = std::min<size_t>(in.size() - pos, 60);
+                out.push_back(static_cast<uint8_t>((chunk - 1) << 2));
+                out.insert(out.end(), in.begin() + pos, in.begin() + pos + chunk);
+                pos += chunk;
+            }
+            return true;
+        }
+
+        bool SnappyDecompress(const uint8_t* in, size_t inLen, std::vector<uint8_t>& out) {
+            out.clear();
+            size_t p = 0;
+            uint64_t total = 0;
+            int shift = 0;
+            while (true) {
+                if (p >= inLen || shift > 35)
+                    return false;
+                const uint8_t b = in[p++];
+                total |= static_cast<uint64_t>(b & 0x7F) << shift;
+                shift += 7;
+                if (!(b & 0x80))
+                    break;
+            }
+            if (total > (1u << 28))
+                return false;
+            out.reserve(total);
+            while (p < inLen) {
+                const uint8_t tag = in[p++];
+                const int type = tag & 3;
+                if (type == 0) {
+                    size_t len = tag >> 2;
+                    if (len >= 60) {
+                        const int extra = static_cast<int>(len) - 59;
+                        if (p + extra > inLen)
+                            return false;
+                        len = 0;
+                        for (int i = 0; i < extra; i++)
+                            len |= static_cast<size_t>(in[p + i]) << (8 * i);
+                        p += extra;
+                    }
+                    len += 1;
+                    if (p + len > inLen)
+                        return false;
+                    out.insert(out.end(), in + p, in + p + len);
+                    p += len;
+                } else {
+                    size_t len, offset;
+                    if (type == 1) {
+                        if (p >= inLen)
+                            return false;
+                        len = 4 + ((tag >> 2) & 7);
+                        offset = (static_cast<size_t>(tag >> 5) << 8) | in[p++];
+                    } else if (type == 2) {
+                        if (p + 2 > inLen)
+                            return false;
+                        len = 1 + (tag >> 2);
+                        offset = in[p] | (static_cast<size_t>(in[p + 1]) << 8);
+                        p += 2;
+                    } else {
+                        if (p + 4 > inLen)
+                            return false;
+                        len = 1 + (tag >> 2);
+                        offset = in[p] | (static_cast<size_t>(in[p + 1]) << 8) | (static_cast<size_t>(in[p + 2]) << 16) |
+                                 (static_cast<size_t>(in[p + 3]) << 24);
+                        p += 4;
+                    }
+                    if (offset == 0 || offset > out.size())
+                        return false;
+                    for (size_t i = 0; i < len; i++)
+                        out.push_back(out[out.size() - offset]);
+                }
+                if (out.size() > total)
+                    return false;
+            }
+            return out.size() == total;
+        }
+
         bool RawDeflate(const std::vector<uint8_t>& in, std::vector<uint8_t>& out) {
             out.clear();
             mz_stream strm = {};
@@ -455,9 +541,14 @@ namespace perlin {
             batch = std::move(content);
         } else if (content.size() > compressThreshold) {
             std::vector<uint8_t> deflated;
-            if (!RawDeflate(content, deflated))
-                return false;
-            batch.push_back(0x00);
+            if (compressAlgorithm == 1) {
+                SnappyCompress(content, deflated);
+                batch.push_back(0x01);
+            } else {
+                if (!RawDeflate(content, deflated))
+                    return false;
+                batch.push_back(0x00);
+            }
             batch.insert(batch.end(), deflated.begin(), deflated.end());
         } else {
             batch.push_back(0xFF);
@@ -615,6 +706,14 @@ namespace perlin {
             if (msg[0] == 0x00) {
                 if (!RawInflate(data + 1, size - 1, decompressed)) {
                     lastError = "batch raw-inflate failed (size " + std::to_string(size) + ")";
+                    state = State::Failed;
+                    return;
+                }
+                data = decompressed.data();
+                size = decompressed.size();
+            } else if (msg[0] == 0x01) {
+                if (!SnappyDecompress(data + 1, size - 1, decompressed)) {
+                    lastError = "batch snappy decompress failed (size " + std::to_string(size) + ")";
                     state = State::Failed;
                     return;
                 }
@@ -1144,6 +1243,7 @@ namespace perlin {
         p.skin.geometryDataVersion = "1.14.0";
         p.skin.animationData = "null";
         p.skin.primaryUser = true;
+        p.skin.trusted = "true";
         p.skinName = skin.skinId;
         return Send(p);
     }
