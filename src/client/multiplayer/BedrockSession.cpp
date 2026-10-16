@@ -109,12 +109,60 @@ namespace perlin {
                 n >>= 7;
                 out.push_back(n ? (b | 0x80) : b);
             } while (n);
-            size_t pos = 0;
-            while (pos < in.size()) {
-                const size_t chunk = std::min<size_t>(in.size() - pos, 60);
-                out.push_back(static_cast<uint8_t>((chunk - 1) << 2));
-                out.insert(out.end(), in.begin() + pos, in.begin() + pos + chunk);
-                pos += chunk;
+            const auto literal = [&](size_t from, size_t to) {
+                while (from < to) {
+                    const size_t chunk = std::min<size_t>(to - from, 65536);
+                    const size_t l = chunk - 1;
+                    if (l < 60) {
+                        out.push_back(static_cast<uint8_t>(l << 2));
+                    } else if (l < 256) {
+                        out.push_back(60 << 2);
+                        out.push_back(static_cast<uint8_t>(l));
+                    } else {
+                        out.push_back(61 << 2);
+                        out.push_back(static_cast<uint8_t>(l & 0xFF));
+                        out.push_back(static_cast<uint8_t>(l >> 8));
+                    }
+                    out.insert(out.end(), in.begin() + from, in.begin() + from + chunk);
+                    from += chunk;
+                }
+            };
+            const auto copy = [&](size_t offset, size_t len) {
+                while (len > 0) {
+                    const size_t l = len >= 68 ? 64 : (len > 64 ? 60 : len);
+                    out.push_back(static_cast<uint8_t>(((l - 1) << 2) | 2));
+                    out.push_back(static_cast<uint8_t>(offset & 0xFF));
+                    out.push_back(static_cast<uint8_t>(offset >> 8));
+                    len -= l;
+                }
+            };
+            constexpr size_t kBlock = 65536;
+            const size_t total = in.size();
+            for (size_t base = 0; base < total; base += kBlock) {
+                const size_t end = std::min(total, base + kBlock);
+                std::vector<int32_t> table(1 << 14, -1);
+                const auto load = [&](size_t i) {
+                    return static_cast<uint32_t>(in[i]) | (static_cast<uint32_t>(in[i + 1]) << 8) | (static_cast<uint32_t>(in[i + 2]) << 16) |
+                           (static_cast<uint32_t>(in[i + 3]) << 24);
+                };
+                size_t pos = base, lit = base;
+                while (pos + 4 <= end) {
+                    const uint32_t h = (load(pos) * 0x1e35a7bdu) >> 18;
+                    const int32_t cand = table[h];
+                    table[h] = static_cast<int32_t>(pos);
+                    if (cand >= static_cast<int32_t>(base) && load(static_cast<size_t>(cand)) == load(pos)) {
+                        size_t len = 4;
+                        while (pos + len < end && in[cand + len] == in[pos + len])
+                            len++;
+                        literal(lit, pos);
+                        copy(pos - static_cast<size_t>(cand), len);
+                        pos += len;
+                        lit = pos;
+                    } else {
+                        pos++;
+                    }
+                }
+                literal(lit, end);
             }
             return true;
         }
@@ -539,7 +587,10 @@ namespace perlin {
         std::vector<uint8_t> batch;
         if (!compressEnabled) {
             batch = std::move(content);
-        } else if (content.size() > compressThreshold) {
+        } else if (compressAlgorithm == 0xFFFF || content.size() < compressThreshold) {
+            batch.push_back(0xFF);
+            batch.insert(batch.end(), content.begin(), content.end());
+        } else {
             std::vector<uint8_t> deflated;
             if (compressAlgorithm == 1) {
                 SnappyCompress(content, deflated);
@@ -550,9 +601,6 @@ namespace perlin {
                 batch.push_back(0x00);
             }
             batch.insert(batch.end(), deflated.begin(), deflated.end());
-        } else {
-            batch.push_back(0xFF);
-            batch.insert(batch.end(), content.begin(), content.end());
         }
         if (cipher && cipher->Active())
             batch = cipher->Encrypt(batch);
