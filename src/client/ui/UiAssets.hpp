@@ -18,6 +18,7 @@ namespace perlin::ui {
         bool block = false;
         bool handheld = false;
         bool fromBlock = false;
+        bool generic = false;
         int w = 0, h = 0;
         std::vector<uint8_t> rgba;
         int tile = 0;
@@ -61,6 +62,8 @@ namespace perlin::ui {
         bool ReadFile(const std::string& rel, std::string& out) const;
         bool FindImage(const std::string& rel, Texture& out) const;
         void LoadItemTextureTable();
+        std::string FindByStem(const std::string& stem);
+        void BuildStemIndex();
         void LoadLang();
         bool FlatSprite(const std::string& shortName, int aux, ItemSprite& out, int64_t dyeColor = -1, const std::string& iconKey = {});
         bool BakeModelIcon(const std::string& name, int32_t hash, int size, Texture& out);
@@ -77,6 +80,10 @@ namespace perlin::ui {
         bool langLoaded = false;
         uint32_t generation = 0;
         std::unordered_map<std::string, TextureSidecar> sidecars;
+        std::unordered_map<std::string, std::pair<int, int>> sizeCache;
+        std::unordered_map<std::string, std::string> stemIndex;
+        bool stemIndexBuilt = false;
+        uint32_t stemGeneration = 0;
     };
 
     void BakeCubeIcon(const ItemSprite& sprite, int size, Texture& out);

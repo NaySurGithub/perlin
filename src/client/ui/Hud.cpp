@@ -147,6 +147,7 @@ namespace perlin::ui {
                 reloadRequested = false;
                 UiAssets::Instance().ClearItemCache();
                 UiAssets::Instance().LoadFont(dataDir);
+                backend.ReloadTextures();
                 Rebuild();
                 rebuilt = true;
             }

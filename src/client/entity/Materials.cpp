@@ -86,14 +86,16 @@ namespace perlin::entity {
     }
 
     void MaterialLibrary::Load(const std::string& root) {
-        db.Load(material::Registry::Instance().ModeValue());
-        db.AddPackDirectory(root);
+        material::Registry::Instance().SetRoot(root);
+        db.Load(material::Registry::Instance().ModeValue(), root);
         db.Resolve();
+        db.InstallBuiltins();
     }
 
     void MaterialLibrary::AddDirectory(const std::string& dir) {
         db.AddPackDirectory(dir);
         db.Resolve();
+        db.InstallBuiltins();
     }
 
     MaterialInfo MaterialLibrary::Find(const std::string& name) const {

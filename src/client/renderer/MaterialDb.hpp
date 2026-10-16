@@ -70,10 +70,11 @@ namespace perlin::material {
 
     class Db {
     public:
-        void Load(Mode mode);
+        void Load(Mode mode, const std::string& root);
         void AddText(const std::string& text, const std::set<std::string>& extraDefines);
         void AddPackDirectory(const std::string& dir);
         void Resolve();
+        void InstallBuiltins();
         const Def* Find(const std::string& name) const;
         const Def* Variant(const std::string& name, const std::string& variant) const;
         size_t Count() const { return resolved.size(); }
@@ -105,12 +106,14 @@ namespace perlin::material {
     public:
         static Registry& Instance();
         void Configure(bool fancy);
+        void SetRoot(const std::string& root);
         const Db& Get();
         uint32_t Generation() const { return generation; }
         Mode ModeValue() const { return fancy ? Mode::Fancy : Mode::Sad; }
 
     private:
         Db db;
+        std::string root;
         bool loaded = false;
         bool fancy = true;
         uint32_t generation = 0;

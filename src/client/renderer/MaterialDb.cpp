@@ -1,7 +1,6 @@
 #include "client/renderer/MaterialDb.hpp"
 
 #include "client/ui/Json.hpp"
-#include "util/Resources.hpp"
 
 #include <algorithm>
 #include <filesystem>
@@ -225,40 +224,30 @@ namespace perlin::material {
         docs.push_back(std::move(doc));
     }
 
-    void Db::Load(Mode newMode) {
+    void Db::Load(Mode newMode, const std::string& root) {
         mode = newMode;
         docs.clear();
         raws.clear();
         rawIndex.clear();
         resolved.clear();
         resolving.clear();
-        const auto loadList = [&](const std::string& listName) {
-            const std::string text = resources::ReadText(listName);
-            if (text.empty())
-                return;
-            Json list;
-            std::string error;
-            if (!Json::Parse(text, list, error) || !list.IsArray())
-                return;
-            for (const Json& entry : list.array) {
-                const Json* path = entry.Find("path");
-                if (!path)
-                    continue;
-                const std::string file = fs::path(path->StringOr("")).filename().string();
-                std::set<std::string> extra;
-                if (const Json* d = entry.Find("+defines"); d && d->IsArray())
-                    for (const Json& v : d->array)
-                        extra.insert(v.StringOr(""));
-                const std::string body = resources::ReadText("materials_" + fs::path(file).stem().string() + ".material");
-                if (body.empty()) {
-                    std::cout << "[material] missing " << file << std::endl;
-                    continue;
-                }
-                AddText(body, extra);
-            }
-        };
-        loadList("materials_list_common.json");
-        loadList(mode == Mode::Fancy ? "materials_list_fancy.json" : mode == Mode::Sad ? "materials_list_sad.json" : "materials_list_gameface.json");
+        if (root.empty())
+            return;
+        const bool fancy = mode == Mode::Fancy;
+        const std::set<std::string> fancyDefine = {"FANCY"};
+        std::error_code ec;
+        std::vector<fs::path> files;
+        for (const auto& e : fs::directory_iterator(fs::path(root) / "materials", ec))
+            if (e.is_regular_file() && e.path().extension() == ".material")
+                files.push_back(e.path());
+        std::sort(files.begin(), files.end());
+        for (const fs::path& p : files) {
+            const std::string stem = p.stem().string();
+            if (stem == "gameface" || stem == "hologram" || (stem == "fancy" && !fancy) || (stem == "sad" && fancy))
+                continue;
+            const bool defineFancy = fancy && (stem == "fancy" || stem == "entity" || stem == "terrain" || stem == "portal");
+            AddText(ReadFile(p), defineFancy ? fancyDefine : std::set<std::string>());
+        }
     }
 
     void Db::AddPackDirectory(const std::string& dir) {
@@ -296,18 +285,30 @@ namespace perlin::material {
         def.name = r.name;
         Apply(def, *r.json);
         def.defines.insert(r.extraDefines.begin(), r.extraDefines.end());
-        if (const Json* variants = r.json->Find("variants"); variants && variants->IsArray()) {
-            for (const Json& entry : variants->array) {
-                if (!entry.IsObject())
-                    continue;
-                for (const auto& [vname, vjson] : entry.object) {
-                    Def v = def;
-                    v.variants.clear();
-                    v.name = r.name + "." + vname;
-                    Apply(v, vjson);
-                    def.variants[vname] = std::move(v);
-                }
-            }
+        std::map<std::string, const Json*> collected;
+        std::vector<const Raw*> chain;
+        for (const Raw* cur = &r; cur;) {
+            chain.push_back(cur);
+            if (cur->parent.empty() || chain.size() > 32)
+                break;
+            const auto next = rawIndex.find(cur->parent);
+            cur = next == rawIndex.end() ? nullptr : &raws[next->second];
+        }
+        for (auto it = chain.rbegin(); it != chain.rend(); ++it) {
+            const Json* variants = (*it)->json->Find("variants");
+            if (!variants || !variants->IsArray())
+                continue;
+            for (const Json& entry : variants->array)
+                if (entry.IsObject())
+                    for (const auto& [vname, vjson] : entry.object)
+                        collected[vname] = &vjson;
+        }
+        for (const auto& [vname, vjson] : collected) {
+            Def v = def;
+            v.variants.clear();
+            v.name = r.name + "." + vname;
+            Apply(v, *vjson);
+            def.variants[vname] = std::move(v);
         }
         resolving[name] = 0;
         return &(resolved[name] = std::move(def));
@@ -318,6 +319,75 @@ namespace perlin::material {
         resolving.clear();
         for (const Raw& r : raws)
             ResolveOne(r.name);
+    }
+
+
+    namespace {
+        struct Builtin {
+            const char* name;
+            const char* states;
+            BlendFactor src;
+            BlendFactor dst;
+            DepthFunc depth;
+            const char* defines;
+        };
+
+        std::set<std::string> Split(const char* s) {
+            std::set<std::string> out;
+            std::string cur;
+            for (const char* p = s;; p++) {
+                if (*p == ',' || *p == 0) {
+                    if (!cur.empty())
+                        out.insert(cur);
+                    cur.clear();
+                    if (*p == 0)
+                        break;
+                } else {
+                    cur += *p;
+                }
+            }
+            return out;
+        }
+    }
+
+    void Db::InstallBuiltins() {
+        using B = BlendFactor;
+        const bool fancy = mode == Mode::Fancy;
+        const Builtin table[] = {
+            {"clouds", fancy ? "Blending,DisableAlphaWrite" : "DisableAlphaWrite", B::SrcAlpha, B::InvSrcAlpha, DepthFunc::LessEqual, ""},
+            {"sun_moon", "DisableDepthWrite,DisableAlphaWrite,Blending", B::SrcAlpha, B::One, DepthFunc::LessEqual, ""},
+            {"stars", "DisableDepthWrite,DisableAlphaWrite,Blending", B::InvDstColor, B::One, DepthFunc::LessEqual, ""},
+            {"ui_crosshair", "Blending", B::InvDstColor, B::InvSrcColor, DepthFunc::LessEqual, ""},
+            {"particles_opaque", "DisableAlphaWrite", B::SrcAlpha, B::InvSrcAlpha, DepthFunc::LessEqual, "ENABLE_FOG"},
+            {"particles_alpha", "DisableAlphaWrite", B::SrcAlpha, B::InvSrcAlpha, DepthFunc::LessEqual, "ALPHA_TEST,ENABLE_FOG"},
+            {"particles_blend", "Blending,DisableCulling,DisableDepthWrite", B::SrcAlpha, B::InvSrcAlpha, DepthFunc::LessEqual, "ENABLE_FOG"},
+            {"particles_add", "Blending,DisableCulling,DisableDepthWrite", B::SrcAlpha, B::One, DepthFunc::LessEqual, "ENABLE_FOG"},
+            {"cracks_overlay", "Blending,DisableDepthWrite,DisableAlphaWrite", B::DstColor, B::Zero, DepthFunc::LessEqual, ""},
+            {"name_tag", "Blending,DisableDepthWrite", B::SrcAlpha, B::InvSrcAlpha, DepthFunc::Always, ""},
+            {"name_tag_depth_tested", "Blending,DisableDepthWrite", B::SrcAlpha, B::InvSrcAlpha, DepthFunc::LessEqual, ""},
+            {"name_tag_text", "Blending", B::SrcAlpha, B::InvSrcAlpha, DepthFunc::Always, ""},
+            {"name_text_depth_tested", "Blending", B::SrcAlpha, B::InvSrcAlpha, DepthFunc::LessEqual, ""},
+            {"precipitation", "DisableCulling,DisableDepthWrite,Blending", B::SrcAlpha, B::InvSrcAlpha, DepthFunc::LessEqual, "COMFORT_MODE"},
+            {"lightning", "DisableCulling,Blending", B::SrcAlpha, B::One, DepthFunc::LessEqual, ""},
+            {"entity", "", B::SrcAlpha, B::InvSrcAlpha, DepthFunc::LessEqual, "USE_OVERLAY"},
+            {"entity_alphatest", "DisableCulling", B::SrcAlpha, B::InvSrcAlpha, DepthFunc::LessEqual, "USE_OVERLAY,ALPHA_TEST"},
+            {"entity_alphablend", "Blending", B::SrcAlpha, B::InvSrcAlpha, DepthFunc::LessEqual, "USE_OVERLAY"},
+            {"entity_emissive", "", B::SrcAlpha, B::InvSrcAlpha, DepthFunc::LessEqual, "USE_OVERLAY,USE_EMISSIVE"},
+            {"entity_emissive_alpha", "DisableCulling,Blending", B::SrcAlpha, B::InvSrcAlpha, DepthFunc::LessEqual, "USE_OVERLAY,USE_EMISSIVE,ALPHA_TEST"},
+        };
+        for (const Builtin& b : table) {
+            if (resolved.count(b.name))
+                continue;
+            Def d;
+            d.name = b.name;
+            d.states = Split(b.states);
+            d.defines = Split(b.defines);
+            d.blendSrc = b.src;
+            d.blendDst = b.dst;
+            d.blendSet = true;
+            d.depthFunc = b.depth;
+            resolved.emplace(d.name, std::move(d));
+        }
     }
 
     const Def* Db::Find(const std::string& name) const {
@@ -351,6 +421,13 @@ namespace perlin::material {
         return registry;
     }
 
+    void Registry::SetRoot(const std::string& newRoot) {
+        if (newRoot == root)
+            return;
+        root = newRoot;
+        loaded = false;
+    }
+
     void Registry::Configure(bool wantFancy) {
         if (loaded && fancy == wantFancy)
             return;
@@ -360,8 +437,9 @@ namespace perlin::material {
 
     const Db& Registry::Get() {
         if (!loaded) {
-            db.Load(fancy ? Mode::Fancy : Mode::Sad);
+            db.Load(fancy ? Mode::Fancy : Mode::Sad, root);
             db.Resolve();
+            db.InstallBuiltins();
             loaded = true;
             generation++;
         }

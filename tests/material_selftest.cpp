@@ -1,28 +1,11 @@
 #include "client/entity/Materials.hpp"
 #include "client/renderer/MaterialDb.hpp"
-#include "util/Resources.hpp"
 
 #include <cstdio>
+#include <filesystem>
 #include <fstream>
-#include <sstream>
-#include <string>
 
 namespace {
-    std::string gRoot;
-    std::string gHold;
-
-    bool Provide(const char* name, const uint8_t** data, size_t* size) {
-        std::ifstream f(gRoot + "/" + name, std::ios::binary);
-        if (!f)
-            return false;
-        std::stringstream ss;
-        ss << f.rdbuf();
-        gHold = ss.str();
-        *data = reinterpret_cast<const uint8_t*>(gHold.data());
-        *size = gHold.size();
-        return true;
-    }
-
     int failures = 0;
 
     void Expect(bool ok, const char* what) {
@@ -31,80 +14,107 @@ namespace {
             failures++;
         }
     }
+
+    const char* kSample = R"MAT({
+  "materials": {
+    "version": "1.0.0",
+    "base": {
+      "+defines": [ "A", "B" ],
+      "+states": [ "Blending", "DisableDepthWrite" ],
+      "blendSrc": "SourceAlpha",
+      "blendDst": "OneMinusSrcAlpha",
+      "depthFunc": "Always",
+      "vertexShader": "shaders/x.vertex",
+      "vertexFields": [ { "field": "Position" }, { "field": "UV0" } ],
+      "+samplerStates": [ { "samplerIndex": 0, "textureFilter": "Point" } ],
+      "variants": [
+        { "skinning": { "+defines": [ "USE_SKINNING" ], "+states": [ "DisableCulling" ], "vertexFields": [ { "field": "Position" }, { "field": "BoneId0" }, { "field": "UV0" } ] } }
+      ]
+    },
+    "child:base": {
+      "-defines": [ "A" ],
+      "-states": [ "DisableDepthWrite" ],
+      "blendDst": "One",
+      "frontFace": { "stencilFunc": "Equal", "stencilPassOp": "Replace" },
+      "+states": [ "EnableStencilTest" ],
+      "stencilRef": 2
+    },
+    "grand:child": { "+defines": [ "C" ], "primitiveMode": "Line" },
+    "late:missing_parent": { "+defines": [ "Z" ] }
+  }
+})MAT";
+
+    const char* kUnwrapped = R"MAT({
+  "sun_like": { "states": [ "Blending" ], "blendSrc": "SourceAlpha", "blendDst": "One" }
+})MAT";
 }
 
-int main(int argc, char** argv) {
+int main() {
     using namespace perlin;
-    gRoot = argc > 1 ? argv[1] : "resources";
-    resources::SetProvider(Provide);
+    material::Db db;
+    db.AddText(kSample, {});
+    db.AddText(kUnwrapped, {"FANCY"});
+    db.Resolve();
 
-    material::Db fancy;
-    fancy.Load(material::Mode::Fancy);
-    fancy.Resolve();
+    const material::Def* base = db.Find("base");
+    Expect(base && base->Define("A") && base->Define("B") && base->Blending() && !base->DepthWrite() &&
+               base->depthFunc == DepthFunc::Always && base->samplers.size() == 1,
+           "base");
+    const material::Def* child = db.Find("child");
+    Expect(child && !child->Define("A") && child->Define("B") && child->DepthWrite() && child->blendDst == BlendFactor::One &&
+               child->blendSrc == BlendFactor::SrcAlpha && child->stencil.enabled && child->stencil.ref == 2 &&
+               child->stencil.func == StencilFunc::Equal && child->stencil.passOp == StencilOp::Replace,
+           "child overrides");
+    const material::Def* grand = db.Find("grand");
+    Expect(grand && grand->Define("C") && grand->Define("B") && grand->primitive == "Line" && grand->vertexShader == "shaders/x.vertex",
+           "grandchild");
+    const material::Def* skinned = db.Variant("child", "skinning");
+    Expect(skinned && skinned->Define("USE_SKINNING") && skinned->NoCull() && skinned->vertexFields.size() == 3, "variant");
+    const material::Def* baseVariant = db.Variant("base", "skinning");
+    Expect(baseVariant && baseVariant->Define("USE_SKINNING") && baseVariant->NoCull(), "base variant");
+    const material::Def* unwrapped = db.Find("sun_like");
+    Expect(unwrapped && unwrapped->Define("FANCY") && unwrapped->blendDst == BlendFactor::One, "unwrapped file and list defines");
+    Expect(db.Find("late") && db.Find("late")->Define("Z"), "unknown parent tolerated");
+
+    material::Db empty;
+    empty.Load(material::Mode::Fancy, "");
+    empty.Resolve();
+    empty.InstallBuiltins();
+    const material::Def* clouds = empty.Find("clouds");
+    Expect(clouds && clouds->Blending() && !clouds->AlphaWrite(), "builtin fancy clouds");
     material::Db sad;
-    sad.Load(material::Mode::Sad);
+    sad.Load(material::Mode::Sad, "");
     sad.Resolve();
-    std::printf("fancy %zu materials, sad %zu\n", fancy.Count(), sad.Count());
-    Expect(fancy.Count() > 300, "fancy count");
-    Expect(sad.Count() > 300, "sad count");
+    sad.InstallBuiltins();
+    Expect(sad.Find("clouds") && !sad.Find("clouds")->Blending(), "builtin fast clouds");
+    const material::Def* crack = empty.Find("cracks_overlay");
+    Expect(crack && crack->blendSrc == BlendFactor::DstColor && crack->blendDst == BlendFactor::Zero, "builtin cracks");
+    const material::Def* stars = empty.Find("stars");
+    Expect(stars && stars->blendSrc == BlendFactor::InvDstColor, "builtin stars");
+    const material::Def* add = empty.Find("particles_add");
+    Expect(add && add->blendDst == BlendFactor::One && !add->DepthWrite(), "builtin particles add");
 
-    const material::Def* clouds = fancy.Find("clouds");
-    Expect(clouds && clouds->Blending() && !clouds->AlphaWrite(), "fancy clouds blend");
-    const material::Def* sadClouds = sad.Find("clouds");
-    Expect(sadClouds && !sadClouds->Blending() && !sadClouds->AlphaWrite(), "sad clouds opaque");
-
-    const material::Def* add = fancy.Find("particles_add");
-    Expect(add && add->Blending() && add->blendDst == BlendFactor::One && !add->DepthWrite() && add->NoCull() &&
-               add->Define("ENABLE_FOG"),
-           "particles_add inherits blend");
-    const material::Def* alpha = fancy.Find("particles_alpha");
-    Expect(alpha && alpha->Define("ALPHA_TEST") && !alpha->Blending(), "particles_alpha");
-
-    const material::Def* stars = fancy.Find("stars");
-    Expect(stars && stars->blendSrc == BlendFactor::InvDstColor && stars->blendDst == BlendFactor::One, "stars blend");
-    const material::Def* crack = fancy.Find("cracks_overlay");
-    Expect(crack && crack->blendSrc == BlendFactor::DstColor && crack->blendDst == BlendFactor::Zero && !crack->DepthWrite(),
-           "cracks multiply");
-    const material::Def* tag = fancy.Find("name_tag_depth_tested");
-    Expect(tag && tag->depthFunc == DepthFunc::LessEqual && tag->Blending(), "name tag depth");
-    const material::Def* tagAlways = fancy.Find("name_tag");
-    Expect(tagAlways && tagAlways->depthFunc == DepthFunc::Always, "name tag always");
-    const material::Def* tagAlpha = fancy.Find("name_tag_alpha_tested");
-    Expect(tagAlpha && !tagAlpha->Blending() && tagAlpha->DepthWrite() && tagAlpha->Define("ALPHA_TEST"), "minus states");
-
-    const material::Def* portal = fancy.Find("portal_base");
-    Expect(portal && portal->Define("FANCY") && portal->Define("END_PORTAL") && portal->blendSrc == BlendFactor::One &&
-               portal->blendDst == BlendFactor::SrcAlpha,
-           "portal list defines");
-    Expect(sad.Find("portal_base") && !sad.Find("portal_base")->Define("FANCY"), "sad portal");
-
-    const material::Def* entity = fancy.Find("entity");
-    Expect(entity && entity->Define("USE_OVERLAY") && entity->vertexShader == "shaders/entity.vertex", "entity chain");
-    const material::Def* skinned = fancy.Variant("entity_static", "skinning_alphatest");
-    Expect(skinned && skinned->Define("USE_SKINNING") && skinned->Define("ALPHA_TEST") && skinned->NoCull() &&
-               skinned->vertexFields.size() == 4,
-           "variant resolve");
-    const material::Def* line = fancy.Find("selection_box");
-    Expect(line && line->primitive == "Line", "primitive mode");
-    const material::Def* stencil = fancy.Find("ui_fill_stencil");
-    Expect(stencil && stencil->stencil.write && stencil->stencil.passOp == StencilOp::Replace && !stencil->ColorWrite(),
-           "stencil");
-    const material::Def* sunMoon = fancy.Find("sun_moon");
-    Expect(sunMoon && sunMoon->blendDst == BlendFactor::One && !sunMoon->DepthWrite(), "unwrapped sky file");
-    const material::Def* base = fancy.Find("block_overlay");
-    Expect(base && base->stencil.enabled && base->stencil.ref == 2 && base->depthBias == 100.0f, "stencil ref and bias");
-
-    for (const char* name : {"entity_alphatest", "entity_emissive", "entity_emissive_alpha", "entity_alphablend", "entity_beam",
-                              "entity_custom", "opaque_block", "spider", "enderman"}) {
-        const material::Def* d = fancy.Find(name);
-        if (!d) {
-            std::printf("note: %s not in files\n", name);
-            continue;
-        }
-        const entity::MaterialInfo m = entity::InfoFromDef(*d);
-        std::printf("%-24s blend=%d depthWrite=%d noCull=%d emissive=%d hurt=%d\n", name, static_cast<int>(m.blend), m.depthWrite,
-                    m.noCull, m.emissive, m.hurtTint);
+    namespace fs = std::filesystem;
+    const fs::path dir = fs::temp_directory_path() / "perlin_material_selftest";
+    fs::create_directories(dir / "materials");
+    {
+        std::ofstream f(dir / "materials" / "entity.material");
+        f << R"MAT({"materials":{"version":"1.0.0","entity_static":{"+defines":["X"]},"entity:entity_static":{"+defines":["USE_OVERLAY"]}}})MAT";
+        std::ofstream g(dir / "materials" / "gameface.material");
+        g << R"MAT({"materials":{"ST_Standard":{}}})MAT";
     }
+    material::Db fromDisk;
+    fromDisk.Load(material::Mode::Fancy, dir.string());
+    fromDisk.Resolve();
+    fromDisk.InstallBuiltins();
+    const material::Def* entity = fromDisk.Find("entity");
+    Expect(entity && entity->Define("X") && entity->Define("USE_OVERLAY") && entity->Define("FANCY"), "directory load with fancy define");
+    Expect(!fromDisk.Find("ST_Standard"), "gameface skipped");
+    Expect(fromDisk.Find("clouds") != nullptr, "builtins fill gaps");
+    fs::remove_all(dir);
+
+    const entity::MaterialInfo info = entity::InfoFromDef(*add);
+    Expect(info.blend == entity::MaterialInfo::Blend::Additive && info.emissive == 2 && !info.depthWrite, "info from def");
 
     if (failures == 0)
         std::printf("material_selftest OK\n");

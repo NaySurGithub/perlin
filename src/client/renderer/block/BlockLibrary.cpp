@@ -326,7 +326,7 @@ namespace perlin {
             }
         }
         const unsigned char* data = tex.pixels.data();
-        const bool strip = h > w && h % w == 0;
+        const bool strip = !fetchingGeometry && h > w && h % w == 0;
         const int fw = w, fh = strip ? w : h;
         const int frames = strip ? h / w : 1;
         tile = NewTile();
@@ -380,6 +380,63 @@ namespace perlin {
                               anim.pixels.data() + (size_t)f * kTilePx * kTilePx * 4);
             animByTile[tile] = std::move(anim);
         }
+        return tile;
+    }
+
+    int BlockLibrary::SynthTile(const std::string& label) {
+        if (nextTile >= kAtlasTiles * kAtlasTiles)
+            return 0;
+        uint32_t h = 2166136261u;
+        for (char c : label)
+            h = (h ^ static_cast<uint8_t>(c)) * 16777619u;
+        const int px = tilePxValue;
+        const int tile = NewTile();
+        uint8_t* out = atlas.data() + static_cast<size_t>(tile) * px * px * 4;
+        const float base[3] = {90.0f + static_cast<float>(h & 0x7F), 90.0f + static_cast<float>((h >> 7) & 0x7F),
+                               90.0f + static_cast<float>((h >> 14) & 0x7F)};
+        for (int y = 0; y < px; y++)
+            for (int x = 0; x < px; x++) {
+                uint32_t n = h ^ (static_cast<uint32_t>(x / std::max(1, px / 16)) * 374761393u) ^
+                             (static_cast<uint32_t>(y / std::max(1, px / 16)) * 668265263u);
+                n = (n ^ (n >> 13)) * 1274126177u;
+                const float jitter = 0.88f + 0.12f * static_cast<float>(n & 0xFF) / 255.0f;
+                const bool edge = x < std::max(1, px / 16) || y < std::max(1, px / 16) || x >= px - std::max(1, px / 16) ||
+                                  y >= px - std::max(1, px / 16);
+                const float shade = edge ? 0.72f : jitter;
+                uint8_t* p = out + (static_cast<size_t>(y) * px + x) * 4;
+                for (int c = 0; c < 3; c++)
+                    p[c] = static_cast<uint8_t>(std::min(255.0f, base[c] * shade));
+                p[3] = 255;
+            }
+        alphaByTile[tile] = TileAlpha{};
+        pathByTile[tile] = "synthetic/" + label;
+        return tile;
+    }
+
+    int BlockLibrary::FetchOrSynth(const std::string& pngRelPath, const std::string& vanillaRpRoot, const std::string& label,
+                                   const std::unordered_map<std::string, std::string>& stems) {
+        int tile = FetchTile(pngRelPath, vanillaRpRoot);
+        if (tile > 0)
+            return tile;
+        const size_t slash = pngRelPath.find_last_of('/');
+        const std::string stem = slash == std::string::npos ? pngRelPath : pngRelPath.substr(slash + 1);
+        std::string blockName = label.substr(0, label.find('/'));
+        if (const size_t colon = blockName.find(':'); colon != std::string::npos)
+            blockName.erase(0, colon + 1);
+        for (const std::string& candidate : {stem, blockName}) {
+            const auto found = stems.find(candidate);
+            if (found != stems.end()) {
+                tile = FetchTile(found->second, vanillaRpRoot);
+                if (tile > 0) {
+                    tileByPng[pngRelPath] = tile;
+                    return tile;
+                }
+            }
+        }
+        std::cout << "[blocks] no texture for " << label << " (" << pngRelPath << "), using a generated tile" << std::endl;
+        tile = SynthTile(label);
+        if (tile > 0)
+            tileByPng[pngRelPath] = tile;
         return tile;
     }
 
@@ -1025,7 +1082,10 @@ namespace perlin {
         if (!geometryTried) {
             geometryTried = true;
             const BlockGeometry::FetchFn fetch = [this](const std::string& p, const std::string& root) {
-                return FetchTile(p, root);
+                fetchingGeometry = true;
+                const int tile = FetchTile(p, root);
+                fetchingGeometry = false;
+                return tile;
             };
             geometry.ScanPack(vanillaRpRoot, vanillaRpRoot + "/../behavior_pack/blocks", fetch);
             std::error_code ec;
@@ -1169,7 +1229,35 @@ namespace perlin {
         }
         bool any = false;
         const std::vector<std::string> serverDirs = ServerPacks::Instance().Directories();
-        const BlockGeometry::FetchFn fetchGeometry = [this](const std::string& p, const std::string& root) { return FetchTile(p, root); };
+        std::unordered_map<std::string, std::string> stems;
+        for (const std::string& dir : serverDirs) {
+            std::error_code ec;
+            for (std::filesystem::recursive_directory_iterator it(std::filesystem::path(dir) / "textures",
+                                                                  std::filesystem::directory_options::skip_permission_denied, ec),
+                 end;
+                 !ec && it != end; it.increment(ec)) {
+                if (!it->is_regular_file(ec))
+                    continue;
+                const std::string ext = it->path().extension().string();
+                if (ext != ".png" && ext != ".tga")
+                    continue;
+                std::string rel = std::filesystem::relative(it->path(), dir, ec).generic_string();
+                rel.resize(rel.size() - ext.size());
+                stems.emplace(it->path().stem().string(), rel);
+            }
+        }
+        const BlockGeometry::FetchFn fetchGeometry = [this, &stems](const std::string& p, const std::string& root) {
+            fetchingGeometry = true;
+            int tile = FetchTile(p, root);
+            if (tile == 0) {
+                const size_t slash = p.find_last_of('/');
+                const auto found = stems.find(slash == std::string::npos ? p : p.substr(slash + 1));
+                if (found != stems.end())
+                    tile = FetchTile(found->second, root);
+            }
+            fetchingGeometry = false;
+            return tile;
+        };
         for (const CustomBlockDef& def : defs) {
             if (!def.json.empty()) {
                 geometry.AddCustom(def.name, def.json, serverDirs, vanillaRpRoot, fetchGeometry);
@@ -1183,7 +1271,7 @@ namespace perlin {
                     const auto p = pathByKey.find(f->second);
                     const std::string path = p != pathByKey.end() ? p->second : "textures/blocks/" + f->second;
                     pathOut = path;
-                    return FetchTile(path, vanillaRpRoot);
+                    return FetchOrSynth(path, vanillaRpRoot, def.name + "/" + f->second, stems);
                 }
                 return -1;
             };
@@ -1194,10 +1282,8 @@ namespace perlin {
             int bottom = resolve({"down", "*"}, pBottom);
             if (top < 0 && side < 0 && bottom < 0) {
                 const std::string guess = "textures/blocks/" + AfterColon(def.name);
-                side = FetchTile(guess, vanillaRpRoot);
+                side = FetchOrSynth(guess, vanillaRpRoot, def.name, stems);
                 pSide = guess;
-                if (side == 0)
-                    continue;
             }
             if (side < 0)
                 side = top >= 0 ? top : bottom;

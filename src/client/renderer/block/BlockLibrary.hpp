@@ -78,6 +78,10 @@ namespace perlin {
 
     private:
         int FetchTile(const std::string& pngRelPath, const std::string& vanillaRpRoot);
+        int FetchOrSynth(const std::string& pngRelPath, const std::string& vanillaRpRoot, const std::string& label,
+                         const std::unordered_map<std::string, std::string>& stems);
+        int SynthTile(const std::string& label);
+        bool fetchingGeometry = false;
 
         BlockModels models;
         mutable BlockGeometry geometry;

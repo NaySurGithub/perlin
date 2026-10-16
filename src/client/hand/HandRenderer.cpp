@@ -418,6 +418,17 @@ namespace perlin {
             return it->second;
         Model model;
         const ui::ItemSprite* sprite = assets.Item(key);
+        ui::ItemSprite baked;
+        if (!sprite || sprite->generic || sprite->fromBlock) {
+            Texture icon;
+            if (assets.ItemIcon(key, icon) && icon.width > 0 && !icon.pixels.empty() && (!sprite || sprite->generic || !sprite->block)) {
+                baked.ok = true;
+                baked.w = icon.width;
+                baked.h = icon.height;
+                baked.rgba = std::move(icon.pixels);
+                sprite = &baked;
+            }
+        }
         if (sprite && sprite->ok) {
             if (sprite->block && sprite->tile > 0) {
                 const int t = sprite->tile;

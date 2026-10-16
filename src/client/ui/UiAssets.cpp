@@ -18,6 +18,7 @@
 #include <fstream>
 #include <cstdlib>
 #include <sstream>
+#include <unordered_set>
 
 namespace fs = std::filesystem;
 
@@ -200,21 +201,31 @@ namespace perlin::ui {
 
     bool UiAssets::ImageSize(const std::string& rel, int& w, int& h) {
         std::lock_guard lock(mutex);
+        if (const auto it = sizeCache.find(rel); it != sizeCache.end()) {
+            w = it->second.first;
+            h = it->second.second;
+            return w > 0 && h > 0;
+        }
         std::string base = rel;
         if (base.size() < 5 || base.substr(base.size() - 4) != ".png")
             base += ".png";
-        std::ifstream f(root + "/" + base, std::ios::binary);
-        unsigned char b[24];
-        if (f.read(reinterpret_cast<char*>(b), 24) && b[1] == 'P') {
-            w = (b[16] << 24) | (b[17] << 16) | (b[18] << 8) | b[19];
-            h = (b[20] << 24) | (b[21] << 16) | (b[22] << 8) | b[23];
-            return w > 0 && h > 0;
+        const bool layered = TexturePack::Instance().Active() || !ServerPacks::Instance().Directories().empty();
+        if (!layered) {
+            std::ifstream f(root + "/" + base, std::ios::binary);
+            unsigned char b[24];
+            if (f.read(reinterpret_cast<char*>(b), 24) && b[1] == 'P') {
+                w = (b[16] << 24) | (b[17] << 16) | (b[18] << 8) | b[19];
+                h = (b[20] << 24) | (b[21] << 16) | (b[22] << 8) | b[23];
+                sizeCache[rel] = {w, h};
+                return w > 0 && h > 0;
+            }
         }
         Texture t;
         if (!FindImage(rel, t))
             return false;
         w = t.width;
         h = t.height;
+        sizeCache[rel] = {w, h};
         return true;
     }
 
@@ -324,6 +335,7 @@ namespace perlin::ui {
         if (itemTableLoaded) {
             items.clear();
             itemTextures.clear();
+            stemIndexBuilt = false;
         }
         itemTableLoaded = true;
         itemTableGeneration = generation;
@@ -509,8 +521,76 @@ namespace perlin::ui {
         }
     }
 
+    void UiAssets::BuildStemIndex() {
+        stemIndexBuilt = true;
+        stemIndex.clear();
+        namespace fs = std::filesystem;
+        for (const std::string& dir : ServerPacks::Instance().Directories()) {
+            std::error_code ec;
+            const fs::path base = fs::path(dir) / "textures";
+            for (const char* sub : {"items", "blocks"}) {
+                for (fs::recursive_directory_iterator it(base / sub, fs::directory_options::skip_permission_denied, ec), end;
+                     !ec && it != end; it.increment(ec)) {
+                    if (!it->is_regular_file(ec))
+                        continue;
+                    const std::string ext = it->path().extension().string();
+                    if (ext != ".png" && ext != ".tga")
+                        continue;
+                    std::string rel = fs::relative(it->path(), dir, ec).generic_string();
+                    rel.resize(rel.size() - ext.size());
+                    stemIndex.emplace(it->path().stem().string(), rel);
+                }
+            }
+        }
+    }
+
+    std::string UiAssets::FindByStem(const std::string& stem) {
+        if (!stemIndexBuilt)
+            BuildStemIndex();
+        const auto it = stemIndex.find(stem);
+        return it == stemIndex.end() ? std::string() : it->second;
+    }
+
+    namespace {
+        void MakeGenericIcon(const std::string& name, ItemSprite& out) {
+            uint32_t h = 2166136261u;
+            for (char c : name)
+                h = (h ^ static_cast<uint8_t>(c)) * 16777619u;
+            const float hue = static_cast<float>(h % 360) / 60.0f;
+            const auto channel = [&](float n) {
+                const float k = std::fmod(n + hue, 6.0f);
+                return 0.35f + 0.45f * (1.0f - std::max(0.0f, std::min({k, 4.0f - k, 1.0f})));
+            };
+            const float r = channel(5.0f), g = channel(3.0f), b = channel(1.0f);
+            out.w = out.h = 16;
+            out.rgba.assign(16 * 16 * 4, 0);
+            for (int y = 0; y < 16; y++)
+                for (int x = 0; x < 16; x++) {
+                    const int dx = std::abs(x * 2 - 15), dy = std::abs(y * 2 - 15);
+                    const int d = (dx + dy) / 2;
+                    if (d > 7)
+                        continue;
+                    const bool edge = d == 7;
+                    const float shade = edge ? 0.45f : (y < 8 ? 1.15f : 0.85f) - 0.02f * static_cast<float>(d);
+                    uint8_t* px = &out.rgba[static_cast<size_t>(y * 16 + x) * 4];
+                    px[0] = static_cast<uint8_t>(std::min(1.0f, r * shade) * 255.0f);
+                    px[1] = static_cast<uint8_t>(std::min(1.0f, g * shade) * 255.0f);
+                    px[2] = static_cast<uint8_t>(std::min(1.0f, b * shade) * 255.0f);
+                    px[3] = 255;
+                }
+            out.ok = true;
+            out.generic = true;
+        }
+    }
+
     const ItemSprite* UiAssets::Item(const std::string& key) {
         std::lock_guard lock(mutex);
+        if (itemTableLoaded && itemTableGeneration != ServerPacks::Instance().Generation()) {
+            items.clear();
+            itemTextures.clear();
+            itemTableLoaded = false;
+            stemIndexBuilt = false;
+        }
         auto it = items.find(key);
         if (it != items.end())
             return it->second.ok ? &it->second : nullptr;
@@ -525,8 +605,35 @@ namespace perlin::ui {
 
         CustomItemDef custom;
         const bool customItem = ServerBlocks::Instance().Item(id, custom);
-        if (!FlatSprite(name, aux, sprite, dye, customItem ? custom.icon : std::string()) && blocks && blocks->Ready()) {
-            if (const BlockAppearance* a = blocks->LookByName("minecraft:" + name)) {
+        bool flat = FlatSprite(name, aux, sprite, dye, customItem ? custom.icon : std::string());
+        if (!flat) {
+            std::vector<std::string> stems;
+            if (customItem && !custom.icon.empty())
+                stems.push_back(custom.icon);
+            stems.push_back(name);
+            if (customItem && !custom.icon.empty()) {
+                const size_t slash = custom.icon.find_last_of('/');
+                if (slash != std::string::npos)
+                    stems.push_back(custom.icon.substr(slash + 1));
+            }
+            for (const std::string& stem : stems) {
+                const std::string rel = FindByStem(stem);
+                Texture t;
+                if (!rel.empty() && FindImage(rel, t) && t.width > 0) {
+                    sprite.ok = true;
+                    sprite.w = t.width;
+                    sprite.h = t.height;
+                    sprite.rgba = std::move(t.pixels);
+                    flat = true;
+                    break;
+                }
+            }
+        }
+        if (!flat && blocks && blocks->Ready()) {
+            const BlockAppearance* a = id.find(':') != std::string::npos ? blocks->LookByName(id) : nullptr;
+            if (!a)
+                a = blocks->LookByName("minecraft:" + name);
+            if (a) {
                 const int px = BlockLibrary::TilePx();
                 sprite.tile = px;
                 sprite.fromBlock = true;
@@ -593,14 +700,25 @@ namespace perlin::ui {
                 }
             }
         }
+        if (!sprite.ok) {
+            static std::unordered_set<std::string> reported;
+            if (reported.insert(id).second)
+                std::cout << "[items] no texture found for " << id << (customItem ? " (icon '" + custom.icon + "')" : std::string())
+                          << ", using a generic icon" << std::endl;
+            MakeGenericIcon(id, sprite);
+        }
         auto inserted = items.emplace(key, std::move(sprite)).first;
-        return inserted->second.ok ? &inserted->second : nullptr;
+        return &inserted->second;
     }
 
     void UiAssets::ClearItemCache() {
         std::lock_guard lock(mutex);
         items.clear();
         itemTextures.clear();
+        sidecars.clear();
+        sizeCache.clear();
+        stemIndex.clear();
+        stemIndexBuilt = false;
         itemTableLoaded = false;
         generation++;
     }
@@ -658,7 +776,7 @@ namespace perlin::ui {
 
     bool UiAssets::ItemIcon(const std::string& key, Texture& out) {
         const ItemSprite* s = Item(key);
-        if (!s || s->fromBlock) {
+        if (!s || s->fromBlock || s->generic) {
             const size_t hashAt = key.find('#');
             if (hashAt != std::string::npos && blocks && blocks->Ready()) {
                 const size_t semi = key.rfind(';', hashAt);

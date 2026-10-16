@@ -201,8 +201,8 @@ namespace perlin {
             auto addGeometry = [&](const std::string& id, const json::View g, bool legacy) {
                 Geometry geo;
                 const json::View desc = legacy ? g : g["description"];
-                geo.tw = desc["texture_width"].real(16);
-                geo.th = desc["texture_height"].real(16);
+                geo.tw = desc["texture_width"].real(desc["texturewidth"].real(16));
+                geo.th = desc["texture_height"].real(desc["textureheight"].real(16));
                 for (const json::View b : g["bones"].items()) {
                     Bone bone;
                     bone.name = b["name"].str();
