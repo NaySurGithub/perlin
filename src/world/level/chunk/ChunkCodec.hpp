@@ -48,6 +48,7 @@ namespace perlin {
         using CellIds = std::array<int32_t, kCells>;
 
         static const DimensionInfo& Dimension(int dimensionId);
+        static void SetDimension(int dimensionId, int minY, int heightRange);
 
         static bool ParseSubChunk(const uint8_t* data, size_t size, SubChunkData& out, size_t& consumed,
                                   const char** err = nullptr);

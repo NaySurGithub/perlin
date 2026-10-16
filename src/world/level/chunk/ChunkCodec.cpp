@@ -211,18 +211,19 @@ namespace perlin {
 
     void SetPersistentResolver(PersistentResolver resolver) { gResolver = resolver; }
 
+    namespace {
+        DimensionInfo gDimensions[3] = {{0, -64, 24}, {1, 0, 8}, {2, 0, 16}};
+    }
+
+    void ChunkCodec::SetDimension(int id, int minY, int heightRange) {
+        if (id < 0 || id > 2 || heightRange <= 0)
+            return;
+        gDimensions[id].minY = minY;
+        gDimensions[id].slots = (heightRange + 15) / 16;
+    }
+
     const DimensionInfo& ChunkCodec::Dimension(int id) {
-        static const DimensionInfo kOverworld{0, -64, 24};
-        static const DimensionInfo kNether{1, 0, 8};
-        static const DimensionInfo kEnd{2, 0, 16};
-        switch (id) {
-        case 1:
-            return kNether;
-        case 2:
-            return kEnd;
-        default:
-            return kOverworld;
-        }
+        return gDimensions[id == 1 ? 1 : id == 2 ? 2 : 0];
     }
 
     bool ChunkCodec::ParseSubChunk(const uint8_t* data, size_t size, SubChunkData& out, size_t& consumed,

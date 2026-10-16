@@ -1,6 +1,7 @@
 #include "client/ui/ChatFormat.hpp"
 #include "util/Env.hpp"
 #include "client/multiplayer/BedrockSession.hpp"
+#include "world/level/chunk/ChunkCodec.hpp"
 #include "client/multiplayer/CustomBlocks.hpp"
 #include "client/i18n/Lang.hpp"
 #include "client/player/VoxelShapes.hpp"
@@ -444,6 +445,14 @@ namespace perlin {
                           << p.savedChunks.size() << " server-built chunks listed" << std::endl;
             if (radius > 0)
                 PruneChunks(cx, cz, radius + 2);
+        });
+
+        On<DimensionDataPacket>([](const DimensionDataPacket& p) {
+            for (const DimensionDataPacketDefinitionsEntry& d : p.definitions) {
+                const int id = d.id.find("nether") != std::string::npos ? 1 : d.id.find("end") != std::string::npos ? 2 : 0;
+                std::cout << "[chunk] dimension " << d.id << " minY=" << d.minY << " height=" << d.heightRange << std::endl;
+                ChunkCodec::SetDimension(id, d.minY, d.heightRange);
+            }
         });
 
         On<ChunkRadiusUpdatePacket>([this](const ChunkRadiusUpdatePacket& p) {
