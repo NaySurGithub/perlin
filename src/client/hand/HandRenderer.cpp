@@ -830,7 +830,8 @@ namespace perlin {
         m = m * part;
         const ArmModel& arm = (in.slimArm ? armSlim : armClassic)[rightArm ? 0 : 1];
         DrawModel(arm.base, skinTexture, m, in.light, 0.1f);
-        DrawModel(arm.sleeve, skinTexture, m, in.light, 0.1f);
+        if (rightArm ? in.rightSleeve : in.leftSleeve)
+            DrawModel(arm.sleeve, skinTexture, m, in.light, 0.1f);
     }
 
     void HandRenderer::RenderItem(const FrameIn& in, const HandSettings& s, const ui::HudItem& item, bool rightArm,

@@ -72,6 +72,8 @@ namespace perlin {
             return false;
         if (input.TextMode())
             return false;
+        if (holds[static_cast<size_t>(action)] > std::chrono::steady_clock::now())
+            return true;
         const Binding& b = options.GetKey(action);
         switch (b.device) {
         case Binding::Device::Keyboard:

@@ -1,0 +1,7 @@
+{
+  "name": "Speedometer",
+  "description": "Shows your horizontal speed in blocks per second in the corner, with a /speed command and a toggle key (F7).",
+  "version": "1.0.0",
+  "author": "Perlin",
+  "permissions": []
+}

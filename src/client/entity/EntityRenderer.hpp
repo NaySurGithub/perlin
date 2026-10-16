@@ -1,4 +1,5 @@
 #pragma once
+#include "client/Options.hpp"
 #include "client/particle/ParticleSystem.hpp"
 #include "client/entity/EntityAssets.hpp"
 #include "client/entity/EntityTracker.hpp"
@@ -42,6 +43,7 @@ namespace perlin::entity {
             std::function<double(double, double, double)> groundY;
             bool chunkBorders = false;
             bool ownNametag = false;
+            SkinParts ownParts;
             const std::vector<particle::Quad>* particles = nullptr;
             std::function<bool(int, std::vector<uint8_t>&)> tilePixels;
             glm::dvec3 playerPos{0.0};
@@ -107,7 +109,7 @@ namespace perlin::entity {
         EntityAssets assets;
         std::unordered_map<uint64_t, std::unique_ptr<View>> views;
         std::unordered_map<std::string, uint32_t> textures;
-        std::unordered_map<uint64_t, uint32_t> skinTextures, capeTextures;
+        std::unordered_map<uint64_t, uint32_t> skinTextures, capeTextures, capeModelTextures;
         std::unordered_map<uint64_t, std::unique_ptr<attachable::GeometryLibrary>> skinGeometry;
         std::vector<uint32_t> pendingMeshes;
         size_t drawn = 0, considered = 0, unrenderable = 0, culled = 0;

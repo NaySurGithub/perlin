@@ -32,6 +32,7 @@ namespace perlin {
         physics::BlockShape QueryMain(int x, int y, int z) const;
         static const Info& Lookup(uint16_t id, const BlockLibrary* blocks);
         static Info Classify(uint16_t id, const BlockLibrary* blocks);
+        static Info ClassifyVanilla(uint16_t id, const BlockLibrary* blocks);
 
         const Level& level;
         const BlockLibrary* blocks;

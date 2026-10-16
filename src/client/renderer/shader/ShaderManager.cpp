@@ -165,6 +165,7 @@ namespace perlin {
         heldLight = bgfx::createUniform("u_heldLight", bgfx::UniformType::Vec4);
         dynParams = bgfx::createUniform("u_dynParams", bgfx::UniformType::Vec4);
         dynLights = bgfx::createUniform("u_dynLights", bgfx::UniformType::Vec4, 8);
+        packSettings = bgfx::createUniform("u_packSettings", bgfx::UniformType::Vec4, 4);
         tiles = bgfx::createUniform("u_tiles", bgfx::UniformType::Vec4);
         skyParams = bgfx::createUniform("u_skyParams", bgfx::UniformType::Vec4);
         shadowMatrix = bgfx::createUniform("u_shadowMtx", bgfx::UniformType::Mat4);
@@ -181,7 +182,7 @@ namespace perlin {
         }
         for (bgfx::UniformHandle* handle : {&atlasSampler, &lightmapSampler, &skySampler, &mvp, &camera, &fogColor,
                                             &fogEnvironment, &fogSky, &modulator, &textureInfo, &chunk, &cloudOffset,
-                                            &cloudColor, &sunDirection, &timeUniform, &heldLight, &dynParams, &dynLights, &tiles, &skyParams,
+                                            &cloudColor, &sunDirection, &timeUniform, &heldLight, &dynParams, &dynLights, &packSettings, &tiles, &skyParams,
                                             &shadowMatrix, &shadowInfo, &shadowSampler}) {
             if (bgfx::isValid(*handle))
                 bgfx::destroy(*handle);
@@ -218,6 +219,7 @@ namespace perlin {
         dynParamsValue[0] = static_cast<float>(params.dynMode);
         dynParamsValue[1] = static_cast<float>(params.dynMode ? std::clamp(params.dynCount, 0, 8) : 0);
         std::copy_n(&params.dynLights[0][0], 32, &dynLightsValue[0][0]);
+        std::copy_n(&params.packSettings[0], 16, &packSettingsValue[0][0]);
         tilesValue[0] = params.waterTile;
         tilesValue[1] = params.lavaTile;
         tilesValue[2] = params.waterFlowTile;
@@ -234,6 +236,7 @@ namespace perlin {
         bgfx::setUniform(heldLight, heldLightValue);
         bgfx::setUniform(dynParams, dynParamsValue);
         bgfx::setUniform(dynLights, dynLightsValue, 8);
+        bgfx::setUniform(packSettings, packSettingsValue, 4);
         bgfx::setUniform(tiles, tilesValue);
         bgfx::setUniform(skyParams, skyParamsValue);
         SetChunkVisibility(1.0f);

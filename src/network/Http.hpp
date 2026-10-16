@@ -14,4 +14,6 @@ namespace perlin::http {
                      const std::string& path, const std::string& body = {},
                      const std::string& contentType = {},
                      const std::map<std::string, std::string>& headers = {}, int timeoutSecs = 15);
+
+    Response GetUrl(const std::string& url, const std::map<std::string, std::string>& headers = {}, int timeoutSecs = 60);
 }

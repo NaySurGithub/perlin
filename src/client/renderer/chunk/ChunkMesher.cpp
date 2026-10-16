@@ -1091,13 +1091,32 @@ namespace perlin {
                     auto biomeTintFor = [&](const std::string& tex, int tile,
                                             bool isTop) -> std::array<float, 4> {
                         const size_t texHash = std::hash<std::string>()(tex);
+                        std::array<float, 4> sum{0, 0, 0, 0};
+                        std::array<float, 4> own{0, 0, 0, 0};
+                        int count = 0;
+                        const int centre = cache.Biome(std::clamp(x, -1, 16), y, std::clamp(z, -1, 16));
+                        bool uniform = true;
+                        for (int dz = -2; dz <= 2 && uniform; dz++)
+                            for (int dx = -2; dx <= 2; dx++)
+                                if (cache.Biome(std::clamp(x + dx, -1, 16), y, std::clamp(z + dz, -1, 16)) != centre) {
+                                    uniform = false;
+                                    break;
+                                }
+                        if (uniform) {
+                            TintKey k{app, tile, texHash, centre};
+                            auto mit = tintMemo.find(k);
+                            if (mit == tintMemo.end()) {
+                                std::string& bn = biomeNames[static_cast<size_t>(centre) & 255];
+                                if (bn.empty() && haveTints)
+                                    bn = tints->NameForId(centre);
+                                mit = tintMemo.emplace(k, biomeTintForRaw(haveTints ? bn : kPlainsName, tex, tile, isTop)).first;
+                            }
+                            return mit->second;
+                        }
                         TintKey blendKey{app, tile, texHash, (x & 31) | ((z & 31) << 5) | (((y - cache.yBase) & 1023) << 10)};
                         auto bit = blendMemo.find(blendKey);
                         if (bit != blendMemo.end())
                             return bit->second;
-                        std::array<float, 4> sum{0, 0, 0, 0};
-                        std::array<float, 4> own{0, 0, 0, 0};
-                        int count = 0;
                         for (int dz = -2; dz <= 2; dz++)
                             for (int dx = -2; dx <= 2; dx++) {
                                 const int sx = std::clamp(x + dx, -1, 16), sz = std::clamp(z + dz, -1, 16);
@@ -1693,7 +1712,7 @@ namespace perlin {
                         const uint16_t neighborId = cache.Get(x + nx, y + ny, z + nz);
                         if (neighborId != 0 && cache.Occ(x + nx, y + ny, z + nz))
                             return;
-                        if (neighborId != 0 && (translucent || (library && library->IsGlassBase(tile))) && (neighborId == id || (!isWater && library && library->GlassMode() && library->IsGlassBase(library->Look(neighborId).side))))
+                        if (neighborId != 0 && (translucent || (library && library->IsGlassBase(tile))) && neighborId == id)
                             return;
                         if (isWater) {
                             const uint16_t other = EffLiquid(cache, library, x + nx, y + ny, z + nz);

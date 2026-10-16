@@ -60,6 +60,9 @@ namespace perlin {
             std::vector<std::string> disabledMods;
             bool hotReload = true;
             bool betterGrass = false;
+            SkinParts skinParts;
+            std::map<std::string, bool> skinSlim;
+            std::map<std::string, double> shaderSettings;
         };
     }
 
@@ -129,7 +132,10 @@ namespace perlin {
                       o.texturePacks,
                       o.disabledMods,
                       o.hotReload,
-                      o.betterGrass};
+                      o.betterGrass,
+                      o.skinParts,
+                      o.skinSlim,
+                      o.shaderSettings};
         auto parsed = json::Read<Stored>(text);
         if (!parsed)
             return o;
@@ -170,6 +176,9 @@ namespace perlin {
         o.disabledMods = stored.disabledMods;
         o.hotReload = stored.hotReload;
         o.betterGrass = stored.betterGrass;
+        o.skinParts = stored.skinParts;
+        o.skinSlim = stored.skinSlim;
+        o.shaderSettings = stored.shaderSettings;
         o.shadows = stored.shadows;
         o.heldLight = std::clamp(stored.heldLight, 0, 15);
         o.shadowDistance = std::clamp(stored.shadowDistance, 0, 256);
@@ -262,7 +271,10 @@ namespace perlin {
                       texturePacks,
                       disabledMods,
                       hotReload,
-                      betterGrass};
+                      betterGrass,
+                      skinParts,
+                      skinSlim,
+                      shaderSettings};
         for (size_t i = 0; i < kActionCount; i++)
             stored.keys[ActionId(static_cast<Action>(i))] = keys[i].Serialize();
 

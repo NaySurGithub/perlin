@@ -9,6 +9,7 @@ namespace perlin {
         std::string skinPath;
         std::string capePath;
         bool slimArms = false;
+        bool autoSlim = false;
     };
 
     struct LoadedSkin {
@@ -22,6 +23,8 @@ namespace perlin {
         bool hasSkin() const { return !skinRgba.empty(); }
         bool hasCape() const { return !capeRgba.empty(); }
     };
+
+    bool DetectSlimSkin(const std::vector<uint8_t>& rgba, int width, int height);
 
     bool LoadSkinConfig(const SkinConfig& config, LoadedSkin& out, std::string& error);
 

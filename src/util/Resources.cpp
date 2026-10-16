@@ -23,6 +23,8 @@ namespace perlin::resources {
     bool Read(const std::string& name, std::string& out) {
         if (const char* dir = std::getenv("PERLIN_RESOURCES"); dir && *dir && ReadDisk(std::string(dir) + "/" + name, out))
             return true;
+        if (ReadDisk(paths::DataDir() + "/assets/" + name, out))
+            return true;
         const uint8_t* data = nullptr;
         size_t size = 0;
         if (gProvider && gProvider(name.c_str(), &data, &size)) {

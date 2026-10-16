@@ -1,6 +1,7 @@
 #pragma once
 #include "client/input/KeyMapping.hpp"
 
+#include <map>
 #include <string>
 #include <vector>
 
@@ -42,6 +43,16 @@ namespace perlin {
         float master = 1.0f, music = 1.0f, record = 1.0f, weather = 1.0f, block = 1.0f, hostile = 1.0f, neutral = 1.0f,
               player = 1.0f, ambient = 1.0f, voice = 1.0f;
         bool subtitles = false;
+    };
+
+    struct SkinParts {
+        bool cape = true;
+        bool jacket = true;
+        bool leftSleeve = true;
+        bool rightSleeve = true;
+        bool leftPants = true;
+        bool rightPants = true;
+        bool hat = true;
     };
 
     struct Options {
@@ -91,6 +102,9 @@ namespace perlin {
         std::vector<std::string> disabledMods;
         bool hotReload = true;
         bool betterGrass = false;
+        SkinParts skinParts;
+        std::map<std::string, bool> skinSlim;
+        std::map<std::string, double> shaderSettings;
         KeyBindings keys = DefaultBindings();
 
         const Binding& GetKey(Action action) const { return keys[static_cast<size_t>(action)]; }

@@ -29,6 +29,9 @@ namespace perlin::ui {
         bool SetDocument(const std::string& rml, std::string& error);
         bool SetOverlay(const std::string& rml, std::string& error);
         void ClearOverlay();
+        bool SetPluginLayer(const std::string& rml, std::string& error);
+        void ClearPluginLayer();
+        bool HasPluginLayer() const { return plugin != nullptr; }
         void MoveOverlayElement(const char* id, int guiX, int guiY);
         bool HasOverlay() const { return overlay != nullptr; }
         void MouseMove(float guiX, float guiY);
@@ -47,5 +50,6 @@ namespace perlin::ui {
         Rml::Context* context = nullptr;
         Rml::ElementDocument* document = nullptr;
         Rml::ElementDocument* overlay = nullptr;
+        Rml::ElementDocument* plugin = nullptr;
     };
 }

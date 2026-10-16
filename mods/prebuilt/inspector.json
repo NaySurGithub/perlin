@@ -1,0 +1,7 @@
+{
+  "name": "Inspector",
+  "description": "Shows the block or entity under your crosshair, your held item, nearby entity count and how many matching blocks are around. Adds /inspect.",
+  "version": "1.0.0",
+  "author": "Perlin",
+  "permissions": []
+}

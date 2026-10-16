@@ -34,6 +34,7 @@ namespace perlin {
         void DrawHudCursor(float x, float y, float w, float h) override;
         void UploadAtlas(const uint8_t* rgba, int tilePx, int tiles) override;
         bool ReloadShaders() override;
+        void SetVsync(bool enabled) override;
         void UpdateAtlasRegion(int tile, const uint8_t* rgba) override;
         uint32_t UiCreateTexture(int width, int height, const uint8_t* rgba, bool linear, bool repeat = false) override;
         void UiDestroyTexture(uint32_t texture) override;

@@ -50,6 +50,7 @@ namespace perlin {
         size_t MeshesInFlight() const { return inFlight.size(); }
         size_t MaxMeshesInFlight() const { return maxInFlight; }
         size_t MeshedChunks() const { return meshKey.size(); }
+        void BenchmarkMeshing(Level& level, int rounds);
         bool TexturesLoaded() const { return atlasUploaded; }
 
     private:

@@ -17,9 +17,11 @@
 #include "client/ui/ChatLog.hpp"
 #include "client/ui/Hud.hpp"
 #include "client/ui/InventoryScreen.hpp"
+#include "client/mods/ModManager.hpp"
 #include "util/ThreadPool.hpp"
 
 #include <atomic>
+#include <future>
 #include "client/resources/PackInfo.hpp"
 #include <memory>
 #include <map>
@@ -27,6 +29,7 @@
 #include <string>
 #include <thread>
 #include <unordered_map>
+#include <unordered_set>
 
 class AppPlatform;
 
@@ -116,6 +119,11 @@ namespace perlin {
         std::chrono::steady_clock::time_point wardListedAt{};
         std::unordered_map<std::string, std::string> wardStamp;
         std::unordered_map<std::string, bool> wardSlimGuess;
+        std::string wardSkin, wardCape, wardPreviewSource;
+        bool wardInit = false;
+        std::map<std::string, bool> wardSlim;
+        LoadedSkin wardPreviewLoaded;
+        SkinConfig MakeSkinConfig(const std::string& skinPath, const std::string& capePath) const;
         int optHoverRow = -1;
         std::chrono::steady_clock::time_point optHoverSince{};
         std::map<std::string, std::pair<int, double>> worldOverride;
@@ -132,12 +140,17 @@ namespace perlin {
         std::chrono::steady_clock::time_point packFoundAt{};
         int packRowsHover = -1;
         void ApplyTexturePacks();
+        void CommitTexturePacks();
+        std::vector<std::string> packPending;
+        bool packPendingInit = false;
         void ApplyShaderPack();
+        struct HotStamps {
+            std::string tex, shader;
+        };
         void PollHotReload();
+        std::future<HotStamps> hotScan;
         std::chrono::steady_clock::time_point hotPollAt{};
-        std::string hotTexStamp, hotShaderStamp, hotSrcStamp, shaderBuildReport;
-        std::atomic<bool> shaderBuilding{false};
-        std::thread shaderBuildThread;
+        std::string hotTexStamp, hotShaderStamp, shaderBuildReport;
         std::chrono::steady_clock::time_point bindStartedAt{};
         std::string optionsSignature;
         std::chrono::steady_clock::time_point pauseOpenedAt{}, pauseCheckAt{};
@@ -148,6 +161,46 @@ namespace perlin {
         uint32_t commandsSeen = 0;
         std::chrono::steady_clock::time_point playersAt{};
         void UpdateTitle(int fps);
+        void SetupMods();
+        void PumpMods(BedrockSession* live, Level* level, ui::Hud* hudPtr, float dt);
+        void TickMods(BedrockSession* live);
+        bool InterceptOutgoing(BedrockSession* live, const std::string& text);
+        bool FilterIncomingChat(const std::string& line);
+        void UpdateModLayer(ui::Hud& hud);
+        void ApplyModHud(ui::HudState& s);
+        void NoteModSound(const std::string& name, double x, double y, double z, float volume, float pitch);
+        void MergePluginCommands(BedrockSession* live);
+        void StartModHttp(const std::string& plugin, uint32_t id, std::string method, std::string url, int timeoutMs,
+                          std::vector<std::pair<std::string, std::string>> headers, std::vector<uint8_t> body);
+        abi::Screen CurrentScreen() const;
+        BedrockSession* modLive = nullptr;
+        Level* modLevel = nullptr;
+        ui::Hud* modHud = nullptr;
+        float modDt = 0.0f;
+        int modGuiW = 0, modGuiH = 0;
+        std::mutex modMutex;
+        std::vector<std::pair<std::string, abi::EventHttp>> modHttp;
+        std::atomic<int> modHttpActive{0};
+        std::vector<abi::EventSound> modSounds;
+        std::map<std::string, bool> modKeyDown;
+        std::atomic<bool> modWantPackets{false};
+        bool modWasConnected = false, modWasDead = false;
+        int modLastDim = 0, modLastSlot = -1;
+        uint32_t modLastHurt = 0, modTitleSerial = 0;
+        abi::Screen modLastScreen = abi::Screen::None;
+        std::unordered_set<uint64_t> modEntityIds;
+        bool modEntitySeeded = false;
+        std::string modToastText, modTitleText, modSubtitleText;
+        std::chrono::steady_clock::time_point modToastUntil{}, modTitleStart{};
+        int modTitleFadeIn = 500, modTitleStay = 3500, modTitleFadeOut = 1000;
+        uint64_t modLayerVersion = 0;
+        int modLayerW = 0, modLayerH = 0;
+        bool modLayerShown = false;
+        std::string modCommandSig;
+        uint32_t modCommandsVersion = 0;
+        std::vector<std::pair<uint32_t, std::vector<uint8_t>>> modPackets;
+        std::chrono::steady_clock::time_point modLastFrame{};
+        double modTickAccum = 0.0;
         void FillDebug(ui::HudState& state, BedrockSession* live, Level* level);
         bool debugOn = false;
         int fpsShown = 0;

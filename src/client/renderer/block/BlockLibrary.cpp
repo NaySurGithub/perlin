@@ -1,4 +1,5 @@
 #include "client/renderer/block/BlockLibrary.hpp"
+#include "client/renderer/block/BiomeTints.hpp"
 #include <unordered_set>
 #include <algorithm>
 #include "world/level/block/BlockPalette.hpp"
@@ -1054,17 +1055,7 @@ namespace perlin {
             }
         }
         {
-            std::array<float, 3> wc = {0.266f, 0.686f, 0.961f};
-            if (const auto biomesDocument =
-                    json::Document::Parse(ReadFile(vanillaRpRoot + "/biomes_client.json"), true)) {
-                const json::View biomes = biomesDocument->root()["biomes"];
-                const json::View pick =
-                    biomes.contains("default") ? biomes["default"] : biomes["minecraft:plains"];
-                const std::string hex = pick["water_surface_color"].str();
-                unsigned r = 0, g = 0, bq = 0;
-                if (hex.size() > 1 && sscanf(hex.c_str() + 1, "%02x%02x%02x", &r, &g, &bq) == 3)
-                    wc = {r / 255.0f, g / 255.0f, bq / 255.0f};
-            }
+            const std::array<float, 3> wc = ResolveDefaultWater(vanillaRpRoot);
             for (auto& [name, app] : appearances) {
                 auto isWaterNamed = [](const std::string& t) {
                     return t.find("still_water") != std::string::npos ||

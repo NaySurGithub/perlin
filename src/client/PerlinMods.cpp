@@ -1,0 +1,1125 @@
+#include "client/Perlin.hpp"
+
+#include "client/i18n/Lang.hpp"
+#include "client/input/Keys.hpp"
+#include "client/mods/ModManager.hpp"
+#include "client/platform/AppPlatform.hpp"
+#include "client/player/BlockUse.hpp"
+#include "client/player/Interaction.hpp"
+#include "client/resources/ShaderPack.hpp"
+#include "client/ui/Json.hpp"
+#include "client/ui/McFont.hpp"
+#include "network/Transport.hpp"
+#include "world/level/block/BlockPalette.hpp"
+
+#include <algorithm>
+#include <cmath>
+#include <functional>
+
+namespace perlin {
+    namespace {
+        using abi::Status;
+
+        const char* PlatformName() {
+#if defined(__EMSCRIPTEN__)
+            return "web";
+#elif defined(__ANDROID__)
+            return "android";
+#elif defined(_WIN32)
+            return "windows";
+#elif defined(__APPLE__)
+            return "macos";
+#else
+            return "linux";
+#endif
+        }
+
+        abi::Item ToItem(const BedrockSession::ItemStackInfo& s) {
+            abi::Item i;
+            if (s.Empty())
+                return i;
+            i.name = s.name;
+            i.count = s.count;
+            i.aux = s.aux;
+            i.damage = s.damage;
+            i.enchanted = s.enchanted;
+            i.customName = s.customName;
+            for (const auto& e : s.enchants)
+                i.enchants.emplace_back(e.first, e.second);
+            i.lore = s.lore;
+            return i;
+        }
+
+        abi::Entity ToEntity(const entity::Entity& e) {
+            abi::Entity out;
+            out.runtimeId = e.runtimeId;
+            out.uniqueId = e.uniqueId;
+            out.type = e.type;
+            out.name = e.name;
+            out.nameTag = e.nameTag;
+            out.uuid = e.uuid;
+            out.x = e.pos.x;
+            out.y = e.pos.y;
+            out.z = e.pos.z;
+            out.yaw = e.yaw;
+            out.pitch = e.pitch;
+            out.headYaw = e.headYaw;
+            out.health = e.health;
+            out.scale = e.scale;
+            out.onGround = e.onGround;
+            out.isPlayer = e.isPlayer;
+            out.isItem = e.isItem;
+            out.isSelf = e.isSelf;
+            out.flags = e.flags;
+            out.itemName = e.itemName;
+            out.itemCount = e.itemCount;
+            out.mainHand = e.mainHand;
+            out.offHand = e.offHand;
+            for (int i = 0; i < 4; i++)
+                out.armor[static_cast<size_t>(i)] = e.armor[i];
+            out.vehicleUid = e.vehicleUid;
+            out.ownerUid = e.ownerUid;
+            out.targetUid = e.targetUid;
+            return out;
+        }
+
+        class NameCache {
+        public:
+            const std::string& Get(uint16_t id) {
+                const auto it = names.find(id);
+                if (it != names.end())
+                    return it->second;
+                return names.emplace(id, BlockPalette::Instance().Name(id)).first->second;
+            }
+
+        private:
+            std::unordered_map<uint16_t, std::string> names;
+        };
+
+        std::string StateText(const BlockPalette::StateValue& v) {
+            switch (v.kind) {
+            case BlockPalette::StateValue::Bool: return v.i ? "true" : "false";
+            case BlockPalette::StateValue::Int: return std::to_string(v.i);
+            default: return v.s;
+            }
+        }
+
+        bool MatchName(const std::string& have, const std::string& want, bool exact) {
+            if (want.empty())
+                return false;
+            if (exact)
+                return have == want || have == "minecraft:" + want;
+            return have.find(want) != std::string::npos;
+        }
+
+        abi::Item ToItem(const ui::HudItem& s) {
+            abi::Item i;
+            if (s.Empty())
+                return i;
+            i.name = s.name;
+            i.count = s.count;
+            i.aux = s.aux;
+            i.damage = s.maxDamage > 0 ? s.aux : 0;
+            i.enchanted = s.enchanted;
+            i.customName = s.customName;
+            for (const auto& e : s.enchants)
+                i.enchants.emplace_back(e.first, e.second);
+            i.lore = s.lore;
+            return i;
+        }
+
+        bool BlockIsAir(const std::string& name) {
+            return name.empty() || name == "minecraft:air" || name == "minecraft:cave_air" || name == "minecraft:void_air";
+        }
+
+        bool Finite(double v) { return std::isfinite(v) && std::fabs(v) < 1.0e7; }
+
+        std::string Trim(std::string s) {
+            while (!s.empty() && (s.back() == ' ' || s.back() == '\n' || s.back() == '\r'))
+                s.pop_back();
+            return s;
+        }
+
+        struct OptionAccess {
+            std::string key;
+            std::function<std::string()> get;
+            std::function<bool(const std::string&)> set;
+        };
+    }
+
+    abi::Screen Perlin::CurrentScreen() const {
+        if (deathShown)
+            return abi::Screen::Death;
+        if (invShown)
+            return invWorkbench ? abi::Screen::Workbench : abi::Screen::Inventory;
+        if (pauseShown) {
+            switch (pauseView) {
+            case 1: return abi::Screen::Options;
+            case 4: return abi::Screen::Mods;
+            case 5: return abi::Screen::Wardrobe;
+            default: return abi::Screen::Pause;
+            }
+        }
+        if (chat.IsOpen())
+            return abi::Screen::Chat;
+        if (disconnectShown)
+            return abi::Screen::Other;
+        return abi::Screen::None;
+    }
+
+    void Perlin::SetupMods() {
+        auto& mm = mods::ModManager::Instance();
+        mm.SetEnvironment(kBedrockVersion, PlatformName());
+        using mods::CallContext;
+        const uint32_t control = static_cast<uint32_t>(abi::Permission::Control);
+        const uint32_t network = static_cast<uint32_t>(abi::Permission::Network);
+        const uint32_t packets = static_cast<uint32_t>(abi::Permission::Packets);
+        using abi::Op;
+
+        const auto optionTable = [this]() {
+            std::vector<OptionAccess> t;
+            const auto boolean = [&](const char* key, bool& ref) {
+                t.push_back({key, [&ref] { return std::string(ref ? "true" : "false"); },
+                             [&ref](const std::string& v) {
+                                 if (v != "true" && v != "false")
+                                     return false;
+                                 ref = v == "true";
+                                 return true;
+                             }});
+            };
+            const auto integer = [&](const char* key, int& ref, int lo, int hi) {
+                t.push_back({key, [&ref] { return std::to_string(ref); }, [&ref, lo, hi](const std::string& v) {
+                                 char* end = nullptr;
+                                 const long n = std::strtol(v.c_str(), &end, 10);
+                                 if (!end || *end || v.empty())
+                                     return false;
+                                 ref = static_cast<int>(std::clamp<long>(n, lo, hi));
+                                 return true;
+                             }});
+            };
+            const auto real = [&](const char* key, float& ref, float lo, float hi) {
+                t.push_back({key, [&ref] { return std::to_string(ref); }, [&ref, lo, hi](const std::string& v) {
+                                 char* end = nullptr;
+                                 const float n = std::strtof(v.c_str(), &end);
+                                 if (!end || *end || v.empty() || !std::isfinite(n))
+                                     return false;
+                                 ref = std::clamp(n, lo, hi);
+                                 return true;
+                             }});
+            };
+            const auto choice = [&](const char* key, std::string& ref, std::vector<std::string> allowed) {
+                t.push_back({key, [&ref] { return ref; }, [&ref, allowed](const std::string& v) {
+                                 if (std::find(allowed.begin(), allowed.end(), v) == allowed.end())
+                                     return false;
+                                 ref = v;
+                                 return true;
+                             }});
+            };
+            integer("maxFps", options.maxFps, 0, 260);
+            boolean("vsync", options.vsync);
+            integer("renderDistance", options.renderDistance, 2, 64);
+            real("fov", options.fov, 30.0f, 110.0f);
+            real("gamma", options.gamma, 0.0f, 1.0f);
+            real("mouseSensitivity", options.mouseSensitivity, 0.0f, 1.0f);
+            boolean("invertMouse", options.invertMouse);
+            boolean("fancyGraphics", options.fancyGraphics);
+            integer("cloudRange", options.cloudRange, 0, 512);
+            integer("guiScale", options.guiScale, 0, 6);
+            boolean("shadows", options.shadows);
+            boolean("fovEffects", options.fovEffects);
+            real("motionBlur", options.motionBlur, 0.0f, 1.0f);
+            integer("damageTilt", options.damageTilt, 0, 100);
+            boolean("damageTint", options.damageTint);
+            boolean("thirdPersonCrosshair", options.thirdPersonCrosshair);
+            boolean("thirdPersonNametag", options.thirdPersonNametag);
+            integer("menuBlur", options.menuBlur, 0, 10);
+            boolean("betterGrass", options.betterGrass);
+            boolean("showHud", options.showHud);
+            choice("glass", options.glass, {"normal", "connected", "connectedClear", "clear"});
+            choice("dynamicLights", options.dynamicLights, {"off", "fast", "fancy"});
+            choice("sprintMode", options.sprintMode, {"hold", "toggle"});
+            choice("sneakMode", options.sneakMode, {"hold", "toggle"});
+            t.push_back({"language", [this] { return options.language; }, [this](const std::string& v) {
+                             if (v.empty() || v.size() > 16)
+                                 return false;
+                             options.language = v;
+                             return true;
+                         }});
+            t.push_back({"playerName", [this] { return options.playerName; }, nullptr});
+            t.push_back({"server", [this] { return options.server; }, nullptr});
+            t.push_back({"texturePack", [this] { return options.texturePack; }, nullptr});
+            t.push_back({"shaderPack", [this] { return options.shaderPack; }, nullptr});
+            for (const ShaderSetting& st : ShaderPack::Instance().Settings())
+                t.push_back({"shader." + st.id,
+                             [this, st] {
+                                 const auto found = options.shaderSettings.find(st.id);
+                                 const double v = found == options.shaderSettings.end() ? st.def : found->second;
+                                 return std::to_string(v);
+                             },
+                             [this, st](const std::string& v) {
+                                 char* end = nullptr;
+                                 const double d = std::strtod(v.c_str(), &end);
+                                 if (end == v.c_str() || !std::isfinite(d))
+                                     return false;
+                                 options.shaderSettings[st.id] = std::clamp(d, st.min, st.max);
+                                 return true;
+                             }});
+            return t;
+        };
+
+        mm.Register(Op::PlayerState, [this](CallContext&, abi::Reader&, abi::Writer& w) {
+            abi::PlayerState p;
+            const physics::State& st = player.State();
+            p.x = modLive ? st.x : camera.x;
+            p.y = modLive ? st.y : camera.y - 1.62;
+            p.z = modLive ? st.z : camera.z;
+            p.vx = st.vx;
+            p.vy = st.vy;
+            p.vz = st.vz;
+            p.yaw = camera.yaw - 90.0f;
+            p.pitch = -camera.pitch;
+            p.headYaw = p.yaw;
+            p.onGround = st.onGround;
+            p.sprinting = player.Sprinting();
+            p.sneaking = player.Sneaking();
+            p.swimming = player.Swimming();
+            p.gliding = player.Gliding();
+            p.eyeHeight = p.sneaking ? 1.27f : 1.62f;
+            p.selectedSlot = hudState.selectedSlot;
+            if (modLive) {
+                const BedrockSession::Vitals v = modLive->GetVitals();
+                p.runtimeId = modLive->GetRuntimeId();
+                p.name = modLive->PlayerName();
+                p.flying = modLive->IsFlying();
+                p.mayFly = modLive->MayFly();
+                p.spectator = modLive->Spectator();
+                p.riding = modLive->RidingUid() != 0;
+                p.connected = modLive->GetState() == BedrockSession::State::InGame;
+                p.gameMode = modLive->GameType();
+                p.dimension = modLive->DimensionId();
+                p.permission = modLive->OwnPermission();
+                p.walkSpeed = modLive->WalkSpeed();
+                p.health = v.health;
+                p.maxHealth = v.maxHealth;
+                p.absorption = v.absorption;
+                p.hunger = v.hunger;
+                p.saturation = v.saturation;
+                p.xpProgress = v.xpProgress;
+                p.xpLevel = v.level;
+                p.air = v.air;
+                p.maxAir = v.maxAir;
+                p.onFire = v.onFire;
+            } else {
+                p.name = options.playerName;
+                p.health = hudState.health;
+            }
+            p.Write(w);
+            return Status::Ok;
+        });
+
+        mm.Register(Op::PlayerEffects, [this](CallContext&, abi::Reader&, abi::Writer& w) {
+            if (!modLive)
+                return Status::Unavailable;
+            const auto list = modLive->GetEffects();
+            w.put<uint32_t>(static_cast<uint32_t>(list.size()));
+            for (const auto& e : list) {
+                abi::Effect out;
+                out.id = e.id;
+                out.amplifier = e.amplifier;
+                out.ticks = e.ticks;
+                out.ambient = e.ambient;
+                out.particles = e.particles;
+                out.Write(w);
+            }
+            return Status::Ok;
+        });
+
+        mm.Register(Op::PlayerLook, [this](CallContext&, abi::Reader&, abi::Writer& w) {
+            w.put(camera.yaw - 90.0f).put(-camera.pitch);
+            return Status::Ok;
+        });
+
+        mm.Register(Op::Inventory, [this](CallContext&, abi::Reader&, abi::Writer& w) {
+            abi::Inventory inv;
+            if (!modLive) {
+                for (int i = 0; i < 9; i++)
+                    inv.slots[static_cast<size_t>(i)] = ToItem(hudState.hotbar[i]);
+                inv.offhand = ToItem(hudState.offhand);
+                inv.selected = hudState.selectedSlot;
+                inv.Write(w);
+                return Status::Ok;
+            }
+            const BedrockSession::InventoryView view = modLive->GetInventory();
+            for (int i = 0; i < 9; i++)
+                inv.slots[static_cast<size_t>(i)] = ToItem(view.hotbar[i]);
+            for (int i = 0; i < 27; i++)
+                inv.slots[static_cast<size_t>(9 + i)] = ToItem(view.main[i]);
+            for (int i = 0; i < 4; i++)
+                inv.armor[static_cast<size_t>(i)] = ToItem(view.armor[i]);
+            inv.offhand = ToItem(view.offhand);
+            inv.cursor = ToItem(view.cursor);
+            inv.selected = view.selected;
+            inv.open = modLive->InventoryIsOpen();
+            inv.Write(w);
+            return Status::Ok;
+        });
+
+        mm.Register(Op::InventorySelect, [this](CallContext&, abi::Reader& r, abi::Writer&) {
+            const int32_t slot = r.get<int32_t>();
+            if (!r.Ok() || slot < 0 || slot > 8)
+                return Status::BadArguments;
+            if (!modLive)
+                return Status::Unavailable;
+            hudState.selectedSlot = slot;
+            modLive->SelectHotbarSlot(slot);
+            return Status::Ok;
+        }, control);
+
+        mm.Register(Op::InventoryDrop, [this](CallContext&, abi::Reader& r, abi::Writer&) {
+            const int32_t count = r.get<int32_t>();
+            if (!r.Ok() || count < 1 || count > 64)
+                return Status::BadArguments;
+            if (!modLive)
+                return Status::Unavailable;
+            modLive->SendDropSelected(count);
+            return Status::Ok;
+        }, control);
+
+        mm.Register(Op::InventorySwap, [this](CallContext&, abi::Reader& r, abi::Writer&) {
+            const int32_t a = r.get<int32_t>(), b = r.get<int32_t>();
+            if (!r.Ok() || a < 0 || b < 0 || a >= BedrockSession::kInvSlots || b >= BedrockSession::kInvSlots)
+                return Status::BadArguments;
+            if (!modLive)
+                return Status::Unavailable;
+            modLive->SwapInventorySlots(a, b);
+            return Status::Ok;
+        }, control);
+
+        mm.Register(Op::InventoryClick, [this](CallContext&, abi::Reader& r, abi::Writer&) {
+            const int32_t slot = r.get<int32_t>();
+            const bool right = r.boolean();
+            const bool shift = r.boolean();
+            if (!r.Ok() || slot < 0 || slot >= BedrockSession::kInvSlots)
+                return Status::BadArguments;
+            if (!modLive)
+                return Status::Unavailable;
+            if (shift)
+                modLive->InvShiftClick(slot);
+            else
+                modLive->InvClick(slot, right);
+            return Status::Ok;
+        }, control);
+
+        mm.Register(Op::InventoryOpen, [this](CallContext&, abi::Reader&, abi::Writer&) {
+            if (!modLive)
+                return Status::Unavailable;
+            return modLive->OpenInventory() ? Status::Ok : Status::Failed;
+        }, control);
+
+        mm.Register(Op::InventoryClose, [this](CallContext&, abi::Reader&, abi::Writer&) {
+            if (!modLive)
+                return Status::Unavailable;
+            return modLive->CloseInventory() ? Status::Ok : Status::Failed;
+        }, control);
+
+        mm.Register(Op::WorldState, [this](CallContext&, abi::Reader&, abi::Writer& w) {
+            abi::WorldState s;
+            s.rain = rainLevel;
+            s.thunder = thunderLevel;
+            if (modLive) {
+                s.dimension = modLive->DimensionId();
+                const auto world = modLive->World();
+                s.difficulty = world.difficulty;
+                s.worldGameMode = world.worldGameMode;
+                s.commandsEnabled = world.commandsEnabled;
+                for (const auto& rule : world.rules)
+                    s.rules.emplace_back(rule.first, rule.second);
+                int64_t day = 0;
+                int tod = 0;
+                if (modLive->GetWorldTime(day, tod)) {
+                    s.day = day;
+                    s.timeOfDay = tod;
+                }
+                double ticks = 0;
+                if (modLive->GetWorldTicks(ticks))
+                    s.totalTicks = ticks;
+                int spawn[3];
+                if (modLive->HaveWorldSpawn()) {
+                    modLive->GetWorldSpawn(spawn);
+                    s.haveSpawn = true;
+                    s.spawnX = spawn[0];
+                    s.spawnY = spawn[1];
+                    s.spawnZ = spawn[2];
+                }
+            }
+            s.Write(w);
+            return Status::Ok;
+        });
+
+        mm.Register(Op::Block, [this](CallContext&, abi::Reader& r, abi::Writer& w) {
+            const int32_t x = r.get<int32_t>(), y = r.get<int32_t>(), z = r.get<int32_t>();
+            if (!r.Ok())
+                return Status::BadArguments;
+            if (!modLevel)
+                return Status::Unavailable;
+            abi::BlockInfo info;
+            bool loaded = false;
+            const uint16_t id = modLevel->GetBlock(x, y, z, loaded);
+            info.loaded = loaded;
+            if (loaded) {
+                BlockPalette& palette = BlockPalette::Instance();
+                info.runtimeId = static_cast<uint32_t>(palette.NetworkId(id));
+                info.name = palette.Name(id);
+                for (const auto& s : palette.States(id))
+                    info.states.emplace_back(s.first, StateText(s.second));
+                info.biome = modLevel->GetBiome(x, y, z);
+                info.liquid = modLevel->GetLiquid(x, y, z);
+            }
+            info.Write(w);
+            return Status::Ok;
+        });
+
+        mm.Register(Op::ChunkLoaded, [this](CallContext&, abi::Reader& r, abi::Writer& w) {
+            const int32_t cx = r.get<int32_t>(), cz = r.get<int32_t>();
+            if (!r.Ok())
+                return Status::BadArguments;
+            if (!modLevel)
+                return Status::Unavailable;
+            w.boolean(modLevel->HasChunk(cx, cz));
+            return Status::Ok;
+        });
+
+        mm.Register(Op::Region, [this](CallContext&, abi::Reader& r, abi::Writer& w) {
+            int32_t a[6];
+            for (int32_t& v : a)
+                v = r.get<int32_t>();
+            if (!r.Ok())
+                return Status::BadArguments;
+            if (!modLevel)
+                return Status::Unavailable;
+            abi::Region region;
+            region.x0 = std::min(a[0], a[3]);
+            region.y0 = std::min(a[1], a[4]);
+            region.z0 = std::min(a[2], a[5]);
+            region.sx = std::abs(a[3] - a[0]) + 1;
+            region.sy = std::abs(a[4] - a[1]) + 1;
+            region.sz = std::abs(a[5] - a[2]) + 1;
+            if (static_cast<int64_t>(region.sx) * region.sy * region.sz > 262144)
+                return Status::BadArguments;
+            NameCache names;
+            std::unordered_map<std::string, uint16_t> index;
+            region.palette.push_back(std::string());
+            index[std::string()] = 0;
+            region.cells.reserve(static_cast<size_t>(region.sx) * static_cast<size_t>(region.sy) * static_cast<size_t>(region.sz));
+            for (int y = 0; y < region.sy; y++)
+                for (int z = 0; z < region.sz; z++)
+                    for (int x = 0; x < region.sx; x++) {
+                        bool loaded = false;
+                        const uint16_t id = modLevel->GetBlock(region.x0 + x, region.y0 + y, region.z0 + z, loaded);
+                        const std::string& name = loaded ? names.Get(id) : region.palette[0];
+                        auto it = index.find(name);
+                        if (it == index.end()) {
+                            if (region.palette.size() >= 65535)
+                                return Status::Failed;
+                            it = index.emplace(name, static_cast<uint16_t>(region.palette.size())).first;
+                            region.palette.push_back(name);
+                        }
+                        region.cells.push_back(it->second);
+                    }
+            region.Write(w);
+            return Status::Ok;
+        });
+
+        mm.Register(Op::Raycast, [this](CallContext&, abi::Reader& r, abi::Writer& w) {
+            double v[6];
+            for (double& d : v)
+                d = r.get<double>();
+            const double maxDistance = r.get<double>();
+            const bool liquids = r.boolean();
+            if (!r.Ok() || !Finite(v[0]) || !Finite(v[1]) || !Finite(v[2]) || !Finite(v[3]) || !Finite(v[4]) || !Finite(v[5]) ||
+                !Finite(maxDistance))
+                return Status::BadArguments;
+            if (!modLevel || !levelRenderer)
+                return Status::Unavailable;
+            glm::dvec3 dir(v[3], v[4], v[5]);
+            if (glm::length(dir) < 1.0e-9)
+                return Status::BadArguments;
+            dir = glm::normalize(dir);
+            const glm::dvec3 origin(v[0], v[1], v[2]);
+            const double reach = std::clamp(maxDistance, 0.0, 256.0);
+            const AimHit hit = Raycast(*modLevel, &levelRenderer->Blocks(), {}, [](const entity::Entity&) { return glm::vec2(0.6f, 1.8f); }, origin, dir, reach);
+            abi::RayHit out;
+            double blockDistance = reach;
+            if (hit.kind == AimHit::Kind::Block) {
+                out.hit = true;
+                out.x = hit.bx;
+                out.y = hit.by;
+                out.z = hit.bz;
+                out.face = hit.face;
+                out.hx = hit.point.x;
+                out.hy = hit.point.y;
+                out.hz = hit.point.z;
+                out.distance = hit.distance;
+                bool loaded = false;
+                out.block = BlockPalette::Instance().Name(modLevel->GetBlock(hit.bx, hit.by, hit.bz, loaded));
+                blockDistance = hit.distance;
+            }
+            if (liquids) {
+                glm::ivec3 previous(static_cast<int>(std::floor(origin.x)), static_cast<int>(std::floor(origin.y)), static_cast<int>(std::floor(origin.z)));
+                for (double t = 0.0; t < blockDistance; t += 0.05) {
+                    const glm::dvec3 p = origin + dir * t;
+                    const glm::ivec3 cell(static_cast<int>(std::floor(p.x)), static_cast<int>(std::floor(p.y)), static_cast<int>(std::floor(p.z)));
+                    if (modLevel->GetLiquid(cell.x, cell.y, cell.z) != 0) {
+                        out = abi::RayHit{};
+                        out.hit = true;
+                        out.x = cell.x;
+                        out.y = cell.y;
+                        out.z = cell.z;
+                        const glm::ivec3 d = previous - cell;
+                        out.face = d.y < 0 ? 0 : d.y > 0 ? 1 : d.z < 0 ? 2 : d.z > 0 ? 3 : d.x < 0 ? 4 : 5;
+                        out.hx = p.x;
+                        out.hy = p.y;
+                        out.hz = p.z;
+                        out.distance = t;
+                        out.block = "liquid";
+                        break;
+                    }
+                    previous = cell;
+                }
+            }
+            out.Write(w);
+            return Status::Ok;
+        });
+
+        mm.Register(Op::Aim, [this](CallContext&, abi::Reader&, abi::Writer& w) {
+            abi::AimState a;
+            if (modLevel && levelRenderer) {
+                const std::vector<entity::Entity> entities = modLive ? modLive->Entities().Snapshot() : previewEntities.Snapshot();
+                const bool creative = hudState.mode == ui::GameMode::Creative;
+                const AimHit hit = Raycast(*modLevel, &levelRenderer->Blocks(), entities,
+                                           [&](const entity::Entity& e) {
+                                               const auto hb = entityRenderer.HitBox(e);
+                                               return glm::vec2(hb.first, hb.second);
+                                           },
+                                           {camera.x, camera.y, camera.z}, glm::dvec3(camera.Direction()), 5.7, creative ? 7.0 : 3.0);
+                a.distance = hit.distance;
+                if (hit.kind == AimHit::Kind::Block) {
+                    a.kind = 1;
+                    a.block.hit = true;
+                    a.block.x = hit.bx;
+                    a.block.y = hit.by;
+                    a.block.z = hit.bz;
+                    a.block.face = hit.face;
+                    a.block.hx = hit.point.x;
+                    a.block.hy = hit.point.y;
+                    a.block.hz = hit.point.z;
+                    a.block.distance = hit.distance;
+                    bool loaded = false;
+                    a.block.block = BlockPalette::Instance().Name(modLevel->GetBlock(hit.bx, hit.by, hit.bz, loaded));
+                } else if (hit.kind == AimHit::Kind::Entity) {
+                    a.kind = 2;
+                    a.entity = hit.entity;
+                    for (const entity::Entity& e : entities)
+                        if (e.runtimeId == hit.entity)
+                            a.entityType = e.type;
+                }
+            }
+            a.Write(w);
+            return Status::Ok;
+        });
+
+        mm.Register(Op::FindBlocks, [this](CallContext&, abi::Reader& r, abi::Writer& w) {
+            const int32_t cx = r.get<int32_t>(), cy = r.get<int32_t>(), cz = r.get<int32_t>();
+            const int32_t radius = std::clamp(r.get<int32_t>(), 1, 32);
+            const int32_t limit = std::clamp(r.get<int32_t>(), 1, 4096);
+            const bool exact = r.boolean();
+            const std::string name = r.str();
+            if (!r.Ok() || name.empty())
+                return Status::BadArguments;
+            if (!modLevel)
+                return Status::Unavailable;
+            NameCache names;
+            std::unordered_map<uint16_t, bool> matches;
+            std::vector<abi::FoundBlock> found;
+            for (int y = cy - radius; y <= cy + radius; y++)
+                for (int z = cz - radius; z <= cz + radius; z++)
+                    for (int x = cx - radius; x <= cx + radius; x++) {
+                        bool loaded = false;
+                        const uint16_t id = modLevel->GetBlock(x, y, z, loaded);
+                        if (!loaded)
+                            continue;
+                        auto it = matches.find(id);
+                        if (it == matches.end())
+                            it = matches.emplace(id, MatchName(names.Get(id), name, exact)).first;
+                        if (it->second) {
+                            abi::FoundBlock b;
+                            b.x = x;
+                            b.y = y;
+                            b.z = z;
+                            b.name = names.Get(id);
+                            found.push_back(std::move(b));
+                        }
+                    }
+            const auto dist = [&](const abi::FoundBlock& b) {
+                const double dx = b.x - cx, dy = b.y - cy, dz = b.z - cz;
+                return dx * dx + dy * dy + dz * dz;
+            };
+            std::sort(found.begin(), found.end(), [&](const abi::FoundBlock& a, const abi::FoundBlock& b) { return dist(a) < dist(b); });
+            if (found.size() > static_cast<size_t>(limit))
+                found.resize(static_cast<size_t>(limit));
+            w.put<uint32_t>(static_cast<uint32_t>(found.size()));
+            for (const auto& b : found)
+                b.Write(w);
+            return Status::Ok;
+        });
+
+        mm.Register(Op::BlockNames, [](CallContext&, abi::Reader&, abi::Writer& w) {
+            const std::vector<std::string> list = BlockPalette::Instance().AllNames();
+            w.put<uint32_t>(static_cast<uint32_t>(list.size()));
+            for (const auto& n : list)
+                w.str(n);
+            return Status::Ok;
+        });
+
+        mm.Register(Op::Entities, [this](CallContext&, abi::Reader& r, abi::Writer& w) {
+            const double radius = r.get<double>();
+            const std::string type = r.str();
+            const bool playersOnly = r.boolean();
+            const bool includeItems = r.boolean();
+            if (!r.Ok())
+                return Status::BadArguments;
+            const std::vector<entity::Entity> list = modLive ? modLive->Entities().Snapshot() : previewEntities.Snapshot();
+            const physics::State& st = player.State();
+            const double rx = modLive ? st.x : camera.x, ry = modLive ? st.y : camera.y - 1.62, rz = modLive ? st.z : camera.z;
+            std::vector<const entity::Entity*> picked;
+            for (const entity::Entity& e : list) {
+                if (e.isSelf)
+                    continue;
+                if (playersOnly && !e.isPlayer)
+                    continue;
+                if (!includeItems && e.isItem)
+                    continue;
+                if (!type.empty() && e.type.find(type) == std::string::npos)
+                    continue;
+                if (radius > 0) {
+                    const double dx = e.pos.x - rx, dy = e.pos.y - ry, dz = e.pos.z - rz;
+                    if (dx * dx + dy * dy + dz * dz > radius * radius)
+                        continue;
+                }
+                picked.push_back(&e);
+                if (picked.size() >= 2048)
+                    break;
+            }
+            w.put<uint32_t>(static_cast<uint32_t>(picked.size()));
+            for (const entity::Entity* e : picked)
+                ToEntity(*e).Write(w);
+            return Status::Ok;
+        });
+
+        mm.Register(Op::EntityById, [this](CallContext&, abi::Reader& r, abi::Writer& w) {
+            const uint64_t id = r.get<uint64_t>();
+            if (!r.Ok())
+                return Status::BadArguments;
+            entity::Entity e;
+            const bool ok = modLive ? modLive->Entities().Find(id, e) : previewEntities.Find(id, e);
+            if (!ok)
+                return Status::NotFound;
+            ToEntity(e).Write(w);
+            return Status::Ok;
+        });
+
+        mm.Register(Op::PlayerList, [this](CallContext&, abi::Reader&, abi::Writer& w) {
+            if (!modLive)
+                return Status::Unavailable;
+            const auto list = modLive->PlayerList();
+            w.put<uint32_t>(static_cast<uint32_t>(list.size()));
+            for (const auto& p : list) {
+                abi::PlayerEntry e;
+                e.uuid = p.uuid;
+                e.name = p.name;
+                e.uid = p.uid;
+                e.permission = p.perm;
+                e.Write(w);
+            }
+            return Status::Ok;
+        });
+
+        mm.Register(Op::Options, [this, optionTable](CallContext&, abi::Reader&, abi::Writer& w) {
+            ui::Json json = ui::Json::MakeObject();
+            for (const OptionAccess& o : optionTable())
+                json.Set(o.key, ui::Json(o.get()));
+            const std::string text = json.Dump();
+            w.raw(text.data(), text.size());
+            return Status::Ok;
+        });
+
+        mm.Register(Op::OptionGet, [optionTable](CallContext&, abi::Reader& r, abi::Writer& w) {
+            const std::string key = r.str();
+            if (!r.Ok())
+                return Status::BadArguments;
+            for (const OptionAccess& o : optionTable())
+                if (o.key == key) {
+                    const std::string v = o.get();
+                    w.raw(v.data(), v.size());
+                    return Status::Ok;
+                }
+            return Status::NotFound;
+        });
+
+        mm.Register(Op::OptionSet, [this, optionTable](CallContext&, abi::Reader& r, abi::Writer&) {
+            const std::string key = r.str();
+            const std::string value = r.str();
+            if (!r.Ok())
+                return Status::BadArguments;
+            for (const OptionAccess& o : optionTable())
+                if (o.key == key) {
+                    if (!o.set)
+                        return Status::Denied;
+                    if (!o.set(value))
+                        return Status::BadArguments;
+                    options.Save();
+                    return Status::Ok;
+                }
+            return Status::NotFound;
+        }, control);
+
+        mm.Register(Op::Screen, [this](CallContext&, abi::Reader&, abi::Writer& w) {
+            abi::ScreenState s;
+            s.guiWidth = modGuiW;
+            s.guiHeight = modGuiH;
+            s.guiScale = modHud ? modHud->Scale() : 1;
+            int fw = 0, fh = 0;
+            if (renderer)
+                renderer->FramebufferSize(fw, fh);
+            s.framebufferWidth = fw;
+            s.framebufferHeight = fh;
+            s.fps = static_cast<float>(fpsShown);
+            s.frameMs = fpsShown > 0 ? 1000.0f / static_cast<float>(fpsShown) : 0.0f;
+            s.screen = CurrentScreen();
+            s.paused = pauseShown;
+            s.connected = modLive && modLive->GetState() == BedrockSession::State::InGame;
+            s.hudHidden = !options.showHud;
+            s.debug = debugOn;
+            s.server = options.server;
+            s.language = options.language;
+            s.platform = PlatformName();
+            s.gameVersion = kBedrockVersion;
+            s.Write(w);
+            return Status::Ok;
+        });
+
+        mm.Register(Op::Translate, [](CallContext&, abi::Reader& r, abi::Writer& w) {
+            const std::string key = r.str();
+            if (!r.Ok())
+                return Status::BadArguments;
+            const std::string text = i18n::Tr(key);
+            w.raw(text.data(), text.size());
+            return Status::Ok;
+        });
+
+        mm.Register(Op::ReloadResources, [this](CallContext&, abi::Reader&, abi::Writer&) {
+            packFoundAt = {};
+            hotTexStamp = "reload";
+            return Status::Ok;
+        }, control);
+
+        mm.Register(Op::InputActions, [](CallContext&, abi::Reader&, abi::Writer& w) {
+            w.put<uint32_t>(static_cast<uint32_t>(kActionCount));
+            for (size_t i = 0; i < kActionCount; i++)
+                w.str(ActionId(static_cast<Action>(i)));
+            return Status::Ok;
+        });
+
+        mm.Register(Op::InputDown, [this](CallContext&, abi::Reader& r, abi::Writer& w) {
+            const std::string name = r.str();
+            if (!r.Ok())
+                return Status::BadArguments;
+            for (size_t i = 0; i < kActionCount; i++)
+                if (name == ActionId(static_cast<Action>(i))) {
+                    w.boolean(inputManager.IsDown(static_cast<Action>(i)));
+                    return Status::Ok;
+                }
+            const Binding b = Binding::Parse(name);
+            if (b.device == Binding::Device::Keyboard) {
+                w.boolean(input.IsKeyDown(b.code) && !input.TextMode());
+                return Status::Ok;
+            }
+            if (b.device == Binding::Device::Mouse) {
+                w.boolean(input.IsMouseDown(b.code));
+                return Status::Ok;
+            }
+            return Status::NotFound;
+        });
+
+        mm.Register(Op::MousePosition, [this](CallContext&, abi::Reader&, abi::Writer& w) {
+            const float scale = static_cast<float>(modHud ? std::max(1, modHud->Scale()) : 1);
+            w.put(input.MouseX() / scale).put(input.MouseY() / scale).boolean(input.Captured());
+            return Status::Ok;
+        });
+
+        mm.Register(Op::InputOverride, [this](CallContext&, abi::Reader& r, abi::Writer&) {
+            const abi::InputOverrideState s = abi::InputOverrideState::Read(r);
+            if (!r.Ok())
+                return Status::BadArguments;
+            const auto until = std::chrono::steady_clock::now() + std::chrono::milliseconds(std::clamp(s.ticks, 0, 200) * 50);
+            const auto epoch = std::chrono::steady_clock::time_point{};
+            inputManager.Hold(Action::Forward, s.forward > 0.3f ? until : epoch);
+            inputManager.Hold(Action::Back, s.forward < -0.3f ? until : epoch);
+            inputManager.Hold(Action::Right, s.strafe > 0.3f ? until : epoch);
+            inputManager.Hold(Action::Left, s.strafe < -0.3f ? until : epoch);
+            inputManager.Hold(Action::Jump, s.jump ? until : epoch);
+            inputManager.Hold(Action::Sneak, s.sneak ? until : epoch);
+            inputManager.Hold(Action::Sprint, s.sprint ? until : epoch);
+            inputManager.Hold(Action::Attack, s.attack ? until : epoch);
+            inputManager.Hold(Action::Use, s.use ? until : epoch);
+            return Status::Ok;
+        }, control);
+
+        mm.Register(Op::Jump, [this](CallContext&, abi::Reader&, abi::Writer&) {
+            inputManager.Hold(Action::Jump, std::chrono::steady_clock::now() + std::chrono::milliseconds(120));
+            return Status::Ok;
+        }, control);
+
+        mm.Register(Op::Chat, [this](CallContext&, abi::Reader& r, abi::Writer&) {
+            std::string text = r.str();
+            if (!r.Ok() || text.empty() || text.size() > 512)
+                return Status::BadArguments;
+            if (!modLive)
+                return Status::Unavailable;
+            if (text[0] == '/')
+                modLive->SendCommand(text.substr(1));
+            else
+                modLive->SendChat(text);
+            return Status::Ok;
+        }, control);
+
+        mm.Register(Op::Command, [this](CallContext&, abi::Reader& r, abi::Writer&) {
+            std::string text = r.str();
+            if (!r.Ok() || text.empty() || text.size() > 512)
+                return Status::BadArguments;
+            if (!modLive)
+                return Status::Unavailable;
+            modLive->SendCommand(text[0] == '/' ? text.substr(1) : text);
+            return Status::Ok;
+        }, control);
+
+        mm.Register(Op::LocalMessage, [this](CallContext&, abi::Reader& r, abi::Writer&) {
+            const std::string text = r.str();
+            if (!r.Ok() || text.size() > 2000)
+                return Status::BadArguments;
+            chat.AddMessage(text, hudAnim.ticks);
+            return Status::Ok;
+        });
+
+        mm.Register(Op::ServerCommands, [this](CallContext&, abi::Reader&, abi::Writer& w) {
+            if (!modLive)
+                return Status::Unavailable;
+            const auto list = modLive->Commands();
+            w.put<uint32_t>(static_cast<uint32_t>(list.size()));
+            for (const auto& c : list)
+                w.str(c.name);
+            return Status::Ok;
+        });
+
+        mm.Register(Op::Toast, [this](CallContext&, abi::Reader& r, abi::Writer&) {
+            const std::string text = r.str();
+            const int32_t ms = r.get<int32_t>();
+            if (!r.Ok() || text.size() > 256)
+                return Status::BadArguments;
+            modToastText = text;
+            modToastUntil = std::chrono::steady_clock::now() + std::chrono::milliseconds(std::clamp(ms, 100, 30000));
+            return Status::Ok;
+        });
+
+        mm.Register(Op::Title, [this](CallContext&, abi::Reader& r, abi::Writer&) {
+            modTitleText = r.str();
+            modSubtitleText = r.str();
+            modTitleFadeIn = std::clamp(r.get<int32_t>(), 0, 10000);
+            modTitleStay = std::clamp(r.get<int32_t>(), 0, 30000);
+            modTitleFadeOut = std::clamp(r.get<int32_t>(), 0, 10000);
+            if (!r.Ok() || modTitleText.size() > 128 || modSubtitleText.size() > 256)
+                return Status::BadArguments;
+            modTitleStart = std::chrono::steady_clock::now();
+            return Status::Ok;
+        });
+
+        mm.Register(Op::SwingArm, [this](CallContext&, abi::Reader&, abi::Writer&) {
+            if (!modLive)
+                return Status::Unavailable;
+            handRenderer.Swing(options.hand);
+            modLive->SendSwingArm("build");
+            return Status::Ok;
+        }, control);
+
+        mm.Register(Op::UseItem, [this](CallContext&, abi::Reader&, abi::Writer&) {
+            if (!modLive)
+                return Status::Unavailable;
+            const float eye[3] = {camera.x, camera.y, camera.z};
+            modLive->SendUseItemInAir(eye);
+            return Status::Ok;
+        }, control);
+
+        mm.Register(Op::UseOnBlock, [this](CallContext&, abi::Reader& r, abi::Writer&) {
+            const int32_t x = r.get<int32_t>(), y = r.get<int32_t>(), z = r.get<int32_t>(), face = r.get<int32_t>();
+            if (!r.Ok() || face < 0 || face > 5)
+                return Status::BadArguments;
+            if (!modLive)
+                return Status::Unavailable;
+            static const int kOff[6][3] = {{0, -1, 0}, {0, 1, 0}, {0, 0, -1}, {0, 0, 1}, {-1, 0, 0}, {1, 0, 0}};
+            const auto nameAt = [&](int bx, int by, int bz) {
+                bool loaded = false;
+                const uint16_t id = modLive->NetLevel().GetBlock(bx, by, bz, loaded);
+                return loaded ? BlockPalette::Instance().Name(id) : std::string();
+            };
+            const ui::HudItem& held = hudState.hotbar[std::clamp(hudState.selectedSlot, 0, 8)];
+            int clicked[3] = {x, y, z};
+            const blockuse::Result use = blockuse::Classify(nameAt(x, y, z), nameAt(x + kOff[face][0], y + kOff[face][1], z + kOff[face][2]), clicked,
+                                                           face, !held.Empty(), !held.Empty() && held.blockRuntimeId != 0, player.Sneaking());
+            const float click[3] = {0.5f, 0.5f, 0.5f};
+            const float eye[3] = {camera.x, camera.y, camera.z};
+            int dest[3];
+            std::copy(use.dest, use.dest + 3, dest);
+            handRenderer.Swing(options.hand);
+            modLive->SendSwingArm("build");
+            modLive->SendUseItemOnBlock(x, y, z, face, click, eye, static_cast<int>(use.use), dest);
+            return Status::Ok;
+        }, control);
+
+        mm.Register(Op::AttackEntity, [this](CallContext&, abi::Reader& r, abi::Writer&) {
+            const uint64_t id = r.get<uint64_t>();
+            if (!r.Ok())
+                return Status::BadArguments;
+            if (!modLive)
+                return Status::Unavailable;
+            entity::Entity e;
+            if (!modLive->Entities().Find(id, e))
+                return Status::NotFound;
+            const float eye[3] = {camera.x, camera.y, camera.z};
+            const float click[3] = {0.0f, 0.0f, 0.0f};
+            handRenderer.Swing(options.hand);
+            modLive->SendSwingArm("attack");
+            modLive->SendAttackEntity(id, eye, click);
+            return Status::Ok;
+        }, control);
+
+        mm.Register(Op::InteractEntity, [this](CallContext&, abi::Reader& r, abi::Writer&) {
+            const uint64_t id = r.get<uint64_t>();
+            if (!r.Ok())
+                return Status::BadArguments;
+            if (!modLive)
+                return Status::Unavailable;
+            entity::Entity e;
+            if (!modLive->Entities().Find(id, e))
+                return Status::NotFound;
+            const float eye[3] = {camera.x, camera.y, camera.z};
+            const float click[3] = {0.0f, 0.0f, 0.0f};
+            handRenderer.Swing(options.hand);
+            modLive->SendSwingArm("interact");
+            modLive->SendInteractEntity(id, eye, click);
+            return Status::Ok;
+        }, control);
+
+        mm.Register(Op::BreakBlock, [this](CallContext&, abi::Reader& r, abi::Writer&) {
+            const int32_t x = r.get<int32_t>(), y = r.get<int32_t>(), z = r.get<int32_t>(), face = r.get<int32_t>();
+            if (!r.Ok() || face < 0 || face > 5)
+                return Status::BadArguments;
+            if (!modLive)
+                return Status::Unavailable;
+            handRenderer.Swing(options.hand);
+            modLive->SendSwingArm("mine");
+            modLive->SendPlayerAuthInputBlockAction(0, x, y, z, face);
+            if (modLive->GameType() == 1)
+                modLive->SendPlayerAuthInputBlockAction(1, x, y, z, face);
+            return Status::Ok;
+        }, control);
+
+        mm.Register(Op::Look, [this](CallContext&, abi::Reader& r, abi::Writer&) {
+            const float yaw = r.get<float>(), pitch = r.get<float>();
+            if (!r.Ok() || !std::isfinite(yaw) || !std::isfinite(pitch))
+                return Status::BadArguments;
+            camera.yaw = yaw + 90.0f;
+            camera.pitch = std::clamp(-pitch, -89.0f, 89.0f);
+            return Status::Ok;
+        }, control);
+
+        mm.Register(Op::Respawn, [this](CallContext&, abi::Reader&, abi::Writer&) {
+            if (!modLive)
+                return Status::Unavailable;
+            modLive->RequestRespawn();
+            return Status::Ok;
+        }, control);
+
+        mm.Register(Op::Disconnect, [this](CallContext&, abi::Reader&, abi::Writer&) {
+            if (!platform)
+                return Status::Unavailable;
+            platform->isRunning = false;
+            return Status::Ok;
+        }, control);
+
+        mm.Register(Op::PlaySound, [this](CallContext&, abi::Reader& r, abi::Writer&) {
+            const std::string name = r.str();
+            const bool positional = r.boolean();
+            const double x = r.get<float>(), y = r.get<float>(), z = r.get<float>();
+            const float volume = r.get<float>(), pitch = r.get<float>();
+            if (!r.Ok() || name.empty() || name.size() > 128)
+                return Status::BadArguments;
+            const glm::dvec3 at = positional ? glm::dvec3(x, y, z) : glm::dvec3(camera.x, camera.y, camera.z);
+            sounds.PlayNamed(name, at, std::clamp(volume, 0.0f, 4.0f), std::clamp(pitch, 0.25f, 4.0f), positional);
+            return Status::Ok;
+        });
+
+        mm.Register(Op::UiMeasure, [](CallContext&, abi::Reader& r, abi::Writer& w) {
+            const std::string text = r.str();
+            const float scale = r.get<float>();
+            if (!r.Ok() || text.size() > 4000)
+                return Status::BadArguments;
+            w.put(ui::McFont::Instance().Width(text, std::clamp(scale, 0.25f, 16.0f)));
+            return Status::Ok;
+        });
+
+        mm.Register(Op::HttpRequest, [this](CallContext& ctx, abi::Reader& r, abi::Writer&) {
+            const uint32_t id = r.get<uint32_t>();
+            std::string method = r.str();
+            std::string url = r.str();
+            const int32_t timeout = r.get<int32_t>();
+            const uint32_t count = r.get<uint32_t>();
+            std::vector<std::pair<std::string, std::string>> headers;
+            for (uint32_t i = 0; i < count && i < 64 && r.Ok(); i++) {
+                std::string k = r.str();
+                headers.emplace_back(std::move(k), r.str());
+            }
+            std::vector<uint8_t> body = r.bytes();
+            if (!r.Ok() || body.size() > (4u << 20))
+                return Status::BadArguments;
+            if (method != "GET" && method != "POST" && method != "PUT" && method != "DELETE" && method != "PATCH" && method != "HEAD")
+                return Status::BadArguments;
+            if (modHttpActive.load() >= 6)
+                return Status::Unavailable;
+            StartModHttp(ctx.plugin, id, std::move(method), std::move(url), std::clamp(timeout, 500, 60000), std::move(headers), std::move(body));
+            return Status::Ok;
+        }, network);
+
+        mm.Register(Op::PacketSend, [this](CallContext&, abi::Reader& r, abi::Writer&) {
+            const uint32_t id = r.get<uint32_t>();
+            std::vector<uint8_t> body = r.bytes();
+            if (!r.Ok() || id == 0 || id > 400 || body.size() > (1u << 20))
+                return Status::BadArguments;
+            static const uint32_t denied[] = {1, 4, 5, 8, 193};
+            if (std::find(std::begin(denied), std::end(denied), id) != std::end(denied))
+                return Status::Denied;
+            if (!modLive)
+                return Status::Unavailable;
+            return modLive->SendRaw(id, body) ? Status::Ok : Status::Failed;
+        }, packets);
+
+        mm.Register(Op::PacketName, [](CallContext&, abi::Reader& r, abi::Writer& w) {
+            const uint32_t id = r.get<uint32_t>();
+            if (!r.Ok())
+                return Status::BadArguments;
+            const char* name = BedrockSession::PacketName(id);
+            const std::string text = name ? name : "";
+            w.raw(text.data(), text.size());
+            return Status::Ok;
+        });
+    }
+}

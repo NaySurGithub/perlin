@@ -7,6 +7,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <iterator>
 #include <mutex>
 #include <unordered_map>
 
@@ -213,5 +214,62 @@ namespace perlin {
             }
         }
         return false;
+    }
+
+    std::vector<std::string> TexturePack::ReadTextLayers(const std::string& rel) const {
+        std::lock_guard lock(impl->mutex);
+        std::vector<std::string> out;
+        for (auto it = impl->layers.rbegin(); it != impl->layers.rend(); ++it) {
+            const auto& l = *it;
+            if (l->zipMode) {
+                if (!l->zipOpen)
+                    continue;
+                const auto found = l->index.find(Lower(rel));
+                if (found == l->index.end())
+                    continue;
+                size_t size = 0;
+                void* data = mz_zip_reader_extract_to_heap(&l->zip, found->second, &size, 0);
+                if (!data)
+                    continue;
+                out.emplace_back(static_cast<const char*>(data), size);
+                mz_free(data);
+            } else if (!l->folder.empty()) {
+                std::ifstream in(fs::path(l->folder) / rel, std::ios::binary);
+                if (!in)
+                    continue;
+                out.emplace_back(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
+            }
+        }
+        return out;
+    }
+
+    std::vector<std::string> TexturePack::ListFiles(const std::string& dirRel, const std::string& suffix) const {
+        std::lock_guard lock(impl->mutex);
+        std::vector<std::string> out;
+        std::string prefix = Lower(dirRel);
+        if (!prefix.empty() && prefix.back() != '/')
+            prefix += '/';
+        const std::string lowerSuffix = Lower(suffix);
+        const auto matches = [&](const std::string& lowerPath) {
+            return lowerPath.compare(0, prefix.size(), prefix) == 0 && lowerPath.find('/', prefix.size()) == std::string::npos &&
+                   lowerPath.size() >= lowerSuffix.size() && lowerPath.compare(lowerPath.size() - lowerSuffix.size(), lowerSuffix.size(), lowerSuffix) == 0;
+        };
+        for (auto it = impl->layers.rbegin(); it != impl->layers.rend(); ++it) {
+            const auto& l = *it;
+            if (l->zipMode) {
+                for (const auto& [path, idx] : l->index)
+                    if (matches(path))
+                        out.push_back(path);
+            } else if (!l->folder.empty()) {
+                std::error_code ec;
+                for (const auto& entry : fs::directory_iterator(fs::path(l->folder) / dirRel, ec))
+                    if (entry.is_regular_file(ec)) {
+                        const std::string rel = (dirRel.empty() || dirRel.back() == '/' ? dirRel : dirRel + "/") + entry.path().filename().string();
+                        if (matches(Lower(rel)))
+                            out.push_back(rel);
+                    }
+            }
+        }
+        return out;
     }
 }

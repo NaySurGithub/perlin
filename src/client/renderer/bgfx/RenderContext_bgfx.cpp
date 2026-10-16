@@ -368,6 +368,16 @@ namespace perlin {
         bgfx::reset(ResetFlags(), &sc);
     }
 
+    void RenderContext_bgfx::SetVsync(bool enabled) {
+        if (!initialized || vsync == enabled)
+            return;
+        vsync = enabled;
+        bgfx::SwapChain sc;
+        sc.width = static_cast<uint32_t>(width);
+        sc.height = static_cast<uint32_t>(height);
+        bgfx::reset(ResetFlags(), &sc);
+    }
+
     bool RenderContext_bgfx::EnsureMotionBlurTargets() {
         if (blur.targets)
             return true;

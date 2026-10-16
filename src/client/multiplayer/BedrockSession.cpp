@@ -220,7 +220,8 @@ namespace perlin {
             }
             const char* geometry = loadedSkin.slimArms ? "geometry.humanoid.customSlim" : "geometry.humanoid.custom";
             skin.ArmSize = loadedSkin.slimArms ? "slim" : "wide";
-            skin.SkinGeometryDataEngineVersion = std::string();
+            skin.SkinGeometryData = B64Standard("null");
+            skin.SkinGeometryDataEngineVersion = B64Standard("1.14.0");
             skin.SkinResourcePatch = B64Standard(std::string("{\"geometry\":{\"default\":\"") + geometry + "\"}}");
             if (loadedSkin.hasCape()) {
                 skin.CapeData = B64Standard(std::string(loadedSkin.capeRgba.begin(), loadedSkin.capeRgba.end()));
@@ -1139,6 +1140,9 @@ namespace perlin {
         const char* geometry = skin.slimArms ? "geometry.humanoid.customSlim" : "geometry.humanoid.custom";
         p.skin.skinResourcePack = std::string("{\"geometry\":{\"default\":\"") + geometry + "\"}}";
         p.skin.armSize = skin.slimArms ? proto::SkinArmSize::Slim : proto::SkinArmSize::Wide;
+        p.skin.geometryData = "null";
+        p.skin.geometryDataVersion = "1.14.0";
+        p.skin.animationData = "null";
         p.skin.primaryUser = true;
         p.skinName = skin.skinId;
         return Send(p);

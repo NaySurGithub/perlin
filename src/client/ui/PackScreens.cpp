@@ -52,6 +52,13 @@ div, mcimg { display: block; position: absolute; }
 .track { background-color: #000000; width: 6px; }
 .thumb { background-color: #808080; width: 6px; }
 .wrap { font-family: minecraft-shadow; font-size: 8px; line-height: 9px; color: #a0a0a0; white-space: normal; overflow: hidden; }
+.ico { width: 32px; height: 32px; z-index: 8; }
+.ico .ov { display: none; left: 0px; top: 0px; width: 32px; height: 32px; background-color: rgba(144,144,144,160); }
+.ico:hover .ov { display: block; }
+.ico .ch, .ico .zone { display: none; }
+.ico:hover .ch { display: block; background-color: #a0a0a0; }
+.ico:hover .zone { display: block; }
+.zone:hover .ch { background-color: #ffffff; }
 .srow { height: 18px; background-color: rgba(0,0,0,0); }
 .srow:hover { background-color: rgba(255,255,255,30); }
 </style>
@@ -161,6 +168,27 @@ div, mcimg { display: block; position: absolute; }
         const float cx = static_cast<float>(guiW) / 2.0f;
         d += Text(0, 5, static_cast<float>(guiW), title, "", nullptr, true);
         d += Text(0, 15, static_cast<float>(guiW), subtitle, "g", nullptr, true);
+        const auto chevron = [&](char dir, float x, float y, const char* cls) {
+            std::string out;
+            for (int r = 0; r < 5; r++) {
+                const int a = r, b2 = 8 - r;
+                for (const int k : {a, b2}) {
+                    if (r == 4 && k == b2)
+                        continue;
+                    float px = 0, py = 0;
+                    if (dir == '>')
+                        px = static_cast<float>(r), py = static_cast<float>(k);
+                    else if (dir == '<')
+                        px = static_cast<float>(4 - r), py = static_cast<float>(k);
+                    else if (dir == '^')
+                        px = static_cast<float>(k), py = static_cast<float>(4 - r);
+                    else
+                        px = static_cast<float>(k), py = static_cast<float>(r);
+                    out += "<div class=\"" + std::string(cls) + "\" style=\"left: " + N(x + px * 2.0f) + "px; top: " + N(y + py * 2.0f) + "px; width: 2px; height: 2px;\"></div>";
+                }
+            }
+            return out;
+        };
         const auto column = [&](const std::vector<PackEntry>& items, float x, float scroll, float maxScroll, const std::string& label, char prefix) {
             d += Text(x, 26, l.panelW, label, "", nullptr, true);
             d += "<div class=\"sep\" style=\"left: " + N(x + l.panelW / 2.0f - static_cast<float>(label.size()) * 2.5f) + "px; top: " + N(36) + "px; width: " +
@@ -171,15 +199,24 @@ div, mcimg { display: block; position: absolute; }
                 if (y + l.rowH < 0.0f || y > h)
                     continue;
                 const PackEntry& e = items[static_cast<size_t>(i)];
-                const float textW = l.panelW - 44.0f - (e.movable ? 36.0f : 0.0f) - (maxScroll > 0 ? 8.0f : 0.0f);
+                const float textW = l.panelW - 44.0f - (maxScroll > 0 ? 8.0f : 0.0f);
                 d += "<div id=\"" + std::string(1, prefix) + "p" + std::to_string(i) + "\" class=\"prow\" style=\"left: 2px; top: " + N(y) + "px; width: " +
                      N(l.panelW - 4.0f - (maxScroll > 0 ? 6.0f : 0.0f)) + "px;\"></div>\n";
                 d += Img(e.icon, 4, y + 1, 32);
                 d += Text(40, y + 2, textW, e.name, "");
                 d += "<div class=\"wrap\" style=\"left: 40px; top: " + N(y + 13) + "px; width: " + N(textW) + "px; height: 18px; z-index: 2;\">" + EscapeRml(e.desc) + "</div>\n";
-                if (e.movable) {
-                    d += Mini(std::string(1, prefix) + "u" + std::to_string(i), l.panelW - 38.0f - (maxScroll > 0 ? 6.0f : 0.0f), y + 10, 16, "^", i == 0);
-                    d += Mini(std::string(1, prefix) + "d" + std::to_string(i), l.panelW - 20.0f - (maxScroll > 0 ? 6.0f : 0.0f), y + 10, 16, "v", i + 1 >= static_cast<int>(items.size()));
+                const std::string id = std::string(1, prefix) + std::to_string(i);
+                if (e.canSelect) {
+                    d += "<div id=\"" + id + "i\" class=\"ico\" style=\"left: 4px; top: " + N(y + 1) + "px;\"><div class=\"ov\"></div>" + chevron('>', 11, 7, "ch") + "</div>\n";
+                } else if (e.canUnselect || e.canUp || e.canDown) {
+                    std::string zones;
+                    if (e.canUnselect)
+                        zones += "<div id=\"" + id + "x\" class=\"zone\" style=\"left: 0px; top: 0px; width: 16px; height: 32px;\">" + chevron('<', 3, 7, "ch") + "</div>";
+                    if (e.canUp)
+                        zones += "<div id=\"" + id + "u\" class=\"zone\" style=\"left: 16px; top: 0px; width: 16px; height: 16px;\">" + chevron('^', -1, 3, "ch") + "</div>";
+                    if (e.canDown)
+                        zones += "<div id=\"" + id + "d\" class=\"zone\" style=\"left: 16px; top: 16px; width: 16px; height: 16px;\">" + chevron('v', -1, 3, "ch") + "</div>";
+                    d += "<div class=\"ico\" style=\"left: 4px; top: " + N(y + 1) + "px;\"><div class=\"ov\"></div>" + zones + "</div>\n";
                 }
             }
             d += Bar(l.panelW - 6.0f, 0, h, static_cast<float>(items.size()) * l.rowH + 4.0f, scroll, maxScroll);
@@ -361,7 +398,7 @@ div, mcimg { display: block; position: absolute; }
         const auto addSection = [&](int headKind, int count, bool open) {
             all.push_back({headKind, 0, 0});
             const int rows = std::max(1, (count + l.cols - 1) / l.cols);
-            const int shown = open ? rows : 1;
+            const int shown = open ? rows : 0;
             for (int r = 0; r < shown; r++)
                 all.push_back({headKind + 1, r, 0});
         };

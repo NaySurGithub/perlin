@@ -95,6 +95,7 @@ namespace perlin {
         int dynMode = 0;
         int dynCount = 0;
         float dynLights[8][4] = {};
+        float packSettings[16] = {};
         float heldLight = 0.0f;
         float waterTile = -1.0f;
         float lavaTile = -1.0f;
@@ -109,6 +110,7 @@ namespace perlin {
         virtual bool Initialize(AppPlatform& platform, const Options& options) = 0;
         virtual void Shutdown() = 0;
         virtual bool ReloadShaders() { return false; }
+        virtual void SetVsync(bool) {}
         virtual std::string RendererName() const { return {}; }
         virtual std::string GpuVendor() const { return {}; }
         virtual std::string GpuDescription() const { return {}; }

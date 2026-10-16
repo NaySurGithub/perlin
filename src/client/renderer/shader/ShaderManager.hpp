@@ -71,6 +71,7 @@ namespace perlin {
         bgfx::UniformHandle heldLight = BGFX_INVALID_HANDLE;
         bgfx::UniformHandle dynParams = BGFX_INVALID_HANDLE;
         bgfx::UniformHandle dynLights = BGFX_INVALID_HANDLE;
+        bgfx::UniformHandle packSettings = BGFX_INVALID_HANDLE;
         bgfx::UniformHandle tiles = BGFX_INVALID_HANDLE;
         bgfx::UniformHandle skyParams = BGFX_INVALID_HANDLE;
         bgfx::UniformHandle shadowMatrix = BGFX_INVALID_HANDLE;
@@ -87,6 +88,7 @@ namespace perlin {
         float heldLightValue[4] = {};
         float dynParamsValue[4] = {};
         float dynLightsValue[8][4] = {};
+        float packSettingsValue[4][4] = {};
         float tilesValue[4] = {};
         float skyParamsValue[4] = {};
     };

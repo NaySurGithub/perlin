@@ -164,6 +164,7 @@ jobs:
           if-no-files-found: error
 
   web:
+    if: false
     name: web
     runs-on: ubuntu-24.04
     needs: shaders
@@ -228,6 +229,7 @@ jobs:
           if-no-files-found: error
 
   android:
+    if: false
     name: android
     runs-on: ubuntu-24.04
     needs: shaders
@@ -304,7 +306,7 @@ jobs:
 
   release:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [native, web, android]
+    needs: [native]
     runs-on: ubuntu-24.04
     permissions:
       contents: write

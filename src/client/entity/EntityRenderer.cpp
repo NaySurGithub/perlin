@@ -165,6 +165,9 @@ namespace perlin::entity {
             for (auto& [s, id] : skinTextures)
                 if (id)
                     renderer->UiDestroyTexture(id);
+            for (auto& [s, id] : capeModelTextures)
+                if (id)
+                    renderer->UiDestroyTexture(id);
             for (auto& [s, id] : capeTextures)
                 if (id)
                     renderer->UiDestroyTexture(id);
@@ -182,6 +185,7 @@ namespace perlin::entity {
         textures.clear();
         skinTextures.clear();
         capeTextures.clear();
+        capeModelTextures.clear();
         pendingMeshes.clear();
         views.clear();
         skinGeometry.clear();
@@ -199,6 +203,22 @@ namespace perlin::entity {
                 auto& id = skinTextures[s.serial];
                 if (!id)
                     id = renderer->UiCreateTexture(s.skinWidth, s.skinHeight, s.skinRgba.data(), false);
+                return id;
+            }
+            if (key == "capemodel" && s.capeWidth > 0) {
+                auto& id = capeModelTextures[s.serial];
+                if (!id) {
+                    std::vector<uint8_t> swapped = s.capeRgba;
+                    const int sc = std::max(1, s.capeWidth / 64);
+                    for (int y = sc; y < 17 * sc && y < s.capeHeight; y++)
+                        for (int x = 0; x < 10 * sc; x++) {
+                            const size_t a = (static_cast<size_t>(y) * static_cast<size_t>(s.capeWidth) + static_cast<size_t>(sc + x)) * 4;
+                            const size_t b = (static_cast<size_t>(y) * static_cast<size_t>(s.capeWidth) + static_cast<size_t>(12 * sc + x)) * 4;
+                            for (int c = 0; c < 4; c++)
+                                std::swap(swapped[a + static_cast<size_t>(c)], swapped[b + static_cast<size_t>(c)]);
+                        }
+                    id = renderer->UiCreateTexture(s.capeWidth, s.capeHeight, swapped.data(), false);
+                }
                 return id;
             }
             if (key == "cape" && s.capeWidth > 0) {
@@ -580,6 +600,19 @@ namespace perlin::entity {
             for (const auto& [bn, xf] : pose)
                 std::cout << "[pose] " << e.type << " " << bn << " rot " << xf.rotation.x << "," << xf.rotation.y << "," << xf.rotation.z
                           << " pos " << xf.position.x << "," << xf.position.y << "," << xf.position.z << std::endl;
+        if (e.isPlayer && e.isSelf) {
+            const SkinParts& parts = in.ownParts;
+            const auto hide = [&](bool shown, const char* bone) {
+                if (!shown)
+                    pose[bone].scale = glm::vec3(0.0f);
+            };
+            hide(parts.hat, "hat");
+            hide(parts.jacket, "jacket");
+            hide(parts.leftSleeve, "leftsleeve");
+            hide(parts.rightSleeve, "rightsleeve");
+            hide(parts.leftPants, "leftpants");
+            hide(parts.rightPants, "rightpants");
+        }
         if (e.isPlayer) {
             auto& r = pose["cape"].rotation;
             r.x = -v.capeX;
@@ -683,7 +716,7 @@ namespace perlin::entity {
             if (e.isPlayer && e.skin && (texKey == "default" || texKey == "cape")) {
                 if (texKey == "cape" && e.skin->capeWidth <= 0)
                     return;
-                layer.texture = texKey == "cape" ? "#cape" : "#skin";
+                layer.texture = texKey == "cape" ? "#capemodel" : "#skin";
             } else {
                 const auto tp = def->textures.find(texKey);
                 if (tp == def->textures.end())
@@ -765,7 +798,7 @@ namespace perlin::entity {
                 continue;
             addLayer(rcRef.id, false);
         }
-        if (e.isPlayer && e.skin && e.skin->capeWidth > 0 && !e.Has(flag::Invisible) && !v.fp && e.armor[1] != "minecraft:elytra")
+        if (e.isPlayer && e.skin && e.skin->capeWidth > 0 && !e.Has(flag::Invisible) && !v.fp && e.armor[1] != "minecraft:elytra" && (!e.isSelf || in.ownParts.cape))
             addLayer("controller.render.player.cape", true);
         if (itemRenderer && !e.Has(flag::Invisible) && e.isPlayer) {
             const auto bind = [&](const std::string& name, const glm::mat4& boneWorld, bool left) {
@@ -952,6 +985,8 @@ namespace perlin::entity {
                 texture = TextureFor(e, "default");
             else if (layer.texture == "#cape")
                 texture = TextureFor(e, "cape");
+            else if (layer.texture == "#capemodel")
+                texture = TextureFor(e, "capemodel");
             else {
                 auto it = textures.find(layer.texture);
                 if (it == textures.end()) {

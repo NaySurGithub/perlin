@@ -16,6 +16,8 @@ namespace perlin {
         bool Active() const;
         bool Load(const std::string& rel, Texture& out) const;
         bool Has(const std::string& rel) const;
+        std::vector<std::string> ReadTextLayers(const std::string& rel) const;
+        std::vector<std::string> ListFiles(const std::string& dirRel, const std::string& suffix) const;
         std::string Description() const;
 
     public:

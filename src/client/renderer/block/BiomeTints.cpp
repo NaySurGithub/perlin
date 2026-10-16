@@ -1,5 +1,6 @@
 #include "client/renderer/block/BiomeTints.hpp"
 #include "client/resources/TextureLoader.hpp"
+#include "client/resources/TexturePack.hpp"
 #include "util/Json.hpp"
 
 #include <cmath>
@@ -58,6 +59,8 @@ namespace perlin {
         climate.clear();
         idToName.clear();
         nameToId.clear();
+        packWater.clear();
+        packDefaultWater.reset();
 
         static const char* kMaps[] = {"grass",     "foliage",     "dry_foliage",   "birch",
                                       "evergreen", "swamp_grass", "swamp_foliage", "mangrove_swamp_foliage"};
@@ -65,7 +68,14 @@ namespace perlin {
         for (const char* m : kMaps) {
             std::string full = vanillaRpRoot + "/textures/colormap/" + m + ".png";
             Texture tex;
-            if (!LoadTexture(full, tex) || tex.width <= 0 || tex.height <= 0) {
+            bool fromPack = false;
+            if (TexturePack::Instance().Active())
+                for (const char* ext : {".png", ".tga"})
+                    if (TexturePack::Instance().Load(std::string("textures/colormap/") + m + ext, tex) && tex.width > 0 && tex.height > 0) {
+                        fromPack = true;
+                        break;
+                    }
+            if (!fromPack && (!LoadTexture(full, tex) || tex.width <= 0 || tex.height <= 0)) {
                 std::string tga = vanillaRpRoot + "/textures/colormap/" + m + ".tga";
                 if (!LoadTexture(tga, tex) || tex.width <= 0 || tex.height <= 0)
                     continue;
@@ -143,60 +153,80 @@ namespace perlin {
                 }
             }
         }
-        {
-            std::error_code dirEc;
-            for (const auto& dirEntry :
-                 std::filesystem::directory_iterator(vanillaRpRoot + "/biomes", dirEc)) {
-                if (!dirEntry.path().filename().string().ends_with(".client_biome.json"))
-                    continue;
-                {
-                    std::string full = dirEntry.path().string();
-                    std::string txt = ReadFile(full);
-                    if (txt.empty())
-                        continue;
-                    const auto document = json::Document::Parse(txt, true);
-                    if (!document)
-                        continue;
-                    const json::View biome = document->root()["minecraft:client_biome"];
-                    const json::View ident = biome["description"]["identifier"];
-                    const json::View components = biome["components"];
-                    if (!ident.isString() || !components.valid())
-                        continue;
-                    BiomeColorRule& rule = rules[ident.str()];
-                    std::array<float, 3> c;
-                    if (const auto v = components["minecraft:grass_appearance"]["color"];
-                        ResolveTint(v, mapAvg, c)) {
-                        rule.grass = c;
-                        rule.hasGrass = true;
-                    }
-                    if (const auto v = components["minecraft:foliage_appearance"]["color"];
-                        ResolveTint(v, mapAvg, c)) {
-                        rule.foliage = c;
-                        rule.hasFoliage = true;
-                    }
-                    if (const auto v = components["minecraft:dry_foliage_color"]["color"];
-                        ResolveTint(v, mapAvg, c)) {
-                        rule.dryFoliage = c;
-                        rule.hasDry = true;
-                    }
-                    if (const auto v = components["minecraft:water_appearance"]["surface_color"];
-                        v.isString() && ParseHex(v.str(), c)) {
-                        rule.water = c;
-                        rule.hasWater = true;
-                    }
+        const auto applyClientBiome = [&](const std::string& txt, bool packLayer) {
+            if (txt.empty())
+                return;
+            const auto document = json::Document::Parse(txt, true);
+            if (!document)
+                return;
+            const json::View biome = document->root()["minecraft:client_biome"];
+            const json::View ident = biome["description"]["identifier"];
+            const json::View components = biome["components"];
+            if (!ident.isString() || !components.valid())
+                return;
+            BiomeColorRule& rule = rules[ident.str()];
+            std::array<float, 3> c;
+            if (const auto v = components["minecraft:grass_appearance"]["color"]; ResolveTint(v, mapAvg, c)) {
+                rule.grass = c;
+                rule.hasGrass = true;
+            }
+            if (const auto v = components["minecraft:foliage_appearance"]["color"]; ResolveTint(v, mapAvg, c)) {
+                rule.foliage = c;
+                rule.hasFoliage = true;
+            }
+            if (const auto v = components["minecraft:dry_foliage_color"]["color"]; ResolveTint(v, mapAvg, c)) {
+                rule.dryFoliage = c;
+                rule.hasDry = true;
+            }
+            if (const auto v = components["minecraft:water_appearance"]["surface_color"]; v.isString() && ParseHex(v.str(), c)) {
+                rule.water = c;
+                rule.hasWater = true;
+                if (packLayer) {
+                    std::string name = ident.str();
+                    packWater[name] = c;
+                    if (name.rfind("minecraft:", 0) == 0)
+                        packWater[name.substr(10)] = c;
                 }
             }
+        };
+        {
+            std::error_code dirEc;
+            for (const auto& dirEntry : std::filesystem::directory_iterator(vanillaRpRoot + "/biomes", dirEc)) {
+                if (!dirEntry.path().filename().string().ends_with(".client_biome.json"))
+                    continue;
+                applyClientBiome(ReadFile(dirEntry.path().string()), false);
+            }
+        }
+        if (TexturePack::Instance().Active()) {
+            const auto names = TexturePack::Instance().ListFiles("biomes", ".client_biome.json");
+            for (const std::string& rel : names)
+                for (const std::string& text : TexturePack::Instance().ReadTextLayers(rel))
+                    applyClientBiome(text, true);
         }
 
-        if (const auto document =
-                json::Document::Parse(ReadFile(vanillaRpRoot + "/biomes_client.json"), true)) {
-            const json::View biomes = document->root()["biomes"];
-            const json::View pick =
-                biomes.contains("default") ? biomes["default"] : biomes["minecraft:plains"];
-            std::array<float, 3> water;
-            if (ParseHex(pick["water_surface_color"].str(), water))
-                defaultWater = water;
-        }
+        defaultWater = ResolveDefaultWater(vanillaRpRoot);
+        if (TexturePack::Instance().Active())
+            for (const char* file : {"biomes_client.json", "biome_client.json"})
+                for (const std::string& text : TexturePack::Instance().ReadTextLayers(file)) {
+                    const auto document = json::Document::Parse(text, true);
+                    if (!document)
+                        continue;
+                    const json::View biomes = document->root()["biomes"];
+                    for (const auto member : biomes.members()) {
+                        const std::string key = member.key;
+                        const json::View value = member.value;
+                        std::array<float, 3> c;
+                        if (!ParseHex(value["water_surface_color"].str(), c))
+                            continue;
+                        if (key == "default")
+                            packDefaultWater = c;
+                        else {
+                            packWater[key] = c;
+                            if (key.rfind("minecraft:", 0) == 0)
+                                packWater[key.substr(10)] = c;
+                        }
+                    }
+                }
 
         auto avg = [&](const char* m, std::array<float, 3> fb) {
             auto it = mapAvg.find(m);
@@ -300,10 +330,14 @@ namespace perlin {
             {"snowy_", 0x3D57D6},         {"ice_spikes", 0x3D57D6},   {"grove", 0x3D57D6},
             {"frozen_peaks", 0x3D57D6},   {"jagged_peaks", 0x3D57D6},
         };
+        if (const auto it = packWater.find(biomeName); it != packWater.end())
+            return it->second;
         for (const Entry& entry : kJava)
             if (biomeName.find(entry.name) != std::string::npos)
                 return {((entry.color >> 16) & 255) / 255.0f, ((entry.color >> 8) & 255) / 255.0f,
                         (entry.color & 255) / 255.0f};
+        if (packDefaultWater)
+            return *packDefaultWater;
         return {0x3F / 255.0f, 0x76 / 255.0f, 0xE4 / 255.0f};
     }
 
@@ -321,4 +355,27 @@ namespace perlin {
         return 1;
     }
 
+
+    std::array<float, 3> ResolveDefaultWater(const std::string& vanillaRpRoot) {
+        std::array<float, 3> water = {0.266f, 0.686f, 0.961f};
+        if (const auto document = json::Document::Parse(ReadFile(vanillaRpRoot + "/biomes_client.json"), true)) {
+            const json::View biomes = document->root()["biomes"];
+            const json::View pick = biomes.contains("default") ? biomes["default"] : biomes["minecraft:plains"];
+            std::array<float, 3> parsed;
+            if (ParseHex(pick["water_surface_color"].str(), parsed))
+                water = parsed;
+        }
+        if (TexturePack::Instance().Active())
+            for (const char* file : {"biomes_client.json", "biome_client.json"})
+                for (const std::string& text : TexturePack::Instance().ReadTextLayers(file))
+                    if (const auto document = json::Document::Parse(text, true)) {
+                        const json::View biomes = document->root()["biomes"];
+                        if (biomes.contains("default")) {
+                            std::array<float, 3> parsed;
+                            if (ParseHex(biomes["default"]["water_surface_color"].str(), parsed))
+                                water = parsed;
+                        }
+                    }
+        return water;
+    }
 }

@@ -101,10 +101,6 @@ namespace perlin::ui {
         for (const char* name : {"/font/default8.png", "/font/ascii.png"})
             if (LoadTexture(dataDir + name, t) && apply(t))
                 return "data dir" + std::string(name);
-        std::string bytes;
-        if (resources::Read("mojangles_ascii.png", bytes) &&
-            LoadTextureMemory(reinterpret_cast<const unsigned char*>(bytes.data()), bytes.size(), t) && apply(t))
-            return "bundled Mojangles";
         font.UseBuiltin();
         return "built-in face";
     }

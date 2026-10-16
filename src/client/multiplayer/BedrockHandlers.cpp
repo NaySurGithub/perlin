@@ -1,6 +1,7 @@
 #include "client/ui/ChatFormat.hpp"
 #include "util/Env.hpp"
 #include "client/multiplayer/BedrockSession.hpp"
+#include "client/player/VoxelShapes.hpp"
 #include "network/ClientIdentity.hpp"
 #include "network/PacketDump.hpp"
 #include "world/level/block/BlockPalette.hpp"
@@ -895,6 +896,11 @@ namespace perlin {
                     entities.SetHealth(p.runtimeId, a.value);
         });
 
+        On<VoxelShapesPacket>([](const VoxelShapesPacket& p) {
+            VoxelShapeRegistry::Instance().Set(p);
+            std::cout << "[bedrock] VoxelShapes: " << p.shapes.size() << " shapes, " << p.nameMap.size() << " named" << std::endl;
+        });
+
         On<AddItemEntityPacket>([this](const AddItemEntityPacket& p) {
             const auto it = itemNames.find(p.item.networkId);
             if (p.item.networkId == 0 || it == itemNames.end() || p.item.count == 0)
@@ -907,49 +913,6 @@ namespace perlin {
         });
 
         On<TakeItemEntityPacket>([this](const TakeItemEntityPacket& p) {
-            entity::Entity item;
-            if (runtimeId != 0 && p.target == runtimeId && entities.Find(p.runtimeEntityId, item) && item.isItem && item.itemCount > 0) {
-                std::lock_guard lock(statusMutex);
-                const auto stampNow = std::chrono::steady_clock::now();
-                for (int i = 0; i < 36; i++)
-                    if (stampNow - invServerAt[i] < std::chrono::milliseconds(400)) {
-                        droppedRaw.erase(p.runtimeEntityId);
-                        entities.RemoveRuntime(p.runtimeEntityId);
-                        return;
-                    }
-                int left = item.itemCount;
-                ItemV4 dropped;
-                if (const auto found = droppedRaw.find(p.runtimeEntityId); found != droppedRaw.end())
-                    dropped = found->second;
-                const auto slotInfo = [&](int i) -> ItemStackInfo& { return i < 9 ? inventory.hotbar[i] : inventory.main[i - 9]; };
-                for (int i = 0; i < 36 && left > 0; i++) {
-                    ItemStackInfo& s = slotInfo(i);
-                    if (s.Empty() || s.name != item.itemName || s.aux != item.itemAux || s.count >= 64)
-                        continue;
-                    const int add = std::min(left, 64 - s.count);
-                    s.count += add;
-                    inventoryRaw[i].count = static_cast<uint16_t>(s.count);
-                    inventoryRaw[i].hasStackId = false;
-                    inventoryRaw[i].stackId.reset();
-                    left -= add;
-                }
-                for (int i = 0; i < 36 && left > 0; i++) {
-                    ItemStackInfo& s = slotInfo(i);
-                    if (!s.Empty())
-                        continue;
-                    s.name = item.itemName;
-                    s.aux = item.itemAux;
-                    s.blockRuntimeId = item.itemBlock;
-                    s.enchanted = item.itemEnchanted;
-                    s.damage = 0;
-                    s.count = std::min(left, 64);
-                    left -= s.count;
-                    inventoryRaw[i] = dropped;
-                    inventoryRaw[i].count = static_cast<uint16_t>(s.count);
-                    inventoryRaw[i].hasStackId = false;
-                    inventoryRaw[i].stackId.reset();
-                }
-            }
             droppedRaw.erase(p.runtimeEntityId);
             entities.RemoveRuntime(p.runtimeEntityId);
         });

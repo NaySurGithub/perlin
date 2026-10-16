@@ -266,6 +266,7 @@ void RequestRespawn();
         }
 
         void SetPacketHandler(PacketHandler h) { onPacket = std::move(h); }
+        bool SendRaw(uint32_t id, const std::vector<uint8_t>& body) { return Transmit(id, body, true); }
 
         State GetState() const { return state; }
         std::string LastError() const { return lastError; }

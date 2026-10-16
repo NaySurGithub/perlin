@@ -1,4 +1,5 @@
 #include "client/player/BlockCollision.hpp"
+#include "client/player/VoxelShapes.hpp"
 
 #include "client/renderer/block/BlockLibrary.hpp"
 #include "util/Paths.hpp"
@@ -251,6 +252,20 @@ namespace perlin {
     }
 
     LevelCollision::Info LevelCollision::Classify(uint16_t id, const BlockLibrary* blocks) {
+        Info info = ClassifyVanilla(id, blocks);
+        if (id == 0 || !info.shape.Empty() || info.shape.fluid != 0 || info.shape.climbable || info.shape.web)
+            return info;
+        std::vector<Box> custom;
+        if (VoxelShapeRegistry::Instance().Find(BlockPalette::Instance().Name(id), custom) && !custom.empty()) {
+            for (const Box& b : custom)
+                Add(info.shape, b.x0, b.y0, b.z0, b.x1, b.y1, b.z1);
+            info.full = info.shape.count == 1 && info.shape.boxes[0].x0 <= 0 && info.shape.boxes[0].y0 <= 0 &&
+                        info.shape.boxes[0].z0 <= 0 && info.shape.boxes[0].x1 >= 1 && info.shape.boxes[0].y1 >= 1 && info.shape.boxes[0].z1 >= 1;
+        }
+        return info;
+    }
+
+    LevelCollision::Info LevelCollision::ClassifyVanilla(uint16_t id, const BlockLibrary* blocks) {
         Info info;
         BlockShape& s = info.shape;
         if (id == 0)

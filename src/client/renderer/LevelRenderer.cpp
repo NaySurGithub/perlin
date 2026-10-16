@@ -131,6 +131,7 @@ namespace perlin {
 
     void LevelRenderer::ReloadResources() {
         blocks.Reset();
+        biomeTints.Reset();
         texturePackResolved = false;
         atlasUploaded = false;
         uploadedTiles = 0;
@@ -548,6 +549,22 @@ namespace perlin {
 
     void LevelRenderer::Render(const Frustum& frustum, float camX, float camZ) {
         context.DrawChunkMeshes(frustum, camX, camZ);
+    }
+
+    void LevelRenderer::BenchmarkMeshing(Level& level, int rounds) {
+        const auto start = std::chrono::steady_clock::now();
+        size_t quads = 0;
+        for (int r = 0; r < rounds; r++)
+            for (const auto& entry : meshKey) {
+                Tessellator mesh;
+                mesh.Begin();
+                BuildChunkMesh(level, entry.first, mesh, &blocks, &biomeTints);
+                mesh.End();
+                quads += mesh.Vertices().size();
+            }
+        const double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
+        std::printf("[meshbench] %d rounds x %zu chunks: %.1f ms total, %.3f ms/chunk, %zu vertices\n", rounds, meshKey.size(), ms,
+                    ms / std::max<size_t>(1, static_cast<size_t>(rounds) * meshKey.size()), quads);
     }
 
     void LevelRenderer::TickAnimation(uint64_t step) {

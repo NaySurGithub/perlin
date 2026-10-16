@@ -2,14 +2,15 @@
 
 #include <miniz.h>
 
-#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <sstream>
 #include <vector>
 
+#include "client/resources/ClientAssets.hpp"
 #include "client/ui/Json.hpp"
+#include "network/Http.hpp"
 
 namespace fs = std::filesystem;
 
@@ -19,24 +20,23 @@ namespace perlin {
         constexpr const char* kResources = "https://resources.download.minecraft.net/";
 
 #if !defined(__EMSCRIPTEN__) && !defined(__ANDROID__)
-        bool Run(const std::string& command) {
-#ifdef _WIN32
-            return std::system(("\"" + command + "\"").c_str()) == 0;
-#else
-            return std::system(command.c_str()) == 0;
-#endif
-        }
-
         bool Download(const std::string& url, const fs::path& target) {
             std::error_code ec;
             fs::create_directories(target.parent_path(), ec);
             const fs::path part = target.string() + ".part";
             for (int attempt = 0; attempt < 3; attempt++) {
-                if (Run("curl -fsSL --retry 2 --connect-timeout 20 -o \"" + part.string() + "\" \"" + url + "\"")) {
-                    fs::rename(part, target, ec);
-                    if (!ec)
-                        return true;
+                const http::Response res = http::GetUrl(url, {}, 120);
+                if (res.status != 200 || res.body.empty())
+                    continue;
+                {
+                    std::ofstream out(part, std::ios::binary);
+                    out.write(res.body.data(), static_cast<std::streamsize>(res.body.size()));
+                    if (!out.good())
+                        continue;
                 }
+                fs::rename(part, target, ec);
+                if (!ec)
+                    return true;
             }
             fs::remove(part, ec);
             return false;
@@ -127,7 +127,8 @@ namespace perlin {
 
     bool MojangFonts::Available(const std::string& dataDir) {
         std::error_code ec;
-        return fs::exists(UnihexPath(dataDir), ec) && fs::file_size(UnihexPath(dataDir), ec) > 1024 && fs::exists(fs::path(dataDir) / "font" / "ascii.png", ec);
+        return fs::exists(UnihexPath(dataDir), ec) && fs::file_size(UnihexPath(dataDir), ec) > 1024 && fs::exists(fs::path(dataDir) / "font" / "ascii.png", ec) &&
+               clientassets::Ready(dataDir);
     }
 
     bool MojangFonts::Ensure(const std::string& dataDir) {
@@ -178,8 +179,10 @@ namespace perlin {
         const fs::path asciiOut = fs::path(dataDir) / "font" / "ascii.png";
         if (!clientUrl.empty()) {
             const fs::path jar = root / "client.tmp";
-            if (Download(clientUrl, jar))
+            if (Download(clientUrl, jar)) {
                 ok = ExtractFromJar(jar, hexOut, asciiOut);
+                clientassets::BuildFromJar(jar, dataDir);
+            }
             fs::remove(jar, ec);
         }
         ui::Json assets;

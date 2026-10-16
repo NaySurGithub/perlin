@@ -2,6 +2,7 @@
 #include <array>
 #include <atomic>
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -22,6 +23,10 @@ namespace perlin {
     class BiomeTints {
     public:
         bool EnsureLoaded(const std::string& vanillaRpRoot);
+        void Reset() {
+            ready.store(false, std::memory_order_release);
+            attempts = 0;
+        }
         bool Ready() const { return ready.load(std::memory_order_acquire); }
 
         std::array<float, 3> MapAverage(const std::string& mapName) const;
@@ -50,6 +55,9 @@ namespace perlin {
         std::unordered_map<int, std::string> idToName;
         std::unordered_map<std::string, int> nameToId;
         std::array<float, 3> defaultWater = {0.266f, 0.686f, 0.961f};
+        std::unordered_map<std::string, std::array<float, 3>> packWater;
+        std::optional<std::array<float, 3>> packDefaultWater;
     };
 
+    std::array<float, 3> ResolveDefaultWater(const std::string& vanillaRpRoot);
 }

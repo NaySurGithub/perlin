@@ -1,4 +1,5 @@
 #include "client/resources/ShaderPack.hpp"
+#include "client/resources/BundledShaderPack.hpp"
 
 #include <miniz.h>
 
@@ -74,6 +75,7 @@ namespace perlin {
 
     struct ShaderPack::Impl {
         bool zipMode = false;
+        bool bundled = false;
         std::string folder;
         mz_zip_archive zip{};
         bool zipOpen = false;
@@ -89,6 +91,7 @@ namespace perlin {
             zip = {};
             zipOpen = false;
             zipMode = false;
+            bundled = false;
             folder.clear();
             index.clear();
             backends.clear();
@@ -135,6 +138,24 @@ namespace perlin {
         fs::path source = fs::path(packsDir) / name;
         if (!fs::exists(source, ec) && fs::exists(source.string() + ".zip", ec))
             source = source.string() + ".zip";
+        if (!fs::exists(source, ec) && Lower(name) == "bsl") {
+            impl->bundled = true;
+            for (const char* b : kBackends) {
+                const uint8_t* data = nullptr;
+                size_t size = 0;
+                if (BundledShaderBytes(b, "vs_terrain", data, size))
+                    impl->backends.insert(b);
+            }
+            if (impl->backends.empty()) {
+                error = "the bundled BSL pack has no shaders for this renderer";
+                impl->Reset();
+                return false;
+            }
+            impl->meta = BundledShaderMeta();
+            impl->label = "BSL";
+            std::cout << "[shaders] opened bundled pack BSL" << std::endl;
+            return true;
+        }
         if (!fs::exists(source, ec)) {
             error = "no such shader pack: " + source.generic_string();
             return false;
@@ -263,8 +284,62 @@ namespace perlin {
         return end == v.c_str() ? fallback : d;
     }
 
+    std::vector<ShaderSetting> ShaderPack::Settings() const {
+        std::string meta;
+        {
+            std::lock_guard lock(impl->mutex);
+            meta = impl->meta;
+        }
+        std::vector<ShaderSetting> out;
+        const size_t key = meta.find("\"settings\"");
+        if (key == std::string::npos)
+            return out;
+        size_t i = meta.find('[', key);
+        if (i == std::string::npos)
+            return out;
+        while (out.size() < 16) {
+            const size_t open = meta.find('{', i);
+            const size_t close = open == std::string::npos ? open : meta.find('}', open);
+            const size_t end = meta.find(']', i);
+            if (open == std::string::npos || close == std::string::npos || (end != std::string::npos && end < open))
+                break;
+            const std::string obj = meta.substr(open, close - open + 1);
+            i = close + 1;
+            ShaderSetting s;
+            s.id = JsonString(obj, "id");
+            if (s.id.empty())
+                continue;
+            s.label = JsonString(obj, "label");
+            if (s.label.empty())
+                s.label = s.id;
+            const auto num = [&](const char* name, double fallback) {
+                const std::string v = RawValue(obj, name);
+                if (v.empty())
+                    return fallback;
+                char* e = nullptr;
+                const double d = std::strtod(v.c_str(), &e);
+                return e == v.c_str() ? fallback : d;
+            };
+            s.toggle = JsonString(obj, "type") == "toggle";
+            s.min = s.toggle ? 0.0 : num("min", 0.0);
+            s.max = s.toggle ? 1.0 : num("max", 1.0);
+            s.step = s.toggle ? 1.0 : std::max(1.0e-4, num("step", 0.1));
+            s.def = std::clamp(num("default", s.min), s.min, s.max);
+            out.push_back(std::move(s));
+        }
+        return out;
+    }
+
     bool ShaderPack::Read(const std::string& backend, const std::string& shader, std::vector<char>& out) const {
         std::lock_guard lock(impl->mutex);
+        if (impl->bundled) {
+            const uint8_t* data = nullptr;
+            size_t size = 0;
+            if (!BundledShaderBytes(backend, shader, data, size))
+                return false;
+            out.assign(reinterpret_cast<const char*>(data), reinterpret_cast<const char*>(data) + size);
+            return true;
+        }
         const std::string rel = backend + "/" + shader + ".bin";
         if (impl->zipMode) {
             if (!impl->zipOpen)

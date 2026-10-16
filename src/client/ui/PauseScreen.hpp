@@ -111,6 +111,7 @@ namespace perlin::ui {
     struct PackEntry {
         std::string name, desc, icon;
         bool movable = false;
+        bool canSelect = false, canUnselect = false, canUp = false, canDown = false;
     };
     struct PackScreenLayout {
         float panelW = 200, leftX = 0, rightX = 0, top = 36, bottom = 0, rowH = 36, btnY = 0, btnW = 200, openX = 0, doneX = 0;

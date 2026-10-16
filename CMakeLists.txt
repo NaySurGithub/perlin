@@ -23,6 +23,11 @@ endif()
 
 add_compile_definitions(GLM_FORCE_DEPTH_ZERO_TO_ONE)
 
+option(PERLIN_ALLOW_WEB_ANDROID "Allow the web and Android builds (disabled for now)" OFF)
+if((EMSCRIPTEN OR ANDROID) AND NOT PERLIN_ALLOW_WEB_ANDROID)
+    message(FATAL_ERROR "The web and Android builds are disabled. Pass -DPERLIN_ALLOW_WEB_ANDROID=ON to try them anyway.")
+endif()
+
 option(PERLIN_WEB_SHADERS_ONLY "Only compile the ESSL shaders used by the web build" OFF)
 set(PERLIN_WEB_SHADER_DIR "" CACHE PATH "Directory holding prebuilt essl shader headers for the web build")
 if(PERLIN_WEB_SHADERS_ONLY)
@@ -217,11 +222,13 @@ foreach(k DXBC DXIL ESSL GLSL SPIRV METAL WGSL PSSL NVN)
     list(APPEND PERLIN_SHADER_DEFS "BGFX_PLATFORM_SUPPORTS_${k}=${on}")
 endforeach()
 
-set(PERLIN_SHADER_INCLUDES "${bgfx_SOURCE_DIR}/bgfx/src" "${PERLIN_SHADER_DIR}")
+set(PERLIN_SHADER_INCLUDES "${bgfx_SOURCE_DIR}/bgfx/src" "${PERLIN_SHADER_DIR}" "${PERLIN_SHADER_DIR}/bsl")
 set(PERLIN_SHADER_OUTPUTS)
 set(PERLIN_SHADER_NAMES
     vs_terrain fs_terrain_solid fs_terrain_cutout fs_terrain_translucent vs_sky fs_sky vs_star fs_star
-    vs_sunrise fs_sunrise vs_celestial fs_celestial vs_cloud fs_cloud vs_screen fs_screen vs_ui fs_ui vs_post fs_post)
+    vs_sunrise fs_sunrise vs_celestial fs_celestial vs_cloud fs_cloud vs_screen fs_screen vs_ui fs_ui vs_post fs_post
+    bsl_vs_terrain bsl_fs_terrain_solid bsl_fs_terrain_cutout bsl_fs_terrain_translucent bsl_vs_sky bsl_fs_sky bsl_vs_star bsl_fs_star
+    bsl_vs_sunrise bsl_fs_sunrise bsl_vs_celestial bsl_fs_celestial bsl_vs_cloud bsl_fs_cloud bsl_vs_shadow bsl_fs_shadow bsl_fs_shadow_cutout)
 
 function(perlin_compile_shaders type varying)
     set(sources)
@@ -260,6 +267,20 @@ perlin_compile_shaders(VERTEX varying_ui.def.sc vs_ui)
 perlin_compile_shaders(FRAGMENT varying_ui.def.sc fs_ui)
 perlin_compile_shaders(VERTEX varying_post.def.sc vs_post)
 perlin_compile_shaders(FRAGMENT varying_post.def.sc fs_post)
+perlin_compile_shaders(VERTEX bsl/bsl_varying_terrain.def.sc bsl/bsl_vs_terrain)
+perlin_compile_shaders(FRAGMENT bsl/bsl_varying_terrain.def.sc bsl/bsl_fs_terrain_solid bsl/bsl_fs_terrain_cutout bsl/bsl_fs_terrain_translucent)
+perlin_compile_shaders(VERTEX bsl/bsl_varying_sky.def.sc bsl/bsl_vs_sky)
+perlin_compile_shaders(FRAGMENT bsl/bsl_varying_sky.def.sc bsl/bsl_fs_sky)
+perlin_compile_shaders(VERTEX bsl/bsl_varying_star.def.sc bsl/bsl_vs_star)
+perlin_compile_shaders(FRAGMENT bsl/bsl_varying_star.def.sc bsl/bsl_fs_star)
+perlin_compile_shaders(VERTEX bsl/bsl_varying_sunrise.def.sc bsl/bsl_vs_sunrise)
+perlin_compile_shaders(FRAGMENT bsl/bsl_varying_sunrise.def.sc bsl/bsl_fs_sunrise)
+perlin_compile_shaders(VERTEX bsl/bsl_varying_celestial.def.sc bsl/bsl_vs_celestial)
+perlin_compile_shaders(FRAGMENT bsl/bsl_varying_celestial.def.sc bsl/bsl_fs_celestial)
+perlin_compile_shaders(VERTEX bsl/bsl_varying_cloud.def.sc bsl/bsl_vs_cloud)
+perlin_compile_shaders(FRAGMENT bsl/bsl_varying_cloud.def.sc bsl/bsl_fs_cloud)
+perlin_compile_shaders(VERTEX bsl/bsl_varying_shadow.def.sc bsl/bsl_vs_shadow)
+perlin_compile_shaders(FRAGMENT bsl/bsl_varying_shadow.def.sc bsl/bsl_fs_shadow bsl/bsl_fs_shadow_cutout)
 endif()
 
 if(PERLIN_PREBUILT_SHADERS)
@@ -403,6 +424,7 @@ target_compile_features(Perlin PRIVATE cxx_std_23)
 
 target_include_directories(Perlin PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/src"
+    "${CMAKE_CURRENT_SOURCE_DIR}/mods/sdk"
     "${PERLIN_SHADER_OUT}"
     "${stb_SOURCE_DIR}"
     "${concurrentqueue_SOURCE_DIR}"
@@ -541,13 +563,6 @@ if(PERLIN_BUILD_TESTS AND NOT EMSCRIPTEN AND NOT ANDROID)
         src/client/ui/HudRenderers.cpp src/client/ui/EffectData.cpp src/client/i18n/Lang.cpp src/client/i18n/BuiltinEnglish.cpp src/util/Resources.cpp src/util/Paths.cpp)
     target_include_directories(hud_dump PRIVATE src)
     target_compile_features(hud_dump PRIVATE cxx_std_23)
-    add_executable(mod_selftest tests/mod_selftest.cpp src/client/mods/ModManager.cpp src/client/ui/Json.cpp)
-    target_include_directories(mod_selftest PRIVATE src)
-    target_link_libraries(mod_selftest PRIVATE wasm3_core)
-    target_compile_features(mod_selftest PRIVATE cxx_std_23)
-    find_package(Threads REQUIRED)
-    target_link_libraries(mod_selftest PRIVATE Threads::Threads)
-    add_test(NAME mod_selftest COMMAND mod_selftest "${CMAKE_SOURCE_DIR}/mods/prebuilt/speedometer.wasm")
     add_executable(attachable_selftest tests/attachable_selftest.cpp
         src/client/attachable/Molang.cpp src/client/attachable/Animation.cpp src/client/attachable/Geometry.cpp
         src/client/ui/Json.cpp)
@@ -652,7 +667,12 @@ if(PERLIN_BUILD_TESTS AND NOT EMSCRIPTEN AND NOT ANDROID)
     endif()
     target_compile_features(rak_selftest PRIVATE cxx_std_23)
 
-    add_executable(shaderpack_selftest tests/shaderpack_selftest.cpp src/client/resources/ShaderPack.cpp)
+    add_executable(clientassets_selftest tests/clientassets_selftest.cpp src/client/resources/ClientAssets.cpp src/client/resources/TextureLoader.cpp)
+    target_include_directories(clientassets_selftest PRIVATE src "${stb_SOURCE_DIR}")
+    target_link_libraries(clientassets_selftest PRIVATE miniz)
+    target_compile_features(clientassets_selftest PRIVATE cxx_std_23)
+
+    add_executable(shaderpack_selftest tests/shaderpack_selftest.cpp src/client/resources/ShaderPack.cpp tests/BundledShaderStub.cpp)
     target_include_directories(shaderpack_selftest PRIVATE src)
     target_link_libraries(shaderpack_selftest PRIVATE miniz)
     target_compile_features(shaderpack_selftest PRIVATE cxx_std_23)

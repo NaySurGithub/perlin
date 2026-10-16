@@ -51,6 +51,7 @@ namespace perlin {
             float yaw = 0, pitch = 0;
             glm::vec3 light{1.0f};
             bool slimArm = false;
+            bool leftSleeve = true, rightSleeve = true;
             glm::mat4 viewEffect{1.0f};
             const LoadedSkin* skin = nullptr;
             uint64_t skinSerial = 0;

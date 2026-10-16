@@ -3,7 +3,9 @@
 #include "client/input/Input.hpp"
 #include "client/input/KeyMapping.hpp"
 
+#include <array>
 #include <bitset>
+#include <chrono>
 #include <optional>
 #include <vector>
 
@@ -32,6 +34,7 @@ namespace perlin {
         };
         std::vector<Typed> TakeTyped() { return std::move(typed); }
 
+        void Hold(Action action, std::chrono::steady_clock::time_point until) { holds[static_cast<size_t>(action)] = until; }
         void SetBlocked(bool b) { blocked = b; }
         bool Blocked() const { return blocked; }
         void BeginRebind(Action action) { rebinding = action; }
@@ -51,5 +54,6 @@ namespace perlin {
         float lastMouseX = 0, lastMouseY = 0;
         bool haveMouse = false;
         bool blocked = false;
+        std::array<std::chrono::steady_clock::time_point, kActionCount> holds{};
     };
 }
