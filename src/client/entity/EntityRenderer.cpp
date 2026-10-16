@@ -300,7 +300,9 @@ namespace perlin::entity {
             v.swingSerial = e.swingSerial;
             v.attackTime = 0.0001f;
         }
-        if (v.attackTime > 0)
+        if (static const char* forced = PERLIN_ENV("PERLIN_PREVIEW_ATTACK"); forced && e.isSelf)
+            v.attackTime = static_cast<float>(std::atof(forced));
+        else if (v.attackTime > 0)
             v.attackTime = v.attackTime + dt / 0.3f >= 1.0f ? 0.0f : v.attackTime + dt / 0.3f;
         if (e.hurtSerial != v.hurtSerial) {
             v.hurtSerial = e.hurtSerial;
@@ -659,7 +661,7 @@ namespace perlin::entity {
                 return;
             }
             if (!allowCapeOnly && !v.hasArmR && !v.hasArmL) {
-                const glm::mat4 toJava = glm::scale(glm::mat4(1.0f), glm::vec3(-16.0f, -16.0f, 16.0f));
+                const glm::mat4 toJava = glm::scale(glm::mat4(1.0f), glm::vec3(16.0f, -16.0f, 16.0f));
                 glm::mat4 w;
                 glm::vec3 pv;
                 if (attachable::BoneWorld(*geometry, pose, "rightarm", w, pv)) {
@@ -899,10 +901,12 @@ namespace perlin::entity {
                     billboard = true;
                     break;
                 }
-        const float rotation = (fpModel || billboard) ? 180.0f : 180.0f - v.yaw;
-        const glm::mat3 rot = glm::mat3(glm::rotate(glm::mat4(1.0f), rotation * kDeg, glm::vec3(0, 1, 0)));
+        const bool mirrored = !fpModel && !billboard;
+        const float rotation = (fpModel || billboard) ? 180.0f : -v.yaw;
+        const glm::mat4 mirrorZ = mirrored ? glm::scale(glm::mat4(1.0f), glm::vec3(1.0f, 1.0f, -1.0f)) : glm::mat4(1.0f);
+        const glm::mat3 rot = glm::mat3(glm::rotate(glm::mat4(1.0f), rotation * kDeg, glm::vec3(0, 1, 0)) * mirrorZ);
         glm::mat4 model = glm::translate(glm::mat4(1.0f), glm::vec3(v.pos));
-        model = glm::rotate(model, rotation * kDeg, glm::vec3(0, 1, 0));
+        model = glm::rotate(model, rotation * kDeg, glm::vec3(0, 1, 0)) * mirrorZ;
         if (v.deathTime > 0.0f) {
             const float t = v.deathTime * 20.0f;
             const float f = std::min(std::sqrt(std::max(0.0f, (t - 1.0f) / 20.0f * 1.6f)), 1.0f);
@@ -930,7 +934,7 @@ namespace perlin::entity {
                 light = fp->light;
         }
         if (dollModel) {
-            model = *dollModel * glm::rotate(glm::mat4(1.0f), rotation * kDeg, glm::vec3(0, 1, 0)) * glm::scale(glm::mat4(1.0f), glm::vec3(scale / 16.0f));
+            model = *dollModel * glm::rotate(glm::mat4(1.0f), rotation * kDeg, glm::vec3(0, 1, 0)) * mirrorZ * glm::scale(glm::mat4(1.0f), glm::vec3(scale / 16.0f));
             light = glm::vec3(1.0f);
         }
         const float hurt = v.hurtTimer > 0.0f ? std::min(1.0f, v.hurtTimer / 0.5f) : 0.0f;

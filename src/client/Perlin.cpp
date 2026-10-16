@@ -5,6 +5,9 @@
 #include "client/Perlin.hpp"
 #include "client/i18n/Lang.hpp"
 #include "client/multiplayer/SkinLoader.hpp"
+#include "client/mods/ModManager.hpp"
+#include "client/resources/ShaderPack.hpp"
+#include "client/resources/TexturePack.hpp"
 #include "network/XboxAuth.hpp"
 #include "client/renderer/chunk/ChunkMesher.hpp"
 #include "client/platform/AppPlatform.hpp"
@@ -197,6 +200,8 @@ namespace perlin {
         platform = p;
         options = Options::Load();
         i18n::Lang::Get().Configure(std::string(), paths::DataDir(), options.language);
+        mods::ModManager::Instance().SetDisabled(options.disabledMods);
+        mods::ModManager::Instance().Start(paths::DataDir() + "/mods");
         if (!args.server.empty())
             options.server = args.server;
         if (!args.playerName.empty())
@@ -321,7 +326,80 @@ namespace perlin {
         statusHint = text;
     }
 
+    namespace {
+        std::string TreeStamp(const std::string& path) {
+            std::error_code ec;
+            uint64_t h = 1469598103934665603ull;
+            const auto mix = [&h](uint64_t v) { h = (h ^ v) * 1099511628211ull; };
+            if (!std::filesystem::exists(path, ec))
+                return "none";
+            if (!std::filesystem::is_directory(path, ec)) {
+                mix(static_cast<uint64_t>(std::filesystem::last_write_time(path, ec).time_since_epoch().count()));
+                mix(std::filesystem::file_size(path, ec));
+                return std::to_string(h);
+            }
+            for (std::filesystem::recursive_directory_iterator it(path, std::filesystem::directory_options::skip_permission_denied, ec), end; !ec && it != end; it.increment(ec)) {
+                if (!it->is_regular_file(ec))
+                    continue;
+                mix(static_cast<uint64_t>(it->last_write_time(ec).time_since_epoch().count()));
+                mix(it->file_size(ec));
+            }
+            return std::to_string(h);
+        }
+    }
+
+    void Perlin::ApplyTexturePacks() {
+        if (levelRenderer)
+            levelRenderer->ReloadResources();
+        entityRenderer.ClearCaches();
+        ui::UiAssets::Instance().ClearItemCache();
+        if (hud)
+            hud->Reload();
+        hotTexStamp.clear();
+    }
+
+    void Perlin::ApplyShaderPack() {
+        ShaderPack& pack = ShaderPack::Instance();
+        pack.Close();
+        if (!options.shaderPack.empty()) {
+            std::string error;
+            if (!pack.Open(paths::DataDir() + "/shaderpacks", options.shaderPack, error))
+                std::cout << "[shaders] " << error << " - using the built-in shaders" << std::endl;
+        }
+        if (renderer)
+            renderer->ReloadShaders();
+        hotShaderStamp.clear();
+    }
+
+    void Perlin::PollHotReload() {
+        if (!options.hotReload)
+            return;
+        const auto now = Clock::now();
+        if (now - hotPollAt < std::chrono::milliseconds(500))
+            return;
+        hotPollAt = now;
+        std::string tex;
+        for (const std::string& name : options.texturePacks)
+            tex += TreeStamp(paths::DataDir() + "/texturepacks/" + name) + ";";
+        if (hotTexStamp.empty())
+            hotTexStamp = tex;
+        else if (tex != hotTexStamp) {
+            hotTexStamp = tex;
+            std::cout << "[hot-reload] texture packs changed" << std::endl;
+            ApplyTexturePacks();
+        }
+        const std::string shader = options.shaderPack.empty() ? std::string("none") : TreeStamp(paths::DataDir() + "/shaderpacks/" + options.shaderPack);
+        if (hotShaderStamp.empty())
+            hotShaderStamp = shader;
+        else if (shader != hotShaderStamp) {
+            hotShaderStamp = shader;
+            std::cout << "[hot-reload] shader pack changed" << std::endl;
+            ApplyShaderPack();
+        }
+    }
+
     void Perlin::Shutdown() {
+        mods::ModManager::Instance().Stop();
         renderRunning = false;
         if (renderThread.joinable())
             renderThread.join();
@@ -1227,7 +1305,9 @@ namespace perlin {
                     v = "left " + v;
                 if (v.empty())
                     return std::string("Not bound");
-                if (v.size() > 1) {
+                if (v.size() == 1)
+                    v[0] = static_cast<char>(std::toupper(static_cast<unsigned char>(v[0])));
+                else {
                     bool word = true;
                     for (char& c : v) {
                         if (c == '_')
@@ -1338,11 +1418,12 @@ namespace perlin {
             return;
         }
 
-        if (pauseView == 1 || pauseView == 3) {
+        if (pauseView == 1 || pauseView == 3 || pauseView == 4 || pauseView == 5) {
             struct OptRow {
                 std::string label, value;
                 float fraction;
                 std::function<void(float, bool)> apply;
+                bool header = false;
             };
             static const int kFps[] = {0, 30, 60, 90, 120, 144, 165, 240};
             static const int kGuiScales[] = {0, 1, 2, 3, 4};
@@ -1387,72 +1468,229 @@ namespace perlin {
             };
             if (pauseView == 3) {
                 title = tr("perlin.worldOptions", "World Options");
-                static std::map<std::string, bool> rules = {{"keepInventory", false}, {"doDaylightCycle", true}, {"doWeatherCycle", true},
-                                                            {"doMobSpawning", true}, {"mobGriefing", true},
-                                                            {"showCoordinates", false}, {"pvp", true}};
-                static int modeAt = 0, timeAt = 0, weatherAt = 0, diffAt = 2;
+                const BedrockSession::WorldSettings ws = live ? live->World() : BedrockSession::WorldSettings{};
                 const int perm = live ? live->OwnPermission() : 2;
-                model.push_back({tr("perlin.cheats", "Cheats"), perm >= 2 ? tr("perlin.cheats.on", "Allowed (Operator)") : tr("perlin.cheats.off", "No Permission"), -1.0f,
-                                 [](float, bool) {}});
+                const bool isOp = perm >= 2;
+                const bool cheats = isOp && (!live || ws.commandsEnabled);
+                const double nowSec = std::chrono::duration<double>(Clock::now().time_since_epoch()).count();
+                const auto ruleDefault = [](const std::string& k) {
+                    if (k == "playerssleepingpercentage")
+                        return 100;
+                    if (k == "spawnradius")
+                        return 10;
+                    if (k == "randomtickspeed")
+                        return 1;
+                    for (const char* off : {"showcoordinates", "showdaysplayed", "doimmediaterespawn", "keepinventory", "locatorbar"})
+                        if (k == off)
+                            return 0;
+                    return 1;
+                };
+                const auto ruleValue = [this, ws, nowSec, ruleDefault](const std::string& k) {
+                    const auto o = worldOverride.find(k);
+                    if (o != worldOverride.end() && nowSec - o->second.second < 2.0)
+                        return o->second.first;
+                    const auto it = ws.rules.find(k);
+                    return it == ws.rules.end() ? ruleDefault(k) : it->second;
+                };
                 const auto run = [live](const std::string& cmd) {
                     if (live)
                         live->SendCommand(cmd);
                 };
-                static const char* const kModes[] = {"survival", "creative", "adventure", "spectator"};
-                static const char* const kModeNames[] = {"Survival", "Creative", "Adventure", "Spectator"};
-                model.push_back({tr("perlin.gamemode", "Game Mode"), kModeNames[modeAt], -1.0f, [run](float, bool click) {
-                                     if (click) {
-                                         modeAt = (modeAt + 1) % 4;
-                                         run(std::string("/gamemode ") + kModes[modeAt]);
-                                     }
-                                 }});
-                static const char* const kTimes[] = {"day", "noon", "night", "midnight"};
-                static const char* const kTimeNames[] = {"Day", "Noon", "Night", "Midnight"};
-                model.push_back({tr("perlin.time", "Time"), kTimeNames[timeAt], -1.0f, [run](float, bool click) {
-                                     if (click) {
-                                         timeAt = (timeAt + 1) % 4;
-                                         run(std::string("/time set ") + kTimes[timeAt]);
-                                     }
-                                 }});
-                static const char* const kWeather[] = {"clear", "rain", "thunder"};
-                static const char* const kWeatherNames[] = {"Clear", "Rain", "Thunder"};
-                model.push_back({tr("perlin.weather", "Weather"), kWeatherNames[weatherAt], -1.0f, [run](float, bool click) {
-                                     if (click) {
-                                         weatherAt = (weatherAt + 1) % 3;
-                                         run(std::string("/weather ") + kWeather[weatherAt]);
-                                     }
-                                 }});
+                const auto setRule = [this, run, nowSec](const std::string& k, int v, bool boolean) {
+                    worldOverride[k] = {v, nowSec};
+                    run("gamerule " + k + " " + (boolean ? (v != 0 ? "true" : "false") : std::to_string(v)));
+                };
+                const auto head = [&](const std::string& text) {
+                    OptRow r{text, "", -1.0f, [](float, bool) {}};
+                    r.header = true;
+                    model.push_back(r);
+                };
+                const auto cyc = [&](const std::string& label, const std::vector<std::string>& names, int at, bool enabled, std::function<void(int)> pick) {
+                    const int safe = std::clamp(at, 0, static_cast<int>(names.size()) - 1);
+                    model.push_back({label, names[static_cast<size_t>(safe)] + (enabled ? "" : " (locked)"), -1.0f, [=](float, bool click) {
+                                         if (click && enabled)
+                                             pick((safe + 1) % static_cast<int>(names.size()));
+                                     }});
+                };
+                const auto rule = [&](const std::string& label, const std::string& key, bool enabled) {
+                    const bool on = ruleValue(key) != 0;
+                    model.push_back({label, onOff(on) + (enabled ? "" : " (locked)"), -1.0f, [=](float, bool click) {
+                                         if (click && enabled)
+                                             setRule(key, on ? 0 : 1, true);
+                                     }});
+                };
+                const auto ruleSlider = [&](const std::string& label, const std::string& key, int maxValue, const char* suffix, bool enabled) {
+                    const int v = std::clamp(ruleValue(key), 0, maxValue);
+                    model.push_back({label, std::to_string(v) + suffix, static_cast<float>(v) / static_cast<float>(maxValue), [=](float f, bool) {
+                                         if (enabled)
+                                             setRule(key, static_cast<int>(std::lround(std::clamp(f, 0.0f, 1.0f) * static_cast<float>(maxValue))), false);
+                                     }});
+                };
+                head("Game");
                 static const char* const kDiff[] = {"peaceful", "easy", "normal", "hard"};
-                static const char* const kDiffNames[] = {"Peaceful", "Easy", "Normal", "Hard"};
-                model.push_back({tr("options.difficulty", "Difficulty"), kDiffNames[diffAt], -1.0f, [run](float, bool click) {
-                                     if (click) {
-                                         diffAt = (diffAt + 1) % 4;
-                                         run(std::string("/difficulty ") + kDiff[diffAt]);
-                                     }
-                                 }});
-                static const std::pair<const char*, const char*> kRules[] = {
-                    {"keepInventory", "Keep Inventory"}, {"doDaylightCycle", "Daylight Cycle"}, {"doWeatherCycle", "Weather Cycle"},
-                    {"doMobSpawning", "Mob Spawning"}, {"mobGriefing", "Mob Griefing"},
-                    {"showCoordinates", "Show Coordinates"}, {"pvp", "PvP"}};
-                for (const auto& r : kRules) {
-                    const std::string id = r.first;
-                    model.push_back({r.second, onOff(rules[id]), -1.0f, [run, id](float, bool click) {
-                                         if (click) {
-                                             rules[id] = !rules[id];
-                                             run("/gamerule " + id + (rules[id] ? " true" : " false"));
+                cyc(tr("options.difficulty", "Difficulty"), {"Peaceful", "Easy", "Normal", "Hard"}, ws.difficulty, isOp,
+                    [=](int i) { run(std::string("difficulty ") + kDiff[i]); });
+                static const char* const kModes[] = {"survival", "creative", "adventure"};
+                cyc("Default Mode", {"Survival", "Creative", "Adventure"}, ws.worldGameMode, isOp,
+                    [=](int i) { run(std::string("defaultgamemode ") + kModes[i]); });
+                static const char* const kPersonal[] = {"survival", "creative", "adventure", "spectator"};
+                cyc("Your Game Mode", {"Survival", "Creative", "Adventure", "Spectator"}, live ? live->GameType() : 0, isOp,
+                    [=](int i) { run(std::string("gamemode ") + kPersonal[i]); });
+                head("World");
+                rule("Friendly Fire", "pvp", isOp);
+                rule("Show Coordinates", "showcoordinates", isOp);
+                rule("Player Waypoints", "locatorbar", isOp);
+                rule("Show Days Played", "showdaysplayed", isOp);
+                rule("Fire Spreads", "dofiretick", isOp);
+                rule("Recipes Unlocking", "recipesunlock", isOp);
+                rule("TNT Explodes", "tntexplodes", isOp);
+                rule("Respawn Blocks Explode", "respawnblocksexplode", isOp);
+                rule("Mob Loot", "domobloot", isOp);
+                rule("Natural Regeneration", "naturalregeneration", isOp);
+                rule("Tile Drops", "dotiledrops", isOp);
+                rule("Immediate Respawn", "doimmediaterespawn", isOp);
+                ruleSlider("Skip Night By Sleeping", "playerssleepingpercentage", 100, "%", isOp);
+                ruleSlider("Respawn Radius", "spawnradius", 128, " blocks", isOp);
+                head("Cheats");
+                {
+                    const bool on = !live || ws.commandsEnabled;
+                    model.push_back({"Activate Cheats", onOff(on) + (isOp ? "" : " (operators only)"), -1.0f, [=](float, bool click) {
+                                         if (click && isOp)
+                                             run(std::string("changesetting allow-cheats ") + (on ? "false" : "true"));
+                                     }});
+                }
+                rule("Normal Day/Night Cycle", "dodaylightcycle", cheats);
+                {
+                    const bool always = ruleValue("dodaylightcycle") == 0;
+                    model.push_back({"Always Day", onOff(always) + (cheats ? "" : " (locked)"), -1.0f, [=](float, bool click) {
+                                         if (click && cheats) {
+                                             worldOverride["dodaylightcycle"] = {always ? 1 : 0, nowSec};
+                                             run(always ? "alwaysday false" : "alwaysday true");
                                          }
                                      }});
                 }
-                model.push_back({tr("perlin.setSpawn", "Set World Spawn Here"), "", -1.0f, [run](float, bool click) {
-                                     if (click)
-                                         run("/setworldspawn ~ ~ ~");
+                rule("Keep Inventory", "keepinventory", cheats);
+                rule("Mob Spawn Normally", "domobspawning", cheats);
+                rule("Mob Griefing", "mobgriefing", cheats);
+                rule("Entities Drop Loot", "doentitydrops", cheats);
+                rule("Normal Weather Cycle", "doweathercycle", cheats);
+                rule("Command Blocks Enabled", "commandblocksenabled", cheats);
+                ruleSlider("Tick Speed", "randomtickspeed", 100, "", cheats);
+                model.push_back({"Reset Tick Speed", "", -1.0f, [=](float, bool click) {
+                                     if (click && cheats)
+                                         setRule("randomtickspeed", 1, false);
                                  }});
+            } else if (pauseView == 4) {
+                title = tr("perlin.mods", "Mods");
+                auto& mm = mods::ModManager::Instance();
+                model.push_back({"Reload All Mods", "", -1.0f, [&mm](float, bool click) {
+                                     if (click)
+                                         mm.ReloadAll();
+                                 }});
+                toggle("Hot Reload On Save", options.hotReload);
+                const auto infos = mm.List();
+                if (infos.empty())
+                    model.push_back({"No .wasm mods in", mm.Directory(), -1.0f, [](float, bool) {}});
+                for (const mods::ModInfo& info : infos) {
+                    const std::string name = info.name;
+                    std::string state = info.enabled ? info.state : std::string("disabled");
+                    if (!info.error.empty())
+                        state += " - " + info.error.substr(0, 24);
+                    model.push_back({name, state, -1.0f, [this, name](float, bool click) {
+                                         if (!click)
+                                             return;
+                                         auto& d = options.disabledMods;
+                                         const auto it = std::find(d.begin(), d.end(), name);
+                                         if (it == d.end())
+                                             d.push_back(name);
+                                         else
+                                             d.erase(it);
+                                         mods::ModManager::Instance().SetDisabled(d);
+                                         options.Save();
+                                     }});
+                }
+            } else if (pauseView == 5) {
+                title = tr("perlin.wardrobe", "Wardrobe");
+                const std::string skinDir = paths::DataDir() + "/skins", capeDir = paths::DataDir() + "/capes";
+                std::error_code ec;
+                std::filesystem::create_directories(skinDir, ec);
+                std::filesystem::create_directories(capeDir, ec);
+                const auto pngs = [](const std::string& dir) {
+                    std::vector<std::string> out;
+                    std::error_code e;
+                    for (const auto& entry : std::filesystem::directory_iterator(dir, e))
+                        if (entry.is_regular_file(e) && entry.path().extension() == ".png")
+                            out.push_back(entry.path().filename().string());
+                    std::sort(out.begin(), out.end());
+                    return out;
+                };
+                const auto wear = [this, live]() {
+                    options.Save();
+                    SkinConfig cfg;
+                    cfg.skinPath = options.skin;
+                    cfg.capePath = options.cape;
+                    cfg.slimArms = options.slimArms;
+                    LoadedSkin loaded;
+                    std::string err;
+                    if (!LoadSkinConfig(cfg, loaded, err)) {
+                        std::cout << "[wardrobe] " << err << std::endl;
+                        return;
+                    }
+                    if (live) {
+                        live->SetSkin(std::move(loaded));
+                        live->SendSkinUpdate();
+                    }
+                };
+                model.push_back({"Skin", "", -1.0f, [](float, bool) {}});
+                model.back().header = true;
+                model.push_back({"Default Skin", options.skin.empty() ? "Worn" : "Wear", -1.0f, [this, wear](float, bool click) {
+                                     if (click) {
+                                         options.skin.clear();
+                                         wear();
+                                     }
+                                 }});
+                for (const std::string& name : pngs(skinDir)) {
+                    const std::string full = skinDir + "/" + name;
+                    model.push_back({name, options.skin == full ? "Worn" : "Wear", -1.0f, [this, wear, full](float, bool click) {
+                                         if (click) {
+                                             options.skin = full;
+                                             wear();
+                                         }
+                                     }});
+                }
+                model.push_back({"Slim Arms", onOff(options.slimArms), -1.0f, [this, wear](float, bool click) {
+                                     if (click) {
+                                         options.slimArms = !options.slimArms;
+                                         wear();
+                                     }
+                                 }});
+                model.push_back({"Cape", "", -1.0f, [](float, bool) {}});
+                model.back().header = true;
+                model.push_back({"No Cape", options.cape.empty() ? "Worn" : "Wear", -1.0f, [this, wear](float, bool click) {
+                                     if (click) {
+                                         options.cape.clear();
+                                         wear();
+                                     }
+                                 }});
+                for (const std::string& name : pngs(capeDir)) {
+                    const std::string full = capeDir + "/" + name;
+                    model.push_back({name, options.cape == full ? "Worn" : "Wear", -1.0f, [this, wear, full](float, bool click) {
+                                         if (click) {
+                                             options.cape = full;
+                                             wear();
+                                         }
+                                     }});
+                }
+                model.push_back({"Skins:", skinDir, -1.0f, [](float, bool) {}});
             } else if (optionsPage == 0) {
                 nav(tr("options.videoTitle", "Video Settings..."), 1);
                 nav(tr("options.sounds.title", "Music & Sounds..."), 2);
                 nav(tr("options.controls", "Controls..."), 3);
                 nav(tr("perlin.options.hand", "Hand & Camera..."), 4);
                 nav(tr("controls.keybinds", "Key Binds..."), 5);
+                nav(tr("options.language", "Language..."), 6);
+                nav(tr("resourcePack.title", "Resource Packs..."), 7);
+                nav(tr("perlin.shaderPacks", "Shader Packs..."), 8);
             } else if (optionsPage == 1) {
                 title = tr("options.videoTitle", "Video Settings");
                 slider(tr("options.fov", "FOV"), std::to_string(static_cast<int>(std::lround(options.fov))), (options.fov - 30.0f) / 80.0f,
@@ -1504,6 +1742,138 @@ namespace perlin {
                        [this](float f) { options.damageTilt = static_cast<int>(std::lround(std::clamp(f, 0.0f, 1.0f) * 100.0f)); });
                 toggle(tr("perlin.options.damageTint", "Damage Tint"), options.damageTint);
                 toggle(tr("options.rgss", "Supersampling"), options.rgss);
+                slider("Cloud Range", std::to_string(options.cloudRange) + " " + tr("options.chunks", "chunks"), static_cast<float>(options.cloudRange - 2) / 126.0f,
+                       [this](float f) { options.cloudRange = 2 + static_cast<int>(std::lround(std::clamp(f, 0.0f, 1.0f) * 126.0f)); });
+                toggle("Better Grass", options.betterGrass);
+                choice("Glass", options.glass, {{"normal", "Normal"}, {"connected", "Connected"}, {"connectedClear", "Connected Clear"}, {"clear", "Clear"}});
+                slider("Shadow Distance", options.shadowDistance == 0 ? std::string("Auto") : std::to_string(options.shadowDistance),
+                       static_cast<float>(options.shadowDistance) / 256.0f,
+                       [this](float f) { options.shadowDistance = static_cast<int>(std::lround(std::clamp(f, 0.0f, 1.0f) * 64.0f)) * 4; });
+                slider("Held Item Light", std::to_string(options.heldLight), static_cast<float>(options.heldLight) / 15.0f,
+                       [this](float f) { options.heldLight = static_cast<int>(std::lround(std::clamp(f, 0.0f, 1.0f) * 15.0f)); });
+                choice("Dynamic Lights", options.dynamicLights, {{"off", "Off"}, {"fast", "Fast"}, {"fancy", "Fancy"}});
+                toggle("Third Person Crosshair", options.thirdPersonCrosshair);
+                toggle("Third Person Nametag", options.thirdPersonNametag);
+                {
+                    OptRow h{"Zoom", "", -1.0f, [](float, bool) {}};
+                    h.header = true;
+                    model.push_back(h);
+                }
+                auto& z = options.zoom;
+                slider("Zoom Level", percent(z.level), (z.level - z.minLevel) / std::max(0.001f, z.maxLevel - z.minLevel),
+                       [this](float f) { auto& zz = options.zoom; zz.level = zz.minLevel + std::round(std::clamp(f, 0.0f, 1.0f) * 100.0f) / 100.0f * (zz.maxLevel - zz.minLevel); });
+                slider("Zoom In Time", std::to_string(static_cast<int>(std::lround(z.inSeconds * 1000.0f))) + " ms", z.inSeconds / 2.0f,
+                       [this](float f) { options.zoom.inSeconds = std::round(std::clamp(f, 0.0f, 1.0f) * 100.0f) / 50.0f; });
+                slider("Zoom Out Time", std::to_string(static_cast<int>(std::lround(z.outSeconds * 1000.0f))) + " ms", z.outSeconds / 2.0f,
+                       [this](float f) { options.zoom.outSeconds = std::round(std::clamp(f, 0.0f, 1.0f) * 100.0f) / 50.0f; });
+                choice("Zoom Easing", z.easing, {{"linear", "Linear"}, {"cubic", "Cubic"}, {"quint", "Quint"}, {"sine", "Sine"}, {"smooth", "Smooth"}});
+                slider("Zoom Scroll Step", percent(z.scrollStep), z.scrollStep / 0.9f,
+                       [this](float f) { options.zoom.scrollStep = std::round(std::clamp(f, 0.0f, 1.0f) * 90.0f) / 100.0f; });
+                slider("Zoom Smoothing", std::to_string(static_cast<int>(std::lround(z.smoothing))), z.smoothing / 30.0f,
+                       [this](float f) { options.zoom.smoothing = std::round(std::clamp(f, 0.0f, 1.0f) * 30.0f); });
+                toggle("Zoom Reset On Press", options.zoom.resetOnPress);
+                toggle("Cinematic Camera", options.zoom.cinematic);
+                toggle("Scale Sensitivity", options.zoom.scaleSensitivity);
+                {
+                    OptRow h{"Developer", "", -1.0f, [](float, bool) {}};
+                    h.header = true;
+                    model.push_back(h);
+                }
+                toggle("Hot Reload On Save", options.hotReload);
+            } else if (optionsPage == 6) {
+                title = tr("options.language", "Language");
+                for (const auto& lang : i18n::Lang::Get().Languages()) {
+                    const std::string code = lang.code;
+                    model.push_back({lang.name.empty() ? code : lang.name, code == options.language ? "Selected" : "", -1.0f, [this, code](float, bool click) {
+                                         if (!click)
+                                             return;
+                                         options.language = code;
+                                         i18n::Lang::Get().Configure(ui::UiAssets::Instance().VanillaRoot(), paths::DataDir(), code);
+                                         options.Save();
+                                         pauseSignature.clear();
+                                     }});
+                }
+            } else if (optionsPage == 7) {
+                title = tr("resourcePack.title", "Resource Packs");
+                const std::string dir = paths::DataDir() + "/texturepacks";
+                std::error_code ec;
+                std::filesystem::create_directories(dir, ec);
+                {
+                    OptRow h{"Active (top wins)", "", -1.0f, [](float, bool) {}};
+                    h.header = true;
+                    model.push_back(h);
+                }
+                if (options.texturePacks.empty())
+                    model.push_back({"Default textures", "", -1.0f, [](float, bool) {}});
+                for (size_t i = 0; i < options.texturePacks.size(); i++) {
+                    const std::string name = options.texturePacks[i];
+                    model.push_back({"Raise: " + name, "", -1.0f, [this, i](float, bool click) {
+                                         if (click && i > 0) {
+                                             std::swap(options.texturePacks[i], options.texturePacks[i - 1]);
+                                             options.Save();
+                                             ApplyTexturePacks();
+                                         }
+                                     }});
+                    model.push_back({"Remove: " + name, "", -1.0f, [this, i](float, bool click) {
+                                         if (click && i < options.texturePacks.size()) {
+                                             options.texturePacks.erase(options.texturePacks.begin() + static_cast<long>(i));
+                                             options.Save();
+                                             ApplyTexturePacks();
+                                         }
+                                     }});
+                }
+                {
+                    OptRow h{"Available", "", -1.0f, [](float, bool) {}};
+                    h.header = true;
+                    model.push_back(h);
+                }
+                std::vector<std::string> found;
+                for (const auto& entry : std::filesystem::directory_iterator(dir, ec)) {
+                    const std::string ext = entry.path().extension().string();
+                    if (entry.is_directory(ec) || ext == ".zip" || ext == ".mcpack")
+                        found.push_back(entry.path().filename().string());
+                }
+                std::sort(found.begin(), found.end());
+                for (const std::string& name : found) {
+                    if (std::find(options.texturePacks.begin(), options.texturePacks.end(), name) != options.texturePacks.end())
+                        continue;
+                    model.push_back({name, "Add", -1.0f, [this, name](float, bool click) {
+                                         if (click) {
+                                             options.texturePacks.insert(options.texturePacks.begin(), name);
+                                             options.Save();
+                                             ApplyTexturePacks();
+                                         }
+                                     }});
+                }
+                model.push_back({"Folder", dir, -1.0f, [](float, bool) {}});
+            } else if (optionsPage == 8) {
+                title = tr("perlin.shaderPacks", "Shader Packs");
+                const std::string dir = paths::DataDir() + "/shaderpacks";
+                std::error_code ec;
+                std::filesystem::create_directories(dir, ec);
+                model.push_back({"Built-in Shaders", options.shaderPack.empty() ? "Active" : "Use", -1.0f, [this](float, bool click) {
+                                     if (click) {
+                                         options.shaderPack.clear();
+                                         options.Save();
+                                         ApplyShaderPack();
+                                     }
+                                 }});
+                std::vector<std::string> found;
+                for (const auto& entry : std::filesystem::directory_iterator(dir, ec)) {
+                    const std::string ext = entry.path().extension().string();
+                    if (entry.is_directory(ec) || ext == ".zip")
+                        found.push_back(entry.path().filename().string());
+                }
+                std::sort(found.begin(), found.end());
+                for (const std::string& name : found)
+                    model.push_back({name, options.shaderPack == name ? "Active" : "Use", -1.0f, [this, name](float, bool click) {
+                                         if (click) {
+                                             options.shaderPack = name;
+                                             options.Save();
+                                             ApplyShaderPack();
+                                         }
+                                     }});
+                model.push_back({"Folder", dir, -1.0f, [](float, bool) {}});
             } else if (optionsPage == 2) {
                 title = tr("options.sounds.title", "Music & Sounds");
                 volume("soundCategory.master", "Master Volume", options.sound.master);
@@ -1607,16 +1977,29 @@ namespace perlin {
             }
 
             std::vector<ui::OptionsRow> view;
-            for (const OptRow& r : model)
-                view.push_back({r.label, r.value, r.fraction});
-            const ui::OptionsLayout layout = ui::ComputeOptionsLayout(static_cast<int>(view.size()), guiW, guiH);
-            std::string signature = std::to_string(guiW) + "x" + std::to_string(guiH) + title;
+            for (const OptRow& r : model) {
+                ui::OptionsRow row{r.label, r.value, r.fraction};
+                row.header = r.header;
+                view.push_back(row);
+            }
+            const int scrollKey = pauseView * 100 + optionsPage;
+            if (scrollKey != optScrollKey) {
+                optScrollKey = scrollKey;
+                optScroll = 0.0f;
+            }
+            const ui::OptionsLayout probe = ui::ComputeOptionsLayout(view, guiW, guiH, 0.0f);
+            if (probe.scrolling && bindCapture < 0)
+                optScroll = std::clamp(optScroll - inputManager.Scroll() * 20.0f, 0.0f, probe.maxScroll);
+            else if (!probe.scrolling)
+                optScroll = 0.0f;
+            const ui::OptionsLayout layout = ui::ComputeOptionsLayout(view, guiW, guiH, optScroll);
+            std::string signature = std::to_string(guiW) + "x" + std::to_string(guiH) + title + std::to_string(static_cast<int>(optScroll));
             for (const ui::OptionsRow& r : view)
                 signature += "|" + r.label + r.value;
             if (signature != optionsSignature || !hud.Overlay().HasOverlay()) {
                 optionsSignature = signature;
                 std::string error;
-                if (!hud.Overlay().SetOverlay(ui::BuildOptionsScreenRml(view, title, tr("gui.done", "Done"), guiW, guiH), error))
+                if (!hud.Overlay().SetOverlay(ui::BuildOptionsScreenRml(view, title, tr("gui.done", "Done"), optScroll, guiW, guiH), error))
                     std::cout << "[ui] options screen: " << error << std::endl;
             }
             const float gx = mx / static_cast<float>(scale), gy = my / static_cast<float>(scale);
@@ -1650,7 +2033,7 @@ namespace perlin {
             bindWasCapturing = false;
             if (down && !pauseLeftDown && clickReady) {
                 for (int i = 0; i < layout.count; i++)
-                    if (inside(layout.x[i], layout.y[i], layout.w, layout.h)) {
+                    if (layout.visible[static_cast<size_t>(i)] && !model[static_cast<size_t>(i)].header && inside(layout.x[i], layout.y[i], layout.w, layout.h)) {
                         const OptRow& row = model[static_cast<size_t>(i)];
                         if (row.fraction >= 0.0f) {
                             optionsDrag = i;
@@ -1691,6 +2074,7 @@ namespace perlin {
         t.back = i18n::Tr("menu.returnToGame");
         t.options = i18n::Tr("menu.options");
         t.world = tr("perlin.worldOptions", "World Options");
+        t.mods = tr("perlin.mods", "Mods");
         t.quit = i18n::Tr("menu.disconnect");
         t.advancements = tr("gui.advancements", "Advancements");
         t.stats = tr("gui.stats", "Statistics");
@@ -1716,7 +2100,7 @@ namespace perlin {
         std::string panelSig;
         for (const auto& r : t.panel)
             panelSig += r.name + ":" + std::to_string(r.perm) + ",";
-        const std::string signature = std::to_string(guiW) + "x" + std::to_string(guiH) + (t.showPanel ? "P" : "p") + panelSig + t.title + t.back + t.options + t.quit + t.advancements + t.stats + t.feedback + t.bugs + t.lan + t.players + t.world;
+        const std::string signature = std::to_string(guiW) + "x" + std::to_string(guiH) + (t.showPanel ? "P" : "p") + panelSig + t.title + t.back + t.options + t.quit + t.advancements + t.stats + t.feedback + t.bugs + t.lan + t.players + t.world + t.mods;
         if (signature != pauseSignature || !hud.Overlay().HasOverlay()) {
             pauseSignature = signature;
             std::string error;
@@ -1742,6 +2126,14 @@ namespace perlin {
                 pausePlayers = !pausePlayers;
             } else if (hover == ui::kPauseBugsId) {
                 platform->OpenUrl("https://github.com/theselauraproject/perlin/issues/new?labels=bug");
+            } else if (hover == ui::kPauseWardrobeId) {
+                pauseView = 5;
+                optionsSignature.clear();
+                hud.Overlay().ClearOverlay();
+            } else if (hover == ui::kPauseModsId) {
+                pauseView = 4;
+                optionsSignature.clear();
+                hud.Overlay().ClearOverlay();
             } else if (hover == ui::kPauseWorldId) {
                 pauseView = 3;
                 optionsSignature.clear();
@@ -2452,6 +2844,26 @@ namespace perlin {
             inputManager.Poll();
             if (inputManager.Pressed(Action::CyclePerspective))
                 camera.CycleMode();
+            zoom.SetConfig(options.zoom);
+            PollHotReload();
+            {
+                auto& mm = mods::ModManager::Instance();
+                mods::HostState hs;
+                hs.x = camera.x;
+                hs.y = camera.y;
+                hs.z = camera.z;
+                hs.yaw = camera.yaw;
+                hs.pitch = camera.pitch;
+                hs.gameMode = session ? session->GameType() : 0;
+                hs.connected = session && session->GetState() == BedrockSession::State::InGame;
+                mm.SetHostState(hs);
+                for (mods::Outbound out : mm.TakeOutbound()) {
+                    if (out.kind == mods::Outbound::Kind::Hud)
+                        chat.AddMessage(out.text, hudAnim.ticks);
+                    else if (session && !out.text.empty())
+                        out.text[0] == '/' ? session->SendCommand(out.text) : session->SendChat(out.text);
+                }
+            }
             const LookDelta look = zoom.Update(dt, inputManager.IsDown(Action::Zoom), inputManager.Scroll(),
                                                inputManager.Look());
             camera.Rotate(look.yaw, look.pitch);
@@ -2530,6 +2942,7 @@ namespace perlin {
             }
             if (const char* g = PERLIN_ENV("PERLIN_GLASS"))
                 options.glass = g;
+            levelRenderer->SetBetterGrass(options.betterGrass ? 1 : 0);
             levelRenderer->SetGlassMode(options.glass == "connected" ? 1 : options.glass == "connectedClear" ? 2 : options.glass == "clear" ? 3 : 0);
             levelRenderer->ReloadAssetsIfNeeded();
 
@@ -3746,7 +4159,7 @@ namespace perlin {
                     handFrame.slimArm = session->Skin().slimArms;
                 }
                 handFrame.slimArm = handFrame.slimArm || options.hand.slimArm;
-                if (!(pauseShown && options.menuBlur > 0)) { ProfScope p(4); handRenderer.Render(handFrame, options.hand); }
+                { ProfScope p(4); handRenderer.Render(handFrame, options.hand); }
                 {
                     int sw = 0, sh = 0;
                     renderer->FramebufferSize(sw, sh);

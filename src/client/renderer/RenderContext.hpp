@@ -108,6 +108,7 @@ namespace perlin {
 
         virtual bool Initialize(AppPlatform& platform, const Options& options) = 0;
         virtual void Shutdown() = 0;
+        virtual bool ReloadShaders() { return false; }
         virtual std::string RendererName() const { return {}; }
         virtual std::string GpuVendor() const { return {}; }
         virtual std::string GpuDescription() const { return {}; }

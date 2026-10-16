@@ -345,6 +345,21 @@ namespace perlin {
             runtimeId = p.runtimeEntityId;
             uniqueId = p.entityId;
             gameType = static_cast<int>(p.playerGamemode);
+            {
+                std::lock_guard<std::mutex> lk(worldMutex);
+                world.difficulty = p.difficulty;
+                world.worldGameMode = static_cast<int>(p.worldGamemode);
+                world.commandsEnabled = p.enableCommands;
+                world.known = true;
+                for (const GameRuleI32& rule : p.gamerules) {
+                    std::string name = rule.name;
+                    std::transform(name.begin(), name.end(), name.begin(), ::tolower);
+                    if (const bool* b = std::get_if<bool>(&rule.value))
+                        world.rules[name] = *b ? 1 : 0;
+                    else if (const int32_t* i = std::get_if<int32_t>(&rule.value))
+                        world.rules[name] = *i;
+                }
+            }
             if (gameType == 1) mayFly = true;
             if (!pose.known && SaneWorldPos(x, y, z))
                 pose = {x, y, z, p.rotation.z, p.rotation.x, p.rotation.z, false, true};
@@ -644,7 +659,26 @@ namespace perlin {
             }
         });
 
+        On<SetCommandsEnabledPacket>([this](const SetCommandsEnabledPacket& p) {
+            std::lock_guard<std::mutex> lk(worldMutex);
+            world.commandsEnabled = p.enabled;
+        });
+        On<SetDifficultyPacket>([this](const SetDifficultyPacket& p) {
+            std::lock_guard<std::mutex> lk(worldMutex);
+            world.difficulty = static_cast<int>(p.difficulty);
+        });
         On<GameRulesChangedPacket>([this](const GameRulesChangedPacket& p) {
+            {
+                std::lock_guard<std::mutex> lk(worldMutex);
+                for (const GameRuleI32& rule : p.rules) {
+                    std::string name = rule.name;
+                    std::transform(name.begin(), name.end(), name.begin(), ::tolower);
+                    if (const bool* b = std::get_if<bool>(&rule.value))
+                        world.rules[name] = *b ? 1 : 0;
+                    else if (const int32_t* i = std::get_if<int32_t>(&rule.value))
+                        world.rules[name] = *i;
+                }
+            }
             for (const GameRuleI32& rule : p.rules)
                 if (EqualsIgnoreCase(rule.name, "dodaylightcycle"))
                     if (const bool* enabled = std::get_if<bool>(&rule.value))
@@ -804,6 +838,7 @@ namespace perlin {
             pose.z = p.position.z;
             pose.onGround = p.onGround;
             haveLastAuthPos = false;
+            ArmPredictionSync();
             if (correctionsReceived++ < 5 || correctionsReceived % 100 == 0)
                 std::cout << "[move] server correction #" << correctionsReceived << " tick=" << p.tick << " pos=("
                           << p.position.x << "," << p.position.y << "," << p.position.z << ") delta=("
@@ -943,8 +978,25 @@ namespace perlin {
         });
 
         On<SetEntityDataPacket>([this](const SetEntityDataPacket& p) {
-            if (runtimeId != 0 && p.runtimeEntityId == runtimeId)
+            if (runtimeId != 0 && p.runtimeEntityId == runtimeId) {
+                std::lock_guard lk(attrMutex);
+                for (const MetadataDictionaryEntry& m : p.metadata) {
+                    double n = 0;
+                    if (!MetaNumber(m, n))
+                        continue;
+                    if (m.key == MetadataDictionaryEntryKey::Flags)
+                        ownFlagWords[0] = static_cast<uint64_t>(static_cast<int64_t>(n));
+                    else if (m.key == MetadataDictionaryEntryKey::FlagsExtended)
+                        ownFlagWords[1] = static_cast<uint64_t>(static_cast<int64_t>(n));
+                    else if (m.key == MetadataDictionaryEntryKey::Scale)
+                        ownScale = static_cast<float>(n);
+                    else if (m.key == MetadataDictionaryEntryKey::BoundingboxWidth)
+                        ownWidth = static_cast<float>(n);
+                    else if (m.key == MetadataDictionaryEntryKey::BoundingboxHeight)
+                        ownHeight = static_cast<float>(n);
+                }
                 return;
+            }
             ApplyMetadata(entities, p.runtimeEntityId, p.metadata);
         });
 
@@ -1024,6 +1076,11 @@ namespace perlin {
                     if (a.name == "minecraft:health")
                         entities.SetHealth(p.runtimeEntityId, a.current);
                 return;
+            }
+            {
+                std::lock_guard lk(attrMutex);
+                for (const PlayerAttributesEntry& a : p.attributes)
+                    ownAttributes[a.name] = a.current;
             }
             for (const PlayerAttributesEntry& a : p.attributes) {
                 if (a.name == "minecraft:movement" && a.current > 0.0f && a.current < 5.0f)

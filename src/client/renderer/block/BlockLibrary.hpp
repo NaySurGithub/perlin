@@ -51,6 +51,8 @@ namespace perlin {
         const BlockModels& Models() const { return models; }
         int GlassMode() const { return glassMode.load(std::memory_order_relaxed); }
         void SetGlassMode(int mode) { glassMode.store(mode, std::memory_order_relaxed); }
+        int BetterGrass() const { return betterGrass.load(std::memory_order_relaxed); }
+        void SetBetterGrass(int mode) { betterGrass.store(mode, std::memory_order_relaxed); }
         bool IsGlassBase(int tile) const { return glassTiles.find(tile) != glassTiles.end(); }
         int GlassTile(int baseTile, int mode, int mask) const;
         BlockGeometry& Geometry() const { return geometry; }
@@ -101,6 +103,7 @@ namespace perlin {
         void BuildGlassVariants();
         bool glassBuilt = false;
         std::atomic<int> glassMode{0};
+        std::atomic<int> betterGrass{0};
         std::unordered_map<int, std::vector<int>> glassTiles;
         inline static int tilePxValue = 16;
         std::unordered_map<std::string, std::array<float, 3>> baseTints;

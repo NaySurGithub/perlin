@@ -1176,7 +1176,8 @@ namespace perlin {
                                             if (negate)
                                                 d[a] = -d[a];
                                         }
-                                        return cache.Get(x + d[0], y + d[1], z + d[2]) != id;
+                                        const uint16_t nn = cache.Get(x + d[0], y + d[1], z + d[2]);
+                                        return !(nn == id || (nn != 0 && library->IsGlassBase(library->Look(nn).side)));
                                     };
                                     if (exposed(q.pos[ia], q.pos[ib], true)) mask |= 1;
                                     if (exposed(q.pos[ia], q.pos[ib], false)) mask |= 2;
@@ -1192,7 +1193,7 @@ namespace perlin {
                                 const uint16_t nid = cache.Get(x + nb[0], y + nb[1], z + nb[2]);
                                 if (nid != 0 && cache.Occ(x + nb[0], y + nb[1], z + nb[2]))
                                     return;
-                                if (nid == id && ta.translucent)
+                                if ((nid == id || (library->GlassMode() && nid != 0 && library->IsGlassBase(library->Look(nid).side))) && ta.translucent)
                                     return;
                             }
                             const int dir = q.dir;
@@ -1691,7 +1692,7 @@ namespace perlin {
                         const uint16_t neighborId = cache.Get(x + nx, y + ny, z + nz);
                         if (neighborId != 0 && cache.Occ(x + nx, y + ny, z + nz))
                             return;
-                        if (neighborId != 0 && translucent && neighborId == id)
+                        if (neighborId != 0 && translucent && (neighborId == id || (!isWater && library && library->GlassMode() && library->IsGlassBase(library->Look(neighborId).side))))
                             return;
                         if (isWater) {
                             const uint16_t other = EffLiquid(cache, library, x + nx, y + ny, z + nz);
@@ -1703,11 +1704,12 @@ namespace perlin {
                             if (nx != 0) { du[2] = nx > 0 ? -1 : 1; dv[1] = -1; }
                             else if (nz != 0) { du[0] = nz < 0 ? -1 : 1; dv[1] = -1; }
                             else { du[0] = 1; dv[2] = ny > 0 ? 1 : -1; }
+                            const auto sameGlass = [&](uint16_t nn) { return nn == id || (nn != 0 && library->IsGlassBase(library->Look(nn).side)); };
                             int mask = 0;
-                            if (cache.Get(x - du[0], y - du[1], z - du[2]) != id) mask |= 1;
-                            if (cache.Get(x + du[0], y + du[1], z + du[2]) != id) mask |= 2;
-                            if (cache.Get(x - dv[0], y - dv[1], z - dv[2]) != id) mask |= 4;
-                            if (cache.Get(x + dv[0], y + dv[1], z + dv[2]) != id) mask |= 8;
+                            if (!sameGlass(cache.Get(x - du[0], y - du[1], z - du[2]))) mask |= 1;
+                            if (!sameGlass(cache.Get(x + du[0], y + du[1], z + du[2]))) mask |= 2;
+                            if (!sameGlass(cache.Get(x - dv[0], y - dv[1], z - dv[2]))) mask |= 4;
+                            if (!sameGlass(cache.Get(x + dv[0], y + dv[1], z + dv[2]))) mask |= 8;
                             tile = library->GlassTile(tile, glassMode, mask);
                         }
                         float u0, v0uv, u1, v1uv;
@@ -1966,10 +1968,18 @@ namespace perlin {
                             ovG = tgT;
                             ovB = tbT;
                         }
-                        face(1, 0, 0, tSide, trS, tgS, tbS, fS, known, kShadeX, cPx, px);
-                        face(-1, 0, 0, tSide, trS, tgS, tbS, fS, known, kShadeX, cNx, nx);
-                        face(0, 0, 1, tSide, trS, tgS, tbS, fS, known, kShadeZ, cPz, pz);
-                        face(0, 0, -1, tSide, trS, tgS, tbS, fS, known, kShadeZ, cNz, nz);
+                        if (ovTile && library && library->BetterGrass() && tTop) {
+                            ovTile = 0;
+                            face(1, 0, 0, tTop, trT, tgT, tbT, fT, known, kShadeX, cPx, px);
+                            face(-1, 0, 0, tTop, trT, tgT, tbT, fT, known, kShadeX, cNx, nx);
+                            face(0, 0, 1, tTop, trT, tgT, tbT, fT, known, kShadeZ, cPz, pz);
+                            face(0, 0, -1, tTop, trT, tgT, tbT, fT, known, kShadeZ, cNz, nz);
+                        } else {
+                            face(1, 0, 0, tSide, trS, tgS, tbS, fS, known, kShadeX, cPx, px);
+                            face(-1, 0, 0, tSide, trS, tgS, tbS, fS, known, kShadeX, cNx, nx);
+                            face(0, 0, 1, tSide, trS, tgS, tbS, fS, known, kShadeZ, cPz, pz);
+                            face(0, 0, -1, tSide, trS, tgS, tbS, fS, known, kShadeZ, cNz, nz);
+                        }
                         ovTile = 0;
                     }
                   }

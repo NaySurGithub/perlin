@@ -14,23 +14,32 @@ namespace perlin {
     namespace fs = std::filesystem;
 
     struct TexturePack::Impl {
-        bool zipMode = false;
-        std::string folder;
-        mz_zip_archive zip{};
-        bool zipOpen = false;
-        std::unordered_map<std::string, mz_uint> index;
-        std::string label;
+        struct Layer {
+            bool zipMode = false;
+            std::string folder;
+            mz_zip_archive zip{};
+            bool zipOpen = false;
+            std::unordered_map<std::string, mz_uint> index;
+            std::string label;
+            bool Active() const { return zipMode ? zipOpen : !folder.empty(); }
+            void Reset() {
+                if (zipOpen)
+                    mz_zip_reader_end(&zip);
+                zip = {};
+                zipOpen = false;
+                zipMode = false;
+                folder.clear();
+                index.clear();
+                label.clear();
+            }
+        };
+        std::vector<std::unique_ptr<Layer>> layers;
         mutable std::mutex mutex;
 
         void Reset() {
-            if (zipOpen)
-                mz_zip_reader_end(&zip);
-            zip = {};
-            zipOpen = false;
-            zipMode = false;
-            folder.clear();
-            index.clear();
-            label.clear();
+            for (auto& l : layers)
+                l->Reset();
+            layers.clear();
         }
     };
 
@@ -76,104 +85,133 @@ namespace perlin {
 
     bool TexturePack::Active() const {
         std::lock_guard lock(impl->mutex);
-        return impl->zipMode ? impl->zipOpen : !impl->folder.empty();
+        return !impl->layers.empty();
     }
 
     std::string TexturePack::Description() const {
         std::lock_guard lock(impl->mutex);
-        return impl->label;
+        std::string out;
+        for (const auto& l : impl->layers)
+            out += (out.empty() ? "" : ", ") + l->label;
+        return out;
     }
 
-    bool TexturePack::Open(const std::string& packsDir, const std::string& name, std::string& error) {
+    namespace {
+        bool OpenLayer(TexturePack::Impl::Layer& layer, const fs::path& source, const std::string& name, std::string& error) {
+            std::error_code ec;
+            if (!fs::exists(source, ec)) {
+                error = "no such texture pack: " + source.generic_string();
+                return false;
+            }
+            if (fs::is_directory(source, ec)) {
+                layer.folder = FindFolderRoot(source);
+                if (layer.folder.empty()) {
+                    error = "no textures folder inside " + source.generic_string();
+                    return false;
+                }
+                layer.label = name;
+                return true;
+            }
+            if (!mz_zip_reader_init_file(&layer.zip, source.string().c_str(), 0)) {
+                error = "not a readable zip/mcpack archive: " + source.generic_string();
+                layer.zip = {};
+                return false;
+            }
+            layer.zipOpen = true;
+            layer.zipMode = true;
+            std::string prefix;
+            bool prefixFound = false;
+            const mz_uint count = mz_zip_reader_get_num_files(&layer.zip);
+            std::vector<std::pair<std::string, mz_uint>> entries;
+            entries.reserve(count);
+            for (mz_uint i = 0; i < count; i++) {
+                mz_zip_archive_file_stat st;
+                if (!mz_zip_reader_file_stat(&layer.zip, i, &st) || mz_zip_reader_is_file_a_directory(&layer.zip, i))
+                    continue;
+                std::string path = st.m_filename;
+                std::replace(path.begin(), path.end(), '\\', '/');
+                const std::string lower = Lower(path);
+                if (!prefixFound) {
+                    const size_t at = lower.find("textures/");
+                    if (at != std::string::npos && (at == 0 || lower[at - 1] == '/')) {
+                        prefix = lower.substr(0, at);
+                        prefixFound = true;
+                    }
+                }
+                entries.emplace_back(lower, i);
+            }
+            if (!prefixFound) {
+                error = "no textures folder inside " + source.generic_string();
+                layer.Reset();
+                return false;
+            }
+            for (auto& [path, idx] : entries)
+                if (path.compare(0, prefix.size(), prefix) == 0)
+                    layer.index.emplace(path.substr(prefix.size()), idx);
+            layer.label = name;
+            std::cout << "[textures] opened " << name << " (" << layer.index.size() << " files)" << std::endl;
+            return true;
+        }
+    }
+
+    bool TexturePack::OpenStack(const std::string& packsDir, const std::vector<std::string>& names, std::string& error) {
         std::lock_guard lock(impl->mutex);
         impl->Reset();
         error.clear();
-        if (name.empty())
-            return false;
-        std::error_code ec;
-        const fs::path source = fs::path(packsDir) / name;
-        if (!fs::exists(source, ec)) {
-            error = "no such texture pack: " + source.generic_string();
-            return false;
-        }
-        if (fs::is_directory(source, ec)) {
-            impl->folder = FindFolderRoot(source);
-            if (impl->folder.empty()) {
-                error = "no textures folder inside " + source.generic_string();
-                return false;
-            }
-            impl->label = name;
-            return true;
-        }
-        if (!mz_zip_reader_init_file(&impl->zip, source.string().c_str(), 0)) {
-            error = "not a readable zip/mcpack archive: " + source.generic_string();
-            impl->zip = {};
-            return false;
-        }
-        impl->zipOpen = true;
-        impl->zipMode = true;
-        std::string prefix;
-        bool prefixFound = false;
-        const mz_uint count = mz_zip_reader_get_num_files(&impl->zip);
-        std::vector<std::pair<std::string, mz_uint>> entries;
-        entries.reserve(count);
-        for (mz_uint i = 0; i < count; i++) {
-            mz_zip_archive_file_stat st;
-            if (!mz_zip_reader_file_stat(&impl->zip, i, &st) || mz_zip_reader_is_file_a_directory(&impl->zip, i))
+        for (const std::string& name : names) {
+            if (name.empty())
                 continue;
-            std::string path = st.m_filename;
-            std::replace(path.begin(), path.end(), '\\', '/');
-            const std::string lower = Lower(path);
-            if (!prefixFound) {
-                const size_t at = lower.find("textures/");
-                if (at != std::string::npos && (at == 0 || lower[at - 1] == '/')) {
-                    prefix = lower.substr(0, at);
-                    prefixFound = true;
-                }
-            }
-            entries.emplace_back(lower, i);
+            auto layer = std::make_unique<Impl::Layer>();
+            std::string one;
+            if (OpenLayer(*layer, fs::path(packsDir) / name, name, one))
+                impl->layers.push_back(std::move(layer));
+            else
+                error += (error.empty() ? "" : "; ") + one;
         }
-        if (!prefixFound) {
-            error = "no textures folder inside " + source.generic_string();
-            impl->Reset();
-            return false;
-        }
-        for (auto& [path, idx] : entries)
-            if (path.compare(0, prefix.size(), prefix) == 0)
-                impl->index.emplace(path.substr(prefix.size()), idx);
-        impl->label = name;
-        std::cout << "[textures] opened " << name << " (" << impl->index.size() << " files)" << std::endl;
-        return true;
+        return !impl->layers.empty();
+    }
+
+    bool TexturePack::Open(const std::string& packsDir, const std::string& name, std::string& error) {
+        return OpenStack(packsDir, name.empty() ? std::vector<std::string>{} : std::vector<std::string>{name}, error);
     }
 
     bool TexturePack::Has(const std::string& rel) const {
         std::lock_guard lock(impl->mutex);
-        if (impl->zipMode)
-            return impl->zipOpen && impl->index.count(Lower(rel));
-        if (impl->folder.empty())
-            return false;
-        std::error_code ec;
-        return fs::exists(fs::path(impl->folder) / rel, ec);
+        for (const auto& l : impl->layers) {
+            if (l->zipMode) {
+                if (l->zipOpen && l->index.count(Lower(rel)))
+                    return true;
+            } else if (!l->folder.empty()) {
+                std::error_code ec;
+                if (fs::exists(fs::path(l->folder) / rel, ec))
+                    return true;
+            }
+        }
+        return false;
     }
 
     bool TexturePack::Load(const std::string& rel, Texture& out) const {
         std::lock_guard lock(impl->mutex);
-        if (impl->zipMode) {
-            if (!impl->zipOpen)
-                return false;
-            const auto it = impl->index.find(Lower(rel));
-            if (it == impl->index.end())
-                return false;
-            size_t size = 0;
-            void* data = mz_zip_reader_extract_to_heap(&impl->zip, it->second, &size, 0);
-            if (!data)
-                return false;
-            const bool ok = LoadTextureMemory(static_cast<const unsigned char*>(data), size, out);
-            mz_free(data);
-            return ok && out.width > 0 && out.height > 0;
+        for (const auto& l : impl->layers) {
+            if (l->zipMode) {
+                if (!l->zipOpen)
+                    continue;
+                const auto it = l->index.find(Lower(rel));
+                if (it == l->index.end())
+                    continue;
+                size_t size = 0;
+                void* data = mz_zip_reader_extract_to_heap(&l->zip, it->second, &size, 0);
+                if (!data)
+                    continue;
+                const bool ok = LoadTextureMemory(static_cast<const unsigned char*>(data), size, out);
+                mz_free(data);
+                if (ok && out.width > 0 && out.height > 0)
+                    return true;
+            } else if (!l->folder.empty()) {
+                if (LoadTexture(l->folder + "/" + rel, out) && out.width > 0 && out.height > 0)
+                    return true;
+            }
         }
-        if (impl->folder.empty())
-            return false;
-        return LoadTexture(impl->folder + "/" + rel, out) && out.width > 0 && out.height > 0;
+        return false;
     }
 }

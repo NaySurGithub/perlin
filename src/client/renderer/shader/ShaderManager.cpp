@@ -98,7 +98,7 @@ namespace perlin {
         return bgfx::createEmbeddedShader(kShaders, type, name);
     }
 
-    bool ShaderManager::Initialize() {
+    bool ShaderManager::BuildPrograms() {
         const bool packActive = ShaderPack::Instance().Active();
         for (size_t i = 0; i < programs.size(); i++) {
             const ProgramSource& source = kSources[i];
@@ -132,7 +132,21 @@ namespace perlin {
                 return false;
             }
         }
+        return true;
+    }
 
+    bool ShaderManager::Reload() {
+        for (auto& program : programs) {
+            if (bgfx::isValid(program))
+                bgfx::destroy(program);
+            program = BGFX_INVALID_HANDLE;
+        }
+        return BuildPrograms();
+    }
+
+    bool ShaderManager::Initialize() {
+        if (!BuildPrograms())
+            return false;
         atlasSampler = bgfx::createUniform("s_atlas", bgfx::UniformType::Sampler);
         lightmapSampler = bgfx::createUniform("s_lightmap", bgfx::UniformType::Sampler);
         skySampler = bgfx::createUniform("s_sky", bgfx::UniformType::Sampler);

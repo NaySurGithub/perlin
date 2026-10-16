@@ -2,6 +2,7 @@
 #include "client/input/KeyMapping.hpp"
 
 #include <string>
+#include <vector>
 
 namespace perlin {
     struct ZoomSettings {
@@ -85,6 +86,10 @@ namespace perlin {
         std::string language = "en_US";
         bool showHud = true;
         std::string texturePack;
+        std::vector<std::string> texturePacks;
+        std::vector<std::string> disabledMods;
+        bool hotReload = true;
+        bool betterGrass = true;
         KeyBindings keys = DefaultBindings();
 
         const Binding& GetKey(Action action) const { return keys[static_cast<size_t>(action)]; }

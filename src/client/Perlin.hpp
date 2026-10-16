@@ -21,6 +21,7 @@
 
 #include <atomic>
 #include <memory>
+#include <map>
 #include <mutex>
 #include <string>
 #include <thread>
@@ -102,7 +103,14 @@ namespace perlin {
         bool pausePlayers = false;
         int pauseView = 0, optionsDrag = -1, optionsPage = 0, optionsSub = 0, bindCapture = -1;
         bool bindWasCapturing = false;
-        float kbScroll = 0.0f;
+        float kbScroll = 0.0f, optScroll = 0.0f;
+        int optScrollKey = -1;
+        std::map<std::string, std::pair<int, double>> worldOverride;
+        void ApplyTexturePacks();
+        void ApplyShaderPack();
+        void PollHotReload();
+        std::chrono::steady_clock::time_point hotPollAt{};
+        std::string hotTexStamp, hotShaderStamp;
         std::chrono::steady_clock::time_point bindStartedAt{};
         std::string optionsSignature;
         std::chrono::steady_clock::time_point pauseOpenedAt{}, pauseCheckAt{};

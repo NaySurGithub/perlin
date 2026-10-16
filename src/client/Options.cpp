@@ -56,6 +56,10 @@ namespace perlin {
             int menuBlur = 5;
             std::string sprintMode = "hold";
             std::string sneakMode = "hold";
+            std::vector<std::string> texturePacks;
+            std::vector<std::string> disabledMods;
+            bool hotReload = true;
+            bool betterGrass = true;
         };
     }
 
@@ -121,7 +125,11 @@ namespace perlin {
                       o.dynamicLights,
                       o.menuBlur,
                       o.sprintMode,
-                      o.sneakMode};
+                      o.sneakMode,
+                      o.texturePacks,
+                      o.disabledMods,
+                      o.hotReload,
+                      o.betterGrass};
         auto parsed = json::Read<Stored>(text);
         if (!parsed)
             return o;
@@ -156,6 +164,12 @@ namespace perlin {
         o.damageTilt = std::clamp(stored.damageTilt, 0, 100);
         o.damageTint = stored.damageTint;
         o.texturePack = stored.texturePack;
+        o.texturePacks = stored.texturePacks;
+        if (o.texturePacks.empty() && !stored.texturePack.empty())
+            o.texturePacks.push_back(stored.texturePack);
+        o.disabledMods = stored.disabledMods;
+        o.hotReload = stored.hotReload;
+        o.betterGrass = stored.betterGrass;
         o.shadows = stored.shadows;
         o.heldLight = std::clamp(stored.heldLight, 0, 15);
         o.shadowDistance = std::clamp(stored.shadowDistance, 0, 256);
@@ -241,7 +255,11 @@ namespace perlin {
                       dynamicLights,
                       menuBlur,
                       sprintMode,
-                      sneakMode};
+                      sneakMode,
+                      texturePacks,
+                      disabledMods,
+                      hotReload,
+                      betterGrass};
         for (size_t i = 0; i < kActionCount; i++)
             stored.keys[ActionId(static_cast<Action>(i))] = keys[i].Serialize();
 

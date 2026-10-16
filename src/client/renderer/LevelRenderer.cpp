@@ -157,7 +157,7 @@ namespace perlin {
         if (!texturePackResolved) {
             texturePackResolved = true;
             std::string error;
-            TexturePack::Instance().Open(paths::DataDir() + "/texturepacks", options.texturePack, error);
+            TexturePack::Instance().OpenStack(paths::DataDir() + "/texturepacks", options.texturePacks, error);
             if (!error.empty())
                 std::cout << "[textures] " << error << " (using default textures)" << std::endl;
             blocks.SetTexturePack(TexturePack::Instance().Active());

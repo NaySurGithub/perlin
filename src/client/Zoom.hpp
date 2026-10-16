@@ -10,6 +10,8 @@ namespace perlin {
     public:
         explicit Zoom(const ZoomSettings& settings) : cfg(settings), level(settings.level) {}
 
+        void SetConfig(const ZoomSettings& settings) { cfg = settings; }
+
         LookDelta Update(float dt, bool held, float scroll, LookDelta raw) {
             if (held && !wasHeld && cfg.resetOnPress)
                 level = cfg.level;

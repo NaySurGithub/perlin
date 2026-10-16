@@ -1753,6 +1753,13 @@ namespace perlin {
         cloudBuilt = false;
     }
 
+    bool RenderContext_bgfx::ReloadShaders() {
+        if (!initialized)
+            return false;
+        bgfx::frame();
+        return shaders.Reload();
+    }
+
     void RenderContext_bgfx::Shutdown() {
         if (!initialized)
             return;

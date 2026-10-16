@@ -145,6 +145,8 @@ namespace perlin {
         uint64_t LastAuthTick() const { return authTick; }
         bool TakeServerMotion(ServerMotion& out);
         float MovementSpeedAttribute() const { return movementSpeed; }
+        void ArmPredictionSync() { if (predictionSyncCountdown < 0) predictionSyncCountdown = 200; }
+        bool SendPredictionSync();
         bool Initialized() const { return initializedSent; }
         void PruneChunks(int centerChunkX, int centerChunkZ, int radiusChunks);
         bool SendLoadingScreen(bool start, std::optional<uint32_t> id = std::nullopt);
@@ -179,6 +181,7 @@ namespace perlin {
             int32_t held = 0;
         };
         bool SendCommand(const std::string& command);
+        bool SendSkinUpdate();
         uint32_t CommandsVersion() const { std::lock_guard<std::mutex> lk(commandMutex); return commandVersion; }
         std::vector<ui::CommandInfo> Commands() const { std::lock_guard<std::mutex> lk(commandMutex); return commands; }
         struct TabPlayer {
@@ -217,6 +220,17 @@ void RequestRespawn();
         bool GetWorldTime(int64_t& outDay, int& outTicksOfDay) const;
         bool GetWorldTicks(double& outTicks) const;
         void SetDayCycle(bool running);
+        struct WorldSettings {
+            std::map<std::string, int> rules;
+            int difficulty = 2;
+            int worldGameMode = 0;
+            bool commandsEnabled = true;
+            bool known = false;
+        };
+        WorldSettings World() const {
+            std::lock_guard<std::mutex> lk(worldMutex);
+            return world;
+        }
         int OwnPermission() const {
             std::lock_guard<std::mutex> lk(tabMutex);
             const auto it = permByUid.find(uniqueId);
@@ -502,6 +516,8 @@ void RequestRespawn();
         bool deathPending = false;
         std::vector<TabPlayer> tabPlayers;
         std::map<int64_t, int> permByUid;
+        mutable std::mutex worldMutex;
+        WorldSettings world;
         mutable std::mutex commandMutex;
         std::vector<ui::CommandInfo> commands;
         uint32_t commandVersion = 0;
@@ -549,6 +565,12 @@ void RequestRespawn();
         std::deque<BlockActionData> pendingBlockActions;
         ServerMotion serverMotion;
         float movementSpeed = 0.1f;
+        mutable std::mutex attrMutex;
+        std::map<std::string, float> ownAttributes;
+        std::array<uint64_t, 2> ownFlagWords{};
+        float ownScale = 1.0f, ownWidth = 0.6f, ownHeight = 1.8f;
+        int predictionSyncCountdown = -1;
+        bool flying = false;
         bool initializedSent = false;
         bool startGameSeen = false;
         std::chrono::steady_clock::time_point startGameAt{};

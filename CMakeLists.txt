@@ -98,6 +98,16 @@ CPMAddPackage("gh:stephenberry/glaze@7.1.1")
 CPMAddPackage("gh:cameron314/concurrentqueue@1.0.4")
 CPMAddPackage("gh:g-truc/glm#1.0.1")
 CPMAddPackage(NAME stb GITHUB_REPOSITORY nothings/stb GIT_TAG master DOWNLOAD_ONLY YES)
+CPMAddPackage(NAME wasm3 GITHUB_REPOSITORY wasm3/wasm3 GIT_TAG 28ecb9af6d2040e474a70f7cb7f43666740141fb DOWNLOAD_ONLY YES)
+set(WASM3_CORE_SOURCES m3_bind.c m3_code.c m3_compile.c m3_core.c m3_env.c m3_exec.c m3_function.c m3_info.c m3_module.c m3_parse.c m3_validate.c)
+list(TRANSFORM WASM3_CORE_SOURCES PREPEND "${wasm3_SOURCE_DIR}/source/")
+add_library(wasm3_core STATIC ${WASM3_CORE_SOURCES})
+target_include_directories(wasm3_core PUBLIC "${wasm3_SOURCE_DIR}/source")
+target_compile_definitions(wasm3_core PRIVATE d_m3HasTracer=0)
+if(NOT MSVC)
+    target_compile_options(wasm3_core PRIVATE -w)
+endif()
+set_target_properties(wasm3_core PROPERTIES POSITION_INDEPENDENT_CODE ON C_STANDARD 11)
 if(NOT EMSCRIPTEN)
 CPMAddPackage(NAME httplib GITHUB_REPOSITORY yhirose/cpp-httplib GIT_TAG v0.60.1 DOWNLOAD_ONLY YES)
 endif()
@@ -415,6 +425,7 @@ if(WIN32)
 endif()
 
 target_link_libraries(Perlin PRIVATE
+    wasm3_core
     perlin_protocol
     glaze::glaze
     miniz

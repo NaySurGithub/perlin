@@ -988,7 +988,46 @@ namespace perlin {
                       << f.position.y << "," << f.position.z << ") move=(" << f.moveVector.x << "," << f.moveVector.z
                       << ") flags=" << f.inputData.size() << std::endl;
         movePacketsSent++;
-        return Send(f);
+        const bool sent = Send(f);
+        if (predictionSyncCountdown > 0 && --predictionSyncCountdown == 0 && SendPredictionSync())
+            predictionSyncCountdown = -1;
+        return sent;
+    }
+
+    bool BedrockSession::SendPredictionSync() {
+        proto::ClientMovementPredictionSyncPacket p;
+        {
+            std::lock_guard lk(attrMutex);
+            const auto value = [&](const char* name, float fallback, bool required, bool& ok) {
+                const auto it = ownAttributes.find(name);
+                if (it == ownAttributes.end() || !std::isfinite(it->second)) {
+                    if (required)
+                        ok = false;
+                    return fallback;
+                }
+                return it->second;
+            };
+            bool ok = true;
+            p.movementSpeed = value("minecraft:movement", 0.0f, true, ok);
+            p.underwaterMovementSpeed = value("minecraft:underwater_movement", 0.0f, true, ok);
+            p.lavaMovementSpeed = value("minecraft:lava_movement", 0.0f, true, ok);
+            p.jumpStrength = value("minecraft:horse.jump_strength", 0.0f, true, ok);
+            p.health = value("minecraft:health", 0.0f, true, ok);
+            p.hunger = value("minecraft:player.hunger", 0.0f, true, ok);
+            p.unknownAttribute1 = value("minecraft:friction_modifier", 1.0f, false, ok);
+            p.unknownAttribute2 = value("minecraft:bounciness", 0.0f, false, ok);
+            p.unknownAttribute3 = value("minecraft:air_drag_modifier", 1.0f, false, ok);
+            if (!ok)
+                return false;
+            p.dataFlags = ownFlagWords;
+            p.boundingBox.scale = ownScale;
+            p.boundingBox.width = ownWidth;
+            p.boundingBox.height = ownHeight;
+        }
+        p.entityRuntimeId = static_cast<uint64_t>(uniqueId);
+        p.isFlying = flying;
+        std::cout << "[move] prediction sync" << std::endl;
+        return Send(p);
     }
 
     bool BedrockSession::SendPlayerAuthInputBlockAction(uint32_t action, int bx, int by, int bz, int face) {
@@ -1062,7 +1101,7 @@ namespace perlin {
 
     bool BedrockSession::SendCommand(const std::string& command) {
         proto::CommandRequestPacket p;
-        p.command = command;
+        p.command = !command.empty() && command[0] == '/' ? command : "/" + command;
         p.origin.type = "player";
         p.origin.uuid = net::RandomUuidV4();
         p.origin.requestId = std::string();
@@ -1070,6 +1109,38 @@ namespace perlin {
         p.internal = false;
         p.version = "latest";
         std::cout << "[bedrock] command> " << command << std::endl;
+        return Send(p);
+    }
+
+    bool BedrockSession::SendSkinUpdate() {
+        if (!skin.hasSkin() && !skin.hasCape())
+            return false;
+        proto::PlayerSkinPacket p;
+        std::string hex;
+        for (char c : playerUuid)
+            if (c != '-')
+                hex += c;
+        for (size_t i = 0; i < 16 && i * 2 + 1 < hex.size(); i++)
+            p.uuid.bytes[i] = static_cast<uint8_t>(std::stoi(hex.substr(i * 2, 2), nullptr, 16));
+        p.skin.skinId = skin.skinId;
+        p.skin.fullSkinId = skin.skinId;
+        if (skin.hasSkin()) {
+            p.skin.skinData.width = skin.skinWidth;
+            p.skin.skinData.height = skin.skinHeight;
+            p.skin.skinData.data = skin.skinRgba;
+        }
+        if (skin.hasCape()) {
+            p.skin.capeData.width = skin.capeWidth;
+            p.skin.capeData.height = skin.capeHeight;
+            p.skin.capeData.data = skin.capeRgba;
+            p.skin.capeId = skin.capeId;
+            p.skin.capeOnClassic = true;
+        }
+        const char* geometry = skin.slimArms ? "geometry.humanoid.customSlim" : "geometry.humanoid.custom";
+        p.skin.skinResourcePack = std::string("{\"geometry\":{\"default\":\"") + geometry + "\"}}";
+        p.skin.armSize = skin.slimArms ? proto::SkinArmSize::Slim : proto::SkinArmSize::Wide;
+        p.skin.primaryUser = true;
+        p.skinName = skin.skinId;
         return Send(p);
     }
 
