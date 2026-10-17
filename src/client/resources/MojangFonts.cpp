@@ -8,8 +8,10 @@
 #include <sstream>
 #include <vector>
 
+#include "client/resources/AssetJobs.hpp"
 #include "client/resources/ClientAssets.hpp"
 #include "client/ui/Json.hpp"
+#include "network/FastDownload.hpp"
 #include "network/Http.hpp"
 
 namespace fs = std::filesystem;
@@ -135,11 +137,20 @@ namespace perlin {
     }
 
     bool MojangFonts::Ensure(const std::string& dataDir) {
-        if (Available(dataDir))
+        assets::Job& job = assets::Client();
+        if (Available(dataDir)) {
+            job.stage = assets::Stage::Done;
             return true;
+        }
 #if defined(__EMSCRIPTEN__) || defined(__ANDROID__)
         return false;
 #else
+        job.stage = assets::Stage::Checking;
+        struct Finish {
+            assets::Job& job;
+            bool ok = false;
+            ~Finish() { job.stage = ok ? assets::Stage::Done : assets::Stage::Failed; }
+        } finish{job};
         const fs::path root = fs::path(dataDir) / "fonts";
         const fs::path hexOut = UnihexPath(dataDir);
         std::error_code ec;
@@ -182,7 +193,12 @@ namespace perlin {
         const fs::path asciiOut = fs::path(dataDir) / "font" / "ascii.png";
         if (!clientUrl.empty()) {
             const fs::path jar = root / "client.tmp";
-            if (Download(clientUrl, jar)) {
+            job.stage = assets::Stage::Downloading;
+            download::Options options;
+            options.connections = 8;
+            options.chunkBytes = 2ull << 20;
+            if (download::Fetch(clientUrl, jar, &job.bytes, options) || Download(clientUrl, jar)) {
+                job.stage = assets::Stage::Extracting;
                 ok = ExtractFromJar(jar, hexOut, asciiOut);
                 clientassets::BuildFromJar(jar, dataDir);
             }
@@ -222,6 +238,7 @@ namespace perlin {
         }
         fs::remove(root / "assets.tmp", ec);
         std::cout << (ok ? "[fonts] Unicode font ready" : "[fonts] Unicode font download failed") << std::endl;
+        finish.ok = ok || clientassets::Ready(dataDir);
         return ok;
 #endif
     }

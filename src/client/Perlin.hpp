@@ -119,6 +119,14 @@ namespace perlin {
         bool UpdateLoadingScreen(ui::Hud& hud, int fbW, int fbH);
         bool UpdateTitleScreen(ui::Hud& hud, int fbW, int fbH);
         void JoinServer(const std::string& address);
+        // First-start asset download screen (shown instead of the title while assets download).
+        bool UpdateAssetScreen(ui::Hud& hud, int fbW, int fbH);
+        bool assetShown = false, assetSkip = false, assetLeftDown = false;
+        std::string assetSignature;
+        std::chrono::steady_clock::time_point assetOpenedAt{}, assetSampleAt{};
+        uint64_t assetLastBytes[2] = {0, 0};
+        double assetSpeed[2] = {0.0, 0.0};
+        void StartAssetDownloads();
         // Drop the current connection (or connection attempt) and show the server list.
         void LeaveToServerList(ui::Hud& hud);
         bool titleReturnToServers = false;

@@ -7,42 +7,47 @@
 namespace perlin {
     namespace {
         const bgfx::EmbeddedShader kBundled[] = {
-            BGFX_EMBEDDED_SHADER(bsl_vs_terrain),
-            BGFX_EMBEDDED_SHADER(bsl_fs_terrain_solid),
-            BGFX_EMBEDDED_SHADER(bsl_fs_terrain_cutout),
-            BGFX_EMBEDDED_SHADER(bsl_fs_terrain_translucent),
-            BGFX_EMBEDDED_SHADER(bsl_vs_sky),
-            BGFX_EMBEDDED_SHADER(bsl_fs_sky),
-            BGFX_EMBEDDED_SHADER(bsl_vs_star),
-            BGFX_EMBEDDED_SHADER(bsl_fs_star),
-            BGFX_EMBEDDED_SHADER(bsl_vs_sunrise),
-            BGFX_EMBEDDED_SHADER(bsl_fs_sunrise),
-            BGFX_EMBEDDED_SHADER(bsl_vs_celestial),
-            BGFX_EMBEDDED_SHADER(bsl_fs_celestial),
-            BGFX_EMBEDDED_SHADER(bsl_vs_cloud),
-            BGFX_EMBEDDED_SHADER(bsl_fs_cloud),
-            BGFX_EMBEDDED_SHADER(bsl_vs_shadow),
-            BGFX_EMBEDDED_SHADER(bsl_fs_shadow),
-            BGFX_EMBEDDED_SHADER(bsl_fs_shadow_cutout),
+            BGFX_EMBEDDED_SHADER(vv_vs_terrain),
+            BGFX_EMBEDDED_SHADER(vv_fs_terrain_solid),
+            BGFX_EMBEDDED_SHADER(vv_fs_terrain_cutout),
+            BGFX_EMBEDDED_SHADER(vv_fs_terrain_translucent),
+            BGFX_EMBEDDED_SHADER(vv_vs_sky),
+            BGFX_EMBEDDED_SHADER(vv_fs_sky),
+            BGFX_EMBEDDED_SHADER(vv_vs_star),
+            BGFX_EMBEDDED_SHADER(vv_fs_star),
+            BGFX_EMBEDDED_SHADER(vv_vs_sunrise),
+            BGFX_EMBEDDED_SHADER(vv_fs_sunrise),
+            BGFX_EMBEDDED_SHADER(vv_vs_celestial),
+            BGFX_EMBEDDED_SHADER(vv_fs_celestial),
+            BGFX_EMBEDDED_SHADER(vv_vs_cloud),
+            BGFX_EMBEDDED_SHADER(vv_fs_cloud),
+            BGFX_EMBEDDED_SHADER(vv_vs_shadow),
+            BGFX_EMBEDDED_SHADER(vv_fs_shadow),
+            BGFX_EMBEDDED_SHADER(vv_fs_shadow_cutout),
             BGFX_EMBEDDED_SHADER_END(),
         };
 
 
         const char* const kBundledMeta = R"({
-  "name": "BSL",
-  "description": "Soft shadows, warm sun and cool shade, filmic tonemapping, vibrance, and tunable lighting in the style of BSL",
+  "name": "Vibrant Visuals",
+  "description": "Bedrock's Vibrant Visuals look: atmospheric sky, square sun with bloom, blocky volumetric clouds with glowing edges, reflective water, soft shadows and haze",
   "shadows": true,
   "shadowMapSize": 2048,
-  "shadowDistance": 90,
+  "shadowDistance": 96,
   "vanillaClouds": false,
+  "sceneCopy": true,
   "settings": [
-    {"id": "exposure", "label": "Exposure", "min": -2.0, "max": 2.0, "step": 0.25, "default": -0.75},
-    {"id": "saturation", "label": "Saturation", "min": 0.0, "max": 2.0, "step": 0.05, "default": 1.0},
-    {"id": "vibrance", "label": "Vibrance", "min": 0.0, "max": 2.0, "step": 0.05, "default": 1.0},
-    {"id": "sunIntensity", "label": "Sunlight Intensity", "min": 0.25, "max": 3.0, "step": 0.25, "default": 1.0},
-    {"id": "ambientIntensity", "label": "Ambient Light Intensity", "min": 0.25, "max": 3.0, "step": 0.25, "default": 1.0},
-    {"id": "blockLightIntensity", "label": "Block Light Intensity", "min": 0.25, "max": 3.0, "step": 0.25, "default": 1.0},
-    {"id": "foliageGlow", "label": "Foliage Translucency", "min": 0.0, "max": 2.0, "step": 0.1, "default": 1.0}
+    {"id": "vvExposure", "label": "Exposure", "min": -2.0, "max": 2.0, "step": 0.25, "default": 0.0},
+    {"id": "vvSaturation", "label": "Saturation", "min": 0.0, "max": 2.0, "step": 0.05, "default": 1.0},
+    {"id": "vvContrast", "label": "Contrast", "min": 0.5, "max": 1.5, "step": 0.05, "default": 1.0},
+    {"id": "vvSun", "label": "Sunlight Intensity", "min": 0.25, "max": 3.0, "step": 0.25, "default": 1.0},
+    {"id": "vvAmbient", "label": "Sky Light Intensity", "min": 0.25, "max": 3.0, "step": 0.25, "default": 1.0},
+    {"id": "vvBlock", "label": "Block Light Intensity", "min": 0.25, "max": 3.0, "step": 0.25, "default": 1.0},
+    {"id": "vvFoliage", "label": "Foliage Translucency", "min": 0.0, "max": 2.0, "step": 0.1, "default": 1.0},
+    {"id": "vvFog", "label": "Haze", "min": 0.0, "max": 3.0, "step": 0.25, "default": 1.0},
+    {"id": "vvReflections", "label": "Screen-Space Reflections", "type": "toggle", "default": 1},
+    {"id": "vvClouds", "label": "Clouds", "type": "toggle", "default": 1},
+    {"id": "vvCloudShadows", "label": "Cloud Shadows", "type": "toggle", "default": 1}
   ]
 })";
 
@@ -62,7 +67,7 @@ namespace perlin {
 
         const bgfx::EmbeddedShader::Data* BundledData(const std::string& backend, const std::string& shader) {
             const bgfx::RendererType::Enum want = RendererOf(backend);
-            const std::string name = "bsl_" + shader;
+            const std::string name = "vv_" + shader;
             for (const bgfx::EmbeddedShader* it = kBundled; it->name != nullptr; ++it) {
                 if (name != it->name)
                     continue;

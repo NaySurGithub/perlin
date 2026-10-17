@@ -3,6 +3,7 @@
 
 #include <bgfx/bgfx.h>
 
+#include <algorithm>
 #include <array>
 #include <string>
 
@@ -46,6 +47,14 @@ namespace perlin {
         void BindShadow(bgfx::TextureHandle texture) const;
         void Apply(bgfx::TextureHandle atlas, bgfx::TextureHandle lightmap, uint32_t atlasFlags,
                    uint32_t lightmapFlags) const;
+        // Pack extras. Clouds: the vanilla cloud map (stage 3) and how world xz maps onto it.
+        // Scene: copies of the opaque scene colour/depth for the translucent pass (stages 4, 5),
+        // u_sceneInfo = (valid, depth is -1..1, origin bottom-left, unused), u_invMvp = inverse
+        // of the world view-projection.
+        void SetCloudMap(const float value[4]) { std::copy_n(value, 4, cloudMapValue); }
+        void BindClouds(bgfx::TextureHandle texture) const;
+        void SetScene(const float info[4], const float inverseMvp[16]);
+        void BindScene(bgfx::TextureHandle color, bgfx::TextureHandle depth) const;
 
     private:
         bool BuildPrograms();
@@ -77,6 +86,15 @@ namespace perlin {
         bgfx::UniformHandle shadowMatrix = BGFX_INVALID_HANDLE;
         bgfx::UniformHandle shadowInfo = BGFX_INVALID_HANDLE;
         bgfx::UniformHandle shadowSampler = BGFX_INVALID_HANDLE;
+        bgfx::UniformHandle cloudsSampler = BGFX_INVALID_HANDLE;
+        bgfx::UniformHandle cloudMap = BGFX_INVALID_HANDLE;
+        bgfx::UniformHandle sceneColorSampler = BGFX_INVALID_HANDLE;
+        bgfx::UniformHandle sceneDepthSampler = BGFX_INVALID_HANDLE;
+        bgfx::UniformHandle sceneInfo = BGFX_INVALID_HANDLE;
+        bgfx::UniformHandle invMvp = BGFX_INVALID_HANDLE;
+        float cloudMapValue[4] = {0.0f, 0.0f, 1.0f / 3072.0f, 1.0f / 3072.0f};
+        float sceneInfoValue[4] = {};
+        float invMvpValue[16] = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
 
         float cameraValue[4] = {};
         float fogColorValue[4] = {};

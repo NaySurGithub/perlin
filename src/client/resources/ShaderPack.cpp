@@ -138,7 +138,7 @@ namespace perlin {
         fs::path source = fs::path(packsDir) / name;
         if (!fs::exists(source, ec) && fs::exists(source.string() + ".zip", ec))
             source = source.string() + ".zip";
-        if (!fs::exists(source, ec) && Lower(name) == "bsl") {
+        if (!fs::exists(source, ec) && IsBundledName(name)) {
             impl->bundled = true;
             for (const char* b : kBackends) {
                 const uint8_t* data = nullptr;
@@ -147,13 +147,13 @@ namespace perlin {
                     impl->backends.insert(b);
             }
             if (impl->backends.empty()) {
-                error = "the bundled BSL pack has no shaders for this renderer";
+                error = "the bundled Vibrant Visuals pack has no shaders for this renderer";
                 impl->Reset();
                 return false;
             }
             impl->meta = BundledShaderMeta();
-            impl->label = "BSL";
-            std::cout << "[shaders] opened bundled pack BSL" << std::endl;
+            impl->label = kBundledPackName;
+            std::cout << "[shaders] opened bundled pack " << kBundledPackName << std::endl;
             return true;
         }
         if (!fs::exists(source, ec)) {

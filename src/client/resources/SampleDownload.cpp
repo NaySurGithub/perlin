@@ -6,6 +6,7 @@
 #include <glaze/glaze.hpp>
 #include <httplib.h>
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <filesystem>
@@ -14,8 +15,12 @@
 #include <thread>
 #include <vector>
 
+#include "client/resources/AssetJobs.hpp"
 #include "client/ui/Json.hpp"
+#include "network/FastDownload.hpp"
 #include "network/Http.hpp"
+
+#include <miniz.h>
 
 namespace fs = std::filesystem;
 
@@ -126,6 +131,9 @@ namespace {
     bool FetchAll(const std::string& prefix, const std::vector<std::string>& files, const fs::path& repo, const char* label) {
         std::atomic<size_t> next{0}, done{0}, failed{0};
         const size_t total = files.size();
+        perlin::assets::Job& job = perlin::assets::Samples();
+        job.filesTotal = total;
+        job.filesDone = 0;
         auto worker = [&] {
             httplib::SSLClient cli("raw.githubusercontent.com", 443);
 #ifdef __ANDROID__
@@ -166,6 +174,7 @@ namespace {
                 if (!ok)
                     failed++;
                 const size_t n = ++done;
+                job.filesDone = n;
                 if (n % 500 == 0)
                     std::cout << "[samples] " << label << " " << n << "/" << total << std::endl;
             }
@@ -177,6 +186,124 @@ namespace {
             t.join();
         std::cout << "[samples] " << label << " done, " << failed.load() << " failed of " << total << std::endl;
         return failed.load() == 0;
+    }
+
+    // Paths inside the samples we keep: the listed directories plus files directly in resource_pack/.
+    bool Wanted(const std::string& rel) {
+        if (rel.empty() || rel.back() == '/')
+            return false;
+        if (rel.rfind("resource_pack/", 0) == 0 && rel.find('/', 14) == std::string::npos)
+            return true;
+        for (const std::string& dir : Directories())
+            if (rel.size() > dir.size() && rel.compare(0, dir.size(), dir) == 0 && rel[dir.size()] == '/')
+                return true;
+        return false;
+    }
+
+    // Extracts the wanted files of a samples zip into repo, on a few threads.
+    bool ExtractSamplesZip(const fs::path& zipPath, const fs::path& repo) {
+        perlin::assets::Job& job = perlin::assets::Samples();
+        mz_zip_archive zip{};
+        if (!mz_zip_reader_init_file(&zip, zipPath.string().c_str(), 0)) {
+            std::cout << "[samples] the downloaded archive is not a valid zip" << std::endl;
+            return false;
+        }
+        const mz_uint count = mz_zip_reader_get_num_files(&zip);
+        std::string prefix;
+        bool found = false;
+        std::vector<std::pair<mz_uint, std::string>> entries;
+        std::vector<std::string> names(count);
+        for (mz_uint i = 0; i < count; i++) {
+            char name[1024];
+            if (mz_zip_reader_get_filename(&zip, i, name, sizeof(name)))
+                names[i] = name;
+            const std::string& n = names[i];
+            const size_t at = n.find("resource_pack/blocks.json");
+            if (!found && at != std::string::npos && at + 25 == n.size()) {
+                prefix = n.substr(0, at);
+                found = true;
+            }
+        }
+        mz_zip_reader_end(&zip);
+        if (!found) {
+            std::cout << "[samples] the archive has no resource_pack/blocks.json" << std::endl;
+            return false;
+        }
+        for (mz_uint i = 0; i < count; i++) {
+            const std::string& n = names[i];
+            if (n.size() <= prefix.size() || n.compare(0, prefix.size(), prefix) != 0)
+                continue;
+            std::string rel = n.substr(prefix.size());
+            if (Wanted(rel))
+                entries.emplace_back(i, std::move(rel));
+        }
+        job.filesTotal = entries.size();
+        job.filesDone = 0;
+        job.stage = perlin::assets::Stage::Extracting;
+        std::atomic<size_t> next{0};
+        std::atomic<bool> failed{false};
+        auto work = [&] {
+            mz_zip_archive z{};
+            if (!mz_zip_reader_init_file(&z, zipPath.string().c_str(), 0)) {
+                failed = true;
+                return;
+            }
+            std::error_code ec;
+            for (;;) {
+                const size_t k = next.fetch_add(1);
+                if (k >= entries.size() || failed)
+                    break;
+                const fs::path target = repo / entries[k].second;
+                fs::create_directories(target.parent_path(), ec);
+                if (!mz_zip_reader_extract_to_file(&z, entries[k].first, target.string().c_str(), 0)) {
+                    std::cout << "[samples] could not extract " << entries[k].second << std::endl;
+                    failed = true;
+                    break;
+                }
+                job.filesDone++;
+            }
+            mz_zip_reader_end(&z);
+        };
+        const unsigned threads = std::clamp(std::thread::hardware_concurrency(), 2u, 6u);
+        std::vector<std::thread> pool;
+        for (unsigned i = 0; i < threads; i++)
+            pool.emplace_back(work);
+        for (std::thread& t : pool)
+            t.join();
+        std::cout << "[samples] extracted " << job.filesDone.load() << " of " << entries.size() << " files" << std::endl;
+        return !failed;
+    }
+
+    // Fast path: the latest Mojang/bedrock-samples release zip, downloaded in parallel chunks.
+    bool DownloadReleaseZip(const std::string& targetDir) {
+        perlin::assets::Job& job = perlin::assets::Samples();
+        job.stage = perlin::assets::Stage::Checking;
+        const std::string latest = perlin::download::Resolve(std::string("https://github.com/") + kRepository + "/releases/latest");
+        const size_t tagAt = latest.rfind("/tag/");
+        // A known-good release if the "latest" redirect can't be read.
+        const std::string tag = tagAt != std::string::npos ? latest.substr(tagAt + 5) : std::string("v1.26.30.5");
+        if (tagAt == std::string::npos)
+            std::cout << "[samples] could not read the latest release; using " << tag << std::endl;
+        const std::string url = std::string("https://github.com/") + kRepository + "/releases/download/" + tag + "/bedrock-samples-" + tag + "-full.zip";
+        const fs::path zipPath = fs::path(targetDir) / ("bedrock-samples-" + tag + ".zip");
+        std::cout << "[samples] downloading " << tag << " (one archive, parallel chunks)" << std::endl;
+        job.stage = perlin::assets::Stage::Downloading;
+        const auto started = std::chrono::steady_clock::now();
+        perlin::download::Options options;
+        options.connections = 12;
+        options.chunkBytes = 4ull << 20;
+        if (!perlin::download::Fetch(url, zipPath, &job.bytes, options)) {
+            std::cout << "[samples] archive download failed" << std::endl;
+            return false;
+        }
+        const double secs = std::chrono::duration<double>(std::chrono::steady_clock::now() - started).count();
+        std::cout << "[samples] " << job.bytes.total.load() / (1024 * 1024) << " MB in " << secs << " s" << std::endl;
+        const fs::path repo = fs::path(targetDir) / "repo";
+        std::error_code ec;
+        fs::create_directories(repo, ec);
+        const bool ok = ExtractSamplesZip(zipPath, repo);
+        fs::remove(zipPath, ec);
+        return ok;
     }
 
     bool DownloadFromManifest(const std::string& targetDir) {
@@ -207,6 +334,26 @@ namespace perlin {
 #ifdef __ANDROID__
         return DownloadFromManifest(targetDir);
 #else
+        const fs::path zipDone = fs::path(targetDir) / "repo" / ".from-release-zip";
+        std::error_code zec;
+        if (fs::exists(zipDone, zec) || DownloadReleaseZip(targetDir)) {
+            std::ofstream(zipDone.string()).close();
+            // The release archive leaves out a few folders the client wants (behavior_pack/blocks);
+            // fetch just those, file by file.
+            std::vector<std::string> extra;
+            for (const std::string& dir : Directories())
+                if (!fs::exists(fs::path(targetDir) / "repo" / dir, zec) && !CollectDirectory(dir, extra))
+                    return false;
+            if (extra.empty())
+                return true;
+            std::cout << "[samples] fetching " << extra.size() << " files missing from the release archive" << std::endl;
+            perlin::assets::Samples().stage = perlin::assets::Stage::Downloading;
+            perlin::assets::Samples().bytes.total = 0;
+            return FetchAll(std::string("/") + kRepository + "/" + kBranch + "/", extra, fs::path(targetDir) / "repo", "extra");
+        }
+        std::cout << "[samples] falling back to downloading files one by one" << std::endl;
+        perlin::assets::Samples().bytes.total = 0;
+        perlin::assets::Samples().stage = perlin::assets::Stage::Downloading;
         const fs::path repo = fs::path(targetDir) / "repo";
         std::error_code ec;
         fs::create_directories(repo, ec);

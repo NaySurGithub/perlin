@@ -159,6 +159,17 @@ namespace perlin {
             bool targets = false;
             float lastTime = 0.0f;
         } blur;
+        // Shader packs that set "sceneCopy" get the opaque scene (colour + depth) copied after
+        // entities and before the translucent pass, for screen-space reflections/refraction.
+        struct SceneCopy {
+            bgfx::TextureHandle color = BGFX_INVALID_HANDLE, depth = BGFX_INVALID_HANDLE;
+            bool valid = false;
+            bool failed = false;
+        } scene;
+        bool depthReadable = false;
+        bool EnsureSceneCopy();
+        void DestroySceneCopy();
+        bgfx::TextureHandle cloudMapTexture = BGFX_INVALID_HANDLE;
         bool EnsureMotionBlurTargets();
         void DestroyMotionBlur();
         void SetupMotionBlur(const FrameParams& params);

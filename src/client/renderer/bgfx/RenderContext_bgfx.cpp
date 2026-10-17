@@ -14,6 +14,7 @@
 #include <bx/math.h>
 
 #include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtc/type_ptr.hpp>
 
 #include <algorithm>
 #include <cmath>
@@ -50,6 +51,7 @@ namespace perlin {
         constexpr bgfx::ViewId kViewLate = 8;
         constexpr bgfx::ViewId kViewDoll = 7;
         constexpr bgfx::ViewId kViewTop = 9;
+        constexpr bgfx::ViewId kViewCopy = 10; // opaque scene copy for packs (after entities, before translucent)
         constexpr uint32_t kPageVerts = 1u << 20;
         constexpr uint32_t kPageIdx = (kPageVerts / 4) * 6;
 
@@ -299,8 +301,8 @@ namespace perlin {
         bgfx::setViewMode(kViewEntity, bgfx::ViewMode::Sequential);
         bgfx::setViewMode(kViewLate, bgfx::ViewMode::Sequential);
         {
-            const bgfx::ViewId order[10] = {0, 1, kViewEntity, kViewLate, kViewBlur, kViewBlurOut, kViewHand, kViewGui, kViewDoll, kViewTop};
-            bgfx::setViewOrder(0, 10, order);
+            const bgfx::ViewId order[11] = {0, 1, kViewEntity, kViewCopy, kViewLate, kViewBlur, kViewBlurOut, kViewHand, kViewGui, kViewDoll, kViewTop};
+            bgfx::setViewOrder(0, 11, order);
         }
         bgfx::setViewMode(kViewGui, bgfx::ViewMode::Sequential);
         bgfx::setViewMode(kViewDoll, bgfx::ViewMode::Sequential);
@@ -392,8 +394,9 @@ namespace perlin {
             return true;
         const uint64_t sample = BGFX_TEXTURE_RT | BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP;
         blur.worldColor = bgfx::createTexture2D(bgfx::BackbufferRatio::Equal, false, 1, bgfx::TextureFormat::RGBA8, sample);
+        // The scene copy blits this depth buffer, so it must be a real texture then.
         blur.worldDepth = bgfx::createTexture2D(bgfx::BackbufferRatio::Equal, false, 1, bgfx::TextureFormat::D24S8,
-                                                BGFX_TEXTURE_RT_WRITE_ONLY);
+                                                depthReadable ? BGFX_TEXTURE_RT : BGFX_TEXTURE_RT_WRITE_ONLY);
         for (int i = 0; i < 2; i++)
             blur.histColor[i] = bgfx::createTexture2D(bgfx::BackbufferRatio::Equal, false, 1, bgfx::TextureFormat::RGBA8, sample);
         bool ok = bgfx::isValid(blur.worldColor) && bgfx::isValid(blur.worldDepth) && bgfx::isValid(blur.histColor[0]) &&
@@ -441,21 +444,78 @@ namespace perlin {
         blur.valid = false;
     }
 
+    bool RenderContext_bgfx::EnsureSceneCopy() {
+        if (bgfx::isValid(scene.color) && bgfx::isValid(scene.depth))
+            return true;
+        const uint64_t clamp = BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP;
+        scene.color = bgfx::createTexture2D(bgfx::BackbufferRatio::Equal, false, 1, bgfx::TextureFormat::RGBA8,
+                                            BGFX_TEXTURE_BLIT_DST | clamp);
+        scene.depth = bgfx::createTexture2D(bgfx::BackbufferRatio::Equal, false, 1, bgfx::TextureFormat::D24S8,
+                                            BGFX_TEXTURE_RT | BGFX_TEXTURE_BLIT_DST | clamp | BGFX_SAMPLER_MIN_POINT |
+                                                BGFX_SAMPLER_MAG_POINT);
+        if (!bgfx::isValid(scene.color) || !bgfx::isValid(scene.depth)) {
+            std::cout << "[shaders] could not create the scene copy; reflections fall back to the sky" << std::endl;
+            DestroySceneCopy();
+            scene.failed = true;
+            return false;
+        }
+        std::cout << "[shaders] scene copy on (screen-space reflections)" << std::endl;
+        return true;
+    }
+
+    void RenderContext_bgfx::DestroySceneCopy() {
+        for (bgfx::TextureHandle* h : {&scene.color, &scene.depth})
+            if (bgfx::isValid(*h)) {
+                bgfx::destroy(*h);
+                *h = BGFX_INVALID_HANDLE;
+            }
+        scene.valid = false;
+    }
+
     void RenderContext_bgfx::SetupMotionBlur(const FrameParams& params) {
         const float intensity = std::clamp(params.motionBlur, 0.0f, 1.0f);
         static bool failed = false;
         const float menuPx = std::max(0.0f, params.menuBlur);
-        const bool on = (intensity > 0.001f || menuPx > 0.01f) && !failed && !PERLIN_ENV("PERLIN_NO_BLUR");
+        const bool blurOn = (intensity > 0.001f || menuPx > 0.01f) && !failed && !PERLIN_ENV("PERLIN_NO_BLUR");
+        // A pack asking for the scene copy needs the world drawn offscreen too.
+        ShaderPack& pack = ShaderPack::Instance();
+        const bool sceneWanted = pack.Active() && pack.Flag("sceneCopy", false) && !scene.failed && !PERLIN_ENV("PERLIN_NO_SSR");
+        if (sceneWanted != depthReadable) {
+            if (blur.targets)
+                DestroyMotionBlur();
+            depthReadable = sceneWanted;
+        }
+        scene.valid = false;
+        const bool on = blurOn || sceneWanted;
         if (!on || !EnsureMotionBlurTargets()) {
-            if (on && !blur.targets)
-                failed = true;
+            if (on && !blur.targets) {
+                if (blurOn)
+                    failed = true;
+                if (sceneWanted) {
+                    scene.failed = true;
+                    std::cout << "[shaders] no offscreen targets; reflections fall back to the sky" << std::endl;
+                }
+            }
             bgfx::setViewFrameBuffer(0, BGFX_INVALID_HANDLE);
             bgfx::setViewFrameBuffer(kViewEntity, BGFX_INVALID_HANDLE);
             bgfx::setViewFrameBuffer(kViewLate, BGFX_INVALID_HANDLE);
             blur.valid = false;
             if (blur.targets && !on)
                 DestroyMotionBlur();
+            if (!sceneWanted)
+                DestroySceneCopy();
             return;
+        }
+        if (sceneWanted && EnsureSceneCopy()) {
+            bgfx::TextureRegion dst, src;
+            dst.init(scene.color);
+            src.init(blur.worldColor);
+            bgfx::blit(kViewCopy, dst, src);
+            dst.init(scene.depth);
+            src.init(blur.worldDepth);
+            bgfx::blit(kViewCopy, dst, src);
+            bgfx::touch(kViewCopy);
+            scene.valid = true;
         }
         bgfx::setViewFrameBuffer(0, blur.worldFb);
         bgfx::setViewFrameBuffer(kViewEntity, blur.worldFb);
@@ -482,6 +542,12 @@ namespace perlin {
             bgfx::setState(BGFX_STATE_WRITE_RGB);
             bgfx::submit(view, shaders.Program(ShaderProgram::Post));
         };
+        if (!blurOn) {
+            // Offscreen only for the scene copy: straight copy to the screen.
+            fullscreen(kViewBlurOut, BGFX_INVALID_HANDLE, blur.worldColor, blur.worldColor, 0.0f, 1.0f);
+            blur.valid = false;
+            return;
+        }
         fullscreen(kViewBlur, blur.histFb[write], blur.worldColor, blur.histColor[blur.read], weight, 0.0f);
         fullscreen(kViewBlurOut, BGFX_INVALID_HANDLE, blur.histColor[write], blur.histColor[write], 0.0f, 1.0f);
         blur.read = write;
@@ -542,6 +608,21 @@ namespace perlin {
                 mvp[c * 4 + 2] = 2.0f * params.viewProjection[c * 4 + 2] - params.viewProjection[c * 4 + 3];
         }
         shaders.SetFrame(params, tileSize);
+        {
+            // Vanilla cloud map placement (same drift as the vanilla cloud mesh).
+            float cloudMap[4] = {0.0f, 3.96f, 1.0f / 3072.0f, 1.0f / 3072.0f};
+            if (cloudTexture.width > 0 && cloudTexture.height > 0) {
+                const double widthBlocks = cloudTexture.width * 12.0;
+                cloudMap[0] = static_cast<float>(std::fmod(params.cloud.gameTicks * 0.030000001, widthBlocks));
+                cloudMap[2] = static_cast<float>(1.0 / widthBlocks);
+                cloudMap[3] = static_cast<float>(1.0 / (cloudTexture.height * 12.0));
+            }
+            shaders.SetCloudMap(cloudMap);
+            const glm::mat4 inverse = glm::inverse(glm::make_mat4(mvp));
+            const float info[4] = {scene.valid ? 1.0f : 0.0f, homogeneousDepth ? 1.0f : 0.0f,
+                                   bgfx::getCaps()->originBottomLeft ? 1.0f : 0.0f, 0.0f};
+            shaders.SetScene(info, &inverse[0][0]);
+        }
         UploadLightmap(params.lightmap);
         frame = params;
         ConvertDepth(params.skyViewProjection, skyMvp);
@@ -573,6 +654,9 @@ namespace perlin {
             }
         sunTexture = create(sun, clamp);
         moonTexture = create(moon, clamp);
+        if (bgfx::isValid(cloudMapTexture))
+            bgfx::destroy(cloudMapTexture);
+        cloudMapTexture = create(clouds, BGFX_SAMPLER_MIN_POINT | BGFX_SAMPLER_MAG_POINT); // repeats
         cloudTexture.width = clouds.width;
         cloudTexture.height = clouds.height;
         cloudTexture.solid.assign(static_cast<size_t>(std::max(0, clouds.width)) * std::max(0, clouds.height), 0);
@@ -1277,6 +1361,7 @@ namespace perlin {
 
         submitMatrix(view);
         shaders.SetModulator(sky.skyColor[0], sky.skyColor[1], sky.skyColor[2], 1.0f);
+        shaders.BindClouds(cloudMapTexture);
         bgfx::setVertexBuffer(0, topSkyBuffer);
         bgfx::setIndexBuffer(skyFanIndices, 0, skyFanIndexCount);
         bgfx::setState(write);
@@ -1732,6 +1817,9 @@ namespace perlin {
                 shaders.Apply(atlas, lightmapTex, samplerFlags, lightmapFlags);
                 if (shadow.active)
                     shaders.BindShadow(shadow.color);
+                shaders.BindClouds(cloudMapTexture);
+                if (ordered && scene.valid)
+                    shaders.BindScene(scene.color, scene.depth);
                 primed = true;
             }
             bgfx::submit(lateView ? kViewLate : 0, shaders.Program(program), 0, kKeep);
@@ -1860,6 +1948,10 @@ namespace perlin {
         lodChunks.clear();
         DestroyPages();
         DestroyMotionBlur();
+        DestroySceneCopy();
+        if (bgfx::isValid(cloudMapTexture))
+            bgfx::destroy(cloudMapTexture);
+        cloudMapTexture = BGFX_INVALID_HANDLE;
         DestroyShadows();
         DestroyUi();
         if (bgfx::isValid(atlasTex))

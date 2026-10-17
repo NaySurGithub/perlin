@@ -171,6 +171,12 @@ namespace perlin {
         shadowMatrix = bgfx::createUniform("u_shadowMtx", bgfx::UniformType::Mat4);
         shadowInfo = bgfx::createUniform("u_shadowInfo", bgfx::UniformType::Vec4);
         shadowSampler = bgfx::createUniform("s_shadow", bgfx::UniformType::Sampler);
+        cloudsSampler = bgfx::createUniform("s_clouds", bgfx::UniformType::Sampler);
+        cloudMap = bgfx::createUniform("u_cloudMap", bgfx::UniformType::Vec4);
+        sceneColorSampler = bgfx::createUniform("s_sceneColor", bgfx::UniformType::Sampler);
+        sceneDepthSampler = bgfx::createUniform("s_sceneDepth", bgfx::UniformType::Sampler);
+        sceneInfo = bgfx::createUniform("u_sceneInfo", bgfx::UniformType::Vec4);
+        invMvp = bgfx::createUniform("u_invMvp", bgfx::UniformType::Mat4);
         return true;
     }
 
@@ -183,7 +189,8 @@ namespace perlin {
         for (bgfx::UniformHandle* handle : {&atlasSampler, &lightmapSampler, &skySampler, &mvp, &camera, &fogColor,
                                             &fogEnvironment, &fogSky, &modulator, &textureInfo, &chunk, &cloudOffset,
                                             &cloudColor, &sunDirection, &timeUniform, &heldLight, &dynParams, &dynLights, &packSettings, &tiles, &skyParams,
-                                            &shadowMatrix, &shadowInfo, &shadowSampler}) {
+                                            &shadowMatrix, &shadowInfo, &shadowSampler, &cloudsSampler, &cloudMap,
+                                            &sceneColorSampler, &sceneDepthSampler, &sceneInfo, &invMvp}) {
             if (bgfx::isValid(*handle))
                 bgfx::destroy(*handle);
             *handle = BGFX_INVALID_HANDLE;
@@ -239,7 +246,26 @@ namespace perlin {
         bgfx::setUniform(packSettings, packSettingsValue, 4);
         bgfx::setUniform(tiles, tilesValue);
         bgfx::setUniform(skyParams, skyParamsValue);
+        bgfx::setUniform(cloudMap, cloudMapValue);
+        bgfx::setUniform(sceneInfo, sceneInfoValue);
+        bgfx::setUniform(invMvp, invMvpValue);
         SetChunkVisibility(1.0f);
+    }
+
+    void ShaderManager::BindClouds(bgfx::TextureHandle texture) const {
+        if (bgfx::isValid(texture))
+            bgfx::setTexture(3, cloudsSampler, texture, BGFX_SAMPLER_MIN_POINT | BGFX_SAMPLER_MAG_POINT);
+    }
+
+    void ShaderManager::SetScene(const float info[4], const float inverseMvp[16]) {
+        std::copy_n(info, 4, sceneInfoValue);
+        std::copy_n(inverseMvp, 16, invMvpValue);
+    }
+
+    void ShaderManager::BindScene(bgfx::TextureHandle color, bgfx::TextureHandle depth) const {
+        constexpr uint32_t kFlags = BGFX_SAMPLER_MIN_POINT | BGFX_SAMPLER_MAG_POINT | BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP;
+        bgfx::setTexture(4, sceneColorSampler, color, BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP);
+        bgfx::setTexture(5, sceneDepthSampler, depth, kFlags);
     }
 
     void ShaderManager::SetMatrix(const float matrix[16]) const {
