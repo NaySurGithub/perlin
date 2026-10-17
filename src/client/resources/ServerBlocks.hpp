@@ -17,6 +17,7 @@ namespace perlin {
     struct CustomBlockCollision {
         CollisionSet base;
         std::vector<std::pair<std::string, CollisionSet>> permutations;
+        float friction = -1.0f;
     };
 
     struct CustomBlockDef {

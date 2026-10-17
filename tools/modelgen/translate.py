@@ -172,6 +172,10 @@ def translate(bname, st, jb):
             props["powered"] = b(int(st["rail_data_bit"]))
         return jn, props, search
 
+    if n == "portal":
+        props["axis"] = "z" if st.get("portal_axis") == "z" else "x"
+        return "nether_portal", props, search
+
     if n == "bed":
         return None
         jn = "red_bed"

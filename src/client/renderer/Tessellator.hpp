@@ -26,6 +26,11 @@ namespace perlin {
         uint16_t conn;
     };
 
+    struct SpecialBlock {
+        int x, y, z;
+        uint16_t id;
+    };
+
     inline uint32_t PackColor(float r, float g, float b, float a = 1.0f) {
         auto q = [](float c) -> uint32_t {
             c = c < 0.0f ? 0.0f : (c > 1.0f ? 1.0f : c);
@@ -52,6 +57,8 @@ namespace perlin {
         void EnterSection(int sy);
         void AddVisibility(int sy, uint16_t conn) { visibility.push_back({sy, conn}); }
         const std::vector<SectionVis>& Visibility() const { return visibility; }
+        void AddSpecial(int x, int y, int z, uint16_t id) { specials.push_back({x, y, z, id}); }
+        std::vector<SpecialBlock>& Specials() { return specials; }
 
         void AddQuad(const float v[4][3], const float c[4][3], const float uv[4][2], bool flip,
                      const float light[4][2]);
@@ -75,6 +82,7 @@ namespace perlin {
         std::array<std::vector<uint32_t>, kRenderLayerCount> indices;
         std::vector<MeshSection> sections;
         std::vector<SectionVis> visibility;
+        std::vector<SpecialBlock> specials;
         RenderLayer layer = RenderLayer::Solid;
         bool building = false;
     };

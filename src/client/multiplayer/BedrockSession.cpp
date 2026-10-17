@@ -1,5 +1,6 @@
 #include "util/Paths.hpp"
 #include "client/multiplayer/BedrockSession.hpp"
+#include "client/multiplayer/NbtJson.hpp"
 #include "client/multiplayer/DeviceProfile.hpp"
 
 #include "network/ClientIdentity.hpp"
@@ -636,7 +637,7 @@ namespace perlin {
                     loaded.push_back(entry.first);
         }
         for (const ChunkPos& p : loaded)
-            netLevel.RemoveChunk(p.x, p.z);
+            { netLevel.RemoveChunk(p.x, p.z); blockEntities.RemoveChunk(p.x, p.z); }
         std::lock_guard<std::mutex> lk(reqMutex);
         std::vector<ChunkPos> doomed = std::move(loaded);
         for (const auto& entry : columns)
@@ -984,6 +985,7 @@ namespace perlin {
             chunkIn.clear();
         }
         netLevel.Clear();
+        blockEntities.Clear();
         std::lock_guard<std::mutex> lk(reqMutex);
         seenColumns.clear();
         requestedSlots.clear();
@@ -1482,6 +1484,8 @@ namespace perlin {
             }
             for (auto& [absY, sc] : parsed)
                 ApplySubChunk(pkt.x, pkt.z, absY, sc);
+            if (left > 0)
+                ParseBlockEntities(p, left, true);
             netLevel.MarkComplete(pkt.x, pkt.z);
         } else {
             ApplyBiomeColumn(pkt.x, pkt.z, pkt.payload);
@@ -1501,6 +1505,30 @@ namespace perlin {
             } else {
                 QueueSubChunkRequests(pkt.dimension, pkt.x, pkt.z, dim.MinSubChunk(), slots);
             }
+        }
+    }
+
+    void BedrockSession::ParseBlockEntities(const uint8_t* data, size_t size, bool scan) {
+        size_t at = 0;
+        while (at + 3 <= size) {
+            if (scan && !(data[at] == 0x0A && data[at + 1] == 0x00)) {
+                at++;
+                continue;
+            }
+            ui::Json nbt;
+            const size_t used = NetworkNbtPrefix(data + at, size - at, nbt);
+            if (!used) {
+                if (!scan)
+                    return;
+                at++;
+                continue;
+            }
+            const ui::Json* x = nbt.Find("x");
+            const ui::Json* y = nbt.Find("y");
+            const ui::Json* z = nbt.Find("z");
+            if (x && y && z && x->IsNumber() && y->IsNumber() && z->IsNumber())
+                blockEntities.Set(static_cast<int>(x->number), static_cast<int>(y->number), static_cast<int>(z->number), nbt);
+            at += used;
         }
     }
 
@@ -1650,6 +1678,8 @@ namespace perlin {
                 return;
             }
             ApplySubChunk(job.cx, job.cz, job.absY, sc);
+            if (used < job.body->size())
+                ParseBlockEntities(job.body->data() + used, job.body->size() - used, false);
         };
         if (decodeJobs.size() >= 4 && decodePool)
             decodePool->ParallelFor(decodeJobs.size(), decode);
@@ -1952,8 +1982,10 @@ namespace perlin {
                 if (const auto found = columns.find(p); found != columns.end())
                     promote.push_back({p, found->second});
         }
-        for (const ChunkPos& p : demote)
+        for (const ChunkPos& p : demote) {
             netLevel.RemoveChunk(p.x, p.z);
+            blockEntities.RemoveChunk(p.x, p.z);
+        }
         for (const auto& [pos, info] : promote) {
             if (info.slots <= 0)
                 continue;

@@ -1,3 +1,4 @@
+#include "util/Relaunch.hpp"
 #include "client/EmbeddedProvider.hpp"
 #include "client/Perlin.hpp"
 #include "client/platform/sdl/AppPlatform_SDL.hpp"
@@ -219,6 +220,7 @@ namespace {
 }
 
 int main(int argc, char** argv) {
+    perlin::RememberCommandLine(argc, argv);
     AttachParentConsole();
     perlin::RegisterEmbeddedResources();
 

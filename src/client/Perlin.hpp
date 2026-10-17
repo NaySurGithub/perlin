@@ -10,6 +10,8 @@
 #include "client/input/InputManager.hpp"
 #include "client/multiplayer/BedrockSession.hpp"
 #include "client/particle/ParticleSystem.hpp"
+#include "client/particle/DataParticles.hpp"
+#include "client/renderer/FogDefs.hpp"
 #include "client/player/LocalPlayer.hpp"
 #include "client/renderer/LevelRenderer.hpp"
 #include "client/renderer/Lightmap.hpp"
@@ -243,6 +245,8 @@ namespace perlin {
         HandRenderer handRenderer;
         entity::EntityRenderer entityRenderer;
         particle::ParticleSystem particles;
+        particle::DataParticles dataParticles;
+        FogDefs fogDefs;
         double particleClock = 0;
         std::vector<particle::Quad> particleQuads;
         struct LocalBreak {

@@ -69,6 +69,7 @@ namespace perlin::entity {
         std::string armor[4];
         std::shared_ptr<const SkinData> skin;
         std::map<std::string, float> props;
+        std::map<std::string, std::string> propText;
         bool Has(uint64_t f) const { return (flags & f) != 0; }
     };
 
@@ -94,12 +95,14 @@ namespace perlin::entity {
         void SetOwner(uint64_t rid, int64_t ownerUid);
         void SetTarget(uint64_t rid, int64_t targetUid);
         void SetHeld(uint64_t rid, const std::string& item);
+        void SetOffHand(uint64_t rid, const std::string& item);
         void SetArmor(uint64_t rid, int slot, const std::string& item);
         void SetVehicle(int64_t riderUid, int64_t vehicleUid);
         void Hurt(uint64_t rid);
         void Die(uint64_t rid);
         void Swing(uint64_t rid);
         void SetProperty(uint64_t rid, const std::string& key, float value);
+        void SetPropertyText(uint64_t rid, const std::string& key, const std::string& text);
         void SetSkin(const std::string& uuid, std::shared_ptr<const SkinData> skin);
         void SetSelf(uint64_t rid, const std::string& uuid);
 

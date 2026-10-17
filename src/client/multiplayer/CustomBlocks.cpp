@@ -243,6 +243,11 @@ namespace perlin {
             int emission = -1, dampening = -1;
             if (const ui::Json* components = nbt.Find("components"); components && components->IsObject()) {
                 collision.base = ParseCollision(components->Find("minecraft:collision_box"));
+                if (const ui::Json* f = components->Find("minecraft:friction")) {
+                    const ui::Json* v = f->IsObject() ? f->Find("value") : f;
+                    if (v && v->IsNumber())
+                        collision.friction = std::clamp(1.0f - static_cast<float>(v->number), 0.1f, 1.0f);
+                }
                 int level = ParseLevel(components->Find("minecraft:light_emission"), "emission", false);
                 if (level < 0)
                     level = ParseLevel(components->Find("minecraft:block_light_emission"), "emission", true);
@@ -274,7 +279,7 @@ namespace perlin {
                     if (set.defined)
                         collision.permutations.emplace_back(cond->string, std::move(set));
                 }
-            if (collision.base.defined || !collision.permutations.empty())
+            if (collision.base.defined || !collision.permutations.empty() || collision.friction >= 0.0f)
                 ServerBlocks::Instance().SetCollision(entry.name, std::move(collision));
             if (emission >= 0 || dampening >= 0)
                 LightRegistry::Instance().SetCustom(entry.name, emission, dampening);

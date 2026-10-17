@@ -156,6 +156,8 @@ namespace perlin {
     void BedrockSession::RegisterPacketHandlers() {
         InstallPersistentChunkResolver();
         RegisterServerUiHandlers();
+        RegisterWorldExtraHandlers();
+        RegisterIgnoredHandlers();
         dispatcher.OnFailure([](uint32_t id, const char* name, size_t size) {
             std::cout << "[net] failed to decode " << name << " (id " << id << ", " << size << " bytes)"
                       << std::endl;
@@ -361,6 +363,7 @@ namespace perlin {
         });
 
         OnPartial<StartGamePacket>([this](const StartGamePacket& p) {
+            ParsePropertySchema(p.propertyData.bytes);
             if (!p.blockProperties.empty()) {
                 const size_t n = RegisterCustomBlocks(p.blockProperties);
                 std::cout << "[blocks] server defines " << p.blockProperties.size() << " custom blocks (" << n << " states)" << std::endl;
@@ -916,6 +919,14 @@ namespace perlin {
             entities.AddPlayer(p.runtimeId, p.uniqueId, UuidKey(p.uuid), p.username,
                                {p.position.x, p.position.y, p.position.z}, p.pitch, p.yaw, p.headYaw, MetaFlags(p.metadata), held);
             ApplyMetadata(entities, p.runtimeId, p.metadata);
+            ApplyEntityProperties(p.runtimeId, "minecraft:player", p.properties);
+        });
+
+        On<AddPaintingPacket>([this](const AddPaintingPacket& p) {
+            entities.AddEntity(p.runtimeEntityId, p.entityIdSelf, "minecraft:painting", {p.coordinates.x, p.coordinates.y, p.coordinates.z}, 0.0f,
+                               0.0f, 0.0f, 0, 1.0f, 0, 0, 0);
+            entities.SetPropertyText(p.runtimeEntityId, "painting_motive", p.title);
+            entities.SetProperty(p.runtimeEntityId, "painting_direction", static_cast<float>(p.direction));
         });
 
         On<AddEntityPacket>([this](const AddEntityPacket& p) {
@@ -924,6 +935,7 @@ namespace perlin {
             entities.AddEntity(p.runtimeId, p.uniqueId, p.entityType, {p.position.x, p.position.y, p.position.z}, p.pitch, p.yaw,
                                p.headYaw, MetaFlags(p.metadata), 1.0f, 0, 0, 0);
             ApplyMetadata(entities, p.runtimeId, p.metadata);
+            ApplyEntityProperties(p.runtimeId, p.entityType, p.properties);
             for (const EntityAttributesEntry& a : p.attributes)
                 if (a.name == "minecraft:health")
                     entities.SetHealth(p.runtimeId, a.value);
@@ -1003,6 +1015,9 @@ namespace perlin {
                 return;
             }
             ApplyMetadata(entities, p.runtimeEntityId, p.metadata);
+            entity::Entity target;
+            if (entities.Find(p.runtimeEntityId, target))
+                ApplyEntityProperties(p.runtimeEntityId, target.type, p.properties);
         });
 
         On<PlayerListPacket>([this](const PlayerListPacket& p) {
@@ -1046,7 +1061,10 @@ namespace perlin {
             std::string name;
             if (const auto it = itemNames.find(p.item.networkId); p.item.networkId != 0 && it != itemNames.end())
                 name = it->second;
-            entities.SetHeld(p.runtimeEntityId, name);
+            if (static_cast<int>(p.windowId) == 119)
+                entities.SetOffHand(p.runtimeEntityId, name);
+            else
+                entities.SetHeld(p.runtimeEntityId, name);
         });
 
         On<MobArmorEquipmentPacket>([this](const MobArmorEquipmentPacket& p) {
@@ -1166,6 +1184,8 @@ namespace perlin {
         On<SpawnParticleEffectPacket>([this](const SpawnParticleEffectPacket& p) {
             ParticleEvent pe;
             pe.name = p.particleName;
+            if (p.molangVariables)
+                pe.molang = *p.molangVariables;
             pe.x = p.position.x;
             pe.y = p.position.y;
             pe.z = p.position.z;

@@ -1,5 +1,7 @@
 #pragma once
+#include <atomic>
 #include <cstdint>
+#include <thread>
 #include <string>
 #include <memory>
 #include <vector>
@@ -39,7 +41,9 @@ namespace perlin::ui {
     class FormUi {
     public:
         FormUi();
-        bool Prepare(const std::vector<std::string>& packDirs);
+        ~FormUi();
+        void Warm(const std::vector<std::string>& packDirs);
+        bool Ready() const { return state.load() == 2; }
         bool Build(const FormModel& form, int guiW, int guiH, float scroll, std::string& rml, float& contentHeight, float& viewHeight);
         const std::string& Problem() const { return problem; }
 
@@ -49,6 +53,9 @@ namespace perlin::ui {
         RmlEmitter emitter;
         UiServices services;
         std::string problem;
+        std::thread worker;
+        std::atomic<int> state{0};
+        std::string key;
     };
 
     bool ParseForm(uint32_t id, const std::string& json, FormModel& out);

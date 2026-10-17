@@ -14,6 +14,8 @@ namespace perlin::ui {
             int width = 0;
             int advance = 0;
             int cell = 8;
+            float top = 0;
+            float height = 8;
         };
 
         McFont();
@@ -22,6 +24,12 @@ namespace perlin::ui {
         bool LoadSheet(const uint8_t* rgba, int width, int height);
         void UseBuiltin();
         bool LoadUnihexFile(const std::string& path);
+        struct RawSheet {
+            const uint8_t* rgba = nullptr;
+            int width = 0, height = 0;
+        };
+        bool LoadVanillaSheets(const RawSheet& accented, const RawSheet& nonlatin);
+        bool HasVanillaSheets() const { return !sheets.empty(); }
         bool HasUnihex() const { return !hex.empty(); }
         bool AddTtf(const std::string& path);
         size_t TtfCount() const { return ttfs.size(); }
@@ -42,6 +50,7 @@ namespace perlin::ui {
     private:
         void Build(const std::vector<uint8_t>& cells, int cellsAcross, int cellPx);
         const Glyph* Dynamic(uint32_t cp) const;
+        const Glyph* FromSheet(uint32_t cp) const;
         struct TtfFont;
         bool RasterTtf(uint32_t cp, int cx, int cy, Glyph& out) const;
         std::vector<std::shared_ptr<TtfFont>> ttfs;
@@ -50,6 +59,12 @@ namespace perlin::ui {
             std::array<uint8_t, 32> rows{};
             bool wide = false;
         };
+        struct Sheet {
+            std::vector<uint8_t> rgba;
+            int width = 0, height = 0, cellW = 0, cellH = 0, ascent = 7;
+        };
+        std::vector<Sheet> sheets;
+        std::unordered_map<uint32_t, std::pair<uint16_t, uint16_t>> sheetChars;
         std::unordered_map<uint32_t, HexGlyph> hex;
         std::string hexPath;
         std::unordered_map<uint32_t, Glyph> mapped;

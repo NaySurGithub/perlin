@@ -463,7 +463,24 @@ namespace perlin::ui {
         emitter.SetTemplates(kFormTemplate, std::string());
     }
 
-    bool FormUi::Prepare(const std::vector<std::string>& packDirs) {
+    FormUi::~FormUi() {
+        if (worker.joinable())
+            worker.join();
+    }
+
+    void FormUi::Warm(const std::vector<std::string>& packDirs) {
+        std::string wanted;
+        for (const std::string& d : packDirs)
+            wanted += d + "|";
+        wanted += paths::DataDir() + "|" + UiAssets::Instance().VanillaRoot();
+        if (state.load() == 1)
+            return;
+        if (state.load() != 0 && wanted == key)
+            return;
+        if (worker.joinable())
+            worker.join();
+        key = wanted;
+        state = 1;
         std::vector<std::string> roots;
         for (size_t i = packDirs.size(); i-- > 0;)
             roots.push_back(packDirs[i] + "/ui");
@@ -471,26 +488,30 @@ namespace perlin::ui {
         roots.push_back(data + "/ui");
         roots.push_back(data + "/ui_defaults");
         roots.push_back(UiAssets::Instance().VanillaRoot() + "/ui");
-        library.SetRoots(roots);
-        tree.reset();
-        problem.clear();
-        if (!library.Scan()) {
-            problem = "no ui folder";
-            return false;
-        }
-        BuildReport report;
-        tree = BuildTree(library, "server_form.third_party_server_screen", EngineRootVariables(), report);
-        if (!tree) {
-            problem = "server_form.third_party_server_screen could not be built";
-            return false;
-        }
-        for (const std::string& missing : report.missingControls)
-            std::cout << "[form] missing control " << missing << std::endl;
-        return true;
+        worker = std::thread([this, roots]() {
+            library.SetRoots(roots);
+            tree.reset();
+            problem.clear();
+            if (!library.Scan()) {
+                problem = "no ui folder";
+                state = 3;
+                return;
+            }
+            BuildReport report;
+            tree = BuildTree(library, "server_form.third_party_server_screen", EngineRootVariables(), report);
+            if (!tree) {
+                problem = "server_form.third_party_server_screen could not be built";
+                state = 3;
+                return;
+            }
+            for (const std::string& missing : report.missingControls)
+                std::cout << "[form] missing control " << missing << std::endl;
+            state = 2;
+        });
     }
 
     bool FormUi::Build(const FormModel& form, int guiW, int guiH, float scroll, std::string& rml, float& contentHeight, float& viewHeight) {
-        if (!tree || form.type == FormModel::Type::Custom)
+        if (state.load() != 2 || !tree || form.type == FormModel::Type::Custom)
             return false;
         FormData data(form);
         const std::unique_ptr<LNode> root = EvaluateTree(*tree, data, services, static_cast<float>(guiW), static_cast<float>(guiH));

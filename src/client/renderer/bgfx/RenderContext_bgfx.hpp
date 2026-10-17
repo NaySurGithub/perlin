@@ -33,6 +33,7 @@ namespace perlin {
         void UploadCrosshair(const Texture& icons) override;
         void DrawHudCursor(float x, float y, float w, float h) override;
         void UploadAtlas(const uint8_t* rgba, int tilePx, int tiles) override;
+        int MaxAtlasLayers(int tilePx) const override;
         bool ReloadShaders() override;
         void SetVsync(bool enabled) override;
         void UpdateAtlasRegion(int tile, const uint8_t* rgba) override;

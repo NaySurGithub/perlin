@@ -4,6 +4,7 @@
 
 #include <cctype>
 #include <cstdio>
+#include <string_view>
 
 namespace perlin::ui {
     bool FormatCodeColor(char code, uint32_t& rgb) {
@@ -59,11 +60,33 @@ namespace perlin::ui {
         return out;
     }
 
+    namespace {
+        std::string Scramble(const std::string& in) {
+            static const char* const kClasses[] = {"il!|'.,:;", "tI[] ", "fk<>(){}*\"", "abcdeghjmnopqrsuvwxyz0123456789ABCDEFGHJKLMNOPQRSTUVWXYZ"};
+            static uint32_t state = 0x9E3779B9u;
+            std::string out = in;
+            for (char& c : out) {
+                for (const char* cls : kClasses) {
+                    const std::string_view set(cls);
+                    if (set.find(c) == std::string_view::npos)
+                        continue;
+                    state ^= state << 13;
+                    state ^= state >> 17;
+                    state ^= state << 5;
+                    c = set[state % set.size()];
+                    break;
+                }
+            }
+            return out;
+        }
+    }
+
     std::string FormatCodesToRml(const std::string& text) {
         std::string out;
         std::string chunk;
         bool bold = false, italic = false, underline = false, strike = false;
         bool haveColor = false;
+        bool obfuscated = false;
         uint32_t color = 0;
         bool open = false;
         const auto close = [&] {
@@ -92,7 +115,7 @@ namespace perlin::ui {
                 out += "<span style=\"" + style + "\">";
                 open = true;
             }
-            out += EscapeRml(chunk);
+            out += EscapeRml(obfuscated ? Scramble(chunk) : chunk);
             chunk.clear();
             close();
         };
@@ -105,13 +128,13 @@ namespace perlin::ui {
                 if (FormatCodeColor(code, rgb)) {
                     haveColor = true;
                     color = rgb;
-                    bold = italic = underline = strike = false;
+                    bold = italic = underline = strike = obfuscated = false;
                 } else {
                     switch (std::tolower(static_cast<unsigned char>(code))) {
                     case 'l': bold = true; break;
                     case 'o': italic = true; break;
-                    case 'k': break;
-                    case 'r': haveColor = bold = italic = underline = strike = false; break;
+                    case 'k': obfuscated = true; break;
+                    case 'r': haveColor = bold = italic = underline = strike = obfuscated = false; break;
                     default: break;
                     }
                 }

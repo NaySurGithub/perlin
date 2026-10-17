@@ -1,3 +1,4 @@
+#include "util/Relaunch.hpp"
 #include "util/SystemInfo.hpp"
 #include "util/Env.hpp"
 #include <cstdio>
@@ -90,6 +91,13 @@ namespace perlin {
         void fatal(const char* filePath, uint16_t line, bgfx::Fatal::Enum code, const char* str) override {
             std::cout << "[bgfx] FATAL " << filePath << ":" << line << " (" << (int)code << "): " << str
                       << std::endl;
+            const std::string message = str ? str : "";
+            if (code == bgfx::Fatal::DeviceLost || message.find("DEVICE_REMOVED") != std::string::npos ||
+                message.find("DEVICE_RESET") != std::string::npos || message.find("DEVICE_HUNG") != std::string::npos) {
+                std::cout << "[bgfx] the GPU driver reset the device; restarting Perlin" << std::endl;
+                if (RelaunchSelf())
+                    std::_Exit(0);
+            }
             std::abort();
         }
         void traceVargs(const char* filePath, uint16_t line, const char* format, va_list args) override {
@@ -1006,6 +1014,13 @@ namespace perlin {
         void UploadTile(bgfx::TextureHandle tex, int kTileSize, int layer, const uint8_t* rgba, size_t stride) {
             SubmitTileMips(tex, kTileSize, layer, BuildTileMips(kTileSize, rgba, stride));
         }
+    }
+
+    int RenderContext_bgfx::MaxAtlasLayers(int tilePx) const {
+        const int limit = initialized ? std::max<int>(1, bgfx::getCaps()->limits.maxTextureLayers) : 2048;
+        const double perLayer = static_cast<double>(std::max(1, tilePx)) * std::max(1, tilePx) * 4.0 * 4.0 / 3.0;
+        const double budget = 1.3e9;
+        return std::max(256, std::min(limit, static_cast<int>(budget / perLayer)));
     }
 
     void RenderContext_bgfx::UploadAtlas(const uint8_t* rgba, int tilePx, int tiles) {

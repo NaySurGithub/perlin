@@ -132,6 +132,7 @@ namespace perlin {
         virtual void DrawHudCursor(float x, float y, float w, float h) = 0;
         virtual void UploadSkyTextures(const Texture& sun, const Texture& moon, const Texture& clouds) = 0;
         virtual void UploadAtlas(const uint8_t* rgba, int tilePx, int tiles) = 0;
+        virtual int MaxAtlasLayers(int) const { return 2048; }
         virtual void UpdateAtlasRegion(int tile, const uint8_t* rgba) = 0;
 
         virtual uint32_t UiCreateTexture(int width, int height, const uint8_t* rgba, bool linear, bool repeat = false) = 0;

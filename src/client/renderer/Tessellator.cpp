@@ -10,6 +10,7 @@ namespace perlin {
             list.clear();
         sections.clear();
         visibility.clear();
+        specials.clear();
         layer = RenderLayer::Solid;
         building = true;
     }

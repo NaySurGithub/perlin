@@ -159,10 +159,12 @@ namespace perlin::entity {
     PERLIN_ENTITY_SET(SetOwner(uint64_t rid, int64_t ownerUid), e.ownerUid = ownerUid)
     PERLIN_ENTITY_SET(Die(uint64_t rid), e.dying = true)
     PERLIN_ENTITY_SET(SetHeld(uint64_t rid, const std::string& item), e.mainHand = item)
+    PERLIN_ENTITY_SET(SetOffHand(uint64_t rid, const std::string& item), e.offHand = item)
     PERLIN_ENTITY_SET(SetArmor(uint64_t rid, int slot, const std::string& item), if (slot >= 0 && slot < 4) e.armor[slot] = item)
     PERLIN_ENTITY_SET(Hurt(uint64_t rid), e.hurtSerial++)
     PERLIN_ENTITY_SET(Swing(uint64_t rid), e.swingSerial++)
     PERLIN_ENTITY_SET(SetProperty(uint64_t rid, const std::string& key, float value), e.props[key] = value)
+    PERLIN_ENTITY_SET(SetPropertyText(uint64_t rid, const std::string& key, const std::string& text), e.propText[key] = text)
 #undef PERLIN_ENTITY_SET
 
     void EntityTracker::SetSkin(const std::string& uuid, std::shared_ptr<const SkinData> skin) {

@@ -1,3 +1,5 @@
+#include "client/CameraEffects.hpp"
+#include "client/entity/BlockEntityView.hpp"
 #include "client/ui/ItemTooltip.hpp"
 #include "client/SampleProfiler.hpp"
 #include "util/Env.hpp"
@@ -680,8 +682,17 @@ namespace perlin {
                 closeForm();
             return;
         }
+        {
+            static auto lastWarm = Clock::time_point{};
+            if (now - lastWarm > std::chrono::seconds(2)) {
+                lastWarm = now;
+                formUi.Warm(ServerPacks::Instance().Directories());
+            }
+        }
         if (live->TakeFormClosed() && formShown)
             closeForm();
+        if (formShown && !formEngine && formModel.type != ui::FormModel::Type::Custom && formUi.Ready())
+            formEngine = true;
         if (!formShown) {
             if (deathShown || invShown || pauseShown || chat.IsOpen())
                 return;
@@ -694,9 +705,8 @@ namespace perlin {
                 return;
             }
             std::cout << "[form] opened form " << sf.id << " '" << formModel.title << "'" << std::endl;
-            formEngine = formModel.type != ui::FormModel::Type::Custom && formUi.Prepare(ServerPacks::Instance().Directories());
-            if (!formEngine && formModel.type != ui::FormModel::Type::Custom)
-                std::cout << "[form] json ui unavailable: " << formUi.Problem() << ", using the built-in layout" << std::endl;
+            formUi.Warm(ServerPacks::Instance().Directories());
+            formEngine = formModel.type != ui::FormModel::Type::Custom && formUi.Ready();
             formShown = true;
             formScroll = 0.0f;
             formContentH = formViewH = 0.0f;
@@ -3306,6 +3316,8 @@ namespace perlin {
             show = true;
             t.message = tr("progressScreen.title.downloading", "Downloading packs %1", {"3/25"});
             t.progress = 0.4f;
+        } else if (PERLIN_ENV("PERLIN_PREVIEW") && !session) {
+            show = false;
         } else if (!session || (!sessionReady && session->GetState() != BedrockSession::State::Failed) || transferring) {
             show = true;
             if (transferring)
@@ -4141,6 +4153,19 @@ namespace perlin {
                 scopeFov += (target - scopeFov) * (1.0f - std::pow(0.5f, dt * 20.0f));
             }
             camera.fov = zoom.Fov(options.fov * (options.fovEffects ? player.FovModifier() : 1.0f)) * scopeFov;
+            if (sessionReady && session) {
+                CameraEffects& fx = session->Camera();
+                fx.Tick({glm::vec3(camera.x, camera.y, camera.z), camera.yaw - 90.0f, -camera.pitch});
+                camera.fov = fx.Fov(camera.fov);
+                if (fx.PoseActive()) {
+                    const CameraPose pose = fx.Pose();
+                    camera.x = pose.position.x;
+                    camera.y = pose.position.y;
+                    camera.z = pose.position.z;
+                    camera.yaw = pose.yaw + 90.0f;
+                    camera.pitch = glm::clamp(-pose.pitch, -89.0f, 89.0f);
+                }
+            }
             if (sessionReady) {
                 const uint32_t hurts = session->HurtCount();
                 const auto source = session->LatestHurtSource();
@@ -4895,6 +4920,8 @@ namespace perlin {
                 bobMatrix = BobViewMatrix(player.Bob(), player.PartialTick(), options.hand.bobStrength);
             const glm::mat4 hurtMatrix = sessionReady ? damage.ViewMatrix(partial, options.damageTilt) : glm::mat4(1.0f);
             camera.viewEffect = hurtMatrix * (options.hand.bobCamera ? bobMatrix : glm::mat4(1.0f));
+            if (sessionReady && session)
+                camera.viewEffect = session->Camera().ShakeMatrix() * camera.viewEffect;
             const glm::mat4 handViewEffect = hurtMatrix * (options.hand.bobHand ? bobMatrix : glm::mat4(1.0f));
             const glm::mat4 viewProjection = camera.ViewProjection();
             const Frustum frustum = Frustum::FromViewProjection(viewProjection);
@@ -4930,7 +4957,27 @@ namespace perlin {
                 if (shortName == "swamp")
                     fogInput.waterFogEndScale = 0.85f;
             }
-            const FogState fog = ComputeFog(env, fogInput);
+            FogState fog = ComputeFog(env, fogInput);
+            if (sessionReady && session) {
+                static auto fogCheck = std::chrono::steady_clock::now() - std::chrono::seconds(10);
+                if (std::chrono::steady_clock::now() - fogCheck > std::chrono::seconds(2)) {
+                    fogCheck = std::chrono::steady_clock::now();
+                    fogDefs.Configure(ServerPacks::Instance().Directories());
+                }
+                const std::vector<std::string> fogStack = session->Camera().FogStack();
+                if (!fogStack.empty()) {
+                    const FogMedium m = fogDefs.Resolve(fogStack, fogInput.inLava ? 2 : fogInput.underwater ? 1 : 0);
+                    const float distance = static_cast<float>(options.renderDistance * 16);
+                    if (m.start && m.end) {
+                        const float scale = m.relative ? distance : 1.0f;
+                        fog.environmentalStart = *m.start * scale;
+                        fog.environmentalEnd = std::max(*m.end * scale, fog.environmentalStart + 0.01f);
+                        fog.skyEnd = std::min(fog.skyEnd, std::max(fog.environmentalEnd, 1.0f));
+                    }
+                    if (m.color)
+                        fog.color = glm::vec4(*m.color, fog.color.w);
+                }
+            }
 
             if (preview) {
                 static int once = 0;
@@ -5023,6 +5070,16 @@ namespace perlin {
             params.screenTint[1] = 0.0f;
             params.screenTint[2] = 0.0f;
             params.screenTint[3] = options.damageTint ? damage.TintAlpha() : 0.0f;
+            if (sessionReady && session) {
+                const glm::vec4 fade = session->Camera().Tint();
+                if (fade.a > 0.0f) {
+                    const float base = params.screenTint[3];
+                    const float total = fade.a + base * (1.0f - fade.a);
+                    for (int i = 0; i < 3; i++)
+                        params.screenTint[i] = (fade[i] * fade.a + params.screenTint[i] * base * (1.0f - fade.a)) / std::max(total, 0.0001f);
+                    params.screenTint[3] = total;
+                }
+            }
 
             {
                 static float waterTile = -1, flowTile = -1, lavaTile = -1;
@@ -5364,13 +5421,17 @@ namespace perlin {
                         return s == 1;
                     };
                     pw.light = ein.light;
+                    particle::DataWorld dataWorld;
+                    dataWorld.solid = pw.solid;
+                    dataWorld.light = pw.light;
                     if (live) {
                         for (const BedrockSession::ParticleEvent& pe : live->TakeParticles()) {
                             const glm::dvec3 at(pe.x, pe.y, pe.z);
                             if (pe.event == 0) {
                                 if (player.Gliding() && pe.name.find("firework") != std::string::npos)
                                     continue;
-                                particles.SpawnNamed(pe.name, at);
+                                if (!dataParticles.Spawn(pe.name, at, pe.molang))
+                                    particles.SpawnNamed(pe.name, at);
                             } else if (pe.event == 2001 || pe.event == 2021 || pe.event == 16404) {
                                 const int bx = static_cast<int>(std::floor(pe.x)), by = static_cast<int>(std::floor(pe.y)),
                                           bz = static_cast<int>(std::floor(pe.z));
@@ -5401,6 +5462,14 @@ namespace perlin {
                         particles.Tick(pw, glm::dvec3(camera.x, camera.y, camera.z));
                     if (particleClock > 0.2)
                         particleClock = 0;
+                    {
+                        static auto dataParticleCheck = std::chrono::steady_clock::now() - std::chrono::seconds(10);
+                        if (std::chrono::steady_clock::now() - dataParticleCheck > std::chrono::seconds(2)) {
+                            dataParticleCheck = std::chrono::steady_clock::now();
+                            dataParticles.Configure(ServerPacks::Instance().Directories());
+                        }
+                        dataParticles.Update(std::min(dt, 0.1f), dataWorld);
+                    }
                     particleQuads.clear();
                     particles.Collect(static_cast<float>(particleClock / 0.05), pw, particleQuads);
                     if (const int fireTile = levelRenderer->Blocks().TileContaining("fire_1"); fireTile >= 0) {
@@ -5424,9 +5493,23 @@ namespace perlin {
                         }
                     }
                     ein.particles = &particleQuads;
+                    ein.dataParticles = &dataParticles;
+                    ein.dataWorld = dataWorld;
                     ein.tilePixels = [this](int tile, std::vector<uint8_t>& rgba) { return levelRenderer->Blocks().TilePixels(tile, rgba); };
                 }
                 { ProfScope p(3); entityRenderer.Render(entities, ein); }
+                {
+                    static std::vector<SpecialBlock> specialBlocks;
+                    static std::vector<entity::BlockEntityDraw> blockEntityDraws;
+                    specialBlocks.clear();
+                    blockEntityDraws.clear();
+                    if (levelRenderer) {
+                        levelRenderer->CollectSpecials(camera.x, camera.z, 64.0f, specialBlocks);
+                        static const BlockEntityStore emptyStore;
+                        entity::BuildBlockEntityDraws(specialBlocks, live ? live->BlockEntities() : emptyStore, blockEntityDraws);
+                        entityRenderer.RenderBlockEntities(blockEntityDraws, ein);
+                    }
+                }
             }
             if ((live || preview) && camera.mode == PerspectiveMode::FirstPerson && options.showHud &&
                 hudState.mode != ui::GameMode::Spectator && ui::UiAssets::Instance().VanillaRoot().size()) {

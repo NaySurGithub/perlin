@@ -388,6 +388,20 @@ namespace perlin {
         return result;
     }
 
+    static int SpecialKind(uint16_t id) {
+        thread_local std::vector<int8_t> memo(65536, -1);
+        int8_t& m = memo[id];
+        if (m < 0) {
+            const std::string name = BlockPalette::Instance().Name(id);
+            if (name.empty())
+                return 0;
+            const std::string shortName = name.rfind("minecraft:", 0) == 0 ? name.substr(10) : name;
+            const bool sign = shortName.size() > 5 && shortName.compare(shortName.size() - 5, 5, "_sign") == 0;
+            m = shortName == "bed" ? 1 : sign ? 2 : 0;
+        }
+        return m;
+    }
+
     static bool IsDoorId(uint16_t id) {
         thread_local std::vector<int8_t> memo(65536, -1);
         int8_t& m = memo[id];
@@ -877,6 +891,13 @@ namespace perlin {
                     }
                     if (id == 0)
                         continue;
+                    if (pass == 1 && textured) {
+                        if (const int special = SpecialKind(id)) {
+                            tess.AddSpecial(baseX + x, y, baseZ + z, id);
+                            if (special == 1)
+                                continue;
+                        }
+                    }
                     if (pass == 1 && textured && IsDoorId(id)) {
                         const bool upperHalf = BlockPalette::Instance().StateInt(id, "upper_block_bit", 0) != 0;
                         const int oy = upperHalf ? y - 1 : y + 1;

@@ -197,15 +197,16 @@ namespace perlin::ui {
             return true;
         }
 
-        Rml::FontFaceHandle GetFontFaceHandle(const Rml::String& family, Rml::Style::FontStyle, Rml::Style::FontWeight weight,
+        Rml::FontFaceHandle GetFontFaceHandle(const Rml::String& family, Rml::Style::FontStyle style, Rml::Style::FontWeight weight,
                                               int size) override {
             Face face;
             face.shadow = family.find("shadow") != Rml::String::npos;
             face.outline = family.find("outline") != Rml::String::npos;
             face.bold = weight == Rml::Style::FontWeight::Bold;
+            face.italic = style == Rml::Style::FontStyle::Italic;
             face.size = std::max(size, 1);
             for (size_t i = 0; i < faces.size(); i++)
-                if (faces[i].shadow == face.shadow && faces[i].outline == face.outline && faces[i].bold == face.bold && faces[i].size == face.size)
+                if (faces[i].shadow == face.shadow && faces[i].outline == face.outline && faces[i].bold == face.bold && faces[i].italic == face.italic && faces[i].size == face.size)
                     return static_cast<Rml::FontFaceHandle>(i + 1);
             faces.push_back(face);
             return static_cast<Rml::FontFaceHandle>(faces.size());
@@ -220,7 +221,7 @@ namespace perlin::ui {
             f.metrics.ascent = 7.0f * s;
             f.metrics.descent = 2.0f * s;
             f.metrics.line_spacing = 9.0f * s;
-            f.metrics.x_height = 5.0f * s;
+            f.metrics.x_height = 6.0f * s;
             f.metrics.underline_position = 1.0f * s;
             f.metrics.underline_thickness = std::max(1.0f, s);
             return f.metrics;
@@ -273,10 +274,23 @@ namespace perlin::ui {
                     const McFont::Glyph& g = font.Get(cp);
                     if (g.width > 0) {
                         const float x = position.x + pen + ox;
-                        const float y = position.y - 7.0f * s + oy;
-                        for (int pass = 0; pass < (f.bold ? 2 : 1); pass++)
-                            Rml::MeshUtilities::GenerateQuad(out.mesh, {x + pass * s, y}, {g.width * s, 8.0f * s}, c,
-                                                             {g.u0, g.v0}, {g.u1, g.v1});
+                        const float y = position.y - 7.0f * s + oy + g.top * s;
+                        const float w = g.width * s, h = g.height * s;
+                        for (int pass = 0; pass < (f.bold ? 2 : 1); pass++) {
+                            if (!f.italic) {
+                                Rml::MeshUtilities::GenerateQuad(out.mesh, {x + pass * s, y}, {w, h}, c, {g.u0, g.v0}, {g.u1, g.v1});
+                                continue;
+                            }
+                            const float top = (1.0f - 0.25f * g.top) * s, bottom = (1.0f - 0.25f * (g.top + g.height)) * s;
+                            const int base = static_cast<int>(out.mesh.vertices.size());
+                            const float bx = x + pass * s;
+                            out.mesh.vertices.push_back({{bx + top, y}, c, {g.u0, g.v0}});
+                            out.mesh.vertices.push_back({{bx + w + top, y}, c, {g.u1, g.v0}});
+                            out.mesh.vertices.push_back({{bx + w + bottom, y + h}, c, {g.u1, g.v1}});
+                            out.mesh.vertices.push_back({{bx + bottom, y + h}, c, {g.u0, g.v1}});
+                            for (int idx : {0, 2, 1, 0, 3, 2})
+                                out.mesh.indices.push_back(base + idx);
+                        }
                     }
                     pen += static_cast<float>(g.advance + (f.bold ? 1 : 0)) * s;
                 }
@@ -303,6 +317,7 @@ namespace perlin::ui {
             bool shadow = false;
             bool outline = false;
             bool bold = false;
+            bool italic = false;
             int size = 8;
             Rml::FontMetrics metrics{};
         };

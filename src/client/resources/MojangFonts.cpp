@@ -96,13 +96,15 @@ namespace perlin {
                 if (!mz_zip_reader_get_filename(&zip, i, name, sizeof(name)))
                     continue;
                 const std::string n = name;
-                if (n == "assets/minecraft/textures/font/ascii.png") {
+                const bool vanillaSheet = n == "assets/minecraft/textures/font/ascii.png" || n == "assets/minecraft/textures/font/accented.png" ||
+                                          n == "assets/minecraft/textures/font/nonlatin_european.png";
+                if (vanillaSheet) {
                     size_t size = 0;
                     void* bytes = mz_zip_reader_extract_to_heap(&zip, i, &size, 0);
                     if (bytes) {
                         std::error_code ec;
                         fs::create_directories(asciiOut.parent_path(), ec);
-                        std::ofstream out(asciiOut, std::ios::binary);
+                        std::ofstream out(asciiOut.parent_path() / fs::path(n).filename(), std::ios::binary);
                         out.write(static_cast<const char*>(bytes), static_cast<std::streamsize>(size));
                         mz_free(bytes);
                     }
@@ -128,6 +130,7 @@ namespace perlin {
     bool MojangFonts::Available(const std::string& dataDir) {
         std::error_code ec;
         return fs::exists(UnihexPath(dataDir), ec) && fs::file_size(UnihexPath(dataDir), ec) > 1024 && fs::exists(fs::path(dataDir) / "font" / "ascii.png", ec) &&
+               fs::exists(fs::path(dataDir) / "font" / "accented.png", ec) &&
                clientassets::Ready(dataDir);
     }
 

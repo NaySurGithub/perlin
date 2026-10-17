@@ -12,6 +12,8 @@
 #include "network/PlayerConstants.hpp"
 #include "client/multiplayer/PackDownloader.hpp"
 
+#include "client/multiplayer/BlockEntities.hpp"
+#include "client/CameraEffects.hpp"
 #include <array>
 #include <utility>
 #include <condition_variable>
@@ -208,6 +210,7 @@ namespace perlin {
             double x = 0, y = 0, z = 0;
             int32_t data = 0;
             std::string name;
+            std::string molang;
         };
         std::vector<ParticleEvent> TakeParticles();
         struct PendingPlace {
@@ -462,7 +465,38 @@ void RequestRespawn();
         bool InventoryIsOpen() const { std::lock_guard lock(statusMutex); return inventoryOpen; }
         bool TakeServerClosedInventory();
 
+        struct SignEditRequest {
+            int x = 0, y = 0, z = 0;
+            bool front = true;
+        };
+        struct MapView {
+            int width = 128, height = 128;
+            std::vector<uint32_t> pixels;
+            bool locked = false;
+            uint64_t revision = 0;
+        };
+        struct NpcDialogueView {
+            uint64_t entityId = 0;
+            std::string dialogue, screenName, npcName, actionJson;
+            bool open = true;
+        };
+        struct TradeView {
+            int windowId = 0;
+            std::string title;
+            std::vector<uint8_t> offers;
+            int64_t villagerUid = 0;
+            bool newUi = false;
+        };
+        CameraEffects& Camera() { return cameraEffects; }
+        bool TakeSignRequest(SignEditRequest& out);
+        bool SendSignText(int x, int y, int z, bool front, const std::string& text);
+        int WindowProperty(int window, int property, int fallback) const;
+        bool TakeNpcDialogue(NpcDialogueView& out);
+        bool TakeTrade(TradeView& out);
+        std::optional<MapView> Map(int64_t id) const;
         Level& NetLevel() { return netLevel; }
+        BlockEntityStore& BlockEntities() { return blockEntities; }
+        const BlockEntityStore& BlockEntities() const { return blockEntities; }
         bool HasSpawn() const { return gotSpawn; }
         int ChunksReceived() const { return chunksReceived; }
         void PumpRequests(int budget);
@@ -474,7 +508,41 @@ void RequestRespawn();
         void HandleBatch(const std::vector<uint8_t>& msg);
         void OnGamePacket(uint32_t id, const std::vector<uint8_t>& body);
         void RegisterPacketHandlers();
+        void ParseBlockEntities(const uint8_t* data, size_t size, bool scan);
+        BlockEntityStore blockEntities;
         void RegisterServerUiHandlers();
+        void RegisterWorldExtraHandlers();
+        void RegisterIgnoredHandlers();
+        struct PropertyDef {
+            std::string name;
+            int type = 0;
+            std::vector<std::string> values;
+        };
+        void ParsePropertySchema(const std::vector<uint8_t>& nbt);
+        void ApplyEntityProperties(uint64_t rid, const std::string& type, const proto::EntityProperties& props);
+        mutable std::mutex propertyMutex;
+        std::unordered_map<std::string, std::vector<PropertyDef>> propertySchemas;
+        CameraEffects cameraEffects;
+        struct CameraPreset {
+            std::string name, parent;
+            std::optional<glm::vec3> position;
+            std::optional<glm::vec2> rotation;
+            std::optional<glm::vec2> offset;
+            std::optional<glm::vec3> entityOffset;
+        };
+        std::vector<CameraPreset> cameraPresets;
+        mutable std::mutex worldExtraMutex;
+        std::deque<SignEditRequest> signRequests;
+        std::map<uint32_t, SignEditRequest> signForms;
+        uint32_t signFormSerial = 0;
+        std::map<int, std::map<int, int>> windowData;
+        std::map<int64_t, MapView> maps;
+        std::deque<NpcDialogueView> npcDialogues;
+        std::optional<TradeView> pendingTrade;
+        std::map<int64_t, glm::vec3> trackedLocations;
+        std::atomic<uint64_t> syntheticEntityId{0x7000000000ull};
+        std::atomic<int> gameCreditsStatus{0};
+        std::atomic<int> controlsScheme{0};
         mutable std::mutex serverUiMutex;
         std::deque<ServerForm> pendingForms;
         std::atomic<bool> formClosed{false};

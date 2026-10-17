@@ -12,6 +12,7 @@
 #include <glm/gtc/matrix_transform.hpp>
 
 #include <algorithm>
+#include <map>
 #include <deque>
 #include <cmath>
 #include <cstdlib>
@@ -1317,7 +1318,8 @@ namespace perlin::entity {
     }
 
     void EntityRenderer::DrawParticles(const FrameIn& in) {
-        if (!in.particles || in.particles->empty() || !renderer)
+        const bool haveCustom = in.dataParticles && in.dataParticles->Count() > 0;
+        if (!renderer || ((!in.particles || in.particles->empty()) && !haveCustom))
             return;
         if (!particleSheet && !particleSheetTried) {
             particleSheetTried = true;
@@ -1335,7 +1337,8 @@ namespace perlin::entity {
             std::vector<uint32_t> indices;
         };
         std::unordered_map<int, Batch> batches;
-        for (const particle::Quad& q : *in.particles) {
+        static const std::vector<particle::Quad> noQuads;
+        for (const particle::Quad& q : in.particles ? *in.particles : noQuads) {
             Batch& b = batches[q.terrainTile];
             const glm::vec3 c = glm::vec3(q.centre - base);
             const glm::vec3 r = right * q.half, u = up * q.half;
@@ -1349,6 +1352,59 @@ namespace perlin::entity {
                 b.indices.push_back(i0 + k);
         }
         const glm::mat4 model = glm::translate(glm::mat4(1.0f), glm::vec3(base));
+        if (haveCustom) {
+            particle::CameraView view;
+            view.position = in.camera;
+            view.right = right;
+            view.up = up;
+            view.forward = forward;
+            static std::vector<particle::CustomQuad> custom;
+            custom.clear();
+            in.dataParticles->Collect(view, in.dataWorld, custom);
+            struct CustomBatch {
+                std::vector<UiVertex> vertices;
+                std::vector<uint32_t> indices;
+            };
+            std::map<std::pair<std::string, int>, CustomBatch> grouped;
+            for (const particle::CustomQuad& q : custom) {
+                CustomBatch& b = grouped[{q.texture, q.blend}];
+                const glm::vec3 c = glm::vec3(q.centre - base);
+                const uint32_t i0 = static_cast<uint32_t>(b.vertices.size());
+                const glm::vec3 p0 = c - q.right - q.up, p1 = c + q.right - q.up, p2 = c + q.right + q.up, p3 = c - q.right + q.up;
+                b.vertices.push_back({p0.x, p0.y, p0.z, q.abgr, q.u0, q.v1});
+                b.vertices.push_back({p1.x, p1.y, p1.z, q.abgr, q.u1, q.v1});
+                b.vertices.push_back({p2.x, p2.y, p2.z, q.abgr, q.u1, q.v0});
+                b.vertices.push_back({p3.x, p3.y, p3.z, q.abgr, q.u0, q.v0});
+                for (uint32_t k : {0u, 1u, 2u, 0u, 2u, 3u, 0u, 2u, 1u, 0u, 3u, 2u})
+                    b.indices.push_back(i0 + k);
+            }
+            for (auto& [keyPair, b] : grouped) {
+                auto cached = particleTextures.find(keyPair.first);
+                if (cached == particleTextures.end()) {
+                    uint32_t id = 0;
+                    Texture t;
+                    if (ui::UiAssets::Instance().Image(keyPair.first, t) && t.width > 0)
+                        id = renderer->UiCreateTexture(t.width, t.height, t.pixels.data(), false);
+                    cached = particleTextures.emplace(keyPair.first, id).first;
+                }
+                if (!cached->second || b.vertices.empty())
+                    continue;
+                const uint32_t mesh = renderer->UiCreateFrameMesh(b.vertices.data(), static_cast<uint32_t>(b.vertices.size()), b.indices.data(),
+                                                             static_cast<uint32_t>(b.indices.size()));
+                if (!mesh)
+                    continue;
+                pendingMeshes.push_back(mesh);
+                UiDraw draw;
+                draw.mesh = mesh;
+                draw.texture = cached->second;
+                std::copy_n(&model[0][0], 16, draw.model);
+                draw.premultiplied = false;
+                StyleFromMaterial(draw, keyPair.second == 1 ? "particles_add" : (keyPair.second == 2 ? "particles_blend" : "particles_alpha"));
+                draw.alphaCutoff = keyPair.second == 0 ? 0.5f : 0.02f;
+                draw.emissive = 2;
+                renderer->UiSubmit(UiLayer::World, draw);
+            }
+        }
         for (auto& [tile, b] : batches) {
             uint32_t texture = 0;
             if (tile < 0) {
@@ -1457,7 +1513,7 @@ namespace perlin::entity {
                     continue;
                 const ui::McFont::Glyph& g = font.Get(cp);
                 if (g.width > 0)
-                    quad(textV, textI, pen, rowY, pen + static_cast<float>(g.width), rowY + 8.0f, g.u0, g.v0, g.u1, g.v1, PackColor(col));
+                    quad(textV, textI, pen, rowY + g.top, pen + static_cast<float>(g.width), rowY + g.top + g.height, g.u0, g.v0, g.u1, g.v1, PackColor(col));
                 pen += static_cast<float>(g.advance) + (bold ? 1.0f : 0.0f);
             }
             }
@@ -1566,6 +1622,10 @@ namespace perlin::entity {
             if (e.isSelf && in.firstPerson)
                 continue;
             considered++;
+            if (e.type == "minecraft:painting") {
+                DrawPainting(e, in);
+                continue;
+            }
             auto& slot = views[e.runtimeId];
             if (!slot)
                 slot = std::make_unique<View>();
@@ -1940,5 +2000,371 @@ namespace perlin::entity {
         model[3] = glm::vec4(static_cast<float>(in.camera.x), static_cast<float>(in.camera.y), static_cast<float>(in.camera.z), 1.0f);
         std::copy_n(&model[0][0], 16, draw.model);
         renderer->UiSubmit(UiLayer::World, draw);
+    }
+
+    uint32_t EntityRenderer::TextureByPath(const std::string& path) {
+        auto it = textures.find(path);
+        if (it == textures.end()) {
+            Texture t;
+            uint32_t id = 0;
+            if (ui::UiAssets::Instance().Image(path, t) && t.width > 0)
+                id = renderer->UiCreateTexture(t.width, t.height, t.pixels.data(), false);
+            else if (!warned[path]) {
+                warned[path] = true;
+                std::cout << "[entity] texture " << path << " not found" << std::endl;
+            }
+            it = textures.emplace(path, id).first;
+        }
+        return it->second;
+    }
+
+    namespace {
+        struct BedCube {
+            float o[3], s[3], uv[2];
+        };
+
+        const BedCube kBedCubes[] = {
+            {{0, 0, 0}, {16, 32, 6}, {0, 0}},   {{3, 31, 6}, {10, 1, 3}, {38, 2}}, {{3, 0, 6}, {10, 1, 3}, {38, 38}},
+            {{15, 3, 6}, {1, 26, 3}, {52, 6}},  {{0, 3, 6}, {1, 26, 3}, {44, 6}},  {{13, 29, 6}, {3, 3, 3}, {12, 38}},
+            {{0, 29, 6}, {3, 3, 3}, {0, 38}},   {{13, 0, 6}, {3, 3, 3}, {12, 44}}, {{0, 0, 6}, {3, 3, 3}, {0, 44}},
+        };
+
+        const char* const kDyeNames[] = {"white", "orange", "magenta", "light_blue", "yellow", "lime", "pink", "gray",
+                                         "silver", "cyan", "purple", "blue", "brown", "green", "red", "black"};
+
+        struct WrappedLine {
+            std::string text;
+        };
+
+        std::vector<std::string> WrapSignText(const std::string& text, float maxWidth, int maxLines) {
+            ui::McFont& font = ui::McFont::Instance();
+            std::vector<std::string> lines;
+            for (size_t start = 0;;) {
+                const size_t nl = text.find('\n', start);
+                std::string row = text.substr(start, nl == std::string::npos ? std::string::npos : nl - start);
+                while (!row.empty() && font.Width(row) > maxWidth) {
+                    size_t cut = row.size();
+                    while (cut > 1 && font.Width(row.substr(0, cut)) > maxWidth)
+                        cut--;
+                    const size_t space = row.rfind(' ', cut);
+                    size_t take = space != std::string::npos && space > 0 ? space : cut;
+                    lines.push_back(row.substr(0, take));
+                    row.erase(0, take);
+                    while (!row.empty() && row[0] == ' ')
+                        row.erase(0, 1);
+                }
+                lines.push_back(row);
+                if (nl == std::string::npos)
+                    break;
+                start = nl + 1;
+            }
+            if (static_cast<int>(lines.size()) > maxLines)
+                lines.resize(static_cast<size_t>(maxLines));
+            return lines;
+        }
+    }
+
+    namespace {
+        struct PaintingMotive {
+            const char* title;
+            int w, h, ox, oy;
+        };
+
+        const PaintingMotive kPaintings[] = {
+            {"Kebab", 16, 16, 0, 0},     {"Aztec", 16, 16, 16, 0},     {"Alban", 16, 16, 32, 0},     {"Aztec2", 16, 16, 48, 0},
+            {"Bomb", 16, 16, 64, 0},     {"Plant", 16, 16, 80, 0},     {"Wasteland", 16, 16, 96, 0}, {"Pool", 32, 16, 0, 32},
+            {"Courbet", 32, 16, 32, 32}, {"Sea", 32, 16, 64, 32},      {"Sunset", 32, 16, 96, 32},   {"Creebet", 32, 16, 128, 32},
+            {"Wanderer", 16, 32, 0, 64}, {"Graham", 16, 32, 16, 64},   {"Match", 32, 32, 0, 128},    {"Bust", 32, 32, 32, 128},
+            {"Stage", 32, 32, 64, 128},  {"Void", 32, 32, 96, 128},    {"SkullAndRoses", 32, 32, 128, 128}, {"Wither", 32, 32, 160, 128},
+            {"Fighters", 64, 32, 0, 96}, {"Pointer", 64, 64, 0, 192},  {"Pigscene", 64, 64, 64, 192}, {"BurningSkull", 64, 64, 128, 192},
+            {"Skeleton", 64, 48, 192, 64}, {"DonkeyKong", 64, 48, 192, 112}, {"Earth", 32, 32, 0, 160}, {"Wind", 32, 32, 32, 160},
+            {"Fire", 32, 32, 64, 160},   {"Water", 32, 32, 96, 160},   {"baroque", 32, 32, -1, 0},   {"humble", 32, 32, -1, 0},
+            {"meditative", 16, 16, -1, 0}, {"prairie_ride", 16, 32, -1, 0}, {"unpacked", 64, 64, -1, 0}, {"backyard", 48, 64, -1, 0},
+            {"bouquet", 48, 48, -1, 0},  {"cavebird", 48, 48, -1, 0},  {"changing", 64, 32, -1, 0},  {"cotan", 48, 48, -1, 0},
+            {"endboss", 48, 48, -1, 0},  {"fern", 48, 48, -1, 0},      {"finding", 64, 32, -1, 0},   {"lowmist", 64, 32, -1, 0},
+            {"orb", 64, 64, -1, 0},      {"owlemons", 48, 48, -1, 0},  {"passage", 64, 32, -1, 0},   {"pond", 48, 64, -1, 0},
+            {"sunflowers", 48, 48, -1, 0}, {"tides", 48, 48, -1, 0},   {"dennis", 48, 48, -1, 0},
+        };
+    }
+
+    void EntityRenderer::DrawPainting(const Entity& e, const FrameIn& in) {
+        const auto title = e.propText.find("painting_motive");
+        const auto direction = e.props.find("painting_direction");
+        if (title == e.propText.end() || direction == e.props.end() || !renderer)
+            return;
+        const glm::dvec3 delta = e.pos - in.camera;
+        if (glm::dot(delta, delta) > 96.0 * 96.0)
+            return;
+        const PaintingMotive* motive = &kPaintings[0];
+        for (const PaintingMotive& m : kPaintings)
+            if (title->second == m.title) {
+                motive = &m;
+                break;
+            }
+        static const float kYaw[4] = {180.0f, 90.0f, 0.0f, 270.0f};
+        const int dir = std::clamp(static_cast<int>(direction->second), 0, 3);
+        const float yaw = kYaw[dir] * kDeg;
+        const float sn = std::sin(yaw), cs = std::cos(yaw);
+        const float hw = static_cast<float>(motive->w) / 32.0f, hh = static_cast<float>(motive->h) / 32.0f;
+        const float depth = 1.0f / 32.0f;
+        const bool atlas = motive->ox >= 0;
+        const uint32_t texture = TextureByPath(atlas ? "textures/painting/kz" : std::string("textures/painting/") + motive->title);
+        const uint32_t borderTexture = atlas ? texture : TextureByPath("textures/painting/kz");
+        if (!texture)
+            return;
+        const glm::dvec3 base(std::floor(in.camera.x), std::floor(in.camera.y), std::floor(in.camera.z));
+        const glm::vec3 centre = glm::vec3(e.pos - base);
+        const auto world = [&](float x, float y, float z) {
+            return centre + glm::vec3(cs * x + sn * z, y, -sn * x + cs * z);
+        };
+        glm::vec3 lit(1.0f);
+        if (in.light) {
+            const glm::vec3 front(sn * -1.0f, 0.0f, cs * -1.0f);
+            lit = in.light(e.pos + glm::dvec3(front.x * 0.6, 0.0, front.z * 0.6));
+        }
+        const uint32_t color = PackColor(lit);
+        float fu0 = 0, fv0 = 0, fu1 = 1, fv1 = 1;
+        float bu0 = 192.0f / 256.0f, bv0 = 0.0f, bu1 = 208.0f / 256.0f, bv1 = 16.0f / 256.0f;
+        if (atlas) {
+            fu0 = static_cast<float>(motive->ox) / 256.0f;
+            fv0 = static_cast<float>(motive->oy) / 256.0f;
+            fu1 = static_cast<float>(motive->ox + motive->w) / 256.0f;
+            fv1 = static_cast<float>(motive->oy + motive->h) / 256.0f;
+        }
+        std::vector<UiVertex> front, border;
+        std::vector<uint32_t> fi, bi;
+        const auto quad = [](std::vector<UiVertex>& vv, std::vector<uint32_t>& ii, glm::vec3 p0, glm::vec3 p1, glm::vec3 p2, glm::vec3 p3,
+                             uint32_t c, float u0, float v0, float u1, float v1) {
+            const uint32_t i0 = static_cast<uint32_t>(vv.size());
+            vv.push_back({p0.x, p0.y, p0.z, c, u0, v1});
+            vv.push_back({p1.x, p1.y, p1.z, c, u1, v1});
+            vv.push_back({p2.x, p2.y, p2.z, c, u1, v0});
+            vv.push_back({p3.x, p3.y, p3.z, c, u0, v0});
+            for (uint32_t k : {0u, 1u, 2u, 0u, 2u, 3u, 0u, 2u, 1u, 0u, 3u, 2u})
+                ii.push_back(i0 + k);
+        };
+        quad(front, fi, world(hw, -hh, -depth), world(-hw, -hh, -depth), world(-hw, hh, -depth), world(hw, hh, -depth), color, fu0, fv0, fu1, fv1);
+        quad(border, bi, world(-hw, -hh, depth), world(hw, -hh, depth), world(hw, hh, depth), world(-hw, hh, depth), color, bu0, bv0, bu1, bv1);
+        quad(border, bi, world(hw, -hh, depth), world(hw, -hh, -depth), world(hw, hh, -depth), world(hw, hh, depth), color, bu0, bv0, bu1, bv1);
+        quad(border, bi, world(-hw, -hh, -depth), world(-hw, -hh, depth), world(-hw, hh, depth), world(-hw, hh, -depth), color, bu0, bv0, bu1, bv1);
+        quad(border, bi, world(-hw, hh, depth), world(hw, hh, depth), world(hw, hh, -depth), world(-hw, hh, -depth), color, bu0, bv0, bu1, bv1);
+        quad(border, bi, world(-hw, -hh, -depth), world(hw, -hh, -depth), world(hw, -hh, depth), world(-hw, -hh, depth), color, bu0, bv0, bu1, bv1);
+        glm::mat4 model(1.0f);
+        model[3] = glm::vec4(static_cast<float>(base.x), static_cast<float>(base.y), static_cast<float>(base.z), 1.0f);
+        const auto submit = [&](std::vector<UiVertex>& vv, std::vector<uint32_t>& ii, uint32_t tex) {
+            if (!tex || vv.empty())
+                return;
+            const uint32_t mesh = renderer->UiCreateFrameMesh(vv.data(), static_cast<uint32_t>(vv.size()), ii.data(), static_cast<uint32_t>(ii.size()));
+            if (!mesh)
+                return;
+            pendingMeshes.push_back(mesh);
+            UiDraw draw;
+            draw.mesh = mesh;
+            draw.texture = tex;
+            std::copy_n(&model[0][0], 16, draw.model);
+            draw.premultiplied = false;
+            draw.alphaCutoff = 0.1f;
+            draw.blend = 0;
+            draw.depth = true;
+            draw.depthWrite = true;
+            draw.emissive = 0;
+            renderer->UiSubmit(UiLayer::World, draw);
+        };
+        submit(front, fi, texture);
+        submit(border, bi, borderTexture);
+        drawn++;
+    }
+
+    void EntityRenderer::RenderBlockEntities(const std::vector<BlockEntityDraw>& draws, const FrameIn& in) {
+        if (!renderer || draws.empty())
+            return;
+        const std::string& root = ui::UiAssets::Instance().VanillaRoot();
+        if (root.empty())
+            return;
+        ui::McFont& font = ui::McFont::Instance();
+        if (!fontTexture || fontTextureVersion != font.Version()) {
+            if (fontTexture)
+                renderer->UiDestroyTexture(fontTexture);
+            fontTexture = renderer->UiCreateTexture(font.AtlasWidth(), font.AtlasHeight(), font.Atlas().data(), false);
+            fontTextureVersion = font.Version();
+        }
+        const auto submit = [&](std::vector<UiVertex>& vv, std::vector<uint32_t>& ii, uint32_t texture, float cutoff) {
+            if (vv.empty() || !texture)
+                return;
+            const uint32_t mesh = renderer->UiCreateFrameMesh(vv.data(), static_cast<uint32_t>(vv.size()), ii.data(), static_cast<uint32_t>(ii.size()));
+            if (!mesh)
+                return;
+            pendingMeshes.push_back(mesh);
+            UiDraw draw;
+            draw.mesh = mesh;
+            draw.texture = texture;
+            draw.premultiplied = false;
+            draw.alphaCutoff = cutoff;
+            draw.blend = 0;
+            draw.depth = true;
+            draw.depthWrite = true;
+            draw.emissive = 0;
+            renderer->UiSubmit(UiLayer::World, draw);
+        };
+        std::unordered_map<int, std::pair<std::vector<UiVertex>, std::vector<uint32_t>>> beds;
+        std::pair<std::vector<UiVertex>, std::vector<uint32_t>> text;
+        const double maxDist = 64.0;
+        for (const BlockEntityDraw& d : draws) {
+            const glm::dvec3 centre = d.origin + glm::dvec3(0.5, 0.5, 0.5);
+            const glm::dvec3 delta = centre - in.camera;
+            const double dist2 = glm::dot(delta, delta);
+            if (dist2 > maxDist * maxDist)
+                continue;
+            if (in.frustum && !in.frustum->Visible(static_cast<float>(d.origin.x) - 1.0f, static_cast<float>(d.origin.y) - 0.5f, static_cast<float>(d.origin.z) - 1.0f,
+                                                   static_cast<float>(d.origin.x) + 2.0f, static_cast<float>(d.origin.y) + 1.5f, static_cast<float>(d.origin.z) + 2.0f))
+                continue;
+            glm::vec3 light(1.0f);
+            if (in.light)
+                light = in.light(centre);
+            const float ryRad = d.yaw * kDeg;
+            const float cs = std::cos(ryRad), sn = std::sin(ryRad);
+            const auto rotate = [&](float lx, float lz, float& ox, float& oz) {
+                const float dx = lx - 0.5f, dz = lz - 0.5f;
+                ox = 0.5f + dx * cs - dz * sn;
+                oz = 0.5f + dx * sn + dz * cs;
+            };
+            const glm::vec3 base(static_cast<float>(d.origin.x), static_cast<float>(d.origin.y), static_cast<float>(d.origin.z));
+            if (d.kind == BlockEntityDraw::Kind::Bed) {
+                auto& batch = beds[std::clamp(d.color, 0, 15)];
+                const auto map = [&](float x, float y, float z) {
+                    float ox, oz;
+                    rotate(x / 16.0f, y / 16.0f, ox, oz);
+                    return base + glm::vec3(ox, (9.0f - z) / 16.0f, oz);
+                };
+                for (const BedCube& c : kBedCubes) {
+                    const float x0 = c.o[0], y0 = c.o[1], z0 = c.o[2], sx = c.s[0], sy = c.s[1], sz = c.s[2];
+                    const float x1 = x0 + sx, y1 = y0 + sy, z1 = z0 + sz;
+                    const float u = c.uv[0], v = c.uv[1];
+                    struct Face {
+                        glm::vec3 p[4];
+                        float u0, v0, u1, v1;
+                        float shade;
+                    };
+                    const float tw = 64.0f, th = 64.0f;
+                    const auto face = [&](glm::vec3 tl, glm::vec3 tr, glm::vec3 br, glm::vec3 bl, float fu, float fv, float fw, float fh, float shade) {
+                        const uint32_t color = PackColor(light * shade);
+                        const uint32_t i0 = static_cast<uint32_t>(batch.first.size());
+                        const float uu0 = fu / tw, vv0 = fv / th, uu1 = (fu + fw) / tw, vv1 = (fv + fh) / th;
+                        batch.first.push_back({tl.x, tl.y, tl.z, color, uu0, vv0});
+                        batch.first.push_back({tr.x, tr.y, tr.z, color, uu1, vv0});
+                        batch.first.push_back({br.x, br.y, br.z, color, uu1, vv1});
+                        batch.first.push_back({bl.x, bl.y, bl.z, color, uu0, vv1});
+                        for (uint32_t k : {0u, 1u, 2u, 0u, 2u, 3u})
+                            batch.second.push_back(i0 + k);
+                    };
+                    face(map(x1, y1, z0), map(x0, y1, z0), map(x0, y0, z0), map(x1, y0, z0), u + sz, v + sz, sx, sy, 1.0f);
+                    face(map(x0, y1, z1), map(x1, y1, z1), map(x1, y0, z1), map(x0, y0, z1), u + 2 * sz + sx, v + sz, sx, sy, 0.5f);
+                    face(map(x0, y1, z0), map(x0, y1, z1), map(x0, y0, z1), map(x0, y0, z0), u, v + sz, sz, sy, 0.8f);
+                    face(map(x1, y1, z1), map(x1, y1, z0), map(x1, y0, z0), map(x1, y0, z1), u + sz + sx, v + sz, sz, sy, 0.8f);
+                    face(map(x0, y1, z0), map(x1, y1, z0), map(x1, y1, z1), map(x0, y1, z1), u + sz, v, sx, sz, 0.9f);
+                    face(map(x0, y0, z1), map(x1, y0, z1), map(x1, y0, z0), map(x0, y0, z0), u + sz + sx, v, sx, sz, 0.6f);
+                }
+                continue;
+            }
+            const bool hasFront = !d.front.empty(), hasBack = !d.back.empty();
+            if (!hasFront && !hasBack)
+                continue;
+            if (dist2 > 32.0 * 32.0 || !fontTexture)
+                continue;
+            float centerY, frontZ, backZ;
+            float scale, maxWidth, lineHeight;
+            if (d.hanging) {
+                centerY = 7.0f / 16.0f;
+                frontZ = 9.0f / 16.0f + 0.002f;
+                backZ = 7.0f / 16.0f - 0.002f;
+                scale = 0.0140625f;
+                maxWidth = 60.0f;
+                lineHeight = 9.0f;
+            } else if (d.wall) {
+                centerY = 8.5f / 16.0f;
+                frontZ = 1.5f / 16.0f + 0.002f;
+                backZ = -1.0f;
+                scale = 0.0104167f;
+                maxWidth = 90.0f;
+                lineHeight = 10.0f;
+            } else {
+                centerY = 13.0f / 16.0f;
+                frontZ = 8.6667f / 16.0f + 0.002f;
+                backZ = 7.3333f / 16.0f - 0.002f;
+                scale = 0.0104167f;
+                maxWidth = 90.0f;
+                lineHeight = 10.0f;
+            }
+            const float centerZ = d.hanging ? 0.5f : d.wall ? 0.5f : 0.5f;
+            (void)centerZ;
+            const auto emit = [&](const std::string& body, uint32_t argb, bool glow, bool frontSide, float planeZ) {
+                if (body.empty() || planeZ < -0.5f)
+                    return;
+                const std::vector<std::string> lines = WrapSignText(body, maxWidth, 4);
+                const float dir = frontSide ? 1.0f : -1.0f;
+                const float rx = frontSide ? 1.0f : -1.0f;
+                const float baseR = static_cast<float>(argb & 0xFF) / 255.0f, baseG = static_cast<float>((argb >> 8) & 0xFF) / 255.0f,
+                            baseB = static_cast<float>((argb >> 16) & 0xFF) / 255.0f;
+                const glm::vec3 ink(baseB, baseG, baseR);
+                const glm::vec3 lit = glow ? glm::vec3(1.0f) : light;
+                const float top = -static_cast<float>(lines.size()) * lineHeight * 0.5f;
+                for (size_t row = 0; row < lines.size(); row++) {
+                    const std::string& line = lines[row];
+                    const float width = font.Width(line);
+                    float pen = -width * 0.5f;
+                    glm::vec3 col = ink;
+                    bool bold = false;
+                    const float y0 = top + static_cast<float>(row) * lineHeight;
+                    for (size_t i = 0; i < line.size();) {
+                        uint32_t cp = 0;
+                        if (!ui::McFont::Next(line, i, cp))
+                            break;
+                        if (cp == 0xA7 && i < line.size()) {
+                            const char code = static_cast<char>(std::tolower(static_cast<unsigned char>(line[i++])));
+                            uint32_t rgb = 0;
+                            if (ui::FormatCodeColor(code, rgb)) {
+                                col = glm::vec3(static_cast<float>((rgb >> 16) & 0xFF), static_cast<float>((rgb >> 8) & 0xFF), static_cast<float>(rgb & 0xFF)) / 255.0f;
+                                bold = false;
+                            } else if (code == 'l')
+                                bold = true;
+                            else if (code == 'r') {
+                                col = ink;
+                                bold = false;
+                            }
+                            continue;
+                        }
+                        if (cp < 0x20)
+                            continue;
+                        const ui::McFont::Glyph& g = font.Get(cp);
+                        if (g.width > 0) {
+                            const uint32_t color = PackColor(col * lit);
+                            for (int pass = 0; pass < (bold ? 2 : 1); pass++) {
+                                const float gx0 = pen + static_cast<float>(pass), gx1 = gx0 + static_cast<float>(g.width);
+                                const auto corner = [&](float gx, float gy) {
+                                    float ox, oz;
+                                    const float lx = 0.5f + rx * gx * scale, lz = planeZ + dir * 0.0f;
+                                    rotate(lx, lz, ox, oz);
+                                    return base + glm::vec3(ox, centerY - gy * scale, oz);
+                                };
+                                const uint32_t i0 = static_cast<uint32_t>(text.first.size());
+                                const glm::vec3 p0 = corner(gx0, y0 + g.top + g.height), p1 = corner(gx1, y0 + g.top + g.height), p2 = corner(gx1, y0 + g.top), p3 = corner(gx0, y0 + g.top);
+                                text.first.push_back({p0.x, p0.y, p0.z, color, g.u0, g.v1});
+                                text.first.push_back({p1.x, p1.y, p1.z, color, g.u1, g.v1});
+                                text.first.push_back({p2.x, p2.y, p2.z, color, g.u1, g.v0});
+                                text.first.push_back({p3.x, p3.y, p3.z, color, g.u0, g.v0});
+                                for (uint32_t k : {0u, 1u, 2u, 0u, 2u, 3u})
+                                    text.second.push_back(i0 + k);
+                            }
+                        }
+                        pen += static_cast<float>(g.advance) + (bold ? 1.0f : 0.0f);
+                    }
+                }
+            };
+            emit(d.front, d.frontColor, d.frontGlow, true, frontZ);
+            emit(d.back, d.backColor, d.backGlow, false, backZ);
+        }
+        for (auto& [color, batch] : beds)
+            submit(batch.first, batch.second, TextureByPath(std::string("textures/entity/bed/") + kDyeNames[color]), 0.0f);
+        submit(text.first, text.second, fontTexture, 0.1f);
     }
 }

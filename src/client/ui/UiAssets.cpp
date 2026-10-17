@@ -158,8 +158,16 @@ namespace perlin::ui {
                     return std::string("pack ") + rel;
         }
         for (const char* name : {"/font/default8.png", "/font/ascii.png"})
-            if (LoadTexture(dataDir + name, t) && apply(t))
+            if (LoadTexture(dataDir + name, t) && apply(t)) {
+                if (std::string(name) == "/font/ascii.png") {
+                    Texture accented, nonlatin;
+                    const bool haveAccented = LoadTexture(dataDir + "/font/accented.png", accented);
+                    const bool haveNonlatin = LoadTexture(dataDir + "/font/nonlatin_european.png", nonlatin);
+                    font.LoadVanillaSheets({haveAccented ? accented.pixels.data() : nullptr, accented.width, accented.height},
+                                           {haveNonlatin ? nonlatin.pixels.data() : nullptr, nonlatin.width, nonlatin.height});
+                }
                 return "data dir" + std::string(name);
+            }
         font.UseBuiltin();
         return "built-in face";
     }

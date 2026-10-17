@@ -157,4 +157,20 @@ namespace perlin {
             return false;
         return Payload(s, type, 0, out);
     }
+
+    size_t NetworkNbtPrefix(const uint8_t* data, size_t size, ui::Json& out) {
+        if (!data || size == 0)
+            return 0;
+        ReadStream s(data, size);
+        uint8_t type = 0;
+        s.u8(type);
+        if (!s.ok || type != 10)
+            return 0;
+        std::string rootName;
+        if (!ReadName(s, rootName))
+            return 0;
+        if (!Payload(s, type, 0, out) || !s.ok)
+            return 0;
+        return size - s.remaining();
+    }
 }

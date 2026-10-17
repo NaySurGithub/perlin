@@ -1,4 +1,5 @@
 #pragma once
+#include "client/particle/DataParticles.hpp"
 #include "client/Options.hpp"
 #include "client/particle/ParticleSystem.hpp"
 #include "client/entity/EntityAssets.hpp"
@@ -15,6 +16,19 @@ namespace perlin {
 }
 
 namespace perlin::entity {
+    struct BlockEntityDraw {
+        enum class Kind { Bed, Sign };
+        Kind kind = Kind::Bed;
+        glm::dvec3 origin{0.0};
+        float yaw = 0.0f;
+        int color = 14;
+        bool hanging = false;
+        bool wall = false;
+        std::string front, back;
+        uint32_t frontColor = 0xFF000000u, backColor = 0xFF000000u;
+        bool frontGlow = false, backGlow = false;
+    };
+
     class EntityRenderer {
     public:
         EntityRenderer();
@@ -45,6 +59,8 @@ namespace perlin::entity {
             bool ownNametag = false;
             SkinParts ownParts;
             const std::vector<particle::Quad>* particles = nullptr;
+            const particle::DataParticles* dataParticles = nullptr;
+            particle::DataWorld dataWorld;
             std::function<bool(int, std::vector<uint8_t>&)> tilePixels;
             glm::dvec3 playerPos{0.0};
             float pixelScale = 0;
@@ -53,6 +69,7 @@ namespace perlin::entity {
             std::vector<std::pair<glm::dvec3, glm::dvec3>> outlineShape;
         };
         void Render(const std::vector<Entity>& entities, const FrameIn& in);
+        void RenderBlockEntities(const std::vector<BlockEntityDraw>& draws, const FrameIn& in);
 
         struct FpState {
             float attackTime = 0, armHeight = 1, offArmHeight = 1;
@@ -98,10 +115,13 @@ namespace perlin::entity {
         };
         std::vector<Tag> tags;
         void DrawNametags(const FrameIn& in);
+        uint32_t TextureByPath(const std::string& path);
+        void DrawPainting(const Entity& e, const FrameIn& in);
         void DrawParticles(const FrameIn& in);
         uint32_t particleSheet = 0;
         bool particleSheetTried = false;
         std::unordered_map<int, uint32_t> particleTiles;
+        std::unordered_map<std::string, uint32_t> particleTextures;
         uint32_t fontTexture = 0;
         uint32_t fontTextureVersion = 0;
 

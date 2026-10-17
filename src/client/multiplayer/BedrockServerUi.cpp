@@ -17,6 +17,33 @@ namespace perlin {
     }
 
     bool BedrockSession::SendFormResponse(uint32_t id, const std::string* data, bool busy) {
+        if (id >= 0xF0000000u) {
+            SignEditRequest request;
+            bool known = false;
+            {
+                std::lock_guard<std::mutex> lk(serverUiMutex);
+                const auto it = signForms.find(id);
+                if (it != signForms.end()) {
+                    request = it->second;
+                    signForms.erase(it);
+                    known = true;
+                }
+            }
+            if (!known || !data)
+                return known;
+            ui::Json answers;
+            std::string error;
+            if (!ui::Json::Parse(*data, answers, error) || !answers.IsArray())
+                return false;
+            std::string text;
+            for (size_t i = 0; i < 4; i++) {
+                if (i > 0)
+                    text += '\n';
+                if (i < answers.array.size() && answers.array[i].IsString())
+                    text += answers.array[i].string;
+            }
+            return SendSignText(request.x, request.y, request.z, request.front, text);
+        }
         ModalFormResponsePacket p;
         p.formId = id;
         if (data) {

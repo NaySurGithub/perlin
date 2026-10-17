@@ -3,6 +3,7 @@
 #include "client/resources/ServerPacks.hpp"
 #include "client/ui/Json.hpp"
 #include "client/renderer/block/BiomeTints.hpp"
+#include <cstring>
 #include <unordered_set>
 #include <algorithm>
 #include "world/level/block/BlockPalette.hpp"
@@ -72,7 +73,7 @@ namespace perlin {
             }
         }
         int size = 16;
-        while (size < widest && size < 512)
+        while (size < widest && size < 256)
             size <<= 1;
         tilePxValue = size;
         std::cout << "[textures] pack=" << (active ? TexturePack::Instance().Description() : "<vanilla>")
@@ -159,7 +160,7 @@ namespace perlin {
         const bool all = T <= 64;
         const int current = glassMode.load();
         for (int base : bases) {
-            if (nextTile + 33 >= kAtlasTiles * kAtlasTiles)
+            if (nextTile + 33 >= MaxTiles())
                 break;
             const std::vector<uint8_t> src(atlas.begin() + (size_t)base * T * T * 4, atlas.begin() + ((size_t)base + 1) * T * T * 4);
             const TileAlpha baseAlpha = AlphaOf(base);
@@ -254,7 +255,7 @@ namespace perlin {
         auto it = tileByPng.find(pngRelPath);
         if (it != tileByPng.end())
             return it->second;
-        if (nextTile >= kAtlasTiles * kAtlasTiles)
+        if (nextTile >= MaxTiles())
             return 0;
         const int kTilePx = tilePxValue;
         std::string full;
@@ -370,6 +371,22 @@ namespace perlin {
             alphaByTile[tile].saturation = (float)(satSum / satN);
         alphaByTile[tile].frame = (float)frameOpaque / (float)(4 * (kTilePx - 1));
         alphaByTile[tile].holeFrac = 1.0f - (float)opaqueAll / (float)(kTilePx * kTilePx);
+        if (frames == 1) {
+            uint64_t hash = 1469598103934665603ull;
+            const uint64_t* words = reinterpret_cast<const uint64_t*>(tilePixels);
+            const size_t count = (size_t)kTilePx * kTilePx / 2;
+            for (size_t i = 0; i < count; i++)
+                hash = (hash ^ words[i]) * 1099511628211ull;
+            const auto same = tileByHash.find(hash);
+            if (same != tileByHash.end() && std::memcmp(atlas.data() + (size_t)same->second * kTilePx * kTilePx * 4, tilePixels, (size_t)kTilePx * kTilePx * 4) == 0) {
+                alphaByTile.erase(tile);
+                nextTile--;
+                atlas.resize((size_t)nextTile * kTilePx * kTilePx * 4);
+                tileByPng[pngRelPath] = same->second;
+                return same->second;
+            }
+            tileByHash[hash] = tile;
+        }
         pathByTile[tile] = pngRelPath;
         if (frames > 1) {
             AnimSrc anim;
@@ -384,7 +401,7 @@ namespace perlin {
     }
 
     int BlockLibrary::SynthTile(const std::string& label) {
-        if (nextTile >= kAtlasTiles * kAtlasTiles)
+        if (nextTile >= MaxTiles())
             return 0;
         uint32_t h = 2166136261u;
         for (char c : label)
@@ -482,6 +499,7 @@ namespace perlin {
         nextTile = 1;
         atlas.clear();
         tileByPng.clear();
+        tileByHash.clear();
         animByTile.clear();
         baseTints.clear();
         geometry.Clear();
@@ -907,7 +925,7 @@ namespace perlin {
                                 app.overlayFrac = (float)rows / (float)kTilePx;
                         }
                     }
-                    if (app.overlayFrac > 0 && app.side && nextTile < kAtlasTiles * kAtlasTiles) {
+                    if (app.overlayFrac > 0 && app.side && nextTile < MaxTiles()) {
                         const int overlaySrc = app.side;
                         const size_t atlasW = (size_t)kTilePx;
                         auto tileBase = [&](int t) {
@@ -963,7 +981,7 @@ namespace perlin {
                             app.overlayTile = mt;
 
                             auto makeBase = [&](int dirtTile) -> int {
-                                if (nextTile >= kAtlasTiles * kAtlasTiles)
+                                if (nextTile >= MaxTiles())
                                     return overlaySrc;
                                 int ct = NewTile();
                                 size_t cb = tileBase(ct);

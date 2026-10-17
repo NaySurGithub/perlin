@@ -52,6 +52,7 @@ namespace perlin {
         size_t MeshedChunks() const { return meshKey.size(); }
         void BenchmarkMeshing(Level& level, int rounds);
         bool TexturesLoaded() const { return atlasUploaded; }
+        void CollectSpecials(float camX, float camZ, float range, std::vector<SpecialBlock>& out) const;
 
     private:
         struct ChunkInfo {
@@ -111,6 +112,7 @@ namespace perlin {
         PosSet inFlight;
         PosMap<ChunkInfo> info;
         PosMap<uint64_t> meshKey;
+        PosMap<std::vector<SpecialBlock>> specials;
         PosMap<uint64_t> wantKey;
         std::vector<DirtyChunk> drained;
         std::vector<Pending> pending;

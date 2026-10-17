@@ -263,8 +263,15 @@ namespace perlin {
                 for (const auto& [condition, set] : custom.permutations)
                     if (EvaluateBlockCondition(condition, id))
                         chosen = &set;
+                if (!chosen && custom.friction >= 0.0f) {
+                    Info info = ClassifyVanilla(id, blocks);
+                    info.shape.friction = custom.friction;
+                    return info;
+                }
                 if (chosen) {
                     Info info;
+                    if (custom.friction >= 0.0f)
+                        info.shape.friction = custom.friction;
                     for (const CollisionBox& b : chosen->boxes)
                         Add(info.shape, b[0], b[1], b[2], b[3], b[4], b[5]);
                     info.full = info.shape.count == 1 && info.shape.boxes[0].x0 <= 0 && info.shape.boxes[0].y0 <= 0 &&

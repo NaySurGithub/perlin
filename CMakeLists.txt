@@ -570,6 +570,12 @@ if(PERLIN_BUILD_TESTS AND NOT EMSCRIPTEN AND NOT ANDROID)
     target_compile_features(attachable_selftest PRIVATE cxx_std_23)
     add_test(NAME attachable_selftest COMMAND attachable_selftest)
 
+    add_executable(particle_selftest tests/particle_selftest.cpp src/client/particle/DataParticles.cpp
+        src/client/attachable/Molang.cpp src/client/ui/Json.cpp)
+    target_include_directories(particle_selftest PRIVATE src "${glm_SOURCE_DIR}")
+    target_compile_features(particle_selftest PRIVATE cxx_std_23)
+    add_test(NAME particle_selftest COMMAND particle_selftest)
+
     add_executable(audio_selftest tests/audio_selftest.cpp src/client/audio/AudioEngine.cpp src/client/audio/Decode.cpp
         src/client/audio/SoundSystem.cpp src/client/audio/Subtitles.cpp src/client/ui/Json.cpp
         src/client/i18n/Lang.cpp src/client/resources/ServerPackRegistry.cpp src/client/i18n/BuiltinEnglish.cpp src/util/Resources.cpp src/util/Paths.cpp)

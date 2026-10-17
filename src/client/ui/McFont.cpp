@@ -13,6 +13,7 @@
 
 namespace perlin::ui {
     namespace {
+#include "client/ui/FontProviderTables.inc"
         const uint32_t kCp437High[128] = {
             0x00C7, 0x00FC, 0x00E9, 0x00E2, 0x00E4, 0x00E0, 0x00E5, 0x00E7, 0x00EA, 0x00EB, 0x00E8, 0x00EF, 0x00EE, 0x00EC, 0x00C4, 0x00C5,
             0x00C9, 0x00E6, 0x00C6, 0x00F4, 0x00F6, 0x00F2, 0x00FB, 0x00F9, 0x00FF, 0x00D6, 0x00DC, 0x00F8, 0x00A3, 0x00D8, 0x00D7, 0x0192,
@@ -133,7 +134,8 @@ namespace perlin::ui {
 
     void McFont::Build(const std::vector<uint8_t>& cells, int cellsAcross, int cellPx) {
         const int sheet = cellsAcross * cellPx;
-        atlasWidth = atlasHeight = std::max(1024, sheet);
+        atlasWidth = std::max(1024, sheet);
+        atlasHeight = atlasWidth * 2;
         atlas.assign(static_cast<size_t>(atlasWidth) * static_cast<size_t>(atlasHeight) * 4, 0);
         for (int y = 0; y < sheet; y++)
             std::memcpy(&atlas[static_cast<size_t>(y) * static_cast<size_t>(atlasWidth) * 4], &cells[static_cast<size_t>(y) * static_cast<size_t>(sheet) * 4],
@@ -170,6 +172,90 @@ namespace perlin::ui {
                 mapped[kCp437High[i - 0x80]] = g;
         }
         fallback = glyphs['?'];
+    }
+
+    bool McFont::LoadVanillaSheets(const RawSheet& accented, const RawSheet& nonlatin) {
+        struct Source {
+            const RawSheet& raw;
+            const uint32_t* chars;
+            int cols, rows, cellH, ascent;
+        };
+        const Source sources[2] = {{nonlatin, kNonlatinChars, 16, 67, 8, 7}, {accented, kAccentedChars, 16, 75, 12, 10}};
+        std::vector<Sheet> loaded;
+        std::unordered_map<uint32_t, std::pair<uint16_t, uint16_t>> table;
+        for (const Source& src : sources) {
+            if (!src.raw.rgba || src.raw.width <= 0 || src.raw.height <= 0)
+                continue;
+            const int w = src.raw.width, h = src.raw.height;
+            Sheet sheet;
+            sheet.width = w;
+            sheet.height = h;
+            sheet.cellW = w / src.cols;
+            sheet.cellH = src.cellH;
+            sheet.ascent = src.ascent;
+            sheet.rgba.assign(src.raw.rgba, src.raw.rgba + static_cast<size_t>(w) * static_cast<size_t>(h) * 4);
+            if (sheet.cellW <= 0 || sheet.cellW > 16 || sheet.cellH > 16 || h < src.rows * src.cellH)
+                continue;
+            const uint16_t index = static_cast<uint16_t>(loaded.size());
+            for (int cell = 0; cell < src.cols * src.rows; cell++) {
+                const uint32_t cp = src.chars[cell];
+                if (cp == 0 || table.count(cp))
+                    continue;
+                table[cp] = {index, static_cast<uint16_t>(cell)};
+            }
+            loaded.push_back(std::move(sheet));
+        }
+        if (loaded.empty())
+            return false;
+        sheets = std::move(loaded);
+        sheetChars = std::move(table);
+        dyn.clear();
+        dynNext = 0;
+        for (int y = dynY0; y < atlasHeight; y++)
+            std::memset(&atlas[static_cast<size_t>(y) * static_cast<size_t>(atlasWidth) * 4], 0, static_cast<size_t>(atlasWidth) * 4);
+        version++;
+        return true;
+    }
+
+    const McFont::Glyph* McFont::FromSheet(uint32_t cp) const {
+        const auto found = sheetChars.find(cp);
+        if (found == sheetChars.end())
+            return nullptr;
+        const Sheet& sheet = sheets[found->second.first];
+        const int cell = found->second.second;
+        const int col = cell % 16, row = cell / 16;
+        const int sx = col * sheet.cellW, sy = row * sheet.cellH;
+        int ink = 0;
+        for (int x = sheet.cellW - 1; x >= 0 && ink == 0; x--)
+            for (int y = 0; y < sheet.cellH; y++)
+                if (sheet.rgba[(static_cast<size_t>(sy + y) * static_cast<size_t>(sheet.width) + static_cast<size_t>(sx + x)) * 4 + 3] > 0) {
+                    ink = x + 1;
+                    break;
+                }
+        if (ink == 0)
+            return nullptr;
+        const int perRow = atlasWidth / 16;
+        const int rows = (atlasHeight - dynY0) / 16;
+        if (dynNext >= perRow * rows)
+            return nullptr;
+        const int cx = (dynNext % perRow) * 16, cy = dynY0 + (dynNext / perRow) * 16;
+        dynNext++;
+        for (int y = 0; y < sheet.cellH; y++)
+            std::memcpy(&atlas[(static_cast<size_t>(cy + y) * static_cast<size_t>(atlasWidth) + static_cast<size_t>(cx)) * 4],
+                        &sheet.rgba[(static_cast<size_t>(sy + y) * static_cast<size_t>(sheet.width) + static_cast<size_t>(sx)) * 4],
+                        static_cast<size_t>(sheet.cellW) * 4);
+        Glyph g;
+        g.width = ink;
+        g.advance = ink + 1;
+        g.cell = kCell;
+        g.top = static_cast<float>(7 - sheet.ascent);
+        g.height = static_cast<float>(sheet.cellH);
+        g.u0 = static_cast<float>(cx) / static_cast<float>(atlasWidth);
+        g.v0 = static_cast<float>(cy) / static_cast<float>(atlasHeight);
+        g.u1 = static_cast<float>(cx + ink) / static_cast<float>(atlasWidth);
+        g.v1 = static_cast<float>(cy + sheet.cellH) / static_cast<float>(atlasHeight);
+        version++;
+        return &dyn.emplace(cp, g).first->second;
     }
 
     bool McFont::LoadUnihexFile(const std::string& path) {
@@ -304,6 +390,8 @@ namespace perlin::ui {
     const McFont::Glyph* McFont::Dynamic(uint32_t cp) const {
         if (const auto it = dyn.find(cp); it != dyn.end())
             return &it->second;
+        if (const Glyph* g = FromSheet(cp))
+            return g;
         if (!ttfs.empty()) {
             const int perRow = atlasWidth / 16;
             const int rows = (atlasHeight - dynY0) / 16;

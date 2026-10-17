@@ -170,6 +170,7 @@ namespace perlin {
             if (!error.empty())
                 std::cout << "[textures] " << error << " (using default textures)" << std::endl;
             blocks.SetTexturePack(TexturePack::Instance().Active());
+            BlockLibrary::SetMaxTiles(context.MaxAtlasLayers(BlockLibrary::TilePx()));
         }
         LoadSkyTextures();
         const auto loadStart = std::chrono::steady_clock::now();
@@ -221,6 +222,10 @@ namespace perlin {
                 continue;
             if (r.generation == current) {
                 context.UpdateChunkMesh(r.pos.x, r.pos.z, *r.mesh, r.key);
+                if (r.mesh->Specials().empty())
+                    specials.erase(r.pos);
+                else
+                    specials[r.pos] = std::move(r.mesh->Specials());
                 if (shown.insert(r.pos).second)
                     MarkLodTile(r.pos);
             }
@@ -241,6 +246,7 @@ namespace perlin {
             done.clear();
         }
         info.clear();
+        specials.clear();
         meshKey.clear();
         wantKey.clear();
         inFlight.clear();
@@ -286,6 +292,7 @@ namespace perlin {
                     capQueue.push_back(d.pos);
             } else {
                 info.erase(d.pos);
+                specials.erase(d.pos);
                 if (meshKey.erase(d.pos))
                     context.RemoveChunkMesh(d.pos.x, d.pos.z);
                 wantKey.erase(d.pos);
@@ -553,6 +560,17 @@ namespace perlin {
         ApplyDirty(*level);
         Schedule(*level, camX, camZ, frustum);
         ProcessLod(*level, camX, camZ);
+    }
+
+    void LevelRenderer::CollectSpecials(float camX, float camZ, float range, std::vector<SpecialBlock>& out) const {
+        const int reach = static_cast<int>(std::ceil(range / 16.0f)) + 1;
+        const int cx = static_cast<int>(std::floor(camX / 16.0f)), cz = static_cast<int>(std::floor(camZ / 16.0f));
+        for (int dz = -reach; dz <= reach; dz++)
+            for (int dx = -reach; dx <= reach; dx++) {
+                const auto it = specials.find(ChunkPos{cx + dx, cz + dz});
+                if (it != specials.end())
+                    out.insert(out.end(), it->second.begin(), it->second.end());
+            }
     }
 
     void LevelRenderer::Render(const Frustum& frustum, float camX, float camZ) {

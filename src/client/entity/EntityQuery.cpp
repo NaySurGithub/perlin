@@ -258,6 +258,10 @@ namespace perlin::entity {
         if (name == "property") {
             if (!args.empty() && args[0].isString) {
                 std::string key = args[0].s;
+                if (const auto text = e.propText.find(key); text != e.propText.end()) {
+                    out = Value::Str(text->second);
+                    return true;
+                }
                 const auto it = e.props.find(key);
                 if (it != e.props.end())
                     return num(it->second);
@@ -272,7 +276,7 @@ namespace perlin::entity {
             return num(0);
         }
         if (name == "has_property") {
-            return yes(!args.empty() && args[0].isString && e.props.count(args[0].s));
+            return yes(!args.empty() && args[0].isString && (e.props.count(args[0].s) || e.propText.count(args[0].s)));
         }
 
         if (name == "in_range") return yes(args.size() >= 3 && args[0].n >= args[1].n && args[0].n <= args[2].n);

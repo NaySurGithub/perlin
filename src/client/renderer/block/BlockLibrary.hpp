@@ -1,4 +1,5 @@
 #pragma once
+#include <algorithm>
 #include <atomic>
 #include <cstdint>
 #include <functional>
@@ -37,6 +38,8 @@ namespace perlin {
     public:
         static int TilePx() { return tilePxValue; }
         static constexpr int kAtlasTiles = 128;
+        static int MaxTiles() { return maxTilesValue; }
+        static void SetMaxTiles(int tiles) { maxTilesValue = std::clamp(tiles, 256, kAtlasTiles * kAtlasTiles); }
 
         void SetTexturePack(bool active);
         bool EnsureLoaded(const std::string& perlinPackDir, const std::string& vanillaRpRoot);
@@ -115,6 +118,8 @@ namespace perlin {
         std::atomic<int> betterGrass{0};
         std::unordered_map<int, std::vector<int>> glassTiles;
         inline static int tilePxValue = 16;
+        inline static int maxTilesValue = 2048;
+        std::unordered_map<uint64_t, int> tileByHash;
         std::unordered_map<std::string, std::array<float, 3>> baseTints;
         mutable std::unordered_map<int32_t, bool> unknownLogged;
         mutable std::vector<const BlockAppearance*> localLook;
