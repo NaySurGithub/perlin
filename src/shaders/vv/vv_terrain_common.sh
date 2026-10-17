@@ -22,8 +22,6 @@ float vanillaShade(vec3 n)
 
 float sunShadow(vec3 world, vec3 n, float ndl)
 {
-    if (u_shadowInfo.w < 0.5)
-        return -1.0;
     float texelWorld = u_shadowInfo.y * u_shadowInfo.x;
     vec3 p = world + n * (texelWorld * 1.4 + 0.02);
     vec3 sc = mul(u_shadowMtx, vec4(p, 1.0)).xyz;
@@ -41,7 +39,7 @@ float sunShadow(vec3 world, vec3 n, float ndl)
         }
     }
     lit /= 9.0;
-    return mix(1.0, lit, inside);
+    return u_shadowInfo.w < 0.5 ? -1.0 : mix(1.0, lit, inside);
 }
 
 // Lights a block surface and returns display colour.
@@ -51,19 +49,10 @@ vec3 vvLit(vec3 texRgb, vec3 tint, vec3 n, vec3 rel, vec2 light, float backlight
 {
     float shade = vanillaShade(n);
     vec3 tintAo = clamp(tint / max(shade, 0.01), 0.0, 1.5);
-    vec3 albedo = pow(clamp(texRgb * tintAo, 0.0, 1.0), vec3_splat(2.2));
+    vec3 albedo = vvPow(clamp(texRgb * tintAo, 0.0, 1.0), vec3_splat(2.2));
     vec3 viewDir = normalize(rel);
     float dist = length(rel);
     vec3 world = rel + u_camera.xyz;
-
-    if (u_skyParams.z < 0.5)
-    {
-        // Nether / End: the vanilla lightmap, gently warmed, through the same tonemap.
-        vec3 lm = pow(sampleLightmap(light * 240.0), vec3_splat(2.2));
-        vec3 hdr = albedo * (lm * 2.4 + vec3(0.05, 0.035, 0.04) * S_AMBIENT) * mix(shade, 1.0, 0.4);
-        hdr += albedo * emissive * 2.5;
-        return vvTonemap(hdr);
-    }
 
     float skyl = light.y;
     vec3 L = lightDirection();
@@ -80,7 +69,7 @@ vec3 vvLit(vec3 texRgb, vec3 tint, vec3 n, vec3 rel, vec2 light, float backlight
             s = sky;
         s *= sky * vvCloudShadow(world);
         float VoL = clamp(dot(viewDir, L), 0.0, 1.0);
-        scatter = pow(VoL, 10.0) * backlight * S_FOLIAGE * (1.0 - vvRain());
+        scatter = vvPow(VoL, 10.0) * backlight * S_FOLIAGE * (1.0 - vvRain());
         float wrap = mix(max(ndl, 0.0), clamp(abs(ndl) * 0.6 + 0.35, 0.0, 1.0), backlight * clamp(S_FOLIAGE, 0.0, 1.0));
         direct = (wrap + scatter * 1.5) * s;
     }
@@ -101,12 +90,16 @@ vec3 vvLit(vec3 texRgb, vec3 tint, vec3 n, vec3 rel, vec2 light, float backlight
         float att = clamp(1.0 - dist / reach, 0.0, 1.0);
         bl = max(bl, att * att * held * (0.35 + 0.65 * max(dot(n, -viewDir), 0.0)));
     }
-    vec3 block = vec3(1.0, 0.70, 0.42) * (pow(bl, 3.0) * 2.2 + bl * bl * 0.25) * S_BLOCK;
+    vec3 block = vec3(1.0, 0.70, 0.42) * (vvPow(bl, 3.0) * 2.2 + bl * bl * 0.25) * S_BLOCK;
 
     vec3 minLight = vec3(0.008, 0.010, 0.016) * (1.0 - skyl * skyl);
     vec3 total = vvMainLight() * direct + ambient + block + minLight;
     vec3 hdr = albedo * total + albedo * emissive * 3.0;
-    return vvTonemap(hdr);
+
+    // Nether / End: the vanilla lightmap, gently warmed, through the same tonemap.
+    vec3 lm = vvPow(sampleLightmap(light * 240.0), vec3_splat(2.2));
+    vec3 hdrOther = albedo * (lm * 2.4 + vec3(0.05, 0.035, 0.04) * S_AMBIENT) * mix(shade, 1.0, 0.4) + albedo * emissive * 2.5;
+    return vvTonemap(u_skyParams.z > 0.5 ? hdr : hdrOther);
 }
 
 // Aerial haze towards the sky's horizon colour, then the vanilla distance/environment fog.

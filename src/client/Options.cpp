@@ -147,7 +147,7 @@ namespace perlin {
         o.renderDistance = std::clamp(stored.renderDistance, 2, 128);
         o.fov = std::clamp(stored.fov, 30.0f, 110.0f);
         o.gamma = std::clamp(stored.gamma, 0.0f, 1.0f);
-        o.shaderPack = stored.shaderPack == "BSL" ? std::string("Vibrant Visuals") : stored.shaderPack; // renamed pack
+        o.shaderPack = stored.shaderPack;
         o.mouseSensitivity = std::clamp(stored.mouseSensitivity, 0.01f, 2.0f);
         o.invertMouse = stored.invertMouse;
         o.server = stored.server;

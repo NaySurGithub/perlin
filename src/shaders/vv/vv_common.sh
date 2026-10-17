@@ -87,6 +87,17 @@ vec3 sampleLightmap(vec2 lightBytes)
     return texture2DLod(s_lightmap, uv, 0.0).rgb;
 }
 
+// pow() that the HLSL compiler accepts with warnings as errors (no negative or zero base).
+float vvPow(float x, float e)
+{
+    return pow(max(abs(x), 1.0e-6), e);
+}
+
+vec3 vvPow(vec3 x, vec3 e)
+{
+    return pow(max(abs(x), vec3_splat(1.0e-6)), e);
+}
+
 float luma(vec3 c)
 {
     return dot(c, vec3(0.2126, 0.7152, 0.0722));
@@ -185,18 +196,18 @@ vec3 vvSkyGradient(vec3 dir)
 
     vec3 dayZenith = vec3(0.47, 0.67, 0.89);
     vec3 dayHorizon = vec3(0.80, 0.88, 0.95);
-    vec3 daySky = mix(dayHorizon, dayZenith, pow(up, 0.5));
+    vec3 daySky = mix(dayHorizon, dayZenith, vvPow(up, 0.5));
 
     vec2 flatDir = dir.xz / max(length(dir.xz), 0.0001);
     vec2 sunFlat = u_sunDir.xz / max(length(u_sunDir.xz), 0.0001);
-    float sunward = pow(clamp(dot(flatDir, sunFlat) * 0.5 + 0.5, 0.0, 1.0), 2.0);
+    float sunward = vvPow(clamp(dot(flatDir, sunFlat) * 0.5 + 0.5, 0.0, 1.0), 2.0);
     vec3 twHorizon = mix(vec3(0.82, 0.68, 0.82), vec3(1.0, 0.70, 0.46), sunward);
     vec3 twMid = vec3(0.86, 0.72, 0.86);
     vec3 twZenith = vec3(0.60, 0.58, 0.84);
     vec3 twSky = mix(twHorizon, twMid, smoothstep(0.0, 0.18, up));
     twSky = mix(twSky, twZenith, smoothstep(0.12, 0.7, up));
 
-    vec3 nightSky = mix(vec3(0.035, 0.048, 0.085), vec3(0.008, 0.011, 0.026), pow(up, 0.4));
+    vec3 nightSky = mix(vec3(0.035, 0.048, 0.085), vec3(0.008, 0.011, 0.026), vvPow(up, 0.4));
 
     vec3 c = mix(nightSky, daySky, day);
     c = mix(c, twSky, tw * mix(0.55, 1.0, day));
@@ -216,13 +227,11 @@ vec3 vvSunDisc(vec3 dir, out float coverage)
     coverage = 0.0;
     vec3 s = u_sunDir.xyz;
     float facing = dot(dir, s);
-    if (facing <= 0.0)
-        return vec3_splat(0.0);
     vec3 axisA = normalize(cross(s, vec3(0.0, 0.0, 1.0)));
-    vec2 q = vec2(dot(dir, axisA), dir.z) / facing;
+    vec2 q = vec2(dot(dir, axisA), dir.z) / max(facing, 1.0e-4);
     float d = max(abs(q.x), abs(q.y));
     float size = 0.052;
-    float visible = u_time.y * smoothstep(-0.05, 0.02, s.y);
+    float visible = u_time.y * smoothstep(-0.05, 0.02, s.y) * step(0.0, facing);
     vec3 warm = mix(vec3(1.0, 0.80, 0.55), vec3(1.0, 0.98, 0.92), smoothstep(0.0, 0.35, s.y));
     coverage = (1.0 - smoothstep(size - 0.002, size + 0.002, d)) * visible;
     float bloom = exp(-max(d - size, 0.0) * 30.0) * 0.38 + exp(-max(d - size, 0.0) * 7.0) * 0.10;
@@ -236,14 +245,12 @@ vec3 vvMoonDisc(vec3 dir, out float coverage, out vec3 moonColor)
     moonColor = vec3_splat(0.0);
     vec3 m = -u_sunDir.xyz;
     float facing = dot(dir, m);
-    if (facing <= 0.0)
-        return vec3_splat(0.0);
     vec3 axisA = normalize(cross(m, vec3(0.0, 0.0, 1.0)));
-    vec2 q = vec2(dot(dir, axisA), dir.z) / facing;
+    vec2 q = vec2(dot(dir, axisA), dir.z) / max(facing, 1.0e-4);
     float size = 0.034;
     float d = max(abs(q.x), abs(q.y));
-    float visible = u_time.y * (1.0 - smoothstep(0.0, 0.25, u_sunDir.y));
-    if (d < size)
+    float visible = u_time.y * (1.0 - smoothstep(0.0, 0.25, u_sunDir.y)) * step(0.0, facing);
+    if (d < size && facing > 0.0)
     {
         vec2 cell = floor((q / size * 0.5 + 0.5) * 8.0);
         float crater = step(0.72, hash12(cell + vec2(3.0, 7.0))) * 0.22 + hash12(cell) * 0.08;
@@ -264,7 +271,7 @@ vec3 vvMoonDisc(vec3 dir, out float coverage, out vec3 moonColor)
 vec3 vvSunGlow(vec3 dir)
 {
     float toSun = max(dot(dir, u_sunDir.xyz), 0.0);
-    float glow = pow(toSun, 6.0) * 0.16 + pow(toSun, 40.0) * 0.32;
+    float glow = vvPow(toSun, 6.0) * 0.16 + vvPow(toSun, 40.0) * 0.32;
     vec3 col = mix(vec3(1.0, 0.70, 0.45), vec3(1.0, 0.96, 0.88), smoothstep(0.0, 0.4, u_sunDir.y));
     return col * glow * u_time.y * smoothstep(-0.12, 0.05, u_sunDir.y) * (1.0 - vvRain());
 }
@@ -273,10 +280,9 @@ vec3 vvSunGlow(vec3 dir)
 vec3 vvSky(vec3 dir, bool bodies)
 {
     vec3 c = vvSkyGradient(dir);
-    if (u_skyParams.z < 0.5)
-        return c;
-    c += vvSunGlow(dir);
-    if (bodies)
+    if (u_skyParams.z > 0.5)
+        c += vvSunGlow(dir);
+    if (bodies && u_skyParams.z > 0.5)
     {
         float sunCover;
         vec3 sunBloom = vvSunDisc(dir, sunCover);
@@ -362,8 +368,7 @@ void vvCloudColors(out vec3 body, out vec3 rim)
 // Returns the cloud colour to add (premultiplied) in rgb and the transmittance in a.
 vec4 vvClouds(vec3 origin, vec3 dir, float maxDistance)
 {
-    if (u_skyParams.z < 0.5 || S_CLOUDS < 0.5)
-        return vec4(0.0, 0.0, 0.0, 1.0);
+    vec4 result = vec4(0.0, 0.0, 0.0, 1.0);
     float base = u_skyParams.x;
     float top = base + CLOUD_THICKNESS;
     float dy = dir.y;
@@ -374,15 +379,15 @@ vec4 vvClouds(vec3 origin, vec3 dir, float maxDistance)
     float t0 = max(min(tA, tB), 0.0);
     float t1 = min(max(tA, tB), maxDistance);
     t1 = min(t1, t0 + 600.0);
-    if (t1 <= t0)
-        return vec4(0.0, 0.0, 0.0, 1.0);
+    if (u_skyParams.z > 0.5 && S_CLOUDS > 0.5 && t1 > t0)
+    {
 
     // Walk the 12x12 cells the ray crosses inside the slab, adding up the length spent in clouds.
     vec2 p = cloudCoord(origin.xz + dir.xz * t0);
     vec2 d = dir.xz / 12.0;
     vec2 cell = floor(p);
     vec2 stepDir = vec2(d.x >= 0.0 ? 1.0 : -1.0, d.y >= 0.0 ? 1.0 : -1.0);
-    vec2 inv = vec2(abs(d.x) > 1.0e-6 ? 1.0 / abs(d.x) : 1.0e9, abs(d.y) > 1.0e-6 ? 1.0 / abs(d.y) : 1.0e9);
+    vec2 inv = vec2_splat(1.0) / max(abs(d), vec2_splat(1.0e-6));
     vec2 next = vec2(d.x >= 0.0 ? cell.x + 1.0 - p.x : p.x - cell.x, d.y >= 0.0 ? cell.y + 1.0 - p.y : p.y - cell.y) * inv;
     float t = t0;
     float inCloud = 0.0;
@@ -424,30 +429,27 @@ vec4 vvClouds(vec3 origin, vec3 dir, float maxDistance)
     vvCloudColors(body, rimColor);
     // Brighter towards the sun (forward scattering).
     float toLight = max(dot(dir, lightDirection()), 0.0);
-    body += vvSunGlow(dir) * 0.6 + vec3_splat(pow(toLight, 8.0) * 0.08 * vvDay());
+    body += vvSunGlow(dir) * 0.6 + vec3_splat(vvPow(toLight, 8.0) * 0.08 * vvDay());
     vec3 color = mix(body, rimColor, clamp(rim * 1.2, 0.0, 1.0));
 
     float cloudDist = first >= 0.0 ? first : t0;
     float fade = (1.0 - smoothstep(700.0, 1800.0, cloudDist)) * smoothstep(0.0, 0.035, abs(dir.y));
     vec3 scatter = color * (1.0 - trans) + rimColor * halo * 0.30;
     trans = mix(1.0, trans, fade);
-    return vec4(scatter * fade, trans * (1.0 - halo * 0.30 * fade));
+    result = vec4(scatter * fade, trans * (1.0 - halo * 0.30 * fade));
+    }
+    return result;
 }
 
 // Fraction of direct light reaching a world position through the clouds above it.
 float vvCloudShadow(vec3 world)
 {
-    if (u_skyParams.z < 0.5 || S_CLOUDS < 0.5 || S_CLOUD_SHADOWS < 0.5)
-        return 1.0;
     vec3 L = lightDirection();
-    if (L.y < 0.05)
-        return 1.0;
     float mid = u_skyParams.x + CLOUD_THICKNESS * 0.5;
-    if (world.y > mid)
-        return 1.0;
-    vec3 p = world + L * ((mid - world.y) / L.y);
+    float enabled = step(0.5, u_skyParams.z) * step(0.5, S_CLOUDS) * step(0.5, S_CLOUD_SHADOWS) * step(world.y, mid);
+    vec3 p = world + L * ((mid - world.y) / max(L.y, 0.05));
     float c = cloudCell(floor(cloudCoord(p.xz)));
-    return mix(1.0, 0.42, c * smoothstep(0.05, 0.25, L.y));
+    return mix(1.0, 0.42, c * smoothstep(0.05, 0.25, L.y) * enabled);
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -457,7 +459,7 @@ vec3 vvTonemap(vec3 hdr)
 {
     vec3 x = max(hdr, vec3_splat(0.0)) * 0.70 * exp2(S_EXPOSURE);
     vec3 mapped = clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0);
-    vec3 display = pow(mapped, vec3_splat(1.0 / 2.2));
+    vec3 display = vvPow(mapped, vec3_splat(1.0 / 2.2));
     display = saturateColor(display, 1.10 * S_SATURATION);
     display = (display - 0.5) * S_CONTRAST + 0.5;
     return clamp(display, 0.0, 1.0);
