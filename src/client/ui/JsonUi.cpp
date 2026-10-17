@@ -522,6 +522,12 @@ namespace perlin::ui {
                                 continue;
                             std::string r;
                             std::string n = SplitName(member.second.string, &r);
+                            if (r.empty() && !n.empty()) {
+                                r = n;
+                                const size_t dotAt = n.find('.');
+                                if (dotAt != std::string::npos)
+                                    n = n.substr(dotAt + 1);
+                            }
                             if (n.empty())
                                 n = member.first;
                             auto template2 = Build(n + "@" + r, Json::MakeObject(), ns, vars, node->path, depth + 1);
@@ -547,6 +553,12 @@ namespace perlin::ui {
                             std::string value = member.second.string;
                             std::string r;
                             std::string n = SplitName(value, &r);
+                            if (r.empty() && !n.empty()) {
+                                r = n;
+                                const size_t dotAt = n.find('.');
+                                if (dotAt != std::string::npos)
+                                    n = n.substr(dotAt + 1);
+                            }
                             if (n.empty())
                                 n = member.first;
                             auto template2 = Build(n + "@" + r, Json::MakeObject(), ns, vars, node->path, depth + 1);

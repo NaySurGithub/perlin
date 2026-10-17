@@ -41,6 +41,9 @@ namespace perlin::ui {
         void Comment(const std::string& text);
         void Link(float ax, float ay, float w, float h, int z, const std::string& command);
 
+        void BeginBox(float ax, float ay, float w, float h, int z, const std::string& cls, const std::string& id, bool clip, float scroll = 0.0f);
+        void EndBox();
+
         void BeginSection();
         void EndSection(const std::string& name);
         const std::unordered_map<std::string, std::string>& Sections() const { return sections; }
@@ -53,6 +56,8 @@ namespace perlin::ui {
         std::unordered_map<std::string, std::string> sections;
         bool comments;
         size_t count = 0;
+        float ox = 0, oy = 0;
+        std::vector<std::pair<float, float>> origins;
     };
 
     using CustomRenderer = std::function<void(const LNode&, RmlWriter&)>;
@@ -63,11 +68,18 @@ namespace perlin::ui {
         std::string Emit(const LNode& root, float guiW, float guiH, const std::string& extraRcss, bool comments);
         void SetTemplates(std::string hud, std::string chat) { hudTemplate = std::move(hud); chatTemplate = std::move(chat); }
         const std::vector<std::string>& UnknownRenderers() const { return unknown; }
+        void SetScroll(float value) { scroll = value; }
+        float ContentHeight() const { return contentHeight; }
+        float ViewportHeight() const { return viewportHeight; }
 
     private:
         void Visit(const LNode& n, RmlWriter& out);
         void EmitImage(const LNode& n, RmlWriter& out);
         void EmitLabel(const LNode& n, RmlWriter& out);
+        void VisitButton(const LNode& n, RmlWriter& out);
+        void VisitScroll(const LNode& n, RmlWriter& out);
+        float scroll = 0, contentHeight = 0, viewportHeight = 0;
+        std::string viewportName, contentName;
 
         std::unordered_map<std::string, CustomRenderer> renderers;
         std::string hudTemplate, chatTemplate;

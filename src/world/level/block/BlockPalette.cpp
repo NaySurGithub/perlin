@@ -265,6 +265,8 @@ namespace perlin {
 
     uint16_t BlockPalette::InternRuntime(int32_t runtimeId) {
         if (sequential.load(std::memory_order_acquire)) {
+            if (runtimeId >= 0 && runtimeId == sequentialAir.load(std::memory_order_acquire))
+                return 0;
             int32_t hash = 0;
             bool found = false;
             {
@@ -284,6 +286,8 @@ namespace perlin {
         const int32_t hash = NetworkId(local);
         if (!sequential.load(std::memory_order_acquire))
             return hash;
+        if (local == 0 && sequentialAir.load(std::memory_order_acquire) >= 0)
+            return sequentialAir.load(std::memory_order_acquire);
         std::lock_guard<std::mutex> lk(mutex);
         const auto it = sequenceIndex.find(hash);
         return it == sequenceIndex.end() ? hash : it->second;

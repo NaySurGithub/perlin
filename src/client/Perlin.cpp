@@ -4,6 +4,7 @@
 #include "client/Zoom.hpp"
 #include "client/Perlin.hpp"
 #include "client/resources/ServerPacks.hpp"
+#include "client/ui/ServerLayer.hpp"
 #include "client/i18n/Lang.hpp"
 #include "client/multiplayer/SkinLoader.hpp"
 #include "client/mods/ModManager.hpp"
@@ -603,6 +604,173 @@ namespace perlin {
         }
     }
 
+    void Perlin::UpdateServerLayer(ui::Hud& hud, BedrockSession* live, int fbW, int fbH) {
+        static bool shown = false;
+        const bool allowed = live && options.showHud && hudState.visible && !deathShown && !disconnectShown && !loadingShown;
+        if (!allowed) {
+            if (shown) {
+                hud.Overlay().ClearServerLayer();
+                shown = false;
+                serverLayerSignature.clear();
+            }
+            return;
+        }
+        const auto now = std::chrono::steady_clock::now();
+        if (!toastText.empty() && now - toastAt > std::chrono::seconds(4))
+            toastText.clear();
+        ui::ServerLayerData data;
+        if (toastText.empty()) {
+            BedrockSession::ServerToast t;
+            if (live->TakeToast(t)) {
+                toastText = t.title + "\n" + t.message;
+                toastAt = now;
+                data.toastTitle = t.title;
+                data.toastMessage = t.message;
+                lastToastTitle = t.title;
+                lastToastMessage = t.message;
+            }
+        }
+        if (!toastText.empty()) {
+            data.toast = true;
+            data.toastTitle = lastToastTitle;
+            data.toastMessage = lastToastMessage;
+        }
+        for (const auto& b : live->BossBars())
+            data.bars.push_back({b.title, b.progress, b.color, b.overlay});
+        if (data.bars.size() > 4)
+            data.bars.resize(4);
+        const auto sb = live->Scoreboard();
+        if (sb.visible) {
+            data.scoreboard = true;
+            data.scoreboardTitle = sb.title;
+            for (const auto& r : sb.rows)
+                data.rows.emplace_back(r.name, r.score);
+        }
+        if (data.Empty()) {
+            if (shown) {
+                hud.Overlay().ClearServerLayer();
+                shown = false;
+                serverLayerSignature.clear();
+            }
+            return;
+        }
+        const int w = static_cast<int>(hud.GuiWidth()), h = static_cast<int>(hud.GuiHeight());
+        const std::string signature = ui::ServerLayerSignature(data, w, h);
+        if (shown && signature == serverLayerSignature)
+            return;
+        serverLayerSignature = signature;
+        std::string error;
+        shown = hud.Overlay().SetServerLayer(ui::BuildServerLayerRml(data, w, h), error);
+        if (!shown)
+            std::cout << "[ui] " << error << std::endl;
+    }
+
+    void Perlin::UpdateFormScreen(ui::Hud& hud, BedrockSession* live, int fbW, int fbH) {
+        const auto now = Clock::now();
+        const auto closeForm = [&]() {
+            hud.Overlay().ClearOverlay();
+            formShown = false;
+            formSignature.clear();
+            formLeftDown = false;
+            if (!chat.IsOpen())
+                input.SetTextMode(false);
+        };
+        if (!live) {
+            if (formShown)
+                closeForm();
+            return;
+        }
+        if (live->TakeFormClosed() && formShown)
+            closeForm();
+        if (!formShown) {
+            if (deathShown || invShown || pauseShown || chat.IsOpen())
+                return;
+            BedrockSession::ServerForm sf;
+            if (!live->TakeServerForm(sf))
+                return;
+            if (!ui::ParseForm(sf.id, sf.json, formModel)) {
+                std::cout << "[form] cannot parse form " << sf.id << std::endl;
+                live->SendFormResponse(sf.id, nullptr, false);
+                return;
+            }
+            std::cout << "[form] opened form " << sf.id << " '" << formModel.title << "'" << std::endl;
+            formEngine = formModel.type != ui::FormModel::Type::Custom && formUi.Prepare(ServerPacks::Instance().Directories());
+            if (!formEngine && formModel.type != ui::FormModel::Type::Custom)
+                std::cout << "[form] json ui unavailable: " << formUi.Problem() << ", using the built-in layout" << std::endl;
+            formShown = true;
+            formScroll = 0.0f;
+            formContentH = formViewH = 0.0f;
+            formSignature.clear();
+            formOpenedAt = now;
+            formLeftDown = true;
+            input.SetTextMode(true);
+        }
+        bool cancel = false;
+        for (const auto& t : inputManager.TakeTyped()) {
+            if (!t.character && t.key == Key::Escape)
+                cancel = true;
+            else if (!t.character && t.key == Key::Backspace)
+                ui::FormBackspace(formModel);
+            else if (t.character && !t.ctrl)
+                ui::FormTypeChar(formModel, t.key);
+        }
+        formScroll = std::max(0.0f, formScroll - inputManager.Scroll() * 20.0f);
+        if (cancel) {
+            live->SendFormResponse(formModel.id, nullptr, false);
+            closeForm();
+            return;
+        }
+        const int scale = hud.OverlayScale();
+        const int guiW = static_cast<int>(std::ceil(static_cast<float>(fbW) / static_cast<float>(scale)));
+        const int guiH = static_cast<int>(std::ceil(static_cast<float>(fbH) / static_cast<float>(scale)));
+        formScroll = std::clamp(formScroll, 0.0f, std::max(0.0f, formContentH - formViewH));
+        const std::string signature = std::to_string(formModel.id) + "|" + std::to_string(formModel.focus) + "|" + ui::FormCustomResponse(formModel) + "|" +
+                                      std::to_string(guiW) + "x" + std::to_string(guiH) + "|" + std::to_string(static_cast<int>(formScroll)) + "|" +
+                                      (formEngine ? "e" : "b");
+        if (signature != formSignature || !hud.Overlay().HasOverlay()) {
+            formSignature = signature;
+            std::string formRml, error;
+            float contentH = 0.0f, viewH = 0.0f;
+            if (formEngine && !formUi.Build(formModel, guiW, guiH, formScroll, formRml, contentH, viewH)) {
+                std::cout << "[form] json ui build failed: " << formUi.Problem() << ", using the built-in layout" << std::endl;
+                formEngine = false;
+            }
+            if (!formEngine)
+                formRml = ui::BuildFormRml(formModel, guiW, guiH, formScroll, contentH, viewH);
+            formContentH = contentH;
+            formViewH = viewH;
+            if (!hud.Overlay().SetOverlay(formRml, error)) {
+                std::cout << "[form] " << error << std::endl;
+                if (formEngine) {
+                    formEngine = false;
+                    formSignature.clear();
+                    return;
+                }
+                live->SendFormResponse(formModel.id, nullptr, false);
+                closeForm();
+                return;
+            }
+        }
+        hud.Overlay().MouseMove(input.MouseX() / static_cast<float>(scale), input.MouseY() / static_cast<float>(scale));
+        hud.UpdateOverlay(fbW, fbH, options.guiScale);
+        const bool down = input.IsMouseDown(0);
+        if (!down && formLeftDown && now - formOpenedAt > std::chrono::milliseconds(200)) {
+            const std::string hover = hud.Overlay().OverlayHover();
+            if (hover == ui::kFormCloseId) {
+                live->SendFormResponse(formModel.id, nullptr, false);
+                closeForm();
+                return;
+            }
+            std::string response;
+            if (!hover.empty() && ui::FormClick(formModel, hover, response)) {
+                live->SendFormResponse(formModel.id, &response, false);
+                closeForm();
+                return;
+            }
+        }
+        formLeftDown = down;
+    }
+
     void Perlin::UpdateDeathScreen(ui::Hud& hud, BedrockSession* live, const ui::HudState& state, int fbW, int fbH) {
         const bool preview = PERLIN_ENV("PERLIN_PREVIEW_DEATH") != nullptr;
         bool dead = preview || (live && state.mode != ui::GameMode::Spectator && (state.health <= 0.0f || live->DeathPending()));
@@ -1008,7 +1176,7 @@ namespace perlin {
         const auto now = Clock::now();
         if (live)
             live->InvPump();
-        const bool canOpen = (live || preview) && !deathShown && !pauseShown && !chat.IsOpen() && state.mode != ui::GameMode::Spectator;
+        const bool canOpen = (live || preview) && !deathShown && !formShown && !pauseShown && !chat.IsOpen() && state.mode != ui::GameMode::Spectator;
         const bool workbenchOpened = live && live->TakeWorkbenchOpened();
         if (!invShown && workbenchOpened && !deathShown) {
             invShown = true;
@@ -1314,7 +1482,7 @@ namespace perlin {
     void Perlin::UpdatePauseScreen(ui::Hud& hud, BedrockSession* live, int fbW, int fbH) {
         const bool preview = PERLIN_ENV("PERLIN_PREVIEW_PAUSE") != nullptr;
         const auto now = Clock::now();
-        const bool canOpen = (live || preview) && !deathShown && !invShown && !chat.IsOpen();
+        const bool canOpen = (live || preview) && !deathShown && !formShown && !invShown && !chat.IsOpen();
         if (!pauseShown && canOpen && (inputManager.Pressed(Action::Pause) || (preview && !pausePreviewOpened))) {
             pausePreviewOpened = true;
             pauseShown = true;
@@ -3964,6 +4132,7 @@ namespace perlin {
                 wardListedAt = {};
                 optionsSignature.clear();
             }
+            inputManager.SetServerLocks(sessionReady && session && session->GetState() == BedrockSession::State::InGame ? session->InputLocks() : 0u);
             const LookDelta look = zoom.Update(dt, inputManager.IsDown(Action::Zoom), inputManager.Scroll(),
                                                inputManager.Look());
             camera.Rotate(look.yaw, look.pitch);
@@ -4113,6 +4282,24 @@ namespace perlin {
                 const bool spectator = hudState.mode == ui::GameMode::Spectator;
                 const bool creative = hudState.mode == ui::GameMode::Creative;
                 const ui::HudItem& held = hudState.hotbar[std::clamp(hudState.selectedSlot, 0, 8)];
+                if (levelRenderer) {
+                    int technical = 0;
+                    if (creative && !held.Empty()) {
+                        const std::string heldShort = held.name.rfind("minecraft:", 0) == 0 ? held.name.substr(10) : held.name;
+                        if (heldShort == "barrier")
+                            technical = BlockLibrary::kBarrier;
+                        else if (heldShort.rfind("light_block", 0) == 0)
+                            technical = BlockLibrary::kLightBlock;
+                        else if (heldShort == "structure_void")
+                            technical = BlockLibrary::kStructureVoid;
+                    }
+                    if (technical != levelRenderer->Blocks().TechnicalVisible()) {
+                        levelRenderer->Blocks().SetTechnicalVisible(technical);
+                        MesherInvalidateCaches();
+                        if (live)
+                            live->NetLevel().MarkAllDirty();
+                    }
+                }
 
                 gAim = AimHit{};
                 if ((live || previewLevel) && !spectator && levelRenderer) {
@@ -5327,10 +5514,12 @@ namespace perlin {
                     ProfScope hudScope(5);
                     hud->Update(hudState, fbW, fbH, options.guiScale);
                     UpdateModLayer(*hud);
+                    UpdateServerLayer(*hud, live, fbW, fbH);
                     const bool disconnectUp = UpdateDisconnectScreen(*hud, fbW, fbH);
                     const bool loadingUp = !disconnectUp && UpdateLoadingScreen(*hud, fbW, fbH);
                     if (!disconnectUp && !loadingUp) {
                         UpdateDeathScreen(*hud, live, hudState, fbW, fbH);
+                        UpdateFormScreen(*hud, live, fbW, fbH);
                         UpdateInventoryScreen(*hud, live, hudState, fbW, fbH);
                         UpdatePauseScreen(*hud, live, fbW, fbH);
                         UpdateChatClicks(*hud, live, fbW, fbH);
@@ -5367,7 +5556,7 @@ namespace perlin {
                                                   (centerY + (1.8f / 2.0f + 0.0625f) * dollScale) * scale, dollScale * scale, clip);
                     }
                     float cx, cy, cw, ch;
-                    if (options.showHud && !deathShown && !invShown && !pauseShown && !disconnectShown && !loadingShown && (camera.mode == PerspectiveMode::FirstPerson || options.thirdPersonCrosshair) &&
+                    if (options.showHud && !deathShown && !formShown && !invShown && !pauseShown && !disconnectShown && !loadingShown && (camera.mode == PerspectiveMode::FirstPerson || options.thirdPersonCrosshair) &&
                         hudState.mode != ui::GameMode::Spectator &&
                         hud->Cursor(cx, cy, cw, ch))
                         renderer->DrawHudCursor(cx, cy, cw, ch);

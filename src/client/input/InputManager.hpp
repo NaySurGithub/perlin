@@ -24,7 +24,7 @@ namespace perlin {
         bool IsDown(Action action) const;
         bool Pressed(Action action) const { return pressed.test(static_cast<size_t>(action)); }
         float Axis(Action positive, Action negative) const;
-        LookDelta Look() const { return look; }
+        LookDelta Look() const { return (locks & 2u) ? LookDelta{} : look; }
         float Scroll() const { return scroll; }
 
         struct Typed {
@@ -36,6 +36,7 @@ namespace perlin {
 
         void Hold(Action action, std::chrono::steady_clock::time_point until) { holds[static_cast<size_t>(action)] = until; }
         void SetBlocked(bool b) { blocked = b; }
+        void SetServerLocks(uint32_t value) { locks = value; }
         bool Blocked() const { return blocked; }
         void BeginRebind(Action action) { rebinding = action; }
         bool Rebinding() const { return rebinding.has_value(); }
@@ -54,6 +55,7 @@ namespace perlin {
         float lastMouseX = 0, lastMouseY = 0;
         bool haveMouse = false;
         bool blocked = false;
+        uint32_t locks = 0;
         std::array<std::chrono::steady_clock::time_point, kActionCount> holds{};
     };
 }

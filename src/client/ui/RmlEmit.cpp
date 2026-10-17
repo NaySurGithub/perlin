@@ -108,6 +108,8 @@ namespace perlin::ui {
     }
 
     void RmlWriter::Image(float ax, float ay, float w, float h, int z, const std::string& texture, const ImageStyle& st) {
+        ax -= ox;
+        ay -= oy;
         if (w <= 0 || h <= 0)
             return;
         count++;
@@ -133,9 +135,30 @@ namespace perlin::ui {
     }
 
     void RmlWriter::Link(float ax, float ay, float w, float h, int z, const std::string& command) {
+        ax -= ox;
+        ay -= oy;
         count++;
         body += "  <div class=\"link\" id=\"link:" + EscapeRml(command) + "\" style=\"left:" + Num(ax) + "px;top:" + Num(ay) + "px;width:" +
                 Num(w) + "px;height:" + Num(h) + "px;z-index:" + std::to_string(z) + ";\"><div class=\"ul\"></div></div>\n";
+    }
+
+    void RmlWriter::BeginBox(float ax, float ay, float w, float h, int z, const std::string& cls, const std::string& id, bool clip, float scroll) {
+        count++;
+        body += "  <div" + (cls.empty() ? std::string() : " class=\"" + cls + "\"") + (id.empty() ? std::string() : " id=\"" + EscapeRml(id) + "\"") +
+                " style=\"position:absolute;display:block;left:" + Num(ax - ox) + "px;top:" + Num(ay - oy) + "px;width:" + Num(w) + "px;height:" + Num(h) +
+                "px;z-index:" + std::to_string(z) + ";" + (clip ? "overflow:hidden;" : "") + "\">\n";
+        origins.emplace_back(ox, oy);
+        ox = ax;
+        oy = ay + scroll;
+    }
+
+    void RmlWriter::EndBox() {
+        if (origins.empty())
+            return;
+        body += "  </div>\n";
+        ox = origins.back().first;
+        oy = origins.back().second;
+        origins.pop_back();
     }
 
     void RmlWriter::BeginSection() {
@@ -159,6 +182,8 @@ namespace perlin::ui {
     }
 
     void RmlWriter::Item(float ax, float ay, float w, float h, int z, const std::string& itemKey, float alpha, bool glint) {
+        ax -= ox;
+        ay -= oy;
         count++;
         body += "  <mcitem key=\"" + EscapeRml(itemKey) + "\" style=\"left:" + std::to_string(Px(ax)) + "px;top:" +
                 std::to_string(Px(ay)) + "px;width:" + Num(w) + "px;height:" + Num(h) + "px;z-index:" + std::to_string(z) + ";\"";
@@ -173,6 +198,8 @@ namespace perlin::ui {
                          const TextStyle& st) {
         if (lines.empty() || st.a <= 0.0f)
             return;
+        ax -= ox;
+        ay -= oy;
         count++;
         const float size = 8.0f * st.scale;
         const float lineHeight = 9.0f * st.scale + st.linePadding;
@@ -269,9 +296,93 @@ namespace perlin::ui {
         out.Text(n.ax, n.ay, n.w, n.h, n.layer, n.lines, st);
     }
 
+    namespace {
+        std::string ButtonCommand(const LNode& n) {
+            const Json* maps = n.Get("button_mappings");
+            if (!maps || !maps->IsArray())
+                return {};
+            for (const Json& m : maps->array) {
+                if (!m.IsObject())
+                    continue;
+                const Json* to = m.Find("to_button_id");
+                if (!to || !to->IsString())
+                    continue;
+                const std::string& id = to->string;
+                if (id == "button.form_button_click")
+                    return "fb:" + std::to_string(std::max(0, n.index));
+                if (id == "button.menu_exit" || id == "button.menu_cancel" || id == "button.exit_dialog" || id.find("close") != std::string::npos)
+                    return "close";
+            }
+            return {};
+        }
+
+        const LNode* FindKid(const LNode& n, const std::string& name) {
+            if (name.empty())
+                return nullptr;
+            for (const auto& kid : n.kids)
+                if (kid->id == name)
+                    return kid.get();
+            return nullptr;
+        }
+    }
+
+    void RmlEmitter::VisitButton(const LNode& n, RmlWriter& out) {
+        const std::string command = ButtonCommand(n);
+        const std::string defName = n.Str("default_control"), hoverName = n.Str("hover_control"), pressedName = n.Str("pressed_control"),
+                          lockedName = n.Str("locked_control");
+        const bool hasHover = FindKid(n, hoverName) != nullptr && !command.empty();
+        out.BeginBox(n.ax, n.ay, n.w, n.h, n.layer, "bt", command, false);
+        for (const auto& kid : n.kids) {
+            if (!kid->visible)
+                continue;
+            if (kid->id == defName) {
+                out.BeginBox(n.ax, n.ay, n.w, n.h, 0, hasHover ? "df" : "", "", false);
+                Visit(*kid, out);
+                out.EndBox();
+            } else if (kid->id == hoverName) {
+                if (hasHover) {
+                    out.BeginBox(n.ax, n.ay, n.w, n.h, 0, "hv", "", false);
+                    Visit(*kid, out);
+                    out.EndBox();
+                }
+            } else if (kid->id == pressedName || kid->id == lockedName) {
+                continue;
+            } else {
+                Visit(*kid, out);
+            }
+        }
+        out.EndBox();
+    }
+
+    void RmlEmitter::VisitScroll(const LNode& n, RmlWriter& out) {
+        float content = 0;
+        for (const auto& kid : n.kids)
+            if (kid->id == contentName || content == 0)
+                content = std::max(content, kid->h);
+        contentHeight = content;
+        viewportHeight = n.h;
+        const float maxScroll = std::max(0.0f, content - n.h);
+        const float s = std::clamp(scroll, 0.0f, maxScroll);
+        out.BeginBox(n.ax, n.ay, n.w, n.h, n.layer, "", "", true, s);
+        for (const auto& kid : n.kids)
+            Visit(*kid, out);
+        out.EndBox();
+    }
+
     void RmlEmitter::Visit(const LNode& n, RmlWriter& out) {
         if (!n.visible)
             return;
+        if (n.type == "button") {
+            VisitButton(n, out);
+            return;
+        }
+        if (n.type == "scroll_view") {
+            viewportName = n.Str("scrolling_view_port", "scrolling_view_port");
+            contentName = n.Str("scrolling_content", "scrolling_content");
+        } else if (!viewportName.empty() && n.id == viewportName) {
+            VisitScroll(n, out);
+            return;
+        }
         if (n.type == "image") {
             EmitImage(n, out);
         } else if (n.type == "label") {
@@ -357,6 +468,9 @@ mcimg, mcitem { display: block; position: absolute; }
     std::string RmlEmitter::Emit(const LNode& root, float guiW, float guiH, const std::string& extraRcss, bool comments) {
         RmlWriter writer(comments);
         unknown.clear();
+        viewportName.clear();
+        contentName.clear();
+        contentHeight = viewportHeight = 0;
         Visit(root, writer);
 
         std::string chatStyle, chatBody;
@@ -391,7 +505,8 @@ mcimg, mcitem { display: block; position: absolute; }
             ".t.s { font-family: minecraft-shadow; }\n.t.o { font-family: minecraft-outline; }\n"
             ".link { display: block; position: absolute; }\n"
             ".link .ul { display: none; position: absolute; left: 0px; bottom: 0px; width: 100%; height: 1px; background-color: #ffff55; }\n"
-            ".link:hover .ul { display: block; }\n";
+            ".link:hover .ul { display: block; }\n"
+            ".bt .hv { display: none; }\n.bt:hover .hv { display: block; }\n.bt:hover .df { display: none; }\n";
         if (const size_t at = doc.find("<style>"); at != std::string::npos)
             doc.insert(at + 7, kEngineCss);
         return doc;

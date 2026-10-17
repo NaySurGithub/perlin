@@ -155,6 +155,7 @@ namespace perlin {
 
     void BedrockSession::RegisterPacketHandlers() {
         InstallPersistentChunkResolver();
+        RegisterServerUiHandlers();
         dispatcher.OnFailure([](uint32_t id, const char* name, size_t size) {
             std::cout << "[net] failed to decode " << name << " (id " << id << ", " << size << " bytes)"
                       << std::endl;

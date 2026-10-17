@@ -11,6 +11,8 @@ namespace perlin::ui {
     struct FactoryItem {
         std::string id;
         Vars vars;
+        std::string collection;
+        int index = -1;
     };
 
     class UiData {

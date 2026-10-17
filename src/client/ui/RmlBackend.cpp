@@ -577,6 +577,7 @@ namespace perlin::ui {
         document = nullptr;
         overlay = nullptr;
         plugin = nullptr;
+        serverLayer = nullptr;
         Rml::Shutdown();
         context = nullptr;
         ready = false;
@@ -626,6 +627,31 @@ namespace perlin::ui {
         if (overlay)
             overlay->PullToFront();
         return true;
+    }
+
+    bool RmlBackend::SetServerLayer(const std::string& rml, std::string& error) {
+        if (!context)
+            return false;
+        Rml::ElementDocument* next = context->LoadDocumentFromMemory(rml);
+        if (!next) {
+            error = "RmlUi could not parse the server layer";
+            return false;
+        }
+        if (serverLayer)
+            context->UnloadDocument(serverLayer);
+        serverLayer = next;
+        serverLayer->Show();
+        if (plugin)
+            plugin->PullToFront();
+        if (overlay)
+            overlay->PullToFront();
+        return true;
+    }
+
+    void RmlBackend::ClearServerLayer() {
+        if (context && serverLayer)
+            context->UnloadDocument(serverLayer);
+        serverLayer = nullptr;
     }
 
     void RmlBackend::ClearPluginLayer() {

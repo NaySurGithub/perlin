@@ -486,6 +486,11 @@ namespace perlin {
         baseTints.clear();
         geometry.Clear();
         geometryTried = false;
+        alphaByTile.clear();
+        pathByTile.clear();
+        glassTiles.clear();
+        std::fill(models.tiles.begin(), models.tiles.end(), 0);
+        std::fill(localLook.begin(), localLook.end(), nullptr);
     }
 
     bool BlockLibrary::EnsureLoaded(const std::string& perlinPackDir, const std::string& vanillaRpRoot) {
@@ -1334,8 +1339,32 @@ namespace perlin {
         auto ait = appearances.find(name);
         if (ait == appearances.end())
             return fallback;
+        {
+            std::string shortName = name;
+            if (shortName.rfind("minecraft:", 0) == 0)
+                shortName.erase(0, 10);
+            int bit = 0;
+            if (shortName == "barrier")
+                bit = kBarrier;
+            else if (shortName.rfind("light_block", 0) == 0)
+                bit = kLightBlock;
+            else if (shortName == "structure_void")
+                bit = kStructureVoid;
+            else if (shortName == "piston_arm_collision" || shortName == "sticky_piston_arm_collision" || shortName == "moving_block" ||
+                     shortName == "movingblock")
+                return fallback;
+            if (bit && !(technicalMask.load(std::memory_order_relaxed) & bit))
+                return fallback;
+        }
         cached = &ait->second;
         return *cached;
+    }
+
+    void BlockLibrary::SetTechnicalVisible(int mask) const {
+        if (technicalMask.exchange(mask) == mask)
+            return;
+        std::lock_guard<std::mutex> lookLock(lookMutex);
+        std::fill(localLook.begin(), localLook.end(), nullptr);
     }
 
     const BlockAppearance* BlockLibrary::LookByName(const std::string& name) const {

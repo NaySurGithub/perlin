@@ -34,6 +34,8 @@ namespace perlin {
         // canonical block-state list (resources/block_states.json order, custom blocks appended).
         void SetSequential(bool on);
         bool Sequential() const { return sequential.load(std::memory_order_acquire); }
+        void SetSequentialAir(int32_t runtimeId) { sequentialAir.store(runtimeId, std::memory_order_release); }
+        int32_t SequentialAir() const { return sequentialAir.load(std::memory_order_acquire); }
         void AppendSequence(int32_t hash);
         void TruncateSequence();
         uint16_t InternRuntime(int32_t runtimeId);
@@ -54,6 +56,7 @@ namespace perlin {
 
     private:
         BlockPalette();
+        std::atomic<int32_t> sequentialAir{-1};
 
         bool namesLoaded = false;
         std::unordered_map<int32_t, std::string> nameByHash;

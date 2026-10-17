@@ -169,6 +169,14 @@ namespace perlin::ui {
                     n->index = collections.back().index;
                 }
                 const Vars* vars = factoryVars;
+                bool deferredView = false;
+                for (const Json& b : node.bindings) {
+                    if (!b.IsObject() || !b.Find("binding_type") || b.Find("binding_type")->StringOr("") != "view")
+                        continue;
+                    const Json* sc = b.Find("source_control_name");
+                    if (sc && sc->IsString() && !sc->string.empty() && sc->string != node.name)
+                        deferredView = true;
+                }
                 ApplyBindings(*n, collections);
                 ResolveProps(*n, vars);
                 if (const Json* ignored = n->p.Find("ignored"); ignored && Truthy(*ignored))
@@ -206,6 +214,19 @@ namespace perlin::ui {
                 };
                 for (const auto& child : node.children)
                     addKid(Instantiate(*child, collections, factoryVars, n->layer, n->alpha, propagate));
+                if (deferredView) {
+                    ApplyBindings(*n, collections);
+                    bool nowVisible = true;
+                    if (const Json* v = n->p.Find("visible"))
+                        nowVisible = Truthy(*v) || (v->IsString() && v->string.empty());
+                    if (const Json* v = n->bag.Find("#visible"))
+                        nowVisible = nowVisible && Truthy(*v);
+                    if (!nowVisible) {
+                        n->visible = false;
+                        n->kids.clear();
+                        return n;
+                    }
+                }
 
                 if (node.gridTemplate) {
                     int cols = 1, rows = 1;
@@ -229,7 +250,10 @@ namespace perlin::ui {
                     for (const FactoryItem& item : data.Factory(name))
                         for (const auto& entry : node.factoryControls)
                             if (entry.first == item.id) {
-                                auto kid = Instantiate(*entry.second, collections, &item.vars, n->layer, n->alpha, propagate);
+                                std::vector<Collection> inner = collections;
+                                if (!item.collection.empty())
+                                    inner.push_back({item.collection, item.index});
+                                auto kid = Instantiate(*entry.second, inner, &item.vars, n->layer, n->alpha, propagate);
                                 if (kid)
                                     kid->fromFactory = true;
                                 addKid(std::move(kid));

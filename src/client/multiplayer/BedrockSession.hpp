@@ -111,6 +111,41 @@ namespace perlin {
         void EndItemUseOn();
         bool TakeBlockNamesLearned() { return blockNamesLearned.exchange(false); }
         bool ServerAuthoritativeBlockBreaking() const { return serverAuthBreaking.load(); }
+
+        struct ServerForm {
+            uint32_t id = 0;
+            std::string json;
+        };
+        struct BossBar {
+            int64_t id = 0;
+            std::string title;
+            float progress = 1.0f;
+            uint8_t color = 0;
+            uint8_t overlay = 0;
+        };
+        struct ScoreRow {
+            std::string name;
+            int32_t score = 0;
+            int64_t order = 0;
+        };
+        struct ScoreboardView {
+            bool visible = false;
+            std::string title;
+            bool descending = true;
+            std::vector<ScoreRow> rows;
+        };
+        struct ServerToast {
+            std::string title, message;
+        };
+        bool TakeServerForm(ServerForm& out);
+        bool TakeFormClosed() { return formClosed.exchange(false); }
+        bool SendFormResponse(uint32_t id, const std::string* data, bool busy);
+        bool SendServerSettingsRequest();
+        std::vector<BossBar> BossBars() const;
+        ScoreboardView Scoreboard() const;
+        bool TakeToast(ServerToast& out);
+        uint32_t InputLocks() const { return inputLocks.load(); }
+        uint32_t HiddenHud() const { return hiddenHud.load(); }
         std::atomic<bool> serverAuthBreaking{true};
 
         struct BlockActionData {
@@ -439,6 +474,32 @@ void RequestRespawn();
         void HandleBatch(const std::vector<uint8_t>& msg);
         void OnGamePacket(uint32_t id, const std::vector<uint8_t>& body);
         void RegisterPacketHandlers();
+        void RegisterServerUiHandlers();
+        mutable std::mutex serverUiMutex;
+        std::deque<ServerForm> pendingForms;
+        std::atomic<bool> formClosed{false};
+        std::vector<BossBar> bossBars;
+        struct Objective {
+            std::string name, display;
+            int sortOrder = 0;
+        };
+        std::map<std::string, Objective> objectives;
+        std::string sidebarObjective;
+        struct ScoreKey {
+            std::string objective;
+            int64_t id = 0;
+            bool operator<(const ScoreKey& o) const { return objective != o.objective ? objective < o.objective : id < o.id; }
+        };
+        struct ScoreValue {
+            std::string name;
+            int32_t score = 0;
+            int64_t entity = 0;
+        };
+        std::map<ScoreKey, ScoreValue> scoreValues;
+        std::map<int64_t, int64_t> scoreIdentities;
+        std::deque<ServerToast> toasts;
+        std::atomic<uint32_t> inputLocks{0};
+        std::atomic<uint32_t> hiddenHud{0};
         net::PacketDispatcher dispatcher;
         bool SendRequestNetworkSettings();
         bool SendLogin();

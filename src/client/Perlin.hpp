@@ -14,6 +14,7 @@
 #include "client/renderer/LevelRenderer.hpp"
 #include "client/renderer/Lightmap.hpp"
 #include "client/renderer/RenderContext.hpp"
+#include "client/ui/FormScreen.hpp"
 #include "client/ui/ChatLog.hpp"
 #include "client/ui/Hud.hpp"
 #include "client/ui/InventoryScreen.hpp"
@@ -66,6 +67,18 @@ namespace perlin {
         void TakeScreenshot();
         void UpdateDeathScreen(ui::Hud& hud, BedrockSession* live, const ui::HudState& state, int fbW, int fbH);
         bool deathShown = false, deathLeftDown = false, deathRespawnSent = false, deathTextMode = false;
+        void UpdateFormScreen(ui::Hud& hud, BedrockSession* live, int fbW, int fbH);
+        void UpdateServerLayer(ui::Hud& hud, BedrockSession* live, int fbW, int fbH);
+        bool formShown = false, formLeftDown = false;
+        ui::FormModel formModel;
+        ui::FormUi formUi;
+        bool formEngine = false;
+        std::string formSignature, serverLayerSignature;
+        float formScroll = 0.0f, formContentH = 0.0f, formViewH = 0.0f;
+        std::chrono::steady_clock::time_point formOpenedAt{};
+        double toastUntil = 0.0;
+        std::string toastText, lastToastTitle, lastToastMessage;
+        std::chrono::steady_clock::time_point toastAt{};
         std::chrono::steady_clock::time_point deathAt{}, deathSentAt{};
         std::string deathSignature, deathTemplate;
         uint64_t deathTemplateVersion = 0;

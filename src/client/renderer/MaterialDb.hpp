@@ -96,8 +96,10 @@ namespace perlin::material {
         std::vector<Raw> raws;
         std::unordered_map<std::string, size_t> rawIndex;
         std::unordered_map<std::string, Def> resolved;
+        std::unordered_map<std::string, Def> builtins;
         std::unordered_map<std::string, int> resolving;
 
+        void FillBuiltins();
         const Def* ResolveOne(const std::string& name);
         static void Apply(Def& def, const ui::Json& json);
     };

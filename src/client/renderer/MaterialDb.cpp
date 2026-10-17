@@ -265,8 +265,11 @@ namespace perlin::material {
         if (const auto it = resolved.find(name); it != resolved.end())
             return &it->second;
         const auto raw = rawIndex.find(name);
-        if (raw == rawIndex.end())
+        if (raw == rawIndex.end()) {
+            if (const auto b = builtins.find(name); b != builtins.end())
+                return &b->second;
             return nullptr;
+        }
         if (resolving[name]++ > 0)
             return nullptr;
         const Raw& r = raws[raw->second];
@@ -317,6 +320,7 @@ namespace perlin::material {
     void Db::Resolve() {
         resolved.clear();
         resolving.clear();
+        FillBuiltins();
         for (const Raw& r : raws)
             ResolveOne(r.name);
     }
@@ -350,7 +354,8 @@ namespace perlin::material {
         }
     }
 
-    void Db::InstallBuiltins() {
+    void Db::FillBuiltins() {
+        builtins.clear();
         using B = BlendFactor;
         const bool fancy = mode == Mode::Fancy;
         const Builtin table[] = {
@@ -372,12 +377,13 @@ namespace perlin::material {
             {"entity", "", B::SrcAlpha, B::InvSrcAlpha, DepthFunc::LessEqual, "USE_OVERLAY"},
             {"entity_alphatest", "DisableCulling", B::SrcAlpha, B::InvSrcAlpha, DepthFunc::LessEqual, "USE_OVERLAY,ALPHA_TEST"},
             {"entity_alphablend", "Blending", B::SrcAlpha, B::InvSrcAlpha, DepthFunc::LessEqual, "USE_OVERLAY"},
+            {"slime_outer", "Blending", B::SrcAlpha, B::InvSrcAlpha, DepthFunc::LessEqual, "USE_OVERLAY"},
+            {"entity_multitexture", "", B::SrcAlpha, B::InvSrcAlpha, DepthFunc::LessEqual, "USE_OVERLAY,MULTI_COLOR_TINT"},
+            {"entity_emissive_alpha_one_sided", "Blending", B::SrcAlpha, B::InvSrcAlpha, DepthFunc::LessEqual, "USE_OVERLAY,USE_EMISSIVE,ALPHA_TEST"},
             {"entity_emissive", "", B::SrcAlpha, B::InvSrcAlpha, DepthFunc::LessEqual, "USE_OVERLAY,USE_EMISSIVE"},
             {"entity_emissive_alpha", "DisableCulling,Blending", B::SrcAlpha, B::InvSrcAlpha, DepthFunc::LessEqual, "USE_OVERLAY,USE_EMISSIVE,ALPHA_TEST"},
         };
         for (const Builtin& b : table) {
-            if (resolved.count(b.name))
-                continue;
             Def d;
             d.name = b.name;
             d.states = Split(b.states);
@@ -386,8 +392,15 @@ namespace perlin::material {
             d.blendDst = b.dst;
             d.blendSet = true;
             d.depthFunc = b.depth;
-            resolved.emplace(d.name, std::move(d));
+            builtins.emplace(d.name, std::move(d));
         }
+    }
+
+    void Db::InstallBuiltins() {
+        if (builtins.empty())
+            FillBuiltins();
+        for (const auto& [k, v] : builtins)
+            resolved.emplace(k, v);
     }
 
     const Def* Db::Find(const std::string& name) const {

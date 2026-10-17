@@ -72,6 +72,18 @@ namespace perlin {
             return false;
         if (input.TextMode())
             return false;
+        if (locks) {
+            const bool all = (locks & 4u) != 0;
+            switch (action) {
+                case Action::Forward: if (all || (locks & 512u)) return false; break;
+                case Action::Back: if (all || (locks & 1024u)) return false; break;
+                case Action::Left: if (all || (locks & 2048u) || (locks & 16u)) return false; break;
+                case Action::Right: if (all || (locks & 4096u) || (locks & 16u)) return false; break;
+                case Action::Jump: if (all || (locks & 64u)) return false; break;
+                case Action::Sneak: if (locks & 32u) return false; break;
+                default: break;
+            }
+        }
         if (holds[static_cast<size_t>(action)] > std::chrono::steady_clock::now())
             return true;
         const Binding& b = options.GetKey(action);

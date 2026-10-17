@@ -133,6 +133,8 @@ namespace perlin {
             for (const char* e : exact)
                 if (n == e)
                     return true;
+            if (n.rfind("light_block", 0) == 0 || n == "piston_arm_collision" || n == "sticky_piston_arm_collision")
+                return true;
             return Ends(n, "_sapling") || Ends(n, "sapling") || Ends(n, "_pressure_plate") || Ends(n, "_button") ||
                    n == "stone_button" || Ends(n, "_sign") || Ends(n, "_banner") || n == "standing_banner" ||
                    n == "wall_banner" || Ends(n, "_coral") || Ends(n, "_coral_fan") || Ends(n, "_coral_wall_fan") ||

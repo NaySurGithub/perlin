@@ -46,6 +46,9 @@ namespace perlin {
         bool Complete() const { return complete; }
         bool ApplyCustom(const std::string& vanillaRpRoot);
 
+        enum TechnicalBits { kBarrier = 1, kLightBlock = 2, kStructureVoid = 4 };
+        void SetTechnicalVisible(int mask) const;
+        int TechnicalVisible() const { return technicalMask.load(std::memory_order_relaxed); }
         const BlockAppearance& Look(int32_t localId) const;
         const BlockAppearance* LookByName(const std::string& name) const;
         bool TilePixels(int tile, std::vector<uint8_t>& rgba) const;
@@ -108,6 +111,7 @@ namespace perlin {
         void BuildGlassVariants();
         bool glassBuilt = false;
         std::atomic<int> glassMode{0};
+        mutable std::atomic<int> technicalMask{0};
         std::atomic<int> betterGrass{0};
         std::unordered_map<int, std::vector<int>> glassTiles;
         inline static int tilePxValue = 16;

@@ -1201,6 +1201,43 @@ namespace perlin {
     }
 
     bool BedrockSession::SendPlayerAuthInputBlockAction(uint32_t action, int bx, int by, int bz, int face) {
+        if (!serverAuthBreaking.load()) {
+            if (action == 26 || action == 27)
+                return true;
+            proto::PlayerActionPacket a;
+            a.runtimeEntityId = runtimeId;
+            a.action = static_cast<proto::Action>(action);
+            a.position = {bx, by, bz};
+            a.resultPosition = {0, 0, 0};
+            a.face = face;
+            const bool ok = Send(a);
+            if (action == 2) {
+                proto::InventoryTransactionPacket t;
+                t.transaction.transactionType = proto::TransactionTransactionType::ItemUse;
+                proto::TransactionUseItem u;
+                int selected = 0;
+                {
+                    std::lock_guard lock(statusMutex);
+                    selected = std::clamp(inventory.selected, 0, 8);
+                    u.heldItem = inventoryRaw[selected];
+                }
+                u.actionType = proto::TransactionUseItemActionType::BreakBlock;
+                u.triggerType = proto::TransactionUseItemTriggerType::PlayerInput;
+                u.blockPosition = {bx, by, bz};
+                u.face = static_cast<uint8_t>(face);
+                u.hotbarSlot = selected;
+                u.hand = proto::TransactionUseItemHand::MainHand;
+                u.playerPos = {lastAuthPos[0], lastAuthPos[1] + 1.62f, lastAuthPos[2]};
+                u.clickPos = {0.5f, 0.5f, 0.5f};
+                bool loaded = false;
+                const uint16_t id = netLevel.GetBlock(bx, by, bz, loaded);
+                u.blockRuntimeId = loaded ? static_cast<uint32_t>(BlockPalette::Instance().RuntimeId(id)) : 0;
+                u.clientPrediction = proto::TransactionUseItemClientPrediction::Success;
+                t.transaction.transactionData = u;
+                Send(t);
+            }
+            return ok;
+        }
         if (pendingBlockActions.size() < 64)
             pendingBlockActions.push_back({action, bx, by, bz, face});
         return true;
@@ -1417,6 +1454,8 @@ namespace perlin {
         if (!requestMode) {
             const uint8_t* p = pkt.payload.data();
             size_t left = pkt.payload.size();
+            std::vector<std::pair<int, SubChunkData>> parsed;
+            parsed.reserve(pkt.subChunkCount);
             for (uint32_t i = 0; i < pkt.subChunkCount; i++) {
                 SubChunkData sc;
                 size_t used = 0;
@@ -1427,9 +1466,22 @@ namespace perlin {
                 }
                 p += used;
                 left -= used;
-                int absY = sc.hasYIndex ? sc.yIndex : dim.MinSubChunk() + (int)i;
-                ApplySubChunk(pkt.x, pkt.z, absY, sc);
+                const int absY = sc.hasYIndex ? sc.yIndex : dim.MinSubChunk() + (int)i;
+                parsed.emplace_back(absY, std::move(sc));
             }
+            BlockPalette& blockPalette = BlockPalette::Instance();
+            if (blockPalette.Sequential() && blockPalette.SequentialAir() < 0 && !parsed.empty()) {
+                const auto top = std::max_element(parsed.begin(), parsed.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
+                if (!top->second.storages.empty() && !top->second.storages[0].persistent && top->second.storages[0].palette.size() == 1) {
+                    const int32_t guess = top->second.storages[0].palette[0];
+                    blockPalette.SetSequentialAir(guess);
+                    std::cout << "[block] server uses sequential block ids; the top sub-chunk of column (" << pkt.x << "," << pkt.z
+                              << ") is a single id " << guess << ", treating it as air (our table maps it to '"
+                              << blockPalette.Name(blockPalette.Intern(blockPalette.NetworkId(blockPalette.InternRuntime(guess)))) << "')" << std::endl;
+                }
+            }
+            for (auto& [absY, sc] : parsed)
+                ApplySubChunk(pkt.x, pkt.z, absY, sc);
             netLevel.MarkComplete(pkt.x, pkt.z);
         } else {
             ApplyBiomeColumn(pkt.x, pkt.z, pkt.payload);
