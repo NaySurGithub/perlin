@@ -4,7 +4,37 @@ if(APPLE)
     set(CMAKE_OSX_DEPLOYMENT_TARGET "12.0" CACHE STRING "" FORCE)
 endif()
 
+# Windows builds use clang-cl (MSVC-compatible Clang) with lld-link instead of cl.exe. This only
+# applies when nothing chose a compiler explicitly (-DCMAKE_CXX_COMPILER, CC/CXX, a preset, or a
+# Visual Studio toolset); pass -DPERLIN_USE_CLANG_CL=OFF to build with cl.exe. With the Visual
+# Studio generator use the windows-vs-clangcl preset (or -T ClangCL) instead.
+option(PERLIN_USE_CLANG_CL "Build with clang-cl on Windows" ON)
+if(CMAKE_HOST_WIN32 AND PERLIN_USE_CLANG_CL AND NOT CMAKE_GENERATOR MATCHES "Visual Studio"
+   AND NOT CMAKE_C_COMPILER AND NOT CMAKE_CXX_COMPILER AND NOT DEFINED ENV{CC} AND NOT DEFINED ENV{CXX})
+    set(_perlin_llvm_hints "$ENV{VCINSTALLDIR}/Tools/Llvm/x64/bin" "$ENV{ProgramFiles}/LLVM/bin" "C:/Program Files/LLVM/bin")
+    find_program(PERLIN_CLANG_CL clang-cl HINTS ${_perlin_llvm_hints})
+    find_program(PERLIN_LLD_LINK lld-link HINTS ${_perlin_llvm_hints})
+    if(PERLIN_CLANG_CL)
+        set(CMAKE_C_COMPILER "${PERLIN_CLANG_CL}" CACHE FILEPATH "C compiler" FORCE)
+        set(CMAKE_CXX_COMPILER "${PERLIN_CLANG_CL}" CACHE FILEPATH "C++ compiler" FORCE)
+        if(PERLIN_LLD_LINK)
+            set(CMAKE_LINKER "${PERLIN_LLD_LINK}" CACHE FILEPATH "Linker" FORCE) # needed for LTO
+        endif()
+        message(STATUS "Perlin: using clang-cl (${PERLIN_CLANG_CL})")
+    else()
+        message(WARNING "Perlin: clang-cl not found, falling back to cl.exe. Install \"C++ Clang tools for Windows\" "
+                        "in the Visual Studio Installer, or LLVM, to build with clang-cl.")
+    endif()
+endif()
+
 project(Perlin VERSION 1.0.0 LANGUAGES C CXX)
+
+if(WIN32 AND CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND CMAKE_CXX_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC")
+    set(PERLIN_CLANG_CL_BUILD ON)
+    message(STATUS "Perlin: compiler is clang-cl ${CMAKE_CXX_COMPILER_VERSION}")
+else()
+    set(PERLIN_CLANG_CL_BUILD OFF)
+endif()
 
 set(CMAKE_POLICY_VERSION_MINIMUM 3.10)
 set(CMAKE_CXX_STANDARD 23)
@@ -519,6 +549,11 @@ endif()
 
 if(MSVC)
     target_compile_options(Perlin PRIVATE /W4 /permissive- /EHsc /Zc:__cplusplus)
+    if(PERLIN_CLANG_CL_BUILD)
+        # clang-cl's /W4 also turns on Clang warnings that are pure MSVC-compatibility noise here.
+        target_compile_options(Perlin PRIVATE -Wno-unused-parameter -Wno-microsoft-cast -Wno-microsoft-enum-value
+                               -Wno-language-extension-token -Wno-c++98-compat -Wno-pragma-pack)
+    endif()
     target_compile_options(Perlin PRIVATE /Zi)
     target_link_options(Perlin PRIVATE /DEBUG /OPT:REF /OPT:ICF /MAP)
     string(REGEX REPLACE "[/-]RTC1" "" CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG}")
@@ -542,6 +577,7 @@ endif()
 if(PERLIN_IPO)
     set_property(TARGET Perlin PROPERTY INTERPROCEDURAL_OPTIMIZATION_RELEASE ON)
     if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+        # Also right for clang-cl, which takes -f options and does LTO via lld-link.
         set_source_files_properties(src/client/entity/EntityRenderer.cpp PROPERTIES COMPILE_OPTIONS "-fno-lto")
     elseif(MSVC)
         set_source_files_properties(src/client/entity/EntityRenderer.cpp PROPERTIES COMPILE_OPTIONS "/GL-")

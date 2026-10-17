@@ -86,7 +86,8 @@ jobs:
         run: |
           & "$env:VCPKG_INSTALLATION_ROOT\vcpkg.exe" install openssl:x64-windows-static --x-install-root="$env:GITHUB_WORKSPACE/openssl-install"
 
-      - name: Set up MSVC
+      # Windows SDK + MSVC libraries for clang-cl (the compiler itself is LLVM, preinstalled on the runner).
+      - name: Set up MSVC environment
         if: runner.os == 'Windows'
         uses: ilammy/msvc-dev-cmd@v1
         with:
@@ -102,6 +103,7 @@ jobs:
         if: runner.os == 'Windows'
         run: >
           cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DPERLIN_BUILD_TESTS=ON
+          -DCMAKE_C_COMPILER=clang-cl -DCMAKE_CXX_COMPILER=clang-cl -DCMAKE_LINKER=lld-link
           -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
           -DOPENSSL_ROOT_DIR="$env:GITHUB_WORKSPACE/openssl-install/x64-windows-static"
 
