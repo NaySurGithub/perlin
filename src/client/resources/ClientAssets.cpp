@@ -16,7 +16,7 @@ namespace fs = std::filesystem;
 
 namespace perlin::clientassets {
     namespace {
-        constexpr const char* kMarker = ".ready1";
+        constexpr const char* kMarker = ".ready2";
         const std::string kBase = "assets/minecraft/textures/";
 
         struct Image {
@@ -207,6 +207,31 @@ namespace perlin::clientassets {
         }
         emit("spyglass_model.png", jar.Load(kBase + "item/spyglass.png"));
         emit("spyglass_scope.png", jar.Load(kBase + "misc/spyglass_scope.png"));
+
+        {
+            const std::pair<const char*, const char*> sprites[] = {
+                {"ui_menu_btn.png", "sprites/widget/button.png"},
+                {"ui_menu_btn_hi.png", "sprites/widget/button_highlighted.png"},
+                {"ui_menu_btn_off.png", "sprites/widget/button_disabled.png"},
+                {"ui_menu_field.png", "sprites/widget/text_field.png"},
+                {"ui_menu_field_hi.png", "sprites/widget/text_field_highlighted.png"},
+                {"ui_menu_logo.png", "title/minecraft.png"},
+                {"ui_menu_edition.png", "title/edition.png"},
+                {"ui_menu_bg.png", "menu_background.png"},
+                {"ui_menu_list_bg.png", "menu_list_background.png"},
+                {"ui_menu_header.png", "header_separator.png"},
+                {"ui_menu_footer.png", "footer_separator.png"},
+                {"ui_menu_join.png", "sprites/server_list/join.png"},
+                {"ui_menu_join_hi.png", "sprites/server_list/join_highlighted.png"},
+                {"ui_menu_ping.png", "sprites/server_list/ping_5.png"},
+                {"ui_menu_unreachable.png", "sprites/server_list/unreachable.png"},
+                {"ui_menu_language.png", "sprites/icon/language.png"},
+                {"ui_menu_accessibility.png", "sprites/icon/accessibility.png"},
+                {"ui_menu_scroller.png", "sprites/widget/scroller.png"},
+            };
+            for (const auto& [dst, src] : sprites)
+                emit(dst, gui(src));
+        }
 
         std::cout << "[assets] built " << saved << " client images (" << missing << " missing)" << std::endl;
         if (saved < 30)

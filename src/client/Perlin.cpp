@@ -29,6 +29,7 @@
 #include "client/ui/CreativeScreen.hpp"
 #include "client/ui/DisconnectScreen.hpp"
 #include "client/ui/LoadingScreen.hpp"
+#include "client/ui/TitleScreen.hpp"
 #include "client/ui/UiLayout.hpp"
 #include "client/ui/PauseScreen.hpp"
 #include "client/resources/MojangFonts.hpp"
@@ -61,6 +62,8 @@
 #include <map>
 #include <cctype>
 #include <chrono>
+#include <sstream>
+#include <fstream>
 #include <stdexcept>
 #include <cstdio>
 #include <cstdlib>
@@ -245,8 +248,14 @@ namespace perlin {
             if (MojangFonts::Ensure(paths::DataDir()))
                 fontsDownloaded = true;
         });
-        if (!PERLIN_ENV("PERLIN_PREVIEW"))
-            Connect();
+        if (!PERLIN_ENV("PERLIN_PREVIEW")) {
+            if (args.server.empty())
+                titleActive = true;
+            else
+                Connect();
+        }
+        if (PERLIN_ENV("PERLIN_PREVIEW_TITLE"))
+            titleActive = true;
 
         renderRunning = true;
 #ifdef __EMSCRIPTEN__
@@ -3293,7 +3302,288 @@ namespace perlin {
         pauseLeftDown = down;
     }
 
+    namespace {
+        std::string ServersPath() { return paths::DataDir() + "/servers.json"; }
+
+        void LoadServers(std::vector<ui::ServerEntry>& out, const std::string& fallback) {
+            out.clear();
+            std::ifstream in(ServersPath(), std::ios::binary);
+            if (!in) {
+                if (!fallback.empty() && fallback != "127.0.0.1:19132")
+                    out.push_back({"Minecraft Server", fallback});
+                return;
+            }
+            std::stringstream ss;
+            ss << in.rdbuf();
+            ui::Json json;
+            std::string error;
+            if (!ui::Json::Parse(ss.str(), json, error))
+                return;
+            const ui::Json* list = json.Find("servers");
+            if (!list || !list->IsArray())
+                return;
+            for (const ui::Json& entry : list->array) {
+                const ui::Json* name = entry.Find("name");
+                const ui::Json* ip = entry.Find("ip");
+                if (ip && ip->IsString() && !ip->string.empty())
+                    out.push_back({name ? name->StringOr("") : std::string(), ip->string});
+            }
+        }
+
+        void SaveServers(const std::vector<ui::ServerEntry>& servers) {
+            ui::Json list = ui::Json::MakeArray();
+            for (const ui::ServerEntry& s : servers) {
+                ui::Json entry = ui::Json::MakeObject();
+                entry.Set("name", ui::Json(s.name));
+                entry.Set("ip", ui::Json(s.address));
+                list.Push(std::move(entry));
+            }
+            ui::Json root = ui::Json::MakeObject();
+            root.Set("servers", std::move(list));
+            std::error_code ec;
+            std::filesystem::create_directories(paths::DataDir(), ec);
+            std::ofstream(ServersPath(), std::ios::binary) << root.Dump(2);
+        }
+
+        void AppendUtf8(std::string& out, int cp) {
+            if (cp < 32 || cp == 127)
+                return;
+            if (cp < 0x80) {
+                out += static_cast<char>(cp);
+            } else if (cp < 0x800) {
+                out += static_cast<char>(0xC0 | (cp >> 6));
+                out += static_cast<char>(0x80 | (cp & 0x3F));
+            } else {
+                out += static_cast<char>(0xE0 | (cp >> 12));
+                out += static_cast<char>(0x80 | ((cp >> 6) & 0x3F));
+                out += static_cast<char>(0x80 | (cp & 0x3F));
+            }
+        }
+
+        void PopUtf8(std::string& text) {
+            while (!text.empty() && (static_cast<unsigned char>(text.back()) & 0xC0) == 0x80)
+                text.pop_back();
+            if (!text.empty())
+                text.pop_back();
+        }
+    }
+
+    void Perlin::JoinServer(const std::string& address) {
+        if (address.empty())
+            return;
+        options.server = address;
+        options.Save();
+        titleActive = false;
+        Connect();
+    }
+
+    bool Perlin::UpdateTitleScreen(ui::Hud& hud, int fbW, int fbH) {
+        const auto now = Clock::now();
+        if (!titleActive) {
+            if (titleShown) {
+                hud.Overlay().ClearOverlay();
+                titleShown = false;
+                titleSignature.clear();
+                if (!chat.IsOpen())
+                    input.SetTextMode(false);
+            }
+            titleLeftDown = false;
+            return false;
+        }
+        if (!titleShown) {
+            titleShown = true;
+            titleOpenedAt = now;
+            titleLeftDown = true;
+            titleSignature.clear();
+            title.page = ui::TitlePage::Main;
+            title.selected = -1;
+            title.scroll = 0;
+            LoadServers(title.servers, options.server);
+            title.version = "Minecraft Bedrock";
+            title.copyright = "Not affiliated with Mojang AB.";
+            if (const char* p = PERLIN_ENV("PERLIN_PREVIEW_TITLE")) {
+                const std::string page = p;
+                if (page == "servers" || page == "edit" || page == "direct") {
+                    if (title.servers.empty())
+                        title.servers = {{"Fozzy Minecraft Server", "23.109.60.29:25565"}, {"Minecraft Server", "play.example.net:19132"}};
+                    title.page = page == "servers" ? ui::TitlePage::Servers : page == "edit" ? ui::TitlePage::Edit : ui::TitlePage::Direct;
+                    title.selected = 0;
+                    title.name = title.servers[0].name;
+                    title.address = title.servers[0].address;
+                    title.focus = 1;
+                }
+            }
+            input.SetTextMode(true);
+        }
+
+        const int scale = hud.OverlayScale();
+        const int guiW = static_cast<int>(std::ceil(static_cast<float>(fbW) / static_cast<float>(scale)));
+        const int guiH = static_cast<int>(std::ceil(static_cast<float>(fbH) / static_cast<float>(scale)));
+
+        const auto commit = [&] {
+            if (title.address.empty())
+                return;
+            if (title.page == ui::TitlePage::Direct) {
+                JoinServer(title.address);
+                return;
+            }
+            const ui::ServerEntry entry{title.name.empty() ? "Minecraft Server" : title.name, title.address};
+            if (title.adding || title.selected < 0 || title.selected >= static_cast<int>(title.servers.size())) {
+                title.servers.push_back(entry);
+                title.selected = static_cast<int>(title.servers.size()) - 1;
+            } else {
+                title.servers[static_cast<size_t>(title.selected)] = entry;
+            }
+            SaveServers(title.servers);
+            title.page = ui::TitlePage::Servers;
+        };
+        const auto join = [&](int row) {
+            if (row >= 0 && row < static_cast<int>(title.servers.size()))
+                JoinServer(title.servers[static_cast<size_t>(row)].address);
+        };
+        const auto back = [&] {
+            switch (title.page) {
+                case ui::TitlePage::Servers: title.page = ui::TitlePage::Main; break;
+                case ui::TitlePage::Edit:
+                case ui::TitlePage::Direct: title.page = ui::TitlePage::Servers; break;
+                default: break;
+            }
+        };
+        const auto edit = [&](bool adding) {
+            title.adding = adding;
+            title.page = ui::TitlePage::Edit;
+            title.focus = 0;
+            if (adding) {
+                title.name = "Minecraft Server";
+                title.address.clear();
+            } else {
+                const ui::ServerEntry& s = title.servers[static_cast<size_t>(title.selected)];
+                title.name = s.name;
+                title.address = s.address;
+            }
+        };
+
+        for (const auto& t : inputManager.TakeTyped()) {
+            if (!titleActive)
+                break;
+            const bool fields = title.page == ui::TitlePage::Edit || title.page == ui::TitlePage::Direct;
+            if (!t.character && t.key == Key::Escape) {
+                back();
+            } else if (fields) {
+                std::string& field = title.page == ui::TitlePage::Direct || title.focus == 1 ? title.address : title.name;
+                if (!t.character && t.key == Key::Backspace)
+                    PopUtf8(field);
+                else if (!t.character && t.key == Key::Tab && title.page == ui::TitlePage::Edit)
+                    title.focus ^= 1;
+                else if (!t.character && t.key == Key::Enter)
+                    commit();
+                else if (t.character && !t.ctrl && field.size() < 120)
+                    AppendUtf8(field, t.key);
+            } else if (title.page == ui::TitlePage::Servers) {
+                const int count = static_cast<int>(title.servers.size());
+                if (!t.character && t.key == Key::Enter)
+                    join(title.selected);
+                else if (!t.character && t.key == Key::Down && count)
+                    title.selected = std::min(count - 1, title.selected + 1);
+                else if (!t.character && t.key == Key::Up && count)
+                    title.selected = std::max(0, title.selected - 1);
+            }
+        }
+        if (!titleActive)
+            return false;
+
+        if (title.page == ui::TitlePage::Servers) {
+            const int rows = ui::TitleVisibleRows(guiH);
+            const int maxScroll = std::max(0, static_cast<int>(title.servers.size()) - rows);
+            if (const float wheel = inputManager.Scroll(); wheel != 0.0f)
+                title.scroll -= wheel > 0 ? 1 : -1;
+            if (title.selected >= 0) {
+                title.scroll = std::min(title.scroll, title.selected);
+                title.scroll = std::max(title.scroll, title.selected - rows + 1);
+            }
+            title.scroll = std::clamp(title.scroll, 0, maxScroll);
+        }
+
+        const int64_t ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count();
+        title.caret = (ms / 500) % 2 == 0;
+        title.spinner = static_cast<int>(ms / 250);
+        std::string signature = std::to_string(guiW) + "x" + std::to_string(guiH) + "|" + std::to_string(static_cast<int>(title.page)) + "|" +
+                                std::to_string(title.selected) + "|" + std::to_string(title.scroll) + "|" + std::to_string(title.focus);
+        if (title.page == ui::TitlePage::Edit || title.page == ui::TitlePage::Direct)
+            signature += "|" + title.name + "|" + title.address + "|" + (title.caret ? "c" : "n") + (title.adding ? "a" : "e");
+        else if (title.page == ui::TitlePage::Servers) {
+            signature += "|" + std::to_string(title.servers.size());
+            for (const ui::ServerEntry& s : title.servers)
+                signature += "|" + s.name + "|" + s.address;
+            if (title.servers.empty())
+                signature += "|" + std::to_string(title.spinner & 3);
+        }
+        if (signature != titleSignature || !hud.Overlay().HasOverlay()) {
+            titleSignature = signature;
+            std::string error;
+            if (!hud.Overlay().SetOverlay(ui::BuildTitleRml(title, guiW, guiH), error))
+                std::cout << "[ui] title screen: " << error << std::endl;
+        }
+        float mx = input.MouseX(), my = input.MouseY();
+        if (const char* m = PERLIN_ENV("PERLIN_PREVIEW_MOUSE"))
+            std::sscanf(m, "%f,%f", &mx, &my);
+        hud.Overlay().MouseMove(mx / static_cast<float>(scale), my / static_cast<float>(scale));
+        hud.UpdateOverlay(fbW, fbH, options.guiScale);
+
+        const bool down = input.IsMouseDown(0);
+        if (!down && titleLeftDown && now - titleOpenedAt > std::chrono::milliseconds(150)) {
+            const std::string hover = hud.Overlay().OverlayHover();
+            const auto rowOf = [&](const char* prefix) {
+                const std::string p = prefix;
+                return hover.compare(0, p.size(), p) == 0 ? std::atoi(hover.c_str() + p.size()) : -1;
+            };
+            if (hover == ui::kTitleMulti) {
+                title.page = ui::TitlePage::Servers;
+            } else if (hover == ui::kTitleQuit) {
+                platform->isRunning = false;
+            } else if (hover == ui::kServerCancel || hover == ui::kEditCancel) {
+                back();
+            } else if (hover == ui::kServerJoin) {
+                join(title.selected);
+            } else if (hover == ui::kServerDirect) {
+                title.page = ui::TitlePage::Direct;
+                title.address = options.server;
+            } else if (hover == ui::kServerAdd) {
+                edit(true);
+            } else if (hover == ui::kServerEdit) {
+                edit(false);
+            } else if (hover == ui::kServerDelete) {
+                if (title.selected >= 0 && title.selected < static_cast<int>(title.servers.size())) {
+                    title.servers.erase(title.servers.begin() + title.selected);
+                    title.selected = -1;
+                    SaveServers(title.servers);
+                }
+            } else if (hover == ui::kServerRefresh) {
+                LoadServers(title.servers, options.server);
+                title.selected = -1;
+            } else if (hover == ui::kEditName) {
+                title.focus = 0;
+            } else if (hover == ui::kEditAddress) {
+                title.focus = 1;
+            } else if (hover == ui::kEditDone) {
+                commit();
+            } else if (const int go = rowOf(ui::kServerJoinPrefix); go >= 0) {
+                join(go);
+            } else if (const int row = rowOf(ui::kServerRowPrefix); row >= 0) {
+                if (row == titleClickRow && now - titleClickAt < std::chrono::milliseconds(400))
+                    join(row);
+                title.selected = row;
+                titleClickRow = row;
+                titleClickAt = now;
+            }
+        }
+        titleLeftDown = down;
+        return titleActive || titleShown;
+    }
+
     bool Perlin::UpdateLoadingScreen(ui::Hud& hud, int fbW, int fbH) {
+        if (titleActive || titleShown)
+            return false;
         const auto now = Clock::now();
         const bool preview = PERLIN_ENV("PERLIN_PREVIEW_LOADING") != nullptr;
         const auto tr = [](const char* key, const char* fallback, const std::vector<std::string>& args = {}) {
@@ -5598,9 +5888,10 @@ namespace perlin {
                     hud->Update(hudState, fbW, fbH, options.guiScale);
                     UpdateModLayer(*hud);
                     UpdateServerLayer(*hud, live, fbW, fbH);
-                    const bool disconnectUp = UpdateDisconnectScreen(*hud, fbW, fbH);
-                    const bool loadingUp = !disconnectUp && UpdateLoadingScreen(*hud, fbW, fbH);
-                    if (!disconnectUp && !loadingUp) {
+                    const bool titleUp = UpdateTitleScreen(*hud, fbW, fbH);
+                    const bool disconnectUp = !titleUp && UpdateDisconnectScreen(*hud, fbW, fbH);
+                    const bool loadingUp = !titleUp && !disconnectUp && UpdateLoadingScreen(*hud, fbW, fbH);
+                    if (!titleUp && !disconnectUp && !loadingUp) {
                         UpdateDeathScreen(*hud, live, hudState, fbW, fbH);
                         UpdateFormScreen(*hud, live, fbW, fbH);
                         UpdateInventoryScreen(*hud, live, hudState, fbW, fbH);
@@ -5639,13 +5930,13 @@ namespace perlin {
                                                   (centerY + (1.8f / 2.0f + 0.0625f) * dollScale) * scale, dollScale * scale, clip);
                     }
                     float cx, cy, cw, ch;
-                    if (options.showHud && !deathShown && !formShown && !invShown && !pauseShown && !disconnectShown && !loadingShown && (camera.mode == PerspectiveMode::FirstPerson || options.thirdPersonCrosshair) &&
+                    if (options.showHud && !deathShown && !formShown && !invShown && !pauseShown && !disconnectShown && !loadingShown && !titleShown && (camera.mode == PerspectiveMode::FirstPerson || options.thirdPersonCrosshair) &&
                         hudState.mode != ui::GameMode::Spectator &&
                         hud->Cursor(cx, cy, cw, ch))
                         renderer->DrawHudCursor(cx, cy, cw, ch);
                 }
             }
-            if (!deathShown && !pauseShown && !invShown && !disconnectShown && !loadingShown)
+            if (!deathShown && !pauseShown && !invShown && !disconnectShown && !loadingShown && !titleShown)
                 platform->DrawTouchOverlay(*renderer);
             if (inputManager.Pressed(Action::Screenshot))
                 TakeScreenshot();

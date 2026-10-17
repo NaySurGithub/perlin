@@ -16,6 +16,7 @@
 #include "client/renderer/LevelRenderer.hpp"
 #include "client/renderer/Lightmap.hpp"
 #include "client/renderer/RenderContext.hpp"
+#include "client/ui/TitleScreen.hpp"
 #include "client/ui/FormScreen.hpp"
 #include "client/ui/ChatLog.hpp"
 #include "client/ui/Hud.hpp"
@@ -115,11 +116,18 @@ namespace perlin {
         void UpdatePauseScreen(ui::Hud& hud, BedrockSession* live, int fbW, int fbH);
         bool UpdateDisconnectScreen(ui::Hud& hud, int fbW, int fbH);
         bool UpdateLoadingScreen(ui::Hud& hud, int fbW, int fbH);
+        bool UpdateTitleScreen(ui::Hud& hud, int fbW, int fbH);
+        void JoinServer(const std::string& address);
         bool loadingShown = false, loadingDone = false;
         std::string loadingSignature, loadingTemplate;
         uint64_t loadingTemplateVersion = 0;
         std::chrono::steady_clock::time_point loadingCheckAt{}, loadingReadyAt{}, loadingStartAt{};
         bool loadingReadyArmed = false;
+        bool titleActive = false, titleShown = false, titleLeftDown = false;
+        ui::TitleModel title;
+        std::string titleSignature;
+        std::chrono::steady_clock::time_point titleOpenedAt{}, titleClickAt{};
+        int titleClickRow = -1;
         bool disconnectShown = false, disconnectLeftDown = false, disconnectTextMode = false;
         std::chrono::steady_clock::time_point disconnectOpenedAt{}, disconnectCheckAt{};
         std::string disconnectSignature, disconnectTemplate;

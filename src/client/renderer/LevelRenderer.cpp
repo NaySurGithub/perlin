@@ -35,7 +35,7 @@ namespace perlin {
         const unsigned cores = HardwareThreads();
         const unsigned threads = std::clamp(cores > 2 ? cores - 1 : 2u, 2u, 32u);
         meshPool = std::make_unique<ThreadPool>(threads);
-        maxInFlight = threads * 4;
+        maxInFlight = threads * 6;
     }
 
     LevelRenderer::~LevelRenderer() {
@@ -214,7 +214,7 @@ namespace perlin {
         const auto uploadStart = std::chrono::steady_clock::now();
         size_t consumed = 0;
         for (MeshResult& r : finished) {
-            if (consumed > 0 && std::chrono::steady_clock::now() - uploadStart > std::chrono::milliseconds(4))
+            if (consumed > 0 && std::chrono::steady_clock::now() - uploadStart > std::chrono::milliseconds(6))
                 break;
             consumed++;
             inFlight.erase(r.pos);
@@ -310,16 +310,16 @@ namespace perlin {
     bool LevelRenderer::Ready(const ChunkPos& pos, uint64_t now) const {
         const ChunkInfo& self = info.at(pos);
         if (self.streaming)
-            return now - self.firstSeen > 8000;
+            return now - self.firstSeen > 3000;
         for (int dz = -1; dz <= 1; dz++)
             for (int dx = -1; dx <= 1; dx++) {
                 if (!dx && !dz)
                     continue;
                 const auto n = info.find(ChunkPos{pos.x + dx, pos.z + dz});
                 if (n == info.end()) {
-                    if (now - self.readyAt < 500)
+                    if (now - self.readyAt < 200)
                         return false;
-                } else if (n->second.streaming && now - n->second.firstSeen < 2500) {
+                } else if (n->second.streaming && now - n->second.firstSeen < 900) {
                     return false;
                 }
             }
