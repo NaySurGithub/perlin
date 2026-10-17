@@ -26,6 +26,10 @@ namespace perlin::ui {
         // The panorama is drawn natively underneath (TitlePanorama); the RML only draws a
         // fallback strip when the panorama textures aren't available yet.
         bool nativePanorama = false;
+        // Logo image and its size in GUI pixels. Perlin points this at Bedrock's textures/ui/title
+        // once the assets are there; empty uses the built-in sprite.
+        std::string logoSrc;
+        int logoW = 256, logoH = 64;
     };
 
     inline constexpr const char* kTitleMulti = "title_multi";

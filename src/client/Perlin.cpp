@@ -78,6 +78,10 @@
 #define PERLIN_WEB_PERSIST
 #endif
 
+#ifndef PERLIN_VERSION
+#define PERLIN_VERSION "1.0.0"
+#endif
+
 namespace perlin {
     namespace {
         uint8_t CachedLight(Level& level, int bx, int by, int bz, std::chrono::steady_clock::time_point now) {
@@ -306,7 +310,15 @@ namespace perlin {
             port = 443;
 
         particleLevel = nullptr;
+        const uint64_t gen = ++connectGeneration;
+        if (session)
+            retiredSessions.push_back(std::move(session));
         session = std::make_unique<BedrockSession>();
+        // Free sessions left behind by Cancel/Disconnect once nothing is still connecting on them.
+        // This runs after the new session exists, so its level can't reuse an old one's address
+        // (the level renderer notices a new level by pointer).
+        if (connectsInFlight.load() == 0)
+            std::erase_if(retiredSessions, [](const std::unique_ptr<BedrockSession>& s) { return !s->Transferring(); });
         session->SetPacketHandler([this](uint32_t id, const std::vector<uint8_t>& body) {
             if (!modWantPackets.load() || body.size() > 65536)
                 return;
@@ -342,20 +354,31 @@ namespace perlin {
         session->SetPackDirectory(paths::DataDir() + "/server_packs");
         ServerPacks::Instance().SetRoot(paths::DataDir() + "/server_packs_extracted");
 
+        account.reset();
         if (onlineThisRun) {
             account = std::make_shared<xbox::Account>(paths::DataDir() + "/auth.json");
             session->SetAccount(account);
         }
-        workers->Submit([this, host, port] {
-            if (account) {
+        connectsInFlight++;
+        workers->Submit([this, host, port, gen, s = session.get(), acct = account] {
+            struct InFlight {
+                std::atomic<int>& n;
+                ~InFlight() { n--; }
+            } inFlight{connectsInFlight};
+            const auto current = [&] { return connectGeneration.load() == gen; };
+            if (acct) {
                 std::string error;
-                const bool signedIn = account->SignIn(
-                    [this](const std::string& url, const std::string& code) {
+                const bool signedIn = acct->SignIn(
+                    [this, &current](const std::string& url, const std::string& code) {
+                        if (!current())
+                            return;
                         std::cout << "[auth] To sign in, open " << url << " and enter the code " << code << std::endl;
                         platform->ShowSignInCode(url, code);
                         SetStatusHint(i18n::Tr("perlin.status.sign_in", {url, code}));
                     },
                     error);
+                if (!current())
+                    return;
                 if (!signedIn) {
                     std::cout << "[auth] sign-in failed: " << error << std::endl;
                     SetStatusHint(i18n::Tr("perlin.status.sign_in_failed", {error}));
@@ -363,10 +386,17 @@ namespace perlin {
                 }
                 SetStatusHint({});
             }
-            if (session->Connect(host, port))
+            const bool connected = s->Connect(host, port);
+            if (!current()) {
+                // Cancelled while connecting: hang up quietly.
+                if (connected)
+                    s->Disconnect();
+                return;
+            }
+            if (connected)
                 sessionReady = true;
-            else if (account)
-                SetStatusHint(i18n::Tr("perlin.status.login_failed", {session->LastError()}));
+            else if (acct)
+                SetStatusHint(i18n::Tr("perlin.status.login_failed", {s->LastError()}));
         });
     }
 
@@ -900,7 +930,7 @@ namespace perlin {
             rateAt = now;
         }
         ui::DebugInfo d;
-        d.version = std::string("Perlin ") + "1.0.0" + " (bedrock " + kBedrockVersion + "/vanilla)";
+        d.version = std::string("Perlin ") + PERLIN_VERSION + " (bedrock " + kBedrockVersion + "/vanilla)";
         d.fps = fpsShown;
         d.maxFps = options.maxFps;
         d.vsync = options.vsync;
@@ -1114,7 +1144,7 @@ namespace perlin {
         title += " | " + i18n::Tr("perlin.title.fps", {std::to_string(fps)});
         int64_t day = 0;
         int tick = 0;
-        if (sessionReady && session->GetWorldTime(day, tick))
+        if (sessionReady && session && session->GetWorldTime(day, tick))
             title += " | " + FormatClock(day, tick);
         if (levelRenderer)
             title += " | " + i18n::Tr("perlin.title.chunks", {std::to_string(levelRenderer->MeshedChunks())});
@@ -3300,7 +3330,7 @@ namespace perlin {
                 pauseShown = false;
                 input.SetTextMode(false);
             } else if (hover == ui::kPauseQuitId && !preview) {
-                platform->isRunning = false;
+                LeaveToServerList(hud);
             } else if (hover == ui::kPauseFeedbackId) {
                 platform->OpenUrl("https://github.com/theselauraproject/perlin/issues");
             } else if (hover == ui::kPausePlayersId) {
@@ -3405,6 +3435,38 @@ namespace perlin {
         Connect();
     }
 
+    void Perlin::LeaveToServerList(ui::Hud& hud) {
+        std::cout << "[perlin] left " << options.server << ", back to the server list" << std::endl;
+        connectGeneration++; // any connect still running for this session backs out
+        if (account)
+            account->Cancel();
+        SetStatusHint({});
+        sessionReady = false;
+        if (session) {
+            // Hang up now unless a background connect/transfer is still using the session; then
+            // it hangs up itself (stale generation) and is freed on the next Connect().
+            if (connectsInFlight.load() == 0 && !session->Transferring())
+                session->Disconnect();
+            retiredSessions.push_back(std::move(session));
+        }
+        particleLevel = nullptr;
+        hud.Overlay().ClearOverlay();
+        disconnectShown = disconnectTextMode = disconnectLeftDown = false;
+        disconnectSignature.clear();
+        loadingShown = loadingTextMode = loadingLeftDown = false;
+        loadingSignature.clear();
+        loadingStartAt = {};
+        loadingReadyArmed = false;
+        pauseShown = invShown = deathShown = formShown = false;
+        deathTextMode = false;
+        pauseSignature.clear();
+        deathSignature.clear();
+        if (chat.IsOpen())
+            chat.Close();
+        titleActive = true;
+        titleReturnToServers = true;
+    }
+
     void Perlin::DrawTitlePanorama(int fbW, int fbH) {
         const auto now = Clock::now();
         if (!panoramaReady) {
@@ -3483,7 +3545,14 @@ namespace perlin {
             title.selected = -1;
             title.scroll = 0;
             LoadServers(title.servers, options.server);
-            title.version = "Minecraft Bedrock";
+            title.version = std::string("Perlin ") + PERLIN_VERSION;
+            if (titleReturnToServers) {
+                titleReturnToServers = false;
+                title.page = ui::TitlePage::Servers;
+                for (size_t i = 0; i < title.servers.size(); i++)
+                    if (title.servers[i].address == options.server)
+                        title.selected = static_cast<int>(i);
+            }
             title.copyright = "Not affiliated with Mojang AB.";
             if (const char* p = PERLIN_ENV("PERLIN_PREVIEW_TITLE")) {
                 const std::string page = p;
@@ -3591,13 +3660,31 @@ namespace perlin {
         if (title.page == ui::TitlePage::Main)
             DrawTitlePanorama(fbW, fbH);
         title.nativePanorama = panoramaReady;
+        if (!logoBedrock && now >= logoRetryAt) {
+            logoRetryAt = now + std::chrono::seconds(2); // assets may still be downloading
+            for (const char* path : {"textures/ui/title"}) {
+                Texture t;
+                if (ui::UiAssets::Instance().Image(path, t) && t.width > 0 && t.height > 0) {
+                    logoBedrock = true;
+                    title.logoSrc = path;
+                    // Fit inside 256x64 GUI pixels, keeping the image's shape.
+                    title.logoW = 256;
+                    title.logoH = std::max(1, static_cast<int>(256.0 * t.height / t.width + 0.5));
+                    if (title.logoH > 64) {
+                        title.logoW = std::max(1, static_cast<int>(64.0 * t.width / t.height + 0.5));
+                        title.logoH = 64;
+                    }
+                    break;
+                }
+            }
+        }
 
         const int64_t ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count();
         title.caret = (ms / 500) % 2 == 0;
         title.spinner = static_cast<int>(ms / 250);
         std::string signature = std::to_string(guiW) + "x" + std::to_string(guiH) + "|" + std::to_string(static_cast<int>(title.page)) + "|" +
                                 std::to_string(title.selected) + "|" + std::to_string(title.scroll) + "|" + std::to_string(title.focus) +
-                                (title.nativePanorama ? "|np" : "|sp");
+                                (title.nativePanorama ? "|np" : "|sp") + "|" + title.logoSrc;
         if (title.page == ui::TitlePage::Edit || title.page == ui::TitlePage::Direct)
             signature += "|" + title.name + "|" + title.address + "|" + (title.caret ? "c" : "n") + (title.adding ? "a" : "e");
         else if (title.page == ui::TitlePage::Servers) {
@@ -3764,9 +3851,24 @@ namespace perlin {
                 loadingStartAt = {};
                 loadingReadyArmed = false;
             }
+            if (loadingTextMode) {
+                loadingTextMode = false;
+                if (!chat.IsOpen())
+                    input.SetTextMode(false);
+            }
+            loadingLeftDown = false;
             return false;
         }
+        t.cancel = tr("gui.cancel", "Cancel");
+        if (t.progress >= 0.0f && t.detail.empty())
+            t.detail = std::to_string(static_cast<int>(std::clamp(t.progress, 0.0f, 1.0f) * 100.0f)) + "%";
+        // Free the mouse so the Cancel button can be clicked.
+        if (!input.TextMode())
+            input.SetTextMode(true);
+        loadingTextMode = true;
         if (!loadingShown) {
+            loadingOpenedAt = now;
+            loadingLeftDown = true; // ignore the click that started the connection
             loadingShown = true;
             pauseShown = invShown = deathShown = false;
             pauseSignature.clear();
@@ -3786,8 +3888,7 @@ namespace perlin {
         const int guiW = static_cast<int>(std::ceil(static_cast<float>(fbW) / static_cast<float>(scale)));
         const int guiH = static_cast<int>(std::ceil(static_cast<float>(fbH) / static_cast<float>(scale)));
         const double time = std::chrono::duration<double>(now.time_since_epoch()).count();
-        const int bucket = t.progress < 0.0f ? static_cast<int>(time * 20.0) : static_cast<int>(t.progress * 200.0f);
-        const std::string signature = std::to_string(guiW) + "x" + std::to_string(guiH) + "|" + t.title + "|" + t.message + "|" + t.detail + "|" + std::to_string(bucket);
+        const std::string signature = std::to_string(guiW) + "x" + std::to_string(guiH) + "|" + t.title + "|" + t.message + "|" + t.detail + "|" + t.cancel;
         if (signature != loadingSignature || !hud.Overlay().HasOverlay()) {
             loadingSignature = signature;
             std::string error;
@@ -3797,7 +3898,20 @@ namespace perlin {
                 hud.Overlay().SetOverlay(ui::BuildLoadingScreenRml(loadingTemplate, t, guiW, guiH, time), error);
             }
         }
+        float mx = input.MouseX(), my = input.MouseY();
+        if (const char* m = PERLIN_ENV("PERLIN_PREVIEW_MOUSE"))
+            std::sscanf(m, "%f,%f", &mx, &my);
+        hud.Overlay().MouseMove(mx / static_cast<float>(scale), my / static_cast<float>(scale));
         hud.UpdateOverlay(fbW, fbH, options.guiScale);
+
+        const bool down = input.IsMouseDown(0);
+        if (!down && loadingLeftDown && !preview && now - loadingOpenedAt > std::chrono::milliseconds(300) &&
+            hud.Overlay().OverlayHover() == ui::kLoadingCancelId) {
+            std::cout << "[ui] loading screen: cancel" << std::endl;
+            LeaveToServerList(hud);
+            return true;
+        }
+        loadingLeftDown = down;
         return true;
     }
 
@@ -3920,7 +4034,7 @@ namespace perlin {
                     Connect();
                 }
             } else if (hover == ui::kDisconnectQuitId) {
-                platform->isRunning = false;
+                LeaveToServerList(hud);
             }
         }
         disconnectLeftDown = down;
@@ -4424,6 +4538,7 @@ namespace perlin {
         PERLIN_WEB_PERSIST uint64_t frameCounter = 0;
         PERLIN_WEB_PERSIST DamageEffect damage;
         PERLIN_WEB_PERSIST uint32_t lastHurtCount = 0, lastHurtSerial = 0;
+        PERLIN_WEB_PERSIST const BedrockSession* hurtSession = nullptr;
         PERLIN_WEB_PERSIST auto titleAt = previous;
         PERLIN_WEB_PERSIST auto animationAt = previous;
         PERLIN_WEB_PERSIST uint64_t animationStep = 0;
@@ -4547,9 +4662,14 @@ namespace perlin {
                     camera.pitch = glm::clamp(-pose.pitch, -89.0f, 89.0f);
                 }
             }
-            if (sessionReady) {
+            if (sessionReady && session) {
                 const uint32_t hurts = session->HurtCount();
                 const auto source = session->LatestHurtSource();
+                if (hurtSession != session.get()) { // new connection: its counters start over
+                    hurtSession = session.get();
+                    lastHurtCount = hurts;
+                    lastHurtSerial = source.serial;
+                }
                 const auto bearing = [&] {
                     if (!source.known)
                         return static_cast<float>(std::rand() % 2) * 180.0f;
@@ -4574,7 +4694,7 @@ namespace perlin {
             if (width > 0 && height > 0)
                 camera.aspect = static_cast<float>(width) / static_cast<float>(height);
 
-            BedrockSession* live = sessionReady && !session->Transferring() ? session.get() : nullptr;
+            BedrockSession* live = sessionReady && session && !session->Transferring() ? session.get() : nullptr;
             const std::vector<entity::Entity> frameEntities = live ? live->Entities().Snapshot() : previewEntities.Snapshot();
             PumpMods(live, live ? &live->NetLevel() : previewLevel.get(), hud.get(), dt);
             if (live) {

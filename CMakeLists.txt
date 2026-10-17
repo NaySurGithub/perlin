@@ -464,7 +464,7 @@ if(NOT EMSCRIPTEN)
     target_include_directories(Perlin PRIVATE "${httplib_SOURCE_DIR}" "${libdatachannel_SOURCE_DIR}/include")
 endif()
 
-target_compile_definitions(Perlin PRIVATE PERLIN_SOURCE_DIR="${CMAKE_SOURCE_DIR}" ${PERLIN_SHADER_DEFS}
+target_compile_definitions(Perlin PRIVATE PERLIN_SOURCE_DIR="${CMAKE_SOURCE_DIR}" PERLIN_VERSION="${PROJECT_VERSION}" ${PERLIN_SHADER_DEFS}
     GLM_FORCE_DEPTH_ZERO_TO_ONE
     OPENSSL_SUPPRESS_DEPRECATED
 )

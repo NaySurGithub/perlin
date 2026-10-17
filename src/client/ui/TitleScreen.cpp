@@ -77,8 +77,14 @@ mcimg { display: block; position: absolute; }
                 d += "</div></div>\n";
             }
             const int cx = w / 2;
-            d += "<mcimg src=\"mcres:ui_menu_logo.png\" style=\"left:" + N(cx - 128) + "px;top:30px;width:256px;height:64px;z-index:3;\"></mcimg>\n";
-            d += "<mcimg src=\"mcres:ui_menu_edition.png\" style=\"left:" + N(cx - 64) + "px;top:67px;width:128px;height:16px;z-index:4;\"></mcimg>\n";
+            if (!m.logoSrc.empty()) {
+                // Centred in the 256x64 slot the Java logo uses, so the buttons below don't move.
+                const int lw = std::clamp(m.logoW, 1, 256), lh = std::clamp(m.logoH, 1, 64);
+                d += "<mcimg src=\"" + EscapeRml(m.logoSrc) + "\" style=\"left:" + N(cx - lw / 2) + "px;top:" + N(30 + (64 - lh) / 2) + "px;width:" + N(lw) +
+                     "px;height:" + N(lh) + "px;z-index:3;\"></mcimg>\n";
+            } else {
+                d += "<mcimg src=\"mcres:ui_menu_logo.png\" style=\"left:" + N(cx - 128) + "px;top:30px;width:256px;height:64px;z-index:3;\"></mcimg>\n";
+            }
             const int j = h / 4 + 48;
             d += Btn("", cx - 100, j, 200, "Singleplayer", true);
             d += Btn(kTitleMulti, cx - 100, j + 24, 200, "Multiplayer");

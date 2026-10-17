@@ -25,6 +25,7 @@
 #include "util/ThreadPool.hpp"
 
 #include <atomic>
+#include <vector>
 #include <future>
 #include "client/resources/PackInfo.hpp"
 #include <memory>
@@ -118,6 +119,14 @@ namespace perlin {
         bool UpdateLoadingScreen(ui::Hud& hud, int fbW, int fbH);
         bool UpdateTitleScreen(ui::Hud& hud, int fbW, int fbH);
         void JoinServer(const std::string& address);
+        // Drop the current connection (or connection attempt) and show the server list.
+        void LeaveToServerList(ui::Hud& hud);
+        bool titleReturnToServers = false;
+        bool loadingLeftDown = false, loadingTextMode = false;
+        std::chrono::steady_clock::time_point loadingOpenedAt{};
+        // Title logo: Bedrock's textures/ui/title, looked up once assets exist.
+        std::chrono::steady_clock::time_point logoRetryAt{};
+        bool logoBedrock = false;
         bool loadingShown = false, loadingDone = false;
         std::string loadingSignature, loadingTemplate;
         uint64_t loadingTemplateVersion = 0;
@@ -322,5 +331,11 @@ namespace perlin {
         void SetStatusHint(const std::string& text);
         bool onlineThisRun = false;
         std::atomic<bool> sessionReady{false};
+        // Each Connect() bumps the generation; a background connect that finishes after the user
+        // cancelled sees a stale generation and backs out. Sessions left behind stay alive until
+        // no connect is running on them.
+        std::atomic<uint64_t> connectGeneration{0};
+        std::atomic<int> connectsInFlight{0};
+        std::vector<std::unique_ptr<BedrockSession>> retiredSessions;
     };
 }
