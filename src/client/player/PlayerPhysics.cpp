@@ -111,7 +111,13 @@ namespace perlin::physics {
         }
 
         Vec3 Add(Vec3 a, Vec3 b) { return {a.x + b.x, a.y + b.y, a.z + b.z}; }
-        Box TranslateBy(const Box& b, Vec3 d) { return b.Offset(d.x, d.y, d.z); }
+        // AABB moves happen in float in Bedrock; doing them in double drifts by an ULP at large |coords|.
+        Box TranslateBy(const Box& b, Vec3 d) {
+            const auto f = [](double a, double delta) {
+                return static_cast<double>(static_cast<float>(a) + static_cast<float>(delta));
+            };
+            return {f(b.x0, d.x), f(b.y0, d.y), f(b.z0, d.z), f(b.x1, d.x), f(b.y1, d.y), f(b.z1, d.z)};
+        }
 
         double ClipAxis(const std::vector<Box>& colliders, const Box& cur, int axis, double v, bool reverse = false) {
             Vec3 vel;
@@ -127,7 +133,9 @@ namespace perlin::physics {
         }
 
         Box Translate(const Box& b, int axis, double d) {
-            return axis == 0 ? b.Offset(d, 0, 0) : (axis == 1 ? b.Offset(0, d, 0) : b.Offset(0, 0, d));
+            Vec3 v;
+            v[axis] = d;
+            return TranslateBy(b, v);
         }
 
         double ClampTowardZero(double value, double limit) {
@@ -465,10 +473,36 @@ namespace perlin::physics {
                static_cast<float>(z1) > static_cast<float>(o.z0) && static_cast<float>(z0) < static_cast<float>(o.z1);
     }
 
+    MoveVector ProcessMoveInput(float forward, float strafe, bool sneaking, bool inWater) {
+        const float lengthSq = forward * forward + strafe * strafe;
+        if (lengthSq > 1.0f) {
+            const float length = std::sqrt(lengthSq);
+            forward /= length;
+            strafe /= length;
+        }
+        if (sneaking && !inWater) {
+            forward *= 0.3f;
+            strafe *= 0.3f;
+        }
+        return {forward, strafe};
+    }
+
+    namespace {
+        double BoxCentre(double lo, double hi) {
+            return F((static_cast<float>(lo) + static_cast<float>(hi)) * 0.5f);
+        }
+    }
+
     Box BoundingBox(const State& s, bool sneaking) {
         const float half = static_cast<float>(kWidth) * 0.5f;
         const float x = static_cast<float>(s.x), y = static_cast<float>(s.y), z = static_cast<float>(s.z);
         const float h = static_cast<float>(sneaking ? kSneakHeight : kStandHeight);
+        if (s.hasBox && BoxCentre(s.box.x0, s.box.x1) == F(s.x) && BoxCentre(s.box.z0, s.box.z1) == F(s.z) &&
+            static_cast<float>(s.box.y0) == y) {
+            Box b = s.box;
+            b.y1 = static_cast<double>(y + h); // sneaking changes only the height
+            return b;
+        }
         return {static_cast<double>(x - half), static_cast<double>(y), static_cast<double>(z - half),
                 static_cast<double>(x + half), static_cast<double>(y + h), static_cast<double>(z + half)};
     }
@@ -476,7 +510,6 @@ namespace perlin::physics {
     void Step(State& s, const Input& in, const Attributes& attr, const World& world) {
         thread_local std::vector<Box> scratch;
         const bool sneaking = in.sneak && !in.flying;
-        const bool prevWater = s.inWater;
 
         s.x = F(s.x); s.y = F(s.y); s.z = F(s.z);
         s.vx = F(s.vx); s.vy = F(s.vy); s.vz = F(s.vz);
@@ -511,9 +544,10 @@ namespace perlin::physics {
                 ns /= length;
             }
         }
-        const float slow = sneaking && !prevWater ? 0.3f : 1.0f;
-        const double forward = static_cast<float>(nf * slow) * 0.98f;
-        const double strafe = static_cast<float>(ns * slow) * 0.98f;
+        // The sneak slowdown is not applied here: in Bedrock it belongs to the input stage
+        // (ProcessMoveInput), so in.forward/in.strafe already include it.
+        const double forward = static_cast<float>(nf) * 0.98f;
+        const double strafe = static_cast<float>(ns) * 0.98f;
 
         if (in.flying) {
             const bool hovering = std::max(std::fabs(forward), std::fabs(strafe)) < 0.01f * 0.98f + 1e-9;
@@ -533,6 +567,7 @@ namespace perlin::physics {
             }
             const float hMod = hover ? (in.creativeFlight ? 0.375f : 0.75f) : 1.0f;
             if (in.noClip) {
+                s.hasBox = false;
                 s.x = F(s.x + s.vx);
                 s.y = F(s.y + s.vy);
                 s.z = F(s.z + s.vz);
@@ -553,6 +588,8 @@ namespace perlin::physics {
             const Box box = BoundingBox(s, false);
             const Motion m = ResolveMotion(world, box, req, grounded, scratch);
             s.x = m.position.x; s.y = m.position.y; s.z = m.position.z;
+            s.box = m.box;
+            s.hasBox = true;
             s.onGround = m.cy && req.y < 0.0;
             s.vx = m.resolved.x; s.vy = m.resolved.y; s.vz = m.resolved.z;
             if (m.stepped || m.cy) s.vy = 0;
@@ -676,6 +713,8 @@ namespace perlin::physics {
         const Box box = BoundingBox(s, sneaking);
         const Motion m = ResolveMotion(world, box, req, grounded, scratch);
         s.x = m.position.x; s.y = m.position.y; s.z = m.position.z;
+        s.box = m.box;
+        s.hasBox = true;
         s.onGround = m.cy ? (pre.y < 0.0) : (grounded && pre.y == 0.0);
         Vec3 v = m.resolved;
         if (hasEdge) {
@@ -746,6 +785,20 @@ namespace perlin::physics {
                                                  static_cast<int>(std::floor(s.z)));
             if (stand.surface == 1 || stand.surface == 3) {
                 const float factor = std::fabs(static_cast<float>(v.y)) * 0.2f + 0.4f;
+                v.x = F(static_cast<float>(v.x) * factor);
+                v.z = F(static_cast<float>(v.z) * factor);
+            }
+        }
+        // Block speed factor (soul sand, honey: 0.4). Applied after collision, before friction, like
+        // Entity::move: the block at the feet if it has one, otherwise the block just below.
+        // BlockShape::speedFactor was populated by the collision layer but never applied, so soul
+        // sand didn't slow the player at all.
+        if (!water && !lava && !in.flying) {
+            const int fx = static_cast<int>(std::floor(s.x)), fz = static_cast<int>(std::floor(s.z));
+            float factor = world.Query(fx, static_cast<int>(std::floor(s.y)), fz).speedFactor;
+            if (factor == 1.0f)
+                factor = world.Query(fx, static_cast<int>(std::floor(s.y - 0.5000001)), fz).speedFactor;
+            if (factor != 1.0f) {
                 v.x = F(static_cast<float>(v.x) * factor);
                 v.z = F(static_cast<float>(v.z) * factor);
             }

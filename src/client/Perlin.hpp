@@ -127,6 +127,13 @@ namespace perlin {
         ui::TitleModel title;
         std::string titleSignature;
         std::chrono::steady_clock::time_point titleOpenedAt{}, titleClickAt{};
+        // Options opened from the title screen (reuses the pause menu's options screen).
+        bool titleOptions = false;
+        // Native cube panorama behind the title screen.
+        void DrawTitlePanorama(int fbW, int fbH);
+        uint32_t panoramaTextures[6] = {};
+        bool panoramaReady = false;
+        std::chrono::steady_clock::time_point panoramaClock{}, panoramaRetryAt{};
         int titleClickRow = -1;
         bool disconnectShown = false, disconnectLeftDown = false, disconnectTextMode = false;
         std::chrono::steady_clock::time_point disconnectOpenedAt{}, disconnectCheckAt{};

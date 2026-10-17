@@ -128,8 +128,8 @@ int main() {
     {
         State s;
         Input in;
-        in.forward = 1;
         in.sneak = true;
+        in.forward = ProcessMoveInput(1, 0, in.sneak, false).forward; // input stage applies the 0.3
         for (int i = 0; i < 60; i++)
             Step(s, in, attr, flat);
         const double z0 = s.z;

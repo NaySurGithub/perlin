@@ -76,6 +76,12 @@ namespace perlin::attachable {
     };
 
     using BindLookup = std::function<glm::vec3(const std::string& bone)>;
+    // `this` in a channel reads the bone's full value, not just the animation delta: the bone's
+    // default (rest rotation; for translation, its pivot relative to the parent's pivot, or to
+    // (0,24,0) for roots) plus what earlier animations added. Vanilla rigs rely on this: e.g.
+    // the enderman's base_pose writes "11.0 - this" to put the body at an absolute offset.
     void Apply(const Animation& animation, molang::Scope& scope, float time, float weight, Pose& pose,
-               const BindLookup& bindRotation = nullptr);
+               const BindLookup& bindRotation = nullptr, const BindLookup& bindTranslation = nullptr);
+    BindLookup RestRotationLookup(const struct Geometry* geometry);
+    BindLookup DefaultTranslationLookup(const struct Geometry* geometry);
 }

@@ -183,8 +183,18 @@ namespace perlin {
                         if (mode == 3)
                             continue;
                         const bool exposed = (l && (mask & 1)) || (r && (mask & 2)) || (tp && (mask & 4)) || (bt && (mask & 8));
-                        if (!exposed)
+                        if (exposed)
+                            continue;
+                        if (keepInterior) {
+                            // Stained/tinted glass has a coloured interior (alpha ~100), so erasing
+                            // the frame on a connected edge leaves a clear stripe through the colour.
+                            // Continue the interior instead: copy the nearest interior texel.
+                            const int ix = std::clamp(x, fw, T - fw - 1), iy = std::clamp(y, fw, T - fw - 1);
+                            const uint8_t* in = src.data() + ((size_t)iy * T + ix) * 4;
+                            std::copy(in, in + 4, px);
+                        } else {
                             px[3] = 0;
+                        }
                     }
                 alphaByTile[t] = baseAlpha;
                 pathByTile[t] = "__glass_variant";

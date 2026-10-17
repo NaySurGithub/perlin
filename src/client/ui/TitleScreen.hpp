@@ -23,10 +23,14 @@ namespace perlin::ui {
         int spinner = 0;
         std::string version;
         std::string copyright;
+        // The panorama is drawn natively underneath (TitlePanorama); the RML only draws a
+        // fallback strip when the panorama textures aren't available yet.
+        bool nativePanorama = false;
     };
 
     inline constexpr const char* kTitleMulti = "title_multi";
     inline constexpr const char* kTitleQuit = "title_quit";
+    inline constexpr const char* kTitleOptions = "title_options";
     inline constexpr const char* kServerJoin = "servers_join";
     inline constexpr const char* kServerDirect = "servers_direct";
     inline constexpr const char* kServerAdd = "servers_add";

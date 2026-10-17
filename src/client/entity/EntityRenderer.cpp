@@ -1,4 +1,6 @@
 #include "client/entity/EntityRenderer.hpp"
+
+#include <cstdio>
 #include "util/Env.hpp"
 #include "client/entity/EntityQuery.hpp"
 #include "client/hand/HandRenderer.hpp"
@@ -232,6 +234,34 @@ namespace perlin::entity {
         renderer = nullptr;
     }
 
+    namespace {
+        // Wool colours by dye index (Bedrock order: white, orange, magenta, light blue, yellow, lime,
+        // pink, gray, light gray, cyan, purple, blue, brown, green, red, black).
+        uint32_t DyeColorRgb(int dye) {
+            static constexpr uint32_t kDye[16] = {0xF9FFFE, 0xF9801D, 0xC74EBD, 0x3AB3DA, 0xFED83D, 0x80C71F,
+                                                  0xF38BAA, 0x474F52, 0x9D9D97, 0x169C9C, 0x8932B8, 0x3C44AA,
+                                                  0x835432, 0x5E7C16, 0xB02E26, 0x1D1D21};
+            return (dye >= 0 && dye < 16) ? kDye[dye] : kDye[0];
+        }
+
+        // Bakes a Bedrock colour-mask texture: alpha >= 128 texels are tinted by `rgb`, any other
+        // non-zero alpha is untinted skin; both become opaque. Alpha 0 stays transparent.
+        void BakeColorMask(Texture& t, uint32_t rgb) {
+            const uint32_t r = (rgb >> 16) & 0xFF, g = (rgb >> 8) & 0xFF, b = rgb & 0xFF;
+            for (size_t i = 0; i + 3 < t.pixels.size(); i += 4) {
+                uint8_t* p = &t.pixels[i];
+                if (p[3] == 0)
+                    continue;
+                if (p[3] >= 128) {
+                    p[0] = static_cast<uint8_t>(p[0] * r / 255);
+                    p[1] = static_cast<uint8_t>(p[1] * g / 255);
+                    p[2] = static_cast<uint8_t>(p[2] * b / 255);
+                }
+                p[3] = 255;
+            }
+        }
+    }
+
     uint32_t EntityRenderer::TextureFor(const Entity& e, const std::string& key) {
         if (e.isPlayer && e.skin) {
             const SkinData& s = *e.skin;
@@ -439,7 +469,9 @@ namespace perlin::entity {
     void EntityRenderer::RunAnimations(const Entity& e, View& v, const ClientEntityDef& def, Pose& pose, const FrameIn& in,
                                        const attachable::Geometry* bindGeometry) {
         (void)in;
-        (void)bindGeometry;
+        // Bone defaults that Molang `this` includes (see attachable::Apply).
+        const attachable::BindLookup restRotation = attachable::RestRotationLookup(bindGeometry);
+        const attachable::BindLookup defaultTranslation = attachable::DefaultTranslationLookup(bindGeometry);
         molang::Scope& scope = v.scope;
         const double now = v.now;
         const uint32_t epoch = ++v.animEpoch;
@@ -544,7 +576,7 @@ namespace perlin::entity {
             host->animTime = static_cast<float>(since);
             if (PERLIN_ENV("PERLIN_POSE_DEBUG"))
                 std::cout << "[anim] " << e.type << " " << id << " w=" << weight << std::endl;
-            attachable::Apply(*a, scope, static_cast<float>(since), weight, pose);
+            attachable::Apply(*a, scope, static_cast<float>(since), weight, pose, restRotation, defaultTranslation);
         };
         for (const auto& entry : def.animate) {
             const float w = entry.weight ? static_cast<float>(entry.weight->Number(scope)) : 1.0f;
@@ -877,6 +909,8 @@ namespace perlin::entity {
                 Layer copy = layer;
                 const auto named = def->materials.find(group);
                 copy.material = assets.materialLibrary.Find(named != def->materials.end() ? named->second : group);
+                if (copy.material.colorMask)
+                    copy.maskRgb = DyeColorRgb(e.color);
                 copy.quads = std::move(mesh.body);
                 layers.push_back(std::move(copy));
             }
@@ -1077,17 +1111,25 @@ namespace perlin::entity {
             else if (layer.texture == "#capemodel")
                 texture = TextureFor(e, "capemodel");
             else {
-                auto it = textures.find(layer.texture);
+                // Colour-mask layers get a texture baked for this colour (cached per colour).
+                char maskKey[16] = "";
+                if (layer.material.colorMask)
+                    std::snprintf(maskKey, sizeof(maskKey), "#mask%06x", layer.maskRgb & 0xFFFFFFu);
+                const std::string key = layer.texture + maskKey;
+                auto it = textures.find(key);
                 if (it == textures.end()) {
                     Texture t;
                     uint32_t id = 0;
-                    if (ui::UiAssets::Instance().Image(layer.texture, t) && t.width > 0)
+                    if (ui::UiAssets::Instance().Image(layer.texture, t) && t.width > 0) {
+                        if (layer.material.colorMask)
+                            BakeColorMask(t, layer.maskRgb);
                         id = renderer->UiCreateTexture(t.width, t.height, t.pixels.data(), false);
+                    }
                     else if (!warned[layer.texture]) {
                         warned[layer.texture] = true;
                         std::cout << "[entity] texture " << layer.texture << " not found" << std::endl;
                     }
-                    it = textures.emplace(layer.texture, id).first;
+                    it = textures.emplace(key, id).first;
                 }
                 texture = it->second;
             }

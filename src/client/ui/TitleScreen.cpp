@@ -69,18 +69,21 @@ mcimg { display: block; position: absolute; }
             std::string d;
             const int face = std::max(h * 5 / 4, 64);
             const int top = -(face - h) / 2;
-            d += "<div style=\"left:0px;top:0px;width:" + N(w) + "px;height:" + N(h) + "px;overflow:hidden;background-color:#000000;\">\n";
-            d += "<div id=\"pano\" style=\"left:0px;top:" + N(top) + "px;width:" + N(face * 5) + "px;height:" + N(face) + "px;animation: 240s linear infinite pano;\">\n";
-            for (int i = 0; i < 5; i++)
-                d += "<mcimg src=\"textures/ui/panorama_" + N(i % 4) + "\" style=\"left:" + N(i * face) + "px;top:0px;width:" + N(face) + "px;height:" + N(face) + "px;\"></mcimg>\n";
-            d += "</div></div>\n";
+            if (!m.nativePanorama) {
+                d += "<div style=\"left:0px;top:0px;width:" + N(w) + "px;height:" + N(h) + "px;overflow:hidden;background-color:#000000;\">\n";
+                d += "<div id=\"pano\" style=\"left:0px;top:" + N(top) + "px;width:" + N(face * 5) + "px;height:" + N(face) + "px;animation: 240s linear infinite pano;\">\n";
+                for (int i = 0; i < 5; i++)
+                    d += "<mcimg src=\"textures/ui/panorama_" + N(i % 4) + "\" style=\"left:" + N(i * face) + "px;top:0px;width:" + N(face) + "px;height:" + N(face) + "px;\"></mcimg>\n";
+                d += "</div></div>\n";
+            }
             const int cx = w / 2;
             d += "<mcimg src=\"mcres:ui_menu_logo.png\" style=\"left:" + N(cx - 128) + "px;top:30px;width:256px;height:64px;z-index:3;\"></mcimg>\n";
             d += "<mcimg src=\"mcres:ui_menu_edition.png\" style=\"left:" + N(cx - 64) + "px;top:67px;width:128px;height:16px;z-index:4;\"></mcimg>\n";
             const int j = h / 4 + 48;
             d += Btn("", cx - 100, j, 200, "Singleplayer", true);
             d += Btn(kTitleMulti, cx - 100, j + 24, 200, "Multiplayer");
-            d += Btn(kTitleQuit, cx - 100, j + 60, 200, "Quit Game");
+            d += Btn(kTitleOptions, cx - 100, j + 60, 98, "Options...");
+            d += Btn(kTitleQuit, cx + 2, j + 60, 98, "Quit Game");
             d += Text(2, h - 10, w / 2, m.version);
             d += "<div class=\"txt\" style=\"left:" + N(w / 2) + "px;top:" + N(h - 10) + "px;width:" + N(w / 2 - 1) + "px;height:9px;text-align:right;\">" + EscapeRml(m.copyright) + "</div>\n";
             return d;

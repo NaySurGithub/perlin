@@ -208,8 +208,11 @@ namespace perlin {
         in.swimming = swimming && !gliding;
         in.headInWater = headUnderwater;
         in.lookY = std::sin(glm::radians(camera.pitch));
-        in.forward = forward;
-        in.strafe = strafe;
+        // Same stage split as Bedrock: the input handler normalizes diagonals and applies the sneak
+        // slowdown, physics consumes the result, and the same vector goes to the server.
+        const physics::MoveVector move = physics::ProcessMoveInput(forward, strafe, sneaking, state.inWater);
+        in.forward = move.forward;
+        in.strafe = move.strafe;
         in.jump = jump;
         in.sneak = sneakKey;
         in.sprint = sprinting;
@@ -338,9 +341,8 @@ namespace perlin {
         if (state.verticalCollision)
             f.push_back(Flag::VerticalCollision);
 
-        const float slowFactor = sneaking ? 0.3f : 1.0f;
-        packet.moveX = -std::clamp(strafe, -slowFactor, slowFactor);
-        packet.moveZ = std::clamp(forward, -slowFactor, slowFactor);
+        packet.moveX = -move.strafe;
+        packet.moveZ = move.forward;
         packet.rawX = -strafeKeys;
         packet.rawZ = forwardKeys;
         packet.yaw = BedrockYaw(camera.yaw);

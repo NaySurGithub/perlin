@@ -1,6 +1,7 @@
 #include <cstdlib>
 #include "util/Env.hpp"
 #include "client/attachable/Animation.hpp"
+#include "client/attachable/Geometry.hpp"
 #include <cctype>
 
 #include <algorithm>
@@ -200,7 +201,8 @@ namespace perlin::attachable {
         return it == controllers.end() ? nullptr : &it->second;
     }
 
-    void Apply(const Animation& a, molang::Scope& scope, float time, float weight, Pose& pose, const BindLookup& bindRotation) {
+    void Apply(const Animation& a, molang::Scope& scope, float time, float weight, Pose& pose, const BindLookup& bindRotation,
+               const BindLookup& bindTranslation) {
         if (a.blendWeight)
             weight *= static_cast<float>(a.blendWeight->Number(scope));
         if (a.overridePrevious)
@@ -222,7 +224,7 @@ namespace perlin::attachable {
                 x.rotation += r * weight;
             }
             if (anim.position.present) {
-                setThis(x.position);
+                setThis(bindTranslation ? x.position + bindTranslation(bone) : x.position);
                 x.position += anim.position.Eval(scope, time) * weight;
             }
             if (anim.scale.present) {
@@ -230,5 +232,31 @@ namespace perlin::attachable {
                 x.scale *= glm::mix(glm::vec3(1.0f), anim.scale.Eval(scope, time), weight);
             }
         }
+    }
+
+    BindLookup RestRotationLookup(const Geometry* g) {
+        if (!g)
+            return nullptr;
+        return [g](const std::string& bone) {
+            for (const Bone& b : g->bones)
+                if (b.name == bone)
+                    return b.rotation;
+            return glm::vec3(0.0f);
+        };
+    }
+
+    BindLookup DefaultTranslationLookup(const Geometry* g) {
+        if (!g)
+            return nullptr;
+        return [g](const std::string& bone) {
+            for (const Bone& b : g->bones)
+                if (b.name == bone) {
+                    const glm::vec3 origin = (b.parent >= 0 && b.parent < static_cast<int>(g->bones.size()))
+                                                 ? g->bones[static_cast<size_t>(b.parent)].pivot
+                                                 : glm::vec3(0.0f, 24.0f, 0.0f);
+                    return b.pivot - origin;
+                }
+            return glm::vec3(0.0f);
+        };
     }
 }

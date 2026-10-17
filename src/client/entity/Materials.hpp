@@ -26,6 +26,10 @@ namespace perlin::entity {
         float depthBias = 0.0f;
         bool glint = false;
         bool skinning = false;
+        // Bedrock colour-mask materials (sheep, USE_COLOR_MASK): the texture's alpha is not
+        // transparency but a mask; alpha 255 texels are multiplied by the entity colour and low
+        // alpha texels (e.g. the sheep's face, alpha 3) are drawn untinted and opaque.
+        bool colorMask = false;
     };
 
     MaterialInfo InfoFromDef(const material::Def& def);

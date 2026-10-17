@@ -30,6 +30,7 @@
 #include "client/ui/DisconnectScreen.hpp"
 #include "client/ui/LoadingScreen.hpp"
 #include "client/ui/TitleScreen.hpp"
+#include "client/ui/TitlePanorama.hpp"
 #include "client/ui/UiLayout.hpp"
 #include "client/ui/PauseScreen.hpp"
 #include "client/resources/MojangFonts.hpp"
@@ -1502,7 +1503,18 @@ namespace perlin {
         const bool preview = PERLIN_ENV("PERLIN_PREVIEW_PAUSE") != nullptr;
         const auto now = Clock::now();
         const bool canOpen = (live || preview) && !deathShown && !formShown && !invShown && !chat.IsOpen();
-        if (!pauseShown && canOpen && (inputManager.Pressed(Action::Pause) || (preview && !pausePreviewOpened))) {
+        if (!pauseShown && titleOptions && titleActive) {
+            pauseShown = true;
+            pauseView = 1;
+            optionsPage = 0;
+            optionsSub = 0;
+            pauseOpenedAt = now;
+            pauseSignature.clear();
+            optionsSignature.clear();
+            pauseLeftDown = true; // the click that opened it must not hit an option
+            inputManager.TakeTyped();
+            input.SetTextMode(true);
+        } else if (!pauseShown && canOpen && (inputManager.Pressed(Action::Pause) || (preview && !pausePreviewOpened))) {
             pausePreviewOpened = true;
             pauseShown = true;
             pauseView = PERLIN_ENV("PERLIN_PREVIEW_OPTIONS") ? (PERLIN_ENV("PERLIN_PREVIEW_OPTIONS")[0] == 0x77 ? 3 : PERLIN_ENV("PERLIN_PREVIEW_OPTIONS")[0] == 0x6d ? 4 : PERLIN_ENV("PERLIN_PREVIEW_OPTIONS")[0] == 0x64 ? 5 : 1) : 0;
@@ -1548,7 +1560,13 @@ namespace perlin {
                 }
             }
         }
+        if (titleOptions && pauseShown && pauseView == 0)
+            resume = true; // leaving the options screen goes back to the title, not the pause menu
         if (resume) {
+            if (titleOptions) {
+                titleOptions = false;
+                titleSignature.clear();
+            }
             pauseView = 0;
             hud.Overlay().ClearOverlay();
             pauseShown = false;
@@ -3222,6 +3240,16 @@ namespace perlin {
             return;
         }
 
+        if (titleOptions) {
+            // Options was opened from the title screen: Done/Escape lands here; go back to the title.
+            titleOptions = false;
+            titleSignature.clear();
+            pauseView = 0;
+            pauseShown = false;
+            hud.Overlay().ClearOverlay();
+            return;
+        }
+
         ui::PauseScreenText t;
         t.title = i18n::Tr("menu.game");
         t.back = i18n::Tr("menu.returnToGame");
@@ -3377,8 +3405,64 @@ namespace perlin {
         Connect();
     }
 
+    void Perlin::DrawTitlePanorama(int fbW, int fbH) {
+        const auto now = Clock::now();
+        if (!panoramaReady) {
+            if (now < panoramaRetryAt)
+                return;
+            panoramaRetryAt = now + std::chrono::seconds(2); // assets may still be downloading
+            int loaded = 0;
+            for (int i = 0; i < 6; i++) {
+                if (panoramaTextures[i])
+                    continue;
+                Texture t;
+                if (ui::UiAssets::Instance().Image("textures/ui/panorama_" + std::to_string(i), t) && t.width > 0)
+                    panoramaTextures[i] = renderer->UiCreateTexture(t.width, t.height, t.pixels.data(), true);
+            }
+            for (uint32_t id : panoramaTextures)
+                loaded += id != 0;
+            panoramaReady = loaded == 6;
+            if (!panoramaReady)
+                return;
+            panoramaClock = now;
+        }
+        const double seconds = std::chrono::duration<double>(now - panoramaClock).count();
+        ui::PanoramaFace faces[6];
+        ui::BuildPanorama(ui::PanoramaViewAt(seconds), fbW, fbH, faces);
+        std::vector<UiVertex> vertices;
+        for (int i = 0; i < 6; i++) {
+            const ui::PanoramaFace& f = faces[i];
+            if (f.indices.empty())
+                continue;
+            vertices.clear();
+            vertices.reserve(f.vertices.size());
+            for (const ui::PanoramaVertex& v : f.vertices)
+                vertices.push_back({v.x, v.y, 0.0f, 0xFFFFFFFFu, v.u, v.v});
+            const uint32_t mesh = renderer->UiCreateFrameMesh(vertices.data(), static_cast<uint32_t>(vertices.size()), f.indices.data(),
+                                                              static_cast<uint32_t>(f.indices.size()));
+            if (!mesh)
+                continue;
+            UiDraw draw;
+            draw.mesh = mesh;
+            draw.texture = panoramaTextures[i];
+            draw.premultiplied = true;
+            renderer->UiSubmit(UiLayer::Gui, draw); // submitted before the title RML, so it sits underneath
+            renderer->UiDestroyMesh(mesh);
+        }
+    }
+
     bool Perlin::UpdateTitleScreen(ui::Hud& hud, int fbW, int fbH) {
         const auto now = Clock::now();
+        if (titleActive && titleOptions) {
+            // Options screen (drawn by UpdatePauseScreen) over the moving panorama.
+            if (titleShown) {
+                hud.Overlay().ClearOverlay();
+                titleShown = false;
+                titleSignature.clear();
+            }
+            DrawTitlePanorama(fbW, fbH);
+            return false;
+        }
         if (!titleActive) {
             if (titleShown) {
                 hud.Overlay().ClearOverlay();
@@ -3504,11 +3588,16 @@ namespace perlin {
             title.scroll = std::clamp(title.scroll, 0, maxScroll);
         }
 
+        if (title.page == ui::TitlePage::Main)
+            DrawTitlePanorama(fbW, fbH);
+        title.nativePanorama = panoramaReady;
+
         const int64_t ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count();
         title.caret = (ms / 500) % 2 == 0;
         title.spinner = static_cast<int>(ms / 250);
         std::string signature = std::to_string(guiW) + "x" + std::to_string(guiH) + "|" + std::to_string(static_cast<int>(title.page)) + "|" +
-                                std::to_string(title.selected) + "|" + std::to_string(title.scroll) + "|" + std::to_string(title.focus);
+                                std::to_string(title.selected) + "|" + std::to_string(title.scroll) + "|" + std::to_string(title.focus) +
+                                (title.nativePanorama ? "|np" : "|sp");
         if (title.page == ui::TitlePage::Edit || title.page == ui::TitlePage::Direct)
             signature += "|" + title.name + "|" + title.address + "|" + (title.caret ? "c" : "n") + (title.adding ? "a" : "e");
         else if (title.page == ui::TitlePage::Servers) {
@@ -3539,6 +3628,8 @@ namespace perlin {
             };
             if (hover == ui::kTitleMulti) {
                 title.page = ui::TitlePage::Servers;
+            } else if (hover == ui::kTitleOptions) {
+                titleOptions = true;
             } else if (hover == ui::kTitleQuit) {
                 platform->isRunning = false;
             } else if (hover == ui::kServerCancel || hover == ui::kEditCancel) {

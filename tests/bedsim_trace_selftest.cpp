@@ -118,11 +118,14 @@ int main(int argc, char** argv) {
             in >> fwd >> strafe >> yaw >> jump >> jumpPressed >> sprint >> sneak;
             lastInput = line;
             input = Input{};
-            input.forward = static_cast<float>(fwd);
-            input.strafe = static_cast<float>(-strafe);
             input.jump = jump != 0;
             input.sprint = sprint != 0;
             input.sneak = sneak != 0;
+            // bedsim traces record raw key axes; run them through the input stage like the client.
+            const MoveVector mv = ProcessMoveInput(static_cast<float>(fwd), static_cast<float>(-strafe), input.sneak,
+                                                   state.inWater);
+            input.forward = mv.forward;
+            input.strafe = mv.strafe;
             state.yaw = static_cast<float>(yaw);
             Step(state, input, attr, world);
         } else if (tag == "E") {

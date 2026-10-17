@@ -630,6 +630,23 @@ if(PERLIN_BUILD_TESTS AND NOT EMSCRIPTEN AND NOT ANDROID)
     target_compile_features(bedsim_trace_selftest PRIVATE cxx_std_23)
     add_test(NAME bedsim_trace_selftest COMMAND bedsim_trace_selftest "${CMAKE_CURRENT_SOURCE_DIR}/tests/data/bedsim_traces.txt")
 
+    add_executable(panorama_selftest tests/panorama_selftest.cpp src/client/ui/TitlePanorama.cpp)
+    target_include_directories(panorama_selftest PRIVATE src)
+    target_compile_features(panorama_selftest PRIVATE cxx_std_23)
+    add_test(NAME panorama_selftest COMMAND panorama_selftest)
+
+    add_executable(uitemplate_selftest tests/uitemplate_selftest.cpp src/client/ui/UiTemplate.cpp)
+    target_include_directories(uitemplate_selftest PRIVATE src)
+    target_compile_features(uitemplate_selftest PRIVATE cxx_std_23)
+    add_test(NAME uitemplate_selftest COMMAND uitemplate_selftest)
+
+    # Diffs a vanilla-client movement trace (perlin-movetrace LeviLamina mod) against physics::Step.
+    add_executable(trace_diff
+        tests/trace_diff.cpp
+        src/client/player/PlayerPhysics.cpp)
+    target_include_directories(trace_diff PRIVATE src)
+    target_compile_features(trace_diff PRIVATE cxx_std_23)
+
     add_executable(damage_selftest tests/damage_selftest.cpp)
     target_include_directories(damage_selftest PRIVATE src "${glm_SOURCE_DIR}")
     target_compile_features(damage_selftest PRIVATE cxx_std_23)

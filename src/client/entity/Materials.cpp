@@ -44,6 +44,10 @@ namespace perlin::entity {
                    name == "entity_lightning" || name == "entity_custom") {
             m.blend = MaterialInfo::Blend::AlphaTest;
         }
+        if (name == "sheep" || Has(name, "color_mask")) {
+            m.blend = MaterialInfo::Blend::AlphaTest; // the baked mask texture has binary alpha
+            m.colorMask = true;
+        }
         if (name == "arrow") {
             m.blend = MaterialInfo::Blend::AlphaTest;
             m.noCull = true;
@@ -82,6 +86,11 @@ namespace perlin::entity {
         m.glint = def.Define("GLINT");
         m.hurtTint = def.Define("USE_OVERLAY") && !additive;
         m.emissive = def.Define("USE_ONLY_EMISSIVE") || additive ? 2 : def.Define("USE_EMISSIVE") ? 1 : 0;
+        if (def.Define("USE_COLOR_MASK") || Lower(def.name) == "sheep") {
+            m.colorMask = true;
+            if (!blending)
+                m.blend = MaterialInfo::Blend::AlphaTest;
+        }
         return m;
     }
 
