@@ -327,15 +327,18 @@ vec3 vvMoonDisc(vec3 dir, out float coverage, out vec3 moonColor)
         float crater = step(0.72, hash12(cell + vec2(3.0, 7.0))) * 0.22 + hash12(cell) * 0.08;
         // Phase: 0 full, 4 new; a terminator sweeps across the columns.
         float phase = u_skyParams.y;
-        float k = abs(4.0 - mod(phase + 4.0, 8.0)) / 4.0; // 1 full .. 0 new
+        float k = abs(4.0 - mod(phase, 8.0)) / 4.0; // phase 0 = full (k 1) .. phase 4 = new (k 0)
         float side = mod(phase, 8.0) < 4.0 ? 1.0 : -1.0;
         float col = (cell.x + 0.5) / 8.0 * 2.0 - 1.0;
         float lit = step(1.0 - 2.0 * k, col * side);
-        moonColor = mix(vec3(0.05, 0.06, 0.09), vec3(0.93, 0.94, 0.98) - crater, lit);
-        coverage = visible;
+        // The unlit part lets the sky show through (with a faint earthshine), like the vanilla
+        // and Vibrant Visuals moon, instead of an opaque black square.
+        moonColor = mix(vec3(0.16, 0.18, 0.24), vec3(0.93, 0.94, 0.98) - crater, lit);
+        coverage = visible * mix(0.10, 1.0, lit);
     }
     float halo = exp(-max(d - size, 0.0) * 16.0) * 0.22 + exp(-max(d - size, 0.0) * 4.0) * 0.05;
-    return vec3(0.70, 0.78, 1.0) * halo * visible * (1.0 - step(d, size));
+    // The halo carries on behind the unlit part of the moon (it is see-through there).
+    return vec3(0.70, 0.78, 1.0) * halo * visible * (1.0 - coverage);
 }
 
 // Glow around the sun (forward scattering), stronger and warmer near dusk.
