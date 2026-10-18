@@ -133,6 +133,9 @@ CPMAddPackage("gh:stephenberry/glaze@7.1.1")
 CPMAddPackage("gh:cameron314/concurrentqueue@1.0.4")
 CPMAddPackage("gh:g-truc/glm#1.0.1")
 CPMAddPackage(NAME stb GITHUB_REPOSITORY nothings/stb GIT_TAG master DOWNLOAD_ONLY YES)
+# Plugins run on WasmEdge (32-bit and 64-bit/memory64 WebAssembly). WasmEdge doesn't build for the
+# web, so the browser build keeps wasm3 behind the same interface (src/client/mods/WasmRuntime*.cpp).
+if(EMSCRIPTEN)
 CPMAddPackage(NAME wasm3 GITHUB_REPOSITORY wasm3/wasm3 GIT_TAG 28ecb9af6d2040e474a70f7cb7f43666740141fb DOWNLOAD_ONLY YES)
 set(WASM3_CORE_SOURCES m3_bind.c m3_code.c m3_compile.c m3_core.c m3_env.c m3_exec.c m3_function.c m3_info.c m3_module.c m3_parse.c m3_validate.c)
 list(TRANSFORM WASM3_CORE_SOURCES PREPEND "${wasm3_SOURCE_DIR}/source/")
@@ -143,6 +146,65 @@ if(NOT MSVC)
     target_compile_options(wasm3_core PRIVATE -w)
 endif()
 set_target_properties(wasm3_core PROPERTIES POSITION_INDEPENDENT_CODE ON C_STANDARD 11)
+set(PERLIN_WASM_ENGINE wasm3_core)
+else()
+CPMAddPackage(NAME wasmedge GITHUB_REPOSITORY WasmEdge/WasmEdge GIT_TAG 0.18.0 DOWNLOAD_ONLY YES)
+# Interpreter only (no LLVM), no tools, plug-ins or shared library: just the engine's static parts.
+set(WASMEDGE_BUILD_SHARED_LIB OFF CACHE BOOL "" FORCE)
+set(WASMEDGE_BUILD_STATIC_LIB OFF CACHE BOOL "" FORCE)
+set(WASMEDGE_BUILD_TOOLS OFF CACHE BOOL "" FORCE)
+set(WASMEDGE_BUILD_PLUGINS OFF CACHE BOOL "" FORCE)
+set(WASMEDGE_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+set(WASMEDGE_BUILD_EXAMPLE OFF CACHE BOOL "" FORCE)
+set(WASMEDGE_USE_LLVM OFF CACHE BOOL "" FORCE)
+# Link-time optimisation inlines the interpreter's instruction handlers into its dispatch loop
+# (they live in separate files); without it the interpreter runs several times slower.
+if(ANDROID)
+    set(WASMEDGE_FORCE_DISABLE_LTO ON CACHE BOOL "" FORCE)
+else()
+    set(WASMEDGE_FORCE_DISABLE_LTO OFF CACHE BOOL "" FORCE)
+endif()
+set(WASMEDGE_PLUGIN_WASI_LOGGING OFF CACHE BOOL "" FORCE)
+add_subdirectory("${wasmedge_SOURCE_DIR}" "${CMAKE_BINARY_DIR}/_deps/wasmedge-build" EXCLUDE_FROM_ALL)
+# WasmEdge builds its own code with -Werror (/WX on MSVC); a newer compiler's new warning must not
+# break Perlin's build, so turn warnings off for its targets.
+function(perlin_quiet_targets dir)
+    get_property(targets DIRECTORY "${dir}" PROPERTY BUILDSYSTEM_TARGETS)
+    foreach(t IN LISTS targets)
+        get_target_property(type ${t} TYPE)
+        if(NOT type STREQUAL "INTERFACE_LIBRARY" AND NOT type STREQUAL "UTILITY")
+            if(MSVC)
+                target_compile_options(${t} PRIVATE /WX- /W0)
+            else()
+                target_compile_options(${t} PRIVATE -Wno-error -w)
+            endif()
+        endif()
+    endforeach()
+    get_property(subdirs DIRECTORY "${dir}" PROPERTY SUBDIRECTORIES)
+    foreach(d IN LISTS subdirs)
+        perlin_quiet_targets("${d}")
+    endforeach()
+endfunction()
+perlin_quiet_targets("${wasmedge_SOURCE_DIR}")
+# The C API (normally only built into libwasmedge) plus the executor interrupt Perlin uses to stop
+# a plugin that runs too long.
+add_library(perlin_wasmedge STATIC
+    "${wasmedge_SOURCE_DIR}/lib/api/wasmedge.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/client/mods/WasmEdgeStop.cpp")
+target_compile_definitions(perlin_wasmedge PUBLIC WASMEDGE_COMPILE_LIBRARY)
+target_include_directories(perlin_wasmedge PUBLIC
+    "${CMAKE_BINARY_DIR}/_deps/wasmedge-build/include/api"
+    "${wasmedge_SOURCE_DIR}/include/api")
+target_link_libraries(perlin_wasmedge PUBLIC wasmedgeVM wasmedgeDriver)
+# Built like WasmEdge's own libraries (C++17; /utf-8 /bigobj on MSVC), quietly.
+set_target_properties(perlin_wasmedge PROPERTIES CXX_STANDARD 17 CXX_EXTENSIONS OFF POSITION_INDEPENDENT_CODE ON)
+if(MSVC)
+    target_compile_options(perlin_wasmedge PRIVATE /utf-8 /bigobj /W0)
+else()
+    target_compile_options(perlin_wasmedge PRIVATE -w)
+endif()
+set(PERLIN_WASM_ENGINE perlin_wasmedge)
+endif()
 if(NOT EMSCRIPTEN)
 CPMAddPackage(NAME httplib GITHUB_REPOSITORY yhirose/cpp-httplib GIT_TAG v0.60.1 DOWNLOAD_ONLY YES)
 endif()
@@ -271,7 +333,7 @@ set(PERLIN_SHADER_NAMES
     vs_sunrise fs_sunrise vs_celestial fs_celestial vs_cloud fs_cloud vs_screen fs_screen vs_ui fs_ui vs_post fs_post
     vs_entity_shadow fs_entity_shadow fs_bloom
     vv_vs_terrain vv_fs_terrain_solid vv_fs_terrain_cutout vv_fs_terrain_translucent vv_vs_sky vv_fs_sky vv_vs_star vv_fs_star
-    vv_vs_sunrise vv_fs_sunrise vv_vs_celestial vv_fs_celestial vv_vs_cloud vv_fs_cloud vv_vs_shadow vv_fs_shadow vv_fs_shadow_cutout)
+    vv_vs_sunrise vv_fs_sunrise vv_vs_celestial vv_fs_celestial vv_vs_cloud vv_fs_cloud vv_vs_shadow vv_fs_shadow vv_fs_shadow_cutout vv_fs_shadow_glass)
 
 function(perlin_compile_shaders type varying)
     set(sources)
@@ -407,7 +469,7 @@ perlin_compile_shaders(FRAGMENT vv/vv_varying_celestial.def.sc vv/vv_fs_celestia
 perlin_compile_shaders(VERTEX vv/vv_varying_cloud.def.sc vv/vv_vs_cloud)
 perlin_compile_shaders(FRAGMENT vv/vv_varying_cloud.def.sc vv/vv_fs_cloud)
 perlin_compile_shaders(VERTEX vv/vv_varying_shadow.def.sc vv/vv_vs_shadow)
-perlin_compile_shaders(FRAGMENT vv/vv_varying_shadow.def.sc vv/vv_fs_shadow vv/vv_fs_shadow_cutout)
+perlin_compile_shaders(FRAGMENT vv/vv_varying_shadow.def.sc vv/vv_fs_shadow vv/vv_fs_shadow_cutout vv/vv_fs_shadow_glass)
 endif()
 
 if(PERLIN_PREBUILT_SHADERS)
@@ -530,6 +592,13 @@ set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${PERLIN_RESOURCE
 
 file(GLOB_RECURSE PERLIN_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp")
 list(FILTER PERLIN_SOURCES EXCLUDE REGEX "/src/network/Nbt\\.cpp")
+# WasmEdgeStop.cpp is part of perlin_wasmedge; each build uses one of the two plugin engines.
+list(FILTER PERLIN_SOURCES EXCLUDE REGEX "/src/client/mods/WasmEdgeStop\\.cpp$")
+if(EMSCRIPTEN)
+    list(FILTER PERLIN_SOURCES EXCLUDE REGEX "/src/client/mods/WasmRuntime\\.cpp$")
+else()
+    list(FILTER PERLIN_SOURCES EXCLUDE REGEX "/src/client/mods/WasmRuntimeWasm3\\.cpp$")
+endif()
 if(EMSCRIPTEN)
     list(FILTER PERLIN_SOURCES EXCLUDE REGEX "/src/network/(NetherNet|Http|RakNet)\\.cpp")
 else()
@@ -574,7 +643,7 @@ if(WIN32)
 endif()
 
 target_link_libraries(Perlin PRIVATE
-    wasm3_core
+    ${PERLIN_WASM_ENGINE}
     perlin_protocol
     glaze::glaze
     miniz
@@ -851,4 +920,17 @@ if(PERLIN_BUILD_TESTS AND NOT EMSCRIPTEN AND NOT ANDROID)
     target_link_libraries(light_selftest PRIVATE glaze::glaze Threads::Threads)
     target_compile_features(light_selftest PRIVATE cxx_std_23)
     add_test(NAME light_selftest COMMAND light_selftest)
+
+    # Plugins on the WebAssembly engine: 32-bit and 64-bit modules, a hung plugin, hot reload.
+    add_executable(mod_selftest tests/mod_selftest.cpp src/client/mods/ModManager.cpp src/client/mods/WasmRuntime.cpp src/client/ui/Json.cpp)
+    target_include_directories(mod_selftest PRIVATE src mods/sdk)
+    target_link_libraries(mod_selftest PRIVATE perlin_wasmedge Threads::Threads)
+    target_compile_features(mod_selftest PRIVATE cxx_std_23)
+    set(PERLIN_TEST_PLUGINS "${CMAKE_CURRENT_SOURCE_DIR}/tests/data/plugins")
+    add_test(NAME mod_selftest COMMAND mod_selftest
+        "${PERLIN_TEST_PLUGINS}/hello64.wasm" "${PERLIN_TEST_PLUGINS}/hello32.wasm"
+        "${PERLIN_TEST_PLUGINS}/loop_64.wasm" "${PERLIN_TEST_PLUGINS}/loop_32.wasm"
+        "${CMAKE_CURRENT_SOURCE_DIR}/mods/prebuilt/speedometer.wasm"
+        "${CMAKE_CURRENT_SOURCE_DIR}/mods/prebuilt/inspector.wasm"
+        "${CMAKE_CURRENT_SOURCE_DIR}/mods/prebuilt/radar.wasm")
 endif()

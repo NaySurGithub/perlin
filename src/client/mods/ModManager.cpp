@@ -1,6 +1,6 @@
 #include "client/mods/ModManager.hpp"
 
-#include <wasm3.h>
+#include "client/mods/WasmRuntime.hpp"
 
 #include "client/ui/Json.hpp"
 
@@ -86,12 +86,6 @@ namespace perlin::mods {
             }
             return out;
         }
-
-        bool InRange(const void* mem, uint32_t ptr, uint32_t len) {
-            if (len == 0)
-                return true;
-            return static_cast<uint64_t>(ptr) + len <= m3_GetMemorySizeAt(mem);
-        }
     }
 
     struct ModManager::Plugin {
@@ -128,217 +122,199 @@ namespace perlin::mods {
         std::string jobError;
         std::mutex gate;
 
-        IM3Environment env = nullptr;
-        IM3Runtime runtime = nullptr;
-        IM3Module module = nullptr;
-        IM3Function fnEvent = nullptr, fnAlloc = nullptr, fnFree = nullptr, fnSubs = nullptr;
+        std::unique_ptr<WasmInstance> instance;
+        std::string arch;
+        bool hasAlloc = false, hasFree = false, hasSubs = false;
     };
 
     struct HostBridge {
         static ModManager* manager;
 
-        static const void* Call(IM3Runtime runtime, IM3ImportContext ctx, uint64_t* sp, void* mem) {
-            int32_t* ret = reinterpret_cast<int32_t*>(sp++);
-            const uint32_t op = static_cast<uint32_t>(*sp++);
-            const uint32_t inPtr = static_cast<uint32_t>(*sp++);
-            const uint32_t inLen = static_cast<uint32_t>(*sp++);
-            const uint32_t outPtr = static_cast<uint32_t>(*sp++);
-            const uint32_t outCap = static_cast<uint32_t>(*sp++);
-            auto* plugin = static_cast<ModManager::Plugin*>(ctx->userdata);
-            if (plugin->revoked)
-                return kRevoked;
-            if (!InRange(mem, inPtr, inLen) || !InRange(mem, outPtr, outCap)) {
-                *ret = static_cast<int32_t>(abi::Status::BadArguments);
-                return m3Err_none;
+        // perlin.call(op, in, in_len, out, out_cap) -> i32. Pointers and lengths may be i32 or
+        // i64 (32-bit or 64-bit plugins); the result is a byte count or a negative status.
+        static bool Call(ModManager::Plugin& plugin, WasmInstance::HostContext& ctx, const uint64_t* a, uint32_t n, uint64_t* r) {
+            if (plugin.revoked) {
+                ctx.error = kRevoked;
+                return false;
             }
-            const int32_t rc = manager->HostCall(*plugin, op, static_cast<uint8_t*>(mem) + inPtr, inLen, static_cast<uint8_t*>(mem) + outPtr, outCap);
-            if (rc == INT32_MIN)
-                return kRevoked;
-            *ret = rc;
-            return m3Err_none;
+            if (n != 5) {
+                ctx.error = "perlin.call has the wrong signature";
+                return false;
+            }
+            const uint32_t op = static_cast<uint32_t>(a[0]);
+            uint8_t* in = ctx.instance.Memory(a[1], a[2]);
+            uint8_t* out = ctx.instance.Memory(a[3], a[4]);
+            if (!in || !out || a[2] > 0xFFFFFFFFu || a[4] > 0xFFFFFFFFu) {
+                r[0] = static_cast<uint32_t>(static_cast<int32_t>(abi::Status::BadArguments));
+                return true;
+            }
+            const int32_t rc = manager->HostCall(plugin, op, in, static_cast<uint32_t>(a[2]), out, static_cast<uint32_t>(a[4]));
+            if (rc == INT32_MIN) {
+                ctx.error = kRevoked;
+                return false;
+            }
+            r[0] = static_cast<uint32_t>(rc);
+            return true;
         }
     };
     ModManager* HostBridge::manager = nullptr;
 
     namespace {
-        template <int Code>
-        const void* WasiConst(IM3Runtime, IM3ImportContext, uint64_t* sp, void*) {
-            *reinterpret_cast<int32_t*>(sp) = Code;
-            return m3Err_none;
+        // The slice of WASI preview 1 a plugin's libc needs: stdout/stderr go to the log, clocks
+        // and randomness work, everything else (files, sockets) is unavailable. Pointers and
+        // sizes are i32 in 32-bit plugins and i64 in 64-bit ones.
+        constexpr uint32_t kBadf = 8, kFault = 21, kNosys = 52, kNotcapable = 76, kSpipe = 70;
+
+        using Wasi = WasmInstance::HostFn;
+
+        bool PutSize(WasmInstance& w, uint64_t at, uint64_t value) {
+            const uint64_t width = w.Is64() ? 8 : 4;
+            uint8_t* p = w.Memory(at, width);
+            if (!p)
+                return false;
+            std::memcpy(p, &value, width); // little-endian
+            return true;
         }
 
-        const void* WasiExit(IM3Runtime, IM3ImportContext, uint64_t*, void*) { return kExit; }
-
-        const void* WasiSizes(IM3Runtime, IM3ImportContext, uint64_t* sp, void* mem) {
-            int32_t* ret = reinterpret_cast<int32_t*>(sp++);
-            const uint32_t a = static_cast<uint32_t>(*sp++);
-            const uint32_t b = static_cast<uint32_t>(*sp++);
-            if (!InRange(mem, a, 4) || !InRange(mem, b, 4)) {
-                *ret = 21;
-                return m3Err_none;
-            }
-            const uint32_t zero = 0;
-            std::memcpy(static_cast<uint8_t*>(mem) + a, &zero, 4);
-            std::memcpy(static_cast<uint8_t*>(mem) + b, &zero, 4);
-            *ret = 0;
-            return m3Err_none;
-        }
-
-        const void* WasiClock(IM3Runtime, IM3ImportContext, uint64_t* sp, void* mem) {
-            int32_t* ret = reinterpret_cast<int32_t*>(sp++);
-            const uint32_t id = static_cast<uint32_t>(*sp++);
-            sp++;
-            const uint32_t out = static_cast<uint32_t>(*sp++);
-            if (!InRange(mem, out, 8)) {
-                *ret = 21;
-                return m3Err_none;
-            }
-            uint64_t ns;
-            if (id == 0)
-                ns = static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::system_clock::now().time_since_epoch()).count());
-            else
-                ns = static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(Clock::now().time_since_epoch()).count());
-            std::memcpy(static_cast<uint8_t*>(mem) + out, &ns, 8);
-            *ret = 0;
-            return m3Err_none;
-        }
-
-        const void* WasiClockRes(IM3Runtime, IM3ImportContext, uint64_t* sp, void* mem) {
-            int32_t* ret = reinterpret_cast<int32_t*>(sp++);
-            sp++;
-            const uint32_t out = static_cast<uint32_t>(*sp++);
-            if (!InRange(mem, out, 8)) {
-                *ret = 21;
-                return m3Err_none;
-            }
-            const uint64_t res = 1000;
-            std::memcpy(static_cast<uint8_t*>(mem) + out, &res, 8);
-            *ret = 0;
-            return m3Err_none;
-        }
-
-        const void* WasiRandom(IM3Runtime, IM3ImportContext, uint64_t* sp, void* mem) {
-            int32_t* ret = reinterpret_cast<int32_t*>(sp++);
-            const uint32_t ptr = static_cast<uint32_t>(*sp++);
-            const uint32_t len = static_cast<uint32_t>(*sp++);
-            if (!InRange(mem, ptr, len)) {
-                *ret = 21;
-                return m3Err_none;
-            }
-            thread_local std::mt19937_64 rng{std::random_device{}()};
-            auto* bytes = static_cast<uint8_t*>(mem) + ptr;
-            for (uint32_t i = 0; i < len; i++)
-                bytes[i] = static_cast<uint8_t>(rng());
-            *ret = 0;
-            return m3Err_none;
-        }
-
-        const void* WasiFdWrite(IM3Runtime, IM3ImportContext ctx, uint64_t* sp, void* mem) {
-            int32_t* ret = reinterpret_cast<int32_t*>(sp++);
-            const uint32_t fd = static_cast<uint32_t>(*sp++);
-            const uint32_t iovs = static_cast<uint32_t>(*sp++);
-            const uint32_t count = static_cast<uint32_t>(*sp++);
-            const uint32_t written = static_cast<uint32_t>(*sp++);
-            if (fd != 1 && fd != 2) {
-                *ret = 8;
-                return m3Err_none;
-            }
-            if (count > 1024 || !InRange(mem, iovs, count * 8) || !InRange(mem, written, 4)) {
-                *ret = 21;
-                return m3Err_none;
-            }
-            std::string text;
-            uint32_t total = 0;
-            for (uint32_t i = 0; i < count; i++) {
-                uint32_t ptr, len;
-                std::memcpy(&ptr, static_cast<uint8_t*>(mem) + iovs + i * 8, 4);
-                std::memcpy(&len, static_cast<uint8_t*>(mem) + iovs + i * 8 + 4, 4);
-                if (!InRange(mem, ptr, len)) {
-                    *ret = 21;
-                    return m3Err_none;
-                }
-                if (text.size() < 65536)
-                    text.append(reinterpret_cast<const char*>(static_cast<uint8_t*>(mem) + ptr), len);
-                total += len;
-            }
-            while (!text.empty() && (text.back() == '\n' || text.back() == '\r'))
-                text.pop_back();
-            if (!text.empty()) {
-                auto* plugin = static_cast<ModManager::Plugin*>(ctx->userdata);
-                std::cout << "[mod:" << plugin->name << "] " << text << std::endl;
-            }
-            std::memcpy(static_cast<uint8_t*>(mem) + written, &total, 4);
-            *ret = 0;
-            return m3Err_none;
-        }
-
-        const void* WasiFdstat(IM3Runtime, IM3ImportContext, uint64_t* sp, void* mem) {
-            int32_t* ret = reinterpret_cast<int32_t*>(sp++);
-            const uint32_t fd = static_cast<uint32_t>(*sp++);
-            const uint32_t out = static_cast<uint32_t>(*sp++);
-            if (fd > 2 || !InRange(mem, out, 24)) {
-                *ret = 8;
-                return m3Err_none;
-            }
-            uint8_t stat[24] = {};
-            stat[0] = 2;
-            const uint64_t rights = fd == 0 ? (1ull << 1) : (1ull << 6);
-            std::memcpy(stat + 8, &rights, 8);
-            std::memcpy(static_cast<uint8_t*>(mem) + out, stat, 24);
-            *ret = 0;
-            return m3Err_none;
-        }
-
-        void LinkWasi(IM3Module module, void* user) {
-            const auto link = [&](const char* name, const char* sig, M3RawCall fn) {
-                m3_LinkRawFunctionEx(module, "wasi_snapshot_preview1", name, sig, fn, user);
+        Wasi Const(uint32_t code) {
+            return [code](WasmInstance::HostContext&, const uint64_t*, uint32_t, uint64_t* r, uint32_t nr) {
+                if (nr)
+                    r[0] = code;
+                return true;
             };
-            link("args_sizes_get", "i(ii)", WasiSizes);
-            link("environ_sizes_get", "i(ii)", WasiSizes);
-            link("args_get", "i(ii)", WasiConst<0>);
-            link("environ_get", "i(ii)", WasiConst<0>);
-            link("clock_time_get", "i(iIi)", WasiClock);
-            link("clock_res_get", "i(ii)", WasiClockRes);
-            link("random_get", "i(ii)", WasiRandom);
-            link("fd_write", "i(iiii)", WasiFdWrite);
-            link("fd_fdstat_get", "i(ii)", WasiFdstat);
-            link("fd_close", "i(i)", WasiConst<0>);
-            link("fd_sync", "i(i)", WasiConst<0>);
-            link("fd_datasync", "i(i)", WasiConst<0>);
-            link("fd_seek", "i(iIii)", WasiConst<70>);
-            link("fd_tell", "i(ii)", WasiConst<70>);
-            link("fd_read", "i(iiii)", WasiConst<8>);
-            link("fd_pread", "i(iiiIi)", WasiConst<8>);
-            link("fd_pwrite", "i(iiiIi)", WasiConst<8>);
-            link("fd_readdir", "i(iiiIi)", WasiConst<8>);
-            link("fd_renumber", "i(ii)", WasiConst<8>);
-            link("fd_advise", "i(iIIi)", WasiConst<8>);
-            link("fd_allocate", "i(iII)", WasiConst<8>);
-            link("fd_fdstat_set_flags", "i(ii)", WasiConst<8>);
-            link("fd_fdstat_set_rights", "i(iII)", WasiConst<8>);
-            link("fd_filestat_get", "i(ii)", WasiConst<8>);
-            link("fd_filestat_set_size", "i(iI)", WasiConst<8>);
-            link("fd_filestat_set_times", "i(iIIi)", WasiConst<8>);
-            link("fd_prestat_get", "i(ii)", WasiConst<8>);
-            link("fd_prestat_dir_name", "i(iii)", WasiConst<8>);
-            link("path_open", "i(iiiiiIIii)", WasiConst<76>);
-            link("path_filestat_get", "i(iiiii)", WasiConst<76>);
-            link("path_filestat_set_times", "i(iiiiIIi)", WasiConst<76>);
-            link("path_create_directory", "i(iii)", WasiConst<76>);
-            link("path_remove_directory", "i(iii)", WasiConst<76>);
-            link("path_unlink_file", "i(iii)", WasiConst<76>);
-            link("path_rename", "i(iiiiii)", WasiConst<76>);
-            link("path_readlink", "i(iiiiii)", WasiConst<76>);
-            link("path_symlink", "i(iiiii)", WasiConst<76>);
-            link("path_link", "i(iiiiiii)", WasiConst<76>);
-            link("poll_oneoff", "i(iiii)", WasiConst<52>);
-            link("sched_yield", "i()", WasiConst<0>);
-            link("proc_exit", "v(i)", WasiExit);
-            link("proc_raise", "i(i)", WasiConst<52>);
-            link("sock_accept", "i(iii)", WasiConst<52>);
-            link("sock_recv", "i(iiiiii)", WasiConst<52>);
-            link("sock_send", "i(iiiii)", WasiConst<52>);
-            link("sock_shutdown", "i(ii)", WasiConst<52>);
+        }
+
+        Wasi WasiFunction(ModManager::Plugin& plugin, const std::string& name) {
+            using Ctx = WasmInstance::HostContext;
+            if (name == "args_sizes_get" || name == "environ_sizes_get")
+                return [](Ctx& c, const uint64_t* a, uint32_t n, uint64_t* r, uint32_t) {
+                    r[0] = n >= 2 && PutSize(c.instance, a[0], 0) && PutSize(c.instance, a[1], 0) ? 0 : kFault;
+                    return true;
+                };
+            if (name == "args_get" || name == "environ_get" || name == "fd_close" || name == "fd_sync" || name == "fd_datasync" || name == "sched_yield")
+                return Const(0);
+            if (name == "clock_time_get")
+                return [](Ctx& c, const uint64_t* a, uint32_t n, uint64_t* r, uint32_t) {
+                    uint8_t* out = n >= 3 ? c.instance.Memory(a[2], 8) : nullptr;
+                    if (!out) {
+                        r[0] = kFault;
+                        return true;
+                    }
+                    const uint64_t ns = a[0] == 0
+                                            ? static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::system_clock::now().time_since_epoch()).count())
+                                            : static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(Clock::now().time_since_epoch()).count());
+                    std::memcpy(out, &ns, 8);
+                    r[0] = 0;
+                    return true;
+                };
+            if (name == "clock_res_get")
+                return [](Ctx& c, const uint64_t* a, uint32_t n, uint64_t* r, uint32_t) {
+                    uint8_t* out = n >= 2 ? c.instance.Memory(a[1], 8) : nullptr;
+                    const uint64_t res = 1000;
+                    if (out)
+                        std::memcpy(out, &res, 8);
+                    r[0] = out ? 0 : kFault;
+                    return true;
+                };
+            if (name == "random_get")
+                return [](Ctx& c, const uint64_t* a, uint32_t n, uint64_t* r, uint32_t) {
+                    uint8_t* bytes = n >= 2 ? c.instance.Memory(a[0], a[1]) : nullptr;
+                    if (!bytes) {
+                        r[0] = kFault;
+                        return true;
+                    }
+                    thread_local std::mt19937_64 rng{std::random_device{}()};
+                    for (uint64_t i = 0; i < a[1]; i++)
+                        bytes[i] = static_cast<uint8_t>(rng());
+                    r[0] = 0;
+                    return true;
+                };
+            if (name == "fd_write")
+                return [&plugin](Ctx& c, const uint64_t* a, uint32_t n, uint64_t* r, uint32_t) {
+                    if (n < 4)
+                        return false;
+                    if (a[0] != 1 && a[0] != 2) {
+                        r[0] = kBadf;
+                        return true;
+                    }
+                    const uint64_t stride = c.instance.Is64() ? 16 : 8, half = stride / 2;
+                    const uint64_t count = a[2];
+                    const uint8_t* iovs = count <= 1024 ? c.instance.Memory(a[1], count * stride) : nullptr;
+                    if (!iovs) {
+                        r[0] = kFault;
+                        return true;
+                    }
+                    // Copy the iovec list first: the buffers it points at are looked up separately.
+                    std::vector<uint8_t> list(iovs, iovs + count * stride);
+                    std::string text;
+                    uint64_t total = 0;
+                    for (uint64_t i = 0; i < count; i++) {
+                        uint64_t ptr = 0, len = 0;
+                        std::memcpy(&ptr, list.data() + i * stride, half);
+                        std::memcpy(&len, list.data() + i * stride + half, half);
+                        const uint8_t* buf = c.instance.Memory(ptr, len);
+                        if (!buf) {
+                            r[0] = kFault;
+                            return true;
+                        }
+                        if (text.size() < 65536)
+                            text.append(reinterpret_cast<const char*>(buf), static_cast<size_t>(std::min<uint64_t>(len, 65536)));
+                        total += len;
+                    }
+                    while (!text.empty() && (text.back() == '\n' || text.back() == '\r'))
+                        text.pop_back();
+                    if (!text.empty())
+                        std::cout << "[mod:" << plugin.name << "] " << text << std::endl;
+                    r[0] = PutSize(c.instance, a[3], total) ? 0 : kFault;
+                    return true;
+                };
+            if (name == "fd_fdstat_get")
+                return [](Ctx& c, const uint64_t* a, uint32_t n, uint64_t* r, uint32_t) {
+                    uint8_t* out = n >= 2 && a[0] <= 2 ? c.instance.Memory(a[1], 24) : nullptr;
+                    if (!out) {
+                        r[0] = kBadf;
+                        return true;
+                    }
+                    uint8_t stat[24] = {};
+                    stat[0] = 2; // character device
+                    const uint64_t rights = a[0] == 0 ? (1ull << 1) : (1ull << 6);
+                    std::memcpy(stat + 8, &rights, 8);
+                    std::memcpy(out, stat, 24);
+                    r[0] = 0;
+                    return true;
+                };
+            if (name == "proc_exit")
+                return [](Ctx& c, const uint64_t*, uint32_t, uint64_t*, uint32_t) {
+                    c.error = kExit;
+                    return false;
+                };
+            if (name == "fd_seek" || name == "fd_tell")
+                return Const(kSpipe);
+            if (name.rfind("fd_", 0) == 0)
+                return Const(kBadf);
+            if (name.rfind("path_", 0) == 0)
+                return Const(kNotcapable);
+            // poll_oneoff, proc_raise, sock_* and anything newer.
+            return Const(kNosys);
+        }
+
+        WasmInstance::Resolver PluginImports(ModManager::Plugin& plugin) {
+            return [&plugin](const std::string& module, const std::string& name) -> WasmInstance::HostFn {
+                if (module == "perlin" && name == "call")
+                    return [&plugin](WasmInstance::HostContext& c, const uint64_t* a, uint32_t n, uint64_t* r, uint32_t nr) {
+                        if (nr != 1) {
+                            c.error = "perlin.call must return i32";
+                            return false;
+                        }
+                        return HostBridge::Call(plugin, c, a, n, r);
+                    };
+                if (module == "wasi_snapshot_preview1")
+                    return WasiFunction(plugin, name);
+                // Emscripten's standalone output reports memory growth; nothing to do.
+                if (module == "env" && name == "emscripten_notify_memory_growth")
+                    return Const(0);
+                return {};
+            };
         }
     }
 
@@ -437,6 +413,7 @@ namespace perlin::mods {
             info.loads = mod->loads;
             info.error = mod->error;
             info.lastEventMs = mod->lastEventMs.load();
+            info.arch = mod->arch;
             info.state = !mod->enabled ? "disabled" : mod->stuck ? "unresponsive" : !mod->error.empty() ? "error" : mod->loaded ? "running" : "loading";
             info.hooks.clear();
             if (mod->loaded) {
@@ -551,6 +528,9 @@ namespace perlin::mods {
         {
             std::lock_guard gateLock(mod.gate);
             mod.revoked = true;
+            // Stop whatever it is running; its worker then finishes and can be joined.
+            if (mod.instance)
+                mod.instance->Interrupt();
         }
         mod.stuck = true;
         mod.loaded = false;
@@ -593,119 +573,107 @@ namespace perlin::mods {
     }
 
     void ModManager::WorkerFree(Plugin& mod) {
-        if (mod.runtime)
-            m3_FreeRuntime(mod.runtime);
-        if (mod.env)
-            m3_FreeEnvironment(mod.env);
-        mod.runtime = nullptr;
-        mod.env = nullptr;
-        mod.module = nullptr;
-        mod.fnEvent = mod.fnAlloc = mod.fnFree = mod.fnSubs = nullptr;
+        std::unique_ptr<WasmInstance> dead;
+        {
+            std::lock_guard gateLock(mod.gate);
+            dead = std::move(mod.instance);
+        }
+        dead.reset();
+        mod.hasAlloc = mod.hasFree = mod.hasSubs = false;
     }
 
     namespace {
-        bool CallEventFn(ModManager&, IM3Function fnEvent, IM3Function fnAlloc, IM3Function fnFree, IM3Module module, uint32_t id,
-                         const std::vector<uint8_t>& payload, uint32_t& flags, std::string& error) {
-            uint32_t ptr = 0;
-            const uint32_t len = static_cast<uint32_t>(payload.size());
-            if (len && !fnAlloc) {
+        // Copies the payload into the plugin (perlin_alloc), runs perlin_event and frees it.
+        bool CallEventFn(ModManager::Plugin& mod, uint32_t id, const std::vector<uint8_t>& payload, uint32_t& flags, std::string& error) {
+            WasmInstance& w = *mod.instance;
+            uint64_t ptr = 0;
+            const uint64_t len = payload.size();
+            if (len && !mod.hasAlloc) {
                 error = "plugin has no perlin_alloc export";
                 return false;
             }
             if (len) {
-                if (M3Result r = m3_CallV(fnAlloc, len)) {
-                    error = std::string("alloc: ") + r;
+                if (!w.Call("perlin_alloc", {len}, &ptr, error)) {
+                    error = "alloc: " + error;
                     return false;
                 }
-                if (M3Result r = m3_GetResultsV(fnAlloc, &ptr)) {
-                    error = std::string("alloc: ") + r;
-                    return false;
-                }
-                size_t memSize = 0;
-                uint8_t* memory = m3_GetMemory(module, &memSize, 0);
-                if (!memory || ptr == 0 || static_cast<uint64_t>(ptr) + len > memSize) {
+                uint8_t* dst = ptr ? w.Memory(ptr, len) : nullptr;
+                if (!dst) {
                     error = "alloc returned a bad pointer";
                     return false;
                 }
-                std::memcpy(memory + ptr, payload.data(), len);
+                std::memcpy(dst, payload.data(), payload.size());
             }
-            if (M3Result r = m3_CallV(fnEvent, id, ptr, len)) {
-                error = std::string(EventName(id) ? EventName(id) : "event") + ": " + r;
+            uint64_t result = 0;
+            if (!w.Call("perlin_event", {id, ptr, len}, &result, error)) {
+                error = std::string(EventName(id) ? EventName(id) : "event") + ": " + error;
                 return false;
             }
-            flags = 0;
-            m3_GetResultsV(fnEvent, &flags);
-            if (len && fnFree)
-                m3_CallV(fnFree, ptr);
+            flags = static_cast<uint32_t>(result);
+            std::string ignored;
+            if (len && mod.hasFree)
+                w.Call("perlin_free", {ptr}, nullptr, ignored);
             return true;
+        }
+
+        void ReadSubscriptions(ModManager::Plugin& mod) {
+            uint64_t subs = 0;
+            std::string ignored;
+            if (mod.instance->Call("perlin_subscriptions", {}, &subs, ignored))
+                mod.subs = static_cast<uint32_t>(subs);
         }
     }
 
     void ModManager::WorkerLoad(Plugin& mod) {
         mod.jobError.clear();
-        mod.env = m3_NewEnvironment();
-        mod.runtime = m3_NewRuntime(mod.env, 512 * 1024, &mod);
-        IM3Module module = nullptr;
-        M3Result result = m3_ParseModule(mod.env, &module, mod.wasm.data(), static_cast<uint32_t>(mod.wasm.size()));
-        if (result) {
-            mod.jobError = std::string("parse: ") + result;
-            return;
+        {
+            std::lock_guard gateLock(mod.gate);
+            mod.instance = std::make_unique<WasmInstance>();
+            if (mod.revoked)
+                mod.instance->Interrupt();
         }
-        result = m3_LoadModule(mod.runtime, module);
-        if (result) {
-            mod.jobError = std::string("load: ") + result;
-            m3_FreeModule(module);
-            return;
-        }
-        mod.module = module;
-        m3_LinkRawFunctionEx(module, "perlin", "call", "i(iiiii)", HostBridge::Call, &mod);
-        LinkWasi(module, &mod);
-        if (m3_FindFunction(&mod.fnEvent, mod.runtime, "perlin_event") || !mod.fnEvent) {
-            mod.jobError = "not a Perlin plugin (missing perlin_event export)";
-            return;
-        }
-        if (m3_FindFunction(&mod.fnAlloc, mod.runtime, "perlin_alloc"))
-            mod.fnAlloc = nullptr;
-        if (m3_FindFunction(&mod.fnFree, mod.runtime, "perlin_free"))
-            mod.fnFree = nullptr;
-        if (m3_FindFunction(&mod.fnSubs, mod.runtime, "perlin_subscriptions"))
-            mod.fnSubs = nullptr;
-        IM3Function init = nullptr;
-        if (!m3_FindFunction(&init, mod.runtime, "_initialize") && init) {
-            if (M3Result r = m3_CallV(init)) {
-                mod.jobError = std::string("_initialize: ") + r;
-                return;
-            }
-        }
-        uint32_t flags = 0;
         std::string error;
-        if (!CallEventFn(*this, mod.fnEvent, mod.fnAlloc, mod.fnFree, module, static_cast<uint32_t>(abi::Event::Load), {}, flags, error)) {
+        if (!mod.instance->Load(mod.wasm.data(), mod.wasm.size(), PluginImports(mod), error)) {
             mod.jobError = error;
             return;
         }
-        if (mod.fnSubs) {
-            uint32_t subs = 0;
-            if (!m3_CallV(mod.fnSubs))
-                m3_GetResultsV(mod.fnSubs, &subs);
-            mod.subs = subs;
+        if (!mod.instance->HasExport("perlin_event")) {
+            mod.jobError = "not a Perlin plugin (missing perlin_event export)";
+            return;
         }
+        mod.hasAlloc = mod.instance->HasExport("perlin_alloc");
+        mod.hasFree = mod.instance->HasExport("perlin_free");
+        mod.hasSubs = mod.instance->HasExport("perlin_subscriptions");
+        {
+            std::lock_guard lock(mutex);
+            mod.arch = mod.instance->Is64() ? "wasm64" : "wasm32";
+        }
+        std::cout << "[mods] " << mod.name << ": " << mod.arch << " on " << WasmEngineName() << std::endl;
+        // WASI reactors (and Emscripten's standalone output) set up their runtime here.
+        if (mod.instance->HasExport("_initialize") && !mod.instance->Call("_initialize", {}, nullptr, error)) {
+            mod.jobError = "_initialize: " + error;
+            return;
+        }
+        uint32_t flags = 0;
+        if (!CallEventFn(mod, static_cast<uint32_t>(abi::Event::Load), {}, flags, error)) {
+            mod.jobError = error;
+            return;
+        }
+        if (mod.hasSubs)
+            ReadSubscriptions(mod);
     }
 
     void ModManager::WorkerEvent(Plugin& mod) {
         mod.jobError.clear();
         uint32_t flags = 0;
         std::string error;
-        if (!CallEventFn(*this, mod.fnEvent, mod.fnAlloc, mod.fnFree, mod.module, static_cast<uint32_t>(mod.event), mod.payload, flags, error)) {
+        if (!CallEventFn(mod, static_cast<uint32_t>(mod.event), mod.payload, flags, error)) {
             mod.jobError = error;
             return;
         }
         mod.flags = flags;
-        if (mod.fnSubs && mod.event != abi::Event::Frame && mod.event != abi::Event::Unload) {
-            uint32_t subs = 0;
-            if (!m3_CallV(mod.fnSubs))
-                m3_GetResultsV(mod.fnSubs, &subs);
-            mod.subs = subs;
-        }
+        if (mod.hasSubs && mod.event != abi::Event::Frame && mod.event != abi::Event::Unload)
+            ReadSubscriptions(mod);
     }
 
     bool ModManager::Call(Plugin& mod, abi::Event event, const abi::Writer& payload, double budgetMs, bool& cancelled) {
@@ -803,7 +771,17 @@ namespace perlin::mods {
         mod.loaded = false;
         if (mod.thread.joinable()) {
             if (mod.stuck) {
-                mod.thread.detach();
+                // Revoking interrupted it: normally the worker is idle again within moments.
+                std::unique_lock lock(mod.jobMutex);
+                if (mod.doneCv.wait_for(lock, std::chrono::milliseconds(500), [&] { return mod.done; })) {
+                    mod.kind = Plugin::Kind::Quit;
+                    lock.unlock();
+                    mod.jobCv.notify_all();
+                    mod.thread.join();
+                } else {
+                    lock.unlock();
+                    mod.thread.detach();
+                }
             } else {
                 {
                     std::lock_guard lock(mod.jobMutex);

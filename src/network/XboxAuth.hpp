@@ -28,6 +28,9 @@ namespace perlin::xbox {
 
         bool SignIn(const PromptFn& prompt, std::string& error);
 
+        // After SignIn: the account's gamertag (one Xbox Live token request).
+        bool FetchGamertag(std::string& gamertag, std::string& error);
+
         bool LoginMinecraft(const std::string& identityPublicKeyB64, const std::string& gameVersion,
                             Credentials& out, std::string& error);
 

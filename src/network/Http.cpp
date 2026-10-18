@@ -3,8 +3,82 @@
 
 #include <cctype>
 #include <cstdlib>
+#include <iostream>
+#include <mutex>
+#if !defined(_WIN32)
+#include <sys/stat.h>
+#endif
 
 namespace perlin::http {
+#if !defined(__ANDROID__) && !defined(_WIN32) && !defined(__APPLE__) && !defined(__EMSCRIPTEN__)
+    namespace {
+        bool IsFile(const char* path) {
+            struct stat st {};
+            return path && *path && stat(path, &st) == 0 && S_ISREG(st.st_mode);
+        }
+        bool IsDir(const char* path) {
+            struct stat st {};
+            return path && *path && stat(path, &st) == 0 && S_ISDIR(st.st_mode);
+        }
+    }
+#endif
+
+    bool SystemCaPaths(std::string& file, std::string& dir) {
+#if defined(__ANDROID__)
+        file.clear();
+        dir = "/system/etc/security/cacerts";
+        return true;
+#elif defined(_WIN32) || defined(__APPLE__) || defined(__EMSCRIPTEN__)
+        (void)file;
+        (void)dir;
+        return false;
+#else
+        static std::once_flag once;
+        static std::string caFile, caDir;
+        std::call_once(once, [] {
+            if (IsFile(std::getenv("SSL_CERT_FILE")))
+                caFile = std::getenv("SSL_CERT_FILE");
+            if (IsDir(std::getenv("SSL_CERT_DIR")))
+                caDir = std::getenv("SSL_CERT_DIR");
+            static const char* const kFiles[] = {
+                "/etc/ssl/certs/ca-certificates.crt",                // Debian, Ubuntu, Arch, Gentoo, NixOS, Void
+                "/etc/pki/tls/certs/ca-bundle.crt",                  // Fedora, RHEL, CentOS
+                "/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem", // Fedora, RHEL (extracted)
+                "/etc/ca-certificates/extracted/tls-ca-bundle.pem",  // Arch (extracted)
+                "/etc/ssl/ca-bundle.pem",                            // openSUSE, SLES
+                "/var/lib/ca-certificates/ca-bundle.pem",            // openSUSE
+                "/etc/ssl/cert.pem",                                 // Alpine, Arch, BSDs
+                "/usr/local/share/certs/ca-root-nss.crt",            // FreeBSD
+                "/etc/certs/ca-certificates.crt",
+            };
+            static const char* const kDirs[] = {"/etc/ssl/certs", "/etc/pki/tls/certs", "/system/etc/security/cacerts"};
+            for (const char* f : kFiles)
+                if (caFile.empty() && IsFile(f))
+                    caFile = f;
+            for (const char* d : kDirs)
+                if (caDir.empty() && IsDir(d))
+                    caDir = d;
+            if (caFile.empty() && caDir.empty())
+                std::cout << "[tls] no CA certificates found (set SSL_CERT_FILE); HTTPS downloads will fail" << std::endl;
+            else
+                std::cout << "[tls] CA certificates: " << (caFile.empty() ? "-" : caFile) << ", " << (caDir.empty() ? "-" : caDir)
+                          << std::endl;
+        });
+        file = caFile;
+        dir = caDir;
+        return !file.empty() || !dir.empty();
+#endif
+    }
+
+    template <class HttpResult>
+    std::string Describe(const HttpResult& res) {
+        std::string out = httplib::to_string(res.error());
+        if (res.ssl_error() != 0 || res.ssl_backend_error() != 0)
+            out += " (ssl error " + std::to_string(res.ssl_error()) + ", backend " + std::to_string(res.ssl_backend_error()) + ")";
+        return out;
+    }
+    template std::string Describe<httplib::Result>(const httplib::Result&);
+
     Response Request(const std::string& host, uint16_t port, bool tls, const std::string& method,
                      const std::string& path, const std::string& body, const std::string& contentType,
                      const std::map<std::string, std::string>& extra, int timeoutSecs) {
@@ -18,8 +92,10 @@ namespace perlin::http {
                 headers.emplace(k, v);
             httplib::Result res =
                 method == "GET" ? cli.Get(path, headers) : cli.Post(path, headers, body, contentType.c_str());
-            if (!res)
+            if (!res) {
+                std::cout << "[http] " << method << " " << host << path.substr(0, path.find('?')) << " failed: " << Describe(res) << std::endl;
                 return {};
+            }
             Response out{res->status, res->body, {}};
             for (auto& [k, v] : res->headers) {
                 std::string key = k;
@@ -31,9 +107,7 @@ namespace perlin::http {
         };
         if (tls) {
             httplib::SSLClient cli(host, port);
-#ifdef __ANDROID__
-            cli.set_ca_cert_path(std::string(), "/system/etc/security/cacerts");
-#endif
+            UseSystemCa(cli);
             return run(cli);
         }
         httplib::Client cli(host, port);

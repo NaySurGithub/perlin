@@ -22,6 +22,7 @@ namespace perlin {
         Post,
         Shadow,
         ShadowCutout,
+        ShadowGlass,  // stained glass etc. into the pack's coloured-light (tint) shadow map
         // Always the built-in shaders, whatever pack is active:
         SpriteUi,     // HUD sprites such as the crosshair
         EntityShadow, // entity meshes into the pack's shadow map
@@ -49,6 +50,7 @@ namespace perlin {
         bool Has(ShaderProgram program) const { return bgfx::isValid(programs[static_cast<size_t>(program)]); }
         void SetShadow(const float sample[16], const float info[4], bool enabled) const;
         void BindShadow(bgfx::TextureHandle texture) const;
+        void BindShadowTint(bgfx::TextureHandle texture) const; // coloured light through glass (stage 7)
         void Apply(bgfx::TextureHandle atlas, bgfx::TextureHandle lightmap, uint32_t atlasFlags,
                    uint32_t lightmapFlags) const;
         // Pack extras. Clouds: the vanilla cloud map (stage 3) and how world xz maps onto it.
@@ -92,6 +94,7 @@ namespace perlin {
         bgfx::UniformHandle shadowMatrix = BGFX_INVALID_HANDLE;
         bgfx::UniformHandle shadowInfo = BGFX_INVALID_HANDLE;
         bgfx::UniformHandle shadowSampler = BGFX_INVALID_HANDLE;
+        bgfx::UniformHandle shadowTintSampler = BGFX_INVALID_HANDLE;
         bgfx::UniformHandle cloudsSampler = BGFX_INVALID_HANDLE;
         bgfx::UniformHandle cloudMap = BGFX_INVALID_HANDLE;
         bgfx::UniformHandle sceneColorSampler = BGFX_INVALID_HANDLE;

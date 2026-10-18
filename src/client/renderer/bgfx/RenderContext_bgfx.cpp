@@ -55,6 +55,7 @@ namespace perlin {
         constexpr bgfx::ViewId kViewBloom = 11; // 11..17: bloom down/up passes
         constexpr bgfx::ViewId kViewShadowBuild = 1;   // terrain shadow map slices
         constexpr bgfx::ViewId kViewShadowEntity = 18; // front shadow map copy + mobs and players
+        constexpr bgfx::ViewId kViewShadowGlass = 19;  // coloured light through glass (tint map slices)
         constexpr uint32_t kPageVerts = 1u << 20;
         constexpr uint32_t kPageIdx = (kPageVerts / 4) * 6;
 
@@ -303,10 +304,11 @@ namespace perlin {
         bgfx::setViewMode(kViewEntity, bgfx::ViewMode::Sequential);
         bgfx::setViewMode(kViewLate, bgfx::ViewMode::Sequential);
         {
-            const bgfx::ViewId order[19] = {kViewShadowBuild, kViewShadowEntity, 0, kViewEntity, kViewCopy, kViewLate,
+            const bgfx::ViewId order[20] = {kViewShadowBuild, kViewShadowGlass, kViewShadowEntity, 0, kViewEntity, kViewCopy, kViewLate,
                                             kViewBloom, kViewBloom + 1, kViewBloom + 2, kViewBloom + 3, kViewBloom + 4, kViewBloom + 5, kViewBloom + 6,
                                             kViewBlur, kViewBlurOut, kViewHand, kViewGui, kViewDoll, kViewTop};
-            bgfx::setViewOrder(0, 19, order);
+            bgfx::setViewOrder(0, 20, order);
+            bgfx::setViewMode(kViewShadowGlass, bgfx::ViewMode::Sequential);
             bgfx::setViewMode(kViewShadowEntity, bgfx::ViewMode::Sequential);
             for (int i = 0; i < 7; i++)
                 bgfx::setViewMode(static_cast<bgfx::ViewId>(kViewBloom + i), bgfx::ViewMode::Sequential);
@@ -426,6 +428,7 @@ namespace perlin {
         blur.sampCur = bgfx::createUniform("s_cur", bgfx::UniformType::Sampler);
         blur.sampHist = bgfx::createUniform("s_hist", bgfx::UniformType::Sampler);
         blur.params = bgfx::createUniform("u_post", bgfx::UniformType::Vec4);
+        blur.fx = bgfx::createUniform("u_postFx", bgfx::UniformType::Vec4);
         blur.targets = true;
         blur.valid = false;
         return true;
@@ -447,6 +450,7 @@ namespace perlin {
         kill(blur.sampCur);
         kill(blur.sampHist);
         kill(blur.params);
+        kill(blur.fx);
         blur.targets = false;
         blur.valid = false;
     }
@@ -631,6 +635,11 @@ namespace perlin {
             bgfx::setUniform(blur.params, p);
             bgfx::setTexture(0, blur.sampCur, cur, BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP);
             bgfx::setTexture(1, blur.sampHist, hist, BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP);
+            // Under water with a shader pack: the world wobbles gently on the way to the screen,
+            // like looking into water from outside (the motion blur history stays undistorted).
+            const float fx[4] = {view == kViewBlurOut && pack.Active() && params.cameraMedium == 1 ? 1.0f : 0.0f,
+                                 std::fmod(params.timeSeconds, 3600.0f), 0.0f, 0.0f};
+            bgfx::setUniform(blur.fx, fx);
             if (bloom.ready) {
                 // Only the last pass to the screen adds the glow.
                 const float b[4] = {bloomRun && view == kViewBlurOut ? params.bloom * 0.55f : 0.0f, 0.0f, 0.0f, 0.0f};
@@ -1767,8 +1776,30 @@ namespace perlin {
             DestroyShadows();
             return;
         }
+        // Coloured light through stained glass: an RGBA16F tint map per terrain map, half size.
+        if (shaders.Has(ShaderProgram::ShadowGlass) && (caps->formats[bgfx::TextureFormat::RGBA16F] & BGFX_CAPS_FORMAT_TEXTURE_FRAMEBUFFER)) {
+            const uint16_t h16 = static_cast<uint16_t>(std::max(1, size / 2));
+            bool tintOk = true;
+            for (ShadowMap& m : shadow.maps) {
+                m.tint = bgfx::createTexture2D(h16, h16, false, 1, bgfx::TextureFormat::RGBA16F, rt);
+                if (bgfx::isValid(m.tint))
+                    m.tintFb = bgfx::createFrameBuffer(1, &m.tint, false);
+                tintOk = tintOk && bgfx::isValid(m.tint) && bgfx::isValid(m.tintFb);
+            }
+            if (!tintOk)
+                for (ShadowMap& m : shadow.maps) {
+                    if (bgfx::isValid(m.tintFb))
+                        bgfx::destroy(m.tintFb);
+                    if (bgfx::isValid(m.tint))
+                        bgfx::destroy(m.tint);
+                    m.tintFb = BGFX_INVALID_HANDLE;
+                    m.tint = BGFX_INVALID_HANDLE;
+                }
+            shadow.tintEnabled = tintOk;
+        }
         shadow.enabled = true;
-        std::cout << "[shadows] " << size << "x" << size << " map, " << shadow.distance << " blocks" << std::endl;
+        std::cout << "[shadows] " << size << "x" << size << " map, " << shadow.distance << " blocks"
+                  << (shadow.tintEnabled ? ", coloured light through glass" : "") << std::endl;
     }
 
     void RenderContext_bgfx::DestroyShadows() {
@@ -1777,6 +1808,10 @@ namespace perlin {
                 bgfx::destroy(m.fb);
             if (bgfx::isValid(m.color))
                 bgfx::destroy(m.color);
+            if (bgfx::isValid(m.tintFb))
+                bgfx::destroy(m.tintFb);
+            if (bgfx::isValid(m.tint))
+                bgfx::destroy(m.tint);
         }
         if (bgfx::isValid(shadow.buildDepth))
             bgfx::destroy(shadow.buildDepth);
@@ -1789,6 +1824,7 @@ namespace perlin {
         shadow = ShadowState{};
         bgfx::setViewClear(kViewShadowBuild, BGFX_CLEAR_NONE);
         bgfx::setViewClear(kViewShadowEntity, BGFX_CLEAR_NONE);
+        bgfx::setViewClear(kViewShadowGlass, BGFX_CLEAR_NONE);
     }
 
     bool RenderContext_bgfx::EnsureEntityShadowMap() {
@@ -1818,6 +1854,7 @@ namespace perlin {
         shadow.entities = false;
         bgfx::setViewClear(kViewShadowBuild, BGFX_CLEAR_NONE);
         bgfx::setViewClear(kViewShadowEntity, BGFX_CLEAR_NONE);
+        bgfx::setViewClear(kViewShadowGlass, BGFX_CLEAR_NONE);
         if (!shadow.enabled || !frame.sky.enabled)
             return;
         const float sunA = frame.sky.sunAngle;
@@ -1889,7 +1926,7 @@ namespace perlin {
             m.info[0] = 1.0f / static_cast<float>(shadow.size);
             m.info[1] = 2.0f * R;
             m.info[2] = 2.0f * D;
-            m.info[3] = 1.0f;
+            m.info[3] = shadow.tintEnabled ? 2.0f : 1.0f; // 2: a tint map is bound too
 
             // Chunks in range, nearest first, for each pass.
             shadow.buildList.clear();
@@ -1906,8 +1943,11 @@ namespace perlin {
                     continue;
                 const glm::vec3 rel = centre - cam;
                 const float d2 = rel.x * rel.x + rel.z * rel.z;
-                for (uint8_t pass = 0; pass < 3; pass++) {
-                    static constexpr RenderLayer kLayers[3] = {RenderLayer::Solid, RenderLayer::Cutout, RenderLayer::CutoutCull};
+                // Passes 0-2: opaque layers into the depth map; 3-4: translucent layers (glass)
+                // into the tint map, after every opaque pass (the glass is tested against it).
+                for (uint8_t pass = 0; pass < (shadow.tintEnabled ? 5 : 3); pass++) {
+                    static constexpr RenderLayer kLayers[5] = {RenderLayer::Solid, RenderLayer::Cutout, RenderLayer::CutoutCull,
+                                                               RenderLayer::Translucent, RenderLayer::TranslucentCull};
                     if (g.layerCount[static_cast<size_t>(kLayers[pass])])
                         found.push_back({d2, {entry.first, pass}});
                 }
@@ -1932,6 +1972,14 @@ namespace perlin {
             if (shadow.buildSlice == 0)
                 bgfx::setViewClear(kViewShadowBuild, BGFX_CLEAR_COLOR | BGFX_CLEAR_DEPTH, 0xFFFFFFFFu, 1.0f, 0);
             bgfx::touch(kViewShadowBuild);
+            if (shadow.tintEnabled) {
+                const uint16_t h16 = static_cast<uint16_t>(std::max(1, shadow.size / 2));
+                bgfx::setViewFrameBuffer(kViewShadowGlass, m.tintFb);
+                bgfx::setViewRect(kViewShadowGlass, 0, 0, h16, h16);
+                if (shadow.buildSlice == 0)
+                    bgfx::setViewClear(kViewShadowGlass, BGFX_CLEAR_COLOR, 0xFFFFFFFFu, 1.0f, 0); // white, nearest glass "far"
+                bgfx::touch(kViewShadowGlass);
+            }
             const size_t remainingSlices = static_cast<size_t>(std::max(1, shadow.buildSlices - shadow.buildSlice));
             const size_t left = shadow.buildList.size() - shadow.buildCursor;
             const size_t count = (left + remainingSlices - 1) / remainingSlices;
@@ -1939,7 +1987,14 @@ namespace perlin {
             const uint64_t state = BGFX_STATE_WRITE_R | BGFX_STATE_WRITE_G | BGFX_STATE_WRITE_B | BGFX_STATE_WRITE_A |
                                    BGFX_STATE_WRITE_Z | BGFX_STATE_DEPTH_TEST_LESS;
             constexpr uint8_t kKeep = BGFX_DISCARD_INDEX_BUFFER | BGFX_DISCARD_VERTEX_STREAMS;
-            static constexpr RenderLayer kLayers[3] = {RenderLayer::Solid, RenderLayer::Cutout, RenderLayer::CutoutCull};
+            static constexpr RenderLayer kLayers[5] = {RenderLayer::Solid, RenderLayer::Cutout, RenderLayer::CutoutCull,
+                                                       RenderLayer::Translucent, RenderLayer::TranslucentCull};
+            // Glass: multiply the colours, keep the nearest depth in alpha; no depth buffer (the
+            // shader tests against the opaque map instead).
+            const uint64_t glassState = BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A |
+                                        BGFX_STATE_BLEND_FUNC_SEPARATE(BGFX_STATE_BLEND_DST_COLOR, BGFX_STATE_BLEND_ZERO,
+                                                                       BGFX_STATE_BLEND_ONE, BGFX_STATE_BLEND_ONE) |
+                                        BGFX_STATE_BLEND_EQUATION_SEPARATE(BGFX_STATE_BLEND_EQUATION_ADD, BGFX_STATE_BLEND_EQUATION_MIN);
             int primedPass = -1;
             for (size_t i = 0; i < count; i++) {
                 const auto [chunkKey, pass] = shadow.buildList[shadow.buildCursor + i];
@@ -1950,21 +2005,25 @@ namespace perlin {
                 const size_t slot = static_cast<size_t>(kLayers[pass]);
                 if (!g.layerCount[slot])
                     continue;
+                const bool glass = pass >= 3;
                 if (primedPass != pass) {
                     if (primedPass >= 0)
                         bgfx::discard(BGFX_DISCARD_ALL);
                     shaders.SetMatrix(m.raster);
                     shaders.SetShadow(m.sample, m.info, true);
-                    bgfx::setState(state);
+                    bgfx::setState(glass ? glassState : state);
                     shaders.Apply(atlas, lightmapTex, samplerFlags, lightmapFlags);
                     if (bgfx::isValid(tileFlagsTexture))
                         shaders.BindTileFlags(tileFlagsTexture);
+                    if (glass)
+                        shaders.BindShadow(m.color); // the opaque depth this build wrote
                     primedPass = pass;
                 }
                 const Page& pg = pages[g.page];
                 bgfx::setVertexBuffer(0, pg.vb);
                 bgfx::setIndexBuffer(pg.ib[slot], g.iOff[slot], g.layerCount[slot]);
-                bgfx::submit(kViewShadowBuild, shaders.Program(pass == 0 ? ShaderProgram::Shadow : ShaderProgram::ShadowCutout), 0, kKeep);
+                const ShaderProgram program = glass ? ShaderProgram::ShadowGlass : (pass == 0 ? ShaderProgram::Shadow : ShaderProgram::ShadowCutout);
+                bgfx::submit(glass ? kViewShadowGlass : kViewShadowBuild, shaders.Program(program), 0, kKeep);
             }
             if (primedPass >= 0)
                 bgfx::discard(BGFX_DISCARD_ALL);
@@ -1986,6 +2045,7 @@ namespace perlin {
         std::memcpy(shadow.raster, f.raster, sizeof(f.raster));
         std::memcpy(shadow.info, f.info, sizeof(f.info));
         shadow.sampled = f.color;
+        shadow.sampledTint = shadow.tintEnabled ? f.tint : whiteTex;
         shadow.active = true;
 
         // Mobs and players: copy the terrain map, draw them over it (UiSubmit), sample the copy.
@@ -2075,6 +2135,8 @@ namespace perlin {
                 shaders.Apply(atlas, lightmapTex, samplerFlags, lightmapFlags);
                 if (shadow.active)
                     shaders.BindShadow(shadow.sampled);
+                // Always bind something to the tint sampler (white: no coloured light).
+                shaders.BindShadowTint(shadow.active && bgfx::isValid(shadow.sampledTint) ? shadow.sampledTint : whiteTex);
                 shaders.BindClouds(cloudMapTexture);
                 if (!bgfx::isValid(tileFlagsTexture))
                     UploadTileFlags({}); // all zero until the block library reports foliage tiles

@@ -26,6 +26,7 @@ namespace perlin::mods {
         std::vector<std::string> permissions;
         uint64_t size = 0;
         double lastEventMs = 0;
+        std::string arch; // "wasm64" or "wasm32" once loaded
     };
 
     struct PluginCommand {

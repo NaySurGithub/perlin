@@ -102,6 +102,8 @@ namespace perlin {
         int shadowQuality = 2;           // 0 off .. 4 ultra (shader packs with shadows)
         int shadowDistance = 0;          // blocks, 0 = the pack's default
         bool shadowEntities = true;      // entities cast pack shadows
+        int cameraMedium = 0;            // what the camera eye is in: 0 air, 1 water, 2 lava
+        float waterSurfaceAbove = 0.0f;  // underwater: height of the water surface above the eye, in blocks
         float menuBlur = 0.0f;
         bool crosshair = false;
         int guiScale = 0;

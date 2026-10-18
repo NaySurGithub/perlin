@@ -1198,7 +1198,9 @@ namespace perlin {
                                 return;
                             const BlockLibrary::TileAlpha ta = library->AlphaOf(tile);
                             const bool glassTile = library->IsGlassBase(tile);
-                            if (const int glassMode = library->GlassMode(); glassMode && !q.tile && library->IsGlassBase(tile)) {
+                            // (Also for quads that carry their own tile: stained glass is built from block geometry
+                            // that way, so it never connected while plain glass did.)
+                            if (const int glassMode = library->GlassMode(); glassMode && library->IsGlassBase(tile)) {
                                 int ia = -1, ib = -1, ic = -1;
                                 for (int k = 0; k < 4; k++) {
                                     const bool u0z = std::fabs(q.uv[k][0]) < 0.01f, u16 = std::fabs(q.uv[k][0] - 16.0f) < 0.01f;
@@ -1245,6 +1247,15 @@ namespace perlin {
                             for (int i = 0; i < 4; i++)
                                 if (std::fabs(q.pos[i][nAxis] - planeAt) > 1e-4f)
                                     flush = false;
+                            // Glass faces flush with the block boundary that the model gave no cull
+                            // direction: skip them against the same glass (or any glass when glass
+                            // connects). Clear glass hid this (its middle is fully transparent), but
+                            // stained glass showed every inner face as a coloured cross.
+                            if (flush && q.cull < 0 && (glassTile || ta.translucent)) {
+                                const uint16_t nid = cache.Get(x + nrm[0], y + nrm[1], z + nrm[2]);
+                                if (nid != 0 && (nid == id || (library->GlassMode() && glassTile && library->IsGlassBase(library->Look(nid).side))))
+                                    return;
+                            }
                             const int axis1 = nrm[0] != 0 ? 1 : 0;
                             const int axis2 = nrm[2] != 0 ? 1 : 2;
                             int first[3] = {0, 0, 0};

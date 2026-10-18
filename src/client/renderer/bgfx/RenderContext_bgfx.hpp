@@ -125,6 +125,9 @@ namespace perlin {
         struct ShadowMap {
             bgfx::FrameBufferHandle fb = BGFX_INVALID_HANDLE;
             bgfx::TextureHandle color = BGFX_INVALID_HANDLE;
+            // Coloured light through stained glass etc.: half size, rgb = tint, a = nearest glass depth.
+            bgfx::FrameBufferHandle tintFb = BGFX_INVALID_HANDLE;
+            bgfx::TextureHandle tint = BGFX_INVALID_HANDLE;
             float sample[16] = {};
             float raster[16] = {};
             float info[4] = {};
@@ -145,6 +148,8 @@ namespace perlin {
             float raster[16] = {};
             float info[4] = {};
             bgfx::TextureHandle sampled = BGFX_INVALID_HANDLE;
+            bgfx::TextureHandle sampledTint = BGFX_INVALID_HANDLE;
+            bool tintEnabled = false;
             int64_t key[6] = {};       // key of the newest build (finished or in progress)
             bool haveKey = false;
             int framesSince = 0;
@@ -187,6 +192,7 @@ namespace perlin {
             bgfx::TextureHandle histColor[2] = {BGFX_INVALID_HANDLE, BGFX_INVALID_HANDLE};
             bgfx::FrameBufferHandle histFb[2] = {BGFX_INVALID_HANDLE, BGFX_INVALID_HANDLE};
             bgfx::UniformHandle sampCur = BGFX_INVALID_HANDLE, sampHist = BGFX_INVALID_HANDLE, params = BGFX_INVALID_HANDLE;
+            bgfx::UniformHandle fx = BGFX_INVALID_HANDLE; // u_postFx: x underwater wobble strength, y time
             int read = 0;
             bool valid = false;
             bool targets = false;

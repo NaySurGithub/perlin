@@ -8,6 +8,8 @@ SAMPLER2D(s_bloom, 2);
 uniform vec4 u_post;
 // x: bloom strength (0 = none)
 uniform vec4 u_bloom;
+// x: under water wobble strength (0 = none), y: time in seconds
+uniform vec4 u_postFx;
 
 void main()
 {
@@ -23,13 +25,25 @@ void main()
         gl_FragColor = vec4(sum, 1.0);
         return;
     }
-    vec3 cur = texture2D(s_cur, v_texcoord0).rgb;
-    vec3 hist = texture2D(s_hist, v_texcoord0).rgb;
+    // Under water: two slow, crossing ripples bend the view a little, like looking into water.
+    vec2 uv = v_texcoord0;
+    if (u_postFx.x > 0.0)
+    {
+        float t = u_postFx.y;
+        vec2 wobble = vec2(sin(uv.y * 23.0 + t * 1.9) + 0.6 * sin(uv.y * 41.0 - t * 2.7 + uv.x * 9.0),
+                           cos(uv.x * 19.0 + t * 1.6) + 0.6 * cos(uv.x * 37.0 + t * 2.3 - uv.y * 7.0));
+        // Fade the bend out at the screen edges so no clamped smear shows there.
+        vec2 edge = min(uv, vec2_splat(1.0) - uv);
+        float fade = smoothstep(0.0, 0.04, min(edge.x, edge.y));
+        uv += wobble * 0.0021 * u_postFx.x * fade;
+    }
+    vec3 cur = texture2D(s_cur, uv).rgb;
+    vec3 hist = texture2D(s_hist, uv).rgb;
     vec3 color = mix(cur, hist, u_post.x);
     if (u_bloom.x > 0.0)
     {
         // Screen-blend the glow so it brightens without clipping to flat white.
-        vec3 glow = texture2D(s_bloom, v_texcoord0).rgb * u_bloom.x;
+        vec3 glow = texture2D(s_bloom, uv).rgb * u_bloom.x;
         color = vec3_splat(1.0) - (vec3_splat(1.0) - color) * (vec3_splat(1.0) - clamp(glow, 0.0, 1.0));
     }
     gl_FragColor = vec4(color, 1.0);

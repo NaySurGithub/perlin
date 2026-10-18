@@ -2,6 +2,7 @@
 #include "client/audio/SoundSystem.hpp"
 #include "client/audio/Subtitles.hpp"
 #include <chrono>
+#include "client/Accounts.hpp"
 #include "client/Camera.hpp"
 #include "client/Options.hpp"
 #include "client/entity/EntityRenderer.hpp"
@@ -152,6 +153,23 @@ namespace perlin {
         bool panoramaReady = false;
         std::chrono::steady_clock::time_point panoramaClock{}, panoramaRetryAt{};
         int titleClickRow = -1;
+        ui::TitlePage titleLastPage = ui::TitlePage::Main;
+
+        // Account switcher (title screen): the saved accounts and a Microsoft sign-in in progress.
+        AccountList accounts;
+        void ApplyActiveAccount();
+        std::string ActiveAuthPath() const;
+        void StartAccountSignIn();
+        void CancelAccountSignIn();
+        std::mutex signInMutex;
+        std::shared_ptr<xbox::Account> signInAccount;
+        std::string signInAuthFile, signInUrl, signInCode, signInStatus, signInGamertag, pendingRenameId, pendingRename;
+        std::atomic<int> signInState{0}; // 0 idle, 1 working, 2 signed in, 3 failed
+
+        // Server list status pings (filled in by worker threads, keyed by address).
+        void PingServers(const std::vector<std::string>& addresses);
+        std::mutex pingMutex;
+        std::map<std::string, ui::ServerEntry> pingResults;
         bool disconnectShown = false, disconnectLeftDown = false, disconnectTextMode = false;
         std::chrono::steady_clock::time_point disconnectOpenedAt{}, disconnectCheckAt{};
         std::string disconnectSignature, disconnectTemplate;
@@ -316,6 +334,8 @@ namespace perlin {
         } hudAnim;
         float hudPartial = 0.0f;
         bool headUnderwater = false;
+        bool headInLava = false;
+        float waterSurfaceAbove = 0.0f; // underwater: water surface height above the eye
         int previewSlot = 0;
         void TickHud();
         std::unique_ptr<ThreadPool> workers;

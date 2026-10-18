@@ -104,7 +104,8 @@ namespace perlin {
 
 template <>
 struct std::formatter<perlin::Vec3> : std::formatter<double> {
-    auto format(const perlin::Vec3& v, std::format_context& ctx) const {
+    template <class FormatContext>
+    auto format(const perlin::Vec3& v, FormatContext& ctx) const {
         auto out = ctx.out();
         out = std::format_to(out, "(");
         out = std::formatter<double>::format(v.x, ctx);
@@ -118,7 +119,8 @@ struct std::formatter<perlin::Vec3> : std::formatter<double> {
 
 template <>
 struct std::formatter<perlin::BlockPos> : std::formatter<int> {
-    auto format(const perlin::BlockPos& p, std::format_context& ctx) const {
+    template <class FormatContext>
+    auto format(const perlin::BlockPos& p, FormatContext& ctx) const {
         return std::format_to(ctx.out(), "[{}, {}, {}]", p.x, p.y, p.z);
     }
 };

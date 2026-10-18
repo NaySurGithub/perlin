@@ -15,7 +15,7 @@ void main()
     vec3 tinted = tex.rgb * v_tint;
     float foliage = max(step(tinted.r * 1.1, tinted.g) * step(tinted.b, tinted.g), step(0.5, v_foliage));
     vec4 color = vec4(vvLit(tex.rgb, v_tint, n, v_rel, v_light, foliage, 0.0, v_sunLight, v_skyLight), alpha);
-    color = mix(u_fogColor * vec4(1.0, 1.0, 1.0, color.a), color, v_visibility);
+    color = mix(vec4(vvFogColor(v_haze), color.a), color, v_visibility);
     color.rgb = vvFog(color.rgb, v_fog, v_haze);
     gl_FragColor = color;
 }

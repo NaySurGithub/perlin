@@ -16,6 +16,7 @@
 #include "client/resources/BundledShaderPack.hpp"
 #include "client/resources/AssetJobs.hpp"
 #include "network/XboxAuth.hpp"
+#include "network/RakNet.hpp"
 #include "client/renderer/chunk/ChunkMesher.hpp"
 #include "client/platform/AppPlatform.hpp"
 #include "client/renderer/Lightmap.hpp"
@@ -234,6 +235,9 @@ namespace perlin {
         }
         if (args.login)
             options.onlineLogin = true;
+        accounts.Load(paths::DataDir(), options.onlineLogin, options.playerName);
+        if (args.playerName.empty() && !args.login && !args.logout)
+            ApplyActiveAccount();
         onlineThisRun = options.onlineLogin && !args.offline;
 
         const bool firstSetup = !options.eulaAccepted;
@@ -367,11 +371,14 @@ namespace perlin {
 
         account.reset();
         if (onlineThisRun) {
-            account = std::make_shared<xbox::Account>(paths::DataDir() + "/auth.json");
+            account = std::make_shared<xbox::Account>(ActiveAuthPath());
             session->SetAccount(account);
         }
         connectsInFlight++;
-        workers->Submit([this, host, port, gen, s = session.get(), acct = account] {
+        std::string nameAccountId; // an active Microsoft account still without a gamertag
+        if (const AccountEntry* active = accounts.Active(); account && active && active->microsoft && active->name.empty())
+            nameAccountId = active->id;
+        workers->Submit([this, host, port, gen, s = session.get(), acct = account, nameAccountId] {
             struct InFlight {
                 std::atomic<int>& n;
                 ~InFlight() { n--; }
@@ -396,6 +403,16 @@ namespace perlin {
                     return;
                 }
                 SetStatusHint({});
+                // The account switcher shows the gamertag: learn it for an account added before the
+                // switcher existed (applied on the main thread).
+                if (!nameAccountId.empty()) {
+                    std::string gamertag, why;
+                    if (acct->FetchGamertag(gamertag, why)) {
+                        std::lock_guard lock(signInMutex);
+                        pendingRenameId = nameAccountId;
+                        pendingRename = gamertag;
+                    }
+                }
             }
             const bool connected = s->Connect(host, port);
             if (!current()) {
@@ -2526,7 +2543,8 @@ namespace perlin {
                 std::string body = info.description.empty() ? tr("perlin.mods.noDescription", "A WebAssembly mod.") : info.description;
                 if (!info.error.empty())
                     body += "\n\n" + tr("perlin.mods.errorLabel", "Error") + ": " + info.error;
-                body += "\n\n" + tr("perlin.mods.file", "File") + ": " + info.name + ".wasm (" + std::to_string(info.size) + " bytes)";
+                body += "\n\n" + tr("perlin.mods.file", "File") + ": " + info.name + ".wasm (" + std::to_string(info.size) + " bytes" +
+                        (info.arch.empty() ? std::string() : info.arch == "wasm64" ? ", 64-bit" : ", 32-bit") + ")";
                 if (!info.hooks.empty()) {
                     body += "\n" + tr("perlin.mods.hooks", "Hooks") + ": ";
                     for (size_t i = 0; i < info.hooks.size(); i++)
@@ -3528,6 +3546,129 @@ namespace perlin {
         }
     }
 
+    void Perlin::ApplyActiveAccount() {
+        const AccountEntry* a = accounts.Active();
+        if (!a)
+            return;
+        options.onlineLogin = a->microsoft;
+        if (!a->microsoft)
+            options.playerName = a->name;
+        onlineThisRun = options.onlineLogin && !args.offline;
+        options.Save();
+    }
+
+    std::string Perlin::ActiveAuthPath() const {
+        const AccountEntry* a = accounts.Active();
+        return a && a->microsoft ? accounts.AuthPath(*a) : paths::DataDir() + "/auth.json";
+    }
+
+    void Perlin::StartAccountSignIn() {
+        CancelAccountSignIn();
+        std::lock_guard lock(signInMutex);
+        signInAuthFile = accounts.NewAuthFile();
+        signInAccount = std::make_shared<xbox::Account>(paths::DataDir() + "/" + signInAuthFile);
+        signInUrl.clear();
+        signInCode.clear();
+        signInStatus.clear();
+        signInGamertag.clear();
+        signInState = 1;
+        workers->Submit([this, acct = signInAccount] {
+            std::string error, gamertag;
+            const bool ok = acct->SignIn(
+                [this, acct](const std::string& url, const std::string& code) {
+                    std::lock_guard lock(signInMutex);
+                    if (signInAccount != acct)
+                        return;
+                    signInUrl = url;
+                    signInCode = code;
+                    signInStatus = "Waiting for you to sign in...";
+                    platform->ShowSignInCode(url, code);
+                },
+                error);
+            const bool named = ok && acct->FetchGamertag(gamertag, error);
+            std::lock_guard lock(signInMutex);
+            if (signInAccount != acct)
+                return; // cancelled
+            if (ok) {
+                signInGamertag = named ? gamertag : std::string();
+                signInState = 2;
+            } else {
+                signInStatus = "Sign-in failed: " + error;
+                signInState = 3;
+            }
+        });
+    }
+
+    void Perlin::CancelAccountSignIn() {
+        std::lock_guard lock(signInMutex);
+        if (!signInAccount)
+            return;
+        signInAccount->Cancel();
+        signInAccount.reset();
+        if (signInState != 2 && !signInAuthFile.empty()) {
+            std::error_code ec;
+            std::filesystem::remove(paths::DataDir() + "/" + signInAuthFile, ec);
+        }
+        signInState = 0;
+    }
+
+    namespace {
+        // Removes Minecraft format codes (section sign + one character) from a MOTD.
+        std::string StripFormatting(const std::string& text) {
+            std::string out;
+            for (size_t i = 0; i < text.size(); i++) {
+                if (static_cast<unsigned char>(text[i]) == 0xC2 && i + 1 < text.size() && static_cast<unsigned char>(text[i + 1]) == 0xA7) {
+                    i += 2; // the code character
+                    continue;
+                }
+                out += text[i];
+            }
+            return out;
+        }
+    }
+
+    void Perlin::PingServers(const std::vector<std::string>& addresses) {
+        for (const std::string& address : addresses) {
+            {
+                std::lock_guard lock(pingMutex);
+                ui::ServerEntry& r = pingResults[address];
+                if (r.status == ui::ServerEntry::Status::Pinging)
+                    continue; // already on its way
+                r.status = ui::ServerEntry::Status::Pinging;
+            }
+            workers->Submit([this, address] {
+                ui::ServerEntry r;
+                std::string host, ad, error, text = address;
+                uint16_t port = 19132;
+                for (const char* scheme : {"https://", "http://"})
+                    if (text.rfind(scheme, 0) == 0)
+                        text.erase(0, std::char_traits<char>::length(scheme));
+                const auto start = Clock::now();
+                const bool ok = ParseServer(text, host, port) && RakNet::Ping(host, port, ad, error, 2500);
+                r.pingMs = static_cast<int>(std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now() - start).count());
+                r.status = ok ? ui::ServerEntry::Status::Online : ui::ServerEntry::Status::Offline;
+                if (ok) {
+                    // MCPE;MOTD;protocol;version;players;max;guid;world;gamemode;...
+                    std::vector<std::string> f;
+                    size_t from = 0;
+                    for (size_t at; (at = ad.find(';', from)) != std::string::npos; from = at + 1)
+                        f.push_back(ad.substr(from, at - from));
+                    f.push_back(ad.substr(from));
+                    if (f.size() > 1)
+                        r.motd = StripFormatting(f[1]);
+                    if (f.size() > 3)
+                        r.version = f[3];
+                    if (f.size() > 5) {
+                        r.players = std::atoi(f[4].c_str());
+                        r.maxPlayers = std::atoi(f[5].c_str());
+                    }
+                }
+                std::lock_guard lock(pingMutex);
+                pingResults[address] = std::move(r);
+            });
+        }
+    }
+
     void Perlin::JoinServer(const std::string& address) {
         if (address.empty())
             return;
@@ -3623,6 +3764,8 @@ namespace perlin {
             busy = busy || assets::Busy(*j);
             failed = failed || j->stage.load() == assets::Stage::Failed;
         }
+        if (failed && PERLIN_ENV("PERLIN_PREVIEW_TITLE"))
+            assetSkip = true; // title previews run offline
         if (assetSkip || (!busy && !failed && !preview)) {
             if (assetShown) {
                 assetShown = false;
@@ -3811,6 +3954,13 @@ namespace perlin {
                     title.name = title.servers[0].name;
                     title.address = title.servers[0].address;
                     title.focus = 1;
+                } else if (page == "accounts" && accounts.Entries().empty()) {
+                    accounts.AddMicrosoft("Steve4821", "accounts/preview.json");
+                    accounts.AddOffline("Alex");
+                    accounts.AddOffline("BuilderBob");
+                    title.page = ui::TitlePage::Accounts;
+                } else if (page == "accounts") {
+                    title.page = ui::TitlePage::Accounts;
                 }
             }
             input.SetTextMode(true);
@@ -3836,6 +3986,11 @@ namespace perlin {
             }
             SaveServers(title.servers);
             title.page = ui::TitlePage::Servers;
+            {
+                std::lock_guard lock(pingMutex);
+                pingResults.erase(entry.address); // ping it again now, filling in its info
+            }
+            PingServers({entry.address});
         };
         const auto join = [&](int row) {
             if (row >= 0 && row < static_cast<int>(title.servers.size()))
@@ -3846,8 +4001,24 @@ namespace perlin {
                 case ui::TitlePage::Servers: title.page = ui::TitlePage::Main; break;
                 case ui::TitlePage::Edit:
                 case ui::TitlePage::Direct: title.page = ui::TitlePage::Servers; break;
+                case ui::TitlePage::Accounts: title.page = ui::TitlePage::Main; break;
+                case ui::TitlePage::AccountName: title.page = ui::TitlePage::Accounts; break;
+                case ui::TitlePage::AccountSignIn:
+                    CancelAccountSignIn();
+                    title.page = ui::TitlePage::Accounts;
+                    break;
                 default: break;
             }
+        };
+        const auto addOffline = [&] {
+            std::string name = title.accountName;
+            while (!name.empty() && name.back() == ' ')
+                name.pop_back();
+            if (name.empty())
+                return;
+            accounts.AddOffline(name);
+            ApplyActiveAccount();
+            title.page = ui::TitlePage::Accounts;
         };
         const auto edit = [&](bool adding) {
             title.adding = adding;
@@ -3869,6 +4040,13 @@ namespace perlin {
             const bool fields = title.page == ui::TitlePage::Edit || title.page == ui::TitlePage::Direct;
             if (!t.character && t.key == Key::Escape) {
                 back();
+            } else if (title.page == ui::TitlePage::AccountName) {
+                if (!t.character && t.key == Key::Backspace)
+                    PopUtf8(title.accountName);
+                else if (!t.character && t.key == Key::Enter)
+                    addOffline();
+                else if (t.character && !t.ctrl && title.accountName.size() < 16 && t.key != ' ')
+                    AppendUtf8(title.accountName, t.key);
             } else if (fields) {
                 std::string& field = title.page == ui::TitlePage::Direct || title.focus == 1 ? title.address : title.name;
                 if (!t.character && t.key == Key::Backspace)
@@ -3904,8 +4082,67 @@ namespace perlin {
             title.scroll = std::clamp(title.scroll, 0, maxScroll);
         }
 
-        if (title.page == ui::TitlePage::Main)
+        if (title.page == ui::TitlePage::Accounts) {
+            const int maxScroll = std::max(0, static_cast<int>(title.accounts.size()) - ui::TitleAccountRows(guiH));
+            if (const float wheel = inputManager.Scroll(); wheel != 0.0f)
+                title.accountScroll -= wheel > 0 ? 1 : -1;
+            title.accountScroll = std::clamp(title.accountScroll, 0, maxScroll);
+        }
+
+        if (title.page == ui::TitlePage::Main || title.page == ui::TitlePage::Accounts || title.page == ui::TitlePage::AccountName ||
+            title.page == ui::TitlePage::AccountSignIn)
             DrawTitlePanorama(fbW, fbH);
+
+        // Account switcher state: a finished sign-in, gamertags learned while connecting.
+        {
+            std::lock_guard lock(signInMutex);
+            if (!pendingRenameId.empty()) {
+                accounts.Rename(pendingRenameId, pendingRename);
+                pendingRenameId.clear();
+            }
+            if (signInState == 2) {
+                accounts.AddMicrosoft(signInGamertag, signInAuthFile);
+                signInAccount.reset();
+                signInState = 0;
+                ApplyActiveAccount();
+                if (title.page == ui::TitlePage::AccountSignIn)
+                    title.page = ui::TitlePage::Accounts;
+            }
+            title.signInUrl = signInUrl;
+            title.signInCode = signInCode;
+            title.signInStatus = signInStatus;
+        }
+        title.accounts.clear();
+        for (const AccountEntry& e : accounts.Entries())
+            title.accounts.push_back({e.id, e.name, e.microsoft, e.id == accounts.ActiveId()});
+        if (const AccountEntry* a = accounts.Active())
+            title.accountLabel = "Logged in as " + (a->name.empty() ? std::string("Microsoft account") : a->name);
+        else
+            title.accountLabel = "Logged in as " + options.playerName + (options.onlineLogin ? "" : " (offline)");
+
+        // Server list: ping everything when the list opens, and show what came back.
+        if (title.page == ui::TitlePage::Servers && titleLastPage != ui::TitlePage::Servers && titleLastPage != ui::TitlePage::Edit &&
+            titleLastPage != ui::TitlePage::Direct) {
+            std::vector<std::string> addresses;
+            for (const ui::ServerEntry& e : title.servers)
+                addresses.push_back(e.address);
+            PingServers(addresses);
+        }
+        titleLastPage = title.page;
+        {
+            std::lock_guard lock(pingMutex);
+            for (ui::ServerEntry& e : title.servers) {
+                const auto it = pingResults.find(e.address);
+                const ui::ServerEntry blank{};
+                const ui::ServerEntry& r = it == pingResults.end() ? blank : it->second;
+                e.status = r.status;
+                e.motd = r.motd;
+                e.version = r.version;
+                e.players = r.players;
+                e.maxPlayers = r.maxPlayers;
+                e.pingMs = r.pingMs;
+            }
+        }
         title.nativePanorama = panoramaReady;
         if (!logoBedrock && now >= logoRetryAt) {
             logoRetryAt = now + std::chrono::seconds(2); // assets may still be downloading
@@ -3932,12 +4169,23 @@ namespace perlin {
         std::string signature = std::to_string(guiW) + "x" + std::to_string(guiH) + "|" + std::to_string(static_cast<int>(title.page)) + "|" +
                                 std::to_string(title.selected) + "|" + std::to_string(title.scroll) + "|" + std::to_string(title.focus) +
                                 (title.nativePanorama ? "|np" : "|sp") + "|" + title.logoSrc;
+        signature += "|" + title.accountLabel;
+        signature += "|" + std::to_string(title.accountScroll);
+        if (title.page == ui::TitlePage::Accounts)
+            for (const ui::AccountRow& a : title.accounts)
+                signature += "|" + a.id + a.name + (a.active ? "*" : "");
+        else if (title.page == ui::TitlePage::AccountName)
+            signature += "|" + title.accountName + (title.caret ? "c" : "n");
+        else if (title.page == ui::TitlePage::AccountSignIn)
+            signature += "|" + title.signInUrl + "|" + title.signInCode + "|" + title.signInStatus;
         if (title.page == ui::TitlePage::Edit || title.page == ui::TitlePage::Direct)
             signature += "|" + title.name + "|" + title.address + "|" + (title.caret ? "c" : "n") + (title.adding ? "a" : "e");
         else if (title.page == ui::TitlePage::Servers) {
             signature += "|" + std::to_string(title.servers.size());
             for (const ui::ServerEntry& s : title.servers)
-                signature += "|" + s.name + "|" + s.address;
+                signature += "|" + s.name + "|" + s.address + "|" + std::to_string(static_cast<int>(s.status)) + s.motd + "|" + std::to_string(s.players) + "/" +
+                             std::to_string(s.maxPlayers) + "|" + std::to_string(s.pingMs) +
+                             (s.status == ui::ServerEntry::Status::Pinging ? std::to_string(title.spinner & 3) : std::string());
             if (title.servers.empty())
                 signature += "|" + std::to_string(title.spinner & 3);
         }
@@ -3960,7 +4208,29 @@ namespace perlin {
                 const std::string p = prefix;
                 return hover.compare(0, p.size(), p) == 0 ? std::atoi(hover.c_str() + p.size()) : -1;
             };
-            if (hover == ui::kTitleMulti) {
+            if (hover == ui::kTitleAccounts) {
+                title.page = ui::TitlePage::Accounts;
+            } else if (hover == ui::kAccountDone) {
+                title.page = ui::TitlePage::Main;
+            } else if (hover == ui::kAccountAddOffline) {
+                title.accountName.clear();
+                title.page = ui::TitlePage::AccountName;
+            } else if (hover == ui::kAccountAddMicrosoft) {
+                StartAccountSignIn();
+                title.page = ui::TitlePage::AccountSignIn;
+            } else if (hover == ui::kAccountNameDone) {
+                addOffline();
+            } else if (hover == ui::kAccountCancel) {
+                back();
+            } else if (const int rm = rowOf(ui::kAccountRemovePrefix); rm >= 0) {
+                if (rm < static_cast<int>(title.accounts.size())) {
+                    accounts.Remove(title.accounts[static_cast<size_t>(rm)].id);
+                    ApplyActiveAccount();
+                }
+            } else if (const int acc = rowOf(ui::kAccountRowPrefix); acc >= 0) {
+                if (acc < static_cast<int>(title.accounts.size()) && accounts.SetActive(title.accounts[static_cast<size_t>(acc)].id))
+                    ApplyActiveAccount();
+            } else if (hover == ui::kTitleMulti) {
                 title.page = ui::TitlePage::Servers;
             } else if (hover == ui::kTitleOptions) {
                 titleOptions = true;
@@ -3986,6 +4256,15 @@ namespace perlin {
             } else if (hover == ui::kServerRefresh) {
                 LoadServers(title.servers, options.server);
                 title.selected = -1;
+                std::vector<std::string> addresses;
+                {
+                    std::lock_guard lock(pingMutex);
+                    for (const ui::ServerEntry& e : title.servers) {
+                        pingResults.erase(e.address);
+                        addresses.push_back(e.address);
+                    }
+                }
+                PingServers(addresses);
             } else if (hover == ui::kEditName) {
                 title.focus = 0;
             } else if (hover == ui::kEditAddress) {
@@ -5421,6 +5700,13 @@ namespace perlin {
                 if (cell.fluid == 1) {
                     const float top = col.Query(bx, by + 1, bz).fluid == 1 ? 1.0f : cell.fluidLevel;
                     underwater = e.y < static_cast<float>(by) + top;
+                    // Where the water surface is above the eye (for the shader pack's caustics and
+                    // the depth fade of sunlight); deep water is followed up to 64 blocks.
+                    int k = 0;
+                    while (k < 64 && col.Query(bx, by + k + 1, bz).fluid == 1)
+                        k++;
+                    const physics::BlockShape topCell = col.Query(bx, by + k, bz);
+                    waterSurfaceAbove = static_cast<float>(by + k) + (k == 0 ? top : topCell.fluidLevel) - e.y;
                 }
                 if (cell.fluid == 2) {
                     const float top = col.Query(bx, by + 1, bz).fluid == 2 ? 1.0f : cell.fluidLevel;
@@ -5432,6 +5718,9 @@ namespace perlin {
             static int waterVisionTime = 0;
 
             headUnderwater = underwater;
+            headInLava = eyeInLava;
+            if (!underwater)
+                waterSurfaceAbove = 0.0f;
             if ((live || previewLevel) && frameStart - handLightAt > std::chrono::milliseconds(200)) {
                 handLightAt = frameStart;
                 const glm::vec3 e = camera.EyePosition();
@@ -5757,6 +6046,8 @@ namespace perlin {
             params.shadowQuality = options.shadowQuality;
             params.shadowDistance = options.shadowDistance;
             params.shadowEntities = options.shadowEntities;
+            params.cameraMedium = headUnderwater ? 1 : (headInLava ? 2 : 0);
+            params.waterSurfaceAbove = waterSurfaceAbove;
             if (pauseShown && options.menuBlur > 0)
                 params.menuBlur = static_cast<float>(options.menuBlur * std::max(1, hud->OverlayScale()));
             if (const char* mb = PERLIN_ENV("PERLIN_MOTION_BLUR"))

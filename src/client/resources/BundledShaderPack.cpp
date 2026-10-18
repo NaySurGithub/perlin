@@ -24,6 +24,7 @@ namespace perlin {
             BGFX_EMBEDDED_SHADER(vv_vs_shadow),
             BGFX_EMBEDDED_SHADER(vv_fs_shadow),
             BGFX_EMBEDDED_SHADER(vv_fs_shadow_cutout),
+            BGFX_EMBEDDED_SHADER(vv_fs_shadow_glass),
             BGFX_EMBEDDED_SHADER_END(),
         };
 

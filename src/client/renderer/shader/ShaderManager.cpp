@@ -61,6 +61,7 @@ namespace perlin {
             {"vs_post", "fs_post"},
             {"vs_shadow", "fs_shadow"},
             {"vs_shadow", "fs_shadow_cutout"},
+            {"vs_shadow", "fs_shadow_glass"},
             {"vs_celestial", "fs_celestial"},
             {"vs_entity_shadow", "fs_entity_shadow"},
             {"vs_post", "fs_bloom"},
@@ -185,6 +186,7 @@ namespace perlin {
         shadowMatrix = bgfx::createUniform("u_shadowMtx", bgfx::UniformType::Mat4);
         shadowInfo = bgfx::createUniform("u_shadowInfo", bgfx::UniformType::Vec4);
         shadowSampler = bgfx::createUniform("s_shadow", bgfx::UniformType::Sampler);
+        shadowTintSampler = bgfx::createUniform("s_shadowTint", bgfx::UniformType::Sampler);
         cloudsSampler = bgfx::createUniform("s_clouds", bgfx::UniformType::Sampler);
         cloudMap = bgfx::createUniform("u_cloudMap", bgfx::UniformType::Vec4);
         sceneColorSampler = bgfx::createUniform("s_sceneColor", bgfx::UniformType::Sampler);
@@ -204,7 +206,7 @@ namespace perlin {
         for (bgfx::UniformHandle* handle : {&atlasSampler, &lightmapSampler, &skySampler, &mvp, &camera, &fogColor,
                                             &fogEnvironment, &fogSky, &modulator, &textureInfo, &chunk, &cloudOffset,
                                             &cloudColor, &sunDirection, &timeUniform, &heldLight, &dynParams, &dynLights, &packSettings, &tiles, &skyParams,
-                                            &shadowMatrix, &shadowInfo, &shadowSampler, &cloudsSampler, &cloudMap,
+                                            &shadowMatrix, &shadowInfo, &shadowSampler, &shadowTintSampler, &cloudsSampler, &cloudMap,
                                             &sceneColorSampler, &sceneDepthSampler, &sceneInfo, &invMvp, &tileFlagsSampler}) {
             if (bgfx::isValid(*handle))
                 bgfx::destroy(*handle);
@@ -236,10 +238,11 @@ namespace perlin {
         skyParamsValue[0] = params.cloud.height;
         skyParamsValue[1] = std::floor(params.sky.moonPhase);
         skyParamsValue[2] = params.sky.enabled ? 1.0f : 0.0f;
-        skyParamsValue[3] = 0.0f;
+        skyParamsValue[3] = static_cast<float>(params.cameraMedium); // 0 air, 1 water, 2 lava
         heldLightValue[0] = params.heldLight;
         dynParamsValue[0] = static_cast<float>(params.dynMode);
         dynParamsValue[1] = static_cast<float>(params.dynMode ? std::clamp(params.dynCount, 0, 8) : 0);
+        dynParamsValue[2] = params.waterSurfaceAbove; // underwater: water surface height above the eye
         std::copy_n(&params.dynLights[0][0], 32, &dynLightsValue[0][0]);
         std::copy_n(&params.packSettings[0], 32, &packSettingsValue[0][0]);
         tilesValue[0] = params.waterTile;
@@ -321,6 +324,11 @@ namespace perlin {
     void ShaderManager::BindShadow(bgfx::TextureHandle texture) const {
         bgfx::setTexture(2, shadowSampler, texture, BGFX_SAMPLER_MIN_POINT | BGFX_SAMPLER_MAG_POINT |
                                                        BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP);
+    }
+
+    void ShaderManager::BindShadowTint(bgfx::TextureHandle texture) const {
+        bgfx::setTexture(7, shadowTintSampler, texture, BGFX_SAMPLER_MIN_POINT | BGFX_SAMPLER_MAG_POINT |
+                                                           BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP);
     }
 
     void ShaderManager::Apply(bgfx::TextureHandle atlas, bgfx::TextureHandle lightmap, uint32_t atlasFlags,

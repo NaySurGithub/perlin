@@ -28,14 +28,18 @@ PERLIN_PLUGIN(ctx) {
 }
 ```
 
-Build it with a wasi-sdk install (<https://github.com/WebAssembly/wasi-sdk>, version 25 or newer):
+Plugins are 64-bit WebAssembly (memory64) by default. Build one with Emscripten (<https://emscripten.org>, activate emsdk first):
 
 ```
-export WASI_SDK_PATH=/path/to/wasi-sdk
+source /path/to/emsdk/emsdk_env.sh
 mods/build.sh my_plugin.cpp
 ```
 
-`build.sh` compiles with `-std=c++23 -fno-exceptions -fno-rtti` as a WASI reactor and writes `prebuilt/my_plugin.wasm` (the second argument picks another output directory). Any compiler that targets `wasm32-wasip1` and exports `perlin_alloc`, `perlin_free`, `perlin_event` and `perlin_subscriptions` works; the headers in `mods/sdk/perlin` provide those exports.
+`build.sh` compiles with `-std=c++23 -fno-exceptions -fno-rtti -sMEMORY64` as a standalone WASI reactor (no JavaScript) and writes `prebuilt/my_plugin.wasm` (the second argument picks another output directory).
+
+Classic 32-bit plugins still work everywhere. `mods/build.sh --wasm32 my_plugin.cpp` builds one with a wasi-sdk install (<https://github.com/WebAssembly/wasi-sdk>, version 25 or newer, `WASI_SDK_PATH`); wasi-sdk has no 64-bit target. Any compiler that targets `wasm64` or `wasm32-wasip1` and exports `perlin_alloc`, `perlin_free`, `perlin_event` and `perlin_subscriptions` works; the headers in `mods/sdk/perlin` provide those exports and compile unchanged for both.
+
+Perlin runs plugins on [WasmEdge](https://wasmedge.org) (desktop and Android) and on wasm3 in the browser build; both take 32-bit and 64-bit modules, and the Mods screen's log line says which one loaded (`speedometer: wasm64 on WasmEdge 0.18.0`).
 
 Prebuilt examples live in `mods/prebuilt`: `speedometer`, `inspector` and `radar`, with sources in `mods/examples`.
 
@@ -43,15 +47,17 @@ Prebuilt examples live in `mods/prebuilt`: `speedometer`, `inspector` and `radar
 
 The C++ SDK is a convenience. A plugin is any WebAssembly module (core wasm, no component model) that targets a WASI preview 1 or freestanding environment, so Rust (`wasm32-wasip1`), C, Zig, Go (TinyGo), AssemblyScript, Swift, Nim and anything else that emits wasm work. The contract is small:
 
-* Import one function: module `perlin`, name `call`, signature `(op: i32, in: i32, in_len: i32, out: i32, out_cap: i32) -> i32`.
-* Export `perlin_alloc(size) -> ptr`, `perlin_free(ptr)`, `perlin_event(id, ptr, len) -> flags` and `perlin_subscriptions() -> mask`.
+* Import one function: module `perlin`, name `call`, signature `(op: i32, in: ptr, in_len: i32, out: ptr, out_cap: i32) -> i32`.
+* Export `perlin_alloc(size: i32) -> ptr`, `perlin_free(ptr)`, `perlin_event(id: i32, ptr, len: i32) -> i32` and `perlin_subscriptions() -> i32`.
+* `ptr` is `i32` in a 32-bit module and `i64` in a 64-bit (memory64) one: exactly what `void*` becomes when you compile for `wasm32` or `wasm64`. The host reads the module's declared types, so it also accepts `i64` lengths (`size_t`) in a 64-bit plugin.
+* Linear memory must be the module's own (not imported) and exported; 1 GiB at most.
 * `perlin_subscriptions` returns a bitmask with bit `1 << event_id` set for every event you want delivered (see `Event` in `mods/sdk/perlin/abi.hpp`; id 1 is Load, 7 is Connected, 3 is Tick, 4 is Frame). `perlin_event` returns bit 0 set to cancel a cancellable event.
 * The host calls `perlin_event(Load = 1, ...)` once after instantiation; register everything (commands, keys, HUD) from there.
 * Payloads and arguments are little-endian packed values: integers and floats at their natural width, strings and byte blobs as a `u32` length followed by the bytes, booleans as one byte.
 * `call` returns the number of bytes written to `out` (>= 0), a negative `Status` code (`-1` unknown op, `-2` denied, `-3` bad arguments, `-4` unavailable, `-5` not found, `-6` failed), or a value below `-16` meaning the buffer was too small: call again with `out_cap` of `-rc - 16`.
 * Operation ids are the `Op` enum in `abi.hpp`; each C++ wrapper in `game.hpp`, `act.hpp`, `ui.hpp` and `io.hpp` shows the exact argument layout for that op.
 
-`mods/examples/c/hello.c` is a complete plugin in plain C (about 30 lines, no SDK) that prints a message when you join a server; build it with `mods/examples/c/build.sh`.
+`mods/examples/c/hello.c` is a complete plugin in plain C (about 30 lines, no SDK) that prints a message when you join a server; build it with `mods/examples/c/build.sh` (`--wasm32` for wasi-sdk).
 
 ## Manifest
 
@@ -86,11 +92,11 @@ An operation without its permission returns `Error::denied()` instead of running
 
 ## Sandbox
 
-* Plugins have no file, socket, process or clock access of their own. Everything goes through the host calls in `perlin/*.hpp`.
+* Plugins have no file, socket or process access of their own; of WASI only stdout/stderr (to the log), clocks and random numbers work. Everything goes through the host calls in `perlin/*.hpp`.
 * Storage paths are relative to the plugin's own folder; `..`, absolute paths and backslashes are rejected.
 * HTTP is HTTPS only, never follows redirects, blocks loopback, private and link-local addresses, caps responses at 4 MiB and allows six requests at a time.
 * The account file (`auth.json`) and its tokens are never reachable. `game::options_json()` lists only a fixed set of settings, and `playerName`, `server`, `texturePack` and `shaderPack` are read-only.
-* Each plugin runs on its own thread, one event at a time. An event that takes longer than 250 ms (4 s for loading) revokes the plugin: its host calls stop working, its commands, keys and HUD layers are removed, and the Mods screen shows it as unresponsive until you reload it. A plugin stuck in a loop that never calls the host keeps burning one CPU thread until the game closes, because the interpreter cannot be interrupted.
+* Each plugin runs on its own thread, one event at a time. An event that takes longer than 250 ms (4 s for loading) revokes the plugin: its host calls stop working, its commands, keys and HUD layers are removed, and the Mods screen shows it as unresponsive until you reload it. A plugin stuck in a loop is interrupted on the spot (WasmEdge); in the browser build the interpreter can't be interrupted, so it keeps one thread busy until the page closes.
 
 ## API tour
 
@@ -165,7 +171,7 @@ Register with `ctx.on<event::Name>([](const event::Name::Payload& e) { ... })`. 
 
 ```
 mods/
-  build.sh            wasi-sdk build script
+  build.sh            build script (wasm64 with Emscripten; --wasm32 with wasi-sdk)
   sdk/perlin/         headers: perlin.hpp pulls in everything
     abi.hpp           wire format shared with the host
     rpc.hpp           Result/Error and the single host import

@@ -143,7 +143,7 @@ void main()
     vec4 color = vec4(tex.rgb * v_color0.rgb, tex.a * v_color0.a);
     vec3 viewDir = normalize(v_rel);
     vec3 n = faceNormal(v_rel);
-    color = mix(u_fogColor * vec4(1.0, 1.0, 1.0, color.a), color, v_visibility);
+    color = mix(vec4(vvFogColor(v_haze), color.a), color, v_visibility);
     if (color.a < 0.1)
         discard;
 
@@ -173,7 +173,7 @@ void main()
         // Surface frame: N faces the camera; T/B span the surface. Pools use the horizontal plane;
         // falling water and water sides use the face plane, with the ripples flowing downward.
         bool top = abs(n.y) > 0.7;
-        float envUnderwater = step(u_fogEnv.y, 96.0) * step(u_fogEnv.y, u_fogEnv.w * 0.6);
+        float envUnderwater = vvUnderwater();
         vec3 N = dot(n, viewDir) > 0.0 ? -n : n;
         vec3 T = top ? vec3(1.0, 0.0, 0.0) : normalize(cross(vec3(0.0, 1.0, 0.0), N));
         vec3 B = top ? vec3(0.0, 0.0, 1.0) : vec3(0.0, 1.0, 0.0);
@@ -206,7 +206,8 @@ void main()
         vec4 hit = vec4(0.0, 0.0, 0.0, 0.0);
 #ifndef VV_DX_NO_SSR
         float reflQuality = floor(S_REFLECTIONS + 0.5);
-        VV_BRANCH if (wantReflection && top && scene && reflQuality > 0.5)
+        // Screen-space reflections only within 96 blocks: further out the water just mirrors the sky.
+        VV_BRANCH if (wantReflection && top && scene && reflQuality > 0.5 && dist < 96.0)
         {
             float jitter = hash12(gl_FragCoord.xy + vec2(fract(t * 7.0) * 61.0, 0.0));
             hit = traceReflection(world, R, jitter, reflQuality);
@@ -221,7 +222,8 @@ void main()
             reflection = vvTonemap(v_skyLight * 1.6) * skyVisible;
 #endif
 #ifndef VV_DX_NO_CLOUDS
-            if (S_REFLECTED_CLOUDS > 0.5)
+            // Clouds only show in reflections that point up from water under open sky.
+            if (S_REFLECTED_CLOUDS > 0.5 && R.y > 0.01 && skyl > 0.3)
             {
                 vec4 cloud = vvClouds(world, R, 4000.0);
                 reflection = reflection * cloud.a + cloud.rgb * skyVisible;
@@ -292,11 +294,12 @@ void main()
             alpha = clamp(mix(color.a, 1.0, fresnel * 0.7), 0.0, 1.0);
         }
 
-        // Looking up from underwater: total internal reflection outside Snell's window.
+        // Looking up from underwater: total internal reflection outside Snell's window, which
+        // mirrors the underwater colour; inside the window the world above shows through.
         if (!fromAbove)
         {
             fresnel = cosV < 0.66 ? 1.0 : fresnel * 0.3;
-            reflection = scatterColor;
+            reflection = v_haze.rgb;
         }
         else if (fresnel <= 0.05)
             fresnel = 0.0;

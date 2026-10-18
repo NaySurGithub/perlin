@@ -285,11 +285,9 @@ vec3 vvSkyGradient(vec3 dir)
     float rain = vvRain();
     c = mix(c, vec3_splat(luma(c)) * vec3(0.86, 0.89, 0.93) * 0.78, rain);
 
-    // Meet the renderer's clear colour (vanilla fog) right at the horizon so the sky dome's rim and
-    // the far terrain fog line up with it.
-    c = min(c * S_SKY_BRIGHTNESS, vec3_splat(1.0));
-    c = mix(u_fogColor.rgb, c, smoothstep(0.0, 0.07, dir.y));
-    return c;
+    // Below the horizon the sky keeps its horizon colour; distant terrain fades to this same colour
+    // (vvHaze/vvFog), so the horizon has no seam at any time of day.
+    return min(c * S_SKY_BRIGHTNESS, vec3_splat(1.0));
 }
 
 // Square sun with a soft square bloom, like Vibrant Visuals.
@@ -373,20 +371,6 @@ vec3 vvSky(vec3 dir, bool bodies)
         c = mix(c, moonCol, moonCover) + moonHalo;
     }
     return c;
-}
-
-// Aerial haze towards the sky's horizon colour for a point at rel from the camera: rgb colour,
-// a amount. Used per vertex (terrain and water), so the sky maths stays out of the pixel shaders.
-vec4 vvHaze(vec3 rel)
-{
-    float dist = length(rel);
-    vec3 viewDir = rel / max(dist, 1.0e-4);
-    float envUnderwater = step(u_fogEnv.y, 96.0) * step(u_fogEnv.y, u_fogEnv.w * 0.6);
-    vec3 hazeDir = normalize(vec3(viewDir.x, max(viewDir.y, 0.0) * 0.5 + 0.04, viewDir.z));
-    vec3 hazeColor = vvSkyGradient(hazeDir) + vvSunGlow(hazeDir) * 0.5;
-    float density = 0.0028 * S_FOG * (1.0 + vvRain() * 2.0);
-    float amount = (1.0 - exp(-dist * density)) * 0.62 * step(0.5, u_skyParams.z) * (1.0 - envUnderwater);
-    return vec4(hazeColor, amount);
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -544,8 +528,14 @@ float vvCloudShadow(vec3 world)
     float mid = u_skyParams.x + CLOUD_THICKNESS * 0.5;
     float enabled = step(0.5, u_skyParams.z) * step(0.5, S_CLOUDS) * step(0.5, S_CLOUD_SHADOWS) * step(world.y, mid);
     vec3 p = world + L * ((mid - world.y) / max(L.y, 0.05));
-    float c = cloudCell(floor(cloudCoord(p.xz)));
-    return mix(1.0, 0.42, c * smoothstep(0.05, 0.25, L.y) * enabled * S_CLOUD_SHADOW_STRENGTH);
+    // Soft-edged: the four nearest cloud cells blended smoothly (the edge fades over a whole
+    // 12-block cell), and light shadows (sky light still reaches under a cloud).
+    vec2 cc = cloudCoord(p.xz) - 0.5;
+    vec2 i = floor(cc);
+    vec2 f = smoothstep(0.0, 1.0, cc - i);
+    float c = mix(mix(cloudCell(i), cloudCell(i + vec2(1.0, 0.0)), f.x),
+                  mix(cloudCell(i + vec2(0.0, 1.0)), cloudCell(i + vec2(1.0, 1.0)), f.x), f.y);
+    return max(1.0 - 0.3 * c * smoothstep(0.05, 0.25, L.y) * enabled * S_CLOUD_SHADOW_STRENGTH, 0.2);
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -580,4 +570,50 @@ vec3 vvTonemap(vec3 hdr)
     display = (display - 0.5) * S_CONTRAST + 0.5;
     display *= vec3(1.0 + 0.06 * S_TEMPERATURE, 1.0, 1.0 - 0.08 * S_TEMPERATURE);
     return clamp(display, 0.0, 1.0);
+}
+
+// ---------------------------------------------------------------------------------------------
+// Under water and aerial haze (after the tonemapper, which they use).
+
+// 1 while the camera is under water (the engine knows exactly; u_skyParams.w: 0 air, 1 water,
+// 2 lava), 0 otherwise.
+float vvUnderwater()
+{
+    return step(0.5, u_skyParams.w) * step(u_skyParams.w, 1.5);
+}
+
+// The colour distance fades to under water: the water's scattering colour lit by the sky (so it
+// darkens at night and matches the water surface), nudged towards the biome's underwater fog colour.
+vec3 vvUnderwaterColor()
+{
+    vec3 light = vvSkyAmbient() * 0.85 + vvMainLight() * 0.3;
+    vec3 scatter = vvTonemap(vec3(0.02, 0.17, 0.24) * clamp(luma(light) * 1.6, 0.03, 1.2) * 3.0) * 0.8;
+    return mix(scatter, u_fogColor.rgb * 1.6, 0.3);
+}
+
+// Animated caustics: bright wavering lines of focused sunlight on surfaces under water.
+float vvCaustics(vec3 p, float t)
+{
+    vec2 q = p.xz * 0.85 + vec2(p.y * 0.3, -p.y * 0.2);
+    float a = sin(q.x * 2.1 + sin(q.y * 1.7 + t * 0.9) * 1.3 + t * 0.6);
+    float b = sin(q.y * 2.3 + sin(q.x * 1.5 - t * 0.7) * 1.2 - t * 0.5);
+    return vvPow(1.0 - abs(a * b), 6.0);
+}
+
+// Aerial haze towards the sky's colour behind a point at rel from the camera: rgb colour, a
+// amount (rgb is also the distance fog colour in the overworld). Used per vertex (terrain and water), so the sky maths stays out of the pixel shaders.
+// Under water rgb carries the underwater colour instead (and a is 0): vvFog uses it for the
+// water's own fade, so that colour is worked out per vertex too.
+vec4 vvHaze(vec3 rel)
+{
+    float dist = length(rel);
+    vec3 viewDir = rel / max(dist, 1.0e-4);
+    float underwater = vvUnderwater();
+    // Exactly the sky behind the point (at the horizon for anything below it), so far terrain and
+    // water melt into the sky with no band at dawn and dusk.
+    vec3 hazeDir = normalize(vec3(viewDir.x, max(viewDir.y, 0.0), viewDir.z) + vec3(0.0, 1.0e-4, 0.0));
+    vec3 hazeColor = vvSkyGradient(hazeDir) + vvSunGlow(hazeDir);
+    float density = 0.0028 * S_FOG * (1.0 + vvRain() * 2.0);
+    float amount = (1.0 - exp(-dist * density)) * 0.62 * step(0.5, u_skyParams.z) * (1.0 - underwater);
+    return vec4(mix(hazeColor, vvUnderwaterColor(), underwater), amount);
 }

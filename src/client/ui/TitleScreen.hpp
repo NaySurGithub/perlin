@@ -1,4 +1,5 @@
 #pragma once
+#include <cstdint>
 #include <string>
 #include <vector>
 
@@ -6,9 +7,23 @@ namespace perlin::ui {
     struct ServerEntry {
         std::string name;
         std::string address;
+        // Live status from a ping (filled in as soon as the server is listed or added).
+        enum class Status : uint8_t { Unknown, Pinging, Online, Offline } status = Status::Unknown;
+        std::string motd;    // first MOTD line (format codes stripped)
+        std::string version; // game version the server reports
+        int players = 0, maxPlayers = 0;
+        int pingMs = 0;
     };
 
-    enum class TitlePage { Main, Servers, Edit, Direct };
+    // One row of the account switcher.
+    struct AccountRow {
+        std::string id;
+        std::string name;
+        bool microsoft = false;
+        bool active = false;
+    };
+
+    enum class TitlePage { Main, Servers, Edit, Direct, Accounts, AccountName, AccountSignIn };
 
     struct TitleModel {
         TitlePage page = TitlePage::Main;
@@ -30,6 +45,13 @@ namespace perlin::ui {
         // once the assets are there; empty uses the built-in sprite.
         std::string logoSrc;
         int logoW = 256, logoH = 64;
+
+        // Account switcher: "Logged in as ..." on the title screen, and the accounts popup.
+        std::string accountLabel;
+        std::vector<AccountRow> accounts;
+        int accountScroll = 0;       // first account row shown
+        std::string accountName;     // offline name being typed
+        std::string signInUrl, signInCode, signInStatus;
     };
 
     inline constexpr const char* kTitleMulti = "title_multi";
@@ -46,6 +68,15 @@ namespace perlin::ui {
     inline constexpr const char* kEditAddress = "edit_address";
     inline constexpr const char* kEditDone = "edit_done";
     inline constexpr const char* kEditCancel = "edit_cancel";
+    inline constexpr const char* kTitleAccounts = "title_accounts";
+    inline constexpr const char* kAccountRowPrefix = "accrow_";
+    inline constexpr const char* kAccountRemovePrefix = "accrm_";
+    inline constexpr const char* kAccountAddMicrosoft = "acc_add_ms";
+    inline constexpr const char* kAccountAddOffline = "acc_add_off";
+    inline constexpr const char* kAccountDone = "acc_done";
+    inline constexpr const char* kAccountNameField = "acc_name";
+    inline constexpr const char* kAccountNameDone = "acc_name_ok";
+    inline constexpr const char* kAccountCancel = "acc_cancel";
     inline constexpr const char* kServerRowPrefix = "row_";
     inline constexpr const char* kServerJoinPrefix = "go_";
 
@@ -53,6 +84,8 @@ namespace perlin::ui {
     int TitleListTop();
     int TitleListBottom(int guiH);
     int TitleVisibleRows(int guiH);
+    // How many account rows fit in the accounts popup.
+    int TitleAccountRows(int guiH);
 
     std::string BuildTitleRml(const TitleModel& model, int guiW, int guiH);
 }

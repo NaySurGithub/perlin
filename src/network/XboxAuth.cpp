@@ -919,6 +919,17 @@ namespace perlin::xbox {
         return impl->DeviceCode(prompt, error);
     }
 
+    bool Account::FetchGamertag(std::string& gamertag, std::string& error) {
+        Impl& s = *impl;
+        if (!s.EnsureUserAndTitle(error))
+            return false;
+        Tok xsts;
+        if (!s.Xsts(kMultiplayerRelyingParty, xsts, error))
+            return false;
+        gamertag = xsts.gtg;
+        return !gamertag.empty();
+    }
+
     bool Account::LoginMinecraft(const std::string& publicKeyB64, const std::string& gameVersion, Credentials& out,
                                  std::string& error) {
         out = {};

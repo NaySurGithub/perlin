@@ -1,9 +1,11 @@
 #include "vv_common.sh"
 #include "vv_block_sampling.sh"
 
-#define VV_TERRAIN_EXPOSURE 0.6
+#define VV_TERRAIN_EXPOSURE 0.45
 
 SAMPLER2D(s_shadow, 2);
+// Coloured light through stained glass etc.: rgb = tint, a = depth of the nearest glass (white = none).
+SAMPLER2D(s_shadowTint, 7);
 
 vec3 faceNormal(vec3 rel)
 {
@@ -25,7 +27,7 @@ float vanillaShade(vec3 n)
 // Soft sun shadow: taps on a per-texel rotated spiral (1 / 6 / 12 / 20 by the filter setting),
 // about a tenth of a block wide whatever the shadow map resolution (higher quality settings just
 // get sharper, cleaner edges). Returns -1 when there is no shadow map.
-float sunShadow(vec3 world, vec3 n, float ndl)
+float sunShadow(vec3 world, vec3 n, float ndl, out vec3 tint)
 {
     float texelWorld = u_shadowInfo.y * u_shadowInfo.x;
     vec3 p = world + n * (texelWorld * 1.5 + 0.02);
@@ -34,11 +36,19 @@ float sunShadow(vec3 world, vec3 n, float ndl)
     float inside = smoothstep(0.0, 0.06, min(edge.x, edge.y));
     float bias = (texelWorld * 1.8 * (1.0 - ndl) + 0.05) / u_shadowInfo.z;
     float lit = 1.0;
+    // Light that came through glass on its way here takes the glass colour (one tap; the tint map
+    // is white where there is no glass, or when none is bound).
+    vec4 glass = texture2DLod(s_shadowTint, sc.xy, 0.0);
+    tint = (sc.z - bias > glass.a && inside > 0.5) ? glass.rgb : vec3_splat(1.0);
     VV_BRANCH if (inside > 0.0 && u_shadowInfo.w > 0.5)
     {
         // Hard / Soft / Softer / Softest = 1 / 6 / 12 / 20 taps on a per-texel rotated spiral.
         float filterLevel = floor(S_SHADOW_FILTER + 0.5);
         float taps = filterLevel < 0.5 ? 1.0 : (filterLevel < 1.5 ? 6.0 : (filterLevel < 2.5 ? 12.0 : 20.0));
+        // Far away a pixel covers several shadow texels anyway: fewer taps (the edge softness
+        // there is beyond what the eye can tell apart).
+        float viewDist = length(world - u_camera.xyz);
+        taps = viewDist > 96.0 ? 1.0 : (viewDist > 48.0 ? min(taps, 6.0) : taps);
         float radius = clamp(0.07 * S_SHADOW_SOFTNESS / max(texelWorld, 1.0e-4), 1.0, 5.0) * u_shadowInfo.x * step(1.5, taps);
         float spin = hash12(floor(p.xz * 16.0) + floor(p.y * 16.0) * 7.31) * 6.2831853; // per world texel
         float sum = 0.0;
@@ -82,20 +92,32 @@ vec3 vvLit(vec3 texRgb, vec3 tint, vec3 n, vec3 rel, vec2 light, float backlight
         // Direct light: soft shadow map, cloud shadows, foliage transmission. Skipped outright
         // underground, facing away, or with the light below the horizon.
         float direct = 0.0;
+        vec3 sunTint = vec3_splat(1.0);
         VV_BRANCH if ((ndl > 0.0 || backlight > 0.0) && sky > 0.0 && sunUp > 0.0)
         {
-            float s = sunShadow(world, n, max(ndl, 0.0));
+            vec3 glassTint;
+            float s = sunShadow(world, n, max(ndl, 0.0), glassTint);
             s = s < 0.0 ? 1.0 : mix(1.0, s, S_SHADOW_STRENGTH);
             s *= sky * vvCloudShadow(world);
             float VoL = clamp(dot(viewDir, L), 0.0, 1.0);
             float scatter = vvPow(VoL, 10.0) * backlight * S_FOLIAGE * (1.0 - vvRain());
             float wrap = mix(max(ndl, 0.0), clamp(abs(ndl) * 0.6 + 0.35, 0.0, 1.0), backlight * clamp(S_FOLIAGE, 0.0, 1.0));
             direct = (wrap + scatter * 1.5) * s * sunUp;
+            sunTint = glassTint;
+        }
+        // Seen from under water: below the surface sunlight fades with depth and gathers into
+        // caustics. (The surface height comes from the engine, relative to the eye.)
+        float depthBelow = (u_camera.y + u_dynParams.z) - world.y;
+        float submerged = vvUnderwater() * step(0.0, depthBelow);
+        VV_BRANCH if (submerged > 0.5)
+        {
+            float caustic = vvCaustics(world, u_time.x) * max(n.y, 0.0);
+            direct *= exp(-0.07 * max(depthBelow, 0.0)) * (0.55 + caustic * 1.9);
         }
 
         // Sky light: brightest on top faces, bluish in shadow (that is most of the Vibrant Visuals look).
         float skyView = 0.78 + 0.22 * n.y;
-        vec3 ambient = skyLight * skyl * skyl * skyView;
+        vec3 ambient = skyLight * skyl * skyl * skyView * 1.2;
         // Light bounced off the sunlit ground fills the undersides a little.
         ambient += sunLight * 0.06 * skyl * clamp(-n.y * 0.5 + 0.5, 0.0, 1.0) * smoothstep(0.0, 0.2, L.y);
 
@@ -112,8 +134,8 @@ vec3 vvLit(vec3 texRgb, vec3 tint, vec3 n, vec3 rel, vec2 light, float backlight
 
         vec3 minLight = vec3(0.008, 0.010, 0.016) * (1.0 - skyl * skyl);
         // VV_TERRAIN_EXPOSURE keeps sunlit blocks near their texture colours (at 1.0 noon terrain was
-        // ~1.7x brighter than the texture and grass turned lime); torches and emissive blocks keep their full strength.
-        hdr = albedo * ((sunLight * direct + ambient) * VV_TERRAIN_EXPOSURE + block + minLight) + albedo * emissive * 3.0;
+        // ~1.7x brighter than the texture and grass turned lime; 0.45 is just above vanilla); torches and emissive blocks keep their full strength.
+        hdr = albedo * ((sunLight * sunTint * direct + ambient) * VV_TERRAIN_EXPOSURE + block + minLight) + albedo * emissive * 3.0;
     }
     // Nether / End: the vanilla lightmap, gently warmed, through the same tonemap.
     vec3 lm = vvPow(sampleLightmap(light * 240.0), vec3_splat(2.2));
@@ -123,11 +145,24 @@ vec3 vvLit(vec3 texRgb, vec3 tint, vec3 n, vec3 rel, vec2 light, float backlight
 
 // Aerial haze (worked out per vertex: rgb colour, a amount), then the vanilla distance and
 // environment fog.
+// Distance fog colour: in the overworld the sky right behind the point (vvHaze), so the terrain's
+// edge matches the sky; elsewhere vanilla's fog colour.
+vec3 vvFogColor(vec4 haze)
+{
+    return mix(u_fogColor.rgb, haze.rgb, step(0.5, u_skyParams.z) * (1.0 - vvUnderwater()));
+}
+
 vec3 vvFog(vec3 color, vec2 fogDistance, vec4 haze)
 {
     color = mix(color, haze.rgb, haze.a);
     float f = fogAmount(fogDistance.x, fogDistance.y);
-    return mix(color, u_fogColor.rgb, f);
+    vec3 fogged = mix(color, vvFogColor(haze), f);
+    // Under water: light is absorbed with distance, red first, fading to the water colour (in
+    // haze.rgb). The reach follows vanilla's underwater fog (biome murkiness, Water Vision).
+    float range = max(u_fogEnv.y, 6.0);
+    vec3 trans = exp(-vec3(3.4, 1.7, 1.4) * fogDistance.x / range);
+    vec3 under = color * trans + haze.rgb * (vec3_splat(1.0) - trans);
+    return mix(fogged, under, vvUnderwater());
 }
 
 float isTile(float layer, float tile)

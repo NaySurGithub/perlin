@@ -14,7 +14,7 @@ void main()
     // Leaves (meshed here with fancy graphics) let light through.
     float leaves = step(0.5, v_foliage) * step(v_foliage, 1.5);
     vec4 color = vec4(vvLit(tex.rgb, v_tint, n, v_rel, v_light, leaves, lava * 0.9, v_sunLight, v_skyLight), tex.a * v_color0.a);
-    color = mix(u_fogColor * vec4(1.0, 1.0, 1.0, color.a), color, v_visibility);
+    color = mix(vec4(vvFogColor(v_haze), color.a), color, v_visibility);
     color.rgb = vvFog(color.rgb, v_fog, v_haze);
     gl_FragColor = color;
 }

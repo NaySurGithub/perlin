@@ -3,6 +3,7 @@
 #include "client/ui/RmlEmit.hpp"
 
 #include <algorithm>
+#include <cctype>
 #include <string>
 #include <utility>
 
@@ -34,6 +35,17 @@ mcimg { display: block; position: absolute; }
 .row:hover .go { display: block; }
 .field { height: 20px; z-index: 5; }
 .field .val { left: 4px; top: 6px; height: 9px; overflow: hidden; }
+.green { color: #55ff55; }
+.yellow { color: #ffff55; }
+.red { color: #ff5555; }
+.dark { color: #606060; }
+.acc { z-index: 13; }
+.acc .hl { display: none; }
+.acc:hover .hl { display: block; }
+.sbtn { height: 20px; z-index: 15; }
+.sbtn .h { display: none; }
+.sbtn:hover .h { display: block; }
+.sbtn .lbl { left: 0px; top: 6px; height: 9px; font-family: minecraft-shadow; font-size: 8px; line-height: 9px; text-align: center; color: #ffffff; }
 @keyframes pano { from { left: 0px; } to { left: -{{span}}px; } }
 </style>
 </head>
@@ -65,6 +77,145 @@ mcimg { display: block; position: absolute; }
             return d;
         }
 
+        // Approximate width of a line of Minecraft font text in GUI pixels.
+        int TextWidth(const std::string& text) {
+            int n = 0;
+            for (unsigned char c : text)
+                n += (c & 0xC0) == 0x80 ? 0 : (c == 'i' || c == 'l' || c == '!' || c == '.' || c == ',' || c == '\'' || c == '|' ? 2 : (c == ' ' ? 4 : 6));
+            return n;
+        }
+
+        // The dark, framed panel the account popup uses (styled after Java's friends menu).
+        std::string Panel(int x, int y, int w, int h) {
+            std::string d;
+            d += "<div style=\"left:" + N(x - 2) + "px;top:" + N(y - 2) + "px;width:" + N(w + 4) + "px;height:" + N(h + 4) + "px;background-color:#000000;z-index:11;\"></div>\n";
+            d += "<div style=\"left:" + N(x - 1) + "px;top:" + N(y - 1) + "px;width:" + N(w + 2) + "px;height:" + N(h + 2) + "px;background-color:#e0e0e0;z-index:11;\"></div>\n";
+            d += "<div style=\"left:" + N(x + 1) + "px;top:" + N(y + 1) + "px;width:" + N(w - 2) + "px;height:" + N(h - 2) + "px;background-color:#373737;z-index:11;\"></div>\n";
+            d += "<div style=\"left:" + N(x + 2) + "px;top:" + N(y + 2) + "px;width:" + N(w - 4) + "px;height:" + N(h - 4) + "px;background-color:#2b2b2b;z-index:11;\"></div>\n";
+            return d;
+        }
+
+        // Darkens whatever is behind a popup (and keeps clicks off it).
+        std::string Shade(int w, int h) {
+            return "<div style=\"left:0px;top:0px;width:" + N(w) + "px;height:" + N(h) + "px;background-color:#000000a0;z-index:10;\"></div>\n";
+        }
+
+        std::string PanoramaFallback(const TitleModel& m, int w, int h) {
+            if (m.nativePanorama)
+                return {};
+            std::string d;
+            const int face = std::max(h * 5 / 4, 64);
+            const int top = -(face - h) / 2;
+            d += "<div style=\"left:0px;top:0px;width:" + N(w) + "px;height:" + N(h) + "px;overflow:hidden;background-color:#000000;\">\n";
+            d += "<div id=\"pano\" style=\"left:0px;top:" + N(top) + "px;width:" + N(face * 5) + "px;height:" + N(face) + "px;animation: 240s linear infinite pano;\">\n";
+            for (int i = 0; i < 5; i++)
+                d += "<mcimg src=\"textures/ui/panorama_" + N(i % 4) + "\" style=\"left:" + N(i * face) + "px;top:0px;width:" + N(face) + "px;height:" + N(face) + "px;\"></mcimg>\n";
+            d += "</div></div>\n";
+            return d;
+        }
+
+        std::string SmallBtn(const std::string& id, int x, int y, int w, const std::string& label) {
+            std::string d = "<div id=\"" + id + "\" class=\"sbtn\" style=\"left:" + N(x) + "px;top:" + N(y) + "px;width:" + N(w) + "px;\">";
+            d += "<mcimg src=\"mcres:ui_menu_btn.png\" nine=\"3 3 3 3\" style=\"left:0px;top:0px;width:" + N(w) + "px;height:20px;\"></mcimg>";
+            d += "<mcimg class=\"h\" src=\"mcres:ui_menu_btn_hi.png\" nine=\"3 3 3 3\" style=\"left:0px;top:0px;width:" + N(w) + "px;height:20px;\"></mcimg>";
+            d += "<div class=\"lbl\" style=\"width:" + N(w) + "px;\">" + EscapeRml(label) + "</div></div>\n";
+            return d;
+        }
+
+        std::string Accounts(const TitleModel& m, int w, int h) {
+            std::string d = PanoramaFallback(m, w, h) + Shade(w, h);
+            const int pw = 240;
+            const int rowH = 24;
+            const int count = static_cast<int>(m.accounts.size());
+            const int rows = std::max(1, std::min(count, TitleAccountRows(h)));
+            const int scroll = std::clamp(m.accountScroll, 0, std::max(0, count - rows));
+            const int ph = 36 + rows * rowH + 56;
+            // Room above for the header tab.
+            const int px = w / 2 - pw / 2, py = std::max(20, h / 2 - ph / 2 + 8);
+            d += Panel(px, py, pw, ph);
+            // Header tab, as on the friends menu.
+            d += "<div style=\"left:" + N(px + pw / 2 - 40) + "px;top:" + N(py - 16) + "px;width:80px;height:16px;background-color:#e0e0e0;z-index:11;\"></div>\n";
+            d += "<div style=\"left:" + N(px + pw / 2 - 39) + "px;top:" + N(py - 15) + "px;width:78px;height:16px;background-color:#2b2b2b;z-index:12;\"></div>\n";
+            d += "<div class=\"txt ctr\" style=\"left:" + N(px + pw / 2 - 40) + "px;top:" + N(py - 11) + "px;width:80px;height:9px;z-index:13;\">Accounts</div>\n";
+            d += "<div style=\"left:" + N(px + pw / 2 - 22) + "px;top:" + N(py - 1) + "px;width:44px;height:1px;background-color:#ffffff;z-index:13;\"></div>\n";
+            d += "<div class=\"txt dim\" style=\"left:" + N(px + 10) + "px;top:" + N(py + 10) + "px;width:" + N(pw - 20) + "px;height:9px;z-index:13;\">" +
+                 EscapeRml(m.accountLabel) + "</div>\n";
+            d += "<div style=\"left:" + N(px + 2) + "px;top:" + N(py + 26) + "px;width:" + N(pw - 4) + "px;height:1px;background-color:#555555;z-index:12;\"></div>\n";
+            int y = py + 32;
+            if (m.accounts.empty())
+                d += "<div class=\"txt ctr gray\" style=\"left:" + N(px) + "px;top:" + N(y + 6) + "px;width:" + N(pw) + "px;height:9px;z-index:13;\">No accounts yet</div>\n";
+            if (count > rows) {
+                // Scrollbar along the right edge of the list.
+                const int trackH = rows * rowH - 2;
+                const int thumbH = std::max(8, trackH * rows / count);
+                const int thumbY = (trackH - thumbH) * scroll / std::max(1, count - rows);
+                d += "<div style=\"left:" + N(px + pw - 6) + "px;top:" + N(y) + "px;width:2px;height:" + N(trackH) + "px;background-color:#1a1a1a;z-index:13;\"></div>\n";
+                d += "<div style=\"left:" + N(px + pw - 6) + "px;top:" + N(y + thumbY) + "px;width:2px;height:" + N(thumbH) + "px;background-color:#a0a0a0;z-index:13;\"></div>\n";
+            }
+            for (int i = scroll; i < count && i < scroll + rows; i++, y += rowH) {
+                const AccountRow& a = m.accounts[static_cast<size_t>(i)];
+                d += "<div id=\"" + std::string(kAccountRowPrefix) + N(i) + "\" class=\"acc\" style=\"left:" + N(px + 6) + "px;top:" + N(y) + "px;width:" + N(pw - 36) +
+                     "px;height:" + N(rowH - 2) + "px;\">";
+                d += "<div class=\"hl\" style=\"left:0px;top:0px;width:" + N(pw - 36) + "px;height:" + N(rowH - 2) + "px;background-color:#ffffff20;\"></div>";
+                if (a.active)
+                    d += "<div style=\"left:0px;top:0px;width:2px;height:" + N(rowH - 2) + "px;background-color:#55ff55;\"></div>";
+                // Avatar: a coloured square with the first letter (green for Microsoft, grey offline).
+                const std::string initial = a.name.empty() ? "?" : std::string(1, static_cast<char>(std::toupper(static_cast<unsigned char>(a.name[0]))));
+                d += "<div style=\"left:5px;top:3px;width:16px;height:16px;background-color:" + std::string(a.microsoft ? "#3c8527" : "#5a5a5a") + ";\"></div>";
+                d += "<div class=\"txt ctr\" style=\"left:5px;top:7px;width:16px;height:9px;\">" + EscapeRml(initial) + "</div>";
+                d += "<div class=\"txt\" style=\"left:26px;top:2px;width:" + N(pw - 70) + "px;height:9px;overflow:hidden;\">" +
+                     EscapeRml(a.name.empty() ? "Microsoft account" : a.name) + "</div>";
+                const std::string kind = a.microsoft ? "Microsoft account" : "Offline";
+                d += "<div class=\"txt " + std::string(a.active ? "green" : "gray") + "\" style=\"left:26px;top:12px;width:" + N(pw - 70) + "px;height:9px;\">" +
+                     EscapeRml(a.active ? "Playing as this account" : kind) + "</div>";
+                d += "</div>\n";
+                d += SmallBtn(std::string(kAccountRemovePrefix) + N(i), px + pw - 28, y + 1, 20, "x");
+            }
+            const int by = py + ph - 50;
+            d += "<div style=\"left:" + N(px + 2) + "px;top:" + N(by - 6) + "px;width:" + N(pw - 4) + "px;height:1px;background-color:#555555;z-index:12;\"></div>\n";
+            d += SmallBtn(kAccountAddMicrosoft, px + 8, by, (pw - 20) / 2, "Add Microsoft");
+            d += SmallBtn(kAccountAddOffline, px + 12 + (pw - 20) / 2, by, (pw - 20) / 2, "Add Offline");
+            d += SmallBtn(kAccountDone, px + 8, by + 24, pw - 16, "Done");
+            return d;
+        }
+
+        std::string AccountName(const TitleModel& m, int w, int h) {
+            std::string d = PanoramaFallback(m, w, h) + Shade(w, h);
+            const int pw = 240, ph = 104;
+            const int px = w / 2 - pw / 2, py = std::max(8, h / 2 - ph / 2);
+            d += Panel(px, py, pw, ph);
+            d += "<div class=\"txt ctr\" style=\"left:" + N(px) + "px;top:" + N(py + 10) + "px;width:" + N(pw) + "px;height:9px;z-index:13;\">Add Offline Account</div>\n";
+            d += "<div class=\"txt dim\" style=\"left:" + N(px + 12) + "px;top:" + N(py + 28) + "px;width:" + N(pw - 24) + "px;height:9px;z-index:13;\">Username</div>\n";
+            std::string field = Field(kAccountNameField, px + 12, py + 40, pw - 24, m.accountName, true, m.caret);
+            d += "<div style=\"left:0px;top:0px;z-index:14;\">" + field + "</div>"; // above the shade
+            d += SmallBtn(kAccountNameDone, px + 8, py + ph - 28, (pw - 20) / 2, "Add");
+            d += SmallBtn(kAccountCancel, px + 12 + (pw - 20) / 2, py + ph - 28, (pw - 20) / 2, "Cancel");
+            return d;
+        }
+
+        std::string AccountSignIn(const TitleModel& m, int w, int h) {
+            std::string d = PanoramaFallback(m, w, h) + Shade(w, h);
+            const int pw = 260, ph = 120;
+            const int px = w / 2 - pw / 2, py = std::max(8, h / 2 - ph / 2);
+            d += Panel(px, py, pw, ph);
+            const auto line = [&](int y, const std::string& text, const std::string& cls) {
+                d += "<div class=\"txt ctr " + cls + "\" style=\"left:" + N(px) + "px;top:" + N(py + y) + "px;width:" + N(pw) + "px;height:9px;z-index:13;\">" + EscapeRml(text) + "</div>\n";
+            };
+            line(10, "Sign in with Microsoft", "");
+            if (m.signInCode.empty()) {
+                line(40, m.signInStatus.empty() ? "Contacting Microsoft..." : m.signInStatus, "gray");
+            } else {
+                line(30, "Open this page in your browser:", "dim");
+                line(42, m.signInUrl, "yellow");
+                line(58, "and enter the code:", "dim");
+                line(70, m.signInCode, "green");
+                if (!m.signInStatus.empty())
+                    line(84, m.signInStatus, "gray");
+            }
+            d += SmallBtn(kAccountCancel, px + pw / 2 - 50, py + ph - 26, 100, "Cancel");
+            return d;
+        }
+
         std::string Main(const TitleModel& m, int w, int h) {
             std::string d;
             const int face = std::max(h * 5 / 4, 64);
@@ -90,6 +241,10 @@ mcimg { display: block; position: absolute; }
             d += Btn(kTitleMulti, cx - 100, j + 24, 200, "Multiplayer");
             d += Btn(kTitleOptions, cx - 100, j + 60, 98, "Options...");
             d += Btn(kTitleQuit, cx + 2, j + 60, 98, "Quit Game");
+            if (!m.accountLabel.empty()) {
+                const int bw = std::clamp(TextWidth(m.accountLabel) + 16, 90, std::max(90, w / 2 - 110));
+                d += Btn(kTitleAccounts, 4, 4, bw, m.accountLabel);
+            }
             d += Text(2, h - 10, w / 2, m.version);
             d += "<div class=\"txt\" style=\"left:" + N(w / 2) + "px;top:" + N(h - 10) + "px;width:" + N(w / 2 - 1) + "px;height:9px;text-align:right;\">" + EscapeRml(m.copyright) + "</div>\n";
             return d;
@@ -117,8 +272,34 @@ mcimg { display: block; position: absolute; }
                 d += "<div id=\"" + std::string(kServerRowPrefix) + N(i) + "\" class=\"row\" style=\"left:" + N(rowX) + "px;top:" + N(y) + "px;width:" + N(kRowW) + "px;height:" + N(kRowH - 4) + "px;\">\n";
                 d += "<div style=\"left:0px;top:0px;width:32px;height:32px;background-color:#3a2f26;\"></div>\n";
                 d += "<div id=\"" + std::string(kServerJoinPrefix) + N(i) + "\" class=\"go\" style=\"left:0px;top:0px;width:32px;height:32px;\"><mcimg src=\"mcres:ui_menu_join_hi.png\" style=\"left:0px;top:0px;width:32px;height:32px;\"></mcimg></div>\n";
-                d += Text(35, 1, kRowW - 40, s.name.empty() ? "Minecraft Server" : s.name);
-                d += Text(35, 12, kRowW - 40, s.address, "gray");
+                d += Text(35, 1, kRowW - 110, s.name.empty() ? "Minecraft Server" : s.name);
+                // Live status (from the ping): players and latency top right, MOTD below the name.
+                std::string right, rightCls = "gray";
+                using St = ServerEntry::Status;
+                if (s.status == St::Pinging || s.status == St::Unknown) {
+                    static const char* const kDots[] = {"Pinging", "Pinging.", "Pinging..", "Pinging..."};
+                    right = kDots[m.spinner & 3];
+                    rightCls = "dark";
+                } else if (s.status == St::Online) {
+                    right = N(s.players) + "/" + N(s.maxPlayers) + "  ";
+                } else {
+                    right = "No connection";
+                    rightCls = "red";
+                }
+                d += "<div class=\"txt " + rightCls + "\" style=\"left:" + N(kRowW - 105) + "px;top:1px;width:" + N(s.status == St::Online ? 72 : 100) +
+                     "px;height:9px;text-align:right;\">" + EscapeRml(right) + "</div>\n";
+                if (s.status == St::Online) {
+                    const char* latencyCls = s.pingMs < 150 ? "green" : (s.pingMs < 300 ? "yellow" : "red");
+                    d += "<div class=\"txt " + std::string(latencyCls) + "\" style=\"left:" + N(kRowW - 33) + "px;top:1px;width:30px;height:9px;text-align:right;\">" +
+                         N(s.pingMs) + "ms</div>\n";
+                    d += Text(35, 12, kRowW - 40, s.motd.empty() ? "A Minecraft Server" : s.motd, "gray");
+                    d += Text(35, 23, kRowW - 40, s.address + (s.version.empty() ? "" : "  -  " + s.version), "dark");
+                } else if (s.status == St::Offline) {
+                    d += Text(35, 12, kRowW - 40, "Can't connect to server", "red");
+                    d += Text(35, 23, kRowW - 40, s.address, "dark");
+                } else {
+                    d += Text(35, 12, kRowW - 40, s.address, "gray");
+                }
                 d += "</div>\n";
             }
             if (m.servers.empty()) {
@@ -182,8 +363,16 @@ mcimg { display: block; position: absolute; }
             case TitlePage::Servers: out += Servers(m, guiW, guiH); break;
             case TitlePage::Edit: out += Edit(m, guiW, guiH); break;
             case TitlePage::Direct: out += Direct(m, guiW, guiH); break;
+            case TitlePage::Accounts: out += Accounts(m, guiW, guiH); break;
+            case TitlePage::AccountName: out += AccountName(m, guiW, guiH); break;
+            case TitlePage::AccountSignIn: out += AccountSignIn(m, guiW, guiH); break;
         }
         out += "</body>\n</rml>\n";
         return out;
+    }
+
+    int TitleAccountRows(int guiH) {
+        // Popup = 92 px of header and buttons plus the rows, with 20 px above for the tab.
+        return std::max(1, (guiH - 20 - 6 - 92) / 24);
     }
 }

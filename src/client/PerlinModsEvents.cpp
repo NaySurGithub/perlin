@@ -1,4 +1,5 @@
 #include "client/Perlin.hpp"
+#include "network/Http.hpp"
 
 #include "client/input/KeyMapping.hpp"
 #include "client/mods/ModManager.hpp"
@@ -181,6 +182,7 @@ namespace perlin {
                     break;
                 }
                 httplib::SSLClient cli(host, port);
+                perlin::http::UseSystemCa(cli);
                 cli.set_hostname_addr_map({{host, address}});
                 cli.set_connection_timeout(0, timeoutMs * 1000);
                 cli.set_read_timeout(timeoutMs / 1000, (timeoutMs % 1000) * 1000);

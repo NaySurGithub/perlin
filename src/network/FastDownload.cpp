@@ -1,4 +1,5 @@
 #include "network/FastDownload.hpp"
+#include "network/Http.hpp"
 
 #ifndef __EMSCRIPTEN__
 #include <httplib.h>
@@ -48,9 +49,8 @@ namespace perlin::download {
             cli->set_write_timeout(timeoutSecs);
             cli->set_follow_location(false);
             cli->set_keep_alive(true);
-#ifdef __ANDROID__
-            cli->set_ca_cert_path(std::string(), "/system/etc/security/cacerts");
-#endif
+            if (origin.rfind("https://", 0) == 0)
+                perlin::http::UseSystemCa(*cli);
             cli->set_default_headers({{"User-Agent", "Perlin"}});
 #ifdef PERLIN_FASTDL_TEST
             // Test builds only: go through the sandbox's HTTPS proxy.
@@ -120,7 +120,7 @@ namespace perlin::download {
             httplib::Result res = cli->Get(dest.path, httplib::Headers{{"Range", "bytes=0-0"}});
             if (!res) {
                 if (++failures >= 3) {
-                    std::cout << "[download] could not reach " << dest.origin << std::endl;
+                    std::cout << "[download] could not reach " << dest.origin << ": " << perlin::http::Describe(res) << std::endl;
                     return false;
                 }
                 std::this_thread::sleep_for(std::chrono::milliseconds(400 * failures));

@@ -136,9 +136,7 @@ namespace {
         job.filesDone = 0;
         auto worker = [&] {
             httplib::SSLClient cli("raw.githubusercontent.com", 443);
-#ifdef __ANDROID__
-            cli.set_ca_cert_path(std::string(), "/system/etc/security/cacerts");
-#endif
+            perlin::http::UseSystemCa(cli);
             cli.set_connection_timeout(20);
             cli.set_read_timeout(60);
             cli.set_keep_alive(true);
