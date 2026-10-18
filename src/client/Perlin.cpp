@@ -6018,10 +6018,11 @@ namespace perlin {
 
             if (preview) {
                 static int once = 0;
-                if (once++ == 200)
+                if (once++ == 20)
                     std::cout << "[preview] fog env " << fog.environmentalStart << ".." << fog.environmentalEnd
                               << " rd " << fog.renderDistanceStart << ".." << fog.renderDistanceEnd << " sky "
-                              << fog.skyEnd << " rdchunks " << options.renderDistance << " ticks " << worldTicks << std::endl;
+                              << fog.skyEnd << " rdchunks " << options.renderDistance << " ticks " << worldTicks << " sun "
+                              << env.sunAngle << std::endl;
             }
             std::vector<dynlight::Light> dyn;
             int dynMode = options.dynamicLights == "fancy" ? 2 : options.dynamicLights == "fast" ? 1 : 0;
@@ -6252,30 +6253,8 @@ namespace perlin {
                     self.isPlayer = self.isSelf = true;
                     self.name = live ? live->PlayerName() : std::string("Perlin");
                     self.pos = {camera.x, camera.y - entity::kPlayerEye, camera.z};
+                    // The body yaw is worked out by the entity renderer, the same way for every player.
                     self.yaw = self.headYaw = camera.yaw - 90.0f;
-                    {
-                        static float bodyYaw = 0.0f;
-                        static glm::dvec3 lastBodyPos{};
-                        static bool bodyInit = false;
-                        const auto wrap = [](float a) { a = std::fmod(a + 180.0f, 360.0f); if (a < 0) a += 360.0f; return a - 180.0f; };
-                        const float head = self.headYaw;
-                        if (!bodyInit || PERLIN_ENV("PERLIN_PREVIEW_ENTITIES")) {
-                            bodyInit = true;
-                            bodyYaw = head;
-                            lastBodyPos = self.pos;
-                        }
-                        const double moved = std::hypot(self.pos.x - lastBodyPos.x, self.pos.z - lastBodyPos.z);
-                        lastBodyPos = self.pos;
-                        const float steps = std::max(1.0f, dt * 20.0f);
-                        if (moved / std::max(1e-4f, dt) > 0.4)
-                            bodyYaw += wrap(head - bodyYaw) * (1.0f - std::pow(1.0f - 0.3f, steps));
-                        float offset = wrap(head - bodyYaw);
-                        offset = std::clamp(offset, -75.0f, 75.0f);
-                        bodyYaw = head - offset;
-                        if (offset * offset > 2500.0f)
-                            bodyYaw += offset * 0.2f;
-                        self.yaw = bodyYaw;
-                    }
                     self.pitch = -camera.pitch;
                     self.moveSerial = 1;
                     self.swingSerial = gSelfSwing;

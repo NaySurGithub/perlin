@@ -546,6 +546,7 @@ namespace perlin {
         geometry.Clear();
         geometryTried = false;
         alphaByTile.clear();
+        overlayMaskTiles.clear();
         pathByTile.clear();
         glassTiles.clear();
         std::fill(models.tiles.begin(), models.tiles.end(), 0);
@@ -646,6 +647,11 @@ namespace perlin {
                 return t;
             }
             const json::View entry = texData[texName];
+            // overlay_color textures carry their tint mask in alpha (see the grass overlay below).
+            const auto noteOverlay = [&](const json::View e, int tile) {
+                if (tile && e.isObject() && e["overlay_color"].isString())
+                    overlayMaskTiles.insert(tile);
+            };
             if (const json::View tintColor = entry["tint_color"]; tintColor.isString()) {
                 const std::string hex = tintColor.str();
                 unsigned r = 255, g = 255, b = 255;
@@ -662,6 +668,13 @@ namespace perlin {
             json::View list;
             if (entry.isObject() && entry.contains("textures")) {
                 const json::View tx = entry["textures"];
+                if (tx.isObject() && tx["path"].isString()) {
+                    int t = FetchTile(tx["path"].str(), vanillaRpRoot);
+                    noteOverlay(tx, t);
+                    if (all && t)
+                        all->push_back(t);
+                    return t;
+                }
                 if (tx.isString()) {
                     int t = FetchTile(tx.str(), vanillaRpRoot);
                     if (all && t)
@@ -684,6 +697,7 @@ namespace perlin {
                 if (path.empty())
                     continue;
                 int tile = FetchTile(path, vanillaRpRoot);
+                noteOverlay(e, tile);
                 if (tile != 0) {
                     if (!first)
                         first = tile;
@@ -813,9 +827,15 @@ namespace perlin {
                     }
                     *vp = std::move(u);
                 }
-                app.varTop = varTop;
-                app.varSide = varSide;
-                app.varBottom = varBottom;
+                // terrain_texture lists are indexed by the block's (legacy) data value - dirt then
+                // coarse dirt, mycelium then its snowy side, a crop's growth stages - not random
+                // variations, so the first entry is the texture. (Vanilla has no random variants.)
+                (void)varTop;
+                (void)varSide;
+                (void)varBottom;
+                app.varTop.clear();
+                app.varSide.clear();
+                app.varBottom.clear();
                 app.texTop = topName;
                 app.texSide = sideName;
                 app.texBottom = botName;
@@ -895,12 +915,15 @@ namespace perlin {
                     bool hasHalf = BlockPalette::Instance().BlockHasProperty(name, "minecraft:vertical_half");
                     if (hasCarried && !hasIsotropic && !hasAO && !perFace) {
                         const json::View ct = vit["carried_textures"];
+                        // A carried (item) texture different from the block's means the block's
+                        // own is grey and coloured by the biome (leaves, vines); the same texture
+                        // (wood, logs) means no tint at all.
                         if (ct.isString()) {
                             app.carriedTex = ct.str();
-                            app.useCarriedColor = true;
+                            app.useCarriedColor = app.carriedTex != topName;
                         } else if (ct["side"].isString()) {
                             app.carriedTex = ct["side"].str();
-                            app.useCarriedColor = true;
+                            app.useCarriedColor = app.carriedTex != sideName;
                         }
                     }
                     bool hasTile = (app.top | app.side | app.bottom) != 0;
@@ -935,176 +958,45 @@ namespace perlin {
                         app.shape == BlockAppearance::Shape::Wall)
                         app.cutout = true;
                     app.overlayFrac = 0;
-                    if (app.top && app.side && app.top != app.side) {
-                        TileAlpha atop = AlphaOf(app.top);
-                        if (!atop.holes) {
-                            const size_t atlasW = (size_t)kTilePx;
-                            size_t sbase = (size_t)app.side * kTilePx * kTilePx;
-                            int rows = 0;
-                            for (int yy = 0; yy < kTilePx; yy++) {
-                                int opq = 0;
-                                double ss = 0;
-                                for (int xx = 0; xx < kTilePx; xx++) {
-                                    const uint8_t* d = atlas.data() + (sbase + (size_t)yy * atlasW + xx) * 4;
-                                    if (d[3] < 128)
-                                        continue;
-                                    opq++;
-                                    int mx = d[0] > d[1] ? (d[0] > d[2] ? d[0] : d[2])
-                                                         : (d[1] > d[2] ? d[1] : d[2]);
-                                    int mn = d[0] < d[1] ? (d[0] < d[2] ? d[0] : d[2])
-                                                         : (d[1] < d[2] ? d[1] : d[2]);
-                                    if (mx > 0)
-                                        ss += (double)(mx - mn) / mx;
-                                }
-                                if (opq < kTilePx / 2)
-                                    break;
-                                if (opq > 0 && ss / opq > 0.3)
-                                    break;
-                                rows++;
-                            }
-                            if (rows > 0 && rows <= kTilePx / 2)
-                                app.overlayFrac = (float)rows / (float)kTilePx;
+                    // Bedrock's overlay_color textures (grass_side): the alpha channel is the tint
+                    // mask, opaque where the biome colour applies and clear where the colours are
+                    // final (the dirt). Split into an opaque base and a masked overlay that the
+                    // mesher tints like the top. Driven only by the texture's own alpha, so any
+                    // texture pack's grass (and its dirt edge) shows as drawn.
+                    if (app.side && overlayMaskTiles.count(app.side) && nextTile + 2 <= MaxTiles()) {
+                        const int src = app.side;
+                        const size_t px = (size_t)kTilePx * kTilePx;
+                        // A pack texture with no clear pixels at all has its grass coloured in
+                        // already (common in ported packs): shown as drawn, untinted.
+                        bool anyMask = false, anyClear = false;
+                        for (size_t i = 0; i < px; i++) {
+                            const bool opaque = atlas[((size_t)src * px + i) * 4 + 3] >= 128;
+                            anyMask = anyMask || opaque;
+                            anyClear = anyClear || !opaque;
                         }
-                    }
-                    if (app.overlayFrac > 0 && app.side && nextTile < MaxTiles()) {
-                        const int overlaySrc = app.side;
-                        const size_t atlasW = (size_t)kTilePx;
-                        auto tileBase = [&](int t) {
-                            return (size_t)t * kTilePx * kTilePx;
-                        };
-                        size_t sb = tileBase(overlaySrc);
-                        std::vector<char> grassMask((size_t)kTilePx * kTilePx, 0);
-                        auto grassPx = [&](int y, int x) -> char& { return grassMask[(size_t)y * kTilePx + x]; };
-                        int kept = 0;
-                        const int maxDepth = (kTilePx * 3) / 4;
-                        for (int xx = 0; xx < kTilePx; xx++) {
-                            for (int yy = 0; yy < maxDepth; yy++) {
-                                const uint8_t* d = atlas.data() + (sb + (size_t)yy * atlasW + xx) * 4;
-                                if (d[3] < 128)
-                                    break;
-                                int mx =
-                                    d[0] > d[1] ? (d[0] > d[2] ? d[0] : d[2]) : (d[1] > d[2] ? d[1] : d[2]);
-                                int mn =
-                                    d[0] < d[1] ? (d[0] < d[2] ? d[0] : d[2]) : (d[1] < d[2] ? d[1] : d[2]);
-                                double sat = mx > 0 ? (double)(mx - mn) / mx : 0.0;
-                                if (sat > 0.3)
-                                    break;
-                                grassPx(yy, xx) = true;
-                                kept++;
+                        if (anyMask && anyClear) {
+                            const int mt = NewTile();
+                            const int bt = NewTile();
+                            for (size_t i = 0; i < px; i++) {
+                                const uint8_t* s = atlas.data() + ((size_t)src * px + i) * 4;
+                                uint8_t* o = atlas.data() + ((size_t)mt * px + i) * 4;
+                                uint8_t* b = atlas.data() + ((size_t)bt * px + i) * 4;
+                                o[0] = b[0] = s[0];
+                                o[1] = b[1] = s[1];
+                                o[2] = b[2] = s[2];
+                                o[3] = s[3] >= 128 ? 255 : 0;
+                                b[3] = 255;
                             }
-                        }
-                        int deepest = 0;
-                        for (int yy = 0; yy < kTilePx; yy++)
-                            for (int xx = 0; xx < kTilePx; xx++)
-                                if (grassPx(yy, xx))
-                                    deepest = yy;
-                        if (kept > 0) {
-                            int mt = NewTile();
-                            size_t mb = tileBase(mt);
-                            for (int yy = 0; yy < kTilePx; yy++)
-                                for (int xx = 0; xx < kTilePx; xx++) {
-                                    const uint8_t* d = atlas.data() + (sb + (size_t)yy * atlasW + xx) * 4;
-                                    uint8_t* o = atlas.data() + (mb + (size_t)yy * atlasW + xx) * 4;
-                                    if (grassPx(yy, xx)) {
-                                        int lum = (int)(0.299 * d[0] + 0.587 * d[1] + 0.114 * d[2] + 0.5);
-                                        o[0] = o[1] = o[2] = (uint8_t)lum;
-                                        o[3] = 255;
-                                    } else {
-                                        o[0] = o[1] = o[2] = o[3] = 0;
-                                    }
-                                }
-                            {
-                                TileAlpha ta;
-                                ta.holes = true;
-                                alphaByTile[mt] = ta;
-                                pathByTile[mt] = std::string("__grass_overlay_") + std::to_string(overlaySrc);
-                            }
+                            TileAlpha overlayAlpha;
+                            overlayAlpha.holes = true;
+                            alphaByTile[mt] = overlayAlpha;
+                            pathByTile[mt] = std::string("__grass_overlay_") + std::to_string(src);
+                            alphaByTile[bt] = TileAlpha{};
+                            pathByTile[bt] = std::string("__grass_base_") + std::to_string(src);
                             app.overlayTile = mt;
-
-                            auto makeBase = [&](int dirtTile) -> int {
-                                if (nextTile >= MaxTiles())
-                                    return overlaySrc;
-                                int ct = NewTile();
-                                size_t cb = tileBase(ct);
-                                size_t db = dirtTile ? tileBase(dirtTile) : 0;
-                                for (int yy = 0; yy < kTilePx; yy++)
-                                    for (int xx = 0; xx < kTilePx; xx++) {
-                                        const uint8_t* sp =
-                                            atlas.data() + (sb + (size_t)yy * atlasW + xx) * 4;
-                                        uint8_t* o = atlas.data() + (cb + (size_t)yy * atlasW + xx) * 4;
-                                        if (grassPx(yy, xx))
-                                            continue;
-                                        if (dirtTile) {
-                                            const uint8_t* dp =
-                                                atlas.data() + (db + (size_t)yy * atlasW + xx) * 4;
-                                            int a = sp[3];
-                                            for (int c = 0; c < 3; c++)
-                                                o[c] = (uint8_t)((sp[c] * a + dp[c] * (255 - a) + 127) / 255);
-                                            o[3] = 255;
-                                        } else {
-                                            o[0] = sp[0];
-                                            o[1] = sp[1];
-                                            o[2] = sp[2];
-                                            o[3] = sp[3];
-                                        }
-                                        if (yy <= deepest && o[3] == 255) {
-                                            int mxc = o[0] > o[1] ? (o[0] > o[2] ? o[0] : o[2])
-                                                                  : (o[1] > o[2] ? o[1] : o[2]);
-                                            int mnc = o[0] < o[1] ? (o[0] < o[2] ? o[0] : o[2])
-                                                                  : (o[1] < o[2] ? o[1] : o[2]);
-                                            bool pebble = mxc > 0 && (double)(mxc - mnc) / mxc < 0.2;
-                                            if (!pebble) {
-                                                static const int cap[3] = {80, 55, 36};
-                                                for (int c = 0; c < 3; c++)
-                                                    if (o[c] > cap[c])
-                                                        o[c] = (uint8_t)cap[c];
-                                            }
-                                        }
-                                    }
-                                for (int xx = 0; xx < kTilePx; xx++)
-                                    for (int yy = 0; yy < kTilePx; yy++) {
-                                        if (!grassPx(yy, xx))
-                                            continue;
-                                        uint8_t* o = atlas.data() + (cb + (size_t)yy * atlasW + xx) * 4;
-                                        const uint8_t* from = nullptr;
-                                        if (dirtTile) {
-                                            from = atlas.data() + (db + (size_t)yy * atlasW + xx) * 4;
-                                        } else {
-                                            for (int y2 = yy + 1; y2 < kTilePx && !from; y2++)
-                                                if (!grassPx(y2, xx))
-                                                    from = atlas.data() + (cb + (size_t)y2 * atlasW + xx) * 4;
-                                        }
-                                        if (from) {
-                                            o[0] = from[0];
-                                            o[1] = from[1];
-                                            o[2] = from[2];
-                                        } else {
-                                            o[0] = 80;
-                                            o[1] = 55;
-                                            o[2] = 36;
-                                        }
-                                        o[3] = 255;
-                                    }
-                                TileAlpha ta;
-                                ta.holes = false;
-                                alphaByTile[ct] = ta;
-                                pathByTile[ct] = std::string("__grass_base_") + std::to_string(dirtTile);
-                                return ct;
-                            };
-                            TileAlpha as = AlphaOf(overlaySrc);
-                            bool hollow = as.holeFrac > 0.5f && app.bottom && app.side != app.bottom;
-                            if (hollow) {
-                                std::vector<int> newVar;
-                                for (int dt : app.varBottom)
-                                    newVar.push_back(makeBase(dt));
-                                app.side = makeBase(app.bottom);
-                                app.varSide = newVar;
-                            } else {
-                                app.side = makeBase(0);
-                                app.varSide.clear();
-                            }
-                        } else {
-                            app.overlayFrac = 0;
+                            app.overlayFrac = 1.0f;
+                            app.side = bt;
+                            app.varSide.clear();
                         }
                     }
                     if (ov["cutout"].isBool()) {

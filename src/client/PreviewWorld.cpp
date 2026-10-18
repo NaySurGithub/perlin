@@ -105,14 +105,42 @@ namespace perlin {
                     size_t comma = list.find(',', from);
                     if (comma == std::string::npos)
                         comma = list.size();
-                    std::string item = list.substr(from, comma - from), partner;
+                    std::string item = list.substr(from, comma - from), partner, overrides;
                     if (const size_t bar = item.find('|'); bar != std::string::npos) {
                         partner = item.substr(bar + 1);
                         item = item.substr(0, bar);
                     }
+                    // name[key=value;key=value] picks a particular state.
+                    if (const size_t br = item.find('['); br != std::string::npos) {
+                        overrides = item.substr(br + 1, item.find(']', br) == std::string::npos ? std::string::npos : item.find(']', br) - br - 1);
+                        item = item.substr(0, br);
+                    }
                     for (const auto& b : blocks)
                         if (b.second == "minecraft:" + item) {
-                            picked.push_back(b);
+                            auto chosen = b;
+                            if (!overrides.empty()) {
+                                BlockPalette& pal = BlockPalette::Instance();
+                                auto states = pal.States(pal.Intern(b.first));
+                                for (size_t at = 0; at <= overrides.size();) {
+                                    size_t semi = overrides.find(';', at);
+                                    if (semi == std::string::npos)
+                                        semi = overrides.size();
+                                    const std::string kv = overrides.substr(at, semi - at);
+                                    if (const size_t eq = kv.find('='); eq != std::string::npos)
+                                        for (auto& st : states)
+                                            if (st.first == kv.substr(0, eq)) {
+                                                const std::string val = kv.substr(eq + 1);
+                                                if (st.second.kind == BlockPalette::StateValue::String)
+                                                    st.second.s = val;
+                                                else
+                                                    st.second.i = std::atoi(val.c_str());
+                                            }
+                                    at = semi + 1;
+                                }
+                                std::sort(states.begin(), states.end(), [](const auto& x, const auto& y) { return x.first < y.first; });
+                                chosen.first = BlockPalette::HashState(b.second, states);
+                            }
+                            picked.push_back(chosen);
                             partners.push_back(partner);
                             break;
                         }

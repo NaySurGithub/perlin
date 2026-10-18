@@ -183,6 +183,9 @@ namespace perlin {
         bgfx::VertexLayout textureLayout;
         bgfx::VertexBufferHandle topSkyBuffer = BGFX_INVALID_HANDLE;
         bgfx::VertexBufferHandle bottomSkyBuffer = BGFX_INVALID_HANDLE;
+        // A cube around the camera: a sky covering every direction (shader packs with "skyBox").
+        bgfx::VertexBufferHandle skyBoxBuffer = BGFX_INVALID_HANDLE;
+        bgfx::IndexBufferHandle skyBoxIndices = BGFX_INVALID_HANDLE;
         bgfx::VertexBufferHandle screenBuffer = BGFX_INVALID_HANDLE;
         void DrawScreenTint();
 

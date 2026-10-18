@@ -37,6 +37,7 @@ namespace perlin {
   "shadowDistance": 96,
   "vanillaClouds": false,
   "sceneCopy": true,
+  "skyBox": true,
   "settings": [
     {"group": "Lighting", "id": "vvSun", "slot": 3, "label": "Sunlight Intensity", "min": 0.25, "max": 3.0, "step": 0.25, "default": 1.0},
     {"id": "vvAmbient", "slot": 4, "label": "Sky Light Intensity", "min": 0.25, "max": 3.0, "step": 0.25, "default": 1.0},

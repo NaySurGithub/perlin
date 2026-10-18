@@ -33,6 +33,21 @@ namespace perlin {
                 be.front.glow = g->NumberOr(0) != 0 || g->BoolOr(false);
         }
         ReadFace(nbt.Find("BackText"), be.back);
+        if (const ui::Json* r = nbt.Find("Rotation"))
+            be.rotation = static_cast<float>(r->NumberOr(0.0));
+        if (const ui::Json* b = nbt.Find("Base"))
+            be.base = static_cast<int>(b->NumberOr(-1));
+        if (const ui::Json* t = nbt.Find("Type"))
+            be.bannerType = static_cast<int>(t->NumberOr(0));
+        if (const ui::Json* list = nbt.Find("Patterns"); list && list->IsArray())
+            for (const ui::Json& p : list->array) {
+                if (!p.IsObject())
+                    continue;
+                const ui::Json* code = p.Find("Pattern");
+                const ui::Json* col = p.Find("Color");
+                if (code && be.patterns.size() < 16)
+                    be.patterns.emplace_back(code->StringOr(""), col ? static_cast<int>(col->NumberOr(0)) : 0);
+            }
         if (const ui::Json* w = nbt.Find("IsWaxed"))
             be.waxed = w->NumberOr(0) != 0 || w->BoolOr(false);
         std::lock_guard lock(mutex);

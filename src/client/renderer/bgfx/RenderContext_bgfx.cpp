@@ -251,6 +251,14 @@ namespace perlin {
         topSkyBuffer = upload(topSky, positionLayout);
         bottomSkyBuffer = upload(BuildSkyDisc(-16.0f), positionLayout);
         {
+            std::vector<PositionVertex> box;
+            for (int i = 0; i < 8; i++)
+                box.push_back({(i & 1) ? 1.0f : -1.0f, (i & 2) ? 1.0f : -1.0f, (i & 4) ? 1.0f : -1.0f});
+            skyBoxBuffer = upload(box, positionLayout);
+            skyBoxIndices = uploadIndices({0, 1, 3, 0, 3, 2, 4, 6, 7, 4, 7, 5, 0, 4, 5, 0, 5, 1,
+                                           2, 3, 7, 2, 7, 6, 0, 2, 6, 0, 6, 4, 1, 5, 7, 1, 7, 3});
+        }
+        {
             const std::vector<PositionVertex> screen = {{-1.0f, -1.0f, 0.0f}, {3.0f, -1.0f, 0.0f}, {-1.0f, 3.0f, 0.0f}};
             screenBuffer = upload(screen, positionLayout);
         }
@@ -1510,8 +1518,16 @@ namespace perlin {
         submitMatrix(view);
         shaders.SetModulator(sky.skyColor[0], sky.skyColor[1], sky.skyColor[2], 1.0f);
         shaders.BindClouds(cloudMapTexture);
-        bgfx::setVertexBuffer(0, topSkyBuffer);
-        bgfx::setIndexBuffer(skyFanIndices, 0, skyFanIndexCount);
+        // Vanilla's sky is a disc overhead that leaves a strip around the horizon in the clear
+        // colour; a pack that draws the whole sky itself gets a box covering every direction.
+        ShaderPack& pack = ShaderPack::Instance();
+        if (pack.Active() && pack.Flag("skyBox", false) && bgfx::isValid(skyBoxBuffer)) {
+            bgfx::setVertexBuffer(0, skyBoxBuffer);
+            bgfx::setIndexBuffer(skyBoxIndices);
+        } else {
+            bgfx::setVertexBuffer(0, topSkyBuffer);
+            bgfx::setIndexBuffer(skyFanIndices, 0, skyFanIndexCount);
+        }
         bgfx::setState(write);
         bgfx::submit(0, shaders.Program(ShaderProgram::Sky));
 
@@ -2227,12 +2243,12 @@ namespace perlin {
 
     void RenderContext_bgfx::DestroySkyResources() {
         for (bgfx::VertexBufferHandle* handle :
-             {&topSkyBuffer, &bottomSkyBuffer, &screenBuffer, &starBuffer, &sunriseBuffer, &sunBuffer, &moonBuffer})
+             {&topSkyBuffer, &bottomSkyBuffer, &skyBoxBuffer, &screenBuffer, &starBuffer, &sunriseBuffer, &sunBuffer, &moonBuffer})
             if (bgfx::isValid(*handle)) {
                 bgfx::destroy(*handle);
                 *handle = BGFX_INVALID_HANDLE;
             }
-        for (bgfx::IndexBufferHandle* handle : {&skyFanIndices, &sunriseIndices, &starIndices, &quadIndices})
+        for (bgfx::IndexBufferHandle* handle : {&skyFanIndices, &skyBoxIndices, &sunriseIndices, &starIndices, &quadIndices})
             if (bgfx::isValid(*handle)) {
                 bgfx::destroy(*handle);
                 *handle = BGFX_INVALID_HANDLE;

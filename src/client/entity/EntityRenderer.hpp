@@ -17,7 +17,13 @@ namespace perlin {
 
 namespace perlin::entity {
     struct BlockEntityDraw {
-        enum class Kind { Bed, Sign };
+        enum class Kind { Bed, Sign, Skull };
+        // Skulls: 0 skeleton, 1 wither skeleton, 2 zombie, 3 player, 4 creeper, 5 dragon, 6 piglin;
+        // 7-10 copper golem statues (unaffected, exposed, weathered, oxidized); 11 conduit;
+        // 12 standing banner, 13 wall banner (base colour in `color`, layers in `patterns`).
+        int skull = 0;
+        std::vector<std::pair<std::string, int>> patterns; // banner layers: texture, dye (white = 0)
+        bool onWall = false;
         Kind kind = Kind::Bed;
         glm::dvec3 origin{0.0};
         float yaw = 0.0f;
@@ -110,6 +116,7 @@ namespace perlin::entity {
         const int* dollClip = nullptr;
         uint32_t TextureFor(const Entity& e, const std::string& key);
         void Track(const Entity& e, View& v, const FrameIn& in);
+        void TickPlayerBody(View& v, float dt, float prevYaw);
         void DrawShadow(const glm::dvec3& pos, float radius, float strength, const FrameIn& in);
         uint32_t shadowTexture = 0;
         struct Tag {

@@ -126,6 +126,11 @@ namespace perlin::entity {
         std::string tag;
         glm::mat4 armR{1.0f}, armL{1.0f};
         bool hasArmR = false, hasArmL = false;
+        // Players' body yaw, worked out on the client like Java's LivingEntity (20 Hz ticks).
+        bool bodyInit = false;
+        float body = 0, bodyPrev = 0;
+        double bodyTickAcc = 0;
+        glm::dvec3 bodyTickPos{0.0};
     };
 
     namespace {
@@ -309,6 +314,52 @@ namespace perlin::entity {
         return 0;
     }
 
+    // Java's body rotation for players (LivingEntity.tick + tickHeadTurn): while moving the body
+    // turns towards the walking direction (backwards walking keeps facing forward), swinging faces
+    // the look direction, and the head may turn at most 50 degrees from the body before dragging it
+    // along. Servers only send the look yaw for players, so the body is always computed here.
+    void EntityRenderer::TickPlayerBody(View& v, float dt, float prevYaw) {
+        const float look = v.headYaw;
+        if (!v.bodyInit) {
+            v.bodyInit = true;
+            v.body = v.bodyPrev = look;
+            v.bodyTickPos = v.pos;
+            v.bodyTickAcc = 0.0;
+        }
+        v.bodyTickAcc += dt;
+        int ticks = 0;
+        while (v.bodyTickAcc >= 0.05 && ticks < 8) {
+            v.bodyTickAcc -= 0.05;
+            ticks++;
+            v.bodyPrev = v.body;
+            const double xd = v.pos.x - v.bodyTickPos.x, zd = v.pos.z - v.bodyTickPos.z;
+            v.bodyTickPos = v.pos;
+            float target = v.body;
+            if (xd * xd + zd * zd > 0.0025000002) {
+                const float walk = static_cast<float>(std::atan2(zd, xd)) * (180.0f / 3.14159265f) - 90.0f;
+                const float diff = std::fabs(WrapDegrees(look) - walk);
+                target = (95.0f < diff && diff < 265.0f) ? walk - 180.0f : walk;
+            }
+            if (v.attackTime > 0.0f)
+                target = look;
+            v.body += WrapDegrees(target - v.body) * 0.3f;
+            const float headDiff = WrapDegrees(look - v.body);
+            if (std::fabs(headDiff) > 50.0f)
+                v.body += headDiff - (headDiff > 0.0f ? 50.0f : -50.0f);
+        }
+        if (ticks > 1 || v.bodyTickAcc > 0.25)
+            v.bodyPrev = v.body; // a long frame: no catch-up sweep
+        v.bodyTickAcc = std::min(v.bodyTickAcc, 0.05);
+        const float partial = static_cast<float>(v.bodyTickAcc / 0.05);
+        float shown = v.bodyPrev + WrapDegrees(v.body - v.bodyPrev) * partial;
+        // The head moves every frame; keep it within reach of the drawn body between ticks too.
+        const float headDiff = WrapDegrees(look - shown);
+        if (std::fabs(headDiff) > 50.0f)
+            shown += headDiff - (headDiff > 0.0f ? 50.0f : -50.0f);
+        v.yaw = shown;
+        v.yawSpeed = WrapDegrees(v.yaw - prevYaw) / std::max(dt, 0.001f);
+    }
+
     void EntityRenderer::Track(const Entity& e, View& v, const FrameIn& in) {
         const float dt = std::clamp(in.dt, 0.001f, 0.25f);
         v.dt = dt;
@@ -399,6 +450,9 @@ namespace perlin::entity {
             v.headYaw = v.yaw;
             v.yawSpeed = 0.0f;
         }
+
+        if (e.isPlayer && !v.fp)
+            TickPlayerBody(v, dt, prevYaw);
 
         const glm::dvec3 step = v.pos - v.lastPos;
         const float horizontal = static_cast<float>(std::sqrt(step.x * step.x + step.z * step.z));
@@ -2230,6 +2284,121 @@ namespace perlin::entity {
         drawn++;
     }
 
+    namespace {
+        // Skull and head blocks: Java's SkullModel / DragonHeadModel / PiglinHeadModel boxes, in
+        // Java model space (pixels, y down, the face towards -z). Parts chain to a parent.
+        struct SkullPart {
+            int parent;
+            glm::vec3 offset, rotation; // rotation in radians (applied Z, Y, X like ModelPart)
+            float scale;
+        };
+        struct SkullBox {
+            int part;
+            float x, y, z, w, h, d, u, v, grow;
+            bool mirror;
+        };
+        struct SkullModelDef {
+            const char* texture;
+            float texW, texH;
+            std::vector<SkullPart> parts;
+            std::vector<SkullBox> boxes;
+            int flagPart = -1; // banners: the swaying flag (tinted, carries the pattern layers)
+        };
+
+        const SkullModelDef& SkullModelFor(int kind) {
+            static const std::vector<SkullModelDef> models = [] {
+                std::vector<SkullModelDef> m(7);
+                const auto plain = [](const char* tex, float tw, float th, bool hat) {
+                    SkullModelDef d{tex, tw, th, {{-1, glm::vec3(0.0f), glm::vec3(0.0f), 1.0f}}, {{0, -4, -8, -4, 8, 8, 8, 0, 0, 0, false}}};
+                    if (hat)
+                        d.boxes.push_back({0, -4, -8, -4, 8, 8, 8, 32, 0, 0.25f, false});
+                    return d;
+                };
+                m[0] = plain("textures/entity/skeleton/skeleton", 64, 32, false);
+                m[1] = plain("textures/entity/skeleton/wither_skeleton", 64, 32, false);
+                m[2] = plain("textures/entity/zombie/zombie", 64, 32, true);
+                m[3] = plain("textures/entity/steve", 64, 64, true);
+                m[4] = plain("textures/entity/creeper/creeper", 64, 32, false);
+                // Ender dragon head: 0.75 scale, open jaw (DragonHeadModel at rest).
+                m[5] = SkullModelDef{"textures/entity/dragon/dragon", 256, 256,
+                                     {{-1, glm::vec3(0.0f, -7.986666f, 0.0f), glm::vec3(0.0f), 0.75f},
+                                      {0, glm::vec3(0.0f, 4.0f, -8.0f), glm::vec3(0.2f, 0.0f, 0.0f), 1.0f}},
+                                     {{0, -6, -1, -24, 12, 5, 16, 176, 44, 0, false},
+                                      {0, -8, -8, -10, 16, 16, 16, 112, 30, 0, false},
+                                      {0, -5, -12, -4, 2, 4, 6, 0, 0, 0, true},
+                                      {0, -5, -3, -22, 2, 2, 4, 112, 0, 0, true},
+                                      {0, 3, -12, -4, 2, 4, 6, 0, 0, 0, false},
+                                      {0, 3, -3, -22, 2, 2, 4, 112, 0, 0, false},
+                                      {1, -6, 0, -16, 12, 4, 16, 176, 65, 0, false}}};
+                // Piglin head with its ears (PiglinHeadModel at rest).
+                m[6] = SkullModelDef{"textures/entity/piglin/piglin", 64, 64,
+                                     {{-1, glm::vec3(0.0f), glm::vec3(0.0f), 1.0f},
+                                      {0, glm::vec3(4.5f, -6.0f, 0.0f), glm::vec3(0.0f, 0.0f, -0.7f), 1.0f},
+                                      {0, glm::vec3(-4.5f, -6.0f, 0.0f), glm::vec3(0.0f, 0.0f, 0.7f), 1.0f}},
+                                     {{0, -5, -8, -4, 10, 8, 8, 0, 0, 0, false},
+                                      {0, -2, -4, -5, 4, 4, 1, 31, 1, 0, false},
+                                      {0, 2, -2, -5, 1, 2, 1, 2, 4, 0, false},
+                                      {0, -3, -2, -5, 1, 2, 1, 2, 0, 0, false},
+                                      {1, 0, 0, -2, 1, 5, 4, 51, 6, 0, false},
+                                      {2, -1, 0, -2, 1, 5, 4, 39, 6, 0, false}}};
+                // Copper golem statues (standing pose, CopperGolemModel), one per oxidation level.
+                static const char* const kCopper[] = {"textures/entity/copper_golem/copper_golem", "textures/entity/copper_golem/copper_golem_exposed",
+                                                      "textures/entity/copper_golem/copper_golem_weathered",
+                                                      "textures/entity/copper_golem/copper_golem_oxidized"};
+                for (const char* tex : kCopper)
+                    m.push_back(SkullModelDef{tex, 64, 64,
+                                              {{-1, glm::vec3(0.0f), glm::vec3(0.0f), 1.0f},
+                                               {0, glm::vec3(0.0f, -5.0f, 0.0f), glm::vec3(0.0f), 1.0f},
+                                               {1, glm::vec3(0.0f, -6.0f, 0.0f), glm::vec3(0.0f), 1.0f},
+                                               {1, glm::vec3(-4.0f, -6.0f, 0.0f), glm::vec3(0.0f), 1.0f},
+                                               {1, glm::vec3(4.0f, -6.0f, 0.0f), glm::vec3(0.0f), 1.0f},
+                                               {0, glm::vec3(0.0f, -5.0f, 0.0f), glm::vec3(0.0f), 1.0f}},
+                                              {{1, -4, -6, -3, 8, 6, 6, 0, 15, 0, false},
+                                               {2, -4, -5, -5, 8, 5, 10, 0, 0, 0.015f, false},
+                                               {2, -1, -2, -6, 2, 3, 2, 56, 0, 0, false},
+                                               {2, -1, -9, -1, 2, 4, 2, 37, 8, -0.015f, false},
+                                               {2, -2, -13, -2, 4, 4, 4, 37, 0, -0.015f, false},
+                                               {3, -3, -1, -2, 3, 10, 4, 36, 16, 0, false},
+                                               {4, 0, -1, -2, 3, 10, 4, 50, 16, 0, false},
+                                               {5, -4, 0, -2, 4, 5, 4, 0, 27, 0, false},
+                                               {5, 0, 0, -2, 4, 5, 4, 16, 27, 0, false}}});
+                // Conduit (inactive): the 6x6x6 shell in the middle of the block.
+                m.push_back(SkullModelDef{"textures/blocks/conduit_base", 32, 16,
+                                          {{-1, glm::vec3(0.0f, -8.0f, 0.0f), glm::vec3(0.0f), 1.0f}},
+                                          {{0, -3, -3, -3, 6, 6, 6, 0, 0, 0, false}}});
+                // Banners (BannerModel + BannerFlagModel), drawn at 2/3 scale. Standing: pole, bar and
+                // a 20x40 flag hanging from the top of the pole; wall: bar and flag against the wall.
+                m.push_back(SkullModelDef{"textures/entity/banner/banner_base", 64, 64,
+                                          {{-1, glm::vec3(0.0f), glm::vec3(0.0f), 2.0f / 3.0f},
+                                           {0, glm::vec3(0.0f, -44.0f, 0.0f), glm::vec3(0.0f), 1.0f}},
+                                          {{0, -1, -42, -1, 2, 42, 2, 44, 0, 0, false},
+                                           {0, -10, -44, -1, 20, 2, 2, 0, 42, 0, false},
+                                           {1, -10, 0, -2, 20, 40, 1, 0, 0, 0, false}},
+                                          1});
+                m.push_back(SkullModelDef{"textures/entity/banner/banner_base", 64, 64,
+                                          {{-1, glm::vec3(0.0f), glm::vec3(0.0f), 2.0f / 3.0f},
+                                           {0, glm::vec3(0.0f, -20.5f, 10.5f), glm::vec3(0.0f), 1.0f}},
+                                          {{0, -10, -20.5f, 9.5f, 20, 2, 2, 0, 42, 0, false},
+                                           {1, -10, 0, -2, 20, 40, 1, 0, 0, 0, false}},
+                                          1});
+                return m;
+            }();
+            return models[static_cast<size_t>(std::clamp(kind, 0, static_cast<int>(models.size()) - 1))];
+        }
+
+        glm::mat4 SkullPartMatrix(const SkullModelDef& def, int part, float flagXRot = 0.0f) {
+            if (part < 0)
+                return glm::mat4(1.0f);
+            const SkullPart& p = def.parts[static_cast<size_t>(part)];
+            glm::mat4 m = SkullPartMatrix(def, p.parent, flagXRot);
+            m = glm::translate(m, p.offset);
+            m = glm::rotate(m, p.rotation.z, glm::vec3(0, 0, 1));
+            m = glm::rotate(m, p.rotation.y, glm::vec3(0, 1, 0));
+            m = glm::rotate(m, p.rotation.x + (part == def.flagPart ? flagXRot : 0.0f), glm::vec3(1, 0, 0));
+            return glm::scale(m, glm::vec3(p.scale));
+        }
+    }
+
     void EntityRenderer::RenderBlockEntities(const std::vector<BlockEntityDraw>& draws, const FrameIn& in) {
         if (!renderer || draws.empty())
             return;
@@ -2254,15 +2423,23 @@ namespace perlin::entity {
             draw.mesh = mesh;
             draw.texture = texture;
             draw.premultiplied = false;
-            draw.alphaCutoff = cutoff;
-            draw.blend = 0;
+            // A negative cutoff marks an overlay layer (banner patterns): blended, no depth write.
+            const bool overlay = cutoff < 0.0f;
+            draw.alphaCutoff = overlay ? 0.004f : cutoff;
+            draw.blend = overlay ? 1 : 0;
             draw.depth = true;
-            draw.depthWrite = true;
+            draw.depthWrite = !overlay;
             draw.emissive = 0;
             draw.shadowOnly = shadowOnlyPass;
             renderer->UiSubmit(UiLayer::World, draw);
         };
         std::unordered_map<int, std::pair<std::vector<UiVertex>, std::vector<uint32_t>>> beds;
+        struct SkullBatch {
+            std::vector<UiVertex> v;
+            std::vector<uint32_t> i;
+            bool overlay = false; // banner pattern layers: alpha-blended over the flag
+        };
+        std::map<std::string, SkullBatch> skulls;
         std::pair<std::vector<UiVertex>, std::vector<uint32_t>> text;
         const double maxDist = 64.0;
         for (const BlockEntityDraw& d : draws) {
@@ -2319,6 +2496,75 @@ namespace perlin::entity {
                     face(map(x1, y1, z1), map(x1, y1, z0), map(x1, y0, z0), map(x1, y0, z1), u + sz + sx, v + sz, sz, sy, 0.8f);
                     face(map(x0, y1, z0), map(x1, y1, z0), map(x1, y1, z1), map(x0, y1, z1), u + sz, v, sx, sz, 0.9f);
                     face(map(x0, y0, z1), map(x1, y0, z1), map(x1, y0, z0), map(x0, y0, z0), u + sz + sx, v, sx, sz, 0.6f);
+                }
+                continue;
+            }
+            if (d.kind == BlockEntityDraw::Kind::Skull) {
+                const SkullModelDef& def = SkullModelFor(d.skull);
+                const bool banner = def.flagPart >= 0;
+                // Placement (SkullBlockRenderer): on the floor centred, on a wall pushed a quarter
+                // block towards the wall and raised a quarter. Model space -> blocks: y and x flip
+                // (Java's scale(-1, -1, 1)), and the face turns to the skull's facing (+z at yaw 0).
+                // Banners use the same frame (BannerRenderer's rotate(-angle) * scale(2/3, -2/3, -2/3)
+                // is this with the 2/3 in the model's root).
+                glm::mat4 place = glm::translate(glm::mat4(1.0f), base + glm::vec3(0.5f, d.onWall ? 0.25f : 0.0f, 0.5f));
+                place = glm::rotate(place, -(d.yaw + 180.0f) * kDeg, glm::vec3(0, 1, 0));
+                if (d.onWall)
+                    place = glm::translate(place, glm::vec3(0.0f, 0.0f, 0.25f));
+                place = glm::scale(place, glm::vec3(-1.0f / 16.0f, -1.0f / 16.0f, 1.0f / 16.0f));
+                float flagXRot = 0.0f;
+                if (banner) {
+                    // BannerFlagModel.setupAnim: a slow sway, phase-shifted per block position.
+                    const double t = in.worldTicks + static_cast<double>(d.origin.x * 7.0 + d.origin.y * 9.0 + d.origin.z * 13.0);
+                    const float phase = static_cast<float>(t - std::floor(t / 100.0) * 100.0) / 100.0f;
+                    flagXRot = (-0.0125f + 0.01f * std::cos(6.2831853f * phase)) * 3.14159265f;
+                }
+                const auto emitBox = [&](SkullBatch& batch, const SkullBox& b, float extraGrow, const glm::vec3& tint) {
+                    const glm::mat4 m = place * SkullPartMatrix(def, b.part, flagXRot);
+                    const float g = b.grow + extraGrow;
+                    float x0 = b.x - g, x1 = b.x + b.w + g;
+                    const float y0 = b.y - g, y1 = b.y + b.h + g, z0 = b.z - g, z1 = b.z + b.d + g;
+                    if (b.mirror)
+                        std::swap(x0, x1);
+                    const auto P = [&](float x, float y, float z) { return glm::vec3(m * glm::vec4(x, y, z, 1.0f)); };
+                    const float u = b.u, v = b.v, w = b.w, h = b.h, dd = b.d;
+                    const auto face = [&](glm::vec3 tl, glm::vec3 tr, glm::vec3 br, glm::vec3 bl, float fu, float fv, float fw, float fh, float shade) {
+                        const uint32_t color = PackColor(light * shade * tint);
+                        const uint32_t i0 = static_cast<uint32_t>(batch.v.size());
+                        const float uu0 = fu / def.texW, vv0 = fv / def.texH, uu1 = (fu + fw) / def.texW, vv1 = (fv + fh) / def.texH;
+                        batch.v.push_back({tl.x, tl.y, tl.z, color, uu0, vv0});
+                        batch.v.push_back({tr.x, tr.y, tr.z, color, uu1, vv0});
+                        batch.v.push_back({br.x, br.y, br.z, color, uu1, vv1});
+                        batch.v.push_back({bl.x, bl.y, bl.z, color, uu0, vv1});
+                        for (uint32_t k : {0u, 1u, 2u, 0u, 2u, 3u})
+                            batch.i.push_back(i0 + k);
+                    };
+                    // Java's box UV layout; "right" is the model's -x side (the character's right).
+                    face(P(x0, y0, z0), P(x1, y0, z0), P(x1, y1, z0), P(x0, y1, z0), u + dd, v + dd, w, h, 0.8f);          // front
+                    face(P(x0, y0, z1), P(x0, y0, z0), P(x0, y1, z0), P(x0, y1, z1), u, v + dd, dd, h, 0.6f);              // right
+                    face(P(x1, y0, z0), P(x1, y0, z1), P(x1, y1, z1), P(x1, y1, z0), u + dd + w, v + dd, dd, h, 0.6f);     // left
+                    face(P(x1, y0, z1), P(x0, y0, z1), P(x0, y1, z1), P(x1, y1, z1), u + 2 * dd + w, v + dd, w, h, 0.8f); // back
+                    face(P(x0, y0, z1), P(x1, y0, z1), P(x1, y0, z0), P(x0, y0, z0), u + dd, v, w, dd, 1.0f);              // top
+                    face(P(x0, y1, z0), P(x1, y1, z0), P(x1, y1, z1), P(x0, y1, z1), u + dd + w, v, w, dd, 0.5f);          // bottom
+                };
+                const auto dyeTint = [](int dye) {
+                    const uint32_t rgb = DyeColorRgb(dye);
+                    return glm::vec3(static_cast<float>((rgb >> 16) & 0xFF), static_cast<float>((rgb >> 8) & 0xFF), static_cast<float>(rgb & 0xFF)) / 255.0f;
+                };
+                SkullBatch& batch = skulls[def.texture];
+                for (const SkullBox& b : def.boxes)
+                    emitBox(batch, b, 0.0f, banner && b.part == def.flagPart ? dyeTint(d.color) : glm::vec3(1.0f));
+                if (banner) {
+                    // Pattern layers over the flag, each a hair further out so they stack in order.
+                    int layer = 0;
+                    for (const auto& [texture, dye] : d.patterns) {
+                        layer++;
+                        SkullBatch& over = skulls[texture];
+                        over.overlay = true;
+                        for (const SkullBox& b : def.boxes)
+                            if (b.part == def.flagPart)
+                                emitBox(over, b, 0.004f * static_cast<float>(layer), dyeTint(dye));
+                    }
                 }
                 continue;
             }
@@ -2419,6 +2665,12 @@ namespace perlin::entity {
             emit(d.front, d.frontColor, d.frontGlow, true, frontZ);
             emit(d.back, d.backColor, d.backGlow, false, backZ);
         }
+        for (auto& [texture, batch] : skulls)
+            if (!batch.overlay)
+                submit(batch.v, batch.i, TextureByPath(texture), 0.1f);
+        for (auto& [texture, batch] : skulls)
+            if (batch.overlay)
+                submit(batch.v, batch.i, TextureByPath(texture), -1.0f);
         for (auto& [color, batch] : beds)
             submit(batch.first, batch.second, TextureByPath(std::string("textures/entity/bed/") + kDyeNames[color]), 0.0f);
         submit(text.first, text.second, fontTexture, 0.1f);

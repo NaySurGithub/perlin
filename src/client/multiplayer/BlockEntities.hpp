@@ -5,6 +5,8 @@
 #include <mutex>
 #include <string>
 #include <unordered_map>
+#include <utility>
+#include <vector>
 
 namespace perlin {
     struct SignFace {
@@ -18,6 +20,10 @@ namespace perlin {
         int color = -1;
         SignFace front, back;
         bool waxed = false;
+        float rotation = 0.0f; // skulls on the floor: degrees
+        // Banners: Bedrock dye indices (0 black .. 15 white), Type 1 = ominous.
+        int base = -1, bannerType = 0;
+        std::vector<std::pair<std::string, int>> patterns; // pattern code, colour
     };
 
     class BlockEntityStore {

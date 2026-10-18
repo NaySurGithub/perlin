@@ -367,7 +367,7 @@ def translate(bname, st, jb):
         props["age"] = str(min(4, int(st["growth"])))
         props["half"] = "upper" if int(st["upper_block_bit"]) else "lower"
         return jn, props, search
-    if "upper_block_bit" in st and n not in ("pitcher_crop", "small_dripleaf_block") and "door" not in n:
+    if "upper_block_bit" in st and n not in ("pitcher_crop", "small_dripleaf_block", "pale_moss_carpet") and "door" not in n:
         props["half"] = "upper" if int(st["upper_block_bit"]) else "lower"
         return jn, props, search
     if n == "seagrass":

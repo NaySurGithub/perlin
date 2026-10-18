@@ -15,7 +15,7 @@ void main()
     {
         // Vanilla's dark disc under the horizon (modulator = black): the horizon colour, darkening
         // only well below it so the horizon itself has no seam.
-        c = vvSkyGradient(vec3(dir.x, 0.0, dir.z)) * mix(1.0, 0.85, smoothstep(-0.08, -0.4, dir.y));
+        c = vvSkyGradient(vec3(dir.x, 0.0, dir.z)) * mix(0.85, 1.0, smoothstep(-0.4, -0.08, dir.y));
         c += vvSunGlow(normalize(vec3(dir.x, 0.0, dir.z) + vec3(0.0, 1.0e-4, 0.0)));
     }
     else

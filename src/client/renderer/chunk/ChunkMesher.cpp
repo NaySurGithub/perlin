@@ -397,7 +397,13 @@ namespace perlin {
                 return 0;
             const std::string shortName = name.rfind("minecraft:", 0) == 0 ? name.substr(10) : name;
             const bool sign = shortName.size() > 5 && shortName.compare(shortName.size() - 5, 5, "_sign") == 0;
-            m = shortName == "bed" ? 1 : sign ? 2 : 0;
+            const auto ends = [&](const char* suffix) {
+                const size_t n = std::strlen(suffix);
+                return shortName.size() > n && shortName.compare(shortName.size() - n, n, suffix) == 0;
+            };
+            const bool skull = ends("_skull") || (ends("_head") && shortName != "piston_head" && shortName.find("bed") == std::string::npos) || shortName.find("copper_golem_statue") != std::string::npos || shortName == "conduit" ||
+                              shortName == "standing_banner" || shortName == "wall_banner";
+            m = shortName == "bed" ? 1 : sign ? 2 : skull ? 3 : shortName == "bubble_column" ? 4 : 0;
         }
         return m;
     }
@@ -503,6 +509,8 @@ namespace perlin {
     }
 
     int BlockLightOpacity(BlockLibrary& library, uint16_t id) {
+        if (SpecialKind(id) == 3)
+            return 0; // skulls and heads let light through
         {
             FaceOcclusion f;
             if (BlockFaceOcclusion(id, f)) {
@@ -634,6 +642,8 @@ namespace perlin {
         static bool ComputeSolid(BlockLibrary* library, uint16_t id) {
             if (!library)
                 return true;
+            if (SpecialKind(id) == 1 || SpecialKind(id) == 3)
+                return false; // beds and skulls: drawn as block entities
             if (const ModelEntry* me = ModelFor(library, id); me && !me->cube)
                 return false;
             const BlockAppearance& a = *LookupApp(library, id);
@@ -892,10 +902,12 @@ namespace perlin {
                     if (id == 0)
                         continue;
                     if (pass == 1 && textured) {
-                        if (const int special = SpecialKind(id)) {
+                        if (SpecialKind(id) == 4)
+                            continue; // bubble columns: just their water (drawn in the liquid pass)
+                        if (const int special = SpecialKind(id); special && special != 4) {
                             tess.AddSpecial(baseX + x, y, baseZ + z, id);
-                            if (special == 1)
-                                continue;
+                            if (special == 1 || special == 3)
+                                continue; // drawn by the block entity renderer
                         }
                     }
                     if (pass == 1 && textured && IsDoorId(id)) {
@@ -1111,6 +1123,12 @@ namespace perlin {
                     };
                     auto biomeTintFor = [&](const std::string& tex, int tile,
                                             bool isTop) -> std::array<float, 4> {
+                        // Redstone dust: coloured by its signal strength (Java RedStoneWireBlock).
+                        if (TexHas(tex, "redstone_dust")) {
+                            const float f = static_cast<float>(BlockPalette::Instance().StateInt(id, "redstone_signal", 0)) / 15.0f;
+                            return {f * 0.6f + (f > 0.0f ? 0.4f : 0.3f), std::clamp(f * f * 0.7f - 0.5f, 0.0f, 1.0f),
+                                    std::clamp(f * f * 0.6f - 0.7f, 0.0f, 1.0f), 1.0f};
+                        }
                         const size_t texHash = std::hash<std::string>()(tex);
                         std::array<float, 4> sum{0, 0, 0, 0};
                         std::array<float, 4> own{0, 0, 0, 0};

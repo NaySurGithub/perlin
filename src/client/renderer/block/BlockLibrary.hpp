@@ -7,6 +7,7 @@
 #include <string>
 #include <array>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 #include "client/renderer/block/BlockGeometry.hpp"
 #include "client/renderer/block/BlockModels.hpp"
@@ -108,6 +109,7 @@ namespace perlin {
         std::vector<uint8_t> atlas;
         std::unordered_map<std::string, int> tileByPng;
         std::unordered_map<int, TileAlpha> alphaByTile;
+        std::unordered_set<int> overlayMaskTiles; // tiles whose alpha is a tint mask (overlay_color)
         std::unordered_map<int, std::string> pathByTile;
         struct AnimSrc {
             std::vector<uint8_t> pixels;

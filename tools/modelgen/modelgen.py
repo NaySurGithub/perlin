@@ -231,11 +231,30 @@ class Gen:
     def special_entry(self, rec):
         n = rec["name"].replace("minecraft:", "")
         base = n[6:] if n.startswith("waxed_") else n
+        if n in ("frame", "glow_frame"):
+            return self.frame_entry(rec, n)
         if base not in self.CHEST_SETS:
             return self.special_sign_entry(rec)
         facing = rec["state"].get("minecraft:cardinal_direction", "north")
         ry = {"north": 0, "east": 90, "south": 180, "west": 270}.get(facing, 0)
         vid = self.bake_variant("special/" + base, 0, ry, False)
+        key = (0, (((vid, 1),),))
+        if key not in self.entry_ids:
+            self.entry_ids[key] = len(self.entries)
+            self.entries.append(key)
+        return self.entry_ids[key]
+
+    # Item frames: Bedrock blocks, Java entities with block models (item_frame, glow_item_frame and
+    # their _map versions, whose front faces north). facing_direction is the way the frame faces.
+    FRAME_ROT = {0: (90, 0), 1: (270, 0), 2: (0, 0), 3: (0, 180), 4: (0, 270), 5: (0, 90)}
+
+    def frame_entry(self, rec, n):
+        st = rec["state"]
+        model = "minecraft:block/" + ("glow_item_frame" if n == "glow_frame" else "item_frame")
+        if int(st.get("item_frame_map_bit", 0)):
+            model += "_map"
+        rx, ry = self.FRAME_ROT.get(int(st.get("facing_direction", 2)), (0, 0))
+        vid = self.bake_variant(model, rx, ry, False)
         key = (0, (((vid, 1),),))
         if key not in self.entry_ids:
             self.entry_ids[key] = len(self.entries)
