@@ -13,6 +13,9 @@ SAMPLER2D(s_sceneDepth, 5);
 // Water extinction per block (red goes first: turquoise shallows, deep blue depths), divided by
 // the Water Clarity setting.
 #define WATER_EXTINCTION (vec3(0.78, 0.13, 0.19) / max(S_WATER_CLARITY, 0.1))
+// The default (ocean) biome water colour; other biomes shift the water colour and extinction
+// relative to it (swamps murky green, warm oceans light teal...).
+#define WATER_DEFAULT_TINT vec3(0.247, 0.463, 0.894)
 
 vec2 ndcToUv(vec2 ndc)
 {
@@ -233,7 +236,11 @@ void main()
         vec3 body;
         float alpha;
         vec3 lightLevel = v_skyLight * skyl * skyl + v_sunLight * 0.25 * skyl;
-        vec3 scatterColor = vec3(0.02, 0.17, 0.24) * clamp(luma(lightLevel) * 1.6, 0.03, 1.2);
+        // Biome water colour (the vertex tint), relative to the default ocean colour.
+        vec3 biomeTint = clamp(v_tint, vec3_splat(0.02), vec3_splat(1.0));
+        vec3 biomeShift = clamp(biomeTint / WATER_DEFAULT_TINT, vec3_splat(0.3), vec3_splat(3.0));
+        vec3 biomeExtinction = WATER_EXTINCTION * clamp(log(biomeTint) / log(WATER_DEFAULT_TINT), vec3_splat(0.3), vec3_splat(3.0));
+        vec3 scatterColor = vec3(0.02, 0.17, 0.24) * biomeShift * clamp(luma(lightLevel) * 1.6, 0.03, 1.2);
         scatterColor = vvTonemap(scatterColor * 3.0) * 0.8;
         if (scene)
         {
@@ -252,7 +259,7 @@ void main()
             float thickness = dR >= 0.99999 ? 48.0 : max(length(behindR - u_camera.xyz) - surfaceDist, 0.0);
             if (!fromAbove)
                 thickness = min(thickness, 6.0) * 0.4;
-            vec3 trans = exp(-WATER_EXTINCTION * thickness);
+            vec3 trans = exp(-biomeExtinction * thickness);
             vec3 below = sceneColorAt(uvR) * vec3(0.82, 1.0, 0.94);
             body = below * trans + scatterColor * (vec3_splat(1.0) - trans);
             alpha = 1.0;
