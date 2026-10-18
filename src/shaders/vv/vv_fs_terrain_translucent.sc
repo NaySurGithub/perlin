@@ -185,28 +185,25 @@ void main()
 
         // Reflection: screen-space first (skipped where the fresnel makes it invisible), then the
         // analytic sky and clouds only where the trace did not fully cover the pixel.
-        vec3 reflection = vec3(0.0, 0.0, 0.0);
+        // Kept as flat, separate branches (not nested): FXC overflows its stack on deeply nested
+        // loops and branches in this shader.
+        bool wantReflection = fromAbove && fresnel > 0.05;
         vec4 hit = vec4(0.0, 0.0, 0.0, 0.0);
         float reflQuality = floor(S_REFLECTIONS + 0.5);
-        VV_BRANCH if (fromAbove && fresnel > 0.05)
+        VV_BRANCH if (wantReflection && scene && reflQuality > 0.5)
         {
-            VV_BRANCH if (scene && reflQuality > 0.5)
-            {
-                float jitter = hash12(gl_FragCoord.xy + vec2(fract(t * 7.0) * 61.0, 0.0));
-                hit = traceReflection(world, R, jitter, reflQuality);
-            }
-            VV_BRANCH if (hit.a < 0.999)
-            {
-                vec3 skyR = vvSky(R, false) * skyVisible;
-                VV_BRANCH if (S_REFLECTED_CLOUDS > 0.5)
-                {
-                    vec4 cloud = vvClouds(world, R, 4000.0);
-                    skyR = skyR * cloud.a + cloud.rgb * skyVisible;
-                }
-                reflection = skyR;
-            }
-            reflection = mix(reflection, hit.rgb, hit.a);
+            float jitter = hash12(gl_FragCoord.xy + vec2(fract(t * 7.0) * 61.0, 0.0));
+            hit = traceReflection(world, R, jitter, reflQuality);
         }
+        bool needSky = wantReflection && hit.a < 0.999;
+        vec3 reflection = vec3(0.0, 0.0, 0.0);
+        VV_BRANCH if (needSky)
+            reflection = vvSky(R, false) * skyVisible;
+        vec4 cloud = vec4(0.0, 0.0, 0.0, 1.0);
+        VV_BRANCH if (needSky && S_REFLECTED_CLOUDS > 0.5)
+            cloud = vvClouds(world, R, 4000.0);
+        reflection = reflection * cloud.a + cloud.rgb * skyVisible;
+        reflection = mix(reflection, hit.rgb, hit.a);
 
         // Sun/moon glint: a soft core plus gently twinkling sparkles. The glint uses the smooth
         // wave normal, a broad highlight and soft compression so it never turns into harsh,
@@ -256,7 +253,9 @@ void main()
         else
         {
             // No scene copy: vanilla-style water colour, blended.
-            vec3 base = vvLit(tex.rgb, v_tint, n, v_rel, v_light, 0.0, 0.0, v_sunLight, v_skyLight);
+            // (Simple light here: a second inlined vvLit makes the shader too big for FXC.)
+            vec3 albedo = vvPow(clamp(tex.rgb * v_tint, 0.0, 1.0), vec3_splat(2.2));
+            vec3 base = vvTonemap(albedo * (v_sunLight * 0.5 * skyl + v_skyLight * skyl * skyl + vec3_splat(0.02)));
             body = mix(saturateColor(base, 0.9), scatterColor, 0.45);
             alpha = clamp(mix(color.a, 1.0, fresnel * 0.7), 0.0, 1.0);
         }

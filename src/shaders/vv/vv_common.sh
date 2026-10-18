@@ -357,14 +357,14 @@ vec3 vvSky(vec3 dir, bool bodies)
         c += vvSunGlow(dir);
     // The discs and their halos only matter within ~35 degrees of the sun or moon.
     float toSun = dot(dir, u_sunDir.xyz);
-    VV_BRANCH if (bodies && u_skyParams.z > 0.5 && toSun > 0.82)
+    if (bodies && u_skyParams.z > 0.5 && toSun > 0.82)
     {
         float sunCover;
         vec3 sunBloom = vvSunDisc(dir, sunCover);
         vec3 sunCol = mix(vec3(1.0, 0.88, 0.70), vec3(1.0, 1.0, 0.98), smoothstep(0.0, 0.3, u_sunDir.y));
         c = mix(c, sunCol, sunCover) + sunBloom;
     }
-    VV_BRANCH if (bodies && u_skyParams.z > 0.5 && toSun < -0.82 && u_sunDir.y < 0.25)
+    if (bodies && u_skyParams.z > 0.5 && toSun < -0.82 && u_sunDir.y < 0.25)
     {
         float moonCover;
         vec3 moonCol;
@@ -559,21 +559,14 @@ vec3 vvHable(vec3 x)
 vec3 vvTonemap(vec3 hdr)
 {
     vec3 x = max(hdr, vec3_splat(0.0)) * 0.70 * exp2(S_EXPOSURE);
-    // A uniform branch: every pixel takes the same path, so only one curve is ever evaluated.
-    vec3 mapped;
-    if (S_TONEMAP < 0.5)
-    {
-        mapped = clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0);
-    }
-    else if (S_TONEMAP < 1.5)
-    {
-        mapped = clamp(vvHable(x * 2.2) / 0.725, 0.0, 1.0); // 0.725 = vvHable(11.2), the white point
-    }
-    else
-    {
-        float l = luma(x);
-        mapped = clamp(x * (1.0 + l / 4.0) / (1.0 + l) * 1.25, 0.0, 1.0);
-    }
+    // All three curves blended by the setting: a few ALU ops, but no branches (this is inlined in
+    // many places, and branches here made the water shader too complex for FXC).
+    vec3 aces = clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0);
+    vec3 filmic = clamp(vvHable(x * 2.2) / 0.725, 0.0, 1.0); // 0.725 = vvHable(11.2), the white point
+    float l = luma(x);
+    vec3 soft = clamp(x * (1.0 + l / 4.0) / (1.0 + l) * 1.25, 0.0, 1.0);
+    float mode = floor(S_TONEMAP + 0.5);
+    vec3 mapped = mode < 0.5 ? aces : (mode < 1.5 ? filmic : soft);
     vec3 display = vvPow(mapped, vec3_splat(1.0 / 2.2));
     display = saturateColor(display, 1.10 * S_SATURATION);
     display = (display - 0.5) * S_CONTRAST + 0.5;
