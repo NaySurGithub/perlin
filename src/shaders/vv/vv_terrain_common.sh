@@ -32,14 +32,14 @@ float sunShadow(vec3 world, vec3 n, float ndl)
     float inside = smoothstep(0.0, 0.06, min(edge.x, edge.y));
     float bias = (texelWorld * 1.8 * (1.0 - ndl) + 0.05) / u_shadowInfo.z;
     float lit = 1.0;
-    if (inside > 0.0 && u_shadowInfo.w > 0.5)
+    VV_BRANCH if (inside > 0.0 && u_shadowInfo.w > 0.5)
     {
         float filterLevel = floor(S_SHADOW_FILTER + 0.5);
         float taps = filterLevel < 0.5 ? 1.0 : (filterLevel < 1.5 ? 6.0 : (filterLevel < 2.5 ? 12.0 : 20.0));
         float radius = clamp(0.07 * S_SHADOW_SOFTNESS / max(texelWorld, 1.0e-4), 1.0, 5.0) * u_shadowInfo.x * step(1.5, taps);
         float spin = hash12(floor(p.xz * 16.0) + floor(p.y * 16.0) * 7.31) * 6.2831853; // per world texel
         float sum = 0.0;
-        for (int i = 0; i < 20; i++)
+        VV_LOOP for (int i = 0; i < 20; i++)
         {
             if (float(i) >= taps)
                 break;
@@ -65,7 +65,7 @@ vec3 vvLit(vec3 texRgb, vec3 tint, vec3 n, vec3 rel, vec2 light, float backlight
     vec3 tintAo = clamp(tint / max(shade, 0.01), 0.0, 1.5);
     vec3 albedo = vvPow(clamp(texRgb * tintAo, 0.0, 1.0), vec3_splat(2.2));
     vec3 hdr;
-    if (u_skyParams.z > 0.5)
+    VV_BRANCH if (u_skyParams.z > 0.5)
     {
         vec3 viewDir = normalize(rel);
         vec3 world = rel + u_camera.xyz;
@@ -78,7 +78,7 @@ vec3 vvLit(vec3 texRgb, vec3 tint, vec3 n, vec3 rel, vec2 light, float backlight
         // Direct light: soft shadow map, cloud shadows, foliage transmission. Skipped outright
         // underground, facing away, or with the light below the horizon.
         float direct = 0.0;
-        if ((ndl > 0.0 || backlight > 0.0) && sky > 0.0 && sunUp > 0.0)
+        VV_BRANCH if ((ndl > 0.0 || backlight > 0.0) && sky > 0.0 && sunUp > 0.0)
         {
             float s = sunShadow(world, n, max(ndl, 0.0));
             s = s < 0.0 ? 1.0 : mix(1.0, s, S_SHADOW_STRENGTH);

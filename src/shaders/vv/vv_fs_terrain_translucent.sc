@@ -62,7 +62,7 @@ vec4 traceReflection(vec3 origin, vec3 dir, float jitter, float quality)
     float t = 0.15 + jitter * stepLen;
     float prevT = 0.0;
     float hitT = -1.0;
-    for (int i = 0; i < 30; i++)
+    VV_LOOP for (int i = 0; i < 30; i++)
     {
         if (float(i) >= maxSteps)
             break;
@@ -89,12 +89,12 @@ vec4 traceReflection(vec3 origin, vec3 dir, float jitter, float quality)
     }
 
     vec4 result = vec4(0.0, 0.0, 0.0, 0.0);
-    if (hitT > 0.0)
+    VV_BRANCH if (hitT > 0.0)
     {
         // Refine between the last two samples.
         float lo = prevT;
         float hi = hitT;
-        for (int k = 0; k < 5; k++)
+        VV_LOOP for (int k = 0; k < 5; k++)
         {
             float mid = (lo + hi) * 0.5;
             vec4 c2 = mul(u_mvp, vec4(origin + dir * mid, 1.0));
@@ -147,7 +147,7 @@ void main()
     float isWater = up * blueish;
 
     vec4 outColor;
-    if (isWater < 0.5)
+    VV_BRANCH if (isWater < 0.5)
     {
         // Glass, ice, slime...: lit like any block, blended normally.
         vec3 lit = vvLit(tex.rgb, v_tint, n, v_rel, v_light, 0.0, 0.0, v_sunLight, v_skyLight);
@@ -188,17 +188,17 @@ void main()
         vec3 reflection = vec3(0.0, 0.0, 0.0);
         vec4 hit = vec4(0.0, 0.0, 0.0, 0.0);
         float reflQuality = floor(S_REFLECTIONS + 0.5);
-        if (fromAbove && fresnel > 0.05)
+        VV_BRANCH if (fromAbove && fresnel > 0.05)
         {
-            if (scene && reflQuality > 0.5)
+            VV_BRANCH if (scene && reflQuality > 0.5)
             {
                 float jitter = hash12(gl_FragCoord.xy + vec2(fract(t * 7.0) * 61.0, 0.0));
                 hit = traceReflection(world, R, jitter, reflQuality);
             }
-            if (hit.a < 0.999)
+            VV_BRANCH if (hit.a < 0.999)
             {
                 vec3 skyR = vvSky(R, false) * skyVisible;
-                if (S_REFLECTED_CLOUDS > 0.5)
+                VV_BRANCH if (S_REFLECTED_CLOUDS > 0.5)
                 {
                     vec4 cloud = vvClouds(world, R, 4000.0);
                     skyR = skyR * cloud.a + cloud.rgb * skyVisible;
@@ -231,7 +231,7 @@ void main()
         vec3 lightLevel = v_skyLight * skyl * skyl + v_sunLight * 0.25 * skyl;
         vec3 scatterColor = vec3(0.02, 0.17, 0.24) * clamp(luma(lightLevel) * 1.6, 0.03, 1.2);
         scatterColor = vvTonemap(scatterColor * 3.0) * 0.8;
-        if (scene)
+        VV_BRANCH if (scene)
         {
             vec2 uv = gl_FragCoord.xy * u_viewTexel.xy;
             float surfaceDist = length(v_rel);

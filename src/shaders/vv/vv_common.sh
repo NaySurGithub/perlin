@@ -5,6 +5,17 @@
 // under its non-commercial licence: see LICENSE-VisualVibrance.txt next to this file.
 #include <bgfx_shader.sh>
 
+// Keep loops and big branches as real flow control on Direct3D. Without these FXC tries to unroll
+// every loop and flatten every branch, and on the water shader (reflection march inside a branch,
+// cloud march inside that) it runs out of stack and crashes.
+#if BGFX_SHADER_LANGUAGE_HLSL
+#define VV_LOOP [loop]
+#define VV_BRANCH [branch]
+#else
+#define VV_LOOP
+#define VV_BRANCH
+#endif
+
 SAMPLER2DARRAY(s_atlas, 0);
 SAMPLER2D(s_lightmap, 1);
 SAMPLER2D(s_clouds, 3);
@@ -82,7 +93,7 @@ uniform mat4 u_invMvp;
 float dynamicLevel(vec3 rel)
 {
     float best = 0.0;
-    for (int i = 0; i < 8; i++)
+    VV_LOOP for (int i = 0; i < 8; i++)
     {
         float on = step(float(i) + 0.5, u_dynParams.y);
         best = max(best, on * (u_dynLights[i].w - length(rel - u_dynLights[i].xyz)));
@@ -346,14 +357,14 @@ vec3 vvSky(vec3 dir, bool bodies)
         c += vvSunGlow(dir);
     // The discs and their halos only matter within ~35 degrees of the sun or moon.
     float toSun = dot(dir, u_sunDir.xyz);
-    if (bodies && u_skyParams.z > 0.5 && toSun > 0.82)
+    VV_BRANCH if (bodies && u_skyParams.z > 0.5 && toSun > 0.82)
     {
         float sunCover;
         vec3 sunBloom = vvSunDisc(dir, sunCover);
         vec3 sunCol = mix(vec3(1.0, 0.88, 0.70), vec3(1.0, 1.0, 0.98), smoothstep(0.0, 0.3, u_sunDir.y));
         c = mix(c, sunCol, sunCover) + sunBloom;
     }
-    if (bodies && u_skyParams.z > 0.5 && toSun < -0.82 && u_sunDir.y < 0.25)
+    VV_BRANCH if (bodies && u_skyParams.z > 0.5 && toSun < -0.82 && u_sunDir.y < 0.25)
     {
         float moonCover;
         vec3 moonCol;
@@ -474,7 +485,7 @@ vec4 vvClouds(vec3 origin, vec3 dir, float maxDistance)
     float inCloud = 0.0;
     float first = -1.0;
     float maxSteps = 16.0 + 14.0 * floor(S_CLOUD_QUALITY + 0.5); // 16 / 30 / 44 cells
-    for (int i = 0; i < 44; i++)
+    VV_LOOP for (int i = 0; i < 44; i++)
     {
         if (float(i) >= maxSteps)
             break;
