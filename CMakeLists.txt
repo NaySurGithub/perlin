@@ -165,6 +165,13 @@ else()
     set(WASMEDGE_FORCE_DISABLE_LTO OFF CACHE BOOL "" FORCE)
 endif()
 set(WASMEDGE_PLUGIN_WASI_LOGGING OFF CACHE BOOL "" FORCE)
+# With Ninja, WasmEdge's Helper.cmake puts its targets in a "link" job pool (to cap parallel LTO
+# links) but only declares the pool in its own directory scope, where Ninja never sees it
+# ("unknown pool name 'link'"). Declare it globally.
+get_property(perlin_job_pools GLOBAL PROPERTY JOB_POOLS)
+if(NOT perlin_job_pools MATCHES "(^|;)link=")
+    set_property(GLOBAL APPEND PROPERTY JOB_POOLS link=2)
+endif()
 add_subdirectory("${wasmedge_SOURCE_DIR}" "${CMAKE_BINARY_DIR}/_deps/wasmedge-build" EXCLUDE_FROM_ALL)
 # WasmEdge builds its own code with -Werror (/WX on MSVC); a newer compiler's new warning must not
 # break Perlin's build, so turn warnings off for its targets.
