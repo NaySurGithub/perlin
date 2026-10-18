@@ -25,8 +25,10 @@ vec4 sampleBlock(vec2 uv, float layer)
     vec2 texelScreenSize = sqrt(du * du + dv * dv);
     float lod = atlasLod(du, dv, pixelSize);
     vec4 nearest = sampleNearest(uv, layer, pixelSize, du, dv, texelScreenSize, lod);
-    if (u_textureInfo.y < 0.5)
-        return nearest;
+    vec4 result = nearest;
+    // Single return (FXC warns about early returns when optimisation is off).
+    if (u_textureInfo.y >= 0.5)
+    {
 
     float maxTexelSize = max(texelScreenSize.x, texelScreenSize.y);
     float minPixelSize = min(pixelSize.x, pixelSize.y);
@@ -54,5 +56,7 @@ vec4 sampleBlock(vec2 uv, float layer)
         high += texture2DArrayLod(s_atlas, coord, mipHigh);
     }
     vec4 rgss = mix(low * 0.25, high * 0.25, mipBlend);
-    return mix(nearest, rgss, blendFactor);
+    result = mix(nearest, rgss, blendFactor);
+    }
+    return result;
 }

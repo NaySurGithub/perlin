@@ -93,7 +93,7 @@ uniform mat4 u_invMvp;
 float dynamicLevel(vec3 rel)
 {
     float best = 0.0;
-    for (int i = 0; i < 8; i++)
+    VV_LOOP for (int i = 0; i < 8; i++)
     {
         float on = step(float(i) + 0.5, u_dynParams.y);
         best = max(best, on * (u_dynLights[i].w - length(rel - u_dynLights[i].xyz)));
@@ -103,11 +103,9 @@ float dynamicLevel(vec3 rel)
 
 float linearFog(float distance, float fogStart, float fogEnd)
 {
-    if (distance <= fogStart)
-        return 0.0;
-    if (distance >= fogEnd)
-        return 1.0;
-    return (distance - fogStart) / max(fogEnd - fogStart, 0.00001);
+    // Single return (FXC warns about early returns when optimisation is off).
+    float f = clamp((distance - fogStart) / max(fogEnd - fogStart, 0.00001), 0.0, 1.0);
+    return distance >= fogEnd ? 1.0 : f;
 }
 
 float fogAmount(float spherical, float cylindrical)
@@ -357,14 +355,14 @@ vec3 vvSky(vec3 dir, bool bodies)
         c += vvSunGlow(dir);
     // The discs and their halos only matter within ~35 degrees of the sun or moon.
     float toSun = dot(dir, u_sunDir.xyz);
-    if (bodies && u_skyParams.z > 0.5 && toSun > 0.82)
+    VV_BRANCH if (bodies && u_skyParams.z > 0.5 && toSun > 0.82)
     {
         float sunCover;
         vec3 sunBloom = vvSunDisc(dir, sunCover);
         vec3 sunCol = mix(vec3(1.0, 0.88, 0.70), vec3(1.0, 1.0, 0.98), smoothstep(0.0, 0.3, u_sunDir.y));
         c = mix(c, sunCol, sunCover) + sunBloom;
     }
-    if (bodies && u_skyParams.z > 0.5 && toSun < -0.82 && u_sunDir.y < 0.25)
+    VV_BRANCH if (bodies && u_skyParams.z > 0.5 && toSun < -0.82 && u_sunDir.y < 0.25)
     {
         float moonCover;
         vec3 moonCol;
@@ -470,8 +468,8 @@ vec4 vvClouds(vec3 origin, vec3 dir, float maxDistance)
     float tB = (top - origin.y) / dy;
     float t0 = max(min(tA, tB), 0.0);
     float t1 = min(max(tA, tB), maxDistance);
-    t1 = min(t1, t0 + 240.0 + 180.0 * floor(S_CLOUD_QUALITY + 0.5)); // 240 / 420 / 600 blocks
-    if (u_skyParams.z > 0.5 && S_CLOUDS > 0.5 && t1 > t0)
+    t1 = min(t1, t0 + 600.0);
+    VV_BRANCH if (u_skyParams.z > 0.5 && S_CLOUDS > 0.5 && t1 > t0)
     {
 
     // Walk the 12x12 cells the ray crosses inside the slab, adding up the length spent in clouds.
@@ -484,10 +482,11 @@ vec4 vvClouds(vec3 origin, vec3 dir, float maxDistance)
     float t = t0;
     float inCloud = 0.0;
     float first = -1.0;
-    // Fixed loop count (FXC crashes on loops that also stop after a setting-dependent count);
-    // cloud quality shortens the marched distance instead, so lower settings exit sooner.
-    for (int i = 0; i < 40; i++)
+    float maxSteps = 16.0 + 14.0 * floor(S_CLOUD_QUALITY + 0.5); // 16 / 30 / 44 cells
+    VV_LOOP for (int i = 0; i < 44; i++)
     {
+        if (float(i) >= maxSteps)
+            break;
         float segEnd = min(t0 + min(next.x, next.y), t1);
         float filled = cloudCell(cell);
         inCloud += filled * (segEnd - t);
@@ -560,14 +559,21 @@ vec3 vvTonemap(vec3 hdr)
     vec3 x = max(hdr, vec3_splat(0.0)) * 0.70 * exp2(S_EXPOSURE);
     // All three curves blended by the setting: a few ALU ops, but no branches (this is inlined in
     // many places, and branches here made the water shader too complex for FXC).
-    vec3 aces = clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0);
+    // Cinematic: ACES applied to luminance so saturated colours keep their hue (per-channel ACES
+    // turns sunlit grass and leaves yellow-lime), easing into per-channel ACES in the brightest
+    // parts so highlights still roll off to white.
+    vec3 acesChannels = clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0);
+    float lx = luma(x);
+    float acesLum = clamp((lx * (2.51 * lx + 0.03)) / (lx * (2.43 * lx + 0.59) + 0.14), 0.0, 1.0);
+    vec3 acesHue = x * (acesLum / max(lx, 1.0e-5));
+    vec3 aces = clamp(mix(acesHue, acesChannels, clamp((acesLum - 0.6) / 0.4, 0.0, 1.0)), 0.0, 1.0);
     vec3 filmic = clamp(vvHable(x * 2.2) / 0.725, 0.0, 1.0); // 0.725 = vvHable(11.2), the white point
     float l = luma(x);
     vec3 soft = clamp(x * (1.0 + l / 4.0) / (1.0 + l) * 1.25, 0.0, 1.0);
     float mode = floor(S_TONEMAP + 0.5);
     vec3 mapped = mode < 0.5 ? aces : (mode < 1.5 ? filmic : soft);
     vec3 display = vvPow(mapped, vec3_splat(1.0 / 2.2));
-    display = saturateColor(display, 1.10 * S_SATURATION);
+    display = saturateColor(display, 1.05 * S_SATURATION);
     display = (display - 0.5) * S_CONTRAST + 0.5;
     display *= vec3(1.0 + 0.06 * S_TEMPERATURE, 1.0, 1.0 - 0.08 * S_TEMPERATURE);
     return clamp(display, 0.0, 1.0);

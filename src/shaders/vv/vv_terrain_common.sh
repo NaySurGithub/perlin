@@ -1,6 +1,8 @@
 #include "vv_common.sh"
 #include "vv_block_sampling.sh"
 
+#define VV_TERRAIN_EXPOSURE 0.6
+
 SAMPLER2D(s_shadow, 2);
 
 vec3 faceNormal(vec3 rel)
@@ -20,7 +22,7 @@ float vanillaShade(vec3 n)
     return clamp(up * 1.0 + down * 0.5 + z * 0.8 + x * 0.6, 0.4, 1.0);
 }
 
-// Soft sun shadow: 12 taps on a per-texel rotated spiral (1 for Hard), spread by the filter setting,
+// Soft sun shadow: taps on a per-texel rotated spiral (1 / 6 / 12 / 20 by the filter setting),
 // about a tenth of a block wide whatever the shadow map resolution (higher quality settings just
 // get sharper, cleaner edges). Returns -1 when there is no shadow map.
 float sunShadow(vec3 world, vec3 n, float ndl)
@@ -32,31 +34,23 @@ float sunShadow(vec3 world, vec3 n, float ndl)
     float inside = smoothstep(0.0, 0.06, min(edge.x, edge.y));
     float bias = (texelWorld * 1.8 * (1.0 - ndl) + 0.05) / u_shadowInfo.z;
     float lit = 1.0;
-    if (inside > 0.0 && u_shadowInfo.w > 0.5)
+    VV_BRANCH if (inside > 0.0 && u_shadowInfo.w > 0.5)
     {
-        // Hard: one sample. Soft / Softer / Softest: the same fixed 12-tap loop (as FXC compiles
-        // reliably), spread wider each step.
+        // Hard / Soft / Softer / Softest = 1 / 6 / 12 / 20 taps on a per-texel rotated spiral.
         float filterLevel = floor(S_SHADOW_FILTER + 0.5);
-        float spread = filterLevel < 1.5 ? 1.0 : (filterLevel < 2.5 ? 1.5 : 2.2);
-        float radius = clamp(0.07 * S_SHADOW_SOFTNESS * spread / max(texelWorld, 1.0e-4), 1.0, 6.0) * u_shadowInfo.x;
+        float taps = filterLevel < 0.5 ? 1.0 : (filterLevel < 1.5 ? 6.0 : (filterLevel < 2.5 ? 12.0 : 20.0));
+        float radius = clamp(0.07 * S_SHADOW_SOFTNESS / max(texelWorld, 1.0e-4), 1.0, 5.0) * u_shadowInfo.x * step(1.5, taps);
         float spin = hash12(floor(p.xz * 16.0) + floor(p.y * 16.0) * 7.31) * 6.2831853; // per world texel
         float sum = 0.0;
-        float taps = 1.0;
-        if (filterLevel < 0.5)
+        VV_LOOP for (int i = 0; i < 20; i++)
         {
-            sum = (sc.z - bias <= texture2DLod(s_shadow, sc.xy, 0.0).r) ? 1.0 : 0.0;
-        }
-        else
-        {
-            taps = 12.0;
-            for (int i = 0; i < 12; i++)
-            {
-                float fi = float(i) + 0.5;
-                float r = sqrt(fi / 12.0);
-                float a = fi * 2.3999632 + spin;
-                vec2 uv = sc.xy + vec2(cos(a), sin(a)) * r * radius;
-                sum += (sc.z - bias <= texture2DLod(s_shadow, uv, 0.0).r) ? 1.0 : 0.0;
-            }
+            if (float(i) >= taps)
+                break;
+            float fi = float(i) + 0.5;
+            float r = sqrt(fi / taps);
+            float a = fi * 2.3999632 + spin;
+            vec2 uv = sc.xy + vec2(cos(a), sin(a)) * r * radius;
+            sum += (sc.z - bias <= texture2DLod(s_shadow, uv, 0.0).r) ? 1.0 : 0.0;
         }
         lit = mix(1.0, sum / taps, inside);
     }
@@ -72,8 +66,10 @@ vec3 vvLit(vec3 texRgb, vec3 tint, vec3 n, vec3 rel, vec2 light, float backlight
     float shade = vanillaShade(n);
     vec3 tintAo = clamp(tint / max(shade, 0.01), 0.0, 1.5);
     vec3 albedo = vvPow(clamp(texRgb * tintAo, 0.0, 1.0), vec3_splat(2.2));
+    // Overworld and Nether/End are both worked out and one is picked at the end, with no branch:
+    // an if/else here (together with the cloud shadow) makes FXC, the Direct3D 11 compiler,
+    // crash on the translucent shader. The Nether path is a single lightmap read.
     vec3 hdr;
-    if (u_skyParams.z > 0.5)
     {
         vec3 viewDir = normalize(rel);
         vec3 world = rel + u_camera.xyz;
@@ -86,7 +82,7 @@ vec3 vvLit(vec3 texRgb, vec3 tint, vec3 n, vec3 rel, vec2 light, float backlight
         // Direct light: soft shadow map, cloud shadows, foliage transmission. Skipped outright
         // underground, facing away, or with the light below the horizon.
         float direct = 0.0;
-        if ((ndl > 0.0 || backlight > 0.0) && sky > 0.0 && sunUp > 0.0)
+        VV_BRANCH if ((ndl > 0.0 || backlight > 0.0) && sky > 0.0 && sunUp > 0.0)
         {
             float s = sunShadow(world, n, max(ndl, 0.0));
             s = s < 0.0 ? 1.0 : mix(1.0, s, S_SHADOW_STRENGTH);
@@ -115,15 +111,14 @@ vec3 vvLit(vec3 texRgb, vec3 tint, vec3 n, vec3 rel, vec2 light, float backlight
         vec3 block = vec3(1.0, 0.70, 0.42) * (bl * bl * bl * 2.2 + bl * bl * 0.25) * S_BLOCK;
 
         vec3 minLight = vec3(0.008, 0.010, 0.016) * (1.0 - skyl * skyl);
-        hdr = albedo * (sunLight * direct + ambient + block + minLight) + albedo * emissive * 3.0;
+        // VV_TERRAIN_EXPOSURE keeps sunlit blocks near their texture colours (at 1.0 noon terrain was
+        // ~1.7x brighter than the texture and grass turned lime); torches and emissive blocks keep their full strength.
+        hdr = albedo * ((sunLight * direct + ambient) * VV_TERRAIN_EXPOSURE + block + minLight) + albedo * emissive * 3.0;
     }
-    else
-    {
-        // Nether / End: the vanilla lightmap, gently warmed, through the same tonemap.
-        vec3 lm = vvPow(sampleLightmap(light * 240.0), vec3_splat(2.2));
-        hdr = albedo * (lm * 2.4 + vec3(0.05, 0.035, 0.04) * S_AMBIENT) * mix(shade, 1.0, 0.4) + albedo * emissive * 2.5;
-    }
-    return vvTonemap(hdr);
+    // Nether / End: the vanilla lightmap, gently warmed, through the same tonemap.
+    vec3 lm = vvPow(sampleLightmap(light * 240.0), vec3_splat(2.2));
+    vec3 hdrOther = albedo * (lm * 2.4 + vec3(0.05, 0.035, 0.04) * S_AMBIENT) * mix(shade, 1.0, 0.4) + albedo * emissive * 2.5;
+    return vvTonemap(u_skyParams.z > 0.5 ? hdr : hdrOther);
 }
 
 // Aerial haze (worked out per vertex: rgb colour, a amount), then the vanilla distance and
