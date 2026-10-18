@@ -174,12 +174,18 @@ if(NOT perlin_job_pools MATCHES "(^|;)link=")
 endif()
 add_subdirectory("${wasmedge_SOURCE_DIR}" "${CMAKE_BINARY_DIR}/_deps/wasmedge-build" EXCLUDE_FROM_ALL)
 # WasmEdge builds its own code with -Werror (/WX on MSVC); a newer compiler's new warning must not
-# break Perlin's build, so turn warnings off for its targets.
+# break Perlin's build, so turn warnings off for its targets. Its top-level CMakeLists.txt also
+# forces the DLL C runtime (/MD) in its scope, which can't be linked with Perlin's static runtime
+# (/MT: lld-link "mismatch detected for 'RuntimeLibrary'"), so its targets (and the fmt/spdlog it
+# fetches) get Perlin's runtime back.
 function(perlin_quiet_targets dir)
     get_property(targets DIRECTORY "${dir}" PROPERTY BUILDSYSTEM_TARGETS)
     foreach(t IN LISTS targets)
         get_target_property(type ${t} TYPE)
         if(NOT type STREQUAL "INTERFACE_LIBRARY" AND NOT type STREQUAL "UTILITY")
+            if(WIN32)
+                set_property(TARGET ${t} PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+            endif()
             if(MSVC)
                 target_compile_options(${t} PRIVATE /WX- /W0)
             else()
