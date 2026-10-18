@@ -220,6 +220,18 @@ CPMAddPackage(
     GIT_SHALLOW YES
 )
 
+# shaderc runs Microsoft's FXC (D3DCompile) in-process for the Direct3D shaders. FXC recurses
+# deeply on bigger shaders (the Vibrant Visuals water shader) and overflowed the 1 MB default
+# Windows stack (exit code 0xC00000FD). Give shaderc a 64 MB stack reserve; it is only address
+# space, committed as it is actually used.
+if(WIN32 AND TARGET shaderc)
+    if(MSVC)
+        target_link_options(shaderc PRIVATE "/STACK:67108864")
+    else()
+        target_link_options(shaderc PRIVATE "-Wl,--stack,67108864")
+    endif()
+endif()
+
 set(PERLIN_SHADER_DIR "${CMAKE_CURRENT_SOURCE_DIR}/src/shaders")
 set(PERLIN_SHADER_OUT "${CMAKE_CURRENT_BINARY_DIR}/shaders")
 file(MAKE_DIRECTORY "${PERLIN_SHADER_OUT}")
