@@ -93,7 +93,7 @@ uniform mat4 u_invMvp;
 float dynamicLevel(vec3 rel)
 {
     float best = 0.0;
-    VV_LOOP for (int i = 0; i < 8; i++)
+    for (int i = 0; i < 8; i++)
     {
         float on = step(float(i) + 0.5, u_dynParams.y);
         best = max(best, on * (u_dynLights[i].w - length(rel - u_dynLights[i].xyz)));
@@ -470,7 +470,7 @@ vec4 vvClouds(vec3 origin, vec3 dir, float maxDistance)
     float tB = (top - origin.y) / dy;
     float t0 = max(min(tA, tB), 0.0);
     float t1 = min(max(tA, tB), maxDistance);
-    t1 = min(t1, t0 + 600.0);
+    t1 = min(t1, t0 + 240.0 + 180.0 * floor(S_CLOUD_QUALITY + 0.5)); // 240 / 420 / 600 blocks
     if (u_skyParams.z > 0.5 && S_CLOUDS > 0.5 && t1 > t0)
     {
 
@@ -484,11 +484,10 @@ vec4 vvClouds(vec3 origin, vec3 dir, float maxDistance)
     float t = t0;
     float inCloud = 0.0;
     float first = -1.0;
-    float maxSteps = 16.0 + 14.0 * floor(S_CLOUD_QUALITY + 0.5); // 16 / 30 / 44 cells
-    VV_LOOP for (int i = 0; i < 44; i++)
+    // Fixed loop count (FXC crashes on loops that also stop after a setting-dependent count);
+    // cloud quality shortens the marched distance instead, so lower settings exit sooner.
+    for (int i = 0; i < 40; i++)
     {
-        if (float(i) >= maxSteps)
-            break;
         float segEnd = min(t0 + min(next.x, next.y), t1);
         float filled = cloudCell(cell);
         inCloud += filled * (segEnd - t);
