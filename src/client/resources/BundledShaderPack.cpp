@@ -103,8 +103,11 @@ namespace perlin {
             for (const bgfx::EmbeddedShader* it = kBundled; it->name != nullptr; ++it) {
                 if (name != it->name)
                     continue;
+                // A real bgfx shader starts with a "VSH"/"FSH"/"CSH" header; a 1-byte placeholder means
+                // the build could not compile this shader for that backend (see PerlinDxbcFallback in
+                // CMakeLists.txt), and the built-in shader is used instead.
                 for (const auto& d : it->data)
-                    if (d.type == want && d.data != nullptr && d.size > 0)
+                    if (d.type == want && d.data != nullptr && d.size >= 16 && d.data[1] == 'S' && d.data[2] == 'H')
                         return &d;
             }
             return nullptr;

@@ -314,8 +314,8 @@ perlin_compile_shaders(VERTEX varying_entity_shadow.def.sc vs_entity_shadow)
 perlin_compile_shaders(FRAGMENT varying_entity_shadow.def.sc fs_entity_shadow)
 perlin_compile_shaders(VERTEX vv/vv_varying_terrain.def.sc vv/vv_vs_terrain)
 if("s_5_0" IN_LIST PERLIN_SHADER_PROFILES)
-    # The Vibrant Visuals water shader crashed FXC (stack overflow inside D3DCompile) at -O 3, so
-    # its Direct3D version is compiled at -O 1 (the GPU driver optimises it again anyway).
+    # The Vibrant Visuals water shader crashes FXC (stack overflow inside D3DCompile), so its
+    # Direct3D version goes through a fallback script (below) that can never fail the build.
     perlin_compile_shaders(FRAGMENT vv/vv_varying_terrain.def.sc vv/vv_fs_terrain_solid vv/vv_fs_terrain_cutout)
     set(_perlin_profiles_all ${PERLIN_SHADER_PROFILES})
     set(PERLIN_SHADER_PROFILES ${PERLIN_SHADER_PROFILES})
@@ -324,18 +324,73 @@ if("s_5_0" IN_LIST PERLIN_SHADER_PROFILES)
     set(PERLIN_SHADER_PROFILES ${_perlin_profiles_all})
     set(_perlin_water_src "${PERLIN_SHADER_DIR}/vv/vv_fs_terrain_translucent.sc")
     set(_perlin_water_out "${PERLIN_SHADER_OUT}/dxbc/vv_fs_terrain_translucent.sc.bin.h")
-    set(_perlin_water_inc)
-    foreach(dir IN LISTS PERLIN_SHADER_INCLUDES)
-        list(APPEND _perlin_water_inc -i "${dir}")
-    endforeach()
+    string(REPLACE ";" "|" _perlin_water_inc "${PERLIN_SHADER_INCLUDES}")
+    # Each variant is <optimisation>:<defines>. "O3" = -O 3, "noopt" = no -O (FXC skips its
+    # optimiser). Full shader first, then features compiled out. If every variant fails, a 1-byte
+    # placeholder is written and the game uses the built-in water on Direct3D 11 only.
+    set(_perlin_water_variants
+        "O3:full|noopt:full|O3:VV_DX_NO_SSR|O3:VV_DX_NO_CLOUDS|O3:VV_DX_NO_SSR,VV_DX_NO_CLOUDS|O3:VV_DX_NO_SSR,VV_DX_NO_CLOUDS,VV_DX_NO_LIT,VV_DX_NO_SKY|noopt:VV_DX_NO_SSR,VV_DX_NO_CLOUDS,VV_DX_NO_LIT,VV_DX_NO_SKY")
+    set(_perlin_water_script "${CMAKE_CURRENT_BINARY_DIR}/PerlinDxbcFallback.cmake")
+    file(WRITE "${_perlin_water_script}" [==[
+# Written by CMakeLists.txt. Compiles one shader for Direct3D 11 (s_5_0), trying simpler
+# variants if FXC (d3dcompiler_47) crashes, and writing a placeholder if they all fail, so the
+# build always goes through. The log shows which variants failed.
+string(REPLACE "|" ";" include_list "${INCLUDES}")
+set(include_args)
+foreach(dir IN LISTS include_list)
+    list(APPEND include_args -i "${dir}")
+endforeach()
+string(REPLACE "|" ";" variant_list "${VARIANTS}")
+set(failed)
+foreach(variant IN LISTS variant_list)
+    string(REPLACE ":" ";" parts "${variant}")
+    list(GET parts 0 opt)
+    list(GET parts 1 defs)
+    set(extra)
+    if(opt STREQUAL "O3")
+        list(APPEND extra -O 3)
+    endif()
+    if(NOT defs STREQUAL "full")
+        string(REPLACE "," ";" define_list "${defs}")
+        list(APPEND extra --define "${define_list}")
+    endif()
+    file(REMOVE "${OUT}.tmp")
+    execute_process(
+        COMMAND "${SHADERC}" -f "${SRC}" ${include_args} -o "${OUT}.tmp" --bin2c "${NAME}"
+                --platform windows --type fragment --varyingdef "${VARYING}" --profile s_5_0 --Werror ${extra}
+        RESULT_VARIABLE rc
+        OUTPUT_VARIABLE out
+        ERROR_VARIABLE err
+        TIMEOUT 600)
+    if("${rc}" STREQUAL "0" AND EXISTS "${OUT}.tmp")
+        file(RENAME "${OUT}.tmp" "${OUT}")
+        if(failed)
+            message(WARNING "[dxbc] ${NAME}: FXC failed on [${failed}]; using [${variant}]")
+        else()
+            message(STATUS "[dxbc] ${NAME}: compiled [${variant}]")
+        endif()
+        return()
+    endif()
+    string(STRIP "${out} ${err}" log)
+    message(STATUS "[dxbc] ${NAME}: [${variant}] failed (${rc}) ${log}")
+    list(APPEND failed "${variant}")
+endforeach()
+file(REMOVE "${OUT}.tmp")
+file(WRITE "${OUT}" "// FXC could not compile this shader (tried: ${failed}).\n// The game uses its built-in shader for it on Direct3D 11.\nstatic const uint8_t ${NAME}[1] = { 0x00 };\n")
+message(WARNING "[dxbc] ${NAME}: FXC failed on every variant [${failed}]; wrote a placeholder (built-in water on Direct3D 11)")
+]==])
     add_custom_command(
         OUTPUT "${_perlin_water_out}"
         COMMAND ${CMAKE_COMMAND} -E make_directory "${PERLIN_SHADER_OUT}/dxbc"
-        COMMAND bgfx::shaderc -f "${_perlin_water_src}" ${_perlin_water_inc} -o "${_perlin_water_out}"
-                --bin2c vv_fs_terrain_translucent_dxbc --platform windows --type fragment
-                --varyingdef "${PERLIN_SHADER_DIR}/vv/vv_varying_terrain.def.sc" --profile s_5_0 -O 1 --Werror
+        COMMAND ${CMAKE_COMMAND} "-DSHADERC=$<TARGET_FILE:bgfx::shaderc>" "-DSRC=${_perlin_water_src}"
+                "-DOUT=${_perlin_water_out}" "-DVARYING=${PERLIN_SHADER_DIR}/vv/vv_varying_terrain.def.sc"
+                "-DNAME=vv_fs_terrain_translucent_dxbc" "-DINCLUDES=${_perlin_water_inc}"
+                "-DVARIANTS=${_perlin_water_variants}"
+                -P "${_perlin_water_script}"
         MAIN_DEPENDENCY "${_perlin_water_src}"
-        DEPENDS "${PERLIN_SHADER_DIR}/vv/vv_varying_terrain.def.sc"
+        DEPENDS "${PERLIN_SHADER_DIR}/vv/vv_varying_terrain.def.sc" "${PERLIN_SHADER_DIR}/vv/vv_common.sh"
+                "${PERLIN_SHADER_DIR}/vv/vv_terrain_common.sh" bgfx::shaderc
+        VERBATIM
     )
     list(APPEND PERLIN_SHADER_OUTPUTS "${_perlin_water_out}")
 else()

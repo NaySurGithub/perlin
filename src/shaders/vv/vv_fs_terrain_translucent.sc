@@ -2,6 +2,10 @@ $input v_color0, v_texcoord0, v_fog, v_layer, v_visibility, v_rel, v_light, v_ti
 
 #include "vv_terrain_common.sh"
 
+// VV_DX_NO_LIT / VV_DX_NO_SKY / VV_DX_NO_CLOUDS / VV_DX_NO_SSR: simpler fallbacks the Windows
+// build can use if FXC (the Direct3D 11 compiler) crashes on the full shader; see
+// PerlinDxbcFallback in CMakeLists.txt. Other backends always get the full shader.
+
 // Opaque scene behind the translucent pass (copied by the renderer when the pack sets sceneCopy).
 SAMPLER2D(s_sceneColor, 4);
 SAMPLER2D(s_sceneDepth, 5);
@@ -146,7 +150,12 @@ void main()
     if (isWater < 0.5)
     {
         // Glass, ice, slime...: lit like any block, blended normally.
+#ifndef VV_DX_NO_LIT
         vec3 lit = vvLit(tex.rgb, v_tint, n, v_rel, v_light, 0.0, 0.0, v_sunLight, v_skyLight);
+#else
+        vec3 litAlbedo = vvPow(clamp(tex.rgb * v_tint, 0.0, 1.0), vec3_splat(2.2));
+        vec3 lit = vvTonemap(litAlbedo * (v_sunLight * 0.5 * v_light.y + v_skyLight * v_light.y * v_light.y + vec3_splat(0.02)));
+#endif
         outColor = vec4(vvFog(lit, v_fog, v_haze), color.a);
     }
     else
@@ -181,12 +190,19 @@ void main()
 
         // Reflection: the sky (and clouds, if enabled), then screen-space on top where the fresnel
         // makes it visible. Same structure as the version FXC compiles.
+#ifndef VV_DX_NO_SKY
         vec3 reflection = vvSky(R, false) * skyVisible;
+#else
+        vec3 reflection = vvTonemap(v_skyLight * 1.6) * skyVisible;
+#endif
+#ifndef VV_DX_NO_CLOUDS
         if (S_REFLECTED_CLOUDS > 0.5)
         {
             vec4 cloud = vvClouds(world, R, 4000.0);
             reflection = reflection * cloud.a + cloud.rgb * skyVisible;
         }
+#endif
+#ifndef VV_DX_NO_SSR
         float reflQuality = floor(S_REFLECTIONS + 0.5);
         if (scene && reflQuality > 0.5 && fromAbove && fresnel > 0.05)
         {
@@ -195,6 +211,7 @@ void main()
             vec4 hit = traceReflection(world, R, jitter, stepScale);
             reflection = mix(reflection, hit.rgb, hit.a);
         }
+#endif
         // Sun/moon glint: a soft core plus gently twinkling sparkles. The glint uses the smooth
         // wave normal, a broad highlight and soft compression so it never turns into harsh,
         // grainy pixels.
