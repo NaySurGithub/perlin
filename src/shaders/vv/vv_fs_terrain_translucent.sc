@@ -12,7 +12,7 @@ SAMPLER2D(s_sceneDepth, 5);
 
 // Water extinction per block (red goes first: turquoise shallows, deep blue depths), divided by
 // the Water Clarity setting.
-#define WATER_EXTINCTION (vec3(0.78, 0.13, 0.19) / max(S_WATER_CLARITY, 0.1))
+#define WATER_EXTINCTION (vec3(0.46, 0.075, 0.11) / max(S_WATER_CLARITY, 0.1))
 // The default (ocean) biome water colour; other biomes shift the water colour and extinction
 // relative to it (swamps murky green, warm oceans light teal...).
 #define WATER_DEFAULT_TINT vec3(0.247, 0.463, 0.894)
@@ -147,11 +147,11 @@ void main()
     if (color.a < 0.1)
         discard;
 
-    // Water: upward facing water tiles (or blue-tinted ones when the tile is unknown).
+    // Water: still and flowing water tiles facing any way (pools, the sides of water and falling
+    // water all get the same water); when the tiles are unknown, upward blue-tinted faces.
     float up = smoothstep(0.85, 0.98, abs(n.y));
     float tileWater = max(isTile(v_layer, u_tiles.x), isTile(v_layer, u_tiles.z));
-    float blueish = u_tiles.x >= 0.0 ? tileWater : step(v_tint.r * 1.25, v_tint.b);
-    float isWater = up * blueish;
+    float isWater = u_tiles.x >= 0.0 ? tileWater : up * step(v_tint.r * 1.25, v_tint.b);
 
     vec4 outColor;
     VV_BRANCH if (isWater < 0.5)
@@ -170,25 +170,30 @@ void main()
         vec3 world = v_rel + u_camera.xyz;
         float dist = v_fog.x;
         float t = u_time.x;
-        bool fromAbove = viewDir.y < 0.0;
+        // Surface frame: N faces the camera; T/B span the surface. Pools use the horizontal plane;
+        // falling water and water sides use the face plane, with the ripples flowing downward.
+        bool top = abs(n.y) > 0.7;
+        float envUnderwater = step(u_fogEnv.y, 96.0) * step(u_fogEnv.y, u_fogEnv.w * 0.6);
+        vec3 N = dot(n, viewDir) > 0.0 ? -n : n;
+        vec3 T = top ? vec3(1.0, 0.0, 0.0) : normalize(cross(vec3(0.0, 1.0, 0.0), N));
+        vec3 B = top ? vec3(0.0, 0.0, 1.0) : vec3(0.0, 1.0, 0.0);
+        bool fromAbove = top ? viewDir.y < 0.0 : envUnderwater < 0.5;
+        vec2 pw = top ? world.xz : vec2(dot(world, T) * 1.6, world.y * 0.45 + t * 1.8);
 
-        // Smooth wave normal; calmer with distance (which also keeps far water from aliasing).
-        vec2 pw = world.xz;
+        // Gentle, smooth wave normal; calmer with distance (which also keeps far water from aliasing).
         float e = 0.08;
         float h0 = waveHeight(pw, t);
         float hx = waveHeight(pw + vec2(e, 0.0), t);
         float hz = waveHeight(pw + vec2(0.0, e), t);
-        float strength = 0.35 * S_WATER_WAVES * (1.0 - smoothstep(16.0, 96.0, dist) * 0.85);
-        vec3 wn = normalize(vec3((h0 - hx) / e * strength, 1.0, (h0 - hz) / e * strength));
-        if (!fromAbove)
-            wn = -wn;
+        float strength = (top ? 0.14 : 0.3) * S_WATER_WAVES * (1.0 - smoothstep(16.0, 96.0, dist) * 0.85);
+        vec3 wn = normalize(N + (T * (h0 - hx) + B * (h0 - hz)) / e * strength);
 
         float cosV = clamp(dot(-viewDir, wn), 0.0, 1.0);
         float fresnel = clamp(0.04 + 0.96 * vvPow(1.0 - cosV, 4.5), 0.0, 1.0);
         // Reflections use a calmer normal so mirrored terrain stays readable, like Vibrant Visuals.
-        vec3 calmN = normalize(mix(vec3(0.0, fromAbove ? 1.0 : -1.0, 0.0), wn, 0.3));
+        vec3 calmN = normalize(mix(N, wn, 0.2));
         vec3 R = reflect(viewDir, calmN);
-        if (fromAbove)
+        if (top && fromAbove)
             R.y = max(abs(R.y), 0.002);
 
         float skyl = v_light.y;
@@ -201,7 +206,7 @@ void main()
         vec4 hit = vec4(0.0, 0.0, 0.0, 0.0);
 #ifndef VV_DX_NO_SSR
         float reflQuality = floor(S_REFLECTIONS + 0.5);
-        VV_BRANCH if (wantReflection && scene && reflQuality > 0.5)
+        VV_BRANCH if (wantReflection && top && scene && reflQuality > 0.5)
         {
             float jitter = hash12(gl_FragCoord.xy + vec2(fract(t * 7.0) * 61.0, 0.0));
             hit = traceReflection(world, R, jitter, reflQuality);
@@ -229,7 +234,7 @@ void main()
         // wave normal, a broad highlight and soft compression so it never turns into harsh,
         // grainy pixels.
         vec3 L = lightDirection();
-        vec3 Rg = reflect(viewDir, normalize(mix(vec3(0.0, 1.0, 0.0), wn, 0.7)));
+        vec3 Rg = reflect(viewDir, normalize(mix(N, wn, 0.7)));
         float rl = max(dot(Rg, L), 0.0);
         float core = vvPow(rl, 260.0) * 2.4 + vvPow(rl, 36.0) * 0.22;
         vec2 cell = floor(world.xz * 8.0);
@@ -256,7 +261,8 @@ void main()
         {
             vec2 uv = gl_FragCoord.xy * u_viewTexel.xy;
             float surfaceDist = length(v_rel);
-            vec2 offset = wn.xz * 0.045 * S_REFRACTION * clamp(6.0 / max(surfaceDist, 1.0), 0.15, 1.0);
+            vec3 bend = wn - N;
+            vec2 offset = vec2(dot(bend, T), top ? dot(bend, B) : -bend.y) * 0.018 * S_REFRACTION * clamp(6.0 / max(surfaceDist, 1.0), 0.15, 1.0);
             vec2 uvR = clamp(uv + offset, vec2_splat(0.001), vec2_splat(0.999));
             float dR = sceneDepthAt(uvR);
             vec3 behindR = sceneWorld(uvR, dR);
@@ -269,6 +275,8 @@ void main()
             float thickness = dR >= 0.99999 ? 48.0 : max(length(behindR - u_camera.xyz) - surfaceDist, 0.0);
             if (!fromAbove)
                 thickness = min(thickness, 6.0) * 0.4;
+            if (!top)
+                thickness = min(thickness, 1.5); // falling water is a thin sheet
             vec3 trans = exp(-biomeExtinction * thickness);
             vec3 below = sceneColorAt(uvR) * vec3(0.82, 1.0, 0.94);
             body = below * trans + scatterColor * (vec3_splat(1.0) - trans);
