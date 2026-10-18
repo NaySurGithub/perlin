@@ -313,7 +313,34 @@ perlin_compile_shaders(FRAGMENT varying_post.def.sc fs_post fs_bloom)
 perlin_compile_shaders(VERTEX varying_entity_shadow.def.sc vs_entity_shadow)
 perlin_compile_shaders(FRAGMENT varying_entity_shadow.def.sc fs_entity_shadow)
 perlin_compile_shaders(VERTEX vv/vv_varying_terrain.def.sc vv/vv_vs_terrain)
-perlin_compile_shaders(FRAGMENT vv/vv_varying_terrain.def.sc vv/vv_fs_terrain_solid vv/vv_fs_terrain_cutout vv/vv_fs_terrain_translucent)
+if("s_5_0" IN_LIST PERLIN_SHADER_PROFILES)
+    # The Vibrant Visuals water shader crashed FXC (stack overflow inside D3DCompile) at -O 3, so
+    # its Direct3D version is compiled at -O 1 (the GPU driver optimises it again anyway).
+    perlin_compile_shaders(FRAGMENT vv/vv_varying_terrain.def.sc vv/vv_fs_terrain_solid vv/vv_fs_terrain_cutout)
+    set(_perlin_profiles_all ${PERLIN_SHADER_PROFILES})
+    set(PERLIN_SHADER_PROFILES ${PERLIN_SHADER_PROFILES})
+    list(REMOVE_ITEM PERLIN_SHADER_PROFILES s_5_0)
+    perlin_compile_shaders(FRAGMENT vv/vv_varying_terrain.def.sc vv/vv_fs_terrain_translucent)
+    set(PERLIN_SHADER_PROFILES ${_perlin_profiles_all})
+    set(_perlin_water_src "${PERLIN_SHADER_DIR}/vv/vv_fs_terrain_translucent.sc")
+    set(_perlin_water_out "${PERLIN_SHADER_OUT}/dxbc/vv_fs_terrain_translucent.sc.bin.h")
+    set(_perlin_water_inc)
+    foreach(dir IN LISTS PERLIN_SHADER_INCLUDES)
+        list(APPEND _perlin_water_inc -i "${dir}")
+    endforeach()
+    add_custom_command(
+        OUTPUT "${_perlin_water_out}"
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${PERLIN_SHADER_OUT}/dxbc"
+        COMMAND bgfx::shaderc -f "${_perlin_water_src}" ${_perlin_water_inc} -o "${_perlin_water_out}"
+                --bin2c vv_fs_terrain_translucent_dxbc --platform windows --type fragment
+                --varyingdef "${PERLIN_SHADER_DIR}/vv/vv_varying_terrain.def.sc" --profile s_5_0 -O 1 --Werror
+        MAIN_DEPENDENCY "${_perlin_water_src}"
+        DEPENDS "${PERLIN_SHADER_DIR}/vv/vv_varying_terrain.def.sc"
+    )
+    list(APPEND PERLIN_SHADER_OUTPUTS "${_perlin_water_out}")
+else()
+    perlin_compile_shaders(FRAGMENT vv/vv_varying_terrain.def.sc vv/vv_fs_terrain_solid vv/vv_fs_terrain_cutout vv/vv_fs_terrain_translucent)
+endif()
 perlin_compile_shaders(VERTEX vv/vv_varying_sky.def.sc vv/vv_vs_sky)
 perlin_compile_shaders(FRAGMENT vv/vv_varying_sky.def.sc vv/vv_fs_sky)
 perlin_compile_shaders(VERTEX vv/vv_varying_star.def.sc vv/vv_vs_star)

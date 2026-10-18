@@ -51,21 +51,17 @@ float edgeFade(vec2 uv)
 
 // Screen-space reflection: march the reflected ray through the opaque depth copy.
 // Returns rgb and a confidence in a (0 = missed).
-// Quality 1 / 2 / 3 = 12 / 20 / 30 steps, with longer, faster growing steps at low quality so
-// the reach stays about the same.
-vec4 traceReflection(vec3 origin, vec3 dir, float jitter, float quality)
+// stepScale: 1 at high quality; longer steps at lower quality leave the screen (and stop) sooner.
+// The loop itself is kept exactly as it was: FXC crashed on a variable step count here.
+vec4 traceReflection(vec3 origin, vec3 dir, float jitter, float stepScale)
 {
     vec3 cam = u_camera.xyz;
-    float maxSteps = quality < 1.5 ? 12.0 : (quality < 2.5 ? 20.0 : 30.0);
-    float stepLen = quality < 1.5 ? 0.6 : (quality < 2.5 ? 0.45 : 0.35);
-    float growth = quality < 1.5 ? 1.32 : (quality < 2.5 ? 1.25 : 1.2);
+    float stepLen = 0.35 * stepScale;
     float t = 0.15 + jitter * stepLen;
     float prevT = 0.0;
     float hitT = -1.0;
-    VV_LOOP for (int i = 0; i < 30; i++)
+    for (int i = 0; i < 30; i++)
     {
-        if (float(i) >= maxSteps)
-            break;
         vec3 q = origin + dir * t;
         vec4 clip = mul(u_mvp, vec4(q, 1.0));
         vec3 ndc = clip.xyz / max(clip.w, 0.05);
@@ -85,16 +81,16 @@ vec4 traceReflection(vec3 origin, vec3 dir, float jitter, float quality)
         }
         prevT = t;
         t += stepLen;
-        stepLen *= growth;
+        stepLen *= 1.2;
     }
 
     vec4 result = vec4(0.0, 0.0, 0.0, 0.0);
-    VV_BRANCH if (hitT > 0.0)
+    if (hitT > 0.0)
     {
         // Refine between the last two samples.
         float lo = prevT;
         float hi = hitT;
-        VV_LOOP for (int k = 0; k < 5; k++)
+        for (int k = 0; k < 5; k++)
         {
             float mid = (lo + hi) * 0.5;
             vec4 c2 = mul(u_mvp, vec4(origin + dir * mid, 1.0));
@@ -147,7 +143,7 @@ void main()
     float isWater = up * blueish;
 
     vec4 outColor;
-    VV_BRANCH if (isWater < 0.5)
+    if (isWater < 0.5)
     {
         // Glass, ice, slime...: lit like any block, blended normally.
         vec3 lit = vvLit(tex.rgb, v_tint, n, v_rel, v_light, 0.0, 0.0, v_sunLight, v_skyLight);
@@ -183,28 +179,22 @@ void main()
         float skyVisible = mix(0.15, 1.0, smoothstep(0.35, 0.9, skyl));
         bool scene = u_sceneInfo.x > 0.5;
 
-        // Reflection: screen-space first (skipped where the fresnel makes it invisible), then the
-        // analytic sky and clouds only where the trace did not fully cover the pixel.
-        // Kept as flat, separate branches (not nested): FXC overflows its stack on deeply nested
-        // loops and branches in this shader.
-        bool wantReflection = fromAbove && fresnel > 0.05;
-        vec4 hit = vec4(0.0, 0.0, 0.0, 0.0);
+        // Reflection: the sky (and clouds, if enabled), then screen-space on top where the fresnel
+        // makes it visible. Same structure as the version FXC compiles.
+        vec3 reflection = vvSky(R, false) * skyVisible;
+        if (S_REFLECTED_CLOUDS > 0.5)
+        {
+            vec4 cloud = vvClouds(world, R, 4000.0);
+            reflection = reflection * cloud.a + cloud.rgb * skyVisible;
+        }
         float reflQuality = floor(S_REFLECTIONS + 0.5);
-        VV_BRANCH if (wantReflection && scene && reflQuality > 0.5)
+        if (scene && reflQuality > 0.5 && fromAbove && fresnel > 0.05)
         {
             float jitter = hash12(gl_FragCoord.xy + vec2(fract(t * 7.0) * 61.0, 0.0));
-            hit = traceReflection(world, R, jitter, reflQuality);
+            float stepScale = reflQuality < 1.5 ? 1.7 : (reflQuality < 2.5 ? 1.3 : 1.0);
+            vec4 hit = traceReflection(world, R, jitter, stepScale);
+            reflection = mix(reflection, hit.rgb, hit.a);
         }
-        bool needSky = wantReflection && hit.a < 0.999;
-        vec3 reflection = vec3(0.0, 0.0, 0.0);
-        VV_BRANCH if (needSky)
-            reflection = vvSky(R, false) * skyVisible;
-        vec4 cloud = vec4(0.0, 0.0, 0.0, 1.0);
-        VV_BRANCH if (needSky && S_REFLECTED_CLOUDS > 0.5)
-            cloud = vvClouds(world, R, 4000.0);
-        reflection = reflection * cloud.a + cloud.rgb * skyVisible;
-        reflection = mix(reflection, hit.rgb, hit.a);
-
         // Sun/moon glint: a soft core plus gently twinkling sparkles. The glint uses the smooth
         // wave normal, a broad highlight and soft compression so it never turns into harsh,
         // grainy pixels.
@@ -228,7 +218,7 @@ void main()
         vec3 lightLevel = v_skyLight * skyl * skyl + v_sunLight * 0.25 * skyl;
         vec3 scatterColor = vec3(0.02, 0.17, 0.24) * clamp(luma(lightLevel) * 1.6, 0.03, 1.2);
         scatterColor = vvTonemap(scatterColor * 3.0) * 0.8;
-        VV_BRANCH if (scene)
+        if (scene)
         {
             vec2 uv = gl_FragCoord.xy * u_viewTexel.xy;
             float surfaceDist = length(v_rel);
