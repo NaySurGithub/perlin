@@ -7,6 +7,9 @@ vec3 v_rel        : TEXCOORD4 = vec3(0.0, 0.0, 0.0);
 vec2 v_light      : TEXCOORD5 = vec2(0.0, 0.0);
 vec3 v_tint       : TEXCOORD6 = vec3(1.0, 1.0, 1.0);
 float v_foliage   : TEXCOORD7 = 0.0;
+vec3 v_sunLight   : NORMAL    = vec3(0.0, 0.0, 0.0);
+vec3 v_skyLight   : TANGENT   = vec3(0.0, 0.0, 0.0);
+vec4 v_haze       : BITANGENT = vec4(0.0, 0.0, 0.0, 0.0);
 
 vec3 a_position  : POSITION;
 vec4 a_color0    : COLOR0;

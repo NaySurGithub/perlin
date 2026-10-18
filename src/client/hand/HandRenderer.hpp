@@ -62,6 +62,8 @@ namespace perlin {
         void DrawWorldItem(const ui::HudItem& item, const glm::dvec3& feet, float age, uint64_t seed, const glm::vec3& light);
 
         void DrawHeldItem(const ui::HudItem& item, const glm::mat4& arm, bool left, const glm::vec3& light);
+        // Held items drawn on world entities only cast shader-pack shadows (yourself in first person).
+        void SetWorldShadowOnly(bool on) { worldShadowOnly = on; }
 
         bool ThirdPersonAttachable(const std::string& item, bool left, bool firstPerson, bool sneaking, bool using_, float usedTicks,
                                    bool blocking, double life, const std::string& mainItem, const std::string& offItem,
@@ -153,5 +155,6 @@ namespace perlin {
         std::vector<uint32_t> pendingMeshes;
         std::vector<uint32_t> worldMeshes;
         bool worldPass = false;
+        bool worldShadowOnly = false;
     };
 }

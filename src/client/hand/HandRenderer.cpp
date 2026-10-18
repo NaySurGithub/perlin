@@ -695,6 +695,7 @@ namespace perlin {
         draw.alphaCutoff = alphaCutoff;
         draw.blend = 1;
         draw.depth = true;
+        draw.shadowOnly = worldPass && worldShadowOnly;
         renderer->UiSubmit(worldPass ? UiLayer::World : UiLayer::Hand, draw);
         if (glint) {
             if (glintTexture == 0)

@@ -1,5 +1,5 @@
 $input a_position, a_color0, a_texcoord0, a_texcoord1
-$output v_color0, v_texcoord0, v_fog, v_layer, v_visibility, v_rel, v_light, v_tint, v_foliage
+$output v_color0, v_texcoord0, v_fog, v_layer, v_visibility, v_rel, v_light, v_tint, v_foliage, v_sunLight, v_skyLight, v_haze
 
 #include "vv_common.sh"
 
@@ -27,6 +27,11 @@ void main()
     v_color0 = vec4(a_color0.rgb, a_color0.a);
     v_texcoord0 = a_texcoord0;
     v_layer = layer;
+
+    // Per-frame lighting and the haze colour, once per vertex instead of once per pixel.
+    v_sunLight = vvMainLight();
+    v_skyLight = vvSkyAmbient();
+    v_haze = vvHaze(relative);
 
     float dist = length(relative);
     v_visibility = mix(1.0, u_chunk.x, clamp((dist - 16.0) / 16.0, 0.0, 1.0));

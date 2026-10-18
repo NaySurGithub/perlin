@@ -1,4 +1,4 @@
-$input v_color0, v_texcoord0, v_fog, v_layer, v_visibility, v_rel, v_light, v_tint, v_foliage
+$input v_color0, v_texcoord0, v_fog, v_layer, v_visibility, v_rel, v_light, v_tint, v_foliage, v_sunLight, v_skyLight, v_haze
 
 #include "vv_terrain_common.sh"
 
@@ -6,8 +6,9 @@ $input v_color0, v_texcoord0, v_fog, v_layer, v_visibility, v_rel, v_light, v_ti
 SAMPLER2D(s_sceneColor, 4);
 SAMPLER2D(s_sceneDepth, 5);
 
-// Water extinction per block (red goes first: turquoise shallows, deep blue depths).
-#define WATER_EXTINCTION vec3(0.78, 0.13, 0.19)
+// Water extinction per block (red goes first: turquoise shallows, deep blue depths), divided by
+// the Water Clarity setting.
+#define WATER_EXTINCTION (vec3(0.78, 0.13, 0.19) / max(S_WATER_CLARITY, 0.1))
 
 vec2 ndcToUv(vec2 ndc)
 {
@@ -50,15 +51,21 @@ float edgeFade(vec2 uv)
 
 // Screen-space reflection: march the reflected ray through the opaque depth copy.
 // Returns rgb and a confidence in a (0 = missed).
-vec4 traceReflection(vec3 origin, vec3 dir, float jitter)
+// Quality 1 / 2 / 3 = 12 / 20 / 30 steps, with longer, faster growing steps at low quality so
+// the reach stays about the same.
+vec4 traceReflection(vec3 origin, vec3 dir, float jitter, float quality)
 {
     vec3 cam = u_camera.xyz;
-    float stepLen = 0.35;
+    float maxSteps = quality < 1.5 ? 12.0 : (quality < 2.5 ? 20.0 : 30.0);
+    float stepLen = quality < 1.5 ? 0.6 : (quality < 2.5 ? 0.45 : 0.35);
+    float growth = quality < 1.5 ? 1.32 : (quality < 2.5 ? 1.25 : 1.2);
     float t = 0.15 + jitter * stepLen;
     float prevT = 0.0;
     float hitT = -1.0;
     for (int i = 0; i < 30; i++)
     {
+        if (float(i) >= maxSteps)
+            break;
         vec3 q = origin + dir * t;
         vec4 clip = mul(u_mvp, vec4(q, 1.0));
         vec3 ndc = clip.xyz / max(clip.w, 0.05);
@@ -78,7 +85,7 @@ vec4 traceReflection(vec3 origin, vec3 dir, float jitter)
         }
         prevT = t;
         t += stepLen;
-        stepLen *= 1.2;
+        stepLen *= growth;
     }
 
     vec4 result = vec4(0.0, 0.0, 0.0, 0.0);
@@ -114,13 +121,12 @@ vec4 traceReflection(vec3 origin, vec3 dir, float jitter)
     return result;
 }
 
-// Pixel-snapped wave height (16 steps per block, like the rest of the textures).
+// Wave height: two travelling sines and one noise octave (cheap, smooth, no tiling).
 float waveHeight(vec2 p, float t)
 {
-    float h = valueNoise(p * 0.55 + vec2(t * 0.30, t * 0.18)) * 1.0;
-    h += valueNoise(p * 1.35 - vec2(t * 0.42, -t * 0.36)) * 0.5;
-    h += valueNoise(p * 3.1 + vec2(-t * 0.75, t * 0.62)) * 0.25;
-    h += sin(dot(p, vec2(0.62, 0.78)) * 1.7 + t * 1.4) * 0.12;
+    float h = sin(dot(p, vec2(0.62, 0.78)) * 1.7 + t * 1.4) * 0.30;
+    h += sin(dot(p, vec2(-0.83, 0.41)) * 2.6 - t * 1.9) * 0.18;
+    h += valueNoise(p * 1.1 + vec2(t * 0.35, t * 0.22)) * 0.6;
     return h;
 }
 
@@ -144,8 +150,8 @@ void main()
     if (isWater < 0.5)
     {
         // Glass, ice, slime...: lit like any block, blended normally.
-        vec3 lit = vvLit(tex.rgb, v_tint, n, v_rel, v_light, 0.0, 0.0);
-        outColor = vec4(vvFog(lit, v_fog, viewDir), color.a);
+        vec3 lit = vvLit(tex.rgb, v_tint, n, v_rel, v_light, 0.0, 0.0, v_sunLight, v_skyLight);
+        outColor = vec4(vvFog(lit, v_fog, v_haze), color.a);
     }
     else
     {
@@ -154,21 +160,21 @@ void main()
         float t = u_time.x;
         bool fromAbove = viewDir.y < 0.0;
 
-        // Wave normal from a pixel-snapped height field; calmer with distance.
-        vec2 pw = (floor(world.xz * 16.0) + 0.5) / 16.0;
-        float e = 1.0 / 16.0;
+        // Smooth wave normal; calmer with distance (which also keeps far water from aliasing).
+        vec2 pw = world.xz;
+        float e = 0.08;
         float h0 = waveHeight(pw, t);
         float hx = waveHeight(pw + vec2(e, 0.0), t);
         float hz = waveHeight(pw + vec2(0.0, e), t);
-        float strength = 0.9 * (1.0 - smoothstep(20.0, 110.0, dist) * 0.8);
-        vec3 wn = normalize(vec3((h0 - hx) * strength * 3.0, 1.0, (h0 - hz) * strength * 3.0));
+        float strength = 0.35 * S_WATER_WAVES * (1.0 - smoothstep(16.0, 96.0, dist) * 0.85);
+        vec3 wn = normalize(vec3((h0 - hx) / e * strength, 1.0, (h0 - hz) / e * strength));
         if (!fromAbove)
             wn = -wn;
 
         float cosV = clamp(dot(-viewDir, wn), 0.0, 1.0);
         float fresnel = clamp(0.04 + 0.96 * vvPow(1.0 - cosV, 4.5), 0.0, 1.0);
         // Reflections use a calmer normal so mirrored terrain stays readable, like Vibrant Visuals.
-        vec3 calmN = normalize(mix(vec3(0.0, fromAbove ? 1.0 : -1.0, 0.0), wn, 0.4));
+        vec3 calmN = normalize(mix(vec3(0.0, fromAbove ? 1.0 : -1.0, 0.0), wn, 0.3));
         vec3 R = reflect(viewDir, calmN);
         if (fromAbove)
             R.y = max(abs(R.y), 0.002);
@@ -176,39 +182,60 @@ void main()
         float skyl = v_light.y;
         float skyVisible = mix(0.15, 1.0, smoothstep(0.35, 0.9, skyl));
         bool scene = u_sceneInfo.x > 0.5;
-        float jitter = hash12(gl_FragCoord.xy + vec2(fract(t * 7.0) * 61.0, 0.0));
 
-        // Reflection: screen-space first, then the sky.
-        vec3 reflection = vvSky(R, false) * skyVisible;
-        vec4 cloud = vvClouds(world, R, 4000.0);
-        reflection = reflection * cloud.a + cloud.rgb * skyVisible;
-        if (scene && S_REFLECTIONS > 0.5 && fromAbove)
+        // Reflection: screen-space first (skipped where the fresnel makes it invisible), then the
+        // analytic sky and clouds only where the trace did not fully cover the pixel.
+        vec3 reflection = vec3(0.0, 0.0, 0.0);
+        vec4 hit = vec4(0.0, 0.0, 0.0, 0.0);
+        float reflQuality = floor(S_REFLECTIONS + 0.5);
+        if (fromAbove && fresnel > 0.05)
         {
-            vec4 hit = traceReflection(world, R, jitter);
+            if (scene && reflQuality > 0.5)
+            {
+                float jitter = hash12(gl_FragCoord.xy + vec2(fract(t * 7.0) * 61.0, 0.0));
+                hit = traceReflection(world, R, jitter, reflQuality);
+            }
+            if (hit.a < 0.999)
+            {
+                vec3 skyR = vvSky(R, false) * skyVisible;
+                if (S_REFLECTED_CLOUDS > 0.5)
+                {
+                    vec4 cloud = vvClouds(world, R, 4000.0);
+                    skyR = skyR * cloud.a + cloud.rgb * skyVisible;
+                }
+                reflection = skyR;
+            }
             reflection = mix(reflection, hit.rgb, hit.a);
         }
 
-        // Sun/moon glint: a sharp core plus pixel-sized sparkles where waves catch the light.
+        // Sun/moon glint: a soft core plus gently twinkling sparkles. The glint uses the smooth
+        // wave normal, a broad highlight and soft compression so it never turns into harsh,
+        // grainy pixels.
         vec3 L = lightDirection();
-        float rl = max(dot(R, L), 0.0);
-        vec2 sparkleCell = floor(world.xz * 16.0);
-        float sparkle = step(0.93, hash12(sparkleCell + floor(t * 6.0) * 17.31)) * vvPow(rl, 14.0);
-        float core = vvPow(rl, 900.0) * 18.0 + vvPow(rl, 90.0) * 0.6;
+        vec3 Rg = reflect(viewDir, normalize(mix(vec3(0.0, 1.0, 0.0), wn, 0.7)));
+        float rl = max(dot(Rg, L), 0.0);
+        float core = vvPow(rl, 260.0) * 2.4 + vvPow(rl, 36.0) * 0.22;
+        vec2 cell = floor(world.xz * 8.0);
+        float seed = hash12(cell);
+        float twinkle = 0.5 + 0.5 * sin(t * (1.5 + seed * 2.0) + seed * 6.2831853);
+        twinkle = smoothstep(0.7, 1.0, twinkle) * step(0.88, hash12(cell + 19.7));
+        float sparkle = twinkle * vvPow(rl, 24.0) * S_WATER_SPARKLE * (1.0 - smoothstep(12.0, 48.0, dist));
         vec3 lightCol = u_sunDir.y >= 0.0 ? vec3(1.0, 0.95, 0.85) : vec3(0.70, 0.78, 1.0) * 0.5;
         float glintVisible = u_time.y * smoothstep(0.4, 0.8, skyl) * smoothstep(0.0, 0.06, L.y) * (fromAbove ? 1.0 : 0.0);
-        vec3 glint = lightCol * (core + sparkle * 2.2) * glintVisible;
+        float g = (core + sparkle * 0.5) * glintVisible;
+        vec3 glint = lightCol * (1.0 - exp(-g * 1.5)) * 1.15;
 
         // What is under the surface.
         vec3 body;
         float alpha;
-        vec3 lightLevel = (vvSkyAmbient() * skyl * skyl + vvMainLight() * 0.25 * skyl);
+        vec3 lightLevel = v_skyLight * skyl * skyl + v_sunLight * 0.25 * skyl;
         vec3 scatterColor = vec3(0.02, 0.17, 0.24) * clamp(luma(lightLevel) * 1.6, 0.03, 1.2);
         scatterColor = vvTonemap(scatterColor * 3.0) * 0.8;
         if (scene)
         {
             vec2 uv = gl_FragCoord.xy * u_viewTexel.xy;
             float surfaceDist = length(v_rel);
-            vec2 offset = wn.xz * 0.045 * clamp(6.0 / max(surfaceDist, 1.0), 0.15, 1.0);
+            vec2 offset = wn.xz * 0.045 * S_REFRACTION * clamp(6.0 / max(surfaceDist, 1.0), 0.15, 1.0);
             vec2 uvR = clamp(uv + offset, vec2_splat(0.001), vec2_splat(0.999));
             float dR = sceneDepthAt(uvR);
             vec3 behindR = sceneWorld(uvR, dR);
@@ -229,7 +256,7 @@ void main()
         else
         {
             // No scene copy: vanilla-style water colour, blended.
-            vec3 base = vvLit(tex.rgb, v_tint, n, v_rel, v_light, 0.0, 0.0);
+            vec3 base = vvLit(tex.rgb, v_tint, n, v_rel, v_light, 0.0, 0.0, v_sunLight, v_skyLight);
             body = mix(saturateColor(base, 0.9), scatterColor, 0.45);
             alpha = clamp(mix(color.a, 1.0, fresnel * 0.7), 0.0, 1.0);
         }
@@ -240,10 +267,12 @@ void main()
             fresnel = cosV < 0.66 ? 1.0 : fresnel * 0.3;
             reflection = scatterColor;
         }
+        else if (fresnel <= 0.05)
+            fresnel = 0.0;
 
         vec3 result = mix(body, reflection, fresnel) + glint;
         alpha = clamp(alpha + luma(glint), 0.0, 1.0);
-        result = vvFog(result, v_fog, viewDir);
+        result = vvFog(result, v_fog, v_haze);
         outColor = vec4(result, alpha);
     }
     gl_FragColor = outColor;

@@ -740,7 +740,7 @@ if(PERLIN_BUILD_TESTS AND NOT EMSCRIPTEN AND NOT ANDROID)
     target_link_libraries(clientassets_selftest PRIVATE miniz)
     target_compile_features(clientassets_selftest PRIVATE cxx_std_23)
 
-    add_executable(shaderpack_selftest tests/shaderpack_selftest.cpp src/client/resources/ShaderPack.cpp tests/BundledShaderStub.cpp)
+    add_executable(shaderpack_selftest tests/shaderpack_selftest.cpp src/client/resources/ShaderPack.cpp src/client/ui/Json.cpp tests/BundledShaderStub.cpp)
     target_include_directories(shaderpack_selftest PRIVATE src)
     target_link_libraries(shaderpack_selftest PRIVATE miniz)
     target_compile_features(shaderpack_selftest PRIVATE cxx_std_23)

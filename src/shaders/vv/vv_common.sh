@@ -33,7 +33,7 @@ uniform vec4 u_tiles;
 uniform vec4 u_skyParams;
 uniform vec4 u_dynParams;
 uniform vec4 u_dynLights[8];
-uniform vec4 u_packSettings[4];
+uniform vec4 u_packSettings[8];
 uniform mat4 u_shadowMtx;
 // x: 1/size, y: box width (blocks), z: box depth (blocks), w: shadows active
 uniform vec4 u_shadowInfo;
@@ -43,6 +43,7 @@ uniform vec4 u_cloudMap;
 uniform vec4 u_sceneInfo;
 uniform mat4 u_invMvp;
 
+// Pack settings, by "slot" in the pack's settings list (BundledShaderPack.cpp).
 #define S_EXPOSURE u_packSettings[0].x
 #define S_SATURATION u_packSettings[0].y
 #define S_CONTRAST u_packSettings[0].z
@@ -51,12 +52,32 @@ uniform mat4 u_invMvp;
 #define S_BLOCK u_packSettings[1].y
 #define S_FOLIAGE u_packSettings[1].z
 #define S_FOG u_packSettings[1].w
-#define S_REFLECTIONS u_packSettings[2].x
+#define S_REFLECTIONS u_packSettings[2].x      // 0 off (sky only), 1 low, 2 medium, 3 high
 #define S_CLOUDS u_packSettings[2].y
 #define S_CLOUD_SHADOWS u_packSettings[2].z
 #define S_WAVING u_packSettings[2].w
+#define S_SHADOW_FILTER u_packSettings[3].x    // 0 hard, 1 soft, 2 softer, 3 softest
+#define S_SHADOW_SOFTNESS u_packSettings[3].y
+#define S_SHADOW_STRENGTH u_packSettings[3].z
+#define S_CLOUD_QUALITY u_packSettings[3].w    // 0 low, 1 medium, 2 high
+#define S_CLOUD_OPACITY u_packSettings[4].x
+#define S_CLOUD_THICKNESS u_packSettings[4].y
+#define S_CLOUD_GLOW u_packSettings[4].z
+#define S_WATER_CLARITY u_packSettings[4].w
+#define S_WATER_WAVES u_packSettings[5].x
+#define S_WATER_SPARKLE u_packSettings[5].y
+#define S_REFRACTION u_packSettings[5].z
+#define S_REFLECTED_CLOUDS u_packSettings[5].w
+#define S_SUN_SIZE u_packSettings[6].x
+#define S_SUN_GLOW u_packSettings[6].y
+#define S_STARS u_packSettings[6].z
+#define S_NIGHT u_packSettings[6].w
+#define S_TONEMAP u_packSettings[7].x          // 0 ACES, 1 filmic, 2 soft
+#define S_TEMPERATURE u_packSettings[7].y
+#define S_SKY_BRIGHTNESS u_packSettings[7].z
+#define S_CLOUD_SHADOW_STRENGTH u_packSettings[7].w
 
-#define CLOUD_THICKNESS 6.0
+#define CLOUD_THICKNESS max(S_CLOUD_THICKNESS, 1.0)
 
 float dynamicLevel(vec3 rel)
 {
@@ -165,7 +186,7 @@ vec3 vvSunRadiance()
 
 vec3 vvMoonRadiance()
 {
-    return vec3(0.42, 0.55, 0.95) * 0.30 * smoothstep(-0.02, 0.12, -u_sunDir.y) * S_SUN;
+    return vec3(0.42, 0.55, 0.95) * 0.30 * smoothstep(-0.02, 0.12, -u_sunDir.y) * S_SUN * S_NIGHT;
 }
 
 // Direct light from whichever body casts the shadows, dimmed by rain.
@@ -181,7 +202,7 @@ vec3 vvSkyAmbient()
     float day = vvDay();
     vec3 noon = vec3(0.42, 0.57, 0.90) * 1.45;
     vec3 dusk = vec3(0.56, 0.44, 0.66) * 0.6;
-    vec3 night = vec3(0.045, 0.06, 0.12);
+    vec3 night = vec3(0.045, 0.06, 0.12) * S_NIGHT;
     vec3 c = mix(night, noon, day);
     c = mix(c, dusk, vvTwilight() * 0.75);
     c = mix(c, vec3_splat(luma(c)) * vec3(0.88, 0.92, 1.0) * 0.8, vvRain());
@@ -257,6 +278,7 @@ vec3 vvSkyGradient(vec3 dir)
 
     // Meet the renderer's clear colour (vanilla fog) right at the horizon so the sky dome's rim and
     // the far terrain fog line up with it.
+    c = min(c * S_SKY_BRIGHTNESS, vec3_splat(1.0));
     c = mix(u_fogColor.rgb, c, smoothstep(0.0, 0.07, dir.y));
     return c;
 }
@@ -270,11 +292,11 @@ vec3 vvSunDisc(vec3 dir, out float coverage)
     vec3 axisA = normalize(cross(s, vec3(0.0, 0.0, 1.0)));
     vec2 q = vec2(dot(dir, axisA), dir.z) / max(facing, 1.0e-4);
     float d = max(abs(q.x), abs(q.y));
-    float size = 0.052;
+    float size = 0.052 * S_SUN_SIZE;
     float visible = u_time.y * smoothstep(-0.05, 0.02, s.y) * step(0.0, facing);
     vec3 warm = mix(vec3(1.0, 0.80, 0.55), vec3(1.0, 0.98, 0.92), smoothstep(0.0, 0.35, s.y));
     coverage = (1.0 - smoothstep(size - 0.002, size + 0.002, d)) * visible;
-    float bloom = exp(-max(d - size, 0.0) * 30.0) * 0.38 + exp(-max(d - size, 0.0) * 7.0) * 0.10;
+    float bloom = (exp(-max(d - size, 0.0) * 30.0) * 0.38 + exp(-max(d - size, 0.0) * 7.0) * 0.10) * S_SUN_GLOW;
     return warm * bloom * visible * (1.0 - coverage);
 }
 
@@ -287,7 +309,7 @@ vec3 vvMoonDisc(vec3 dir, out float coverage, out vec3 moonColor)
     float facing = dot(dir, m);
     vec3 axisA = normalize(cross(m, vec3(0.0, 0.0, 1.0)));
     vec2 q = vec2(dot(dir, axisA), dir.z) / max(facing, 1.0e-4);
-    float size = 0.034;
+    float size = 0.034 * S_SUN_SIZE;
     float d = max(abs(q.x), abs(q.y));
     float visible = u_time.y * (1.0 - smoothstep(0.0, 0.25, u_sunDir.y)) * step(0.0, facing);
     if (d < size && facing > 0.0)
@@ -313,7 +335,7 @@ vec3 vvSunGlow(vec3 dir)
     float toSun = max(dot(dir, u_sunDir.xyz), 0.0);
     float glow = vvPow(toSun, 6.0) * 0.16 + vvPow(toSun, 40.0) * 0.32;
     vec3 col = mix(vec3(1.0, 0.70, 0.45), vec3(1.0, 0.96, 0.88), smoothstep(0.0, 0.4, u_sunDir.y));
-    return col * glow * u_time.y * smoothstep(-0.12, 0.05, u_sunDir.y) * (1.0 - vvRain());
+    return col * glow * u_time.y * smoothstep(-0.12, 0.05, u_sunDir.y) * (1.0 - vvRain()) * S_SUN_GLOW;
 }
 
 // The full sky as seen along a direction (gradient, glow, sun and moon), display space.
@@ -322,18 +344,37 @@ vec3 vvSky(vec3 dir, bool bodies)
     vec3 c = vvSkyGradient(dir);
     if (u_skyParams.z > 0.5)
         c += vvSunGlow(dir);
-    if (bodies && u_skyParams.z > 0.5)
+    // The discs and their halos only matter within ~35 degrees of the sun or moon.
+    float toSun = dot(dir, u_sunDir.xyz);
+    if (bodies && u_skyParams.z > 0.5 && toSun > 0.82)
     {
         float sunCover;
         vec3 sunBloom = vvSunDisc(dir, sunCover);
         vec3 sunCol = mix(vec3(1.0, 0.88, 0.70), vec3(1.0, 1.0, 0.98), smoothstep(0.0, 0.3, u_sunDir.y));
         c = mix(c, sunCol, sunCover) + sunBloom;
+    }
+    if (bodies && u_skyParams.z > 0.5 && toSun < -0.82 && u_sunDir.y < 0.25)
+    {
         float moonCover;
         vec3 moonCol;
         vec3 moonHalo = vvMoonDisc(dir, moonCover, moonCol);
         c = mix(c, moonCol, moonCover) + moonHalo;
     }
     return c;
+}
+
+// Aerial haze towards the sky's horizon colour for a point at rel from the camera: rgb colour,
+// a amount. Used per vertex (terrain and water), so the sky maths stays out of the pixel shaders.
+vec4 vvHaze(vec3 rel)
+{
+    float dist = length(rel);
+    vec3 viewDir = rel / max(dist, 1.0e-4);
+    float envUnderwater = step(u_fogEnv.y, 96.0) * step(u_fogEnv.y, u_fogEnv.w * 0.6);
+    vec3 hazeDir = normalize(vec3(viewDir.x, max(viewDir.y, 0.0) * 0.5 + 0.04, viewDir.z));
+    vec3 hazeColor = vvSkyGradient(hazeDir) + vvSunGlow(hazeDir) * 0.5;
+    float density = 0.0028 * S_FOG * (1.0 + vvRain() * 2.0);
+    float amount = (1.0 - exp(-dist * density)) * 0.62 * step(0.5, u_skyParams.z) * (1.0 - envUnderwater);
+    return vec4(hazeColor, amount);
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -432,8 +473,11 @@ vec4 vvClouds(vec3 origin, vec3 dir, float maxDistance)
     float t = t0;
     float inCloud = 0.0;
     float first = -1.0;
-    for (int i = 0; i < 40; i++)
+    float maxSteps = 16.0 + 14.0 * floor(S_CLOUD_QUALITY + 0.5); // 16 / 30 / 44 cells
+    for (int i = 0; i < 44; i++)
     {
+        if (float(i) >= maxSteps)
+            break;
         float segEnd = min(t0 + min(next.x, next.y), t1);
         float filled = cloudCell(cell);
         inCloud += filled * (segEnd - t);
@@ -458,11 +502,11 @@ vec4 vvClouds(vec3 origin, vec3 dir, float maxDistance)
     float tm = clamp((base + CLOUD_THICKNESS * 0.5 - origin.y) / dy, t0, max(t1, t0));
     float inside;
     float edge = cloudEdgeDistance(cloudCoord(origin.xz + dir.xz * tm), inside);
-    float rim = inside * exp(-edge / 1.4);
-    float halo = (1.0 - inside) * exp(-edge / 1.0);
+    float rim = inside * exp(-edge / 1.4) * S_CLOUD_GLOW;
+    float halo = (1.0 - inside) * exp(-edge / 1.0) * S_CLOUD_GLOW;
 
     float rain = vvRain();
-    float opticalDepth = inCloud * mix(0.24, 0.42, rain) + rim * 1.8;
+    float opticalDepth = (inCloud * mix(0.24, 0.42, rain) + rim * 1.8) * S_CLOUD_OPACITY;
     float trans = exp(-opticalDepth);
 
     vec3 body, rimColor;
@@ -489,18 +533,39 @@ float vvCloudShadow(vec3 world)
     float enabled = step(0.5, u_skyParams.z) * step(0.5, S_CLOUDS) * step(0.5, S_CLOUD_SHADOWS) * step(world.y, mid);
     vec3 p = world + L * ((mid - world.y) / max(L.y, 0.05));
     float c = cloudCell(floor(cloudCoord(p.xz)));
-    return mix(1.0, 0.42, c * smoothstep(0.05, 0.25, L.y) * enabled);
+    return mix(1.0, 0.42, c * smoothstep(0.05, 0.25, L.y) * enabled * S_CLOUD_SHADOW_STRENGTH);
 }
 
 // ---------------------------------------------------------------------------------------------
-// Tonemapping: exposure, ACES (Narkowicz fit), then a little extra saturation and contrast.
+// Tonemapping: exposure, a curve (ACES fit, Hable filmic or a soft Reinhard), then saturation,
+// contrast and colour temperature.
+
+vec3 vvHable(vec3 x)
+{
+    return ((x * (0.15 * x + 0.05) + 0.004) / (x * (0.15 * x + 0.5) + 0.06)) - 0.0667;
+}
 
 vec3 vvTonemap(vec3 hdr)
 {
     vec3 x = max(hdr, vec3_splat(0.0)) * 0.70 * exp2(S_EXPOSURE);
-    vec3 mapped = clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0);
+    // A uniform branch: every pixel takes the same path, so only one curve is ever evaluated.
+    vec3 mapped;
+    if (S_TONEMAP < 0.5)
+    {
+        mapped = clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0);
+    }
+    else if (S_TONEMAP < 1.5)
+    {
+        mapped = clamp(vvHable(x * 2.2) / 0.725, 0.0, 1.0); // 0.725 = vvHable(11.2), the white point
+    }
+    else
+    {
+        float l = luma(x);
+        mapped = clamp(x * (1.0 + l / 4.0) / (1.0 + l) * 1.25, 0.0, 1.0);
+    }
     vec3 display = vvPow(mapped, vec3_splat(1.0 / 2.2));
     display = saturateColor(display, 1.10 * S_SATURATION);
     display = (display - 0.5) * S_CONTRAST + 0.5;
+    display *= vec3(1.0 + 0.06 * S_TEMPERATURE, 1.0, 1.0 - 0.08 * S_TEMPERATURE);
     return clamp(display, 0.0, 1.0);
 }

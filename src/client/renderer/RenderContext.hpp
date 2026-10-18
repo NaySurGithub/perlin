@@ -102,7 +102,6 @@ namespace perlin {
         int shadowQuality = 2;           // 0 off .. 4 ultra (shader packs with shadows)
         int shadowDistance = 0;          // blocks, 0 = the pack's default
         bool shadowEntities = true;      // entities cast pack shadows
-        bool shadowsDynamic = false;     // re-render the shadow map every frame (waving foliage)
         float menuBlur = 0.0f;
         bool crosshair = false;
         int guiScale = 0;
@@ -112,7 +111,7 @@ namespace perlin {
         int dynMode = 0;
         int dynCount = 0;
         float dynLights[8][4] = {};
-        float packSettings[16] = {};
+        float packSettings[32] = {};
         float heldLight = 0.0f;
         float waterTile = -1.0f;
         float lavaTile = -1.0f;

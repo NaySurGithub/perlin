@@ -475,12 +475,22 @@ namespace perlin {
             }
             return gPackSettings;
         }
+        std::vector<ShaderPreset> gPackPresets;
+        std::string gPackPresetsKey = "\x01";
+        const std::vector<ShaderPreset>& CachedPackPresets(const std::string& key) {
+            if (gPackPresetsKey != key) {
+                gPackPresetsKey = key;
+                gPackPresets = ShaderPack::Instance().Presets();
+            }
+            return gPackPresets;
+        }
     }
 
     void Perlin::ApplyShaderPack() {
         ShaderPack& pack = ShaderPack::Instance();
         pack.Close();
         gPackSettingsKey = "\x01";
+        gPackPresetsKey = "\x01";
         if (!options.shaderPack.empty()) {
             std::string error;
             if (!pack.Open(paths::DataDir() + "/shaderpacks", options.shaderPack, error))
@@ -3013,9 +3023,78 @@ namespace perlin {
             } else if (optionsPage == 10) {
                 title = tr("perlin.shaders.settings.title", "Shader Pack Settings");
                 const std::vector<ShaderSetting>& list = CachedPackSettings(options.shaderPack);
-                for (const ShaderSetting& st : list) {
+                const std::vector<ShaderPreset>& presets = CachedPackPresets(options.shaderPack);
+                const auto settingValue = [&](const ShaderSetting& st) {
                     const auto found = options.shaderSettings.find(st.id);
-                    const double value = found == options.shaderSettings.end() ? st.def : std::clamp(found->second, st.min, st.max);
+                    return found == options.shaderSettings.end() ? st.def : std::clamp(found->second, st.min, st.max);
+                };
+                const auto engineValue = [&](const std::string& key) -> double {
+                    if (key == "shadowQuality")
+                        return options.shadowQuality;
+                    if (key == "shadowDistance")
+                        return options.shadowDistance;
+                    if (key == "shadowEntities")
+                        return options.shadowEntities ? 1.0 : 0.0;
+                    if (key == "bloom")
+                        return options.bloom;
+                    return 0.0;
+                };
+                if (!presets.empty()) {
+                    // The preset whose values all match the current ones, or "Custom".
+                    int current = -1;
+                    for (size_t p = 0; p < presets.size() && current < 0; p++) {
+                        bool match = true;
+                        for (const auto& [key, v] : presets[p].engine)
+                            match = match && std::fabs(engineValue(key) - v) < 0.01;
+                        for (const auto& [key, v] : presets[p].settings)
+                            for (const ShaderSetting& st : list)
+                                if (st.id == key)
+                                    match = match && std::fabs(settingValue(st) - std::clamp(v, st.min, st.max)) < 0.01;
+                        if (match)
+                            current = static_cast<int>(p);
+                    }
+                    model.push_back({tr("perlin.shaders.preset", "Preset"), current < 0 ? tr("perlin.shaders.preset.custom", "Custom") : presets[current].name, -1.0f,
+                                     [this, &presets, current](float, bool click) {
+                                         if (!click || presets.empty())
+                                             return;
+                                         const ShaderPreset& p = presets[(current + 1) % static_cast<int>(presets.size())];
+                                         for (const auto& [key, v] : p.settings)
+                                             options.shaderSettings[key] = v;
+                                         for (const auto& [key, v] : p.engine) {
+                                             if (key == "shadowQuality")
+                                                 options.shadowQuality = std::clamp(static_cast<int>(std::lround(v)), 0, 4);
+                                             else if (key == "shadowDistance")
+                                                 options.shadowDistance = std::clamp(static_cast<int>(std::lround(v)), 0, 256);
+                                             else if (key == "shadowEntities")
+                                                 options.shadowEntities = v >= 0.5;
+                                             else if (key == "bloom")
+                                                 options.bloom = std::clamp(static_cast<float>(v), 0.0f, 1.0f);
+                                         }
+                                     }});
+                }
+                if (!list.empty()) {
+                    OptRow h{tr("perlin.shaders.settings.engine", "Rendering"), "", -1.0f, [](float, bool) {}};
+                    h.header = true;
+                    model.push_back(h);
+                    static const char* const kQuality[5] = {"Off", "Low", "Medium", "High", "Ultra"};
+                    slider("Shadow Quality", kQuality[std::clamp(options.shadowQuality, 0, 4)], static_cast<float>(options.shadowQuality) / 4.0f,
+                           [this](float f) { options.shadowQuality = static_cast<int>(std::lround(std::clamp(f, 0.0f, 1.0f) * 4.0f)); });
+                    slider("Shadow Distance", options.shadowDistance == 0 ? std::string("Auto") : std::to_string(options.shadowDistance),
+                           static_cast<float>(options.shadowDistance) / 256.0f,
+                           [this](float f) { options.shadowDistance = static_cast<int>(std::lround(std::clamp(f, 0.0f, 1.0f) * 64.0f)) * 4; });
+                    toggle("Mob & Player Shadows", options.shadowEntities);
+                    slider("Bloom", options.bloom <= 0.001f ? tr("options.off", "OFF") : percent(options.bloom), options.bloom,
+                           [this, snap](float f) { options.bloom = snap(f, 20.0f); });
+                }
+                std::string lastGroup;
+                for (const ShaderSetting& st : list) {
+                    if (!st.group.empty() && st.group != lastGroup) {
+                        lastGroup = st.group;
+                        OptRow h{st.group, "", -1.0f, [](float, bool) {}};
+                        h.header = true;
+                        model.push_back(h);
+                    }
+                    const double value = settingValue(st);
                     if (st.toggle) {
                         model.push_back({st.label, value >= 0.5 ? tr("options.on", "ON") : tr("options.off", "OFF"), -1.0f,
                                          [this, id = st.id, value](float, bool click) {
@@ -3024,12 +3103,16 @@ namespace perlin {
                                          }});
                         continue;
                     }
-                    char buf[32];
-                    std::snprintf(buf, sizeof(buf), st.step < 0.095 ? "%.2f" : st.step < 0.95 ? "%.1f" : "%.0f", value);
+                    char buf[48];
+                    const long stepIndex = std::lround((value - st.min) / st.step);
+                    if (!st.labels.empty() && stepIndex >= 0 && stepIndex < static_cast<long>(st.labels.size()))
+                        std::snprintf(buf, sizeof(buf), "%s", st.labels[static_cast<size_t>(stepIndex)].c_str());
+                    else
+                        std::snprintf(buf, sizeof(buf), st.step < 0.095 ? "%.2f" : st.step < 0.95 ? "%.1f" : "%.0f", value);
                     slider(st.label, buf, static_cast<float>((value - st.min) / std::max(1.0e-9, st.max - st.min)),
                            [this, st](float f) {
                                const double raw = st.min + std::clamp(static_cast<double>(f), 0.0, 1.0) * (st.max - st.min);
-                               options.shaderSettings[st.id] = std::clamp(std::round(raw / st.step) * st.step, st.min, st.max);
+                               options.shaderSettings[st.id] = std::clamp(st.min + std::round((raw - st.min) / st.step) * st.step, st.min, st.max);
                            });
                 }
                 if (list.empty()) {
@@ -5681,13 +5764,12 @@ namespace perlin {
             params.dynMode = dynMode;
             {
                 const std::vector<ShaderSetting>& packSettingList = CachedPackSettings(options.shaderPack);
-                for (size_t i = 0; i < packSettingList.size() && i < 16; i++) {
-                    const auto found = options.shaderSettings.find(packSettingList[i].id);
-                    params.packSettings[i] = static_cast<float>(found == options.shaderSettings.end() ? packSettingList[i].def
-                                                                 : std::clamp(found->second, packSettingList[i].min, packSettingList[i].max));
-                    // Waving foliage moves its shadows too.
-                    if (packSettingList[i].id == "vvWaving" && params.packSettings[i] > 0.001f)
-                        params.shadowsDynamic = true;
+                for (const ShaderSetting& st : packSettingList) {
+                    if (st.slot < 0 || st.slot >= 32)
+                        continue;
+                    const auto found = options.shaderSettings.find(st.id);
+                    params.packSettings[st.slot] = static_cast<float>(found == options.shaderSettings.end() ? st.def
+                                                                      : std::clamp(found->second, st.min, st.max));
                 }
             }
             params.dynCount = static_cast<int>(dyn.size());

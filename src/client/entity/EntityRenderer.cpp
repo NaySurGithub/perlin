@@ -1214,10 +1214,13 @@ namespace perlin::entity {
                 item.maxDamage = ui::MaxDurability(name);
                 itemRenderer->DrawHeldItem(item, model * arm, left, light);
             };
+            // Yourself in first person: the hand renderer already shows these, so only cast shadows.
+            itemRenderer->SetWorldShadowOnly(shadowOnlyPass);
             if (v.hasArmR && !v.attachedItem[0])
                 held(e.mainHand, v.armR, false);
             if (v.hasArmL && !v.attachedItem[1])
                 held(e.offHand, v.armL, true);
+            itemRenderer->SetWorldShadowOnly(false);
         }
     }
 

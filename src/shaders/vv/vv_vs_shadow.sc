@@ -6,10 +6,9 @@ $output v_texcoord0, v_layer, v_depth
 void main()
 {
     float layer = floor(a_texcoord1.z * 255.0 + 0.5) + floor(a_texcoord1.w * 255.0 + 0.5) * 256.0;
+    // No waving here: the terrain shadow map is cached and rebuilt in the background, so moving
+    // leaves would make their shadows jump at every rebuild.
     vec3 position = a_position;
-    float foliage = vvFoliageKind(layer);
-    if (S_WAVING > 0.001 && foliage > 0.5)
-        position += vvWave(a_position, foliage, a_texcoord0);
     gl_Position = mul(u_mvp, vec4(position, 1.0));
     v_texcoord0 = a_texcoord0;
     v_layer = layer;

@@ -5,6 +5,7 @@
 #include "client/renderer/shader/ShaderManager.hpp"
 
 #include <bgfx/bgfx.h>
+#include <glm/glm.hpp>
 
 #include <array>
 #include <atomic>
@@ -13,6 +14,7 @@
 #include <mutex>
 #include <string>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 namespace perlin {
@@ -116,21 +118,44 @@ namespace perlin {
         void UploadLightmap(const uint8_t* pixels);
         static int64_t ChunkKey(int cx, int cz) { return (static_cast<int64_t>(cx) << 32) | (uint32_t)cz; }
 
-        struct ShadowState {
+        // Sun shadow map. The terrain part is cached in two maps: the world samples the front one
+        // while the back one is rebuilt a slice of chunks per frame (a rebuild never costs a whole
+        // map in a single frame), then they swap. Mobs and players move every frame, so when they
+        // cast shadows the front map is copied into a third map each frame and they are drawn on top.
+        struct ShadowMap {
             bgfx::FrameBufferHandle fb = BGFX_INVALID_HANDLE;
             bgfx::TextureHandle color = BGFX_INVALID_HANDLE;
-            int size = 0;
-            float distance = 80.0f;
-            bool enabled = false;
-            bool active = false;
             float sample[16] = {};
             float raster[16] = {};
             float info[4] = {};
-            int64_t key[6] = {};
-            uint64_t generation = 0;
+        };
+        struct ShadowState {
+            ShadowMap maps[2];
+            int front = -1;                                       // map with a finished build, -1 = none yet
+            bgfx::TextureHandle buildDepth = BGFX_INVALID_HANDLE; // shared by both terrain maps
+            bgfx::FrameBufferHandle entityFb = BGFX_INVALID_HANDLE;
+            bgfx::TextureHandle entityColor = BGFX_INVALID_HANDLE;
+            bgfx::TextureHandle entityDepth = BGFX_INVALID_HANDLE;
+            bool entityFailed = false;
+            int size = 0;
+            float distance = 80.0f;
+            bool enabled = false;
+            bool active = false;       // the world samples a shadow map this frame
+            float sample[16] = {};     // what the world samples this frame
+            float raster[16] = {};
+            float info[4] = {};
+            bgfx::TextureHandle sampled = BGFX_INVALID_HANDLE;
+            int64_t key[6] = {};       // key of the newest build (finished or in progress)
+            bool haveKey = false;
             int framesSince = 0;
-            bool entities = false;     // entity meshes are drawn into the map this frame
-            bool rendering = false;    // the map is being redrawn this frame
+            bool entities = false;     // entity meshes are drawn into the entity map this frame
+            // Build in progress (into maps[1 - front]).
+            bool building = false;
+            int buildSlice = 0, buildSlices = 1;
+            std::vector<std::pair<int64_t, uint8_t>> buildList; // chunk key, pass, nearest first
+            size_t buildCursor = 0;
+            glm::vec3 buildRight{}, buildUp{}, buildFwd{};
+            float buildCx = 0, buildCy = 0, buildCz = 0;
         } shadow;
         // Shadow settings the map was built with; a change (or a shader reload) rebuilds it.
         int shadowQualityBuilt = -1, shadowDistanceBuilt = -1;
@@ -138,6 +163,7 @@ namespace perlin {
         void InitShadows(int quality, int distance);
         void DestroyShadows();
         void RenderShadows(float camX, float camY, float camZ);
+        bool EnsureEntityShadowMap();
 
         class Callback;
         std::unique_ptr<Callback> callback;

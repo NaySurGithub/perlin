@@ -1,4 +1,5 @@
 #include "client/resources/ShaderPack.hpp"
+#include "client/ui/Json.hpp"
 #include "client/resources/BundledShaderPack.hpp"
 
 #include <miniz.h>
@@ -291,41 +292,98 @@ namespace perlin {
             meta = impl->meta;
         }
         std::vector<ShaderSetting> out;
-        const size_t key = meta.find("\"settings\"");
-        if (key == std::string::npos)
+        ui::Json root;
+        std::string error;
+        if (!ui::Json::Parse(meta, root, error) || !root.IsObject())
             return out;
-        size_t i = meta.find('[', key);
-        if (i == std::string::npos)
+        const ui::Json* list = root.Find("settings");
+        if (!list || !list->IsArray())
             return out;
-        while (out.size() < 16) {
-            const size_t open = meta.find('{', i);
-            const size_t close = open == std::string::npos ? open : meta.find('}', open);
-            const size_t end = meta.find(']', i);
-            if (open == std::string::npos || close == std::string::npos || (end != std::string::npos && end < open))
+        std::string group;
+        int nextSlot = 0;
+        for (const ui::Json& obj : list->array) {
+            if (out.size() >= 32)
                 break;
-            const std::string obj = meta.substr(open, close - open + 1);
-            i = close + 1;
+            if (!obj.IsObject())
+                continue;
+            if (const ui::Json* g = obj.Find("group"); g && g->IsString())
+                group = g->string;
             ShaderSetting s;
-            s.id = JsonString(obj, "id");
+            const ui::Json* id = obj.Find("id");
+            s.id = id ? id->StringOr("") : "";
             if (s.id.empty())
                 continue;
-            s.label = JsonString(obj, "label");
+            const auto str = [&](const char* name) {
+                const ui::Json* v = obj.Find(name);
+                return v ? v->StringOr("") : std::string();
+            };
+            const auto num = [&](const char* name, double fallback) {
+                const ui::Json* v = obj.Find(name);
+                if (!v)
+                    return fallback;
+                if (v->IsBool())
+                    return v->boolean ? 1.0 : 0.0;
+                return v->NumberOr(fallback);
+            };
+            s.label = str("label");
             if (s.label.empty())
                 s.label = s.id;
-            const auto num = [&](const char* name, double fallback) {
-                const std::string v = RawValue(obj, name);
-                if (v.empty())
-                    return fallback;
-                char* e = nullptr;
-                const double d = std::strtod(v.c_str(), &e);
-                return e == v.c_str() ? fallback : d;
-            };
-            s.toggle = JsonString(obj, "type") == "toggle";
+            s.group = group;
+            s.toggle = str("type") == "toggle";
             s.min = s.toggle ? 0.0 : num("min", 0.0);
             s.max = s.toggle ? 1.0 : num("max", 1.0);
+            if (s.max < s.min)
+                std::swap(s.min, s.max);
             s.step = s.toggle ? 1.0 : std::max(1.0e-4, num("step", 0.1));
             s.def = std::clamp(num("default", s.min), s.min, s.max);
+            s.slot = static_cast<int>(num("slot", static_cast<double>(nextSlot)));
+            if (s.slot < 0 || s.slot >= 32)
+                s.slot = -1;
+            else
+                nextSlot = s.slot + 1;
+            if (const ui::Json* labels = obj.Find("labels"); labels && labels->IsArray())
+                for (const ui::Json& l : labels->array)
+                    s.labels.push_back(l.StringOr(""));
             out.push_back(std::move(s));
+        }
+        return out;
+    }
+
+    std::vector<ShaderPreset> ShaderPack::Presets() const {
+        std::string meta;
+        {
+            std::lock_guard lock(impl->mutex);
+            meta = impl->meta;
+        }
+        std::vector<ShaderPreset> out;
+        ui::Json root;
+        std::string error;
+        if (!ui::Json::Parse(meta, root, error) || !root.IsObject())
+            return out;
+        const ui::Json* list = root.Find("presets");
+        if (!list || !list->IsArray())
+            return out;
+        const auto values = [](const ui::Json* obj, std::map<std::string, double>& into) {
+            if (!obj || !obj->IsObject())
+                return;
+            for (const auto& [key, v] : obj->object) {
+                if (v.IsNumber())
+                    into[key] = v.number;
+                else if (v.IsBool())
+                    into[key] = v.boolean ? 1.0 : 0.0;
+            }
+        };
+        for (const ui::Json& obj : list->array) {
+            if (!obj.IsObject() || out.size() >= 16)
+                continue;
+            ShaderPreset p;
+            if (const ui::Json* n = obj.Find("name"))
+                p.name = n->StringOr("");
+            if (p.name.empty())
+                continue;
+            values(obj.Find("settings"), p.settings);
+            values(obj.Find("engine"), p.engine);
+            out.push_back(std::move(p));
         }
         return out;
     }

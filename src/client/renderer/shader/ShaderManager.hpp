@@ -113,7 +113,7 @@ namespace perlin {
         float heldLightValue[4] = {};
         float dynParamsValue[4] = {};
         float dynLightsValue[8][4] = {};
-        float packSettingsValue[4][4] = {};
+        float packSettingsValue[8][4] = {};
         float tilesValue[4] = {};
         float skyParamsValue[4] = {};
     };
