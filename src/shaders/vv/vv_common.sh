@@ -8,6 +8,8 @@
 SAMPLER2DARRAY(s_atlas, 0);
 SAMPLER2D(s_lightmap, 1);
 SAMPLER2D(s_clouds, 3);
+// 256 x 64 texels, one per atlas tile; r = foliage kind (0 none, 1 leaves, 2 plant, 3/4 tall plant halves).
+SAMPLER2D(s_tileFlags, 6);
 
 uniform mat4 u_mvp;
 uniform vec4 u_camera;
@@ -52,6 +54,7 @@ uniform mat4 u_invMvp;
 #define S_REFLECTIONS u_packSettings[2].x
 #define S_CLOUDS u_packSettings[2].y
 #define S_CLOUD_SHADOWS u_packSettings[2].z
+#define S_WAVING u_packSettings[2].w
 
 #define CLOUD_THICKNESS 6.0
 
@@ -183,6 +186,43 @@ vec3 vvSkyAmbient()
     c = mix(c, dusk, vvTwilight() * 0.75);
     c = mix(c, vec3_splat(luma(c)) * vec3(0.88, 0.92, 1.0) * 0.8, vvRain());
     return c * S_AMBIENT;
+}
+
+// ---------------------------------------------------------------------------------------------
+// Waving foliage (vertex shaders).
+
+float vvFoliageKind(float layer)
+{
+    vec2 uv = vec2((mod(layer, 256.0) + 0.5) / 256.0, (floor(layer / 256.0) + 0.5) / 64.0);
+    return floor(texture2DLod(s_tileFlags, uv, 0.0).r * 255.0 + 0.5);
+}
+
+// Offset for a vertex at world position pos. uv is the texture coordinate inside the tile (v = 0 at
+// the top), which tells how far up a plant the vertex is.
+vec3 vvWave(vec3 pos, float kind, vec2 uv)
+{
+    float t = u_time.x;
+    float wind = S_WAVING * mix(1.0, 1.9, vvRain());
+    // Gusts drift across the world; each vertex follows its own position so shared corners of
+    // neighbouring leaves move together and no gaps open.
+    float gust = 0.65 + 0.35 * sin(t * 0.35 + pos.x * 0.045 + pos.z * 0.03);
+    vec3 offset = vec3(sin(t * 1.9 + pos.x * 0.71 + pos.z * 0.33 + pos.y * 0.21),
+                       sin(t * 1.4 + pos.x * 0.37 + pos.z * 0.61) * 0.45,
+                       sin(t * 1.7 + pos.z * 0.83 + pos.x * 0.29 + pos.y * 0.17));
+    float top = clamp(1.0 - uv.y, 0.0, 1.0);
+    float weight = 0.0;
+    vec3 amp = vec3(0.0, 0.0, 0.0);
+    if (kind > 0.5 && kind < 1.5)
+    {
+        weight = 1.0;
+        amp = vec3(0.045, 0.03, 0.045);
+    }
+    else if (kind > 1.5)
+    {
+        weight = kind > 3.5 ? 0.5 + 0.5 * top : kind > 2.5 ? 0.5 * top : top;
+        amp = vec3(0.13, 0.02, 0.13);
+    }
+    return offset * amp * weight * wind * gust;
 }
 
 // ---------------------------------------------------------------------------------------------

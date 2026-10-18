@@ -20,25 +20,29 @@ float vanillaShade(vec3 n)
     return clamp(up * 1.0 + down * 0.5 + z * 0.8 + x * 0.6, 0.4, 1.0);
 }
 
+// Soft sun shadow: 12 taps on a per-pixel rotated spiral, about a tenth of a block wide whatever
+// the shadow map resolution (higher quality settings just get sharper, cleaner edges).
 float sunShadow(vec3 world, vec3 n, float ndl)
 {
     float texelWorld = u_shadowInfo.y * u_shadowInfo.x;
-    vec3 p = world + n * (texelWorld * 1.4 + 0.02);
+    vec3 p = world + n * (texelWorld * 1.5 + 0.02);
     vec3 sc = mul(u_shadowMtx, vec4(p, 1.0)).xyz;
     vec2 edge = min(sc.xy, vec2(1.0, 1.0) - sc.xy);
     float inside = smoothstep(0.0, 0.06, min(edge.x, edge.y));
-    float bias = (texelWorld * 1.6 * (1.0 - ndl) + 0.05) / u_shadowInfo.z;
+    float bias = (texelWorld * 1.8 * (1.0 - ndl) + 0.05) / u_shadowInfo.z;
+    float radius = clamp(0.07 / max(texelWorld, 1.0e-4), 1.0, 3.5) * u_shadowInfo.x;
+    float spin = hash12(floor(p.xz * 16.0) + floor(p.y * 16.0) * 7.31) * 6.2831853; // per world texel
     float lit = 0.0;
-    for (int y = -1; y <= 1; y++)
+    for (int i = 0; i < 12; i++)
     {
-        for (int x = -1; x <= 1; x++)
-        {
-            vec2 uv = sc.xy + vec2(float(x), float(y)) * u_shadowInfo.x * 1.25;
-            float stored = texture2DLod(s_shadow, uv, 0.0).r;
-            lit += (sc.z - bias <= stored) ? 1.0 : 0.0;
-        }
+        float fi = float(i) + 0.5;
+        float r = sqrt(fi / 12.0);
+        float a = fi * 2.3999632 + spin;
+        vec2 uv = sc.xy + vec2(cos(a), sin(a)) * r * radius;
+        float stored = texture2DLod(s_shadow, uv, 0.0).r;
+        lit += (sc.z - bias <= stored) ? 1.0 : 0.0;
     }
-    lit /= 9.0;
+    lit /= 12.0;
     return u_shadowInfo.w < 0.5 ? -1.0 : mix(1.0, lit, inside);
 }
 

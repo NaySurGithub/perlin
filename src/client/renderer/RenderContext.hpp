@@ -7,6 +7,7 @@
 
 #include <cstdint>
 #include <string>
+#include <vector>
 
 class AppPlatform;
 
@@ -77,6 +78,8 @@ namespace perlin {
         float glintMatrix[4] = {1, 0, 0, 1};
         float glintOffset[2] = {0, 0};
         float glintStrength = 0.9f;
+        // Only cast a shader-pack shadow, don't draw (your own player in first person).
+        bool shadowOnly = false;
     };
 
     struct FrameParams {
@@ -95,6 +98,11 @@ namespace perlin {
         CloudDraw cloud;
         float timeSeconds;
         float motionBlur = 0.0f;
+        float bloom = 0.0f;              // 0..1
+        int shadowQuality = 2;           // 0 off .. 4 ultra (shader packs with shadows)
+        int shadowDistance = 0;          // blocks, 0 = the pack's default
+        bool shadowEntities = true;      // entities cast pack shadows
+        bool shadowsDynamic = false;     // re-render the shadow map every frame (waving foliage)
         float menuBlur = 0.0f;
         bool crosshair = false;
         int guiScale = 0;
@@ -119,6 +127,8 @@ namespace perlin {
         virtual bool Initialize(AppPlatform& platform, const Options& options) = 0;
         virtual void Shutdown() = 0;
         virtual bool ReloadShaders() { return false; }
+        // True while a shader pack's sun shadow map is in use.
+        virtual bool PackShadowsActive() const { return false; }
         virtual void SetVsync(bool) {}
         virtual std::string RendererName() const { return {}; }
         virtual std::string GpuVendor() const { return {}; }
@@ -132,6 +142,8 @@ namespace perlin {
         virtual void DrawHudCursor(float x, float y, float w, float h) = 0;
         virtual void UploadSkyTextures(const Texture& sun, const Texture& moon, const Texture& clouds) = 0;
         virtual void UploadAtlas(const uint8_t* rgba, int tilePx, int tiles) = 0;
+        // Per-tile foliage kinds for shader packs (see BlockLibrary::FoliageFlags).
+        virtual void UploadTileFlags(const std::vector<uint8_t>&) {}
         virtual int MaxAtlasLayers(int) const { return 2048; }
         virtual void UpdateAtlasRegion(int tile, const uint8_t* rgba) = 0;
 

@@ -36,6 +36,9 @@ namespace perlin {
             BGFX_EMBEDDED_SHADER(fs_ui),
             BGFX_EMBEDDED_SHADER(vs_post),
             BGFX_EMBEDDED_SHADER(fs_post),
+            BGFX_EMBEDDED_SHADER(vs_entity_shadow),
+            BGFX_EMBEDDED_SHADER(fs_entity_shadow),
+            BGFX_EMBEDDED_SHADER(fs_bloom),
             BGFX_EMBEDDED_SHADER_END(),
         };
 
@@ -58,8 +61,13 @@ namespace perlin {
             {"vs_post", "fs_post"},
             {"vs_shadow", "fs_shadow"},
             {"vs_shadow", "fs_shadow_cutout"},
+            {"vs_celestial", "fs_celestial"},
+            {"vs_entity_shadow", "fs_entity_shadow"},
+            {"vs_post", "fs_bloom"},
         };
+        static_assert(std::size(kSources) == static_cast<size_t>(ShaderProgram::Count));
         constexpr size_t kPackOnlyFrom = static_cast<size_t>(ShaderProgram::Shadow);
+        constexpr size_t kBuiltinOnlyFrom = static_cast<size_t>(ShaderProgram::SpriteUi);
 
         const char* RendererDirectory(bgfx::RendererType::Enum type) {
             switch (type) {
@@ -103,6 +111,12 @@ namespace perlin {
         for (size_t i = 0; i < programs.size(); i++) {
             const ProgramSource& source = kSources[i];
             programs[i] = BGFX_INVALID_HANDLE;
+            if (i >= kBuiltinOnlyFrom) {
+                programs[i] = bgfx::createProgram(Load(source.vertex, false), Load(source.fragment, false), true);
+                if (!bgfx::isValid(programs[i]))
+                    std::cout << "[shader] built-in program failed: " << source.vertex << " + " << source.fragment << std::endl;
+                continue;
+            }
             if (i >= kPackOnlyFrom && !packActive)
                 continue;
             if (packActive) {
@@ -177,6 +191,7 @@ namespace perlin {
         sceneDepthSampler = bgfx::createUniform("s_sceneDepth", bgfx::UniformType::Sampler);
         sceneInfo = bgfx::createUniform("u_sceneInfo", bgfx::UniformType::Vec4);
         invMvp = bgfx::createUniform("u_invMvp", bgfx::UniformType::Mat4);
+        tileFlagsSampler = bgfx::createUniform("s_tileFlags", bgfx::UniformType::Sampler);
         return true;
     }
 
@@ -190,7 +205,7 @@ namespace perlin {
                                             &fogEnvironment, &fogSky, &modulator, &textureInfo, &chunk, &cloudOffset,
                                             &cloudColor, &sunDirection, &timeUniform, &heldLight, &dynParams, &dynLights, &packSettings, &tiles, &skyParams,
                                             &shadowMatrix, &shadowInfo, &shadowSampler, &cloudsSampler, &cloudMap,
-                                            &sceneColorSampler, &sceneDepthSampler, &sceneInfo, &invMvp}) {
+                                            &sceneColorSampler, &sceneDepthSampler, &sceneInfo, &invMvp, &tileFlagsSampler}) {
             if (bgfx::isValid(*handle))
                 bgfx::destroy(*handle);
             *handle = BGFX_INVALID_HANDLE;
@@ -260,6 +275,11 @@ namespace perlin {
     void ShaderManager::SetScene(const float info[4], const float inverseMvp[16]) {
         std::copy_n(info, 4, sceneInfoValue);
         std::copy_n(inverseMvp, 16, invMvpValue);
+    }
+
+    void ShaderManager::BindTileFlags(bgfx::TextureHandle texture) const {
+        if (bgfx::isValid(texture))
+            bgfx::setTexture(6, tileFlagsSampler, texture, BGFX_SAMPLER_MIN_POINT | BGFX_SAMPLER_MAG_POINT | BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP);
     }
 
     void ShaderManager::BindScene(bgfx::TextureHandle color, bgfx::TextureHandle depth) const {

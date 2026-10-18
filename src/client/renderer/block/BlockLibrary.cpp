@@ -219,6 +219,37 @@ namespace perlin {
         return -1;
     }
 
+    std::vector<uint8_t> BlockLibrary::FoliageFlags() const {
+        std::vector<uint8_t> flags;
+        const auto has = [](const std::string& s, const char* part) { return s.find(part) != std::string::npos; };
+        for (const auto& [path, tile] : tileByPng) {
+            if (tile < 0)
+                continue;
+            const size_t slash = path.rfind('/');
+            const std::string name = path.substr(slash == std::string::npos ? 0 : slash + 1);
+            uint8_t kind = 0;
+            if (has(name, "leaves") || name.rfind("vine", 0) == 0 || has(name, "cave_vines") || has(name, "weeping_vines") ||
+                has(name, "twisting_vines"))
+                kind = 1;
+            else if (has(name, "double_plant") || has(name, "doubletall") || has(name, "pitcher_plant"))
+                kind = has(name, "bottom") ? 3 : 4;
+            else if (has(name, "tallgrass") || has(name, "short_grass") || has(name, "fern") || name.rfind("flower_", 0) == 0 ||
+                     has(name, "sapling") || has(name, "deadbush") || has(name, "_stage") || has(name, "sweet_berry_bush") ||
+                     has(name, "seagrass") || has(name, "torchflower") || has(name, "wither_rose") || has(name, "nether_sprouts") ||
+                     has(name, "crimson_roots") || has(name, "warped_roots") || has(name, "azalea_plant") || has(name, "pink_petals") ||
+                     has(name, "wildflowers") || has(name, "bush") || has(name, "firefly_bush") || has(name, "cactus_flower"))
+                kind = 2;
+            if (has(name, "melon_stem") || has(name, "pumpkin_stem") || has(name, "cocoa") || has(name, "nether_wart") || has(name, "_cake"))
+                kind = 0;
+            if (!kind)
+                continue;
+            if (flags.size() <= static_cast<size_t>(tile))
+                flags.resize(static_cast<size_t>(tile) + 1, 0);
+            flags[static_cast<size_t>(tile)] = kind;
+        }
+        return flags;
+    }
+
     namespace {
         std::unordered_map<std::string, Texture>& PrefetchCache() {
             static std::unordered_map<std::string, Texture> cache;

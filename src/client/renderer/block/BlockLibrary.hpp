@@ -80,6 +80,10 @@ namespace perlin {
         float SaturationOf(int tile) const;
         std::string TilePathOf(int tile) const;
         int TileContaining(const std::string& part) const;
+        // Foliage kind per atlas tile, for waving foliage in shader packs: 0 none, 1 leaves and
+        // vines (the whole block sways), 2 plant (the top sways, the base stays put), 3 lower half
+        // of a two-block plant, 4 upper half.
+        std::vector<uint8_t> FoliageFlags() const;
         void PollAnimation(uint64_t step, const std::function<void(int tile, const uint8_t* rgba)>& emit);
 
     private:

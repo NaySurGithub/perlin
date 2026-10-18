@@ -1,4 +1,4 @@
-$input v_color0, v_texcoord0, v_fog, v_layer, v_visibility, v_rel, v_light, v_tint
+$input v_color0, v_texcoord0, v_fog, v_layer, v_visibility, v_rel, v_light, v_tint, v_foliage
 
 #include "vv_terrain_common.sh"
 
@@ -13,7 +13,7 @@ void main()
     // Green-dominant cutout texels are foliage: light shines through them.
     // (Leaves and grass are grey in the atlas and tinted per biome, so test the tinted colour.)
     vec3 tinted = tex.rgb * v_tint;
-    float foliage = step(tinted.r * 1.1, tinted.g) * step(tinted.b, tinted.g);
+    float foliage = max(step(tinted.r * 1.1, tinted.g) * step(tinted.b, tinted.g), step(0.5, v_foliage));
     vec4 color = vec4(vvLit(tex.rgb, v_tint, n, v_rel, v_light, foliage, 0.0), alpha);
     color = mix(u_fogColor * vec4(1.0, 1.0, 1.0, color.a), color, v_visibility);
     color.rgb = vvFog(color.rgb, v_fog, viewDir);

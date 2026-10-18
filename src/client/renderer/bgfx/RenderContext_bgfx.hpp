@@ -35,6 +35,8 @@ namespace perlin {
         void UploadAtlas(const uint8_t* rgba, int tilePx, int tiles) override;
         int MaxAtlasLayers(int tilePx) const override;
         bool ReloadShaders() override;
+        bool PackShadowsActive() const override { return shadow.enabled; }
+        void UploadTileFlags(const std::vector<uint8_t>& flags) override;
         void SetVsync(bool enabled) override;
         void UpdateAtlasRegion(int tile, const uint8_t* rgba) override;
         uint32_t UiCreateTexture(int width, int height, const uint8_t* rgba, bool linear, bool repeat = false) override;
@@ -127,8 +129,13 @@ namespace perlin {
             int64_t key[6] = {};
             uint64_t generation = 0;
             int framesSince = 0;
+            bool entities = false;     // entity meshes are drawn into the map this frame
+            bool rendering = false;    // the map is being redrawn this frame
         } shadow;
-        void InitShadows(const Options& options);
+        // Shadow settings the map was built with; a change (or a shader reload) rebuilds it.
+        int shadowQualityBuilt = -1, shadowDistanceBuilt = -1;
+        bool shadowConfigDirty = true;
+        void InitShadows(int quality, int distance);
         void DestroyShadows();
         void RenderShadows(float camX, float camY, float camZ);
 
@@ -169,7 +176,19 @@ namespace perlin {
         bool depthReadable = false;
         bool EnsureSceneCopy();
         void DestroySceneCopy();
+        // Bloom: a 4-level downsample/upsample chain over the offscreen world.
+        struct Bloom {
+            bgfx::TextureHandle level[4] = {BGFX_INVALID_HANDLE, BGFX_INVALID_HANDLE, BGFX_INVALID_HANDLE, BGFX_INVALID_HANDLE};
+            bgfx::FrameBufferHandle fb[4] = {BGFX_INVALID_HANDLE, BGFX_INVALID_HANDLE, BGFX_INVALID_HANDLE, BGFX_INVALID_HANDLE};
+            bgfx::UniformHandle params = BGFX_INVALID_HANDLE, texel = BGFX_INVALID_HANDLE, composite = BGFX_INVALID_HANDLE,
+                                sampler = BGFX_INVALID_HANDLE;
+            bool ready = false, failed = false;
+        } bloom;
+        bool EnsureBloom();
+        void DestroyBloom();
+        void RunBloom(float strength);
         bgfx::TextureHandle cloudMapTexture = BGFX_INVALID_HANDLE;
+        bgfx::TextureHandle tileFlagsTexture = BGFX_INVALID_HANDLE; // 256 x 64, r = foliage kind
         bool EnsureMotionBlurTargets();
         void DestroyMotionBlur();
         void SetupMotionBlur(const FrameParams& params);

@@ -2866,9 +2866,17 @@ namespace perlin {
                        [this](float f) { options.cloudRange = 2 + static_cast<int>(std::lround(std::clamp(f, 0.0f, 1.0f) * 126.0f)); });
                 toggle("Better Grass", options.betterGrass);
                 choice("Glass", options.glass, {{"normal", "Normal"}, {"connected", "Connected"}, {"connectedClear", "Connected Clear"}, {"clear", "Clear"}});
+                {
+                    static const char* const kQuality[5] = {"Off", "Low", "Medium", "High", "Ultra"};
+                    slider("Shadow Quality", kQuality[std::clamp(options.shadowQuality, 0, 4)], static_cast<float>(options.shadowQuality) / 4.0f,
+                           [this](float f) { options.shadowQuality = static_cast<int>(std::lround(std::clamp(f, 0.0f, 1.0f) * 4.0f)); });
+                }
                 slider("Shadow Distance", options.shadowDistance == 0 ? std::string("Auto") : std::to_string(options.shadowDistance),
                        static_cast<float>(options.shadowDistance) / 256.0f,
                        [this](float f) { options.shadowDistance = static_cast<int>(std::lround(std::clamp(f, 0.0f, 1.0f) * 64.0f)) * 4; });
+                toggle("Mob & Player Shadows", options.shadowEntities);
+                slider("Bloom", options.bloom <= 0.001f ? tr("options.off", "OFF") : percent(options.bloom), options.bloom,
+                       [this, snap](float f) { options.bloom = snap(f, 20.0f); });
                 slider("Held Item Light", std::to_string(options.heldLight), static_cast<float>(options.heldLight) / 15.0f,
                        [this](float f) { options.heldLight = static_cast<int>(std::lround(std::clamp(f, 0.0f, 1.0f) * 15.0f)); });
                 choice("Dynamic Lights", options.dynamicLights, {{"off", "Off"}, {"fast", "Fast"}, {"fancy", "Fancy"}});
@@ -5662,6 +5670,10 @@ namespace perlin {
             }
             FrameParams params{};
             params.motionBlur = options.motionBlur;
+            params.bloom = options.bloom;
+            params.shadowQuality = options.shadowQuality;
+            params.shadowDistance = options.shadowDistance;
+            params.shadowEntities = options.shadowEntities;
             if (pauseShown && options.menuBlur > 0)
                 params.menuBlur = static_cast<float>(options.menuBlur * std::max(1, hud->OverlayScale()));
             if (const char* mb = PERLIN_ENV("PERLIN_MOTION_BLUR"))
@@ -5673,6 +5685,9 @@ namespace perlin {
                     const auto found = options.shaderSettings.find(packSettingList[i].id);
                     params.packSettings[i] = static_cast<float>(found == options.shaderSettings.end() ? packSettingList[i].def
                                                                  : std::clamp(found->second, packSettingList[i].min, packSettingList[i].max));
+                    // Waving foliage moves its shadows too.
+                    if (packSettingList[i].id == "vvWaving" && params.packSettings[i] > 0.001f)
+                        params.shadowsDynamic = true;
                 }
             }
             params.dynCount = static_cast<int>(dyn.size());
@@ -5745,6 +5760,13 @@ namespace perlin {
                     waterTile = static_cast<float>(levelRenderer->Blocks().TileContaining("water_still"));
                     flowTile = static_cast<float>(levelRenderer->Blocks().TileContaining("water_flow"));
                     lavaTile = static_cast<float>(levelRenderer->Blocks().TileContaining("lava_still"));
+                    // Foliage kinds for waving leaves and plants in shader packs.
+                    static std::vector<uint8_t> lastFoliage;
+                    std::vector<uint8_t> foliage = levelRenderer->Blocks().FoliageFlags();
+                    if (foliage != lastFoliage) {
+                        renderer->UploadTileFlags(foliage);
+                        lastFoliage = std::move(foliage);
+                    }
                 }
                 params.waterTile = waterTile;
                 params.waterFlowTile = flowTile;
@@ -5933,6 +5955,12 @@ namespace perlin {
                     ein.camera = {eyePos.x, eyePos.y, eyePos.z};
                 }
                 ein.firstPerson = firstPerson;
+                {
+                    // With shader pack shadows, entities cast real shadows instead of the round blobs.
+                    const bool packShadows = renderer->PackShadowsActive() && options.shadowEntities;
+                    ein.blobShadows = options.shadows && !packShadows;
+                    ein.selfShadow = packShadows;
+                }
                 ein.ownNametag = options.thirdPersonNametag;
                 ein.ownParts = options.skinParts;
                 ein.frustum = &frustum;

@@ -5,8 +5,13 @@ $output v_texcoord0, v_layer, v_depth
 
 void main()
 {
-    gl_Position = mul(u_mvp, vec4(a_position, 1.0));
+    float layer = floor(a_texcoord1.z * 255.0 + 0.5) + floor(a_texcoord1.w * 255.0 + 0.5) * 256.0;
+    vec3 position = a_position;
+    float foliage = vvFoliageKind(layer);
+    if (S_WAVING > 0.001 && foliage > 0.5)
+        position += vvWave(a_position, foliage, a_texcoord0);
+    gl_Position = mul(u_mvp, vec4(position, 1.0));
     v_texcoord0 = a_texcoord0;
-    v_layer = floor(a_texcoord1.z * 255.0 + 0.5) + floor(a_texcoord1.w * 255.0 + 0.5) * 256.0;
-    v_depth = mul(u_shadowMtx, vec4(a_position, 1.0)).z;
+    v_layer = layer;
+    v_depth = mul(u_shadowMtx, vec4(position, 1.0)).z;
 }

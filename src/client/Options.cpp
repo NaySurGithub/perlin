@@ -63,6 +63,9 @@ namespace perlin {
             SkinParts skinParts;
             std::map<std::string, bool> skinSlim;
             std::map<std::string, double> shaderSettings;
+            int shadowQuality = 2;
+            bool shadowEntities = true;
+            float bloom = 0.5f;
         };
     }
 
@@ -135,7 +138,10 @@ namespace perlin {
                       o.betterGrass,
                       o.skinParts,
                       o.skinSlim,
-                      o.shaderSettings};
+                      o.shaderSettings,
+                      o.shadowQuality,
+                      o.shadowEntities,
+                      o.bloom};
         auto parsed = json::Read<Stored>(text);
         if (!parsed)
             return o;
@@ -179,6 +185,9 @@ namespace perlin {
         o.skinParts = stored.skinParts;
         o.skinSlim = stored.skinSlim;
         o.shaderSettings = stored.shaderSettings;
+        o.shadowQuality = std::clamp(stored.shadowQuality, 0, 4);
+        o.shadowEntities = stored.shadowEntities;
+        o.bloom = std::clamp(stored.bloom, 0.0f, 1.0f);
         o.shadows = stored.shadows;
         o.heldLight = std::clamp(stored.heldLight, 0, 15);
         o.shadowDistance = std::clamp(stored.shadowDistance, 0, 256);
@@ -274,7 +283,10 @@ namespace perlin {
                       betterGrass,
                       skinParts,
                       skinSlim,
-                      shaderSettings};
+                      shaderSettings,
+                      shadowQuality,
+                      shadowEntities,
+                      bloom};
         for (size_t i = 0; i < kActionCount; i++)
             stored.keys[ActionId(static_cast<Action>(i))] = keys[i].Serialize();
 

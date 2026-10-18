@@ -47,7 +47,8 @@ namespace perlin {
     {"id": "vvFog", "label": "Haze", "min": 0.0, "max": 3.0, "step": 0.25, "default": 1.0},
     {"id": "vvReflections", "label": "Screen-Space Reflections", "type": "toggle", "default": 1},
     {"id": "vvClouds", "label": "Clouds", "type": "toggle", "default": 1},
-    {"id": "vvCloudShadows", "label": "Cloud Shadows", "type": "toggle", "default": 1}
+    {"id": "vvCloudShadows", "label": "Cloud Shadows", "type": "toggle", "default": 1},
+    {"id": "vvWaving", "label": "Waving Foliage", "min": 0.0, "max": 2.0, "step": 0.1, "default": 1.0}
   ]
 })";
 

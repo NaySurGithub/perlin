@@ -1,4 +1,4 @@
-$input v_color0, v_texcoord0, v_fog, v_layer, v_visibility, v_rel, v_light, v_tint
+$input v_color0, v_texcoord0, v_fog, v_layer, v_visibility, v_rel, v_light, v_tint, v_foliage
 
 #include "vv_terrain_common.sh"
 

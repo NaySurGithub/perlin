@@ -52,6 +52,7 @@ namespace perlin {
         constexpr bgfx::ViewId kViewDoll = 7;
         constexpr bgfx::ViewId kViewTop = 9;
         constexpr bgfx::ViewId kViewCopy = 10; // opaque scene copy for packs (after entities, before translucent)
+        constexpr bgfx::ViewId kViewBloom = 11; // 11..17: bloom down/up passes
         constexpr uint32_t kPageVerts = 1u << 20;
         constexpr uint32_t kPageIdx = (kPageVerts / 4) * 6;
 
@@ -271,8 +272,7 @@ namespace perlin {
         quadIndices = uploadIndices(QuadIndices(1));
 
         const bool shadersOk = shaders.Initialize();
-        if (shadersOk)
-            InitShadows(options);
+        shadowConfigDirty = true; // built on the first frame from FrameParams
         if (!shadersOk) {
             std::cout << "[bgfx] shader program creation failed for "
                       << bgfx::getRendererName(bgfx::getRendererType()) << std::endl;
@@ -301,8 +301,12 @@ namespace perlin {
         bgfx::setViewMode(kViewEntity, bgfx::ViewMode::Sequential);
         bgfx::setViewMode(kViewLate, bgfx::ViewMode::Sequential);
         {
-            const bgfx::ViewId order[11] = {0, 1, kViewEntity, kViewCopy, kViewLate, kViewBlur, kViewBlurOut, kViewHand, kViewGui, kViewDoll, kViewTop};
-            bgfx::setViewOrder(0, 11, order);
+            const bgfx::ViewId order[18] = {0, 1, kViewEntity, kViewCopy, kViewLate,
+                                            kViewBloom, kViewBloom + 1, kViewBloom + 2, kViewBloom + 3, kViewBloom + 4, kViewBloom + 5, kViewBloom + 6,
+                                            kViewBlur, kViewBlurOut, kViewHand, kViewGui, kViewDoll, kViewTop};
+            bgfx::setViewOrder(0, 18, order);
+            for (int i = 0; i < 7; i++)
+                bgfx::setViewMode(static_cast<bgfx::ViewId>(kViewBloom + i), bgfx::ViewMode::Sequential);
         }
         bgfx::setViewMode(kViewGui, bgfx::ViewMode::Sequential);
         bgfx::setViewMode(kViewDoll, bgfx::ViewMode::Sequential);
@@ -472,6 +476,84 @@ namespace perlin {
         scene.valid = false;
     }
 
+    bool RenderContext_bgfx::EnsureBloom() {
+        if (bloom.ready)
+            return true;
+        if (bloom.failed || !shaders.Has(ShaderProgram::Bloom))
+            return false;
+        static const bgfx::BackbufferRatio::Enum kRatio[4] = {bgfx::BackbufferRatio::Half, bgfx::BackbufferRatio::Quarter,
+                                                              bgfx::BackbufferRatio::Eighth, bgfx::BackbufferRatio::Sixteenth};
+        bool ok = true;
+        for (int i = 0; i < 4 && ok; i++) {
+            bloom.level[i] = bgfx::createTexture2D(kRatio[i], false, 1, bgfx::TextureFormat::RGBA8,
+                                                   BGFX_TEXTURE_RT | BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP);
+            if (bgfx::isValid(bloom.level[i]))
+                bloom.fb[i] = bgfx::createFrameBuffer(1, &bloom.level[i], false);
+            ok = bgfx::isValid(bloom.level[i]) && bgfx::isValid(bloom.fb[i]);
+        }
+        if (!ok) {
+            std::cout << "[bloom] could not create the bloom targets; bloom off" << std::endl;
+            DestroyBloom();
+            bloom.failed = true;
+            return false;
+        }
+        bloom.params = bgfx::createUniform("u_bloomParams", bgfx::UniformType::Vec4);
+        bloom.texel = bgfx::createUniform("u_bloomTexel", bgfx::UniformType::Vec4);
+        bloom.composite = bgfx::createUniform("u_bloom", bgfx::UniformType::Vec4);
+        bloom.sampler = bgfx::createUniform("s_bloom", bgfx::UniformType::Sampler);
+        bloom.ready = true;
+        return true;
+    }
+
+    void RenderContext_bgfx::DestroyBloom() {
+        for (int i = 0; i < 4; i++) {
+            if (bgfx::isValid(bloom.fb[i]))
+                bgfx::destroy(bloom.fb[i]);
+            if (bgfx::isValid(bloom.level[i]))
+                bgfx::destroy(bloom.level[i]);
+            bloom.fb[i] = BGFX_INVALID_HANDLE;
+            bloom.level[i] = BGFX_INVALID_HANDLE;
+        }
+        for (bgfx::UniformHandle* u : {&bloom.params, &bloom.texel, &bloom.composite, &bloom.sampler})
+            if (bgfx::isValid(*u)) {
+                bgfx::destroy(*u);
+                *u = BGFX_INVALID_HANDLE;
+            }
+        bloom.ready = false;
+    }
+
+    // Downsample the finished world (thresholded) through four levels, then add each level back up.
+    void RenderContext_bgfx::RunBloom(float strength) {
+        static const bgfx::BackbufferRatio::Enum kRatio[4] = {bgfx::BackbufferRatio::Half, bgfx::BackbufferRatio::Quarter,
+                                                              bgfx::BackbufferRatio::Eighth, bgfx::BackbufferRatio::Sixteenth};
+        const float origin = bgfx::getCaps()->originBottomLeft ? 1.0f : 0.0f;
+        const float W = static_cast<float>(std::max(1, width)), H = static_cast<float>(std::max(1, height));
+        // Brighter threshold for subtle settings, lower for strong ones.
+        const float threshold = 0.82f - 0.12f * std::clamp(strength, 0.0f, 1.0f);
+        const auto pass = [&](int viewOffset, int target, bgfx::TextureHandle source, float sourceScale, float mode, bool additive) {
+            const bgfx::ViewId view = static_cast<bgfx::ViewId>(kViewBloom + viewOffset);
+            bgfx::setViewFrameBuffer(view, bloom.fb[target]);
+            bgfx::setViewRect(view, 0, 0, kRatio[target]);
+            const float post[4] = {0.0f, origin, 0.0f, 0.0f};
+            bgfx::setUniform(blur.params, post);
+            const float p[4] = {mode, threshold, 0.18f, 0.0f};
+            bgfx::setUniform(bloom.params, p);
+            const float t[4] = {sourceScale / W, sourceScale / H, 0.0f, 0.0f};
+            bgfx::setUniform(bloom.texel, t);
+            bgfx::setTexture(0, blur.sampCur, source, BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP);
+            bgfx::setVertexBuffer(0, screenBuffer);
+            bgfx::setState(BGFX_STATE_WRITE_RGB | (additive ? BGFX_STATE_BLEND_FUNC(BGFX_STATE_BLEND_ONE, BGFX_STATE_BLEND_ONE) : 0));
+            bgfx::submit(view, shaders.Program(ShaderProgram::Bloom));
+        };
+        pass(0, 0, blur.worldColor, 1.0f, 0.0f, false);
+        pass(1, 1, bloom.level[0], 2.0f, 1.0f, false);
+        pass(2, 2, bloom.level[1], 4.0f, 1.0f, false);
+        pass(3, 3, bloom.level[2], 8.0f, 1.0f, false);
+        pass(4, 2, bloom.level[3], 16.0f, 2.0f, true);
+        pass(5, 1, bloom.level[2], 8.0f, 2.0f, true);
+        pass(6, 0, bloom.level[1], 4.0f, 2.0f, true);
+    }
+
     void RenderContext_bgfx::SetupMotionBlur(const FrameParams& params) {
         const float intensity = std::clamp(params.motionBlur, 0.0f, 1.0f);
         static bool failed = false;
@@ -486,7 +568,8 @@ namespace perlin {
             depthReadable = sceneWanted;
         }
         scene.valid = false;
-        const bool on = blurOn || sceneWanted;
+        const bool bloomOn = params.bloom > 0.001f && !bloom.failed && !PERLIN_ENV("PERLIN_NO_BLOOM");
+        const bool on = blurOn || sceneWanted || bloomOn;
         if (!on || !EnsureMotionBlurTargets()) {
             if (on && !blur.targets) {
                 if (blurOn)
@@ -504,8 +587,15 @@ namespace perlin {
                 DestroyMotionBlur();
             if (!sceneWanted)
                 DestroySceneCopy();
+            if (bloom.ready)
+                DestroyBloom();
             return;
         }
+        const bool bloomRun = bloomOn && EnsureBloom();
+        if (!bloomOn && bloom.ready)
+            DestroyBloom();
+        if (bloomRun)
+            RunBloom(params.bloom);
         if (sceneWanted && EnsureSceneCopy()) {
             bgfx::TextureRegion dst, src;
             dst.init(scene.color);
@@ -538,12 +628,18 @@ namespace perlin {
             bgfx::setUniform(blur.params, p);
             bgfx::setTexture(0, blur.sampCur, cur, BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP);
             bgfx::setTexture(1, blur.sampHist, hist, BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP);
+            if (bloom.ready) {
+                // Only the last pass to the screen adds the glow.
+                const float b[4] = {bloomRun && view == kViewBlurOut ? params.bloom * 0.55f : 0.0f, 0.0f, 0.0f, 0.0f};
+                bgfx::setUniform(bloom.composite, b);
+                bgfx::setTexture(2, bloom.sampler, bloom.level[0], BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP);
+            }
             bgfx::setVertexBuffer(0, screenBuffer);
             bgfx::setState(BGFX_STATE_WRITE_RGB);
             bgfx::submit(view, shaders.Program(ShaderProgram::Post));
         };
         if (!blurOn) {
-            // Offscreen only for the scene copy: straight copy to the screen.
+            // Offscreen only for the scene copy / bloom: straight copy to the screen.
             fullscreen(kViewBlurOut, BGFX_INVALID_HANDLE, blur.worldColor, blur.worldColor, 0.0f, 1.0f);
             blur.valid = false;
             return;
@@ -599,6 +695,12 @@ namespace perlin {
             bgfx::setViewRect(kViewTop, 0, 0, static_cast<uint16_t>(width), static_cast<uint16_t>(height));
             bgfx::setViewTransform(kViewTop, identity, guiProj);
             bgfx::touch(kViewTop);
+        }
+        if (shadowConfigDirty || params.shadowQuality != shadowQualityBuilt || params.shadowDistance != shadowDistanceBuilt) {
+            shadowConfigDirty = false;
+            shadowQualityBuilt = params.shadowQuality;
+            shadowDistanceBuilt = params.shadowDistance;
+            InitShadows(params.shadowQuality, params.shadowDistance);
         }
         SetupMotionBlur(params);
 
@@ -666,6 +768,20 @@ namespace perlin {
         cloudBuilt = false;
     }
 
+    void RenderContext_bgfx::UploadTileFlags(const std::vector<uint8_t>& flags) {
+        if (!initialized)
+            return;
+        constexpr int kW = 256, kH = 64;
+        std::vector<uint8_t> rgba(static_cast<size_t>(kW) * kH * 4, 0);
+        for (size_t i = 0; i < flags.size() && i < static_cast<size_t>(kW) * kH; i++)
+            rgba[i * 4] = flags[i];
+        if (!bgfx::isValid(tileFlagsTexture))
+            tileFlagsTexture = bgfx::createTexture2D(kW, kH, false, 1, bgfx::TextureFormat::RGBA8,
+                                                     BGFX_SAMPLER_MIN_POINT | BGFX_SAMPLER_MAG_POINT | BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP);
+        if (bgfx::isValid(tileFlagsTexture))
+            bgfx::updateTexture2D(tileFlagsTexture, 0, 0, 0, 0, kW, kH, bgfx::copy(rgba.data(), static_cast<uint32_t>(rgba.size())));
+    }
+
     void RenderContext_bgfx::UploadCrosshair(const Texture& icons) {
         if (!initialized || icons.width < 16 || icons.height < 16)
             return;
@@ -713,7 +829,8 @@ namespace perlin {
         bgfx::setVertexBuffer(0, &tvb);
         bgfx::setIndexBuffer(quadIndices);
         bgfx::setState(MaterialState("ui_crosshair", BGFX_STATE_WRITE_RGB) & ~BGFX_STATE_WRITE_A);
-        bgfx::submit(kViewGui, shaders.Program(ShaderProgram::Celestial));
+        // The built-in sprite program: shader packs replace "celestial" for the sun and moon.
+        bgfx::submit(kViewGui, shaders.Program(shaders.Has(ShaderProgram::SpriteUi) ? ShaderProgram::SpriteUi : ShaderProgram::Celestial));
     }
 
     uint32_t RenderContext_bgfx::UiCreateTexture(int w, int h, const uint8_t* rgba, bool linear, bool repeat) {
@@ -863,16 +980,34 @@ namespace perlin {
 
         float model[16];
         std::memcpy(model, draw.model, sizeof(model));
-        bgfx::setTransform(model);
-        if (mesh.transient) {
-            bgfx::setVertexBuffer(0, &mesh.tvb);
-            bgfx::setIndexBuffer(&mesh.tib);
-        } else {
-            bgfx::setVertexBuffer(0, mesh.vb);
-            bgfx::setIndexBuffer(mesh.ib);
-        }
-        bgfx::setTexture(0, uiSampler, texture);
+        const auto bindMesh = [&] {
+            bgfx::setTransform(model);
+            if (mesh.transient) {
+                bgfx::setVertexBuffer(0, &mesh.tvb);
+                bgfx::setIndexBuffer(&mesh.tib);
+            } else {
+                bgfx::setVertexBuffer(0, mesh.vb);
+                bgfx::setIndexBuffer(mesh.ib);
+            }
+            bgfx::setTexture(0, uiSampler, texture);
+        };
         const bool glint = draw.glintTexture != 0 && draw.glintTexture <= uiTextures.size() && uiTextures[draw.glintTexture - 1].used;
+
+        // Opaque world meshes (mobs, players, items) also go into the shader pack's shadow map
+        // while it is being redrawn this frame.
+        if (layer == UiLayer::World && shadow.active && shadow.rendering && shadow.entities && !glint && draw.depth && draw.depthWrite &&
+            draw.blend != 2 && shaders.Has(ShaderProgram::EntityShadow)) {
+            bindMesh();
+            shaders.SetMatrix(shadow.raster);
+            shaders.SetShadow(shadow.sample, shadow.info, true);
+            bgfx::setState(BGFX_STATE_WRITE_R | BGFX_STATE_WRITE_G | BGFX_STATE_WRITE_B | BGFX_STATE_WRITE_A | BGFX_STATE_WRITE_Z |
+                           BGFX_STATE_DEPTH_TEST_LESS);
+            bgfx::submit(1, shaders.Program(ShaderProgram::EntityShadow));
+            shaders.SetMatrix(mvp);
+        }
+        if (draw.shadowOnly)
+            return;
+        bindMesh();
         const float params[4] = {draw.alphaCutoff, glint ? 1.0f : 0.0f, draw.glintStrength, static_cast<float>(draw.emissive)};
         bgfx::setUniform(uiParams, params);
         bgfx::setUniform(uiOverlay, draw.overlay);
@@ -1590,10 +1725,10 @@ namespace perlin {
         }
     }
 
-    void RenderContext_bgfx::InitShadows(const Options& options) {
-        shadow = ShadowState{};
+    void RenderContext_bgfx::InitShadows(int quality, int distance) {
+        DestroyShadows();
         ShaderPack& pack = ShaderPack::Instance();
-        if (!pack.Active() || !pack.Feature("shadows") || !options.shadows || PERLIN_ENV("PERLIN_NO_SHADOWS"))
+        if (!pack.Active() || !pack.Feature("shadows") || quality <= 0 || PERLIN_ENV("PERLIN_NO_SHADOWS"))
             return;
         if (!shaders.Has(ShaderProgram::Shadow) || !shaders.Has(ShaderProgram::ShadowCutout)) {
             std::cout << "[shadows] the pack asks for shadows but has no shadow shaders for this backend" << std::endl;
@@ -1604,16 +1739,17 @@ namespace perlin {
             std::cout << "[shadows] float render targets are not supported; shadows off" << std::endl;
             return;
         }
-        int size = static_cast<int>(pack.Number("shadowMapSize", 2048));
-        size = std::clamp(size, 512, 4096);
+        static constexpr int kSizes[5] = {0, 1024, 2048, 3072, 4096};
+        int size = kSizes[std::clamp(quality, 1, 4)];
+        if (const bgfx::Caps* c = bgfx::getCaps(); c && c->limits.maxTextureSize > 0)
+            size = std::min<int>(size, static_cast<int>(c->limits.maxTextureSize));
         shadow.size = size;
-        shadow.distance = options.shadowDistance > 0 ? static_cast<float>(options.shadowDistance)
-                                                     : static_cast<float>(pack.Number("shadowDistance", 80));
+        shadow.distance = distance > 0 ? static_cast<float>(distance) : static_cast<float>(pack.Number("shadowDistance", 80));
         shadow.distance = std::clamp(shadow.distance, 24.0f, 256.0f);
         const uint64_t rt = BGFX_TEXTURE_RT | BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP | BGFX_SAMPLER_MIN_POINT |
                             BGFX_SAMPLER_MAG_POINT;
-        shadow.color = bgfx::createTexture2D(size, size, false, 1, bgfx::TextureFormat::R32F, rt);
-        bgfx::TextureHandle depth = bgfx::createTexture2D(size, size, false, 1, bgfx::TextureFormat::D24S8,
+        shadow.color = bgfx::createTexture2D(static_cast<uint16_t>(size), static_cast<uint16_t>(size), false, 1, bgfx::TextureFormat::R32F, rt);
+        bgfx::TextureHandle depth = bgfx::createTexture2D(static_cast<uint16_t>(size), static_cast<uint16_t>(size), false, 1, bgfx::TextureFormat::D24S8,
                                                           BGFX_TEXTURE_RT_WRITE_ONLY);
         bgfx::TextureHandle attachments[2] = {shadow.color, depth};
         shadow.fb = bgfx::createFrameBuffer(2, attachments, true);
@@ -1633,6 +1769,7 @@ namespace perlin {
 
     void RenderContext_bgfx::RenderShadows(float camX, float camY, float camZ) {
         shadow.active = false;
+        shadow.rendering = false;
         if (!shadow.enabled || !frame.sky.enabled)
             return;
         const float sunA = frame.sky.sunAngle;
@@ -1692,8 +1829,13 @@ namespace perlin {
                                 static_cast<int64_t>(std::llround(L.x * 500.0f)),
                                 static_cast<int64_t>(std::llround(L.y * 500.0f)),
                                 static_cast<int64_t>(meshGeneration)};
-        if (std::memcmp(key, shadow.key, sizeof(key)) == 0 && ++shadow.framesSince < 600)
+        // Entities and waving foliage move every frame, so then the map is redrawn every frame.
+        shadow.entities = frame.shadowEntities;
+        const bool dynamic = frame.shadowEntities || frame.shadowsDynamic;
+        shadow.rendering = false;
+        if (!dynamic && std::memcmp(key, shadow.key, sizeof(key)) == 0 && ++shadow.framesSince < 600)
             return;
+        shadow.rendering = true;
         std::memcpy(shadow.key, key, sizeof(key));
         shadow.framesSince = 0;
 
@@ -1733,6 +1875,8 @@ namespace perlin {
                     shaders.SetShadow(shadow.sample, shadow.info, true);
                     bgfx::setState(state);
                     shaders.Apply(atlas, lightmapTex, samplerFlags, lightmapFlags);
+                    if (bgfx::isValid(tileFlagsTexture))
+                        shaders.BindTileFlags(tileFlagsTexture);
                     primed = true;
                 }
                 const Page& pg = pages[g.page];
@@ -1818,6 +1962,9 @@ namespace perlin {
                 if (shadow.active)
                     shaders.BindShadow(shadow.color);
                 shaders.BindClouds(cloudMapTexture);
+                if (!bgfx::isValid(tileFlagsTexture))
+                    UploadTileFlags({}); // all zero until the block library reports foliage tiles
+                shaders.BindTileFlags(tileFlagsTexture);
                 if (ordered && scene.valid)
                     shaders.BindScene(scene.color, scene.depth);
                 primed = true;
@@ -1938,6 +2085,7 @@ namespace perlin {
         if (!initialized)
             return false;
         bgfx::frame();
+        shadowConfigDirty = true; // the new pack may want (or not want) shadows
         return shaders.Reload();
     }
 
@@ -1949,9 +2097,13 @@ namespace perlin {
         DestroyPages();
         DestroyMotionBlur();
         DestroySceneCopy();
+        DestroyBloom();
         if (bgfx::isValid(cloudMapTexture))
             bgfx::destroy(cloudMapTexture);
         cloudMapTexture = BGFX_INVALID_HANDLE;
+        if (bgfx::isValid(tileFlagsTexture))
+            bgfx::destroy(tileFlagsTexture);
+        tileFlagsTexture = BGFX_INVALID_HANDLE;
         DestroyShadows();
         DestroyUi();
         if (bgfx::isValid(atlasTex))

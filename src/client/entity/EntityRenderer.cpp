@@ -1201,6 +1201,7 @@ namespace perlin::entity {
                 draw.scissor = true;
                 std::copy_n(dollClip, 4, draw.scissorRect);
             }
+            draw.shadowOnly = shadowOnlyPass;
             renderer->UiSubmit(dollModel ? UiLayer::Doll : fpModel ? UiLayer::Hand : UiLayer::World, draw);
         }
         if (itemRenderer && !e.Has(flag::Invisible) && !fpModel && !dollModel) {
@@ -1356,6 +1357,7 @@ namespace perlin::entity {
         draw.depthWrite = false;
         draw.depth = true;
         draw.emissive = 2;
+        draw.shadowOnly = shadowOnlyPass;
         renderer->UiSubmit(UiLayer::World, draw);
     }
 
@@ -1444,6 +1446,7 @@ namespace perlin::entity {
                 StyleFromMaterial(draw, keyPair.second == 1 ? "particles_add" : (keyPair.second == 2 ? "particles_blend" : "particles_alpha"));
                 draw.alphaCutoff = keyPair.second == 0 ? 0.5f : 0.02f;
                 draw.emissive = 2;
+                draw.shadowOnly = shadowOnlyPass;
                 renderer->UiSubmit(UiLayer::World, draw);
             }
         }
@@ -1479,6 +1482,7 @@ namespace perlin::entity {
             StyleFromMaterial(draw, tile < 0 ? "particles_blend" : "particles_alpha");
             draw.alphaCutoff = tile < 0 ? 0.02f : 0.5f;
             draw.emissive = 2;
+            draw.shadowOnly = shadowOnlyPass;
             renderer->UiSubmit(UiLayer::World, draw);
         }
     }
@@ -1642,6 +1646,7 @@ namespace perlin::entity {
             StyleFromMaterial(draw, "cracks_overlay");
             draw.alphaCutoff = 0.5f;
             draw.emissive = 2;
+            draw.shadowOnly = shadowOnlyPass;
             renderer->UiSubmit(UiLayer::World, draw);
         }
     }
@@ -1661,8 +1666,10 @@ namespace perlin::entity {
             itemRenderer->BeginWorldItems();
         tags.clear();
         for (const Entity& e : entities) {
-            if (e.isSelf && in.firstPerson)
+            const bool shadowOnlySelf = e.isSelf && in.firstPerson;
+            if (shadowOnlySelf && !in.selfShadow)
                 continue;
+            shadowOnlyPass = shadowOnlySelf;
             considered++;
             if (e.type == "minecraft:painting") {
                 DrawPainting(e, in);
@@ -1681,7 +1688,7 @@ namespace perlin::entity {
                 continue;
             if (e.dying && v.deathTime >= 1.0f && !e.isSelf)
                 continue;
-            if (in.frustum) {
+            if (in.frustum && !shadowOnlySelf) {
                 float w = 0.5f, h = 0.5f;
                 if (!e.isItem) {
                     const auto hb = HitBox(e);
@@ -1695,7 +1702,7 @@ namespace perlin::entity {
                     continue;
                 }
             }
-            if (!e.Has(flag::Invisible) && !(e.isSelf && in.firstPerson)) {
+            if (in.blobShadows && !e.Has(flag::Invisible) && !(e.isSelf && in.firstPerson)) {
                 if (e.isItem) {
                     DrawShadow(v.pos, 0.15f, 0.75f, in);
                 } else if (!e.dying || v.deathTime < 0.9f) {
@@ -1798,6 +1805,7 @@ namespace perlin::entity {
             gEntityProf[1] += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - prof1).count();
             drawn++;
         }
+        shadowOnlyPass = false;
         if (PERLIN_ENV("PERLIN_PROFILE") && ++gEntityProfFrames >= 120) {
             std::cout << "[profile] entity build=" << gEntityProf[0] / gEntityProfFrames << " draw=" << gEntityProf[1] / gEntityProfFrames << " shadow+rest=" << gEntityProf[2] / gEntityProfFrames << std::endl;
             gEntityProf[0] = gEntityProf[1] = gEntityProf[2] = 0;
@@ -2041,6 +2049,7 @@ namespace perlin::entity {
         glm::mat4 model(1.0f);
         model[3] = glm::vec4(static_cast<float>(in.camera.x), static_cast<float>(in.camera.y), static_cast<float>(in.camera.z), 1.0f);
         std::copy_n(&model[0][0], 16, draw.model);
+        draw.shadowOnly = shadowOnlyPass;
         renderer->UiSubmit(UiLayer::World, draw);
     }
 
@@ -2210,6 +2219,7 @@ namespace perlin::entity {
             draw.depth = true;
             draw.depthWrite = true;
             draw.emissive = 0;
+            draw.shadowOnly = shadowOnlyPass;
             renderer->UiSubmit(UiLayer::World, draw);
         };
         submit(front, fi, texture);
@@ -2246,6 +2256,7 @@ namespace perlin::entity {
             draw.depth = true;
             draw.depthWrite = true;
             draw.emissive = 0;
+            draw.shadowOnly = shadowOnlyPass;
             renderer->UiSubmit(UiLayer::World, draw);
         };
         std::unordered_map<int, std::pair<std::vector<UiVertex>, std::vector<uint32_t>>> beds;

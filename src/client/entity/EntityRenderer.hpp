@@ -67,6 +67,8 @@ namespace perlin::entity {
             float lineWidthPx = 2.5f;
             glm::dvec3 outlineLo{0.0}, outlineHi{0.0};
             std::vector<std::pair<glm::dvec3, glm::dvec3>> outlineShape;
+            bool blobShadows = true; // vanilla round shadows under entities
+            bool selfShadow = false; // in first person, still draw yourself into the shader pack's shadow map
         };
         void Render(const std::vector<Entity>& entities, const FrameIn& in);
         void RenderBlockEntities(const std::vector<BlockEntityDraw>& draws, const FrameIn& in);
@@ -102,6 +104,7 @@ namespace perlin::entity {
                            const attachable::Geometry* bindGeometry);
         void Draw(const Entity& e, const View& v, const std::vector<Layer>& layers, float scale, const FrameIn& in);
         const FpState* fp = nullptr;
+        bool shadowOnlyPass = false; // current entity only casts a shadow (yourself in first person)
         const glm::mat4* fpModel = nullptr;
         const glm::mat4* dollModel = nullptr;
         const int* dollClip = nullptr;

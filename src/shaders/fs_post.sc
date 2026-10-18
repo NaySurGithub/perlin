@@ -4,7 +4,10 @@ $input v_texcoord0
 
 SAMPLER2D(s_cur, 0);
 SAMPLER2D(s_hist, 1);
+SAMPLER2D(s_bloom, 2);
 uniform vec4 u_post;
+// x: bloom strength (0 = none)
+uniform vec4 u_bloom;
 
 void main()
 {
@@ -22,5 +25,12 @@ void main()
     }
     vec3 cur = texture2D(s_cur, v_texcoord0).rgb;
     vec3 hist = texture2D(s_hist, v_texcoord0).rgb;
-    gl_FragColor = vec4(mix(cur, hist, u_post.x), 1.0);
+    vec3 color = mix(cur, hist, u_post.x);
+    if (u_bloom.x > 0.0)
+    {
+        // Screen-blend the glow so it brightens without clipping to flat white.
+        vec3 glow = texture2D(s_bloom, v_texcoord0).rgb * u_bloom.x;
+        color = vec3_splat(1.0) - (vec3_splat(1.0) - color) * (vec3_splat(1.0) - clamp(glow, 0.0, 1.0));
+    }
+    gl_FragColor = vec4(color, 1.0);
 }

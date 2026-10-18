@@ -22,6 +22,10 @@ namespace perlin {
         Post,
         Shadow,
         ShadowCutout,
+        // Always the built-in shaders, whatever pack is active:
+        SpriteUi,     // HUD sprites such as the crosshair
+        EntityShadow, // entity meshes into the pack's shadow map
+        Bloom,
         Count
     };
 
@@ -55,6 +59,8 @@ namespace perlin {
         void BindClouds(bgfx::TextureHandle texture) const;
         void SetScene(const float info[4], const float inverseMvp[16]);
         void BindScene(bgfx::TextureHandle color, bgfx::TextureHandle depth) const;
+        // Per-atlas-tile flags for packs (stage 6): r = foliage kind (see the waving code).
+        void BindTileFlags(bgfx::TextureHandle texture) const;
 
     private:
         bool BuildPrograms();
@@ -92,6 +98,7 @@ namespace perlin {
         bgfx::UniformHandle sceneDepthSampler = BGFX_INVALID_HANDLE;
         bgfx::UniformHandle sceneInfo = BGFX_INVALID_HANDLE;
         bgfx::UniformHandle invMvp = BGFX_INVALID_HANDLE;
+        bgfx::UniformHandle tileFlagsSampler = BGFX_INVALID_HANDLE;
         float cloudMapValue[4] = {0.0f, 0.0f, 1.0f / 3072.0f, 1.0f / 3072.0f};
         float sceneInfoValue[4] = {};
         float invMvpValue[16] = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};

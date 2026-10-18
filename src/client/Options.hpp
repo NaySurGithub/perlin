@@ -87,6 +87,12 @@ namespace perlin {
         bool shadows = true;
         int heldLight = 0;
         int shadowDistance = 0;
+        // Shader pack sun shadows: 0 off, 1 low (1024), 2 medium (2048), 3 high (3072), 4 ultra (4096).
+        int shadowQuality = 2;
+        // Mobs, players (and your own player in first person) cast shader pack shadows.
+        bool shadowEntities = true;
+        // Bloom strength 0..1 (0 = off).
+        float bloom = 0.5f;
         ZoomSettings zoom;
         HandSettings hand;
         int guiScale = 0;

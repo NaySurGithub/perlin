@@ -1,4 +1,4 @@
-$input v_color0, v_texcoord0, v_fog, v_layer, v_visibility, v_rel, v_light, v_tint
+$input v_color0, v_texcoord0, v_fog, v_layer, v_visibility, v_rel, v_light, v_tint, v_foliage
 
 #include "vv_terrain_common.sh"
 
@@ -7,8 +7,13 @@ void main()
     vec4 tex = sampleBlock(v_texcoord0, v_layer);
     vec3 viewDir = normalize(v_rel);
     vec3 n = faceNormal(v_rel);
+    // Fancy leaves are meshed into the solid layer and rely on this cut-out.
+    if (tex.a * v_color0.a < 0.5)
+        discard;
     float lava = isTile(v_layer, u_tiles.y);
-    vec4 color = vec4(vvLit(tex.rgb, v_tint, n, v_rel, v_light, 0.0, lava * 0.9), tex.a * v_color0.a);
+    // Leaves (meshed here with fancy graphics) let light through.
+    float leaves = step(0.5, v_foliage) * step(v_foliage, 1.5);
+    vec4 color = vec4(vvLit(tex.rgb, v_tint, n, v_rel, v_light, leaves, lava * 0.9), tex.a * v_color0.a);
     color = mix(u_fogColor * vec4(1.0, 1.0, 1.0, color.a), color, v_visibility);
     color.rgb = vvFog(color.rgb, v_fog, viewDir);
     gl_FragColor = color;
