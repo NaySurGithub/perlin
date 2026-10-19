@@ -5,6 +5,7 @@
 #include "util/Env.hpp"
 #include "client/Zoom.hpp"
 #include "client/Perlin.hpp"
+#include "util/Relaunch.hpp"
 #include "client/resources/ServerPacks.hpp"
 #include "client/ui/ServerLayer.hpp"
 #include "client/i18n/Lang.hpp"
@@ -2970,6 +2971,19 @@ namespace perlin {
                 slider("Cloud Range", std::to_string(options.cloudRange) + " " + tr("options.chunks", "chunks"), static_cast<float>(options.cloudRange - 2) / 126.0f,
                        [this](float f) { options.cloudRange = 2 + static_cast<int>(std::lround(std::clamp(f, 0.0f, 1.0f) * 126.0f)); });
                 toggle("Better Grass", options.betterGrass);
+                {
+                    // The graphics API; picking another one restarts the game (see below).
+                    std::vector<std::pair<std::string, std::string>> apis = {{"auto", "Auto"}};
+#if defined(_WIN32)
+                    apis.insert(apis.end(), {{"d3d11", "Direct3D 11"}, {"d3d12", "Direct3D 12"}, {"vulkan", "Vulkan"}, {"opengl", "OpenGL"}});
+#elif defined(__APPLE__)
+                    apis.insert(apis.end(), {{"metal", "Metal"}});
+#else
+                    apis.insert(apis.end(), {{"vulkan", "Vulkan"}, {"opengl", "OpenGL"}});
+#endif
+                    choice("Renderer", options.renderer, apis);
+                }
+                choice("Cape Physics", options.capePhysics, {{"noshoulder", "No Shoulder"}, {"shoulder", "Shoulder"}, {"off", "Off"}});
                 choice("Glass", options.glass, {{"normal", "Normal"}, {"connected", "Connected"}, {"connectedClear", "Connected Clear"}, {"clear", "Clear"}});
                 {
                     static const char* const kQuality[5] = {"Off", "Low", "Medium", "High", "Ultra"};
@@ -5588,6 +5602,16 @@ namespace perlin {
             }
             if (const char* g = PERLIN_ENV("PERLIN_GLASS"))
                 options.glass = g;
+            {
+                // A different graphics API can only start with the window, so changing it saves and restarts.
+                static std::string appliedRenderer = options.renderer;
+                if (options.renderer != appliedRenderer) {
+                    appliedRenderer = options.renderer;
+                    options.Save();
+                    if (perlin::RelaunchSelf(true))
+                        std::_Exit(0);
+                }
+            }
             levelRenderer->SetBetterGrass(options.betterGrass ? 1 : 0);
             levelRenderer->SetGlassMode(options.glass == "connected" ? 1 : options.glass == "connectedClear" ? 2 : options.glass == "clear" ? 3 : 0);
             levelRenderer->ReloadAssetsIfNeeded();
@@ -6660,6 +6684,7 @@ namespace perlin {
                 }
                 ein.ownNametag = options.thirdPersonNametag;
                 ein.ownParts = options.skinParts;
+                ein.capePhysics = options.capePhysics == "shoulder" ? 2 : options.capePhysics == "off" ? 0 : 1;
                 if (live) {
                     // LivingEntity.getCurrentSwingDuration: 6 ticks, minus (1 + amplifier) with haste or conduit power,
                     // plus 2 * (1 + amplifier) with mining fatigue.

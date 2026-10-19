@@ -27,14 +27,14 @@ namespace perlin {
         Args().assign(argv, argv + argc);
     }
 
-    bool RelaunchSelf() {
+    bool RelaunchSelf(bool requested) {
 #ifdef __EMSCRIPTEN__
         return false;
 #else
-        const int count = Count();
-        if (count >= 3 || Args().empty() || std::getenv("PERLIN_NO_RELAUNCH"))
+        const int count = requested ? 0 : Count();
+        if (count >= 3 || Args().empty() || (!requested && std::getenv("PERLIN_NO_RELAUNCH")))
             return false;
-        const std::string next = std::to_string(count + 1);
+        const std::string next = requested ? std::string("0") : std::to_string(count + 1);
 #ifdef _WIN32
         SetEnvironmentVariableA("PERLIN_RELAUNCH", next.c_str());
         wchar_t path[MAX_PATH * 4] = {};

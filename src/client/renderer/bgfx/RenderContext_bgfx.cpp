@@ -163,7 +163,10 @@ namespace perlin {
         callback = std::make_unique<Callback>(this);
 
         bgfx::Init init;
+        // The environment variable wins (debugging); otherwise the Renderer setting. "auto" lets the GPU chooser decide.
         std::string forced = Env("PERLIN_RENDERER");
+        if (forced.empty())
+            forced = options.renderer;
         init.type = bgfx::RendererType::Count;
         if (forced == "vulkan")
             init.type = bgfx::RendererType::Vulkan;
@@ -202,16 +205,18 @@ namespace perlin {
         }
         // No explicit choice: on Windows pick the fastest GPU and Direct3D 12 where it runs well. bgfx's own
         // ranking always prefers Direct3D 11 on Windows, so Direct3D 12 was never chosen automatically.
+        // An explicit API still gets the fastest adapter (the chooser's vendor/device), so picking Direct3D 12 or 11
+        // by hand never lands on the integrated GPU of a laptop.
         gpu::Choice gpuChoice;
-        if (init.type == bgfx::RendererType::Count || forced == "auto") {
-            gpuChoice = gpu::ChooseRenderer();
-            if (gpuChoice.type != bgfx::RendererType::Count) {
+        const bool autoType = init.type == bgfx::RendererType::Count || forced == "auto";
+        gpuChoice = gpu::ChooseRenderer();
+        if (gpuChoice.type != bgfx::RendererType::Count) {
+            if (autoType)
                 init.type = gpuChoice.type;
-                init.vendorId = gpuChoice.vendorId;
-                init.deviceId = gpuChoice.deviceId;
-                std::cout << "[gpu] " << gpuChoice.adapterName << ": "
-                          << bgfx::getRendererName(gpuChoice.type) << " (" << gpuChoice.reason << ")" << std::endl;
-            }
+            init.vendorId = gpuChoice.vendorId;
+            init.deviceId = gpuChoice.deviceId;
+            std::cout << "[gpu] " << gpuChoice.adapterName << ": " << bgfx::getRendererName(init.type) << " ("
+                      << (autoType ? gpuChoice.reason : std::string("chosen in settings")) << ")" << std::endl;
         }
         init.fallback = true; // if the chosen API cannot start, bgfx tries the next best one
         init.swapChain.nwh = native.window;
@@ -221,6 +226,10 @@ namespace perlin {
         init.swapChain.width = (uint32_t)width;
         init.swapChain.height = (uint32_t)height;
         init.reset = ResetFlags();
+        init.debug = false;   // no D3D12/Vulkan validation layers or debug text
+        init.profile = false;
+        // Direct3D 12 keeps one more frame in flight than the default, so the CPU is not stalled on the GPU's fence.
+        init.swapChain.numBackBuffers = 3;
         init.limits.maxTransientVbSize = 48u << 20;
         init.limits.maxTransientIbSize = 24u << 20;
         init.callback = callback.get();

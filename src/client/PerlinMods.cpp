@@ -258,6 +258,8 @@ namespace perlin {
             choice("dynamicLights", options.dynamicLights, {"off", "fast", "fancy"});
             choice("sprintMode", options.sprintMode, {"hold", "toggle"});
             choice("sneakMode", options.sneakMode, {"hold", "toggle"});
+            choice("capePhysics", options.capePhysics, {"off", "noshoulder", "shoulder"});
+            t.push_back({"renderer", [this] { return options.renderer; }, nullptr}); // changing it restarts the game, so mods only read it
             t.push_back({"language", [this] { return options.language; }, [this](const std::string& v) {
                              if (v.empty() || v.size() > 16)
                                  return false;

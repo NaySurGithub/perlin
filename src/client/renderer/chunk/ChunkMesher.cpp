@@ -99,7 +99,8 @@ namespace perlin {
                         break;
                     }
             }
-            if (pal.HasState(id, "minecraft:vertical_half")) {
+            // A double slab carries the same vertical_half state as a single one but fills the whole block.
+            if (pal.HasState(id, "minecraft:vertical_half") && pal.Name(id).find("double") == std::string::npos) {
                 g.slab = true;
                 g.slabTop = pal.StateString(id, "minecraft:vertical_half", "bottom") == "top";
             }

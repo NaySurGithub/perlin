@@ -109,6 +109,10 @@ namespace perlin {
         std::vector<std::string> approvedMods; // "name=bits": dangerous permissions the player allowed
         bool hotReload = true;
         bool betterGrass = false;
+        // Graphics API: "auto" (picks the best for this GPU), "d3d11", "d3d12", "vulkan", "opengl", "metal". Changing it relaunches.
+        std::string renderer = "auto";
+        // Badlion-style cape physics: "off", "noshoulder" (default) or "shoulder" (adds the shoulder pads).
+        std::string capePhysics = "noshoulder";
         SkinParts skinParts;
         std::map<std::string, bool> skinSlim;
         std::map<std::string, double> shaderSettings;

@@ -132,6 +132,9 @@ namespace perlin {
         virtual bool PackShadowsActive() const { return false; }
         virtual void SetVsync(bool) {}
         virtual std::string RendererName() const { return {}; }
+        // Most chunk meshes the renderer wants uploaded in one frame. Each upload is several buffer copies with
+        // resource barriers on Direct3D 12, so it asks for a steadier trickle than the other backends.
+        virtual size_t MeshUploadsPerFrame() const { return SIZE_MAX; }
         virtual std::string GpuVendor() const { return {}; }
         virtual std::string GpuDescription() const { return {}; }
 

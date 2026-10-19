@@ -1,4 +1,6 @@
 #include "client/entity/EntityRenderer.hpp"
+#include "client/entity/CapeGeometry.inc"
+#include "client/entity/CapePhysics.hpp"
 
 #include <cstdio>
 #include "util/Env.hpp"
@@ -191,6 +193,8 @@ namespace perlin::entity {
         float body = 0, bodyPrev = 0;
         double bodyTickAcc = 0;
         glm::dvec3 bodyTickPos{0.0};
+        CapeChain cape;
+        float capeLean = 0;
     };
 
     namespace {
@@ -374,11 +378,12 @@ namespace perlin::entity {
         return 0;
     }
 
-    // Java's body rotation for players (LivingEntity.tick + tickHeadTurn): while moving the body
-    // turns towards the walking direction (backwards walking keeps facing forward), swinging faces
-    // the look direction, and the head may turn at most 50 degrees from the body before dragging it
-    // along. Servers only send the look yaw for players, so the body is always computed here.
+    // Bedrock's body rotation for players: the body tracks the look direction closely. The head may lead by a
+    // few degrees (a dead zone that is dragged along), never far enough to read as a free look, and while
+    // moving the body faces the look direction, backwards walking included.
     void EntityRenderer::TickPlayerBody(View& v, float dt, float prevYaw) {
+        constexpr float kDeadZone = 12.0f; // head lead before the body starts turning
+        constexpr float kMaxLead = 22.0f;  // hard limit between head and body
         const float look = v.headYaw;
         if (!v.bodyInit) {
             v.bodyInit = true;
@@ -394,18 +399,15 @@ namespace perlin::entity {
             v.bodyPrev = v.body;
             const double xd = v.pos.x - v.bodyTickPos.x, zd = v.pos.z - v.bodyTickPos.z;
             v.bodyTickPos = v.pos;
-            float target = v.body;
-            if (xd * xd + zd * zd > 0.0025000002) {
-                const float walk = static_cast<float>(std::atan2(zd, xd)) * (180.0f / 3.14159265f) - 90.0f;
-                const float diff = std::fabs(WrapDegrees(look) - walk);
-                target = (95.0f < diff && diff < 265.0f) ? walk - 180.0f : walk;
-            }
-            if (v.attackTime > 0.0f)
-                target = look;
-            v.body += WrapDegrees(target - v.body) * 0.3f;
-            const float headDiff = WrapDegrees(look - v.body);
-            if (std::fabs(headDiff) > 50.0f)
-                v.body += headDiff - (headDiff > 0.0f ? 50.0f : -50.0f);
+            const bool moving = xd * xd + zd * zd > 0.0025000002 || v.attackTime > 0.0f;
+            float diff = WrapDegrees(look - v.body);
+            const float lead = moving ? 4.0f : kDeadZone;
+            if (std::fabs(diff) > lead)
+                v.body += (diff - (diff > 0.0f ? lead : -lead)) * (moving ? 0.55f : 0.4f);
+            diff = WrapDegrees(look - v.body);
+            const float maxLead = moving ? 14.0f : kMaxLead;
+            if (std::fabs(diff) > maxLead)
+                v.body += diff - (diff > 0.0f ? maxLead : -maxLead);
         }
         if (ticks > 1 || v.bodyTickAcc > 0.25)
             v.bodyPrev = v.body; // a long frame: no catch-up sweep
@@ -414,8 +416,8 @@ namespace perlin::entity {
         float shown = v.bodyPrev + WrapDegrees(v.body - v.bodyPrev) * partial;
         // The head moves every frame; keep it within reach of the drawn body between ticks too.
         const float headDiff = WrapDegrees(look - shown);
-        if (std::fabs(headDiff) > 50.0f)
-            shown += headDiff - (headDiff > 0.0f ? 50.0f : -50.0f);
+        if (std::fabs(headDiff) > kMaxLead)
+            shown += headDiff - (headDiff > 0.0f ? kMaxLead : -kMaxLead);
         v.yaw = shown;
         v.yawSpeed = WrapDegrees(v.yaw - prevYaw) / std::max(dt, 0.001f);
     }
@@ -588,6 +590,25 @@ namespace perlin::entity {
             flap += std::sin(walk * 6.0f) * 32.0f * bob;
             v.capeX = 6.0f + lean / 2.0f + flap;
             v.capeZ = lean2 / 2.0f;
+
+            if (e.isPlayer && in.capePhysics > 0) {
+                // Velocity in the body's frame (Java yaw: forward = (-sin, cos), right = (-cos, -sin)).
+                const float vx = static_cast<float>(step.x) / dt, vz = static_cast<float>(step.z) / dt;
+                const float fs = static_cast<float>(sn), fc = static_cast<float>(cs);
+                CapeInput ci;
+                const bool jumped = glm::length(step) > 6.0; // teleport: no wind from it
+                ci.forward = jumped ? 0.0f : -fs * vx + fc * vz;
+                ci.right = jumped ? 0.0f : -fc * vx - fs * vz;
+                ci.up = jumped ? 0.0f : v.verticalSpeed;
+                ci.yawRate = std::clamp(v.yawSpeed, -720.0f, 720.0f);
+                const float leanTarget = e.Has(flag::Sneaking) ? 28.6f : 0.0f;
+                const float body = std::max(v.swimAmount, v.lieAmount);
+                v.capeLean += (std::max(leanTarget, 70.0f * body) - v.capeLean) * std::min(1.0f, dt * 10.0f);
+                ci.lean = v.capeLean;
+                ci.stride = walk * 6.0f;
+                ci.moving = std::clamp(v.groundSpeed / 3.0f, 0.0f, 1.0f) * (std::fabs(v.verticalSpeed) < 2.0f ? 1.0f : 0.0f);
+                v.cape.Step(ci, dt);
+            }
         }
 
         if (e.Has(flag::UsingItem) && !v.wasUsing)
@@ -904,6 +925,20 @@ namespace perlin::entity {
             r.z = -v.capeZ;
             r.y = v.capeZ;
         }
+        if (e.isPlayer && in.capePhysics > 0) {
+            // The physics cape: every part turns by its angle relative to the part above it.
+            pose["cape"].rotation = glm::vec3(0.0f);
+            float previousPitch = 0.0f, previousRoll = 0.0f;
+            for (int i = 0; i < CapeChain::kSegments; i++) {
+                auto& part = pose["part" + std::to_string(i + 1)].rotation;
+                part = glm::vec3(-(v.cape.pitch[i] - previousPitch), 0.0f, -(v.cape.roll[i] - previousRoll));
+                previousPitch = v.cape.pitch[i];
+                previousRoll = v.cape.roll[i];
+            }
+            // The shoulder pads follow the head when it is turned against the body while moving.
+            const float turned = std::sin(WrapDegrees(v.yaw - v.headYaw) * 0.017453292f);
+            pose["shoulders"].rotation = glm::vec3(0.0f, std::clamp(v.limbAmount, 0.0f, 1.0f) * turned * turned * turned * 60.0f, 0.0f);
+        }
         if (v.fp) {
             static const float px = PERLIN_ENV("PERLIN_FPX") ? static_cast<float>(std::atof(PERLIN_ENV("PERLIN_FPX"))) : 1.0f;
             for (auto& [boneName, xf] : pose)
@@ -978,6 +1013,18 @@ namespace perlin::entity {
                 }
                 return;
             }
+            bool physicsCape = false;
+            if (controllerId == "controller.render.player.cape" && e.isPlayer && in.capePhysics > 0) {
+                if (capeGeometries.Size() == 0) {
+                    capeGeometries.Load(capegeo::kNoShoulder);
+                    capeGeometries.Load(capegeo::kShoulder);
+                }
+                if (const attachable::Geometry* physics = capeGeometries.Find(in.capePhysics == 2 ? "geometry.cape_physics_shoulder" : "geometry.cape_physics_plain")) {
+                    geometry = physics;
+                    geometryId = in.capePhysics == 2 ? "geometry.cape_physics_shoulder" : "geometry.cape_physics_plain";
+                    physicsCape = true;
+                }
+            }
             if (!allowCapeOnly && !v.hasArmR && !v.hasArmL) {
                 const glm::mat4 toJava = glm::scale(glm::mat4(1.0f), glm::vec3(16.0f, -16.0f, 16.0f));
                 glm::mat4 w;
@@ -1001,7 +1048,8 @@ namespace perlin::entity {
             if (e.isPlayer && e.skin && (texKey == "default" || texKey == "cape")) {
                 if (texKey == "cape" && e.skin->capeWidth <= 0)
                     return;
-                layer.texture = texKey == "cape" ? "#capemodel" : "#skin";
+                // The physics geometry has the cape's own face layout; the vanilla one needs its halves swapped.
+                layer.texture = texKey == "cape" ? (physicsCape ? "#cape" : "#capemodel") : "#skin";
             } else {
                 const auto tp = def->textures.find(texKey);
                 if (tp == def->textures.end())

@@ -165,7 +165,7 @@ namespace perlin::game {
     enum class Option : uint8_t {
         maxFps, vsync, renderDistance, fov, gamma, mouseSensitivity, invertMouse, fancyGraphics, cloudRange, guiScale, shadows,
         fovEffects, motionBlur, damageTilt, damageTint, thirdPersonCrosshair, thirdPersonNametag, menuBlur, betterGrass, showHud,
-        glass, dynamicLights, sprintMode, sneakMode,
+        glass, dynamicLights, sprintMode, sneakMode, capePhysics, renderer,
     };
 
     namespace detail_option {

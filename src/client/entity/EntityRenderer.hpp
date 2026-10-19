@@ -76,6 +76,7 @@ namespace perlin::entity {
             bool blobShadows = true; // vanilla round shadows under entities
             float ownSwingTicks = 6.0f; // Java's current swing duration for the local player (haste, conduit, fatigue)
             bool selfShadow = false; // in first person, still draw yourself into the shader pack's shadow map
+            int capePhysics = 1;     // 0 off, 1 physics without shoulder pads, 2 with them
         };
         void Render(const std::vector<Entity>& entities, const FrameIn& in);
         void RenderBlockEntities(const std::vector<BlockEntityDraw>& draws, const FrameIn& in);
@@ -143,6 +144,7 @@ namespace perlin::entity {
         std::unordered_map<std::string, uint32_t> textures;
         std::unordered_map<uint64_t, uint32_t> skinTextures, capeTextures, capeModelTextures;
         std::unordered_map<uint64_t, std::unique_ptr<attachable::GeometryLibrary>> skinGeometry;
+        attachable::GeometryLibrary capeGeometries; // the 16-part physics cape, loaded on first use
         std::vector<uint32_t> pendingMeshes;
         size_t drawn = 0, considered = 0, unrenderable = 0, culled = 0;
         struct Line {

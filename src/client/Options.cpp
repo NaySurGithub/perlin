@@ -67,6 +67,8 @@ namespace perlin {
             int shadowQuality = 2;
             bool shadowEntities = true;
             float bloom = 0.5f;
+            std::string renderer = "auto";
+            std::string capePhysics = "noshoulder";
         };
     }
 
@@ -143,7 +145,9 @@ namespace perlin {
                       o.shaderSettings,
                       o.shadowQuality,
                       o.shadowEntities,
-                      o.bloom};
+                      o.bloom,
+                      o.renderer,
+                      o.capePhysics};
         auto parsed = json::Read<Stored>(text);
         if (!parsed)
             return o;
@@ -203,6 +207,8 @@ namespace perlin {
         o.guiScale = std::clamp(stored.guiScale, 0, 16);
         o.sound = stored.sound;
         o.menuBlur = std::clamp(stored.menuBlur, 0, 10);
+        o.renderer = stored.renderer == "d3d11" || stored.renderer == "d3d12" || stored.renderer == "vulkan" || stored.renderer == "opengl" || stored.renderer == "metal" ? stored.renderer : std::string("auto");
+        o.capePhysics = stored.capePhysics == "off" || stored.capePhysics == "shoulder" ? stored.capePhysics : std::string("noshoulder");
         o.sprintMode = stored.sprintMode == "toggle" ? "toggle" : "hold";
         o.sneakMode = stored.sneakMode == "toggle" ? "toggle" : "hold";
         o.dynamicLights = stored.dynamicLights == "fast" || stored.dynamicLights == "fancy" ? stored.dynamicLights : "off";
@@ -290,7 +296,9 @@ namespace perlin {
                       shaderSettings,
                       shadowQuality,
                       shadowEntities,
-                      bloom};
+                      bloom,
+                      renderer,
+                      capePhysics};
         for (size_t i = 0; i < kActionCount; i++)
             stored.keys[ActionId(static_cast<Action>(i))] = keys[i].Serialize();
 

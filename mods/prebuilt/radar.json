@@ -1,7 +1,0 @@
-{
-  "name": "Radar",
-  "description": "A small rotating radar of nearby entities. Players are red, items are cyan, everything else is yellow. Toggle with F8.",
-  "version": "1.0.0",
-  "author": "Perlin",
-  "permissions": []
-}
