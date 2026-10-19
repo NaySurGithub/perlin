@@ -74,9 +74,9 @@ mcimg { display: block; position: absolute; }
             std::string d = "<div id=\"" + id + "\" class=\"btn\" style=\"left:" + N(x) + "px;top:" + N(y) + "px;width:" + N(w) + "px;\">";
             d += "<mcimg src=\"mcres:ui_menu_btn.png\" nine=\"3 3 3 3\" style=\"left:0px;top:0px;width:" + N(w) + "px;height:20px;\"></mcimg>";
             d += "<mcimg class=\"h\" src=\"mcres:ui_menu_btn_hi.png\" nine=\"3 3 3 3\" style=\"left:0px;top:0px;width:" + N(w) + "px;height:20px;\"></mcimg>";
-            const int textX = head.empty() ? 0 : 18;
+            const int textX = head.empty() ? 6 : 20;
             d += Head(head, 4, 4, 12);
-            d += "<div class=\"lbl\" style=\"left:" + N(textX) + "px;width:" + N(w - textX) + "px;\">" + EscapeRml(label) + "</div></div>\n";
+            d += "<div class=\"lbl\" style=\"left:" + N(textX) + "px;width:" + N(w - textX - 4) + "px;text-align:left;\">" + EscapeRml(label) + "</div></div>\n";
             return d;
         }
 
@@ -85,7 +85,7 @@ mcimg { display: block; position: absolute; }
             std::string d = "<div id=\"" + id + "\" class=\"btn\" style=\"left:" + N(x) + "px;top:" + N(y) + "px;width:20px;\">";
             d += "<mcimg src=\"mcres:ui_menu_btn.png\" nine=\"3 3 3 3\" style=\"left:0px;top:0px;width:20px;height:20px;\"></mcimg>";
             d += "<mcimg class=\"h\" src=\"mcres:ui_menu_btn_hi.png\" nine=\"3 3 3 3\" style=\"left:0px;top:0px;width:20px;height:20px;\"></mcimg>";
-            d += "<mcimg src=\"" + EscapeRml(icon) + "\" style=\"left:2px;top:2px;width:16px;height:16px;\"></mcimg></div>\n";
+            d += "<mcimg src=\"" + EscapeRml(icon) + "\" style=\"left:4px;top:4px;width:12px;height:12px;\"></mcimg></div>\n";
             return d;
         }
 
@@ -104,11 +104,25 @@ mcimg { display: block; position: absolute; }
             return d;
         }
 
-        // Approximate width of a line of Minecraft font text in GUI pixels.
+        // Width of a line of Minecraft font text in GUI pixels (glyph advances of the default font).
         int TextWidth(const std::string& text) {
             int n = 0;
-            for (unsigned char c : text)
-                n += (c & 0xC0) == 0x80 ? 0 : (c == 'i' || c == 'l' || c == '!' || c == '.' || c == ',' || c == '\'' || c == '|' ? 2 : (c == ' ' ? 4 : 6));
+            for (unsigned char c : text) {
+                if ((c & 0xC0) == 0x80)
+                    continue;
+                if (c == 'i' || c == '!' || c == '.' || c == ',' || c == ':' || c == ';' || c == '|' || c == '\'')
+                    n += 2;
+                else if (c == 'l' || c == '`')
+                    n += 3;
+                else if (c == 'I' || c == 't' || c == '[' || c == ']' || c == ' ')
+                    n += 4;
+                else if (c == 'f' || c == 'k' || c == '<' || c == '>' || c == '{' || c == '}' || c == '(' || c == ')' || c == '*' || c == '"')
+                    n += 5;
+                else if (c == '@' || c == '~')
+                    n += 7;
+                else
+                    n += 6;
+            }
             return n;
         }
 
@@ -156,7 +170,7 @@ mcimg { display: block; position: absolute; }
             const int count = static_cast<int>(m.accounts.size());
             const int rows = std::max(1, std::min(count, TitleAccountRows(h)));
             const int scroll = std::clamp(m.accountScroll, 0, std::max(0, count - rows));
-            const int ph = 36 + rows * rowH + 56;
+            const int ph = 46 + rows * rowH + 56;
             // Room above for the header tab.
             const int px = w / 2 - pw / 2, py = std::max(20, h / 2 - ph / 2 + 8);
             d += Panel(px, py, pw, ph);
@@ -165,13 +179,14 @@ mcimg { display: block; position: absolute; }
             d += "<div style=\"left:" + N(px + pw / 2 - 39) + "px;top:" + N(py - 15) + "px;width:78px;height:16px;background-color:#2b2b2b;z-index:12;\"></div>\n";
             d += "<div class=\"txt ctr\" style=\"left:" + N(px + pw / 2 - 40) + "px;top:" + N(py - 11) + "px;width:80px;height:9px;z-index:13;\">Accounts</div>\n";
             d += "<div style=\"left:" + N(px + pw / 2 - 22) + "px;top:" + N(py - 1) + "px;width:44px;height:1px;background-color:#ffffff;z-index:13;\"></div>\n";
-            const int labelX = m.accountHead.empty() ? 10 : 24;
+            // Header: who is logged in, with room to breathe under the tab.
+            const int labelX = m.accountHead.empty() ? 10 : 30;
             if (!m.accountHead.empty())
-                d += Head(m.accountHead, px + 9, py + 8, 12, "z-index:13;") + "\n";
-            d += "<div class=\"txt dim\" style=\"left:" + N(px + labelX) + "px;top:" + N(py + 10) + "px;width:" + N(pw - labelX - 10) + "px;height:9px;z-index:13;\">" +
+                d += Head(m.accountHead, px + 10, py + 11, 14, "z-index:13;") + "\n";
+            d += "<div class=\"txt dim\" style=\"left:" + N(px + labelX) + "px;top:" + N(py + 14) + "px;width:" + N(pw - labelX - 10) + "px;height:9px;z-index:13;\">" +
                  EscapeRml(m.accountLabel) + "</div>\n";
-            d += "<div style=\"left:" + N(px + 2) + "px;top:" + N(py + 26) + "px;width:" + N(pw - 4) + "px;height:1px;background-color:#555555;z-index:12;\"></div>\n";
-            int y = py + 32;
+            d += "<div style=\"left:" + N(px + 2) + "px;top:" + N(py + 35) + "px;width:" + N(pw - 4) + "px;height:1px;background-color:#555555;z-index:12;\"></div>\n";
+            int y = py + 41;
             if (m.accounts.empty())
                 d += "<div class=\"txt ctr gray\" style=\"left:" + N(px) + "px;top:" + N(y + 6) + "px;width:" + N(pw) + "px;height:9px;z-index:13;\">No accounts yet</div>\n";
             if (count > rows) {
@@ -278,14 +293,14 @@ mcimg { display: block; position: absolute; }
             d += Btn("", cx - 100, j, 200, "Singleplayer", true);
             d += Btn(kTitleMulti, cx - 100, j + 24, 200, "Multiplayer");
             d += Btn(kTitleMods, cx - 100, j + 48, 200, "Mods");
-            d += IconBtn(kTitleWardrobe, cx + 104, j + 48, "textures/items/iron_chestplate");
+            d += IconBtn(kTitleWardrobe, cx + 104, j + 48, "textures/ui/glyph_skin_pack.png"); // the pause screen's hanger
             d += Btn(kTitleOptions, cx - 100, j + 84, 98, "Options...");
             d += Btn(kTitleQuit, cx + 2, j + 84, 98, "Quit Game");
-            if (!m.accountLabel.empty()) {
-                // Above the logo, so it may take whatever width the name needs.
-                const int headW = m.accountHead.empty() ? 0 : 18;
-                const int bw = std::clamp(TextWidth(m.accountLabel) + 20 + headW, 90, std::max(90, w - 8));
-                d += HeadBtn(kTitleAccounts, 4, 4, bw, m.accountLabel, m.accountHead);
+            if (!m.accountUser.empty()) {
+                // Head and username, snug (above the logo, so a long name may take the width it needs).
+                const int textX = m.accountHead.empty() ? 6 : 20;
+                const int bw = std::clamp(textX + TextWidth(m.accountUser) + 7, 40, std::max(40, w - 8));
+                d += HeadBtn(kTitleAccounts, 4, 4, bw, m.accountUser, m.accountHead);
             }
             d += Text(2, h - 10, w / 2, m.version);
             d += "<div class=\"txt\" style=\"left:" + N(w / 2) + "px;top:" + N(h - 10) + "px;width:" + N(w / 2 - 1) + "px;height:9px;text-align:right;\">" + EscapeRml(m.copyright) + "</div>\n";
@@ -414,7 +429,7 @@ mcimg { display: block; position: absolute; }
     }
 
     int TitleAccountRows(int guiH) {
-        // Popup = 92 px of header and buttons plus the rows, with 20 px above for the tab.
-        return std::max(1, (guiH - 20 - 6 - 92) / 24);
+        // Popup = 102 px of header and buttons plus the rows, with 20 px above for the tab.
+        return std::max(1, (guiH - 20 - 6 - 102) / 24);
     }
 }

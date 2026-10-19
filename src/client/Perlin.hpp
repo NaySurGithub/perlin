@@ -167,6 +167,7 @@ namespace perlin {
         std::string signInAuthFile, signInUrl, signInCode, signInStatus, signInGamertag;
         std::vector<std::pair<std::string, std::string>> pendingRenames; // account id, gamertag (under signInMutex)
         void FetchMissingGamertags();
+        std::chrono::steady_clock::time_point gamertagFetchAt{}; // last background gamertag lookup
         std::atomic<int> signInState{0}; // 0 idle, 1 working, 2 signed in, 3 failed
 
         // Server list status pings (filled in by worker threads, keyed by address).

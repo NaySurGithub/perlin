@@ -3624,6 +3624,9 @@ namespace perlin {
     }
 
     void Perlin::FetchMissingGamertags() {
+        if (!workers)
+            return;
+        gamertagFetchAt = std::chrono::steady_clock::now();
         // Microsoft accounts added before the switcher kept their gamertag have no name yet: learn
         // it in the background from the saved sign-in (never prompting), so the title screen can
         // say who is logged in.
@@ -4243,9 +4246,15 @@ namespace perlin {
         }
         title.accountHead = SkinHeadKey(options.skin);
         if (const AccountEntry* a = accounts.Active())
-            title.accountLabel = "Logged in as " + (a->name.empty() ? std::string("Microsoft account") : a->name);
+            title.accountUser = a->name.empty() ? std::string("Microsoft account") : a->name;
         else
-            title.accountLabel = "Logged in as " + options.playerName + (options.onlineLogin ? "" : " (offline)");
+            title.accountUser = options.playerName;
+        title.accountLabel = "Logged in as " + title.accountUser;
+        // Opening the accounts screen with a gamertag still unknown asks Xbox again (at most
+        // every 30 seconds).
+        if (title.page == ui::TitlePage::Accounts && titleLastPage != ui::TitlePage::Accounts &&
+            Clock::now() - gamertagFetchAt > std::chrono::seconds(30) && !PERLIN_ENV("PERLIN_PREVIEW"))
+            FetchMissingGamertags();
 
         // Server list: ping everything when the list opens, and show what came back.
         if (title.page == ui::TitlePage::Servers && titleLastPage != ui::TitlePage::Servers && titleLastPage != ui::TitlePage::Edit &&
@@ -4296,7 +4305,7 @@ namespace perlin {
         std::string signature = std::to_string(guiW) + "x" + std::to_string(guiH) + "|" + std::to_string(static_cast<int>(title.page)) + "|" +
                                 std::to_string(title.selected) + "|" + std::to_string(title.scroll) + "|" + std::to_string(title.focus) +
                                 (title.nativePanorama ? "|np" : "|sp") + "|" + title.logoSrc;
-        signature += "|" + title.accountLabel + "|" + title.accountHead;
+        signature += "|" + title.accountLabel + "|" + title.accountUser + "|" + title.accountHead;
         signature += "|" + std::to_string(title.accountScroll);
         if (title.page == ui::TitlePage::Accounts)
             for (const ui::AccountRow& a : title.accounts)

@@ -48,7 +48,8 @@ namespace perlin::ui {
         int logoW = 256, logoH = 64;
 
         // Account switcher: "Logged in as ..." on the title screen, and the accounts popup.
-        std::string accountLabel;
+        std::string accountLabel;    // "Logged in as <name>" (accounts popup)
+        std::string accountUser;     // just the name (title screen button)
         std::string accountHead;     // head image key of the active account's skin
         std::vector<AccountRow> accounts;
         int accountScroll = 0;       // first account row shown

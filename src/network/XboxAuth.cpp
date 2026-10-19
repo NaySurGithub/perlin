@@ -863,6 +863,16 @@ namespace perlin::xbox {
                 return false;
             gamertag = xsts.gtg;
             xuid = xsts.xid;
+            if (gamertag.empty()) {
+                // The multiplayer token carries only the user hash; Xbox Live's own has the gamertag.
+                Tok live;
+                std::string why;
+                if (Xsts("http://xboxlive.com", live, why)) {
+                    gamertag = live.gtg;
+                    if (xuid.empty())
+                        xuid = live.xid;
+                }
+            }
             Url u;
             ParseUrl("https://multiplayer.minecraft.net/authentication", u);
             const http::Response r = Post(u, "{\"identityPublicKey\":" + Q(publicKeyB64) + "}", "application/json",
@@ -931,10 +941,14 @@ namespace perlin::xbox {
         Impl& s = *impl;
         if (!s.EnsureUserAndTitle(error))
             return false;
+        // Only an XSTS token for Xbox Live itself carries the gamertag in its display claims; the
+        // Minecraft multiplayer one has just the user hash.
         Tok xsts;
-        if (!s.Xsts(kMultiplayerRelyingParty, xsts, error))
+        if (!s.Xsts("http://xboxlive.com", xsts, error))
             return false;
         gamertag = xsts.gtg;
+        if (gamertag.empty())
+            error = "the Xbox token had no gamertag";
         return !gamertag.empty();
     }
 
