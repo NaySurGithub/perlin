@@ -218,7 +218,7 @@ namespace perlin::attachable {
             if (anim.rotation.present) {
                 setThis(bindRotation ? x.rotation + bindRotation(bone) : x.rotation);
                 glm::vec3 r = anim.rotation.Eval(scope, time);
-                static const float armZ = PERLIN_ENV("PERLIN_ARMZ") ? static_cast<float>(std::atof(PERLIN_ENV("PERLIN_ARMZ"))) : -1.0f;
+                static const float armZ = PERLIN_ENV("PERLIN_ARMZ") ? static_cast<float>(std::atof(PERLIN_ENV("PERLIN_ARMZ"))) : 1.0f;
                 if (bone == "rightarm" || bone == "leftarm")
                     r.z *= gFirstPersonPose ? 1.0f : armZ;
                 x.rotation += r * weight;

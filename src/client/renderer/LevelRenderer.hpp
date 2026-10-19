@@ -30,8 +30,12 @@ namespace perlin {
         void RemeshAll() { InvalidateMeshes(); }
         void SetGlassMode(int mode) {
             if (blocks.GlassMode() != mode) {
+                const bool rebuild = blocks.NeedsGlassRebuild(mode);
                 blocks.SetGlassMode(mode);
-                InvalidateMeshes();
+                if (rebuild)
+                    ReloadResources();
+                else
+                    InvalidateMeshes();
             }
         }
         void SetBetterGrass(int mode) {

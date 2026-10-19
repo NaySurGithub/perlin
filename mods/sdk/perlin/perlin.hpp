@@ -1,4 +1,5 @@
 #pragma once
+#include "perlin/meta.hpp"
 #include "perlin/abi.hpp"
 #include "perlin/act.hpp"
 #include "perlin/game.hpp"

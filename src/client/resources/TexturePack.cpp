@@ -157,6 +157,7 @@ namespace perlin {
 
     bool TexturePack::OpenStack(const std::string& packsDir, const std::vector<std::string>& names, std::string& error) {
         std::lock_guard lock(impl->mutex);
+        generation++;
         impl->Reset();
         error.clear();
         for (const std::string& name : names) {
@@ -182,9 +183,15 @@ namespace perlin {
             if (l->zipMode) {
                 if (l->zipOpen && l->index.count(Lower(rel)))
                     return true;
+                if (const size_t dot = rel.find_last_of('.'); l->zipOpen && dot != std::string::npos &&
+                                                               l->index.count(Lower(rel.substr(0, dot) + ".texture_set.json")))
+                    return true;
             } else if (!l->folder.empty()) {
                 std::error_code ec;
                 if (fs::exists(fs::path(l->folder) / rel, ec))
+                    return true;
+                if (const size_t dot = rel.find_last_of('.'); dot != std::string::npos &&
+                                                               fs::exists(fs::path(l->folder) / (rel.substr(0, dot) + ".texture_set.json"), ec))
                     return true;
             }
         }
@@ -198,8 +205,46 @@ namespace perlin {
                 if (!l->zipOpen)
                     continue;
                 const auto it = l->index.find(Lower(rel));
-                if (it == l->index.end())
+                if (it == l->index.end()) {
+                    // No image of that name: a texture set in the zip may declare the texture instead.
+                    const size_t dot = rel.find_last_of('.');
+                    if (dot == std::string::npos)
+                        continue;
+                    const std::string base = rel.substr(0, dot);
+                    const auto setIt = l->index.find(Lower(base + ".texture_set.json"));
+                    if (setIt == l->index.end())
+                        continue;
+                    size_t setSize = 0;
+                    void* setData = mz_zip_reader_extract_to_heap(&l->zip, setIt->second, &setSize, 0);
+                    if (!setData)
+                        continue;
+                    std::string image;
+                    unsigned char rgba[4] = {255, 255, 255, 255};
+                    const bool parsed = TextureSetColor(std::string(static_cast<const char*>(setData), setSize), image, rgba);
+                    mz_free(setData);
+                    if (!parsed)
+                        continue;
+                    if (image.empty()) {
+                        MakeFlatTexture(rgba, 16, out);
+                        return true;
+                    }
+                    const size_t slash = rel.find_last_of('/');
+                    const std::string dir = slash == std::string::npos ? std::string() : rel.substr(0, slash + 1);
+                    for (const char* extension : {".png", ".tga"}) {
+                        const auto imageIt = l->index.find(Lower(dir + image + extension));
+                        if (imageIt == l->index.end())
+                            continue;
+                        size_t imageSize = 0;
+                        void* imageData = mz_zip_reader_extract_to_heap(&l->zip, imageIt->second, &imageSize, 0);
+                        if (!imageData)
+                            continue;
+                        const bool loaded = LoadTextureMemory(static_cast<const unsigned char*>(imageData), imageSize, out);
+                        mz_free(imageData);
+                        if (loaded && out.width > 0 && out.height > 0)
+                            return true;
+                    }
                     continue;
+                }
                 size_t size = 0;
                 void* data = mz_zip_reader_extract_to_heap(&l->zip, it->second, &size, 0);
                 if (!data)

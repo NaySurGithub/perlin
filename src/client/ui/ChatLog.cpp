@@ -1,3 +1,4 @@
+#include <cstring>
 #include "client/ui/ChatLog.hpp"
 #include "client/ui/McFont.hpp"
 
@@ -124,10 +125,58 @@ namespace perlin::ui {
             for (auto it = found.rbegin(); it != found.rend(); ++it)
                 text.replace(it->begin, it->end - it->begin, "\xC2\xA7" "a[" + it->x + ", " + it->y + ", " + it->z + "]\xC2\xA7" "r");
         }
+        const std::vector<std::string> urls = FindUrls(text);
+        size_t urlAt = 0, urlPos = 0; // which URL a wrapped line is inside, and how much of it earlier lines used
         for (const std::string& piece : Wrap(text, kWidth)) {
             if (scroll > 0)
                 scroll++;
-            lines.push_back({piece, tick});
+            Line line{piece, tick, {}};
+            size_t at = 0;
+            while (urlAt < urls.size() && at < piece.size()) {
+                const std::string& u = urls[urlAt];
+                while (at + 1 < piece.size() && static_cast<unsigned char>(piece[at]) == 0xC2 && static_cast<unsigned char>(piece[at + 1]) == 0xA7 && at + 3 <= piece.size())
+                    at += 3; // skip a carried formatting code
+                size_t b = std::string::npos, e = 0;
+                if (urlPos == 0) {
+                    const size_t whole = piece.find(u, at);
+                    if (whole != std::string::npos) {
+                        b = whole;
+                        e = whole + u.size();
+                        urlPos = u.size();
+                    } else {
+                        // The URL starts at the end of this line: its longest prefix that the line ends with.
+                        for (size_t k = std::min(u.size() - 1, piece.size()); k >= 4; k--)
+                            if (piece.compare(piece.size() - k, k, u, 0, k) == 0) {
+                                b = piece.size() - k;
+                                e = piece.size();
+                                urlPos = k;
+                                break;
+                            }
+                    }
+                } else {
+                    size_t n = 0;
+                    while (urlPos + n < u.size() && at + n < piece.size() && piece[at + n] == u[urlPos + n])
+                        n++;
+                    if (n > 0) {
+                        b = at;
+                        e = at + n;
+                        urlPos += n;
+                    } else {
+                        urlPos = 0; // the continuation never showed up; give up on this URL
+                    }
+                }
+                if (b == std::string::npos)
+                    break;
+                line.urls.push_back({b, e, u});
+                at = e;
+                if (urlPos >= u.size()) {
+                    urlAt++;
+                    urlPos = 0;
+                } else {
+                    break; // the rest of the URL is on the next line
+                }
+            }
+            lines.push_back(std::move(line));
         }
         while (lines.size() > kMaxLines)
             lines.pop_front();
@@ -217,6 +266,33 @@ namespace perlin::ui {
             input = history[static_cast<size_t>(historyIndex)];
         }
         caret = input.size();
+    }
+
+    std::vector<std::string> ChatLog::FindUrls(const std::string& text) {
+        std::vector<std::string> out;
+        const auto isStart = [&](size_t i) {
+            const bool afterCode = i >= 3 && static_cast<unsigned char>(text[i - 3]) == 0xC2 && static_cast<unsigned char>(text[i - 2]) == 0xA7;
+            if (!afterCode && i > 0 && (std::isalnum(static_cast<unsigned char>(text[i - 1])) || text[i - 1] == '/'))
+                return false;
+            return text.compare(i, 8, "https://") == 0 || text.compare(i, 7, "http://") == 0 || text.compare(i, 4, "www.") == 0;
+        };
+        for (size_t i = 0; i < text.size();) {
+            if (!isStart(i)) {
+                i++;
+                continue;
+            }
+            size_t e = i;
+            while (e < text.size() && text[e] != ' ' && text[e] != '\t' && static_cast<unsigned char>(text[e]) != 0xC2 && text[e] != '"' && text[e] != '<' && text[e] != '>')
+                e++;
+            while (e > i && std::strchr(".,;:!?)]}'*", text[e - 1]))
+                e--;
+            // A link needs something after the scheme or "www.".
+            const size_t head = text.compare(i, 8, "https://") == 0 ? 8 : text.compare(i, 7, "http://") == 0 ? 7 : 4;
+            if (e > i + head && out.size() < 8)
+                out.push_back(text.substr(i, e - i));
+            i = std::max(e, i + 1);
+        }
+        return out;
     }
 
     std::vector<ChatLog::Coordinate> ChatLog::FindCoordinates(const std::string& line) {
@@ -450,6 +526,13 @@ namespace perlin::ui {
             v.text = l.text;
             v.alpha = d;
             v.row = i;
+            {
+                const McFont& font = McFont::Instance();
+                for (const UrlSpan& u : l.urls) {
+                    const std::string full = u.url.compare(0, 4, "www.") == 0 ? "https://" + u.url : u.url;
+                    v.clicks.push_back({font.Width(l.text.substr(0, u.begin)), font.Width(l.text.substr(u.begin, u.end - u.begin)), "url:" + full});
+                }
+            }
             if (open) {
                 const McFont& font = McFont::Instance();
                 for (const Coordinate& c : FindCoordinates(l.text)) {

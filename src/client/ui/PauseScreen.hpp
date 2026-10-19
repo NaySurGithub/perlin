@@ -50,6 +50,7 @@ namespace perlin::ui {
         bool wide = false;
         std::string tip;
         int impact = 0;
+        std::string icon; // "mchead:<key>", "item:<id>" or an image path; empty for none
     };
 
     struct OptionsLayout {
@@ -140,13 +141,14 @@ namespace perlin::ui {
     };
     struct ModDetail {
         bool valid = false;
-        std::string name, badge, version, author, icon, body, toggleLabel, reloadLabel;
+        std::string name, badge, version, author, icon, body, toggleLabel, reloadLabel, settingsLabel;
         int badgeColor = 0;
         bool toggleEnabled = true;
+        bool hasSettings = false;
     };
     struct ModScreenLayout {
         float leftX = 8, leftW = 0, rightX = 0, rightW = 0, searchY = 20, searchH = 18, listTop = 56, listBottom = 0, rowH = 36;
-        float detailBtnY = 0, detailTextTop = 0, detailTextBottom = 0, toggleX = 0, toggleW = 0, reloadX = 0, reloadW = 0;
+        float detailBtnY = 0, detailTextTop = 0, detailTextBottom = 0, toggleX = 0, toggleW = 0, reloadX = 0, reloadW = 0, settingsX = 0, settingsW = 0;
         float btnY = 0, btnW = 200, openX = 0, doneX = 0;
         float maxScroll = 0, maxDetailScroll = 0;
         float RowY(int i, float scroll) const { return listTop + 2.0f + static_cast<float>(i) * rowH - scroll; }

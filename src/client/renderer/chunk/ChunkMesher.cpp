@@ -2045,10 +2045,11 @@ namespace perlin {
                             face(0, 0, 1, tTop, trT, tgT, tbT, fT, known, kShadeZ, cPz, pz);
                             face(0, 0, -1, tTop, trT, tgT, tbT, fT, known, kShadeZ, cNz, nz);
                         } else {
-                            face(1, 0, 0, tSide, trS, tgS, tbS, fS, known, kShadeX, cPx, px);
-                            face(-1, 0, 0, tSide, trS, tgS, tbS, fS, known, kShadeX, cNx, nx);
-                            face(0, 0, 1, tSide, trS, tgS, tbS, fS, known, kShadeZ, cPz, pz);
-                            face(0, 0, -1, tSide, trS, tgS, tbS, fS, known, kShadeZ, cNz, nz);
+                            const auto sideOf = [&](int i) { return app && app->sideTile[i] ? app->sideTile[i] : tSide; };
+                            face(1, 0, 0, sideOf(0), trS, tgS, tbS, fS, known, kShadeX, cPx, px);
+                            face(-1, 0, 0, sideOf(1), trS, tgS, tbS, fS, known, kShadeX, cNx, nx);
+                            face(0, 0, 1, sideOf(2), trS, tgS, tbS, fS, known, kShadeZ, cPz, pz);
+                            face(0, 0, -1, sideOf(3), trS, tgS, tbS, fS, known, kShadeZ, cNz, nz);
                         }
                         ovTile = 0;
                     }

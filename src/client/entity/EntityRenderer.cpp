@@ -23,6 +23,63 @@
 
 namespace perlin::entity {
     namespace {
+        // Java's HumanoidModel crouch (isCrouching): body leans 0.5 rad and drops 3.2, head drops 4.2, arms drop 3.2
+        // and lean 0.4 rad, legs move back 4 and the whole model sinks 2 pixels. Java parts hang off the root, the
+        // Bedrock rig hangs head and arms off the body, so their local transforms are solved to land where Java puts them.
+        void ApplyJavaCrouch(attachable::Pose& pose, const attachable::Geometry* g) {
+            static const float zs = PERLIN_ENV("PERLIN_ZSIGN") ? static_cast<float>(std::atof(PERLIN_ENV("PERLIN_ZSIGN"))) : -1.0f;
+            const auto find = [&](const char* name) -> const attachable::Bone* {
+                if (g)
+                    for (const auto& b : g->bones)
+                        if (b.name == name)
+                            return &b;
+                return nullptr;
+            };
+            const auto pivotOf = [&](const char* name, glm::vec3 fallback) {
+                const auto* b = find(name);
+                return b ? b->pivot : fallback;
+            };
+            const auto restOf = [&](const char* name) {
+                const auto* b = find(name);
+                return b ? b->rotation : glm::vec3(0.0f);
+            };
+            const auto local = [&](const char* name, const glm::vec3& c, const glm::vec3& rot, const glm::vec3& pos) {
+                return glm::translate(glm::mat4(1.0f), pos) * glm::translate(glm::mat4(1.0f), c) * attachable::EulerZYX(restOf(name) + rot) *
+                       glm::translate(glm::mat4(1.0f), -c);
+            };
+            auto& body = pose["body"];
+            const glm::vec3 bodyPivot = pivotOf("body", {0.0f, 24.0f, 0.0f});
+            const glm::mat4 oldBody = local("body", bodyPivot, body.rotation, body.position);
+            body.rotation.x += 28.64789f;
+            body.position.y -= 3.2f;
+            const glm::mat4 newBody = local("body", bodyPivot, body.rotation, body.position);
+            const glm::mat4 invNew = glm::inverse(newBody);
+            const auto refit = [&](const char* name, glm::vec3 fallbackPivot, float down, float extraX) {
+                auto& x = pose[name];
+                const glm::vec3 c = pivotOf(name, fallbackPivot);
+                glm::vec3 rot = x.rotation;
+                rot.x += extraX;
+                const glm::mat4 desired = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, -down, 0.0f)) * oldBody * local(name, c, rot, x.position);
+                const glm::mat4 fit = invNew * desired;
+                const float b = std::asin(std::clamp(-fit[0][2], -1.0f, 1.0f));
+                const float cc = std::atan2(fit[1][2], fit[2][2]);
+                const float a = std::atan2(fit[0][1], fit[0][0]);
+                const glm::vec3 euler(-glm::degrees(cc), -glm::degrees(b), glm::degrees(a) / zs);
+                x.rotation = euler - restOf(name);
+                const glm::mat3 r(glm::rotate(glm::mat4(1.0f), glm::radians(zs * euler.z), glm::vec3(0, 0, 1)) *
+                                  glm::rotate(glm::mat4(1.0f), glm::radians(-euler.y), glm::vec3(0, 1, 0)) *
+                                  glm::rotate(glm::mat4(1.0f), glm::radians(-euler.x), glm::vec3(1, 0, 0)));
+                const glm::vec3 t(fit[3]);
+                x.position = t - c + r * c;
+            };
+            refit("head", {0.0f, 24.0f, 0.0f}, 4.2f, 0.0f);
+            refit("leftarm", {5.0f, 22.0f, 0.0f}, 3.2f, 22.91831f);
+            refit("rightarm", {-5.0f, 22.0f, 0.0f}, 3.2f, 22.91831f);
+            pose["leftleg"].position.z += 4.0f;
+            pose["rightleg"].position.z += 4.0f;
+            pose["root"].position.y -= 2.0f;
+        }
+
         void StyleFromMaterial(UiDraw& draw, const char* name) {
             const material::Def* def = material::Registry::Instance().Get().Find(name);
             if (!def)
@@ -95,8 +152,11 @@ namespace perlin::entity {
         float limbSwing = 0, limbAmount = 0;
         float groundSpeed = 0, verticalSpeed = 0;
         float capeFlap = 0;
-        glm::dvec3 cloak{0.0};
-        float capeBob = 0, walkDist = 0, capeX = 6.0f, capeZ = 0.0f;
+        glm::dvec3 cloak{0.0}, cloakPrev{0.0}, tickPos{0.0}, tickPosPrev{0.0};
+        bool limbInit = false;
+        double limbAcc = 0;
+        float limbSpd = 0, limbSpdPrev = 0, limbPos = 0, limbPosPrev = 0;
+        float bob = 0, bobPrev = 0, walkDist = 0, walkDistPrev = 0, capeX = 6.0f, capeZ = 0.0f;
         glm::mat4 itemR{1.0f}, itemL{1.0f};
         bool hasItemR = false, hasItemL = false;
         bool attachedItem[2] = {false, false};
@@ -458,30 +518,74 @@ namespace perlin::entity {
         const float horizontal = static_cast<float>(std::sqrt(step.x * step.x + step.z * step.z));
         v.groundSpeed = horizontal / dt;
         v.verticalSpeed = static_cast<float>(step.y) / dt;
-        const float perTick = horizontal / (dt * 20.0f);
-        const float target = std::min(1.0f, perTick * 4.0f);
-        v.limbAmount += (target - v.limbAmount) * (1.0f - std::exp(-dt * 20.0f * 0.4f));
-        v.limbSwing += v.limbAmount * dt * 20.0f;
-        const float flapTarget = std::clamp(v.groundSpeed / 7.0f, 0.0f, 1.0f) * 0.25f;
-        v.capeFlap += (flapTarget - v.capeFlap) * (1.0f - std::exp(-dt * 6.0f));
+        // Walk animation and cape physics run on Java's 20 Hz tick (WalkAnimationState, ClientAvatarState) and
+        // are interpolated between ticks, so they stay smooth and independent of the frame rate.
         {
-            if (glm::length(v.cloak - v.pos) > 10.0)
-                v.cloak = v.pos;
-            const double chase = 1.0 - std::pow(0.75, static_cast<double>(dt) * 20.0);
-            v.cloak += (v.pos - v.cloak) * chase;
-            const double dx = v.cloak.x - v.pos.x, dy = v.cloak.y - v.pos.y, dz = v.cloak.z - v.pos.z;
+            if (!v.limbInit) {
+                v.limbInit = true;
+                v.tickPos = v.tickPosPrev = v.pos;
+                v.cloak = v.cloakPrev = v.pos;
+            }
+            v.limbAcc += dt;
+            int ticks = 0;
+            while (v.limbAcc >= 0.05 && ticks < 8) {
+                v.limbAcc -= 0.05;
+                ticks++;
+                v.tickPosPrev = v.tickPos;
+                v.tickPos = v.pos;
+                const glm::dvec3 moved = v.tickPos - v.tickPosPrev;
+                const float dist = static_cast<float>(std::sqrt(moved.x * moved.x + moved.z * moved.z));
+                if (dist > 8.0f) {
+                    v.tickPosPrev = v.tickPos;
+                    v.limbSpd = v.limbSpdPrev = 0.0f;
+                    v.cloak = v.cloakPrev = v.tickPos;
+                    continue;
+                }
+                v.limbSpdPrev = v.limbSpd;
+                v.limbPosPrev = v.limbPos;
+                v.limbSpd += (std::min(dist * 4.0f, 1.0f) - v.limbSpd) * 0.4f;
+                v.limbPos += v.limbSpd;
+                // Player.aiStep bob and Entity walkDist.
+                const bool onGround = std::fabs(moved.y) < 0.02;
+                v.bobPrev = v.bob;
+                v.bob += ((onGround ? std::min(0.1f, dist) : 0.0f) - v.bob) * 0.4f;
+                v.walkDistPrev = v.walkDist;
+                v.walkDist += dist * 0.6f;
+                // ClientAvatarState.moveCloak
+                v.cloakPrev = v.cloak;
+                const glm::dvec3 off = v.tickPos - v.cloak;
+                if (std::fabs(off.x) > 10.0 || std::fabs(off.y) > 10.0 || std::fabs(off.z) > 10.0)
+                    v.cloak = v.cloakPrev = v.tickPos;
+                else
+                    v.cloak += off * 0.25;
+            }
+            if (ticks > 1 || v.limbAcc > 0.25) {
+                v.limbPosPrev = v.limbPos;
+                v.limbSpdPrev = v.limbSpd;
+                v.cloakPrev = v.cloak;
+                v.tickPosPrev = v.tickPos;
+                v.bobPrev = v.bob;
+                v.walkDistPrev = v.walkDist;
+            }
+            v.limbAcc = std::min(v.limbAcc, 0.05);
+            const float p = static_cast<float>(v.limbAcc / 0.05);
+            v.limbAmount = v.limbSpdPrev + (v.limbSpd - v.limbSpdPrev) * p;
+            v.limbSwing = v.limbPosPrev + (v.limbPos - v.limbPosPrev) * p;
+            v.capeFlap = std::clamp(v.groundSpeed / 7.0f, 0.0f, 1.0f) * 0.25f;
+
+            // CapeLayer / AvatarRenderer.extractCapeState
+            const double pd = static_cast<double>(p);
+            const glm::dvec3 cl = v.cloakPrev + (v.cloak - v.cloakPrev) * pd;
+            const glm::dvec3 ps = v.tickPosPrev + (v.tickPos - v.tickPosPrev) * pd;
+            const double dx = cl.x - ps.x, dy = cl.y - ps.y, dz = cl.z - ps.z;
             const float rad = v.yaw * 0.017453292f;
             const double sn = std::sin(rad), cs = std::cos(rad);
             float flap = std::clamp(static_cast<float>(dy) * 10.0f, -6.0f, 32.0f);
-            float lean = std::max(0.0f, static_cast<float>(dx * sn - dz * cs) * 100.0f);
-            lean = std::min(lean, 150.0f);
-            float lean2 = std::clamp(static_cast<float>(-dx * cs - dz * sn) * 100.0f, -20.0f, 20.0f);
-            const float bobTarget = std::min(1.0f, horizontal * 4.0f);
-            v.capeBob += (bobTarget - v.capeBob) * (1.0f - std::exp(-dt * 20.0f * 0.4f));
-            v.walkDist += horizontal * 0.6f;
-            flap += std::sin(v.walkDist * 6.0f) * 32.0f * v.capeBob;
-            if (e.Has(flag::Sneaking))
-                flap += 25.0f;
+            const float lean = std::clamp(static_cast<float>(dx * sn - dz * cs) * 100.0f, 0.0f, 150.0f);
+            const float lean2 = std::clamp(static_cast<float>(-dx * cs - dz * sn) * 100.0f, -20.0f, 20.0f);
+            const float bob = v.bobPrev + (v.bob - v.bobPrev) * p;
+            const float walk = v.walkDistPrev + (v.walkDist - v.walkDistPrev) * p;
+            flap += std::sin(walk * 6.0f) * 32.0f * bob;
             v.capeX = 6.0f + lean / 2.0f + flap;
             v.capeZ = lean2 / 2.0f;
         }
@@ -496,7 +600,11 @@ namespace perlin::entity {
         if (static const char* forced = PERLIN_ENV("PERLIN_PREVIEW_ATTACK"); forced && e.isSelf)
             v.attackTime = static_cast<float>(std::atof(forced));
         else if (v.attackTime > 0)
-            v.attackTime = v.attackTime + dt / 0.3f >= 1.0f ? 0.0f : v.attackTime + dt / 0.3f;
+            {
+            // Java's swing lasts 6 ticks, shorter with haste or conduit power, longer with mining fatigue.
+            const float seconds = std::max(1.0f, e.isSelf ? in.ownSwingTicks : 6.0f) / 20.0f;
+            v.attackTime = v.attackTime + dt / seconds >= 1.0f ? 0.0f : v.attackTime + dt / seconds;
+        }
         if (e.hurtSerial != v.hurtSerial) {
             v.hurtSerial = e.hurtSerial;
             v.hurtTimer = 0.5f;
@@ -775,6 +883,8 @@ namespace perlin::entity {
             for (const auto& [bn, xf] : pose)
                 std::cout << "[pose] " << e.type << " " << bn << " rot " << xf.rotation.x << "," << xf.rotation.y << "," << xf.rotation.z
                           << " pos " << xf.position.x << "," << xf.position.y << "," << xf.position.z << std::endl;
+        if (e.isPlayer && !v.fp && e.Has(flag::Sneaking) && v.swimAmount < 0.01f && v.lieAmount < 0.01f && !e.Has(flag::Riding))
+            ApplyJavaCrouch(pose, bindGeometry);
         if (e.isPlayer && e.isSelf) {
             const SkinParts& parts = in.ownParts;
             const auto hide = [&](bool shown, const char* bone) {

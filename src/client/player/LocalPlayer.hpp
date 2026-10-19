@@ -34,6 +34,9 @@ namespace perlin {
         void SetItemSlow(bool slow) { itemSlow = slow; }
         void SetRidePosition(bool riding, double x, double y, double z) { rideLock = riding; rideX = x; rideY = y; rideZ = z; }
 
+        // Smoothed eye height above the feet (drops while sneaking); the body model hangs from this.
+        float EyeOffset() const { return eyeOffset; }
+
     private:
         void ApplyServerMotion(BedrockSession& session, Camera& camera);
         void Tick(BedrockSession& session, const InputManager& input, const Camera& camera,

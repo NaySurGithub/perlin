@@ -1,4 +1,8 @@
+#include <filesystem>
+#include <fstream>
 #include "client/Perlin.hpp"
+#include <filesystem>
+#include <fstream>
 #include "network/Http.hpp"
 
 #include "client/input/KeyMapping.hpp"
@@ -62,7 +66,7 @@ namespace perlin {
             out.isPlayer = e.isPlayer;
             out.isItem = e.isItem;
             out.isSelf = e.isSelf;
-            out.flags = e.flags;
+            out.flags = abi::EntityFlags::from_bits(e.flags);
             out.itemName = e.itemName;
             out.itemCount = e.itemCount;
             out.mainHand = e.mainHand;
@@ -141,10 +145,10 @@ namespace perlin {
     }
 
     void Perlin::StartModHttp(const std::string& plugin, uint32_t id, std::string method, std::string url, int timeoutMs,
-                              std::vector<std::pair<std::string, std::string>> headers, std::vector<uint8_t> body) {
+                              std::vector<std::pair<std::string, std::string>> headers, std::vector<uint8_t> body, std::string savePath) {
         modHttpActive++;
         std::thread([this, plugin, id, method = std::move(method), url = std::move(url), timeoutMs, headers = std::move(headers),
-                     body = std::move(body)]() {
+                     body = std::move(body), savePath = std::move(savePath)]() {
             abi::EventHttp ev;
             ev.id = id;
 #ifdef __EMSCRIPTEN__
@@ -203,7 +207,7 @@ namespace perlin {
                     req.body.assign(body.begin(), body.end());
                 bool tooLarge = false;
                 req.content_receiver = [&](const char* data, size_t len, uint64_t, uint64_t) {
-                    if (ev.body.size() + len > (4u << 20)) {
+                    if (ev.body.size() + len > (savePath.empty() ? (4u << 20) : (64u << 20))) {
                         tooLarge = true;
                         return false;
                     }
@@ -214,7 +218,7 @@ namespace perlin {
                 httplib::Error err = httplib::Error::Success;
                 const bool ok = cli.send(req, res, err);
                 if (tooLarge) {
-                    ev.error = "response larger than 4 MiB";
+                    ev.error = savePath.empty() ? "response larger than 4 MiB" : "download larger than 64 MiB";
                     ev.body.clear();
                     break;
                 }
@@ -227,6 +231,16 @@ namespace perlin {
                     std::string key = h.first;
                     std::transform(key.begin(), key.end(), key.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
                     ev.headers.emplace_back(std::move(key), h.second);
+                }
+                if (!savePath.empty() && ev.status >= 200 && ev.status < 300) {
+                    // Downloads go straight to disk; the mod only gets the status.
+                    std::error_code ec;
+                    std::filesystem::create_directories(std::filesystem::path(savePath).parent_path(), ec);
+                    std::ofstream out(savePath, std::ios::binary | std::ios::trunc);
+                    out.write(reinterpret_cast<const char*>(ev.body.data()), static_cast<std::streamsize>(ev.body.size()));
+                    if (!out)
+                        ev.error = "could not write the file";
+                    ev.body.clear();
                 }
             } while (false);
 #endif
@@ -257,11 +271,11 @@ namespace perlin {
         if (!mm.WantsEvent(abi::Event::ChatReceived))
             return false;
         abi::EventChat e;
-        e.type = 0;
+        e.type = abi::ChatType::Raw;
         e.message = line;
         e.raw = line;
         abi::Writer w;
-        e.Write(w);
+        w.write(e);
         return mm.Dispatch(abi::Event::ChatReceived, w);
     }
 
@@ -279,7 +293,7 @@ namespace perlin {
                     e.name = name;
                     e.args = args;
                     abi::Writer w;
-                    e.Write(w);
+                    w.write(e);
                     mm.DispatchTo(cmd.plugin, abi::Event::Command, w);
                     return true;
                 }
@@ -289,7 +303,7 @@ namespace perlin {
         abi::EventText e;
         e.text = text;
         abi::Writer w;
-        e.Write(w);
+        w.write(e);
         return mm.Dispatch(abi::Event::ChatSending, w);
     }
 
@@ -382,7 +396,7 @@ namespace perlin {
         t.dt = 0.05f;
         t.tick = hudAnim.ticks;
         abi::Writer w;
-        t.Write(w);
+        w.write(t);
         mm.Dispatch(abi::Event::Tick, w);
     }
 
@@ -391,6 +405,7 @@ namespace perlin {
         mm.SetAutoReload(options.hotReload);
         mm.SetTick(hudAnim.ticks);
         mm.Update();
+        mm.Pump();
         modLive = live;
         modLevel = level;
         modHud = hudPtr;
@@ -410,10 +425,10 @@ namespace perlin {
             if (!connected && session) {
                 const auto info = session->GetDisconnectInfo();
                 e.message = info.message;
-                e.reason = info.reason;
+                e.reason = static_cast<abi::DisconnectReason>(info.reason);
             }
             abi::Writer w;
-            e.Write(w);
+            w.write(e);
             mm.Dispatch(connected ? abi::Event::Connected : abi::Event::Disconnected, w);
             modEntitySeeded = false;
         }
@@ -425,7 +440,7 @@ namespace perlin {
         }
         for (auto& r : responses) {
             abi::Writer w;
-            r.second.Write(w);
+            w.write(r.second);
             mm.DispatchTo(r.first, abi::Event::HttpResponse, w);
         }
 
@@ -446,7 +461,7 @@ namespace perlin {
                     e.id = key.id;
                     e.down = down;
                     abi::Writer w;
-                    e.Write(w);
+                    w.write(e);
                     mm.DispatchTo(key.plugin, abi::Event::Key, w);
                 }
             }
@@ -454,12 +469,12 @@ namespace perlin {
 
         const abi::Screen screen = CurrentScreen();
         if (screen != modLastScreen) {
-            abi::EventChange e;
-            e.from = static_cast<int32_t>(modLastScreen);
-            e.to = static_cast<int32_t>(screen);
+            abi::EventScreen e;
+            e.from = static_cast<abi::Screen>(modLastScreen);
+            e.to = static_cast<abi::Screen>(screen);
             modLastScreen = screen;
             abi::Writer w;
-            e.Write(w);
+            w.write(e);
             mm.Dispatch(abi::Event::ScreenChanged, w);
         }
 
@@ -469,7 +484,7 @@ namespace perlin {
                 e.slot = hudState.selectedSlot;
                 e.item = ToItem(hudState.hotbar[std::clamp(hudState.selectedSlot, 0, 8)]);
                 abi::Writer w;
-                e.Write(w);
+                w.write(e);
                 mm.Dispatch(abi::Event::SlotChanged, w);
             }
             modLastSlot = hudState.selectedSlot;
@@ -478,12 +493,12 @@ namespace perlin {
         if (live && connected) {
             const int dim = live->DimensionId();
             if (dim != modLastDim) {
-                abi::EventChange e;
-                e.from = modLastDim;
-                e.to = dim;
+                abi::EventDimension e;
+                e.from = static_cast<abi::Dimension>(modLastDim);
+                e.to = static_cast<abi::Dimension>(dim);
                 modLastDim = dim;
                 abi::Writer w;
-                e.Write(w);
+                w.write(e);
                 mm.Dispatch(abi::Event::DimensionChanged, w);
             }
             const uint32_t hurts = live->HurtCount();
@@ -496,7 +511,7 @@ namespace perlin {
                 e.dz = source.dz;
                 e.health = hudState.health;
                 abi::Writer w;
-                e.Write(w);
+                w.write(e);
                 mm.Dispatch(abi::Event::Damage, w);
             }
             const bool dead = live->DeathPending();
@@ -506,7 +521,7 @@ namespace perlin {
                 if (dead) {
                     abi::EventText e;
                     e.text = live->DeathCause();
-                    e.Write(w);
+                    w.write(e);
                     mm.Dispatch(abi::Event::Death, w);
                 } else {
                     mm.Dispatch(abi::Event::Respawned, w);
@@ -521,7 +536,7 @@ namespace perlin {
                     e.subtitle = title.subtitle;
                     e.actionBar = title.actionBar;
                     abi::Writer w;
-                    e.Write(w);
+                    w.write(e);
                     mm.Dispatch(abi::Event::Title, w);
                 }
             }
@@ -539,7 +554,7 @@ namespace perlin {
                         abi::EventEntity ev;
                         ev.entity = ToEntity(e);
                         abi::Writer w;
-                        ev.Write(w);
+                        w.write(ev);
                         mm.Dispatch(abi::Event::EntityAdded, w);
                     }
                 for (const uint64_t id : modEntityIds)
@@ -547,7 +562,7 @@ namespace perlin {
                         abi::EventEntity ev;
                         ev.entity.runtimeId = id;
                         abi::Writer w;
-                        ev.Write(w);
+                        w.write(ev);
                         mm.Dispatch(abi::Event::EntityRemoved, w);
                     }
             }
@@ -562,7 +577,7 @@ namespace perlin {
             list.swap(modSounds);
             for (const abi::EventSound& s : list) {
                 abi::Writer w;
-                s.Write(w);
+                w.write(s);
                 mm.Dispatch(abi::Event::Sound, w);
             }
         }
@@ -580,7 +595,7 @@ namespace perlin {
                 e.outgoing = false;
                 e.body = std::move(p.second);
                 abi::Writer w;
-                e.Write(w);
+                w.write(e);
                 mm.Dispatch(abi::Event::Packet, w);
             }
         }
@@ -592,7 +607,7 @@ namespace perlin {
             f.guiWidth = modGuiW;
             f.guiHeight = modGuiH;
             abi::Writer w;
-            f.Write(w);
+            w.write(f);
             mm.Dispatch(abi::Event::Frame, w);
         }
     }

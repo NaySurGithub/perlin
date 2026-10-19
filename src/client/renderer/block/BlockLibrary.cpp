@@ -157,11 +157,24 @@ namespace perlin {
         }
         std::sort(bases.begin(), bases.end());
         bases.erase(std::unique(bases.begin(), bases.end()), bases.end());
-        const bool all = T <= 64;
         const int current = glassMode.load();
+        // Every base needs 33 tiles for all three modes. Vanilla already uses ~1300 of the (at most 2048) atlas
+        // layers, and 18 glass bases would take another 594, so the last bases (the late stained colours and
+        // tinted glass) used to run out of room and silently never connected. When the full set does not fit
+        // with headroom for server-pack blocks, build only the active mode (16 tiles per base, 1 for "clear")
+        // and rebuild through a resource reload when the mode changes (NeedsGlassRebuild).
+        constexpr int kHeadroom = 256;
+        glassLean = T > 64 || nextTile + static_cast<int>(bases.size()) * 33 + kHeadroom > MaxTiles();
+        glassBuiltMode = current;
+        const bool all = !glassLean;
+        const int perBase = all ? 33 : (current == 1 || current == 2 ? 16 : (current == 3 ? 1 : 0));
+        if (perBase == 0)
+            return;
         for (int base : bases) {
-            if (nextTile + 33 >= MaxTiles())
+            if (nextTile + perBase + 32 > MaxTiles()) {
+                std::cout << "[blocks] atlas full: glass connection disabled for remaining glass tiles" << std::endl;
                 break;
+            }
             const std::vector<uint8_t> src(atlas.begin() + (size_t)base * T * T * 4, atlas.begin() + ((size_t)base + 1) * T * T * 4);
             const TileAlpha baseAlpha = AlphaOf(base);
             const bool keepInterior = tinted.count(base) > 0;
@@ -1183,6 +1196,26 @@ namespace perlin {
                     pathByKey[key] = tex->string;
             }
         }
+        // Keys the server pack does not define (a custom block reusing a vanilla texture by its short name)
+        // resolve through the vanilla terrain_texture.json instead of guessing "textures/blocks/<key>".
+        std::unordered_map<std::string, std::string> vanillaPathByKey;
+        {
+            std::ifstream in(vanillaRpRoot + "/textures/terrain_texture.json", std::ios::binary);
+            if (in) {
+                std::stringstream ss;
+                ss << in.rdbuf();
+                if (const auto doc = json::Document::Parse(ss.str(), true))
+                    for (const auto member : doc->root()["texture_data"].members()) {
+                        json::View tex = member.value["textures"];
+                        if (tex.isArray())
+                            tex = tex[static_cast<size_t>(0)];
+                        if (tex.isObject())
+                            tex = tex["path"];
+                        if (tex.isString())
+                            vanillaPathByKey.emplace(member.key, tex.str());
+                    }
+            }
+        }
         bool any = false;
         const std::vector<std::string> serverDirs = ServerPacks::Instance().Directories();
         std::unordered_map<std::string, std::string> stems;
@@ -1194,12 +1227,24 @@ namespace perlin {
                  !ec && it != end; it.increment(ec)) {
                 if (!it->is_regular_file(ec))
                     continue;
-                const std::string ext = it->path().extension().string();
-                if (ext != ".png" && ext != ".tga")
-                    continue;
+                std::string name = it->path().filename().string();
+                // "x.texture_set.json" declares texture "x" just as "x.png" does.
+                constexpr std::string_view kSet = ".texture_set.json";
+                std::string stem;
+                size_t extSize = 0;
+                if (name.size() > kSet.size() && name.compare(name.size() - kSet.size(), kSet.size(), kSet) == 0) {
+                    stem = name.substr(0, name.size() - kSet.size());
+                    extSize = kSet.size();
+                } else {
+                    const std::string ext = it->path().extension().string();
+                    if (ext != ".png" && ext != ".tga")
+                        continue;
+                    stem = it->path().stem().string();
+                    extSize = ext.size();
+                }
                 std::string rel = std::filesystem::relative(it->path(), dir, ec).generic_string();
-                rel.resize(rel.size() - ext.size());
-                stems.emplace(it->path().stem().string(), rel);
+                rel.resize(rel.size() - extSize);
+                stems.emplace(std::move(stem), std::move(rel));
             }
         }
         const BlockGeometry::FetchFn fetchGeometry = [this, &stems](const std::string& p, const std::string& root) {
@@ -1225,7 +1270,10 @@ namespace perlin {
                     if (f == def.faceTexture.end())
                         continue;
                     const auto p = pathByKey.find(f->second);
-                    const std::string path = p != pathByKey.end() ? p->second : "textures/blocks/" + f->second;
+                    const auto v = vanillaPathByKey.find(f->second);
+                    const std::string path = p != pathByKey.end()   ? p->second
+                                             : v != vanillaPathByKey.end() ? v->second
+                                                                           : "textures/blocks/" + f->second;
                     pathOut = path;
                     return FetchOrSynth(path, vanillaRpRoot, def.name + "/" + f->second, stems);
                 }
@@ -1247,6 +1295,18 @@ namespace perlin {
                 top = side;
             if (bottom < 0)
                 bottom = side;
+            // Distinct per-face materials: only east/west/south/north that name their own texture.
+            {
+                static constexpr const char* kFaces[4] = {"east", "west", "south", "north"};
+                for (int i = 0; i < 4; i++) {
+                    std::string unusedPath;
+                    if (def.faceTexture.count(kFaces[i])) {
+                        const int t = resolve({kFaces[i]}, unusedPath);
+                        if (t > 0 && t != side)
+                            a.sideTile[i] = t;
+                    }
+                }
+            }
             a.top = top;
             a.side = side;
             a.bottom = bottom;

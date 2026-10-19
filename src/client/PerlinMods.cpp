@@ -1,3 +1,5 @@
+#include "client/resources/ServerPacks.hpp"
+#include <filesystem>
 #include "client/Perlin.hpp"
 
 #include "client/i18n/Lang.hpp"
@@ -11,6 +13,7 @@
 #include "client/ui/McFont.hpp"
 #include "network/Transport.hpp"
 #include "world/level/block/BlockPalette.hpp"
+#include "util/Paths.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -70,7 +73,7 @@ namespace perlin {
             out.isPlayer = e.isPlayer;
             out.isItem = e.isItem;
             out.isSelf = e.isSelf;
-            out.flags = e.flags;
+            out.flags = abi::EntityFlags::from_bits(e.flags);
             out.itemName = e.itemName;
             out.itemCount = e.itemCount;
             out.mainHand = e.mainHand;
@@ -295,9 +298,9 @@ namespace perlin {
                 p.spectator = modLive->Spectator();
                 p.riding = modLive->RidingUid() != 0;
                 p.connected = modLive->GetState() == BedrockSession::State::InGame;
-                p.gameMode = modLive->GameType();
-                p.dimension = modLive->DimensionId();
-                p.permission = modLive->OwnPermission();
+                p.gameMode = static_cast<abi::GameMode>(modLive->GameType());
+                p.dimension = static_cast<abi::Dimension>(modLive->DimensionId());
+                p.permission = static_cast<abi::PermissionLevel>(modLive->OwnPermission());
                 p.walkSpeed = modLive->WalkSpeed();
                 p.health = v.health;
                 p.maxHealth = v.maxHealth;
@@ -313,7 +316,7 @@ namespace perlin {
                 p.name = options.playerName;
                 p.health = hudState.health;
             }
-            p.Write(w);
+            w.write(p);
             return Status::Ok;
         });
 
@@ -324,12 +327,12 @@ namespace perlin {
             w.put<uint32_t>(static_cast<uint32_t>(list.size()));
             for (const auto& e : list) {
                 abi::Effect out;
-                out.id = e.id;
+                out.id = static_cast<abi::EffectId>(e.id);
                 out.amplifier = e.amplifier;
                 out.ticks = e.ticks;
                 out.ambient = e.ambient;
                 out.particles = e.particles;
-                out.Write(w);
+                w.write(out);
             }
             return Status::Ok;
         });
@@ -346,7 +349,7 @@ namespace perlin {
                     inv.slots[static_cast<size_t>(i)] = ToItem(hudState.hotbar[i]);
                 inv.offhand = ToItem(hudState.offhand);
                 inv.selected = hudState.selectedSlot;
-                inv.Write(w);
+                w.write(inv);
                 return Status::Ok;
             }
             const BedrockSession::InventoryView view = modLive->GetInventory();
@@ -360,7 +363,7 @@ namespace perlin {
             inv.cursor = ToItem(view.cursor);
             inv.selected = view.selected;
             inv.open = modLive->InventoryIsOpen();
-            inv.Write(w);
+            w.write(inv);
             return Status::Ok;
         });
 
@@ -427,10 +430,10 @@ namespace perlin {
             s.rain = rainLevel;
             s.thunder = thunderLevel;
             if (modLive) {
-                s.dimension = modLive->DimensionId();
+                s.dimension = static_cast<abi::Dimension>(modLive->DimensionId());
                 const auto world = modLive->World();
-                s.difficulty = world.difficulty;
-                s.worldGameMode = world.worldGameMode;
+                s.difficulty = static_cast<abi::Difficulty>(world.difficulty);
+                s.worldGameMode = static_cast<abi::GameMode>(world.worldGameMode);
                 s.commandsEnabled = world.commandsEnabled;
                 for (const auto& rule : world.rules)
                     s.rules.emplace_back(rule.first, rule.second);
@@ -452,7 +455,7 @@ namespace perlin {
                     s.spawnZ = spawn[2];
                 }
             }
-            s.Write(w);
+            w.write(s);
             return Status::Ok;
         });
 
@@ -475,7 +478,7 @@ namespace perlin {
                 info.biome = modLevel->GetBiome(x, y, z);
                 info.liquid = modLevel->GetLiquid(x, y, z);
             }
-            info.Write(w);
+            w.write(info);
             return Status::Ok;
         });
 
@@ -526,7 +529,7 @@ namespace perlin {
                         }
                         region.cells.push_back(it->second);
                     }
-            region.Write(w);
+            w.write(region);
             return Status::Ok;
         });
 
@@ -555,7 +558,7 @@ namespace perlin {
                 out.x = hit.bx;
                 out.y = hit.by;
                 out.z = hit.bz;
-                out.face = hit.face;
+                out.face = static_cast<abi::Face>(hit.face);
                 out.hx = hit.point.x;
                 out.hy = hit.point.y;
                 out.hz = hit.point.z;
@@ -576,7 +579,7 @@ namespace perlin {
                         out.y = cell.y;
                         out.z = cell.z;
                         const glm::ivec3 d = previous - cell;
-                        out.face = d.y < 0 ? 0 : d.y > 0 ? 1 : d.z < 0 ? 2 : d.z > 0 ? 3 : d.x < 0 ? 4 : 5;
+                        out.face = d.y < 0 ? abi::Face::Down : d.y > 0 ? abi::Face::Up : d.z < 0 ? abi::Face::North : d.z > 0 ? abi::Face::South : d.x < 0 ? abi::Face::West : abi::Face::East;
                         out.hx = p.x;
                         out.hy = p.y;
                         out.hz = p.z;
@@ -587,7 +590,7 @@ namespace perlin {
                     previous = cell;
                 }
             }
-            out.Write(w);
+            w.write(out);
             return Status::Ok;
         });
 
@@ -604,12 +607,12 @@ namespace perlin {
                                            {camera.x, camera.y, camera.z}, glm::dvec3(camera.Direction()), 5.7, creative ? 7.0 : 3.0);
                 a.distance = hit.distance;
                 if (hit.kind == AimHit::Kind::Block) {
-                    a.kind = 1;
+                    a.kind = abi::AimKind::Block;
                     a.block.hit = true;
                     a.block.x = hit.bx;
                     a.block.y = hit.by;
                     a.block.z = hit.bz;
-                    a.block.face = hit.face;
+                    a.block.face = static_cast<abi::Face>(hit.face);
                     a.block.hx = hit.point.x;
                     a.block.hy = hit.point.y;
                     a.block.hz = hit.point.z;
@@ -617,14 +620,14 @@ namespace perlin {
                     bool loaded = false;
                     a.block.block = BlockPalette::Instance().Name(modLevel->GetBlock(hit.bx, hit.by, hit.bz, loaded));
                 } else if (hit.kind == AimHit::Kind::Entity) {
-                    a.kind = 2;
+                    a.kind = abi::AimKind::Entity;
                     a.entity = hit.entity;
                     for (const entity::Entity& e : entities)
                         if (e.runtimeId == hit.entity)
                             a.entityType = e.type;
                 }
             }
-            a.Write(w);
+            w.write(a);
             return Status::Ok;
         });
 
@@ -669,7 +672,7 @@ namespace perlin {
                 found.resize(static_cast<size_t>(limit));
             w.put<uint32_t>(static_cast<uint32_t>(found.size()));
             for (const auto& b : found)
-                b.Write(w);
+                w.write(b);
             return Status::Ok;
         });
 
@@ -712,7 +715,7 @@ namespace perlin {
             }
             w.put<uint32_t>(static_cast<uint32_t>(picked.size()));
             for (const entity::Entity* e : picked)
-                ToEntity(*e).Write(w);
+                w.write(ToEntity(*e));
             return Status::Ok;
         });
 
@@ -724,7 +727,7 @@ namespace perlin {
             const bool ok = modLive ? modLive->Entities().Find(id, e) : previewEntities.Find(id, e);
             if (!ok)
                 return Status::NotFound;
-            ToEntity(e).Write(w);
+            w.write(ToEntity(e));
             return Status::Ok;
         });
 
@@ -738,8 +741,8 @@ namespace perlin {
                 e.uuid = p.uuid;
                 e.name = p.name;
                 e.uid = p.uid;
-                e.permission = p.perm;
-                e.Write(w);
+                e.permission = static_cast<abi::PermissionLevel>(p.perm);
+                w.write(e);
             }
             return Status::Ok;
         });
@@ -804,7 +807,7 @@ namespace perlin {
             s.language = options.language;
             s.platform = PlatformName();
             s.gameVersion = kBedrockVersion;
-            s.Write(w);
+            w.write(s);
             return Status::Ok;
         });
 
@@ -851,6 +854,55 @@ namespace perlin {
             return Status::NotFound;
         });
 
+        // ---- Camera, chat, title, packs ----------------------------------------------------------
+        mm.Register(Op::PerspectiveGet, [this](CallContext&, abi::Reader&, abi::Writer& w) {
+            w.write(static_cast<abi::Perspective>(camera.mode));
+            return Status::Ok;
+        });
+
+        mm.Register(Op::PerspectiveSet, [this](CallContext&, abi::Reader& r, abi::Writer&) {
+            const auto mode = r.read<abi::Perspective>();
+            if (!r.Ok() || static_cast<int>(mode) < 0 || static_cast<int>(mode) > 2)
+                return Status::BadArguments;
+            camera.mode = static_cast<PerspectiveMode>(static_cast<int>(mode));
+            return Status::Ok;
+        });
+
+        mm.Register(Op::ChatHistory, [this](CallContext&, abi::Reader& r, abi::Writer& w) {
+            const uint32_t count = std::min<uint32_t>(r.get<uint32_t>(), 100);
+            std::vector<abi::ChatLine> out;
+            for (std::string& line : chat.RecentLines(count ? count : 20)) {
+                abi::ChatLine l;
+                l.text = std::move(line);
+                out.push_back(std::move(l));
+            }
+            w.write(out);
+            return Status::Ok;
+        });
+
+        mm.Register(Op::TitleState, [this](CallContext&, abi::Reader&, abi::Writer& w) {
+            abi::TitleStateData t;
+            t.title = hudState.title;
+            t.subtitle = hudState.subtitle;
+            t.actionBar = hudState.actionBar;
+            t.titleAlpha = hudState.titleAlpha;
+            t.actionBarAlpha = hudState.actionBarAlpha;
+            w.write(t);
+            return Status::Ok;
+        });
+
+        mm.Register(Op::ResourcePacks, [this](CallContext&, abi::Reader&, abi::Writer& w) {
+            std::vector<abi::PackEntry> out;
+            for (const std::string& name : options.texturePacks)
+                out.push_back({name, false});
+            for (const std::string& dir : ServerPacks::Instance().Directories())
+                out.push_back({std::filesystem::path(dir).filename().string(), true});
+            w.write(out);
+            return Status::Ok;
+        });
+
+        SetupModIntents();
+
         mm.Register(Op::MousePosition, [this](CallContext&, abi::Reader&, abi::Writer& w) {
             const float scale = static_cast<float>(modHud ? std::max(1, modHud->Scale()) : 1);
             w.put(input.MouseX() / scale).put(input.MouseY() / scale).boolean(input.Captured());
@@ -858,7 +910,7 @@ namespace perlin {
         });
 
         mm.Register(Op::InputOverride, [this](CallContext&, abi::Reader& r, abi::Writer&) {
-            const abi::InputOverrideState s = abi::InputOverrideState::Read(r);
+            const abi::InputOverrideState s = r.read<abi::InputOverrideState>();
             if (!r.Ok())
                 return Status::BadArguments;
             const auto until = std::chrono::steady_clock::now() + std::chrono::milliseconds(std::clamp(s.ticks, 0, 200) * 50);
@@ -1120,6 +1172,212 @@ namespace perlin {
             const std::string text = name ? name : "";
             w.raw(text.data(), text.size());
             return Status::Ok;
+        });
+    }
+
+    void Perlin::ToggleMod(const std::string& name) {
+        auto& mm = mods::ModManager::Instance();
+        auto& d = options.disabledMods;
+        const auto it = std::find(d.begin(), d.end(), name);
+        bool pending = false;
+        uint32_t requested = 0;
+        for (const mods::ModInfo& info : mm.List())
+            if (info.name == name) {
+                pending = info.needsApproval;
+                requested = info.requested;
+            }
+        if (pending) {
+            // Enabling is the approval: it covers exactly the permissions the mod asks for now.
+            auto& a = options.approvedMods;
+            a.erase(std::remove_if(a.begin(), a.end(), [&](const std::string& e) { return e.rfind(name + "=", 0) == 0; }), a.end());
+            a.push_back(name + "=" + std::to_string(requested));
+            if (it != d.end())
+                d.erase(it);
+            mm.SetApproved(a);
+        } else if (it == d.end()) {
+            d.push_back(name);
+        } else {
+            d.erase(it);
+        }
+        mm.SetDisabled(d);
+        options.Save();
+    }
+
+    void Perlin::SetupModIntents() {
+        auto& mm = mods::ModManager::Instance();
+        using abi::HostAction;
+        using abi::IntentOutcome;
+        const uint32_t network = static_cast<uint32_t>(abi::Permission::Network);
+
+        const auto extraOf = [](const abi::Intent& in, const char* key) -> const abi::ExtraValue* {
+            for (const abi::Extra& e : in.extras)
+                if (e.key == key)
+                    return &e.value;
+            return nullptr;
+        };
+        const auto text = [extraOf](const abi::Intent& in, const char* key) {
+            const abi::ExtraValue* v = extraOf(in, key);
+            const auto* s = v ? std::get_if<std::string>(v) : nullptr;
+            return s ? *s : std::string();
+        };
+        const auto integer = [extraOf](const abi::Intent& in, const char* key, int64_t fallback) {
+            const abi::ExtraValue* v = extraOf(in, key);
+            if (!v)
+                return fallback;
+            if (const auto* i = std::get_if<int64_t>(v))
+                return *i;
+            if (const auto* d = std::get_if<double>(v))
+                return static_cast<int64_t>(*d);
+            return fallback;
+        };
+        const auto reg = [&](HostAction action, const char* description, uint32_t permission, mods::HostIntentFn fn) {
+            mm.RegisterHostIntent(std::string(abi::action_id(action)), description, permission, std::move(fn));
+        };
+
+        reg(HostAction::OpenScreen, "Opens a game screen (extra: screen)", 0,
+            [this, integer](const std::string&, const abi::Intent& in, mods::IntentExtras&) {
+                switch (static_cast<abi::Screen>(integer(in, "screen", static_cast<int64_t>(abi::Screen::Pause)))) {
+                case abi::Screen::Pause: modOpenView = 0; break;
+                case abi::Screen::Options: modOpenView = 1; break;
+                case abi::Screen::Mods: modOpenView = 4; break;
+                case abi::Screen::Wardrobe: modOpenView = 5; break;
+                default: return IntentOutcome::Failed;
+                }
+                modOpenPage = 0;
+                modSettingsFor.clear();
+                return IntentOutcome::Handled;
+            });
+
+        reg(HostAction::OpenModSettings, "Opens a mod's settings page (extra: mod)", 0,
+            [this, text](const std::string& sender, const abi::Intent& in, mods::IntentExtras&) {
+                std::string target = text(in, "mod");
+                if (target.empty() || target == "self")
+                    target = sender;
+                if (!mods::ModManager::Instance().HasSettings(target))
+                    return IntentOutcome::Failed;
+                modOpenView = 1;
+                modOpenPage = 11;
+                modSettingsFor = target;
+                return IntentOutcome::Handled;
+            });
+
+        reg(HostAction::Screenshot, "Takes a screenshot", 0, [this](const std::string&, const abi::Intent&, mods::IntentExtras&) {
+            TakeScreenshot();
+            return IntentOutcome::Handled;
+        });
+
+        reg(HostAction::SetPerspective, "Sets the camera perspective (extra: mode)", 0,
+            [this, integer](const std::string&, const abi::Intent& in, mods::IntentExtras&) {
+                const int64_t mode = integer(in, "mode", -1);
+                if (mode < 0 || mode > 2)
+                    return IntentOutcome::Failed;
+                camera.mode = static_cast<PerspectiveMode>(mode);
+                return IntentOutcome::Handled;
+            });
+
+        reg(HostAction::CyclePerspective, "Cycles the camera perspective", 0, [this](const std::string&, const abi::Intent&, mods::IntentExtras& out) {
+            camera.mode = static_cast<PerspectiveMode>((static_cast<int>(camera.mode) + 1) % 3);
+            out.push_back({"mode", static_cast<int64_t>(camera.mode)});
+            return IntentOutcome::Handled;
+        });
+
+        reg(HostAction::CopyText, "Copies text to the clipboard (extra: text)", 0,
+            [this, text](const std::string&, const abi::Intent& in, mods::IntentExtras&) {
+                const std::string value = text(in, "text");
+                if (value.empty() || value.size() > 65536 || !platform)
+                    return IntentOutcome::Failed;
+                platform->SetClipboard(value);
+                return IntentOutcome::Handled;
+            });
+
+        reg(HostAction::ReloadResources, "Reloads resource packs", 0, [this](const std::string&, const abi::Intent&, mods::IntentExtras&) {
+            ApplyTexturePacks();
+            return IntentOutcome::Handled;
+        });
+
+        reg(HostAction::OpenUrl, "Opens an https link in the browser (extra: url)", network,
+            [this, text](const std::string&, const abi::Intent& in, mods::IntentExtras&) {
+                const std::string url = text(in, "url");
+                if (url.rfind("https://", 0) != 0 || url.size() > 2048 || !platform)
+                    return IntentOutcome::Failed;
+                platform->OpenUrl(url);
+                return IntentOutcome::Handled;
+            });
+
+        // ---- Files: between the mod's own folder and the game's pack/screenshot folders ----
+        const uint32_t files = static_cast<uint32_t>(abi::Permission::Files);
+        // "area:relative/path" -> absolute path. Areas: mod (the mod's own data folder), screenshots, resourcepacks, shaderpacks.
+        const auto resolve = [&mm](const std::string& sender, const std::string& spec, std::filesystem::path& out, std::string& area) {
+            const size_t colon = spec.find(':');
+            if (colon == std::string::npos || spec.size() > 300)
+                return false;
+            area = spec.substr(0, colon);
+            const std::string rel = spec.substr(colon + 1);
+            if (rel.empty() || rel[0] == '/' || rel[0] == '\\' || rel.find("..") != std::string::npos || rel.find('\\') != std::string::npos ||
+                rel.find(':') != std::string::npos)
+                return false;
+            std::filesystem::path root;
+            if (area == "mod")
+                root = std::filesystem::path(mm.Directory()) / (sender + ".data");
+            else if (area == "screenshots")
+                root = std::filesystem::path(paths::DataDir()) / "screenshots";
+            else if (area == "resourcepacks")
+                root = std::filesystem::path(paths::DataDir()) / "texturepacks";
+            else if (area == "shaderpacks")
+                root = std::filesystem::path(paths::DataDir()) / "shaderpacks";
+            else
+                return false;
+            out = root / rel;
+            return true;
+        };
+        const auto transfer = [resolve, text](bool move, const std::string& sender, const abi::Intent& in) {
+            std::filesystem::path from, to;
+            std::string fromArea, toArea;
+            if (!resolve(sender, text(in, "from"), from, fromArea) || !resolve(sender, text(in, "to"), to, toArea))
+                return IntentOutcome::Failed;
+            const bool toOwn = toArea == "mod";
+            std::error_code ec;
+            // Mods may only take files out of their own folder or the screenshots folder, and never overwrite a game file.
+            if (!std::filesystem::is_regular_file(from, ec) || (!toOwn && std::filesystem::exists(to, ec)))
+                return IntentOutcome::Failed;
+            if (fromArea != "mod" && fromArea != "screenshots")
+                return IntentOutcome::Failed; // pack folders are only written to, never taken from
+            if (move && fromArea != "mod")
+                return IntentOutcome::Failed;
+            std::filesystem::create_directories(to.parent_path(), ec);
+            if (move)
+                std::filesystem::rename(from, to, ec);
+            if (!move || ec) {
+                ec.clear();
+                std::filesystem::copy_file(from, to, std::filesystem::copy_options::overwrite_existing, ec);
+                if (!ec && move)
+                    std::filesystem::remove(from, ec);
+            }
+            return ec ? IntentOutcome::Failed : IntentOutcome::Handled;
+        };
+        reg(HostAction::CopyFile, "Copies a file (extras: from, to as area:path)", files,
+            [transfer](const std::string& sender, const abi::Intent& in, mods::IntentExtras&) { return transfer(false, sender, in); });
+        reg(HostAction::MoveFile, "Moves a file (extras: from, to as area:path)", files,
+            [transfer](const std::string& sender, const abi::Intent& in, mods::IntentExtras&) { return transfer(true, sender, in); });
+        reg(HostAction::DownloadFile, "Downloads an https file to disk (extras: url, to as area:path, request)", network | files,
+            [this, resolve, text, integer](const std::string& sender, const abi::Intent& in, mods::IntentExtras&) {
+                std::filesystem::path to;
+                std::string area;
+                const std::string url = text(in, "url");
+                if (url.rfind("https://", 0) != 0 || url.size() > 2048 || !resolve(sender, text(in, "to"), to, area))
+                    return IntentOutcome::Failed;
+                std::error_code ec;
+                if (area != "mod" && std::filesystem::exists(to, ec))
+                    return IntentOutcome::Failed;
+                if (modHttpActive.load() >= 6)
+                    return IntentOutcome::Failed;
+                StartModHttp(sender, static_cast<uint32_t>(integer(in, "request", 0)), "GET", url, 30000, {}, {}, to.string());
+                return IntentOutcome::Handled;
+            });
+
+        reg(HostAction::ToggleHud, "Shows or hides the HUD", 0, [this](const std::string&, const abi::Intent&, mods::IntentExtras&) {
+            options.showHud = !options.showHud;
+            return IntentOutcome::Handled;
         });
     }
 }

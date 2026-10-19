@@ -2,6 +2,8 @@
 
 #include "client/ui/FormatCodes.hpp"
 #include "client/ui/Json.hpp"
+#include "client/resources/TexturePack.hpp"
+#include "client/ui/Hud.hpp"
 #include "client/ui/HudData.hpp"
 #include "client/ui/McFont.hpp"
 #include "client/ui/RmlEmit.hpp"
@@ -11,8 +13,12 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <chrono>
 #include <cstdlib>
+#include <filesystem>
+#include <fstream>
 #include <iostream>
+#include <thread>
 
 namespace perlin::ui {
     namespace {
@@ -376,6 +382,39 @@ namespace perlin::ui {
     }
 
     namespace {
+        std::string ElementRowText(const FormElement& e, bool focused) {
+            switch (e.kind) {
+                case FormElement::Kind::Toggle:
+                    return e.text + ": " + (e.flag ? "\xC2\xA7" "aON" : "\xC2\xA7" "cOFF");
+                case FormElement::Kind::Dropdown:
+                    return e.text + ": " + e.options[static_cast<size_t>(e.index)];
+                case FormElement::Kind::Slider:
+                    return e.text + ": " + Num(e.number);
+                case FormElement::Kind::StepSlider:
+                    return e.text + ": " + e.options[static_cast<size_t>(e.index)];
+                case FormElement::Kind::Input: {
+                    const std::string shown = e.value.empty() && !focused ? "\xC2\xA7" "8" + e.placeholder : e.value + (focused ? "_" : "");
+                    return e.text.empty() ? shown : e.text + ": " + shown;
+                }
+                default:
+                    return e.text;
+            }
+        }
+
+        const char* ElementFactoryId(FormElement::Kind kind) {
+            switch (kind) {
+                case FormElement::Kind::Label: return "label";
+                case FormElement::Kind::Header: return "header";
+                case FormElement::Kind::Divider: return "divider";
+                case FormElement::Kind::Input: return "input";
+                case FormElement::Kind::Toggle: return "toggle";
+                case FormElement::Kind::Slider: return "slider";
+                case FormElement::Kind::StepSlider: return "step_slider";
+                case FormElement::Kind::Dropdown: return "dropdown";
+            }
+            return "label";
+        }
+
         class FormData final : public UiData {
         public:
             explicit FormData(const FormModel& f) : form(f) {
@@ -399,14 +438,61 @@ namespace perlin::ui {
                     out = Json(form.content);
                     return true;
                 }
+                if (name == "#custom_form_length") {
+                    out = Json(static_cast<double>(form.elements.size()));
+                    return true;
+                }
+                if (name == "#submit_text") {
+                    out = Json(form.submit.empty() ? std::string("Submit") : form.submit);
+                    return true;
+                }
+                if (name == "#submit_button_visible") {
+                    out = Json(true);
+                    return true;
+                }
                 return false;
             }
 
             int CollectionSize(const std::string& collection) const override {
-                return collection == "form_buttons" ? static_cast<int>(items.size()) : 0;
+                if (collection == "form_buttons")
+                    return static_cast<int>(items.size());
+                if (collection == "custom_form")
+                    return static_cast<int>(form.elements.size());
+                return 0;
             }
 
             bool CollectionValue(const std::string& collection, int index, const std::string& binding, Json& out) const override {
+                if (collection == "custom_form") {
+                    if (index < 0 || static_cast<size_t>(index) >= form.elements.size())
+                        return false;
+                    const FormElement& e = form.elements[static_cast<size_t>(index)];
+                    if (binding == "#custom_text") {
+                        out = Json(e.text);
+                    } else if (binding == "#custom_row_text") {
+                        out = Json(ElementRowText(e, form.focus == index));
+                    } else if (binding == "#custom_placeholder_text") {
+                        out = Json(e.placeholder);
+                    } else if (binding == "#custom_input_text") {
+                        out = Json(e.value);
+                    } else if (binding == "#custom_toggle_state") {
+                        out = Json(e.flag);
+                    } else if (binding == "#custom_slider_value") {
+                        out = Json(e.number);
+                    } else if (binding == "#custom_slider_step_value") {
+                        out = Json(static_cast<double>(e.index));
+                    } else if (binding == "#custom_slider_text" || binding == "#custom_slider_step_text") {
+                        out = Json(ElementRowText(e, false));
+                    } else if (binding == "#custom_tooltip_text") {
+                        out = Json(std::string());
+                    } else if (binding == "#custom_input_enabled" || binding == "#custom_toggle_enabled" || binding == "#custom_slider_enabled") {
+                        out = Json(true);
+                    } else if (binding == "#dropdown_option_text") {
+                        out = Json(e.options.empty() ? std::string() : e.options[static_cast<size_t>(e.index)]);
+                    } else {
+                        return false;
+                    }
+                    return true;
+                }
                 if (collection != "form_buttons" || index < 0 || static_cast<size_t>(index) >= items.size())
                     return false;
                 const FormButton& b = items[static_cast<size_t>(index)];
@@ -432,7 +518,10 @@ namespace perlin::ui {
             std::vector<FactoryItem> Factory(const std::string& name) const override {
                 std::vector<FactoryItem> result;
                 if (name == "server_form_factory") {
-                    result.push_back({"long_form", {}, {}, -1});
+                    result.push_back({form.type == FormModel::Type::Custom ? "custom_form" : "long_form", {}, {}, -1});
+                } else if (name == "buttons" && form.type == FormModel::Type::Custom) {
+                    for (size_t i = 0; i < form.elements.size(); i++)
+                        result.push_back({ElementFactoryId(form.elements[i].kind), {}, "custom_form", static_cast<int>(i)});
                 } else if (name == "buttons") {
                     for (size_t i = 0; i < items.size(); i++) {
                         const std::string& k = items[i].kind;
@@ -447,6 +536,118 @@ namespace perlin::ui {
             const FormModel& form;
             std::vector<FormButton> items;
         };
+
+        // Controls the layout engine can lay out and emit. A custom-form row built from anything else (the
+        // vanilla option_toggle, option_slider, dropdown and edit box use toggle/slider/edit_box/dropdown
+        // controls) is replaced by the button based version in kFormShim, which draws with the same button
+        // textures and so follows the active resource pack and the server pack.
+        bool NodeSupported(const std::string& type) {
+            return type == "panel" || type == "stack_panel" || type == "grid" || type == "image" || type == "label" ||
+                   type == "button" || type == "scroll_view" || type == "custom" || type == "factory" ||
+                   type == "collection_panel" || type == "input_panel" || type == "screen";
+        }
+
+        bool SubtreeSupported(const Node& node) {
+            if (!NodeSupported(node.type))
+                return false;
+            for (const auto& child : node.children)
+                if (!SubtreeSupported(*child))
+                    return false;
+            if (node.gridTemplate && !SubtreeSupported(*node.gridTemplate))
+                return false;
+            for (const auto& control : node.factoryControls)
+                if (!SubtreeSupported(*control.second))
+                    return false;
+            return true;
+        }
+
+        void ShimCustomRows(Node& node, UiLibrary& library, BuildReport& report) {
+            const Json* collection = node.props.Find("collection_name");
+            const bool customRows = collection && collection->IsString() && collection->string == "custom_form";
+            for (auto& control : node.factoryControls) {
+                const bool needsShim = customRows && (control.first == "toggle" || control.first == "slider" || control.first == "step_slider" ||
+                                                      control.first == "dropdown" || control.first == "input" || control.first == "multiselect" ||
+                                                      !SubtreeSupported(*control.second));
+                if (needsShim && !SubtreeSupported(*control.second)) {
+                    const std::string shimName = control.first == "multiselect" ? "dropdown" : control.first;
+                    if (auto shim = BuildTree(library, "perlin_form.custom_" + shimName, EngineRootVariables(), report)) {
+                        control.second = std::move(shim);
+                        continue;
+                    }
+                }
+                ShimCustomRows(*control.second, library, report);
+            }
+            for (auto& child : node.children)
+                ShimCustomRows(*child, library, report);
+            if (node.gridTemplate)
+                ShimCustomRows(*node.gridTemplate, library, report);
+        }
+
+        // Button based custom-form rows (see NodeSupported). The "button.perlin_form_*" ids are turned into form
+        // actions by the emitter.
+        const char* kFormShim = R"JSON({
+  "namespace": "perlin_form",
+  "text_row": {
+    "type": "panel",
+    "size": ["100%", 32],
+    "$perlin_button": "button.perlin_form_toggle",
+    "controls": [
+      { "row@common_buttons.light_text_button": {
+          "$pressed_button_name": "$perlin_button",
+          "anchor_from": "top_left", "anchor_to": "top_left",
+          "size": ["100%", 32],
+          "$button_text": "#custom_row_text",
+          "$button_text_binding_type": "collection",
+          "$button_text_grid_collection_name": "custom_form",
+          "$button_text_max_size": ["100%", 20],
+          "bindings": [ { "binding_type": "collection_details", "binding_collection_name": "custom_form" } ]
+      } }
+    ]
+  },
+  "custom_toggle@perlin_form.text_row": { "$perlin_button": "button.perlin_form_toggle" },
+  "custom_dropdown@perlin_form.text_row": { "$perlin_button": "button.perlin_form_dropdown" },
+  "custom_input@perlin_form.text_row": { "$perlin_button": "button.perlin_form_input" },
+  "stepper_row": {
+    "type": "stack_panel",
+    "orientation": "horizontal",
+    "size": ["100%", 32],
+    "controls": [
+      { "minus@common_buttons.light_text_button": {
+          "$pressed_button_name": "button.perlin_form_minus",
+          "size": [32, 32], "$button_text": "<" } },
+      { "value@common_buttons.light_text_button": {
+          "$pressed_button_name": "button.perlin_form_none",
+          "size": ["fill", 32],
+          "$button_text": "#custom_row_text",
+          "$button_text_binding_type": "collection",
+          "$button_text_grid_collection_name": "custom_form",
+          "$button_text_max_size": ["100%", 20],
+          "bindings": [ { "binding_type": "collection_details", "binding_collection_name": "custom_form" } ] } },
+      { "plus@common_buttons.light_text_button": {
+          "$pressed_button_name": "button.perlin_form_plus",
+          "size": [32, 32], "$button_text": ">" } }
+    ]
+  },
+  "custom_slider@perlin_form.stepper_row": {},
+  "custom_step_slider@perlin_form.stepper_row": {},
+  "custom_label": {
+    "type": "panel",
+    "size": ["100%", "100%c"],
+    "controls": [
+      { "text": {
+          "type": "label",
+          "offset": [2, 2],
+          "size": ["100%", "default"],
+          "anchor_from": "top_left", "anchor_to": "top_left",
+          "color": "$main_header_text_color",
+          "text": "#custom_text",
+          "bindings": [ { "binding_name": "#custom_text", "binding_type": "collection", "binding_collection_name": "custom_form" } ]
+      } }
+    ]
+  },
+  "custom_header@perlin_form.custom_label": {}
+}
+)JSON";
 
         const char* kFormTemplate =
             "<rml>\n<head>\n<title>form</title>\n<style>\n"
@@ -472,7 +673,7 @@ namespace perlin::ui {
         std::string wanted;
         for (const std::string& d : packDirs)
             wanted += d + "|";
-        wanted += paths::DataDir() + "|" + UiAssets::Instance().VanillaRoot();
+        wanted += paths::DataDir() + "|" + UiAssets::Instance().VanillaRoot() + "|" + std::to_string(TexturePack::Instance().Generation());
         if (state.load() == 1)
             return;
         if (state.load() != 0 && wanted == key)
@@ -485,9 +686,19 @@ namespace perlin::ui {
         for (size_t i = packDirs.size(); i-- > 0;)
             roots.push_back(packDirs[i] + "/ui");
         const std::string data = paths::DataDir();
+        // The player's own texture packs can restyle forms too; the server's packs still win over them.
+        if (const std::string packUi = ExtractPackUi(data, "pack_ui_form"); !packUi.empty())
+            roots.push_back(packUi + "/ui");
         roots.push_back(data + "/ui");
         roots.push_back(data + "/ui_defaults");
         roots.push_back(UiAssets::Instance().VanillaRoot() + "/ui");
+        {
+            // The shim lives in the lowest-priority writable root so a server pack can still define its own.
+            std::error_code ec;
+            std::filesystem::create_directories(data + "/ui_defaults", ec);
+            std::ofstream shim(data + "/ui_defaults/perlin_form.json", std::ios::binary | std::ios::trunc);
+            shim << kFormShim;
+        }
         worker = std::thread([this, roots]() {
             library.SetRoots(roots);
             tree.reset();
@@ -504,14 +715,22 @@ namespace perlin::ui {
                 state = 3;
                 return;
             }
+            ShimCustomRows(*tree, library, report);
             for (const std::string& missing : report.missingControls)
                 std::cout << "[form] missing control " << missing << std::endl;
             state = 2;
         });
     }
 
+    bool FormUi::WaitReady(int timeoutMs) {
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeoutMs);
+        while (state.load() == 1 && std::chrono::steady_clock::now() < deadline)
+            std::this_thread::sleep_for(std::chrono::milliseconds(2));
+        return Ready();
+    }
+
     bool FormUi::Build(const FormModel& form, int guiW, int guiH, float scroll, std::string& rml, float& contentHeight, float& viewHeight) {
-        if (state.load() != 2 || !tree || form.type == FormModel::Type::Custom)
+        if (state.load() != 2 || !tree)
             return false;
         FormData data(form);
         const std::unique_ptr<LNode> root = EvaluateTree(*tree, data, services, static_cast<float>(guiW), static_cast<float>(guiH));
@@ -521,7 +740,7 @@ namespace perlin::ui {
         rml = emitter.Emit(*root, static_cast<float>(guiW), static_cast<float>(guiH), std::string(), false);
         contentHeight = emitter.ContentHeight();
         viewHeight = emitter.ViewportHeight();
-        const size_t buttons = form.type == FormModel::Type::Modal ? 2 : form.buttons.size();
+        const size_t buttons = form.type == FormModel::Type::Modal ? 2 : form.type == FormModel::Type::Custom ? 0 : form.buttons.size();
         if (buttons > 0 && rml.find("id=\"fb:0\"") == std::string::npos) {
             problem = "form buttons were not produced by the ui files";
             return false;

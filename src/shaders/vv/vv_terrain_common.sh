@@ -6,6 +6,9 @@
 SAMPLER2D(s_shadow, 2);
 // Coloured light through stained glass etc.: rgb = tint, a = depth of the nearest glass (white = none).
 SAMPLER2D(s_shadowTint, 7);
+SAMPLER2D(s_shadowB, 8);     // the next terrain shadow map while it fades in
+SAMPLER2D(s_shadowTintB, 9);
+SAMPLER2D(s_shadowEnt, 10);  // mobs and players only
 
 vec3 faceNormal(vec3 rel)
 {
@@ -24,32 +27,18 @@ float vanillaShade(vec3 n)
     return clamp(up * 1.0 + down * 0.5 + z * 0.8 + x * 0.6, 0.4, 1.0);
 }
 
-// Soft sun shadow: taps on a per-texel rotated spiral (1 / 6 / 12 / 20 by the filter setting),
-// about a tenth of a block wide whatever the shadow map resolution (higher quality settings just
-// get sharper, cleaner edges). Returns -1 when there is no shadow map.
-float sunShadow(vec3 world, vec3 n, float ndl, out vec3 tint)
+// One shadow map lookup: taps on a per-texel rotated spiral (1 / 6 / 12 / 20 by the filter setting), about a
+// tenth of a block wide whatever the shadow map resolution. which: 0 terrain, 1 next terrain map, 2 mobs.
+float shadowTap(vec3 p, vec3 sc, float ndl, vec4 info, float which, float taps)
 {
-    float texelWorld = u_shadowInfo.y * u_shadowInfo.x;
-    vec3 p = world + n * (texelWorld * 1.5 + 0.02);
-    vec3 sc = mul(u_shadowMtx, vec4(p, 1.0)).xyz;
+    float texelWorld = info.y * info.x;
     vec2 edge = min(sc.xy, vec2(1.0, 1.0) - sc.xy);
     float inside = smoothstep(0.0, 0.06, min(edge.x, edge.y));
-    float bias = (texelWorld * 1.8 * (1.0 - ndl) + 0.05) / u_shadowInfo.z;
     float lit = 1.0;
-    // Light that came through glass on its way here takes the glass colour (one tap; the tint map
-    // is white where there is no glass, or when none is bound).
-    vec4 glass = texture2DLod(s_shadowTint, sc.xy, 0.0);
-    tint = (sc.z - bias > glass.a && inside > 0.5) ? glass.rgb : vec3_splat(1.0);
-    VV_BRANCH if (inside > 0.0 && u_shadowInfo.w > 0.5)
+    VV_BRANCH if (inside > 0.0)
     {
-        // Hard / Soft / Softer / Softest = 1 / 6 / 12 / 20 taps on a per-texel rotated spiral.
-        float filterLevel = floor(S_SHADOW_FILTER + 0.5);
-        float taps = filterLevel < 0.5 ? 1.0 : (filterLevel < 1.5 ? 6.0 : (filterLevel < 2.5 ? 12.0 : 20.0));
-        // Far away a pixel covers several shadow texels anyway: fewer taps (the edge softness
-        // there is beyond what the eye can tell apart).
-        float viewDist = length(world - u_camera.xyz);
-        taps = viewDist > 96.0 ? 1.0 : (viewDist > 48.0 ? min(taps, 6.0) : taps);
-        float radius = clamp(0.07 * S_SHADOW_SOFTNESS / max(texelWorld, 1.0e-4), 1.0, 5.0) * u_shadowInfo.x * step(1.5, taps);
+        float bias = (texelWorld * 1.8 * (1.0 - ndl) + 0.05) / info.z;
+        float radius = clamp(0.07 * S_SHADOW_SOFTNESS / max(texelWorld, 1.0e-4), 1.0, 5.0) * info.x * step(1.5, taps);
         float spin = hash12(floor(p.xz * 16.0) + floor(p.y * 16.0) * 7.31) * 6.2831853; // per world texel
         float sum = 0.0;
         VV_LOOP for (int i = 0; i < 20; i++)
@@ -60,11 +49,65 @@ float sunShadow(vec3 world, vec3 n, float ndl, out vec3 tint)
             float r = sqrt(fi / taps);
             float a = fi * 2.3999632 + spin;
             vec2 uv = sc.xy + vec2(cos(a), sin(a)) * r * radius;
-            sum += (sc.z - bias <= texture2DLod(s_shadow, uv, 0.0).r) ? 1.0 : 0.0;
+            float stored;
+            if (which < 0.5)
+                stored = texture2DLod(s_shadow, uv, 0.0).r;
+            else if (which < 1.5)
+                stored = texture2DLod(s_shadowB, uv, 0.0).r;
+            else
+                stored = texture2DLod(s_shadowEnt, uv, 0.0).r;
+            sum += (sc.z - bias <= stored) ? 1.0 : 0.0;
         }
         lit = mix(1.0, sum / taps, inside);
     }
-    return u_shadowInfo.w < 0.5 ? -1.0 : lit;
+    return lit;
+}
+
+// Colour of the light that came through glass on its way to a point (white when none).
+vec3 shadowGlass(vec3 sc, float ndl, vec4 info, float second)
+{
+    float texelWorld = info.y * info.x;
+    vec2 edge = min(sc.xy, vec2(1.0, 1.0) - sc.xy);
+    float inside = smoothstep(0.0, 0.06, min(edge.x, edge.y));
+    float bias = (texelWorld * 1.8 * (1.0 - ndl) + 0.05) / info.z;
+    vec4 glass = second > 0.5 ? texture2DLod(s_shadowTintB, sc.xy, 0.0) : texture2DLod(s_shadowTint, sc.xy, 0.0);
+    return (sc.z - bias > glass.a && inside > 0.5) ? glass.rgb : vec3_splat(1.0);
+}
+
+// Soft sun shadow. Returns -1 when there is no shadow map. A finished rebuild never replaces the map
+// in one step: it fades in over the old one (u_shadowInfoB.w), so shadows glide as the sun and the
+// camera move instead of stepping. Mobs and players are looked up in a map of their own, redrawn
+// every frame from the exact light direction.
+float sunShadow(vec3 world, vec3 n, float ndl, out vec3 tint)
+{
+    float texelWorld = u_shadowInfo.y * u_shadowInfo.x;
+    vec3 p = world + n * (texelWorld * 1.5 + 0.02);
+    vec3 sc = mul(u_shadowMtx, vec4(p, 1.0)).xyz;
+    float fade = u_shadowInfoB.w;
+    tint = shadowGlass(sc, ndl, u_shadowInfo, 0.0);
+    vec3 scB = vec3_splat(0.0);
+    VV_BRANCH if (fade > 0.0)
+    {
+        scB = mul(u_shadowMtxB, vec4(p, 1.0)).xyz;
+        tint = mix(tint, shadowGlass(scB, ndl, u_shadowInfoB, 1.0), fade);
+    }
+    if (u_shadowInfo.w < 0.5)
+        return -1.0;
+    // Hard / Soft / Softer / Softest = 1 / 6 / 12 / 20 taps.
+    float filterLevel = floor(S_SHADOW_FILTER + 0.5);
+    float taps = filterLevel < 0.5 ? 1.0 : (filterLevel < 1.5 ? 6.0 : (filterLevel < 2.5 ? 12.0 : 20.0));
+    // Far away a pixel covers several shadow texels anyway: fewer taps.
+    float viewDist = length(world - u_camera.xyz);
+    taps = viewDist > 96.0 ? 1.0 : (viewDist > 48.0 ? min(taps, 6.0) : taps);
+    float lit = shadowTap(p, sc, ndl, u_shadowInfo, 0.0, taps);
+    VV_BRANCH if (fade > 0.0)
+        lit = mix(lit, shadowTap(p, scB, ndl, u_shadowInfoB, 1.0, taps), fade);
+    VV_BRANCH if (u_shadowInfoE.w > 0.5)
+    {
+        vec3 scE = mul(u_shadowMtxE, vec4(p, 1.0)).xyz;
+        lit = min(lit, shadowTap(p, scE, ndl, u_shadowInfoE, 2.0, taps));
+    }
+    return lit;
 }
 
 // Lights a block surface and returns display colour.

@@ -310,6 +310,19 @@ namespace perlin::ui {
                 const std::string& id = to->string;
                 if (id == "button.form_button_click")
                     return "fb:" + std::to_string(std::max(0, n.index));
+                // Custom form rows (see the shim in FormScreen.cpp) and the submit button.
+                if (id == "button.submit_custom_form")
+                    return "submit";
+                if (id == "button.perlin_form_toggle")
+                    return "t:" + std::to_string(std::max(0, n.index));
+                if (id == "button.perlin_form_dropdown")
+                    return "d:" + std::to_string(std::max(0, n.index));
+                if (id == "button.perlin_form_input")
+                    return "i:" + std::to_string(std::max(0, n.index));
+                if (id == "button.perlin_form_minus")
+                    return "s:" + std::to_string(std::max(0, n.index)) + ":-";
+                if (id == "button.perlin_form_plus")
+                    return "s:" + std::to_string(std::max(0, n.index)) + ":+";
                 if (id == "button.menu_exit" || id == "button.menu_cancel" || id == "button.exit_dialog" || id.find("close") != std::string::npos)
                     return "close";
             }

@@ -1,6 +1,6 @@
 #include "client/renderer/shader/ShaderManager.hpp"
 
-#include <bgfx/embedded_shader.h>
+#include "client/renderer/shader/EmbeddedShaders.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -187,6 +187,13 @@ namespace perlin {
         shadowInfo = bgfx::createUniform("u_shadowInfo", bgfx::UniformType::Vec4);
         shadowSampler = bgfx::createUniform("s_shadow", bgfx::UniformType::Sampler);
         shadowTintSampler = bgfx::createUniform("s_shadowTint", bgfx::UniformType::Sampler);
+        shadowMatrixB = bgfx::createUniform("u_shadowMtxB", bgfx::UniformType::Mat4);
+        shadowInfoB = bgfx::createUniform("u_shadowInfoB", bgfx::UniformType::Vec4);
+        shadowSamplerB = bgfx::createUniform("s_shadowB", bgfx::UniformType::Sampler);
+        shadowTintSamplerB = bgfx::createUniform("s_shadowTintB", bgfx::UniformType::Sampler);
+        shadowMatrixE = bgfx::createUniform("u_shadowMtxE", bgfx::UniformType::Mat4);
+        shadowInfoE = bgfx::createUniform("u_shadowInfoE", bgfx::UniformType::Vec4);
+        shadowSamplerE = bgfx::createUniform("s_shadowEnt", bgfx::UniformType::Sampler);
         cloudsSampler = bgfx::createUniform("s_clouds", bgfx::UniformType::Sampler);
         cloudMap = bgfx::createUniform("u_cloudMap", bgfx::UniformType::Vec4);
         sceneColorSampler = bgfx::createUniform("s_sceneColor", bgfx::UniformType::Sampler);
@@ -206,7 +213,7 @@ namespace perlin {
         for (bgfx::UniformHandle* handle : {&atlasSampler, &lightmapSampler, &skySampler, &mvp, &camera, &fogColor,
                                             &fogEnvironment, &fogSky, &modulator, &textureInfo, &chunk, &cloudOffset,
                                             &cloudColor, &sunDirection, &timeUniform, &heldLight, &dynParams, &dynLights, &packSettings, &tiles, &skyParams,
-                                            &shadowMatrix, &shadowInfo, &shadowSampler, &shadowTintSampler, &cloudsSampler, &cloudMap,
+                                            &shadowMatrix, &shadowInfo, &shadowSampler, &shadowTintSampler, &shadowMatrixB, &shadowInfoB, &shadowSamplerB, &shadowTintSamplerB, &shadowMatrixE, &shadowInfoE, &shadowSamplerE, &cloudsSampler, &cloudMap,
                                             &sceneColorSampler, &sceneDepthSampler, &sceneInfo, &invMvp, &tileFlagsSampler}) {
             if (bgfx::isValid(*handle))
                 bgfx::destroy(*handle);
@@ -324,6 +331,29 @@ namespace perlin {
     void ShaderManager::BindShadow(bgfx::TextureHandle texture) const {
         bgfx::setTexture(2, shadowSampler, texture, BGFX_SAMPLER_MIN_POINT | BGFX_SAMPLER_MAG_POINT |
                                                        BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP);
+    }
+
+    void ShaderManager::SetShadowNext(const float sample[16], const float info[4], float weight) const {
+        bgfx::setUniform(shadowMatrixB, sample);
+        const float value[4] = {info[0], info[1], info[2], weight};
+        bgfx::setUniform(shadowInfoB, value);
+    }
+
+    void ShaderManager::BindShadowNext(bgfx::TextureHandle shadow, bgfx::TextureHandle tint) const {
+        constexpr uint32_t kFlags = BGFX_SAMPLER_MIN_POINT | BGFX_SAMPLER_MAG_POINT | BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP;
+        bgfx::setTexture(8, shadowSamplerB, shadow, kFlags);
+        bgfx::setTexture(9, shadowTintSamplerB, tint, kFlags);
+    }
+
+    void ShaderManager::SetShadowEntities(const float sample[16], const float info[4], bool enabled) const {
+        bgfx::setUniform(shadowMatrixE, sample);
+        const float value[4] = {info[0], info[1], info[2], enabled ? 1.0f : 0.0f};
+        bgfx::setUniform(shadowInfoE, value);
+    }
+
+    void ShaderManager::BindShadowEntities(bgfx::TextureHandle texture) const {
+        bgfx::setTexture(10, shadowSamplerE, texture, BGFX_SAMPLER_MIN_POINT | BGFX_SAMPLER_MAG_POINT |
+                                                          BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP);
     }
 
     void ShaderManager::BindShadowTint(bgfx::TextureHandle texture) const {

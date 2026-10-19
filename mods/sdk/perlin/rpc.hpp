@@ -1,12 +1,79 @@
 #pragma once
+#include <array>
 #include <cstdint>
 #include <expected>
+#include <new>
 #include <format>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include "perlin/abi.hpp"
+
+// std::expected needs library support (C++23 <expected>); older standard libraries get a small stand-in with the
+// same surface the SDK uses: has_value, operator bool, *, ->, value, error, value_or.
+#if defined(__cpp_lib_expected) && __cpp_lib_expected >= 202202L
+namespace perlin {
+    using std::expected;
+    using std::unexpected;
+}
+#else
+namespace perlin {
+    template <class E>
+    class unexpected {
+    public:
+        constexpr explicit unexpected(E e) : err(std::move(e)) {}
+        constexpr const E& error() const { return err; }
+
+    private:
+        E err;
+    };
+    template <class E>
+    unexpected(E) -> unexpected<E>;
+
+    template <class T, class E>
+    class expected {
+    public:
+        constexpr expected(T v) : val(std::move(v)), ok(true) {}
+        template <class G>
+        constexpr expected(const unexpected<G>& u) : err(u.error()), ok(false) {}
+        constexpr bool has_value() const { return ok; }
+        constexpr explicit operator bool() const { return ok; }
+        constexpr T& operator*() & { return val; }
+        constexpr const T& operator*() const& { return val; }
+        constexpr T&& operator*() && { return std::move(val); }
+        constexpr T* operator->() { return &val; }
+        constexpr const T* operator->() const { return &val; }
+        constexpr T& value() & { return val; }
+        constexpr const T& value() const& { return val; }
+        constexpr const E& error() const { return err; }
+        template <class U>
+        constexpr T value_or(U&& fallback) const& { return ok ? val : static_cast<T>(std::forward<U>(fallback)); }
+
+    private:
+        T val{};
+        E err{};
+        bool ok;
+    };
+
+    template <class E>
+    class expected<void, E> {
+    public:
+        constexpr expected() : ok(true) {}
+        template <class G>
+        constexpr expected(const unexpected<G>& u) : err(u.error()), ok(false) {}
+        constexpr bool has_value() const { return ok; }
+        constexpr explicit operator bool() const { return ok; }
+        constexpr void operator*() const {}
+        constexpr const E& error() const { return err; }
+
+    private:
+        E err{};
+        bool ok;
+    };
+}
+#endif
 
 namespace perlin {
     using abi::Op;
@@ -15,30 +82,43 @@ namespace perlin {
     struct Error {
         Status status = Status::Failed;
 
+        // One sentence for humans. The table is indexed by the enumerators themselves, so it cannot drift
+        // from `Status` (see the static_assert).
         constexpr std::string_view message() const {
-            switch (status) {
-            case Status::Ok: return "ok";
-            case Status::UnknownOp: return "this game version does not provide that operation";
-            case Status::Denied: return "permission denied";
-            case Status::BadArguments: return "bad arguments";
-            case Status::Unavailable: return "not available right now";
-            case Status::NotFound: return "not found";
-            case Status::Failed: return "failed";
-            }
+            constexpr std::array<std::pair<Status, std::string_view>, 7> table{{
+                {Status::Ok, "ok"},
+                {Status::UnknownOp, "this game version does not provide that operation"},
+                {Status::Denied, "permission denied"},
+                {Status::BadArguments, "bad arguments"},
+                {Status::Unavailable, "not available right now"},
+                {Status::NotFound, "not found"},
+                {Status::Failed, "failed"},
+            }};
+            static_assert(table.size() == meta::enum_count<Status>, "every Status needs a message");
+            for (const auto& [code, text] : table)
+                if (code == status)
+                    return text;
             return "failed";
         }
-        constexpr bool denied() const { return status == Status::Denied; }
-        constexpr bool unavailable() const { return status == Status::Unavailable; }
-        constexpr bool not_found() const { return status == Status::NotFound; }
+        constexpr std::string_view name() const { return meta::enum_name(status); }
+        constexpr bool is(Status s) const { return status == s; }
+        constexpr bool denied() const { return is(Status::Denied); }
+        constexpr bool unavailable() const { return is(Status::Unavailable); }
+        constexpr bool not_found() const { return is(Status::NotFound); }
+        constexpr bool unsupported() const { return is(Status::UnknownOp); }
+        friend constexpr bool operator==(Error, Error) = default;
     };
 
     template <class T>
-    using Result = std::expected<T, Error>;
+    using Result = expected<T, Error>;
 
     namespace detail {
+        // The single host import. Natively (unit tests, tooling) it is an ordinary symbol you can provide yourself.
         extern "C" {
-        __attribute__((import_module("perlin"), import_name("call"))) int32_t perlin_host_call(uint32_t op, const void* in, uint32_t inLen,
-                                                                                               void* out, uint32_t outCap);
+#if defined(__wasm__)
+        __attribute__((import_module("perlin"), import_name("call")))
+#endif
+        int32_t perlin_host_call(uint32_t op, const void* in, uint32_t inLen, void* out, uint32_t outCap);
         }
 
         inline Result<std::vector<uint8_t>> call(Op op, const abi::Writer& args) {
@@ -54,9 +134,9 @@ namespace perlin {
                     out.resize(static_cast<size_t>(-rc - abi::kNeedMoreBase));
                     continue;
                 }
-                return std::unexpected(Error{static_cast<Status>(rc)});
+                return unexpected(Error{static_cast<Status>(rc)});
             }
-            return std::unexpected(Error{Status::Failed});
+            return unexpected(Error{Status::Failed});
         }
 
         inline Result<std::vector<uint8_t>> call(Op op) { return call(op, abi::Writer{}); }
@@ -65,11 +145,11 @@ namespace perlin {
         Result<T> call_as(Op op, const abi::Writer& args) {
             auto bytes = call(op, args);
             if (!bytes)
-                return std::unexpected(bytes.error());
+                return unexpected(bytes.error());
             abi::Reader r(bytes->data(), bytes->size());
-            T value = T::Read(r);
+            T value = r.read<T>();
             if (!r.Ok())
-                return std::unexpected(Error{Status::Failed});
+                return unexpected(Error{Status::Failed});
             return value;
         }
 
@@ -78,13 +158,45 @@ namespace perlin {
             return call_as<T>(op, abi::Writer{});
         }
 
+        // The reply is a u32-counted list of T.
+        template <class T>
+        Result<std::vector<T>> call_list(Op op, const abi::Writer& args) {
+            auto bytes = call(op, args);
+            if (!bytes)
+                return unexpected(bytes.error());
+            abi::Reader r(bytes->data(), bytes->size());
+            auto list = r.read<std::vector<T>>();
+            if (!r.Ok())
+                return unexpected(Error{Status::Failed});
+            return list;
+        }
+
+        template <class T>
+        Result<std::vector<T>> call_list(Op op) {
+            return call_list<T>(op, abi::Writer{});
+        }
+
+        // The reply is a single byte: a boolean.
+        inline bool call_bool(Op op, const abi::Writer& args) {
+            auto bytes = call(op, args);
+            return bytes && !bytes->empty() && (*bytes)[0] != 0;
+        }
+
         inline Result<void> call_void(Op op, const abi::Writer& args) {
             auto bytes = call(op, args);
             if (!bytes)
-                return std::unexpected(bytes.error());
+                return unexpected(bytes.error());
             return {};
         }
 
         inline Result<void> call_void(Op op) { return call_void(op, abi::Writer{}); }
     }
 }
+
+template <>
+struct std::formatter<perlin::Error> : std::formatter<std::string_view> {
+    template <class Ctx>
+    auto format(const perlin::Error& e, Ctx& ctx) const {
+        return std::formatter<std::string_view>::format(e.message(), ctx);
+    }
+};

@@ -19,6 +19,9 @@ namespace perlin {
         int side = 0;
         int bottom = 0;
         std::vector<int> varTop, varSide, varBottom;
+        // Per-face tiles for a cube whose sides differ (a custom block with distinct north/east/south/west
+        // materials): +X (east), -X (west), +Z (south), -Z (north). 0 means "use side".
+        int sideTile[4] = {0, 0, 0, 0};
         float overlayFrac = 0;
         int overlayTile = 0;
         float tintR = 1, tintG = 1, tintB = 1;
@@ -59,6 +62,9 @@ namespace perlin {
         const BlockModels& Models() const { return models; }
         int GlassMode() const { return glassMode.load(std::memory_order_relaxed); }
         void SetGlassMode(int mode) { glassMode.store(mode, std::memory_order_relaxed); }
+        // True when the glass variants were built for another mode only (see BuildGlassVariants); the atlas
+        // must be rebuilt (a resource reload) before the new mode can connect glass.
+        bool NeedsGlassRebuild(int mode) const { return mode != 0 && glassBuilt && glassLean && glassBuiltMode != mode; }
         int BetterGrass() const { return betterGrass.load(std::memory_order_relaxed); }
         void SetBetterGrass(int mode) { betterGrass.store(mode, std::memory_order_relaxed); }
         bool IsGlassBase(int tile) const { return glassTiles.find(tile) != glassTiles.end(); }
@@ -119,6 +125,8 @@ namespace perlin {
         int NewTile();
         void BuildGlassVariants();
         bool glassBuilt = false;
+        bool glassLean = false;
+        int glassBuiltMode = 0;
         std::atomic<int> glassMode{0};
         mutable std::atomic<int> technicalMask{0};
         std::atomic<int> betterGrass{0};

@@ -239,6 +239,14 @@ namespace perlin {
         std::chrono::steady_clock::time_point playersAt{};
         void UpdateTitle(int fps);
         void SetupMods();
+        void SetupModIntents();
+    // Enables or disables a mod; enabling one that asks for dangerous permissions approves exactly what it asked for.
+    void ToggleMod(const std::string& name);
+        // Set by intents; UpdatePauseScreen opens the requested screen: view 1 options, 3 world, 4 mods, 5 wardrobe.
+        int modOpenView = -1, modOpenPage = 0;
+        std::string modSettingsFor;
+    std::vector<std::string> modRowTips;
+        bool modSettingsReload = false;
         void PumpMods(BedrockSession* live, Level* level, ui::Hud* hudPtr, float dt);
         void TickMods(BedrockSession* live);
         bool InterceptOutgoing(BedrockSession* live, const std::string& text);
@@ -248,7 +256,7 @@ namespace perlin {
         void NoteModSound(const std::string& name, double x, double y, double z, float volume, float pitch);
         void MergePluginCommands(BedrockSession* live);
         void StartModHttp(const std::string& plugin, uint32_t id, std::string method, std::string url, int timeoutMs,
-                          std::vector<std::pair<std::string, std::string>> headers, std::vector<uint8_t> body);
+                          std::vector<std::pair<std::string, std::string>> headers, std::vector<uint8_t> body, std::string savePath = {});
         abi::Screen CurrentScreen() const;
         BedrockSession* modLive = nullptr;
         Level* modLevel = nullptr;

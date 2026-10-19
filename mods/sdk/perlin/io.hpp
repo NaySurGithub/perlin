@@ -5,6 +5,7 @@
 #include <functional>
 #include <map>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -22,7 +23,7 @@ namespace perlin::fs {
     inline Result<std::string> read_text(std::string_view path) {
         auto bytes = read_bytes(path);
         if (!bytes)
-            return std::unexpected(bytes.error());
+            return unexpected(bytes.error());
         return std::string(bytes->begin(), bytes->end());
     }
 
@@ -58,15 +59,7 @@ namespace perlin::fs {
     inline Result<std::vector<std::string>> list(std::string_view path = "") {
         abi::Writer w;
         w.str(path);
-        auto bytes = detail::call(Op::StorageList, w);
-        if (!bytes)
-            return std::unexpected(bytes.error());
-        abi::Reader r(bytes->data(), bytes->size());
-        std::vector<std::string> out;
-        const uint32_t n = r.get<uint32_t>();
-        for (uint32_t i = 0; i < n && r.Ok(); i++)
-            out.push_back(r.str());
-        return out;
+        return detail::call_list<std::string>(Op::StorageList, w);
     }
 }
 
@@ -189,7 +182,7 @@ namespace perlin::net {
         w.bytes(request.body.data(), request.body.size());
         auto r = detail::call_void(Op::HttpRequest, w);
         if (!r)
-            return std::unexpected(r.error());
+            return unexpected(r.error());
         detail_net::pending()[id] = std::move(callback);
         return id;
     }
@@ -214,7 +207,7 @@ namespace perlin::net {
         w.put(id);
         auto bytes = detail::call(Op::PacketName, w);
         if (!bytes)
-            return std::unexpected(bytes.error());
+            return unexpected(bytes.error());
         return std::string(bytes->begin(), bytes->end());
     }
 

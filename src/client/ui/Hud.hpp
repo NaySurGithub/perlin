@@ -14,6 +14,10 @@ namespace perlin {
 }
 
 namespace perlin::ui {
+    // Writes the active texture pack stack's ui/*.json into <dataDir>/cache/<folder> so the JSON UI library can read
+    // them as a root. Returns the root, or empty when no pack has UI files.
+    std::string ExtractPackUi(const std::string& dataDir, const std::string& folder = "pack_ui");
+
     class Hud {
     public:
         Hud();

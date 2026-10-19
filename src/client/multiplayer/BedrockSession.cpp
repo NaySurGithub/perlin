@@ -1,5 +1,6 @@
 #include "util/Paths.hpp"
 #include "client/multiplayer/BedrockSession.hpp"
+#include "util/SystemInfo.hpp"
 #include "client/multiplayer/NbtJson.hpp"
 #include "client/multiplayer/DeviceProfile.hpp"
 
@@ -365,12 +366,26 @@ namespace perlin {
                 skin.CapeId = loadedSkin.capeId;
                 skin.CapeOnClassicSkin = true;
             }
-            if (online) {
-                skin.DeviceOS = 1;
-                skin.DeviceModel = device.model;
-                skin.PlatformType = 0;
-                skin.CurrentInputMode = 1;
-                skin.DefaultInputMode = 1;
+            // The Xbox certificate chain is issued for the Android title, so the device description must say
+            // Android in both modes (a Switch DeviceOS next to an Android device id and a "Windows" model, as
+            // offline logins used to send, matches no real device). The model, id and format come from the
+            // persisted device profile so they stay stable between sessions.
+            skin.DeviceOS = 1;
+            skin.DeviceModel = device.model;
+            skin.PlatformType = 0;
+            skin.CurrentInputMode = 1;
+            skin.DefaultInputMode = 1;
+            // Hardware tier as Bedrock reports it: 0 <1.5 GB, 1 <2 GB, 2 <4 GB, 3 <8 GB, 4 more.
+            {
+                const uint64_t gib = sysinfo::TotalMemory() >> 20; // MiB
+                skin.MemoryTier = gib < 1536 ? 0 : gib < 2048 ? 1 : gib < 4096 ? 2 : gib < 8192 ? 3 : 4;
+            }
+            if (skin.PlayFabId.empty()) {
+                // Every client sends a PlayFab id; offline there is no account, so use a random 16 digit hex one
+                // (the shape the service issues).
+                char pf[17];
+                snprintf(pf, sizeof(pf), "%08x%08x", rd(), rd());
+                skin.PlayFabId = pf;
             }
             const claims::Header skinHeader{.x5u = cpk};
             std::string skinJwt = signJwt(skinHeader, skin);

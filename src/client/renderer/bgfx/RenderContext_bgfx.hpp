@@ -154,6 +154,18 @@ namespace perlin {
             bool haveKey = false;
             int framesSince = 0;
             bool entities = false;     // entity meshes are drawn into the entity map this frame
+            float sampleE[16] = {};    // the entity map: exact light direction, redrawn every frame
+            float rasterE[16] = {};
+            float infoE[4] = {};
+            // A finished rebuild fades in over the map in use instead of replacing it in one step.
+            bool fading = false;
+            float fadeT = 0.0f;        // 0..1 progress
+            float fadeWeight = 0.0f;   // eased weight of the next map this frame (0 = not fading)
+            double lastTime = 0.0;
+            float sampleB[16] = {};
+            float infoB[4] = {};
+            bgfx::TextureHandle sampledB = BGFX_INVALID_HANDLE;
+            bgfx::TextureHandle sampledTintB = BGFX_INVALID_HANDLE;
             // Build in progress (into maps[1 - front]).
             bool building = false;
             int buildSlice = 0, buildSlices = 1;

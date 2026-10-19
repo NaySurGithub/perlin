@@ -51,6 +51,12 @@ namespace perlin {
         void SetShadow(const float sample[16], const float info[4], bool enabled) const;
         void BindShadow(bgfx::TextureHandle texture) const;
         void BindShadowTint(bgfx::TextureHandle texture) const; // coloured light through glass (stage 7)
+        // The terrain map fading in over the one above (stages 8 and 9), weight 0 = not fading.
+        void SetShadowNext(const float sample[16], const float info[4], float weight) const;
+        void BindShadowNext(bgfx::TextureHandle shadow, bgfx::TextureHandle tint) const;
+        // Mobs and players (stage 10).
+        void SetShadowEntities(const float sample[16], const float info[4], bool enabled) const;
+        void BindShadowEntities(bgfx::TextureHandle texture) const;
         void Apply(bgfx::TextureHandle atlas, bgfx::TextureHandle lightmap, uint32_t atlasFlags,
                    uint32_t lightmapFlags) const;
         // Pack extras. Clouds: the vanilla cloud map (stage 3) and how world xz maps onto it.
@@ -95,6 +101,13 @@ namespace perlin {
         bgfx::UniformHandle shadowInfo = BGFX_INVALID_HANDLE;
         bgfx::UniformHandle shadowSampler = BGFX_INVALID_HANDLE;
         bgfx::UniformHandle shadowTintSampler = BGFX_INVALID_HANDLE;
+        bgfx::UniformHandle shadowMatrixB = BGFX_INVALID_HANDLE;
+        bgfx::UniformHandle shadowInfoB = BGFX_INVALID_HANDLE;
+        bgfx::UniformHandle shadowSamplerB = BGFX_INVALID_HANDLE;
+        bgfx::UniformHandle shadowTintSamplerB = BGFX_INVALID_HANDLE;
+        bgfx::UniformHandle shadowMatrixE = BGFX_INVALID_HANDLE;
+        bgfx::UniformHandle shadowInfoE = BGFX_INVALID_HANDLE;
+        bgfx::UniformHandle shadowSamplerE = BGFX_INVALID_HANDLE;
         bgfx::UniformHandle cloudsSampler = BGFX_INVALID_HANDLE;
         bgfx::UniformHandle cloudMap = BGFX_INVALID_HANDLE;
         bgfx::UniformHandle sceneColorSampler = BGFX_INVALID_HANDLE;

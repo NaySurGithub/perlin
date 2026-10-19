@@ -306,10 +306,19 @@ div, mcimg { display: block; position: absolute; }
         l.openX = w / 2.0f - 4.0f - l.btnW;
         l.doneX = w / 2.0f + 4.0f;
         l.detailBtnY = 58.0f;
-        l.toggleW = std::floor((l.rightW - 4.0f) / 2.0f);
-        l.toggleX = l.rightX;
-        l.reloadX = l.rightX + l.toggleW + 4.0f;
-        l.reloadW = l.rightW - l.toggleW - 4.0f;
+        if (detail.valid && detail.hasSettings) {
+            l.toggleW = std::floor((l.rightW - 8.0f) / 3.0f);
+            l.toggleX = l.rightX;
+            l.reloadX = l.rightX + l.toggleW + 4.0f;
+            l.reloadW = l.toggleW;
+            l.settingsX = l.reloadX + l.reloadW + 4.0f;
+            l.settingsW = l.rightX + l.rightW - l.settingsX;
+        } else {
+            l.toggleW = std::floor((l.rightW - 4.0f) / 2.0f);
+            l.toggleX = l.rightX;
+            l.reloadX = l.rightX + l.toggleW + 4.0f;
+            l.reloadW = l.rightW - l.toggleW - 4.0f;
+        }
         l.detailTextTop = 82.0f;
         l.detailTextBottom = l.listBottom;
         l.maxScroll = std::max(0.0f, static_cast<float>(rows) * l.rowH + 4.0f - (l.listBottom - l.listTop));
@@ -359,6 +368,8 @@ div, mcimg { display: block; position: absolute; }
             d += Text(l.rightX + 36, 42, l.rightW - 36, detail.author, "g");
             d += Btn("mdtoggle", l.toggleX, l.detailBtnY - 1, l.toggleW, detail.toggleLabel, false);
             d += Btn("mdreload", l.reloadX, l.detailBtnY - 1, l.reloadW, detail.reloadLabel, !detail.toggleEnabled);
+            if (detail.hasSettings)
+                d += Btn("mdsettings", l.settingsX, l.detailBtnY - 1, l.settingsW, detail.settingsLabel, false);
             const float th = l.detailTextBottom - l.detailTextTop;
             d += "<div class=\"panel\" style=\"left: " + N(l.rightX) + "px; top: " + N(l.detailTextTop) + "px; width: " + N(l.rightW) + "px; height: " + N(th) + "px;\">\n";
             d += "<div class=\"wrap\" style=\"left: 6px; top: " + N(4.0f - detailScroll) + "px; width: " + N(l.rightW - 20.0f) + "px; height: " +

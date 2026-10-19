@@ -82,8 +82,32 @@ namespace perlin::claims {
         std::string Token;
     };
 
+    // One frame sequence of an animated skin. Image is base64 RGBA, Type is 1 (face), 2 (32x32 body) or
+    // 3 (128x128 body), AnimationExpression 0 (linear) or 1 (blinking).
+    struct SkinAnimation {
+        double Frames = 0;
+        std::string Image;
+        int ImageHeight = 0;
+        int ImageWidth = 0;
+        int Type = 0;
+        int AnimationExpression = 0;
+    };
+
+    struct PersonaPiece {
+        bool IsDefault = false;
+        std::string PackId;
+        std::string PieceId;
+        std::string PieceType;
+        std::string ProductId;
+    };
+
+    struct PersonaPieceTintColor {
+        std::vector<std::string> Colors; // four ARGB hex strings
+        std::string PieceType;
+    };
+
     struct ClientData {
-        std::vector<std::string> AnimatedImageData;
+        std::vector<SkinAnimation> AnimatedImageData;
         std::string ArmSize = "wide";
         std::string CapeData;
         std::string CapeId;
@@ -107,9 +131,9 @@ namespace perlin::claims {
         int MaxViewDistance = 32;
         int MemoryTier = 4;
         bool OverrideSkin = false;
-        std::vector<std::string> PersonaPieces;
+        std::vector<PersonaPiece> PersonaPieces;
         bool PersonaSkin = false;
-        std::vector<std::string> PieceTintColors;
+        std::vector<PersonaPieceTintColor> PieceTintColors;
         std::string PlatformOfflineId;
         std::string PlatformOnlineId;
         int PlatformType = 0;
@@ -130,6 +154,11 @@ namespace perlin::claims {
         bool ThirdPartyNameOnly = false;
         bool TrustedSkin = true;
         int UIProfile = 0;
+        // Sent by every Bedrock client: the party the player is in (empty when none), whether they lead it, and
+        // the hash of the equipped persona skin (empty for a classic skin).
+        std::string PartyId;
+        bool IsPartyLeader = false;
+        std::string ProfileHash;
     };
 
 }

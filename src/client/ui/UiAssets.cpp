@@ -541,12 +541,23 @@ namespace perlin::ui {
                      !ec && it != end; it.increment(ec)) {
                     if (!it->is_regular_file(ec))
                         continue;
-                    const std::string ext = it->path().extension().string();
-                    if (ext != ".png" && ext != ".tga")
-                        continue;
+                    const std::string name = it->path().filename().string();
+                    constexpr std::string_view kSet = ".texture_set.json"; // declares texture "x" like "x.png"
+                    std::string stem;
+                    size_t extSize = 0;
+                    if (name.size() > kSet.size() && name.compare(name.size() - kSet.size(), kSet.size(), kSet) == 0) {
+                        stem = name.substr(0, name.size() - kSet.size());
+                        extSize = kSet.size();
+                    } else {
+                        const std::string ext = it->path().extension().string();
+                        if (ext != ".png" && ext != ".tga")
+                            continue;
+                        stem = it->path().stem().string();
+                        extSize = ext.size();
+                    }
                     std::string rel = fs::relative(it->path(), dir, ec).generic_string();
-                    rel.resize(rel.size() - ext.size());
-                    stemIndex.emplace(it->path().stem().string(), rel);
+                    rel.resize(rel.size() - extSize);
+                    stemIndex.emplace(std::move(stem), std::move(rel));
                 }
             }
         }

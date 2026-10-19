@@ -222,6 +222,7 @@ namespace perlin {
         options = Options::Load();
         i18n::Lang::Get().Configure(std::string(), paths::DataDir(), options.language);
         SetupMods();
+        mods::ModManager::Instance().SetApproved(options.approvedMods);
         mods::ModManager::Instance().SetDisabled(options.disabledMods);
         mods::ModManager::Instance().Start(paths::DataDir() + "/mods");
         if (!args.server.empty())
@@ -786,7 +787,7 @@ namespace perlin {
         }
         if (live->TakeFormClosed() && formShown)
             closeForm();
-        if (formShown && !formEngine && formModel.type != ui::FormModel::Type::Custom && formUi.Ready())
+        if (formShown && !formEngine && formUi.Ready())
             formEngine = true;
         if (!formShown) {
             if (deathShown || invShown || pauseShown || chat.IsOpen())
@@ -801,7 +802,12 @@ namespace perlin {
             }
             std::cout << "[form] opened form " << sf.id << " '" << formModel.title << "'" << std::endl;
             formUi.Warm(ServerPacks::Instance().Directories());
-            formEngine = formModel.type != ui::FormModel::Type::Custom && formUi.Ready();
+            // Open with the server pack's JSON UI at once: wait for a warm-up in progress instead of showing
+            // the built-in layout first.
+            formUi.WaitReady(2500);
+            formUi.Warm(ServerPacks::Instance().Directories()); // rebuilds if the packs changed meanwhile
+            formUi.WaitReady(2500);
+            formEngine = formUi.Ready();
             formShown = true;
             formScroll = 0.0f;
             formContentH = formViewH = 0.0f;
@@ -1588,6 +1594,28 @@ namespace perlin {
         const bool preview = PERLIN_ENV("PERLIN_PREVIEW_PAUSE") != nullptr;
         const auto now = Clock::now();
         const bool canOpen = (live || preview) && !deathShown && !formShown && !invShown && !chat.IsOpen();
+        if (modOpenView >= 0 && canOpen) {
+            // A mod (or the game) asked for a screen through an intent.
+            if (!pauseShown) {
+                pauseShown = true;
+                pauseOpenedAt = now;
+                pauseLeftDown = true;
+                inputManager.TakeTyped();
+                input.SetTextMode(true);
+            }
+            pauseView = modOpenView;
+            optionsPage = modOpenPage;
+            optionsSub = 0;
+            if (pauseView == 5)
+                wardInit = false;
+            if (optionsPage == 11 && !modSettingsFor.empty())
+                modSelected = modSettingsFor;
+            modOpenView = -1;
+            modOpenPage = 0;
+            pauseSignature.clear();
+            optionsSignature.clear();
+            hud.Overlay().ClearOverlay();
+        }
         if (!pauseShown && titleOptions && titleActive) {
             pauseShown = true;
             pauseView = titleOpenView;
@@ -1628,7 +1656,14 @@ namespace perlin {
                     modSearch.pop_back();
             }
             if (!t.character && t.key == Key::Escape && now - pauseOpenedAt > std::chrono::milliseconds(100)) {
-                if (pauseView == 1 && optionsPage != 0) {
+                if (pauseView == 1 && optionsPage == 11) {
+                    mods::ModManager::Instance().SettingsClosed(modSettingsFor);
+                    pauseView = 4;
+                    optionsPage = 0;
+                    optionsSub = 0;
+                    optionsSignature.clear();
+                    hud.Overlay().ClearOverlay();
+                } else if (pauseView == 1 && optionsPage != 0) {
                     CommitTexturePacks();
                     options.Save();
                     shaderPendingInit = false;
@@ -2505,12 +2540,14 @@ namespace perlin {
                 shown.push_back(&info);
             }
             const auto badgeFor = [&](const mods::ModInfo& info, int& color) {
-                const std::string state = info.enabled ? info.state : std::string("disabled");
+                const std::string state = info.needsApproval ? std::string("approval") : info.enabled ? info.state : std::string("disabled");
                 color = state == "running" ? 2 : state == "disabled" ? 3 : state == "loading" ? 0 : 1;
                 if (state == "running")
                     return tr("perlin.mods.running", "Running");
                 if (state == "disabled")
                     return tr("perlin.mods.disabled", "Disabled");
+                if (state == "approval")
+                    return tr("perlin.mods.approval", "Needs approval");
                 if (state == "loading")
                     return tr("perlin.mods.loading", "Loading");
                 if (state == "unresponsive")
@@ -2559,9 +2596,28 @@ namespace perlin {
                 detail.version = info.version.empty() ? std::string() : "v" + info.version;
                 detail.author = info.author.empty() ? std::string() : tr("perlin.mods.by", "By ") + info.author;
                 detail.toggleEnabled = info.enabled;
-                detail.toggleLabel = info.enabled ? tr("perlin.mods.disable", "Disable") : tr("perlin.mods.enable", "Enable");
+                detail.toggleLabel = info.enabled ? tr("perlin.mods.disable", "Disable")
+                                     : info.needsApproval ? tr("perlin.mods.allow", "Allow & Enable")
+                                                          : tr("perlin.mods.enable", "Enable");
                 detail.reloadLabel = tr("perlin.mods.reload", "Reload");
+                detail.hasSettings = info.hasSettings && info.enabled;
+                detail.settingsLabel = tr("perlin.mods.settings", "Settings");
                 std::string body = info.description.empty() ? tr("perlin.mods.noDescription", "A WebAssembly mod.") : info.description;
+                if (info.requested) {
+                    // What the mod asks to be allowed to do, in plain words, before anything is enabled.
+                    std::string asks;
+                    const auto add = [&](abi::Permission p, const char* text) {
+                        if (info.requested & static_cast<uint32_t>(p))
+                            asks += std::string(asks.empty() ? "" : ", ") + text;
+                    };
+                    add(abi::Permission::Network, "use the internet");
+                    add(abi::Permission::Files, "copy, move and download files");
+                    add(abi::Permission::Control, "act for you (chat, commands, movement, options)");
+                    add(abi::Permission::Packets, "send raw game packets");
+                    body += "\n\n" + std::string(info.needsApproval ? "This mod asks to: " : "Allowed to: ") + asks + ".";
+                    if (info.needsApproval)
+                        body += " It stays off until you press Allow & Enable.";
+                }
                 if (!info.error.empty())
                     body += "\n\n" + tr("perlin.mods.errorLabel", "Error") + ": " + info.error;
                 body += "\n\n" + tr("perlin.mods.file", "File") + ": " + info.name + ".wasm (" + std::to_string(info.size) + " bytes" +
@@ -2627,18 +2683,19 @@ namespace perlin {
                 if (inside(l.openX, l.btnY, l.btnW, 20.0f)) {
                     openFolder(modDir);
                 } else if (detail.valid && inside(l.toggleX, l.detailBtnY - 1.0f, l.toggleW, 20.0f)) {
-                    auto& d = options.disabledMods;
-                    const auto it = std::find(d.begin(), d.end(), modSelected);
-                    if (it == d.end())
-                        d.push_back(modSelected);
-                    else
-                        d.erase(it);
-                    mm.SetDisabled(d);
-                    options.Save();
+                    ToggleMod(modSelected);
                     optionsSignature.clear();
                 } else if (detail.valid && detail.toggleEnabled && inside(l.reloadX, l.detailBtnY - 1.0f, l.reloadW, 20.0f)) {
                     mm.ReloadMod(modSelected);
                     optionsSignature.clear();
+                } else if (detail.valid && detail.hasSettings && inside(l.settingsX, l.detailBtnY - 1.0f, l.settingsW, 20.0f)) {
+                    // The mod's own settings page, shown with the options screen's controls.
+                    modSettingsFor = modSelected;
+                    pauseView = 1;
+                    optionsPage = 11;
+                    optionsSub = 0;
+                    optionsSignature.clear();
+                    hud.Overlay().ClearOverlay();
                 } else if (gy >= l.listTop && gy < l.listBottom && gx >= l.leftX && gx < l.leftX + l.leftW) {
                     for (int i = 0; i < static_cast<int>(shown.size()); i++)
                         if (inside(l.leftX, l.RowY(i, modScroll), l.leftW - (l.maxScroll > 0 ? 8.0f : 0.0f), l.rowH - 2.0f)) {
@@ -2661,7 +2718,9 @@ namespace perlin {
                 bool header = false;
                 bool locked = false;
                 bool wide = false;
+                std::string icon;
             };
+            modRowTips.clear();
             static const int kGuiScales[] = {0, 1, 2, 3, 4};
             const auto percent = [](float v) { return std::to_string(static_cast<int>(std::lround(v * 100.0f))) + "%"; };
             const auto onOff = [&](bool on) { return on ? tr("options.on", "ON") : tr("options.off", "OFF"); };
@@ -2842,14 +2901,7 @@ namespace perlin {
                     model.push_back({name, state, -1.0f, [this, name](float, bool click) {
                                          if (!click)
                                              return;
-                                         auto& d = options.disabledMods;
-                                         const auto it = std::find(d.begin(), d.end(), name);
-                                         if (it == d.end())
-                                             d.push_back(name);
-                                         else
-                                             d.erase(it);
-                                         mods::ModManager::Instance().SetDisabled(d);
-                                         options.Save();
+                                         ToggleMod(name);
                                      }});
                 }
             } else if (optionsPage == 0) {
@@ -3059,6 +3111,123 @@ namespace perlin {
                 choice(tr("key.sprint", "Sprint"), options.sprintMode, {{"hold", tr("options.key.hold", "Hold")}, {"toggle", tr("options.key.toggle", "Toggle")}});
                 choice(tr("key.sneak", "Sneak"), options.sneakMode, {{"hold", tr("options.key.hold", "Hold")}, {"toggle", tr("options.key.toggle", "Toggle")}});
                 nav(tr("controls.keybinds", "Key Binds..."), 5);
+            } else if (optionsPage == 11) {
+                // A mod's own settings, declared by the mod and changed here while the game runs.
+                auto& mm = mods::ModManager::Instance();
+                std::string modTitle = modSettingsFor;
+                for (const mods::ModInfo& mi : mm.List())
+                    if (mi.name == modSettingsFor && !mi.displayName.empty())
+                        modTitle = mi.displayName;
+                title = modTitle + " - " + tr("perlin.mods.settings", "Settings");
+                const std::string owner = modSettingsFor;
+                const auto iconOf = [&](const abi::SettingDef& def) -> std::string {
+                    if (def.icon.rfind("item:", 0) == 0)
+                        return def.icon;
+                    if (def.icon.rfind("texture:", 0) == 0)
+                        return def.icon.substr(8);
+                    if (def.icon.rfind("file:", 0) == 0) {
+                        const std::string rel = def.icon.substr(5);
+                        if (rel.empty() || rel.find("..") != std::string::npos || rel[0] == '/' || rel[0] == '\\')
+                            return {};
+                        const std::string full = (std::filesystem::path(mm.Directory()) / (owner + ".data") / rel).string();
+                        const std::string key = "modset:" + owner + ":" + rel;
+                        std::error_code ec;
+                        const std::string stamp = std::to_string(static_cast<long long>(std::filesystem::last_write_time(full, ec).time_since_epoch().count()));
+                        std::string& seen = modIconStamp[key];
+                        if (seen != stamp) {
+                            seen = stamp;
+                            Texture t;
+                            if (LoadTexture(full, t))
+                                ui::UiAssets::Instance().SetHead(key, t);
+                        }
+                        return ui::UiAssets::Instance().HasHead(key) ? "mchead:" + key : std::string();
+                    }
+                    return {};
+                };
+                const std::vector<abi::SettingDef> defs = mm.Settings(owner);
+                for (const abi::SettingDef& def : defs) {
+                    const size_t before = model.size();
+                    const std::string label = def.label.empty() ? def.id : def.label;
+                    const auto withUnit = [&](std::string v) { return def.unit.empty() ? v : v + " " + def.unit; };
+                    switch (def.kind) {
+                    case abi::SettingKind::Header: {
+                        OptRow h{label, "", -1.0f, [](float, bool) {}};
+                        h.header = true;
+                        model.push_back(h);
+                        break;
+                    }
+                    case abi::SettingKind::Label: {
+                        model.push_back({label, def.value, -1.0f, [](float, bool) {}});
+                        model.back().locked = true;
+                        break;
+                    }
+                    case abi::SettingKind::Toggle: {
+                        const bool on = def.value == "true" || def.value == "1";
+                        model.push_back({label, onOff(on), -1.0f, [owner, id = def.id, on](float, bool click) {
+                                             if (click)
+                                                 mods::ModManager::Instance().ChangeSetting(owner, id, on ? "false" : "true");
+                                         }});
+                        break;
+                    }
+                    case abi::SettingKind::Integer:
+                    case abi::SettingKind::Number: {
+                        const double lo = def.min, hi = std::max(def.max, def.min + 1.0e-9);
+                        const double cur = std::clamp(std::atof(def.value.c_str()), lo, hi);
+                        const bool whole = def.kind == abi::SettingKind::Integer;
+                        char buf[48];
+                        if (whole)
+                            std::snprintf(buf, sizeof(buf), "%lld", static_cast<long long>(std::llround(cur)));
+                        else
+                            std::snprintf(buf, sizeof(buf), def.step > 0 && def.step < 0.095 ? "%.2f" : "%.1f", cur);
+                        model.push_back({label, withUnit(buf), static_cast<float>((cur - lo) / (hi - lo)),
+                                         [owner, id = def.id, lo, hi, whole, step = def.step](float f, bool) {
+                                             double v = lo + std::clamp(static_cast<double>(f), 0.0, 1.0) * (hi - lo);
+                                             if (step > 0)
+                                                 v = lo + std::round((v - lo) / step) * step;
+                                             if (whole)
+                                                 v = std::round(v);
+                                             v = std::clamp(v, lo, hi);
+                                             char out[48];
+                                             std::snprintf(out, sizeof(out), whole ? "%.0f" : "%.6g", v);
+                                             mods::ModManager::Instance().ChangeSetting(owner, id, out);
+                                         }});
+                        break;
+                    }
+                    case abi::SettingKind::Choice: {
+                        size_t at = 0;
+                        for (size_t i = 0; i < def.choices.size(); i++)
+                            if (def.choices[i] == def.value)
+                                at = i;
+                        const std::string shown = at < def.choiceLabels.size() && !def.choiceLabels[at].empty() ? def.choiceLabels[at] : def.value;
+                        model.push_back({label, shown, -1.0f, [owner, id = def.id, next = def.choices.empty() ? std::string() : def.choices[(at + 1) % def.choices.size()]](float, bool click) {
+                                             if (click)
+                                                 mods::ModManager::Instance().ChangeSetting(owner, id, next);
+                                         }});
+                        break;
+                    }
+                    case abi::SettingKind::Button:
+                        model.push_back({label, "", -1.0f, [owner, id = def.id](float, bool click) {
+                                             if (click)
+                                                 mods::ModManager::Instance().ChangeSetting(owner, id, "pressed");
+                                         }});
+                        break;
+                    }
+                    if (model.size() > before && !model.back().header) {
+                        model.back().icon = iconOf(def);
+                        modRowTips.resize(model.size());
+                        modRowTips[model.size() - 1] = def.description;
+                    }
+                }
+                if (defs.empty()) {
+                    OptRow h{tr("perlin.mods.noSettings", "This mod has no settings"), "", -1.0f, [](float, bool) {}};
+                    h.header = true;
+                    model.push_back(h);
+                } else {
+                    model.push_back({tr("perlin.mods.resetSettings", "Reset to Defaults"), "", -1.0f, [owner](float, bool click) {
+                                         if (click)
+                                             mods::ModManager::Instance().ResetSettings(owner);
+                                     }});
+                }
             } else if (optionsPage == 10) {
                 title = tr("perlin.shaders.settings.title", "Shader Pack Settings");
                 const std::vector<ShaderSetting>& list = CachedPackSettings(options.shaderPack);
@@ -3310,6 +3479,12 @@ namespace perlin {
                     row.tip = info.description;
                     row.impact = info.impact;
                 }
+                row.icon = r.icon;
+                if (optionsPage == 11 && pauseView == 1) {
+                    const size_t idx = view.size();
+                    if (idx < modRowTips.size())
+                        row.tip = modRowTips[idx];
+                }
                 view.push_back(row);
             }
             const int scrollKey = pauseView * 100 + optionsPage;
@@ -3392,7 +3567,12 @@ namespace perlin {
                 if (optionsDrag >= 0 || clickReady) {
                     if (inside(layout.doneX, layout.doneY, layout.doneW, layout.h) && optionsDrag < 0) {
                         options.Save();
-                        if (pauseView == 1 && optionsPage != 0) {
+                        if (pauseView == 1 && optionsPage == 11) {
+                            mods::ModManager::Instance().SettingsClosed(modSettingsFor);
+                            pauseView = 4;
+                            optionsPage = 0;
+                            optionsSub = 0;
+                        } else if (pauseView == 1 && optionsPage != 0) {
                             optionsPage = optionsPage == 5 ? 3 : optionsPage == 10 ? 8 : 0;
                             optionsSub = 0;
                         } else {
@@ -4724,7 +4904,14 @@ namespace perlin {
         const bool down = input.IsMouseDown(0);
         if (down && !chatLeftDown) {
             const std::string link = hud.Overlay().HoverLink();
-            if (link.size() > 6 && link[5] == '/' && live) {
+            if (link.rfind("link:url:", 0) == 0) {
+                // https only, and the player sees the address before anything opens.
+                const std::string url = link.substr(9);
+                if (url.rfind("https://", 0) == 0 && platform)
+                    platform->OpenUrl(url);
+                else if (url.rfind("http://", 0) == 0 && platform)
+                    platform->OpenUrl("https://" + url.substr(7));
+            } else if (link.size() > 6 && link[5] == '/' && live) {
                 live->SendCommand(link.substr(6));
                 chat.Close();
                 input.SetTextMode(false);
@@ -6143,6 +6330,17 @@ namespace perlin {
                 if (std::chrono::steady_clock::now() - fogCheck > std::chrono::seconds(2)) {
                     fogCheck = std::chrono::steady_clock::now();
                     fogDefs.Configure(ServerPacks::Instance().Directories());
+                    // The server's resource packs may carry HUD textures and UI JSON: refresh the HUD when they change.
+                    static std::string hudPackKey;
+                    std::string key;
+                    for (const std::string& d : ServerPacks::Instance().Directories())
+                        key += d + "|";
+                    if (key != hudPackKey) {
+                        hudPackKey = key;
+                        ui::UiAssets::Instance().ClearItemCache();
+                        if (hud)
+                            hud->Reload();
+                    }
                 }
                 const std::vector<std::string> fogStack = session->Camera().FogStack();
                 if (!fogStack.empty()) {
@@ -6395,7 +6593,7 @@ namespace perlin {
                     self.type = "minecraft:player";
                     self.isPlayer = self.isSelf = true;
                     self.name = live ? live->PlayerName() : std::string("Perlin");
-                    self.pos = {camera.x, camera.y - entity::kPlayerEye, camera.z};
+                    self.pos = {camera.x, camera.y - (live ? static_cast<double>(player.EyeOffset()) : entity::kPlayerEye), camera.z};
                     // The body yaw is worked out by the entity renderer, the same way for every player.
                     self.yaw = self.headYaw = camera.yaw - 90.0f;
                     self.pitch = -camera.pitch;
@@ -6458,6 +6656,18 @@ namespace perlin {
                 }
                 ein.ownNametag = options.thirdPersonNametag;
                 ein.ownParts = options.skinParts;
+                if (live) {
+                    // LivingEntity.getCurrentSwingDuration: 6 ticks, minus (1 + amplifier) with haste or conduit power,
+                    // plus 2 * (1 + amplifier) with mining fatigue.
+                    int fast = -1, slow = -1;
+                    for (const auto& fx : live->GetEffects()) {
+                        if (fx.id == 3 || fx.id == 26)
+                            fast = std::max(fast, fx.amplifier);
+                        else if (fx.id == 4)
+                            slow = std::max(slow, fx.amplifier);
+                    }
+                    ein.ownSwingTicks = fast >= 0 ? 6.0f - static_cast<float>(1 + fast) : slow >= 0 ? 6.0f + static_cast<float>((1 + slow) * 2) : 6.0f;
+                }
                 ein.frustum = &frustum;
                 ein.cameraYaw = camera.yaw - 90.0f;
                 ein.cameraPitch = -camera.pitch;
@@ -6725,7 +6935,7 @@ namespace perlin {
                         fpSelf->runtimeId = 0xFFFFFFFFFFFF0001ull;
                         fpSelf->type = "minecraft:player";
                         fpSelf->isPlayer = fpSelf->isSelf = true;
-                        fpSelf->pos = {camera.x, camera.y - entity::kPlayerEye, camera.z};
+                        fpSelf->pos = {camera.x, camera.y - static_cast<double>(player.EyeOffset()), camera.z};
                         fpSelf->yaw = fpSelf->headYaw = camera.yaw - 90.0f;
                         fpSelf->pitch = -camera.pitch;
                         fpSelf->moveSerial = 1;

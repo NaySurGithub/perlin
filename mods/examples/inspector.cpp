@@ -28,7 +28,7 @@ PERLIN_PLUGIN(ctx) {
             next.connected = player->connected;
 
         if (auto aim = game::aim()) {
-            if (aim->kind == 1 && aim->block.hit) {
+            if (aim->kind == abi::AimKind::Block && aim->block.hit) {
                 const BlockPos pos{aim->block.x, aim->block.y, aim->block.z};
                 next.looking_at = std::format("{} at {}", short_name(aim->block.block), pos);
                 if (auto info = game::block(pos); info && info->loaded) {
@@ -37,7 +37,7 @@ PERLIN_PLUGIN(ctx) {
                     if (auto found = game::find_blocks(pos, find))
                         next.blocks_found = found->size();
                 }
-            } else if (aim->kind == 2) {
+            } else if (aim->kind == abi::AimKind::Entity) {
                 next.looking_at = std::format("{} #{}", short_name(aim->entityType), aim->entity);
             }
         }
@@ -80,7 +80,7 @@ PERLIN_PLUGIN(ctx) {
         }
     });
 
-    ctx.command("inspect", "/inspect", "prints what you are looking at", [](const CommandCall& call) {
+    ctx.command<"inspect">("prints what you are looking at", [](const CommandCall& call) {
         call.reply("looking at {}, holding {}", snapshot.looking_at, snapshot.held);
     });
 }

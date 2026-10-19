@@ -1,4 +1,8 @@
 #pragma once
+#include <array>
+#include <charconv>
+#include <cmath>
+#include <numbers>
 #include <optional>
 #include <span>
 #include <string>
@@ -19,17 +23,7 @@ namespace perlin::game {
         return {-std::sin(yaw) * std::cos(pitch), -std::sin(pitch), std::cos(yaw) * std::cos(pitch)};
     }
 
-    inline Result<std::vector<Effect>> effects() {
-        auto bytes = detail::call(Op::PlayerEffects);
-        if (!bytes)
-            return std::unexpected(bytes.error());
-        abi::Reader r(bytes->data(), bytes->size());
-        std::vector<Effect> out;
-        const uint32_t n = r.get<uint32_t>();
-        for (uint32_t i = 0; i < n && r.Ok(); i++)
-            out.push_back(Effect::Read(r));
-        return out;
-    }
+    inline Result<std::vector<Effect>> effects() { return detail::call_list<Effect>(Op::PlayerEffects); }
 
     inline Result<Inventory> inventory() { return detail::call_as<Inventory>(Op::Inventory); }
 
@@ -37,8 +31,13 @@ namespace perlin::game {
 
     inline Result<BlockInfo> block(const BlockPos& pos) {
         abi::Writer w;
-        w.put(pos.x).put(pos.y).put(pos.z);
-        return detail::call_as<BlockInfo>(Op::Block, w);
+        w.write(pos.x, pos.y, pos.z);
+        auto info = detail::call_as<abi::BlockInfo>(Op::Block, w);
+        if (!info)
+            return unexpected(info.error());
+        BlockInfo out;
+        static_cast<abi::BlockInfo&>(out) = std::move(*info);
+        return out;
     }
 
     inline std::string block_name(const BlockPos& pos) {
@@ -48,14 +47,13 @@ namespace perlin::game {
 
     inline bool chunk_loaded(int chunkX, int chunkZ) {
         abi::Writer w;
-        w.put<int32_t>(chunkX).put<int32_t>(chunkZ);
-        auto bytes = detail::call(Op::ChunkLoaded, w);
-        return bytes && !bytes->empty() && (*bytes)[0] != 0;
+        w.write<int32_t>(chunkX, chunkZ);
+        return detail::call_bool(Op::ChunkLoaded, w);
     }
 
     inline Result<abi::Region> region(const BlockPos& from, const BlockPos& to) {
         abi::Writer w;
-        w.put(from.x).put(from.y).put(from.z).put(to.x).put(to.y).put(to.z);
+        w.write(from.x, from.y, from.z, to.x, to.y, to.z);
         return detail::call_as<abi::Region>(Op::Region, w);
     }
 
@@ -66,7 +64,7 @@ namespace perlin::game {
 
     inline Result<RayHit> raycast(const Vec3& origin, const Vec3& direction, RaycastOptions options = {}) {
         abi::Writer w;
-        w.put(origin.x).put(origin.y).put(origin.z).put(direction.x).put(direction.y).put(direction.z).put(options.max_distance).boolean(options.include_liquids);
+        w.write(origin.x, origin.y, origin.z, direction.x, direction.y, direction.z, options.max_distance, options.include_liquids);
         return detail::call_as<RayHit>(Op::Raycast, w);
     }
 
@@ -81,17 +79,12 @@ namespace perlin::game {
 
     inline Result<std::vector<abi::FoundBlock>> find_blocks(const BlockPos& center, const FindOptions& options) {
         abi::Writer w;
-        w.put(center.x).put(center.y).put(center.z).put(options.radius).put(options.max_results).boolean(options.exact).str(options.name);
-        auto bytes = detail::call(Op::FindBlocks, w);
-        if (!bytes)
-            return std::unexpected(bytes.error());
-        abi::Reader r(bytes->data(), bytes->size());
-        std::vector<abi::FoundBlock> out;
-        const uint32_t n = r.get<uint32_t>();
-        for (uint32_t i = 0; i < n && r.Ok(); i++)
-            out.push_back(abi::FoundBlock::Read(r));
-        return out;
+        w.write(center.x, center.y, center.z, static_cast<int32_t>(options.radius), static_cast<int32_t>(options.max_results), options.exact, options.name);
+        return detail::call_list<abi::FoundBlock>(Op::FindBlocks, w);
     }
+
+    // Every block name the game knows, for completion lists.
+    inline Result<std::vector<std::string>> block_names() { return detail::call_list<std::string>(Op::BlockNames); }
 
     struct EntityQuery {
         double radius = 0;
@@ -102,116 +95,157 @@ namespace perlin::game {
 
     inline Result<std::vector<Entity>> entities(const EntityQuery& query = {}) {
         abi::Writer w;
-        w.put(query.radius).str(query.type).boolean(query.players_only).boolean(query.include_items);
-        auto bytes = detail::call(Op::Entities, w);
-        if (!bytes)
-            return std::unexpected(bytes.error());
-        abi::Reader r(bytes->data(), bytes->size());
-        std::vector<Entity> out;
-        const uint32_t n = r.get<uint32_t>();
-        for (uint32_t i = 0; i < n && r.Ok(); i++)
-            out.push_back(Entity::Read(r));
-        return out;
+        w.write(query.radius, query.type, query.players_only, query.include_items);
+        return detail::call_list<Entity>(Op::Entities, w);
     }
 
     inline Result<Entity> entity(uint64_t runtimeId) {
         abi::Writer w;
-        w.put(runtimeId);
+        w.write(runtimeId);
         return detail::call_as<Entity>(Op::EntityById, w);
     }
 
-    inline Result<std::vector<PlayerEntry>> players() {
-        auto bytes = detail::call(Op::PlayerList);
-        if (!bytes)
-            return std::unexpected(bytes.error());
-        abi::Reader r(bytes->data(), bytes->size());
-        std::vector<PlayerEntry> out;
-        const uint32_t n = r.get<uint32_t>();
-        for (uint32_t i = 0; i < n && r.Ok(); i++)
-            out.push_back(PlayerEntry::Read(r));
-        return out;
-    }
+    inline Result<std::vector<PlayerEntry>> players() { return detail::call_list<PlayerEntry>(Op::PlayerList); }
 
     inline Result<ScreenState> screen() { return detail::call_as<ScreenState>(Op::Screen); }
 
     inline Result<abi::Meta> meta() { return detail::call_as<abi::Meta>(Op::Meta); }
 
-    inline Result<std::string> options_json() {
-        auto bytes = detail::call(Op::Options);
+    inline Result<abi::Perspective> perspective() { return detail::call_as<abi::Perspective>(Op::PerspectiveGet); }
+
+    inline Result<std::vector<abi::ChatLine>> chat_history(uint32_t count = 20) {
+        abi::Writer w;
+        w.write(count);
+        return detail::call_list<abi::ChatLine>(Op::ChatHistory, w);
+    }
+
+    inline Result<abi::TitleStateData> title_state() { return detail::call_as<abi::TitleStateData>(Op::TitleState); }
+
+    inline Result<std::vector<abi::PackEntry>> resource_packs() { return detail::call_list<abi::PackEntry>(Op::ResourcePacks); }
+
+    // Every installed mod, this one included (`self`).
+    inline Result<std::vector<abi::ModEntry>> mods() { return detail::call_list<abi::ModEntry>(Op::ModList); }
+
+    // ---------------------------------------------------------------------------------------------
+    // Options. The enumerator names are the option keys, so `option<Option::fov>()` needs no string, and the
+    // value type follows from the option.
+    // ---------------------------------------------------------------------------------------------
+    enum class Option : uint8_t {
+        maxFps, vsync, renderDistance, fov, gamma, mouseSensitivity, invertMouse, fancyGraphics, cloudRange, guiScale, shadows,
+        fovEffects, motionBlur, damageTilt, damageTint, thirdPersonCrosshair, thirdPersonNametag, menuBlur, betterGrass, showHud,
+        glass, dynamicLights, sprintMode, sneakMode,
+    };
+
+    namespace detail_option {
+        enum class Kind : uint8_t { Boolean, Integer, Real, Text };
+        constexpr Kind kind_of(Option o) {
+            switch (o) {
+            case Option::vsync: case Option::invertMouse: case Option::fancyGraphics: case Option::shadows: case Option::fovEffects:
+            case Option::damageTint: case Option::thirdPersonCrosshair: case Option::thirdPersonNametag: case Option::betterGrass:
+            case Option::showHud:
+                return Kind::Boolean;
+            case Option::maxFps: case Option::renderDistance: case Option::cloudRange: case Option::guiScale: case Option::damageTilt:
+            case Option::menuBlur:
+                return Kind::Integer;
+            case Option::fov: case Option::gamma: case Option::mouseSensitivity: case Option::motionBlur:
+                return Kind::Real;
+            default:
+                return Kind::Text;
+            }
+        }
+        template <Kind K>
+        struct value_for { using type = std::string; };
+        template <>
+        struct value_for<Kind::Boolean> { using type = bool; };
+        template <>
+        struct value_for<Kind::Integer> { using type = int; };
+        template <>
+        struct value_for<Kind::Real> { using type = double; };
+    }
+
+    template <Option O>
+    using option_t = typename detail_option::value_for<detail_option::kind_of(O)>::type;
+
+    inline Result<std::string> option_text(std::string_view key) {
+        abi::Writer w;
+        w.write(key);
+        auto bytes = detail::call(Op::OptionGet, w);
         if (!bytes)
-            return std::unexpected(bytes.error());
+            return unexpected(bytes.error());
         return std::string(bytes->begin(), bytes->end());
     }
 
-    inline Result<std::string> option(std::string_view key) {
-        abi::Writer w;
-        w.str(key);
-        auto bytes = detail::call(Op::OptionGet, w);
+    inline Result<std::string> options_json() {
+        auto bytes = detail::call(Op::Options);
         if (!bytes)
-            return std::unexpected(bytes.error());
+            return unexpected(bytes.error());
         return std::string(bytes->begin(), bytes->end());
+    }
+
+    // Reads option `O` as its natural type.
+    template <Option O>
+    Result<option_t<O>> option() {
+        auto text = option_text(meta::enum_name(O));
+        if (!text)
+            return unexpected(text.error());
+        using T = option_t<O>;
+        if constexpr (std::is_same_v<T, bool>) {
+            return *text == "true";
+        } else if constexpr (std::is_same_v<T, std::string>) {
+            return std::move(*text);
+        } else {
+            T v{};
+            const auto [ptr, ec] = std::from_chars(text->data(), text->data() + text->size(), v);
+            if (ec != std::errc{})
+                return unexpected(Error{Status::Failed});
+            return v;
+        }
     }
 
     inline std::string translate(std::string_view key) {
         abi::Writer w;
-        w.str(key);
+        w.write(key);
         auto bytes = detail::call(Op::Translate, w);
         return bytes ? std::string(bytes->begin(), bytes->end()) : std::string(key);
     }
 
-    inline Result<std::vector<std::string>> server_commands() {
-        auto bytes = detail::call(Op::ServerCommands);
-        if (!bytes)
-            return std::unexpected(bytes.error());
-        abi::Reader r(bytes->data(), bytes->size());
-        std::vector<std::string> out;
-        const uint32_t n = r.get<uint32_t>();
-        for (uint32_t i = 0; i < n && r.Ok(); i++)
-            out.push_back(r.str());
-        return out;
-    }
+    inline Result<std::vector<std::string>> server_commands() { return detail::call_list<std::string>(Op::ServerCommands); }
 
-    inline Result<std::vector<std::string>> input_actions() {
-        auto bytes = detail::call(Op::InputActions);
-        if (!bytes)
-            return std::unexpected(bytes.error());
-        abi::Reader r(bytes->data(), bytes->size());
-        std::vector<std::string> out;
-        const uint32_t n = r.get<uint32_t>();
-        for (uint32_t i = 0; i < n && r.Ok(); i++)
-            out.push_back(r.str());
-        return out;
-    }
+    // ---------------------------------------------------------------------------------------------
+    // Input. `Control` names the game's own bindings; the wire id is the table entry at the same index.
+    // ---------------------------------------------------------------------------------------------
+    enum class Control : uint8_t {
+        Forward, Back, Left, Right, Jump, Sneak, Sprint, Look, Attack, Use, TogglePerspective, Screenshot, Zoom, ToggleHud, Chat,
+        Command, DebugScreen, PickItem, Drop, Inventory, Pause, PlayerList,
+        Hotbar1, Hotbar2, Hotbar3, Hotbar4, Hotbar5, Hotbar6, Hotbar7, Hotbar8, Hotbar9,
+    };
+
+    inline constexpr std::array<std::string_view, meta::enum_count<Control>> kControlIds{
+        "key.forward", "key.back", "key.left", "key.right", "key.jump", "key.sneak", "key.sprint", "key.look", "key.attack", "key.use",
+        "key.togglePerspective", "key.screenshot", "key.zoom", "key.toggleHud", "key.chat", "key.command", "key.debugScreen",
+        "key.pickItem", "key.drop", "key.inventory", "key.pause", "key.playerlist", "key.hotbar.1", "key.hotbar.2", "key.hotbar.3",
+        "key.hotbar.4", "key.hotbar.5", "key.hotbar.6", "key.hotbar.7", "key.hotbar.8", "key.hotbar.9"};
+
+    constexpr std::string_view control_id(Control c) { return kControlIds[static_cast<size_t>(c)]; }
+
+    inline Result<std::vector<std::string>> input_actions() { return detail::call_list<std::string>(Op::InputActions); }
 
     inline bool input_down(std::string_view action) {
         abi::Writer w;
-        w.str(action);
-        auto bytes = detail::call(Op::InputDown, w);
-        return bytes && !bytes->empty() && (*bytes)[0] != 0;
+        w.write(action);
+        return detail::call_bool(Op::InputDown, w);
     }
+    inline bool input_down(Control control) { return input_down(control_id(control)); }
 
     struct MousePos {
         float x = 0, y = 0;
         bool captured = false;
     };
 
-    inline Result<MousePos> mouse() {
-        auto bytes = detail::call(Op::MousePosition);
-        if (!bytes)
-            return std::unexpected(bytes.error());
-        abi::Reader r(bytes->data(), bytes->size());
-        MousePos m;
-        m.x = r.get<float>();
-        m.y = r.get<float>();
-        m.captured = r.boolean();
-        return m;
-    }
+    inline Result<MousePos> mouse() { return detail::call_as<MousePos>(Op::MousePosition); }
 
     inline int64_t now_ms() {
-        auto bytes = detail::call(Op::Clock);
-        if (!bytes)
-            return 0;
-        abi::Reader r(bytes->data(), bytes->size());
-        return r.get<int64_t>();
+        auto v = detail::call_as<int64_t>(Op::Clock);
+        return v ? *v : 0;
     }
 }

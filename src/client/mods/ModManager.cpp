@@ -5,6 +5,10 @@
 #include "client/ui/Json.hpp"
 
 #include <algorithm>
+#include <cctype>
+#include <cmath>
+#include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <ctime>
 #include <filesystem>
@@ -48,6 +52,9 @@ namespace perlin::mods {
             case abi::Event::HttpResponse: return "http";
             case abi::Event::Packet: return "packet";
             case abi::Event::Title: return "title";
+            case abi::Event::SettingChanged: return "setting_changed";
+            case abi::Event::Intent: return "intent";
+            case abi::Event::IntentResult: return "intent_result";
             default: return nullptr;
             }
         }
@@ -99,10 +106,20 @@ namespace perlin::mods {
         int loads = 0;
         ModInfo meta;
         uint32_t permissions = static_cast<uint32_t>(abi::Permission::Storage);
+        uint32_t requested = 0, safePermissions = static_cast<uint32_t>(abi::Permission::Storage);
+        bool needsApproval = false;
         std::vector<PluginCommand> commands;
         std::vector<PluginKey> keys;
         std::map<std::string, UiLayer> layers;
         std::map<std::string, std::string> savedKeys;
+        std::vector<abi::SettingDef> settings;
+        std::map<std::string, std::string> savedSettings;
+        bool settingsDirty = false, restartPending = false;
+        std::vector<abi::IntentFilter> intentFilters;
+        std::string runtimeIcon;
+        uint32_t replyingTo = 0;
+        bool replied = false;
+        std::vector<abi::Extra> replyExtras;
         std::atomic<bool> loaded{false};
         std::atomic<bool> stuck{false};
         std::atomic<bool> revoked{false};
@@ -341,6 +358,33 @@ namespace perlin::mods {
         lastScan = {};
     }
 
+    // Caller holds the mutex. A mod only ever runs with what was approved, so a mod that later asks for more cannot use it unseen.
+    void ModManager::ApplyApproval(Plugin& mod) {
+        const auto granted = approved.find(mod.name);
+        const uint32_t allowed = granted == approved.end() ? 0u : granted->second;
+        mod.needsApproval = (mod.requested & ~allowed) != 0;
+        mod.permissions = mod.safePermissions | (allowed & mod.requested);
+        mod.meta.requested = mod.requested;
+        mod.meta.needsApproval = mod.needsApproval;
+    }
+
+    uint32_t ModManager::DangerousMask() {
+        return static_cast<uint32_t>(abi::Permission::Network) | static_cast<uint32_t>(abi::Permission::Packets) |
+               static_cast<uint32_t>(abi::Permission::Control) | static_cast<uint32_t>(abi::Permission::Files);
+    }
+
+    void ModManager::SetApproved(const std::vector<std::string>& entries) {
+        std::lock_guard lock(mutex);
+        approved.clear();
+        for (const std::string& e : entries) {
+            const size_t eq = e.rfind('=');
+            if (eq == std::string::npos)
+                continue;
+            approved[e.substr(0, eq)] = static_cast<uint32_t>(std::strtoul(e.c_str() + eq + 1, nullptr, 10));
+        }
+        lastScan = {};
+    }
+
     void ModManager::ReloadAll() {
         std::lock_guard lock(mutex);
         reloadAll = true;
@@ -414,7 +458,10 @@ namespace perlin::mods {
             info.error = mod->error;
             info.lastEventMs = mod->lastEventMs.load();
             info.arch = mod->arch;
-            info.state = !mod->enabled ? "disabled" : mod->stuck ? "unresponsive" : !mod->error.empty() ? "error" : mod->loaded ? "running" : "loading";
+            info.hasSettings = mod->loaded && !mod->settings.empty();
+            if (!mod->runtimeIcon.empty())
+                info.iconPath = mod->runtimeIcon;
+            info.state = mod->needsApproval ? "approval" : !mod->enabled ? "disabled" : mod->stuck ? "unresponsive" : !mod->error.empty() ? "error" : mod->loaded ? "running" : "loading";
             info.hooks.clear();
             if (mod->loaded) {
                 const uint32_t subs = mod->subs.load();
@@ -540,6 +587,9 @@ namespace perlin::mods {
             mod.commands.clear();
             mod.keys.clear();
             mod.layers.clear();
+            mod.settings.clear();
+            mod.intentFilters.clear();
+            mod.runtimeIcon.clear();
         }
         layerVersion++;
         commandVersion++;
@@ -707,6 +757,9 @@ namespace perlin::mods {
             mod.commands.clear();
             mod.keys.clear();
             mod.layers.clear();
+            mod.settings.clear();
+            mod.intentFilters.clear();
+            mod.runtimeIcon.clear();
             layerVersion++;
             commandVersion++;
             std::cout << "[mods] " << mod.name << " stopped: " << message << std::endl;
@@ -768,6 +821,7 @@ namespace perlin::mods {
             bool c = false;
             Call(mod, abi::Event::Unload, abi::Writer{}, 500.0, c);
         }
+        SaveSettings(mod);
         mod.loaded = false;
         if (mod.thread.joinable()) {
             if (mod.stuck) {
@@ -796,6 +850,9 @@ namespace perlin::mods {
             mod.commands.clear();
             mod.keys.clear();
             mod.layers.clear();
+            mod.settings.clear();
+            mod.intentFilters.clear();
+            mod.runtimeIcon.clear();
         }
         layerVersion++;
         commandVersion++;
@@ -809,6 +866,7 @@ namespace perlin::mods {
         uint32_t permissions = static_cast<uint32_t>(abi::Permission::Storage);
         const fs::path base = fs::path(mod.path).replace_extension("");
         std::error_code ec;
+        std::string manifestIcon;
         std::ifstream in(base.string() + ".json", std::ios::binary);
         if (in) {
             const std::string text((std::istreambuf_iterator<char>(in)), {});
@@ -825,6 +883,7 @@ namespace perlin::mods {
                 meta.version = get("version");
                 meta.author = get("author");
                 meta.website = get("website");
+                manifestIcon = get("icon");
                 if (const ui::Json* list = json.Find("permissions"); list && list->IsArray())
                     for (const ui::Json& item : list->array) {
                         const std::string p = item.StringOr("");
@@ -834,6 +893,8 @@ namespace perlin::mods {
                             permissions |= static_cast<uint32_t>(abi::Permission::Packets);
                         else if (p == "control")
                             permissions |= static_cast<uint32_t>(abi::Permission::Control);
+                        else if (p == "files")
+                            permissions |= static_cast<uint32_t>(abi::Permission::Files);
                     }
             }
         }
@@ -843,12 +904,29 @@ namespace perlin::mods {
             meta.permissions.push_back("packets");
         if (permissions & static_cast<uint32_t>(abi::Permission::Control))
             meta.permissions.push_back("control");
+        if (permissions & static_cast<uint32_t>(abi::Permission::Files))
+            meta.permissions.push_back("files");
         meta.permissions.push_back("storage");
-        if (fs::exists(base.string() + ".png", ec))
-            meta.iconPath = base.string() + ".png";
+        // Icon: the manifest's "icon", then name.png next to the mod, then a pack-style icon in its data folder.
+        {
+            std::vector<fs::path> candidates;
+            fs::path rel;
+            if (!manifestIcon.empty() && SafeRelative(manifestIcon, rel))
+                candidates.push_back(fs::path(directory) / rel);
+            candidates.push_back(base.string() + ".png");
+            candidates.push_back(fs::path(directory) / (mod.name + ".data") / "pack_icon.png");
+            candidates.push_back(fs::path(directory) / (mod.name + ".data") / "icon.png");
+            for (const fs::path& c : candidates)
+                if (fs::is_regular_file(c, ec)) {
+                    meta.iconPath = c.string();
+                    break;
+                }
+        }
         std::lock_guard lock(mutex);
-        mod.permissions = permissions;
+        mod.requested = permissions & DangerousMask();
+        mod.safePermissions = permissions & ~DangerousMask();
         mod.meta = std::move(meta);
+        ApplyApproval(mod);
     }
 
     void ModManager::Load(Plugin& mod) {
@@ -858,6 +936,7 @@ namespace perlin::mods {
         ReadMeta(mod);
         mod.storage = (fs::path(directory) / (mod.name + ".data")).string();
         LoadKeys(mod);
+        LoadSettings(mod);
         if (!ReadFile(mod.path, mod.wasm)) {
             std::lock_guard lock(mutex);
             mod.error = "cannot read file";
@@ -928,7 +1007,13 @@ namespace perlin::mods {
                 std::lock_guard lock(mutex);
                 mods.push_back(std::move(created));
             }
-            mod->enabled = std::find(off.begin(), off.end(), name) == off.end();
+            if (mod->meta.path.empty())
+                ReadMeta(*mod);
+            {
+                std::lock_guard lock(mutex);
+                ApplyApproval(*mod);
+            }
+            mod->enabled = std::find(off.begin(), off.end(), name) == off.end() && !mod->needsApproval;
             const bool first = mod->stamp == fs::file_time_type::min();
             const bool force = all || std::find(forced.begin(), forced.end(), name) != forced.end();
             const bool changed = stamp != mod->stamp || size != mod->size;
@@ -1007,6 +1092,502 @@ namespace perlin::mods {
         Scan();
     }
 
+    // ------------------------------------------------------------------------------------------
+    // Settings.
+    // ------------------------------------------------------------------------------------------
+    namespace {
+        std::string FormatNumber(double v) {
+            char buf[48];
+            std::snprintf(buf, sizeof(buf), "%.6g", v);
+            return buf;
+        }
+
+        bool ParseNumber(const std::string& text, double& out) {
+            if (text.empty())
+                return false;
+            char* end = nullptr;
+            out = std::strtod(text.c_str(), &end);
+            return end && *end == 0 && std::isfinite(out);
+        }
+
+        // Turns text from a mod or the UI into the canonical text for this kind of setting.
+        bool NormalizeSetting(const abi::SettingDef& def, const std::string& in, std::string& out) {
+            switch (def.kind) {
+            case abi::SettingKind::Toggle: {
+                std::string v = in;
+                std::transform(v.begin(), v.end(), v.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+                if (v == "true" || v == "1" || v == "on" || v == "yes") {
+                    out = "true";
+                    return true;
+                }
+                if (v == "false" || v == "0" || v == "off" || v == "no") {
+                    out = "false";
+                    return true;
+                }
+                return false;
+            }
+            case abi::SettingKind::Integer:
+            case abi::SettingKind::Number: {
+                double v = 0;
+                if (!ParseNumber(in, v))
+                    return false;
+                const double lo = std::min(def.min, def.max), hi = std::max(def.min, def.max);
+                v = std::clamp(v, lo, hi);
+                double step = def.step;
+                if (def.kind == abi::SettingKind::Integer)
+                    step = std::max(1.0, std::round(step));
+                if (step > 0)
+                    v = std::clamp(lo + std::round((v - lo) / step) * step, lo, hi);
+                if (def.kind == abi::SettingKind::Integer)
+                    v = std::round(v);
+                out = FormatNumber(v);
+                return true;
+            }
+            case abi::SettingKind::Choice:
+                if (std::find(def.choices.begin(), def.choices.end(), in) == def.choices.end())
+                    return false;
+                out = in;
+                return true;
+            default:
+                return false;
+            }
+        }
+
+        bool ValidSettingId(const std::string& id) {
+            if (id.empty() || id.size() > 64)
+                return false;
+            for (const char c : id)
+                if (!(std::isalnum(static_cast<unsigned char>(c)) || c == '_' || c == '.' || c == '-'))
+                    return false;
+            return true;
+        }
+    }
+
+    std::string ModManager::SettingsFile(const Plugin& mod) const { return (fs::path(directory) / (mod.name + ".settings.json")).string(); }
+
+    void ModManager::LoadSettings(Plugin& mod) {
+        mod.savedSettings.clear();
+        std::ifstream in(SettingsFile(mod), std::ios::binary);
+        if (!in)
+            return;
+        const std::string text((std::istreambuf_iterator<char>(in)), {});
+        ui::Json json;
+        std::string error;
+        if (!ui::Json::Parse(text, json, error) || !json.IsObject())
+            return;
+        for (const auto& entry : json.object)
+            if (entry.second.IsString())
+                mod.savedSettings[entry.first] = entry.second.string;
+    }
+
+    void ModManager::SaveSettings(Plugin& mod) {
+        if (!mod.settingsDirty)
+            return;
+        mod.settingsDirty = false;
+        std::string text = "{\n";
+        bool first = true;
+        for (const auto& entry : mod.savedSettings) {
+            if (!first)
+                text += ",\n";
+            first = false;
+            text += "  \"" + Escape(entry.first) + "\": \"" + Escape(entry.second) + "\"";
+        }
+        text += "\n}\n";
+        std::ofstream out(SettingsFile(mod), std::ios::binary | std::ios::trunc);
+        out << text;
+    }
+
+    bool ModManager::HasSettings(const std::string& plugin) const {
+        std::lock_guard lock(const_cast<std::mutex&>(mutex));
+        for (const auto& mod : mods)
+            if (mod->name == plugin)
+                return mod->loaded && !mod->settings.empty();
+        return false;
+    }
+
+    std::vector<abi::SettingDef> ModManager::Settings(const std::string& plugin) const {
+        std::lock_guard lock(const_cast<std::mutex&>(mutex));
+        for (const auto& mod : mods)
+            if (mod->name == plugin)
+                return mod->settings;
+        return {};
+    }
+
+    bool ModManager::ChangeSetting(const std::string& plugin, const std::string& id, const std::string& value) {
+        Plugin* mod = Find(plugin);
+        if (!mod)
+            return false;
+        abi::EventSettingChanged event;
+        event.id = id;
+        {
+            std::lock_guard lock(mutex);
+            abi::SettingDef* def = nullptr;
+            for (auto& d : mod->settings)
+                if (d.id == id)
+                    def = &d;
+            if (!def)
+                return false;
+            event.kind = def->kind;
+            if (def->kind == abi::SettingKind::Button) {
+                event.value = "pressed";
+            } else {
+                std::string normal;
+                if (!NormalizeSetting(*def, value, normal) || normal == def->value)
+                    return false;
+                def->value = normal;
+                mod->savedSettings[id] = normal;
+                mod->settingsDirty = true;
+                if (def->restart)
+                    mod->restartPending = true;
+                event.value = normal;
+            }
+        }
+        if (mod->loaded && (mod->subs.load() & (1u << static_cast<uint32_t>(abi::Event::SettingChanged)))) {
+            abi::Writer w;
+            w.write(event);
+            bool cancelled = false;
+            Call(*mod, abi::Event::SettingChanged, w, 250.0, cancelled);
+        }
+        return true;
+    }
+
+    void ModManager::ResetSettings(const std::string& plugin) {
+        for (const abi::SettingDef& def : Settings(plugin))
+            if (def.kind != abi::SettingKind::Button && def.kind != abi::SettingKind::Label && def.kind != abi::SettingKind::Header)
+                ChangeSetting(plugin, def.id, def.fallback);
+    }
+
+    void ModManager::SettingsClosed(const std::string& plugin) {
+        Plugin* mod = Find(plugin);
+        if (!mod)
+            return;
+        SaveSettings(*mod);
+        bool reload = false;
+        {
+            std::lock_guard lock(mutex);
+            reload = mod->restartPending;
+            mod->restartPending = false;
+        }
+        if (reload)
+            ReloadMod(plugin);
+    }
+
+    void ModManager::RegisterSettingOps() {
+        Register(abi::Op::SettingDefine, [this](CallContext& ctx, abi::Reader& r, abi::Writer& w) {
+            abi::SettingDef def = r.read<abi::SettingDef>();
+            if (!r.Ok() || !ValidSettingId(def.id) || def.label.size() > 160 || def.description.size() > 600 || def.choices.size() > 64 ||
+                def.choiceLabels.size() > 64 || def.icon.size() > 200)
+                return abi::Status::BadArguments;
+            if (def.kind == abi::SettingKind::Choice && def.choices.empty())
+                return abi::Status::BadArguments;
+            auto* mod = static_cast<Plugin*>(ctx.user);
+            std::lock_guard lock(mutex);
+            // Saved value first, then the one the mod passed, then its default.
+            std::string chosen;
+            const auto saved = mod->savedSettings.find(def.id);
+            if (!(saved != mod->savedSettings.end() && NormalizeSetting(def, saved->second, chosen)) &&
+                !NormalizeSetting(def, def.value, chosen) && !NormalizeSetting(def, def.fallback, chosen))
+                chosen = def.value;
+            if (def.fallback.empty())
+                def.fallback = chosen;
+            def.value = chosen;
+            for (auto& d : mod->settings)
+                if (d.id == def.id) {
+                    d = def;
+                    w.write(def.value);
+                    return abi::Status::Ok;
+                }
+            if (mod->settings.size() >= 160)
+                return abi::Status::Failed;
+            mod->settings.push_back(def);
+            w.write(def.value);
+            return abi::Status::Ok;
+        });
+
+        Register(abi::Op::SettingGet, [this](CallContext& ctx, abi::Reader& r, abi::Writer& w) {
+            const std::string id = r.str();
+            if (!r.Ok())
+                return abi::Status::BadArguments;
+            auto* mod = static_cast<Plugin*>(ctx.user);
+            std::lock_guard lock(mutex);
+            for (const auto& d : mod->settings)
+                if (d.id == id) {
+                    w.raw(d.value.data(), d.value.size());
+                    return abi::Status::Ok;
+                }
+            return abi::Status::NotFound;
+        });
+
+        Register(abi::Op::SettingSet, [this](CallContext& ctx, abi::Reader& r, abi::Writer&) {
+            const std::string id = r.str();
+            const std::string value = r.str();
+            if (!r.Ok())
+                return abi::Status::BadArguments;
+            auto* mod = static_cast<Plugin*>(ctx.user);
+            std::lock_guard lock(mutex);
+            for (auto& d : mod->settings)
+                if (d.id == id) {
+                    std::string normal;
+                    if (!NormalizeSetting(d, value, normal))
+                        return abi::Status::BadArguments;
+                    d.value = normal;
+                    mod->savedSettings[id] = normal;
+                    mod->settingsDirty = true;
+                    return abi::Status::Ok;
+                }
+            return abi::Status::NotFound;
+        });
+
+        Register(abi::Op::SettingList, [this](CallContext& ctx, abi::Reader&, abi::Writer& w) {
+            auto* mod = static_cast<Plugin*>(ctx.user);
+            std::lock_guard lock(mutex);
+            std::vector<abi::SettingEntry> out;
+            for (const auto& d : mod->settings)
+                if (d.kind != abi::SettingKind::Button && d.kind != abi::SettingKind::Label && d.kind != abi::SettingKind::Header)
+                    out.push_back({d.id, d.value});
+            w.write(out);
+            return abi::Status::Ok;
+        });
+
+        Register(abi::Op::ModList, [this](CallContext& ctx, abi::Reader&, abi::Writer& w) {
+            std::vector<abi::ModEntry> out;
+            for (const ModInfo& info : List()) {
+                abi::ModEntry e;
+                e.name = info.name;
+                e.displayName = info.displayName;
+                e.description = info.description;
+                e.version = info.version;
+                e.author = info.author;
+                e.state = info.state;
+                e.enabled = info.enabled;
+                e.self = info.name == ctx.plugin;
+                e.hasSettings = info.hasSettings;
+                out.push_back(std::move(e));
+            }
+            w.write(out);
+            return abi::Status::Ok;
+        });
+
+        Register(abi::Op::IconSet, [this](CallContext& ctx, abi::Reader& r, abi::Writer&) {
+            const std::string rel = r.str();
+            fs::path safe;
+            if (!r.Ok() || !SafeRelative(rel, safe))
+                return abi::Status::BadArguments;
+            const fs::path full = fs::path(ctx.storageRoot) / safe;
+            std::error_code ec;
+            if (full.extension() != ".png" || !fs::is_regular_file(full, ec))
+                return abi::Status::NotFound;
+            std::lock_guard lock(mutex);
+            static_cast<Plugin*>(ctx.user)->runtimeIcon = full.string();
+            return abi::Status::Ok;
+        });
+    }
+
+    // ------------------------------------------------------------------------------------------
+    // Intents.
+    // ------------------------------------------------------------------------------------------
+    void ModManager::RegisterHostIntent(std::string action, std::string description, uint32_t permission, HostIntentFn fn) {
+        std::lock_guard lock(mutex);
+        hostIntents[std::move(action)] = HostIntent{std::move(description), permission, std::move(fn)};
+    }
+
+    uint32_t ModManager::SendIntent(abi::Intent intent, const std::string& sender) {
+        PendingIntent p;
+        p.id = nextIntent++;
+        p.sender = sender;
+        p.senderPermissions = sender == "perlin" ? 0xFFFFFFFFu : 0u;
+        p.intent = std::move(intent);
+        const uint32_t id = p.id;
+        std::lock_guard lock(mutex);
+        intentQueue.push_back(std::move(p));
+        return id;
+    }
+
+    void ModManager::DeliverIntent(const PendingIntent& p) {
+        abi::EventIntentResult result;
+        result.request = p.id;
+        const std::string& action = p.intent.action;
+        const HostIntent* host = nullptr;
+        {
+            std::lock_guard lock(mutex);
+            if (const auto it = hostIntents.find(action); it != hostIntents.end())
+                host = &it->second;
+        }
+        const bool toHost = p.intent.target == "perlin" || (p.intent.target.empty() && host);
+        if (toHost) {
+            result.handler = "perlin";
+            if (!host) {
+                result.outcome = abi::IntentOutcome::Unhandled;
+            } else if (host->permission && p.sender != "perlin" && (p.senderPermissions & host->permission) != host->permission) {
+                result.outcome = abi::IntentOutcome::Denied;
+            } else {
+                IntentExtras extras;
+                result.outcome = host->fn(p.sender, p.intent, extras);
+                result.extras = std::move(extras);
+            }
+        } else {
+            std::vector<Plugin*> targets;
+            {
+                std::lock_guard lock(mutex);
+                for (const auto& mod : mods) {
+                    if (!mod->loaded || mod->stuck)
+                        continue;
+                    if (!p.intent.target.empty()) {
+                        if (mod->name == p.intent.target)
+                            targets.push_back(mod.get());
+                        continue;
+                    }
+                    for (const auto& f : mod->intentFilters)
+                        if (f.action == action) {
+                            targets.push_back(mod.get());
+                            break;
+                        }
+                }
+            }
+            const uint32_t bit = 1u << static_cast<uint32_t>(abi::Event::Intent);
+            for (Plugin* mod : targets) {
+                if (!(mod->subs.load() & bit))
+                    continue;
+                abi::EventIntent event;
+                event.request = p.id;
+                event.sender = p.sender;
+                event.intent = p.intent;
+                abi::Writer w;
+                w.write(event);
+                {
+                    std::lock_guard lock(mutex);
+                    mod->replyingTo = p.id;
+                    mod->replied = false;
+                    mod->replyExtras.clear();
+                }
+                bool cancelled = false;
+                if (!Call(*mod, abi::Event::Intent, w, 250.0, cancelled))
+                    continue;
+                std::lock_guard lock(mutex);
+                if (result.outcome != abi::IntentOutcome::Handled) {
+                    result.outcome = abi::IntentOutcome::Handled;
+                    result.handler = mod->name;
+                    if (mod->replied)
+                        result.extras = mod->replyExtras;
+                }
+                mod->replyingTo = 0;
+            }
+        }
+        if (p.sender == "perlin")
+            return;
+        Plugin* sender = Find(p.sender);
+        if (sender && sender->loaded && !sender->stuck && (sender->subs.load() & (1u << static_cast<uint32_t>(abi::Event::IntentResult)))) {
+            abi::Writer w;
+            w.write(result);
+            bool cancelled = false;
+            Call(*sender, abi::Event::IntentResult, w, 250.0, cancelled);
+        }
+    }
+
+    void ModManager::Pump() {
+        if (tlsPlugin)
+            return;
+        std::vector<PendingIntent> batch;
+        {
+            std::lock_guard lock(mutex);
+            const size_t take = std::min<size_t>(intentQueue.size(), 32);
+            batch.assign(std::make_move_iterator(intentQueue.begin()), std::make_move_iterator(intentQueue.begin() + static_cast<std::ptrdiff_t>(take)));
+            intentQueue.erase(intentQueue.begin(), intentQueue.begin() + static_cast<std::ptrdiff_t>(take));
+        }
+        for (const PendingIntent& p : batch)
+            DeliverIntent(p);
+        const auto now = Clock::now();
+        if (now - lastFlush > std::chrono::milliseconds(500)) {
+            lastFlush = now;
+            std::lock_guard lock(mutex);
+            for (auto& mod : mods)
+                SaveSettings(*mod);
+        }
+    }
+
+    void ModManager::RegisterIntentOps() {
+        Register(abi::Op::IntentRegister, [this](CallContext& ctx, abi::Reader& r, abi::Writer&) {
+            const abi::IntentFilter f = r.read<abi::IntentFilter>();
+            if (!r.Ok() || f.action.empty() || f.action.size() > 128 || f.description.size() > 300)
+                return abi::Status::BadArguments;
+            auto* mod = static_cast<Plugin*>(ctx.user);
+            std::lock_guard lock(mutex);
+            for (auto& existing : mod->intentFilters)
+                if (existing.action == f.action) {
+                    existing = f;
+                    return abi::Status::Ok;
+                }
+            if (mod->intentFilters.size() >= 64)
+                return abi::Status::Failed;
+            mod->intentFilters.push_back(f);
+            return abi::Status::Ok;
+        });
+
+        Register(abi::Op::IntentSend, [this](CallContext& ctx, abi::Reader& r, abi::Writer& w) {
+            abi::Intent intent = r.read<abi::Intent>();
+            if (!r.Ok() || intent.action.empty() || intent.action.size() > 128 || intent.extras.size() > 32 || intent.target.size() > 64)
+                return abi::Status::BadArguments;
+            size_t bytes = 0;
+            for (const auto& e : intent.extras) {
+                bytes += e.key.size();
+                if (const auto* s = std::get_if<std::string>(&e.value))
+                    bytes += s->size();
+                else if (const auto* b = std::get_if<std::vector<uint8_t>>(&e.value))
+                    bytes += b->size();
+            }
+            if (bytes > (256u << 10))
+                return abi::Status::BadArguments;
+            PendingIntent p;
+            p.id = nextIntent++;
+            p.sender = ctx.plugin;
+            p.senderPermissions = ctx.permissions;
+            p.intent = std::move(intent);
+            std::lock_guard lock(mutex);
+            size_t mine = 0;
+            for (const auto& q : intentQueue)
+                if (q.sender == ctx.plugin)
+                    mine++;
+            if (mine >= 64 || intentQueue.size() >= 256)
+                return abi::Status::Unavailable;
+            w.write(p.id);
+            intentQueue.push_back(std::move(p));
+            return abi::Status::Ok;
+        });
+
+        Register(abi::Op::IntentReply, [this](CallContext& ctx, abi::Reader& r, abi::Writer&) {
+            const uint32_t request = r.get<uint32_t>();
+            std::vector<abi::Extra> extras = r.read<std::vector<abi::Extra>>();
+            if (!r.Ok() || extras.size() > 32)
+                return abi::Status::BadArguments;
+            auto* mod = static_cast<Plugin*>(ctx.user);
+            std::lock_guard lock(mutex);
+            if (mod->replyingTo == 0 || mod->replyingTo != request)
+                return abi::Status::NotFound;
+            mod->replyExtras = std::move(extras);
+            mod->replied = true;
+            return abi::Status::Ok;
+        });
+
+        Register(abi::Op::IntentQuery, [this](CallContext&, abi::Reader& r, abi::Writer& w) {
+            const std::string action = r.str();
+            if (!r.Ok())
+                return abi::Status::BadArguments;
+            std::vector<abi::IntentHandler> out;
+            std::lock_guard lock(mutex);
+            if (const auto it = hostIntents.find(action); it != hostIntents.end())
+                out.push_back({"perlin", it->second.description, true});
+            for (const auto& mod : mods) {
+                if (!mod->loaded)
+                    continue;
+                for (const auto& f : mod->intentFilters)
+                    if (f.action == action)
+                        out.push_back({mod->name, f.description, false});
+            }
+            w.write(out);
+            return abi::Status::Ok;
+        });
+    }
+
     void ModManager::RegisterCore() {
         Register(abi::Op::Log, [](CallContext& ctx, abi::Reader& r, abi::Writer&) {
             const int32_t level = r.get<int32_t>();
@@ -1031,10 +1612,10 @@ namespace perlin::mods {
                 meta.platform = platform;
             }
             meta.plugin = ctx.plugin;
-            meta.permissions = ctx.permissions;
+            meta.permissions = abi::Permissions::from_bits(ctx.permissions);
             meta.nowMs = UnixMs();
             meta.tick = tickCounter.load();
-            meta.Write(w);
+            w.write(meta);
             return abi::Status::Ok;
         });
 
@@ -1218,5 +1799,8 @@ namespace perlin::mods {
             layerVersion++;
             return abi::Status::Ok;
         });
+
+        RegisterSettingOps();
+        RegisterIntentOps();
     }
 }

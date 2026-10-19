@@ -58,6 +58,7 @@ namespace perlin {
             std::string sneakMode = "hold";
             std::vector<std::string> texturePacks;
             std::vector<std::string> disabledMods;
+            std::vector<std::string> approvedMods;
             bool hotReload = true;
             bool betterGrass = false;
             SkinParts skinParts;
@@ -134,6 +135,7 @@ namespace perlin {
                       o.sneakMode,
                       o.texturePacks,
                       o.disabledMods,
+                      o.approvedMods,
                       o.hotReload,
                       o.betterGrass,
                       o.skinParts,
@@ -180,6 +182,7 @@ namespace perlin {
         if (o.texturePacks.empty() && !stored.texturePack.empty())
             o.texturePacks.push_back(stored.texturePack);
         o.disabledMods = stored.disabledMods;
+        o.approvedMods = stored.approvedMods;
         o.hotReload = stored.hotReload;
         o.betterGrass = stored.betterGrass;
         o.skinParts = stored.skinParts;
@@ -279,6 +282,7 @@ namespace perlin {
                       sneakMode,
                       texturePacks,
                       disabledMods,
+                      approvedMods,
                       hotReload,
                       betterGrass,
                       skinParts,

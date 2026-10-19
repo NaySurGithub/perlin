@@ -14,6 +14,8 @@ namespace perlin::ui {
 <style>
 body { position: absolute; left: 0px; top: 0px; width: {{w}}px; height: {{h}}px; margin: 0; padding: 0; background: transparent; }
 div, mcimg { display: block; position: absolute; }
+mcitem { display: block; position: absolute; }
+mcimg { display: block; position: absolute; }
 #dim { left: 0px; top: 0px; width: {{w}}px; height: {{h}}px; background-color: rgba(0,0,0,64); }
 #heading { left: 0px; top: 40px; width: {{w}}px; height: 9px; font-family: minecraft-shadow; font-size: 8px; line-height: 9px; text-align: center; color: #ffffff; white-space: nowrap; z-index: 3; }
 .btn { height: 20px; background-color: #000000; z-index: 5; }
@@ -205,6 +207,14 @@ div { display: block; position: absolute; }
                 d += Slider("row" + std::to_string(i), l.x[static_cast<size_t>(i)], l.y[static_cast<size_t>(i)], l.rowW[static_cast<size_t>(i)], label, row.fraction);
             else
                 d += Button("row" + std::to_string(i), l.x[static_cast<size_t>(i)], l.y[static_cast<size_t>(i)], l.rowW[static_cast<size_t>(i)], label, row.locked);
+            if (!row.icon.empty()) {
+                const std::string at = "left: " + std::to_string(static_cast<int>(l.x[static_cast<size_t>(i)]) + 3) + "px; top: " +
+                                       std::to_string(static_cast<int>(l.y[static_cast<size_t>(i)]) + 2) + "px; width: 16px; height: 16px; z-index: 9;";
+                if (row.icon.rfind("item:", 0) == 0)
+                    d += "<mcitem key=\"" + EscapeRml(row.icon.substr(5)) + ";0\" style=\"" + at + "\"></mcitem>\n";
+                else
+                    d += "<mcimg src=\"" + EscapeRml(row.icon) + "\" style=\"" + at + "\"></mcimg>\n";
+            }
         }
         if (hover >= 0 && hover < l.count && l.visible[static_cast<size_t>(hover)]) {
             const OptionsRow& row = rows[static_cast<size_t>(hover)];

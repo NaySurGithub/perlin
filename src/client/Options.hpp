@@ -106,6 +106,7 @@ namespace perlin {
         std::string texturePack;
         std::vector<std::string> texturePacks;
         std::vector<std::string> disabledMods;
+        std::vector<std::string> approvedMods; // "name=bits": dangerous permissions the player allowed
         bool hotReload = true;
         bool betterGrass = false;
         SkinParts skinParts;

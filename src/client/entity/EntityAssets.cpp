@@ -250,6 +250,32 @@ namespace perlin::entity {
         const char* kJavaAnimations = R"JAVA({
   "format_version": "1.8.0",
   "animations": {
+    "animation.player.bob": {
+      "loop": true,
+      "bones": {
+        "rightarm": {"rotation": ["math.sin(query.life_time * 76.8) * 2.865", 0.0, "(math.cos(query.life_time * 103.2) * 2.865) + 2.865"]},
+        "leftarm": {"rotation": ["-math.sin(query.life_time * 76.8) * 2.865", 0.0, "-((math.cos(query.life_time * 103.2) * 2.865) + 2.865)"]}
+      }
+    },
+    "animation.player.bob.stationary": {
+      "loop": true,
+      "bones": {
+        "rightarm": {"rotation": ["math.sin(query.life_time * 76.8) * 2.865", 0.0, "(math.cos(query.life_time * 103.2) * 2.865) + 2.865"]},
+        "leftarm": {"rotation": ["-math.sin(query.life_time * 76.8) * 2.865", 0.0, "-((math.cos(query.life_time * 103.2) * 2.865) + 2.865)"]}
+      }
+    },
+    "animation.player.move.legs": {
+      "loop": true,
+      "bones": {
+        "leftleg": {"rotation": ["variable.tcos0 * -1.4", -0.2865, -0.2865]},
+        "rightleg": {"rotation": ["variable.tcos0 * 1.4", 0.2865, 0.2865]}
+      }
+    },
+    "animation.player.sneaking": {
+      "loop": true,
+      "bones": {}
+    },
+    "animation.player.java_marker_v2": {"loop": true, "bones": {}},
     "animation.humanoid.bob": {
       "loop": true,
       "bones": {
@@ -262,8 +288,8 @@ namespace perlin::entity {
       "bones": {
         "leftarm": {"rotation": ["variable.tcos0", 0.0, 0.0]},
         "rightarm": {"rotation": ["-variable.tcos0", 0.0, 0.0]},
-        "leftleg": {"rotation": ["variable.tcos0 * -1.4", -0.29, -0.29]},
-        "rightleg": {"rotation": ["variable.tcos0 * 1.4", 0.29, 0.29]}
+        "leftleg": {"rotation": ["variable.tcos0 * -1.4", -0.2865, -0.2865]},
+        "rightleg": {"rotation": ["variable.tcos0 * 1.4", 0.2865, 0.2865]}
       }
     },
     "animation.polarbear.move": {
@@ -296,7 +322,7 @@ namespace perlin::entity {
                 if (std::ifstream in(file, std::ios::binary); in) {
                     std::stringstream ss;
                     ss << in.rdbuf();
-                    current = ss.str().find("animation.polarbear.move") != std::string::npos;
+                    current = ss.str().find("animation.player.java_marker_v2") != std::string::npos;
                 }
                 if (!current) {
                     fs::create_directories(dir, ec);

@@ -7,6 +7,7 @@
 #include "client/platform/AppPlatform.hpp"
 #include "client/renderer/Tessellator.hpp"
 #include "client/renderer/MaterialDb.hpp"
+#include "client/renderer/bgfx/GpuSelect.hpp"
 #include "client/Options.hpp"
 #include "client/resources/ShaderPack.hpp"
 #include "util/Paths.hpp"
@@ -98,6 +99,8 @@ namespace perlin {
             std::cout << "[bgfx] FATAL " << filePath << ":" << line << " (" << (int)code << "): " << str
                       << std::endl;
             const std::string message = str ? str : "";
+            if (bgfx::getRendererType() == bgfx::RendererType::Direct3D12)
+                gpu::RememberD3D12Failure(message);
             if (code == bgfx::Fatal::DeviceLost || message.find("DEVICE_REMOVED") != std::string::npos ||
                 message.find("DEVICE_RESET") != std::string::npos || message.find("DEVICE_HUNG") != std::string::npos) {
                 std::cout << "[bgfx] the GPU driver reset the device; restarting Perlin" << std::endl;
@@ -197,6 +200,20 @@ namespace perlin {
                     init.type = bgfx::RendererType::OpenGL;
             }
         }
+        // No explicit choice: on Windows pick the fastest GPU and Direct3D 12 where it runs well. bgfx's own
+        // ranking always prefers Direct3D 11 on Windows, so Direct3D 12 was never chosen automatically.
+        gpu::Choice gpuChoice;
+        if (init.type == bgfx::RendererType::Count || forced == "auto") {
+            gpuChoice = gpu::ChooseRenderer();
+            if (gpuChoice.type != bgfx::RendererType::Count) {
+                init.type = gpuChoice.type;
+                init.vendorId = gpuChoice.vendorId;
+                init.deviceId = gpuChoice.deviceId;
+                std::cout << "[gpu] " << gpuChoice.adapterName << ": "
+                          << bgfx::getRendererName(gpuChoice.type) << " (" << gpuChoice.reason << ")" << std::endl;
+            }
+        }
+        init.fallback = true; // if the chosen API cannot start, bgfx tries the next best one
         init.swapChain.nwh = native.window;
         init.swapChain.ndt = native.display;
         if (native.wayland)
@@ -285,6 +302,8 @@ namespace perlin {
         const bool shadersOk = shaders.Initialize();
         shadowConfigDirty = true; // built on the first frame from FrameParams
         if (!shadersOk) {
+            if (bgfx::getRendererType() == bgfx::RendererType::Direct3D12)
+                gpu::RememberD3D12Failure("shader program creation failed");
             std::cout << "[bgfx] shader program creation failed for "
                       << bgfx::getRendererName(bgfx::getRendererType()) << std::endl;
             return false;
@@ -1085,9 +1104,8 @@ namespace perlin {
         if (layer == UiLayer::World && shadow.active && shadow.entities && !glint && draw.depth && draw.depthWrite &&
             draw.blend != 2 && shaders.Has(ShaderProgram::EntityShadow)) {
             bindMesh();
-            shaders.SetMatrix(shadow.raster);
-            shaders.SetShadow(shadow.sample, shadow.info, true);
-            shaders.BindShadow(shadow.maps[shadow.front].color); // the terrain depth, to keep what is nearer the sun
+            shaders.SetMatrix(shadow.rasterE);
+            shaders.SetShadow(shadow.sampleE, shadow.infoE, true);
             bgfx::setState(BGFX_STATE_WRITE_R | BGFX_STATE_WRITE_G | BGFX_STATE_WRITE_B | BGFX_STATE_WRITE_A | BGFX_STATE_WRITE_Z |
                            BGFX_STATE_DEPTH_TEST_LESS);
             bgfx::submit(kViewShadowEntity, shaders.Program(ShaderProgram::EntityShadow));
@@ -1950,36 +1968,84 @@ namespace perlin {
             L = -L;
         if (L.y < 0.03f)
             return; // sunrise / sunset: no direct light (the cached map is kept for when it returns)
-        // The light direction moves in small steps so the cached map stays valid for a while; a
-        // step moves a 10 block tall shadow by a fraction of a shadow texel.
-        L = glm::normalize(glm::vec3(std::round(L.x * 300.0f), std::round(L.y * 300.0f), std::round(L.z * 300.0f)) / 300.0f);
+        // The cached map is rebuilt when the light has moved a small step (about a fifth of a degree: a 10 block
+        // tall shadow moves a fraction of a shadow texel). The rebuild itself uses the exact direction, and
+        // the new map fades in over the old one, so nothing ever jumps.
+        const int64_t lightKey[2] = {static_cast<int64_t>(std::llround(L.x * 300.0f)), static_cast<int64_t>(std::llround(L.y * 300.0f))};
+        const glm::vec3 Lq = glm::normalize(glm::vec3(static_cast<float>(lightKey[0]), static_cast<float>(lightKey[1]),
+                                                      std::round(L.z * 300.0f)) / 300.0f);
 
         const float R = shadow.distance;
         const float D = R + 80.0f;
         const float texel = 2.0f * R / static_cast<float>(shadow.size);
         const float step = texel * 32.0f;
         const glm::vec3 cam(camX, camY, camZ);
+        struct Basis {
+            glm::vec3 right, up, fwd;
+        };
+        const auto basisOf = [](const glm::vec3& light) {
+            Basis b;
+            b.fwd = -light;
+            const glm::vec3 upRef = std::abs(b.fwd.y) > 0.99f ? glm::vec3(0, 0, 1) : glm::vec3(0, 1, 0);
+            b.right = glm::normalize(glm::cross(upRef, b.fwd));
+            b.up = glm::cross(b.fwd, b.right);
+            return b;
+        };
+        // World -> shadow map texture space, and the matrix a build rasterises with.
+        const auto fillMatrices = [&](const Basis& b, float cx, float cy, float cz, float* sample, float* raster, float* info) {
+            float S[16] = {};
+            auto col = [&](int c, int r) -> float& { return S[c * 4 + r]; };
+            for (int j = 0; j < 3; j++) {
+                col(j, 0) = b.right[j] / (2.0f * R);
+                col(j, 1) = b.up[j] / (2.0f * R);
+                col(j, 2) = b.fwd[j] / (2.0f * D);
+            }
+            col(3, 0) = 0.5f - cx / (2.0f * R);
+            col(3, 1) = 0.5f - cy / (2.0f * R);
+            col(3, 2) = 0.5f - cz / (2.0f * D);
+            col(3, 3) = 1.0f;
+            std::memcpy(sample, S, sizeof(S));
+            const bgfx::Caps* caps = bgfx::getCaps();
+            const float sy = caps->originBottomLeft ? 1.0f : -1.0f;
+            const float sz = caps->homogeneousDepth ? 2.0f : 1.0f;
+            const float tz = caps->homogeneousDepth ? -1.0f : 0.0f;
+            for (int c = 0; c < 4; c++) {
+                const float u = S[c * 4 + 0], v = S[c * 4 + 1], d = S[c * 4 + 2], w = S[c * 4 + 3];
+                raster[c * 4 + 0] = 2.0f * u - (c == 3 ? 1.0f : 0.0f);
+                raster[c * 4 + 1] = sy * (2.0f * v - (c == 3 ? 1.0f : 0.0f));
+                raster[c * 4 + 2] = sz * d + (c == 3 ? tz : 0.0f);
+                raster[c * 4 + 3] = w;
+            }
+            info[0] = 1.0f / static_cast<float>(shadow.size);
+            info[1] = 2.0f * R;
+            info[2] = 2.0f * D;
+            info[3] = shadow.tintEnabled ? 2.0f : 1.0f; // 2: a tint map is bound too
+        };
+
+        // Frame time, for the fade.
+        const double nowSeconds = frame.timeSeconds;
+        const float dtFrame = shadow.lastTime > 0.0 ? static_cast<float>(std::clamp(nowSeconds - shadow.lastTime, 0.0, 0.1)) : 0.0f;
+        shadow.lastTime = nowSeconds;
 
         // Start a new build when the key (camera cell, light step, meshes) changed and none is
         // running. A build in progress always finishes, so a stream of mesh updates never starves it.
-        const glm::vec3 fwd = -L;
-        const glm::vec3 upRef = std::abs(fwd.y) > 0.99f ? glm::vec3(0, 0, 1) : glm::vec3(0, 1, 0);
-        const glm::vec3 right = glm::normalize(glm::cross(upRef, fwd));
-        const glm::vec3 up = glm::cross(fwd, right);
-        const float cx = std::floor(glm::dot(cam, right) / step) * step;
-        const float cy = std::floor(glm::dot(cam, up) / step) * step;
-        const float cz = std::floor(glm::dot(cam, fwd) / step) * step;
-        const int64_t key[6] = {static_cast<int64_t>(std::llround(cx / step)), static_cast<int64_t>(std::llround(cy / step)),
-                                static_cast<int64_t>(std::llround(cz / step)),
-                                static_cast<int64_t>(std::llround(L.x * 300.0f)),
-                                static_cast<int64_t>(std::llround(L.y * 300.0f)),
-                                static_cast<int64_t>(meshGeneration)};
+        const Basis kb = basisOf(Lq);
+        const int64_t key[6] = {static_cast<int64_t>(std::llround(std::floor(glm::dot(cam, kb.right) / step))),
+                                static_cast<int64_t>(std::llround(std::floor(glm::dot(cam, kb.up) / step))),
+                                static_cast<int64_t>(std::llround(std::floor(glm::dot(cam, kb.fwd) / step))),
+                                lightKey[0], lightKey[1], static_cast<int64_t>(meshGeneration)};
         shadow.framesSince++;
-        if (!shadow.building && (!shadow.haveKey || std::memcmp(key, shadow.key, sizeof(key)) != 0 || shadow.framesSince > 600)) {
+        if (!shadow.building && !shadow.fading &&
+            (!shadow.haveKey || std::memcmp(key, shadow.key, sizeof(key)) != 0 || shadow.framesSince > 600)) {
             shadow.building = true;
             shadow.haveKey = true;
             shadow.framesSince = 0;
             std::memcpy(shadow.key, key, sizeof(key));
+            const Basis eb = basisOf(L); // the exact light direction
+            const glm::vec3 right = eb.right, up = eb.up, fwd = eb.fwd;
+            const float cx = std::floor(glm::dot(cam, right) / step) * step;
+            const float cy = std::floor(glm::dot(cam, up) / step) * step;
+            const float cz = std::floor(glm::dot(cam, fwd) / step) * step;
             shadow.buildRight = right;
             shadow.buildUp = up;
             shadow.buildFwd = fwd;
@@ -1987,33 +2053,7 @@ namespace perlin {
             shadow.buildCy = cy;
             shadow.buildCz = cz;
             ShadowMap& m = shadow.maps[shadow.front == 0 ? 1 : 0];
-            float S[16] = {};
-            auto col = [&](int c, int r) -> float& { return S[c * 4 + r]; };
-            for (int j = 0; j < 3; j++) {
-                col(j, 0) = right[j] / (2.0f * R);
-                col(j, 1) = up[j] / (2.0f * R);
-                col(j, 2) = fwd[j] / (2.0f * D);
-            }
-            col(3, 0) = 0.5f - cx / (2.0f * R);
-            col(3, 1) = 0.5f - cy / (2.0f * R);
-            col(3, 2) = 0.5f - cz / (2.0f * D);
-            col(3, 3) = 1.0f;
-            std::memcpy(m.sample, S, sizeof(S));
-            const bgfx::Caps* caps = bgfx::getCaps();
-            const float sy = caps->originBottomLeft ? 1.0f : -1.0f;
-            const float sz = caps->homogeneousDepth ? 2.0f : 1.0f;
-            const float tz = caps->homogeneousDepth ? -1.0f : 0.0f;
-            for (int c = 0; c < 4; c++) {
-                const float u = S[c * 4 + 0], v = S[c * 4 + 1], d = S[c * 4 + 2], w = S[c * 4 + 3];
-                m.raster[c * 4 + 0] = 2.0f * u - (c == 3 ? 1.0f : 0.0f);
-                m.raster[c * 4 + 1] = sy * (2.0f * v - (c == 3 ? 1.0f : 0.0f));
-                m.raster[c * 4 + 2] = sz * d + (c == 3 ? tz : 0.0f);
-                m.raster[c * 4 + 3] = w;
-            }
-            m.info[0] = 1.0f / static_cast<float>(shadow.size);
-            m.info[1] = 2.0f * R;
-            m.info[2] = 2.0f * D;
-            m.info[3] = shadow.tintEnabled ? 2.0f : 1.0f; // 2: a tint map is bound too
+            fillMatrices(eb, cx, cy, cz, m.sample, m.raster, m.info);
 
             // Chunks in range, nearest first, for each pass.
             shadow.buildList.clear();
@@ -2119,7 +2159,12 @@ namespace perlin {
             if (shadow.buildSlice >= shadow.buildSlices || shadow.buildCursor >= shadow.buildList.size()) {
                 // Finished (the views run in order, so this frame already samples the new map).
                 shadow.building = false;
-                shadow.front = shadow.front == 0 ? 1 : 0;
+                if (shadow.front < 0) {
+                    shadow.front = 0; // the first build goes into maps[0]
+                } else {
+                    shadow.fading = true; // fades in over the front map, which swaps once it is complete
+                    shadow.fadeT = 0.0f;
+                }
                 shadow.buildList.clear();
                 shadow.buildList.shrink_to_fit();
             }
@@ -2127,25 +2172,50 @@ namespace perlin {
         if (shadow.front < 0)
             return;
 
+        // A finished rebuild fades in over the front map, then becomes it.
+        shadow.fadeWeight = 0.0f;
+        if (shadow.fading) {
+            static constexpr float kFadeSeconds = 0.45f;
+            shadow.fadeT += dtFrame / kFadeSeconds;
+            if (shadow.fadeT >= 1.0f) {
+                shadow.front = shadow.front == 0 ? 1 : 0;
+                shadow.fading = false;
+                shadow.fadeT = 0.0f;
+            } else {
+                shadow.fadeWeight = shadow.fadeT * shadow.fadeT * (3.0f - 2.0f * shadow.fadeT);
+            }
+        }
         const ShadowMap& f = shadow.maps[shadow.front];
         std::memcpy(shadow.sample, f.sample, sizeof(f.sample));
         std::memcpy(shadow.raster, f.raster, sizeof(f.raster));
         std::memcpy(shadow.info, f.info, sizeof(f.info));
         shadow.sampled = f.color;
         shadow.sampledTint = shadow.tintEnabled ? f.tint : whiteTex;
+        shadow.sampledB = f.color;
+        shadow.sampledTintB = shadow.sampledTint;
+        std::memcpy(shadow.sampleB, f.sample, sizeof(f.sample));
+        std::memcpy(shadow.infoB, f.info, sizeof(f.info));
+        if (shadow.fading) {
+            const ShadowMap& next = shadow.maps[shadow.front == 0 ? 1 : 0];
+            std::memcpy(shadow.sampleB, next.sample, sizeof(next.sample));
+            std::memcpy(shadow.infoB, next.info, sizeof(next.info));
+            shadow.sampledB = next.color;
+            shadow.sampledTintB = shadow.tintEnabled ? next.tint : whiteTex;
+        }
         shadow.active = true;
 
-        // Mobs and players: copy the terrain map, draw them over it (UiSubmit), sample the copy.
+        // Mobs and players: their own map, drawn from the exact light direction every frame (UiSubmit),
+        // so their shadows follow the sun and the camera continuously.
         if (frame.shadowEntities && shaders.Has(ShaderProgram::EntityShadow) && EnsureEntityShadowMap()) {
+            const Basis eb = basisOf(L);
+            const float ex = std::floor(glm::dot(cam, eb.right) / texel) * texel;
+            const float ey = std::floor(glm::dot(cam, eb.up) / texel) * texel;
+            const float ez = std::floor(glm::dot(cam, eb.fwd) / texel) * texel;
+            fillMatrices(eb, ex, ey, ez, shadow.sampleE, shadow.rasterE, shadow.infoE);
             bgfx::setViewFrameBuffer(kViewShadowEntity, shadow.entityFb);
             bgfx::setViewRect(kViewShadowEntity, 0, 0, static_cast<uint16_t>(shadow.size), static_cast<uint16_t>(shadow.size));
-            bgfx::setViewClear(kViewShadowEntity, BGFX_CLEAR_DEPTH, 0, 1.0f, 0);
-            bgfx::TextureRegion dst, src;
-            dst.init(shadow.entityColor);
-            src.init(f.color);
-            bgfx::blit(kViewShadowEntity, dst, src);
+            bgfx::setViewClear(kViewShadowEntity, BGFX_CLEAR_COLOR | BGFX_CLEAR_DEPTH, 0xFFFFFFFFu, 1.0f, 0);
             bgfx::touch(kViewShadowEntity);
-            shadow.sampled = shadow.entityColor;
             shadow.entities = true;
         }
     }
@@ -2224,6 +2294,11 @@ namespace perlin {
                     shaders.BindShadow(shadow.sampled);
                 // Always bind something to the tint sampler (white: no coloured light).
                 shaders.BindShadowTint(shadow.active && bgfx::isValid(shadow.sampledTint) ? shadow.sampledTint : whiteTex);
+                shaders.SetShadowNext(shadow.sampleB, shadow.infoB, shadow.active ? shadow.fadeWeight : 0.0f);
+                shaders.BindShadowNext(shadow.active && bgfx::isValid(shadow.sampledB) ? shadow.sampledB : whiteTex,
+                                       shadow.active && bgfx::isValid(shadow.sampledTintB) ? shadow.sampledTintB : whiteTex);
+                shaders.SetShadowEntities(shadow.sampleE, shadow.infoE, shadow.active && shadow.entities);
+                shaders.BindShadowEntities(shadow.active && shadow.entities ? shadow.entityColor : whiteTex);
                 shaders.BindClouds(cloudMapTexture);
                 if (!bgfx::isValid(tileFlagsTexture))
                     UploadTileFlags({}); // all zero until the block library reports foliage tiles

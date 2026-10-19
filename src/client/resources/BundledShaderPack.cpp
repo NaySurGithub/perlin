@@ -1,6 +1,6 @@
 #include "client/resources/BundledShaderPack.hpp"
 
-#include <bgfx/embedded_shader.h>
+#include "client/renderer/shader/EmbeddedShaders.hpp"
 
 #include "perlin_shaders.h"
 

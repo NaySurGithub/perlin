@@ -7,6 +7,8 @@
 #include "client/ui/JavaDefaults.hpp"
 #include "client/ui/RmlEmit.hpp"
 #include "client/ui/UiTemplate.hpp"
+#include "client/resources/ServerPacks.hpp"
+#include "client/resources/TexturePack.hpp"
 
 #include <algorithm>
 #include <chrono>
@@ -37,6 +39,30 @@ namespace perlin::ui {
         }
     }
 
+    std::string ExtractPackUi(const std::string& dataDir, const std::string& folder) {
+        TexturePack& tp = TexturePack::Instance();
+        const fs::path root = fs::path(dataDir) / "cache" / folder;
+        std::error_code ec;
+        fs::remove_all(root, ec);
+        if (!tp.Active())
+            return {};
+        const std::vector<std::string> files = tp.ListFiles("ui", ".json");
+        bool any = false;
+        for (const std::string& rel : files) {
+            const std::vector<std::string> layers = tp.ReadTextLayers(rel);
+            if (layers.empty())
+                continue;
+            const fs::path out = root / rel;
+            fs::create_directories(out.parent_path(), ec);
+            std::ofstream f(out, std::ios::binary | std::ios::trunc);
+            if (!f)
+                continue;
+            f << layers.front();
+            any = true;
+        }
+        return any ? root.string() : std::string();
+    }
+
     Hud::Hud() = default;
     Hud::~Hud() = default;
 
@@ -61,7 +87,6 @@ namespace perlin::ui {
 
         data = std::make_unique<HudData>(state);
         RegisterHudRenderers(emitter, state, services);
-        library.SetRoots({dataDir + "/ui", dataDir + "/ui_defaults", vanillaRoot + "/ui"});
         return Rebuild();
     }
 
@@ -71,6 +96,20 @@ namespace perlin::ui {
     }
 
     bool Hud::Rebuild() {
+        {
+            // Priority: server pack, then the player's texture packs, then user overrides, Java defaults, vanilla.
+            std::vector<std::string> roots;
+            const std::vector<std::string> server = ServerPacks::Instance().Directories();
+            for (size_t i = server.size(); i-- > 0;)
+                roots.push_back(server[i] + "/ui");
+            const std::string packUi = ExtractPackUi(dataDir);
+            if (!packUi.empty())
+                roots.push_back(packUi + "/ui");
+            roots.push_back(dataDir + "/ui");
+            roots.push_back(dataDir + "/ui_defaults");
+            roots.push_back(vanillaRoot + "/ui");
+            library.SetRoots(std::move(roots));
+        }
         if (!library.Scan()) {
             std::cout << "[ui] no ui folder found under " << vanillaRoot << "/ui (waiting for the Bedrock samples)" << std::endl;
             tree.reset();

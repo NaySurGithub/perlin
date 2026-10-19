@@ -4,6 +4,7 @@
 #include <string>
 #include <string_view>
 
+#include "perlin/game.hpp"
 #include "perlin/rpc.hpp"
 #include "perlin/types.hpp"
 
@@ -146,7 +147,7 @@ namespace perlin::act {
 
     inline Result<void> drive(const Inputs& inputs) {
         abi::Writer w;
-        inputs.Write(w);
+        w.write(inputs);
         return detail::call_void(Op::InputOverride, w);
     }
 
@@ -154,6 +155,24 @@ namespace perlin::act {
         abi::Writer w;
         w.str(key).str(value);
         return detail::call_void(Op::OptionSet, w);
+    }
+
+    // Typed: `act::set_option<Option::fov>(90.0)` checks the value type at compile time.
+    template <game::Option O>
+    Result<void> set_option(game::option_t<O> value) {
+        using T = game::option_t<O>;
+        if constexpr (std::is_same_v<T, bool>)
+            return set_option(meta::enum_name(O), value ? "true" : "false");
+        else if constexpr (std::is_same_v<T, std::string>)
+            return set_option(meta::enum_name(O), value);
+        else
+            return set_option(meta::enum_name(O), std::format("{}", value));
+    }
+
+    inline Result<void> set_perspective(abi::Perspective mode) {
+        abi::Writer w;
+        w.write(mode);
+        return detail::call_void(Op::PerspectiveSet, w);
     }
 
     inline Result<void> reload_resources() { return detail::call_void(Op::ReloadResources); }

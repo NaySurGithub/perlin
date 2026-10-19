@@ -48,6 +48,12 @@ uniform vec4 u_packSettings[8];
 uniform mat4 u_shadowMtx;
 // x: 1/size, y: box width (blocks), z: box depth (blocks), w: shadows active
 uniform vec4 u_shadowInfo;
+// The map a rebuild just finished, fading in over the one above: same layout, w = fade weight (0 = not fading).
+uniform mat4 u_shadowMtxB;
+uniform vec4 u_shadowInfoB;
+// Mobs and players, redrawn every frame from the exact light direction: same layout, w = 1 when bound.
+uniform mat4 u_shadowMtxE;
+uniform vec4 u_shadowInfoE;
 // Vanilla cloud map placement: x/y world offset (drift), z/w = 1 / (map size in blocks)
 uniform vec4 u_cloudMap;
 // x: scene copy valid, y: clip depth is -1..1, z: texture origin bottom-left

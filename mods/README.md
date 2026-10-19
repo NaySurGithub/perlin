@@ -12,12 +12,13 @@ Drop `name.wasm` (and optionally `name.json` and `name.png`) into `<data dir>/mo
 using namespace perlin;
 
 PERLIN_PLUGIN(ctx) {
-    ctx.command("here", "/here", "prints your block position", [](const CommandCall& call) {
+    // The lambda's parameters are the command's arguments: `/here`, `/tp 10 64 -3`, `/mode creative`.
+    ctx.command<"here">("prints your block position", [] {
         if (auto p = game::player())
-            call.reply("you are at {}", BlockPos(game::position(*p)));
+            (void)act::message("you are at {}", BlockPos(game::position(*p)));
     });
 
-    ctx.on<event::ChatReceived>([](const event::ChatReceived::Payload& e) {
+    ctx.on<event::ChatReceived>([](const abi::EventChat& e) {
         if (e.message.contains("creeper"))
             (void)act::toast("someone said creeper");
     });
@@ -40,6 +41,67 @@ mods/build.sh my_plugin.cpp
 Classic 32-bit plugins still work everywhere. `mods/build.sh --wasm32 my_plugin.cpp` builds one with a wasi-sdk install (<https://github.com/WebAssembly/wasi-sdk>, version 25 or newer, `WASI_SDK_PATH`); wasi-sdk has no 64-bit target. Any compiler that targets `wasm64` or `wasm32-wasip1` and exports `perlin_alloc`, `perlin_free`, `perlin_event` and `perlin_subscriptions` works; the headers in `mods/sdk/perlin` provide those exports and compile unchanged for both.
 
 Perlin runs plugins on [WasmEdge](https://wasmedge.org) (desktop and Android) and on wasm3 in the browser build; both take 32-bit and 64-bit modules, and the Mods screen's log line says which one loaded (`speedometer: wasm64 on WasmEdge 0.18.0`).
+
+## Modern C++ API
+
+The SDK leans on the compiler instead of strings:
+
+* **Compile-time reflection.** Every wire struct is an aggregate; its encoding is derived from the member list (`perlin/meta.hpp`: enumerator names, aggregate arity and field visitation, `fixed_string`). With `-DPERLIN_USE_STD_META` on a compiler that implements P2996 it uses real `std::meta`; otherwise a portable fallback gives the same results on GCC 13+ and Clang 18+.
+* **Typed events.** `ctx.on<event::Tick>(...)` and `ctx.on<abi::Event::Tick>(...)` hand the handler the payload type from the ABI table (`abi::payload_t<E>`). Handlers may also take no argument and may return `Flow`.
+* **Typed commands.** `ctx.command<"tp">("teleport", [](int x, int y, int z) {...})`. Parameter types are the grammar: text, integers, floats, bool, enumerations (matched by name, case-insensitive) and `std::optional<T>` for optional trailing arguments. The usage line (`/tp <integer> <integer> <integer>`, `/mode [Fast|Slow]`) is generated and shown on a bad call. `(const CommandCall&)` gives raw access.
+* **Typed options and controls.** `game::option<game::Option::fov>()` returns `Result<double>`; `act::set_option<game::Option::vsync>(true)` is checked at compile time. `game::input_down(game::Control::Jump)`.
+* **`Result<T>`** is `std::expected<T, Error>` (a small stand-in is used on standard libraries that lack it); `Error::message()` and `Error::name()` come from the `Status` enumerators.
+* **Chrono timers.** `ctx.after(2s, fn)`, `ctx.every(20_ticks, fn)` return a `TimerId`.
+* **Flags and sets.** `Permissions` is `meta::Flags<Permission>`; entity flags are a `meta::IndexSet<EntityFlag>`. `std::format("{}", abi::Screen::Mods)` prints `Mods`.
+
+## Settings
+
+A mod declares settings once; the game lists them on the mod's **Settings** page (Mods screen, pick the mod, **Settings**), saves them to `<data dir>/mods/<name>.settings.json`, and tells the mod when one changes, live.
+
+```cpp
+enum class Unit { BlocksPerSecond, KilometersPerHour };
+
+PERLIN_PLUGIN(ctx) {
+    static auto shown = ctx.toggle("shown", "Show speedometer", true, {.description = "Draws your speed.", .icon = icon::item("minecraft:clock")});
+    static auto unit  = ctx.choice("unit", "Unit", Unit::BlocksPerSecond);        // choices are the enumerators
+    static auto warn  = ctx.number("warn", "Highlight above", 8.0, 1.0, 40.0, 0.5, {.unit = "b/s"});
+    static auto smooth = ctx.integer("smooth", "Smoothing", 4, 1, 20);
+    ctx.button("reset", "Reset peak", [] { /* pressed */ });
+    ctx.header("about", "About");
+    ctx.note("version", "Version 1.2");
+
+    ctx.on_setting_changed([](const abi::EventSettingChanged& e) { /* e.id, e.value */ });
+    // shown.get(), unit.get(), ... always hold the current value. shown.set(false) changes it from the mod side.
+}
+```
+
+`SettingOptions` has `description` (shown as a tooltip), `icon`, `unit` and `restart` (reload the mod when the page closes). `ctx.open_settings()` opens the page.
+
+## Icons
+
+* Mod icon: `name.png` next to the `.wasm`, `"icon"` in the manifest, `<name>.data/pack_icon.png` (the same file name resource packs use), or `set_mod_icon("icons/me.png")` at runtime.
+* Setting icons (`SettingOptions::icon`): `icon::item("minecraft:feather")` draws an item, `icon::texture("textures/items/apple")` a resource-pack texture (so a resource pack can restyle them), `icon::file("icons/speed.png")` a PNG from the mod's data folder.
+
+## Intents
+
+Intents are Android-style messages: an **action**, an optional **target** mod, and typed **extras**. They are how mods drive the game, and each other, without sharing code.
+
+```cpp
+// Ask the game to do something.
+ctx.send(Intent(abi::HostAction::OpenScreen).put("screen", Screen::Mods));
+ctx.send(Intent(abi::HostAction::CopyText).put("text", "hello"), [](const IntentResult& r) { /* r.outcome, r.handler, r.extras */ });
+
+// Handle an action (yours, or one another mod defines).
+ctx.on_intent<"speedometer.action.SET_UNIT">("Changes the unit", [](const IntentCall& call) {
+    if (auto u = call.get<Unit>("unit")) unit.set(*u);
+    (void)call.reply(std::pair{"ok", true});
+});
+
+// Send to a specific mod.
+ctx.send(Intent("speedometer.action.SET_UNIT").to("speedometer.wasm").put("unit", Unit::KilometersPerHour));
+```
+
+Extras are `bool`, integers (enumerations travel as integers), floating point, text and bytes. Game actions (`abi::HostAction`; the permission-gated ones follow the table above): `OpenScreen`, `OpenModSettings`, `Screenshot`, `SetPerspective`, `CyclePerspective`, `CopyText`, `ReloadResources`, `OpenUrl` (needs `network`; https only) and `ToggleHud`, `CopyFile`, `MoveFile` and `DownloadFile` (`ctx.copy_file`, `ctx.move_file`, `ctx.download`; paths are `file_spec(Area::ResourcePacks, "pack.zip")`). Their wire names are derived from the enumerators at compile time (`perlin.action.OPEN_SCREEN`). `intent_handlers("action")` lists who would handle an action. Mod-to-mod intents are queued and delivered on the next frame, so a handler never runs inside another mod's event.
 
 Prebuilt examples live in `mods/prebuilt`: `speedometer`, `inspector` and `radar`, with sources in `mods/examples`.
 
@@ -70,7 +132,7 @@ The C++ SDK is a convenience. A plugin is any WebAssembly module (core wasm, no 
   "version": "1.0.0",
   "author": "You",
   "website": "https://example.com",
-  "permissions": ["network", "packets", "control"]
+  "permissions": ["network", "files", "packets", "control"]
 }
 ```
 
@@ -78,17 +140,20 @@ The C++ SDK is a convenience. A plugin is any WebAssembly module (core wasm, no 
 
 ## Permissions
 
-Everything that only reads game state, draws UI, prints to your own chat or stores files in the plugin's own folder is always allowed. Things that act on your behalf or leave your machine have to be declared in the manifest and are shown in the Mods screen.
+The API exposes everything the game knows and can do. Only the dangerous operations are gated: those that act on your behalf or leave your machine have to be declared in the manifest and are shown in the Mods screen. Everything else (reading state, drawing, local messages, settings, intents between mods, storage in the plugin's own folder) is always allowed.
 
 | Permission | Allows |
 | --- | --- |
 | *(always)* | player, inventory, world, blocks, entities, player list, options (read), screen and input state, translations, HUD drawing, local messages, toasts, titles, sounds, commands, key binds, storage |
 | `control` | sending chat and commands, hotbar and inventory actions, swinging, using items, attacking, interacting, breaking blocks, looking, driving movement inputs, jumping, respawning, leaving the game, changing options |
-| `network` | HTTPS requests |
+| `network` | HTTPS requests, `OpenUrl`, downloads |
+| `files` | `CopyFile`, `MoveFile` and (with `network`) `DownloadFile` intents between the mod's own folder and the game's screenshot, resource-pack and shader-pack folders; never overwrites a game file |
 | `packets` | sending raw protocol packets (login, handshake, resource pack and disconnect packets are refused) |
 | `storage` | always granted; reads and writes under `<data dir>/mods/<name>.data/` only |
 
 An operation without its permission returns `Error::denied()` instead of running.
+
+**Approval.** A mod that asks for `network`, `files`, `control` or `packets` is never enabled just because it was dropped into the folder. It shows as *Needs approval* in the Mods screen, with a plain-language list of what it asks to do, and starts only after you press **Allow & Enable**. The approval covers exactly the permissions it asked for; a later update that asks for more switches it off again until you approve it. Mods that only use the always-allowed operations start right away.
 
 ## Sandbox
 
@@ -116,13 +181,14 @@ All calls return `Result<T>` (`std::expected<T, Error>`); `Error::status` is one
 | `chunk_loaded(cx, cz)` | whether the chunk is in memory |
 | `entities({radius, type, players_only, include_items})`, `entity(id)`, `players()` | nearby entities, one entity, the tab list |
 | `screen()` | GUI size and scale, fps, which screen is open, platform, server, language |
-| `options_json()`, `option(key)` | settings |
+| `options_json()`, `option<Option::fov>()`, `option_text(key)` | settings |
+| `perspective()`, `chat_history(n)`, `title_state()`, `resource_packs()`, `mods()`, `block_names()` | camera mode, recent chat lines, current title/subtitle/action bar, active packs, installed mods, every block name |
 | `translate(key)` | localized string |
 | `server_commands()`, `input_actions()`, `input_down(action)`, `mouse()` | server command names, action ids, held state of an action or `key.keyboard.x`, cursor in GUI pixels |
 
 ### `act::` (do things)
 
-Free: `message`, `toast`, `title`, `play` (sound). Needs `control`: `say`, `run_command`, `select_slot`, `swing`, `use_item`, `use_on`, `attack`, `interact`, `break_block`, `look`, `look_at`, `jump`, `respawn`, `disconnect`, `drop`, `swap_slots`, `click_slot`, `open_inventory`, `close_inventory`, `drive(Inputs)`, `set_option`, `reload_resources`.
+Free: `message`, `toast`, `title`, `play` (sound). Needs `control`: `say`, `run_command`, `select_slot`, `swing`, `use_item`, `use_on`, `attack`, `interact`, `break_block`, `look`, `look_at`, `jump`, `respawn`, `disconnect`, `drop`, `swap_slots`, `click_slot`, `open_inventory`, `close_inventory`, `drive(Inputs)`, `set_option`, `set_perspective`, `reload_resources`.
 
 `drive` holds movement inputs for a number of ticks (`forward > 0` walks forward, `strafe > 0` goes right); call it every tick to keep moving. `look` takes the same yaw and pitch that `PlayerState` reports (yaw 0 faces south, pitch positive looks down). `break_block` breaks instantly in creative; in survival it starts mining, so keep the crosshair on the block and `drive` with `attack = true` until it breaks.
 
@@ -156,12 +222,14 @@ Register with `ctx.on<event::Name>([](const event::Name::Payload& e) { ... })`. 
 | `Title` | title, subtitle, action bar | |
 | `Packet` | id and body of every packet received from the server | |
 | `HttpResponse` | handled for you by `net::send` | |
+| `SettingChanged` | `id`, `value`, `kind` (also updates `Setting` handles) | |
+| `Intent`, `IntentResult` | handled for you by `ctx.on_intent` / `ctx.send` | |
 
-`ctx.after(delay, fn)` and `ctx.every(period, fn)` run on the tick clock and return an id for `ctx.cancel(id)`. `ctx.on_unload(fn)` runs before a reload.
+`ctx.after(delay, fn)` and `ctx.every(period, fn)` take any `std::chrono` duration (`20_ticks` too), run on the tick clock and return a `TimerId` for `ctx.cancel(id)`. `ctx.on_unload(fn)` runs before a reload.
 
 ### Commands and keys
 
-`ctx.command("name", "/name <arg>", "description", fn)` adds a client-side slash command that appears in chat completion; the call receives `args`, `arg_or(i, fallback)` and `reply(fmt, ...)`. `ctx.bind("id", "Label", Key::G, fn)` registers a key that is active while no menu or chat is open. Players rebind plugin keys in **Options → Controls → Key Binds** (a section per plugin); the choice is stored in `<data dir>/mods/<name>.keys.json` (`{"id": "key.keyboard.g"}`).
+`ctx.command<"name">("description", fn)` adds a client-side slash command that appears in chat completion (see *Typed commands*); the string form `ctx.command("name", "/name <arg>", "description", fn)` still works. `ctx.bind<"id">("Label", Key::G, fn)` (or `ctx.bind("id", "Label", Key::G, fn)`) registers a key that is active while no menu or chat is open. Players rebind plugin keys in **Options → Controls → Key Binds** (a section per plugin); the choice is stored in `<data dir>/mods/<name>.keys.json` (`{"id": "key.keyboard.g"}`).
 
 ## Writing against another game version
 
@@ -175,7 +243,10 @@ mods/
   sdk/perlin/         headers: perlin.hpp pulls in everything
     abi.hpp           wire format shared with the host
     rpc.hpp           Result/Error and the single host import
+    meta.hpp          compile-time reflection (enum names, aggregates, flags, fixed_string)
+    detail/           field-binding helpers used by meta.hpp
     game.hpp act.hpp ui.hpp io.hpp types.hpp runtime.hpp
   examples/           source for the prebuilt plugins
+  tests/              meta_test, abi_test (wire format), sdk_test (fake host); build each with g++ -std=c++23 -Isdk
   prebuilt/           built .wasm files and their manifests
 ```
