@@ -294,6 +294,12 @@ CPMAddPackage(
     GIT_SUBMODULES "bgfx" "bimg" "bx"
     GIT_SHALLOW YES
 )
+# bgfx's default 4096 static vertex/index buffer handles are shared by every UI mesh (each RmlUi
+# geometry holds one of each); give heavy screens and long sessions headroom. Only bgfx's own
+# sources read these (src/config.h).
+if(TARGET bgfx)
+    target_compile_definitions(bgfx PRIVATE BGFX_CONFIG_MAX_VERTEX_BUFFERS=16384 BGFX_CONFIG_MAX_INDEX_BUFFERS=16384)
+endif()
 
 # shaderc runs Microsoft's FXC (D3DCompile) in-process for the Direct3D shaders. FXC recurses
 # deeply on bigger shaders (the Vibrant Visuals water shader) and overflowed the 1 MB default

@@ -21,6 +21,7 @@ namespace perlin::ui {
         std::string name;
         bool microsoft = false;
         bool active = false;
+        std::string headKey; // "mchead:" image of the account's last skin (empty: none yet)
     };
 
     enum class TitlePage { Main, Servers, Edit, Direct, Accounts, AccountName, AccountSignIn };
@@ -48,6 +49,7 @@ namespace perlin::ui {
 
         // Account switcher: "Logged in as ..." on the title screen, and the accounts popup.
         std::string accountLabel;
+        std::string accountHead;     // head image key of the active account's skin
         std::vector<AccountRow> accounts;
         int accountScroll = 0;       // first account row shown
         std::string accountName;     // offline name being typed
@@ -57,6 +59,8 @@ namespace perlin::ui {
     inline constexpr const char* kTitleMulti = "title_multi";
     inline constexpr const char* kTitleQuit = "title_quit";
     inline constexpr const char* kTitleOptions = "title_options";
+    inline constexpr const char* kTitleMods = "title_mods";
+    inline constexpr const char* kTitleWardrobe = "title_wardrobe";
     inline constexpr const char* kServerJoin = "servers_join";
     inline constexpr const char* kServerDirect = "servers_direct";
     inline constexpr const char* kServerAdd = "servers_add";

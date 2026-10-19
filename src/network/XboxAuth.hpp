@@ -27,6 +27,9 @@ namespace perlin::xbox {
         void Cancel();
 
         bool SignIn(const PromptFn& prompt, std::string& error);
+        // Signs in with the saved login only (never asks for a device code); false if there is none
+        // or it no longer works.
+        bool SignInSaved(std::string& error);
 
         // After SignIn: the account's gamertag (one Xbox Live token request).
         bool FetchGamertag(std::string& gamertag, std::string& error);

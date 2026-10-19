@@ -34,6 +34,12 @@ namespace perlin {
                             e.name = v->StringOr("");
                         if (const ui::Json* v = a.Find("auth"))
                             e.authFile = v->StringOr("");
+                        if (const ui::Json* v = a.Find("skin"); v && v->IsString()) {
+                            e.skinKnown = true;
+                            e.skin = v->StringOr("");
+                        }
+                        if (const ui::Json* v = a.Find("cape"))
+                            e.cape = v->StringOr("");
                         if (e.id.empty() || (e.microsoft && e.authFile.empty()) || (!e.microsoft && e.name.empty()))
                             continue;
                         entries.push_back(std::move(e));
@@ -73,6 +79,10 @@ namespace perlin {
             a.Set("name", ui::Json(e.name));
             if (e.microsoft)
                 a.Set("auth", ui::Json(e.authFile));
+            if (e.skinKnown) {
+                a.Set("skin", ui::Json(e.skin));
+                a.Set("cape", ui::Json(e.cape));
+            }
             list.Push(std::move(a));
         }
         ui::Json root = ui::Json::MakeObject();
@@ -163,6 +173,16 @@ namespace perlin {
         for (AccountEntry& e : entries)
             if (e.id == id && e.name != name) {
                 e.name = name;
+                Save();
+            }
+    }
+
+    void AccountList::SetSkin(const std::string& id, const std::string& skin, const std::string& cape) {
+        for (AccountEntry& e : entries)
+            if (e.id == id && (!e.skinKnown || e.skin != skin || e.cape != cape)) {
+                e.skinKnown = true;
+                e.skin = skin;
+                e.cape = cape;
                 Save();
             }
     }

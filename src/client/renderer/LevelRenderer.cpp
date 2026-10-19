@@ -138,6 +138,10 @@ namespace perlin {
         atlasUploaded = false;
         uploadedTiles = 0;
         lastAssetAttempt = {};
+        // The crosshair (gui/icons.png) and the sun, moon and clouds come from the packs too:
+        // load them again so switching packs on or off shows at once.
+        crosshairLoaded = false;
+        skyTexturesLoaded = false;
     }
 
     void LevelRenderer::ReloadAssetsIfNeeded() {

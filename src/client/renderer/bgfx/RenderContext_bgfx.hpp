@@ -280,16 +280,29 @@ namespace perlin {
         std::unordered_map<int64_t, GpuChunk> gpuChunks;
         std::unordered_map<int64_t, GpuChunk> lodChunks;
 
+        // UI meshes are handed out as ids = (generation << kUiMeshSlotBits) | (slot + 1). A slot's
+        // generation changes every time it is freed, so a stale id (destroyed twice, kept past its
+        // frame, or freed by the renderer) never reaches the mesh that reuses the slot.
+        static constexpr uint32_t kUiMeshSlotBits = 20;
+        static constexpr uint32_t kUiMeshSlotMask = (1u << kUiMeshSlotBits) - 1u;
         struct UiMeshGpu {
             bgfx::VertexBufferHandle vb = BGFX_INVALID_HANDLE;
             bgfx::IndexBufferHandle ib = BGFX_INVALID_HANDLE;
             uint32_t indexCount = 0;
+            uint32_t generation = 0;
             bool used = false;
             bool transient = false;
             bgfx::TransientVertexBuffer tvb{};
             bgfx::TransientIndexBuffer tib{};
         };
+        UiMeshGpu* LookupUiMesh(uint32_t id);
+        uint32_t StoreUiMesh(const UiMeshGpu& mesh);
+        void ReleaseUiMeshSlot(uint32_t slot);
+        void ReleaseFrameMeshes();
         std::vector<uint32_t> freeUiMeshes;
+        std::vector<uint32_t> frameUiMeshes;   // made by UiCreateFrameMesh this frame; freed after bgfx::frame()
+        uint32_t staticUiMeshes = 0;           // live meshes holding bgfx vertex/index buffers
+        uint32_t staticUiMeshWarnAt = 2048;
         struct UiTextureGpu {
             bgfx::TextureHandle handle = BGFX_INVALID_HANDLE;
             bool linear = false;

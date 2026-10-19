@@ -919,6 +919,14 @@ namespace perlin::xbox {
         return impl->DeviceCode(prompt, error);
     }
 
+    bool Account::SignInSaved(std::string& error) {
+        if (impl->cache.refreshToken.empty()) {
+            error = "no saved login";
+            return false;
+        }
+        return impl->Refresh(error);
+    }
+
     bool Account::FetchGamertag(std::string& gamertag, std::string& error) {
         Impl& s = *impl;
         if (!s.EnsureUserAndTitle(error))

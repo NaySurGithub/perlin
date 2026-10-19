@@ -147,6 +147,7 @@ namespace perlin {
         std::chrono::steady_clock::time_point titleOpenedAt{}, titleClickAt{};
         // Options opened from the title screen (reuses the pause menu's options screen).
         bool titleOptions = false;
+        int titleOpenView = 1; // what the title screen opens: 1 options, 4 mods, 5 wardrobe
         // Native cube panorama behind the title screen.
         void DrawTitlePanorama(int fbW, int fbH);
         uint32_t panoramaTextures[6] = {};
@@ -163,7 +164,9 @@ namespace perlin {
         void CancelAccountSignIn();
         std::mutex signInMutex;
         std::shared_ptr<xbox::Account> signInAccount;
-        std::string signInAuthFile, signInUrl, signInCode, signInStatus, signInGamertag, pendingRenameId, pendingRename;
+        std::string signInAuthFile, signInUrl, signInCode, signInStatus, signInGamertag;
+        std::vector<std::pair<std::string, std::string>> pendingRenames; // account id, gamertag (under signInMutex)
+        void FetchMissingGamertags();
         std::atomic<int> signInState{0}; // 0 idle, 1 working, 2 signed in, 3 failed
 
         // Server list status pings (filled in by worker threads, keyed by address).
@@ -211,6 +214,8 @@ namespace perlin {
         std::chrono::steady_clock::time_point packFoundAt{};
         int packRowsHover = -1;
         void ApplyTexturePacks();
+        // Drops the last server's resource packs (if any) and reloads what they replaced.
+        void UnloadServerPacks();
         void CommitTexturePacks();
         std::vector<std::string> packPending;
         bool packPendingInit = false;

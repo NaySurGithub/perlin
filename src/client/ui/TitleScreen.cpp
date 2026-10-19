@@ -62,6 +62,33 @@ mcimg { display: block; position: absolute; }
             return d;
         }
 
+        std::string Head(const std::string& key, int x, int y, int size, const std::string& extra = "") {
+            if (key.empty())
+                return {};
+            return "<mcimg src=\"mchead:" + EscapeRml(key) + "\" style=\"left:" + N(x) + "px;top:" + N(y) + "px;width:" + N(size) + "px;height:" + N(size) + "px;" + extra +
+                   "\"></mcimg>";
+        }
+
+        // A menu button with the player's head at its left (the "Logged in as" button).
+        std::string HeadBtn(const std::string& id, int x, int y, int w, const std::string& label, const std::string& head) {
+            std::string d = "<div id=\"" + id + "\" class=\"btn\" style=\"left:" + N(x) + "px;top:" + N(y) + "px;width:" + N(w) + "px;\">";
+            d += "<mcimg src=\"mcres:ui_menu_btn.png\" nine=\"3 3 3 3\" style=\"left:0px;top:0px;width:" + N(w) + "px;height:20px;\"></mcimg>";
+            d += "<mcimg class=\"h\" src=\"mcres:ui_menu_btn_hi.png\" nine=\"3 3 3 3\" style=\"left:0px;top:0px;width:" + N(w) + "px;height:20px;\"></mcimg>";
+            const int textX = head.empty() ? 0 : 18;
+            d += Head(head, 4, 4, 12);
+            d += "<div class=\"lbl\" style=\"left:" + N(textX) + "px;width:" + N(w - textX) + "px;\">" + EscapeRml(label) + "</div></div>\n";
+            return d;
+        }
+
+        // A square 20x20 menu button showing an image instead of a label (like Java's language button).
+        std::string IconBtn(const std::string& id, int x, int y, const std::string& icon) {
+            std::string d = "<div id=\"" + id + "\" class=\"btn\" style=\"left:" + N(x) + "px;top:" + N(y) + "px;width:20px;\">";
+            d += "<mcimg src=\"mcres:ui_menu_btn.png\" nine=\"3 3 3 3\" style=\"left:0px;top:0px;width:20px;height:20px;\"></mcimg>";
+            d += "<mcimg class=\"h\" src=\"mcres:ui_menu_btn_hi.png\" nine=\"3 3 3 3\" style=\"left:0px;top:0px;width:20px;height:20px;\"></mcimg>";
+            d += "<mcimg src=\"" + EscapeRml(icon) + "\" style=\"left:2px;top:2px;width:16px;height:16px;\"></mcimg></div>\n";
+            return d;
+        }
+
         std::string Text(int x, int y, int w, const std::string& text, const std::string& cls = "") {
             return "<div class=\"txt " + cls + "\" style=\"left:" + N(x) + "px;top:" + N(y) + "px;width:" + N(w) + "px;height:9px;\">" + EscapeRml(text) + "</div>\n";
         }
@@ -138,7 +165,10 @@ mcimg { display: block; position: absolute; }
             d += "<div style=\"left:" + N(px + pw / 2 - 39) + "px;top:" + N(py - 15) + "px;width:78px;height:16px;background-color:#2b2b2b;z-index:12;\"></div>\n";
             d += "<div class=\"txt ctr\" style=\"left:" + N(px + pw / 2 - 40) + "px;top:" + N(py - 11) + "px;width:80px;height:9px;z-index:13;\">Accounts</div>\n";
             d += "<div style=\"left:" + N(px + pw / 2 - 22) + "px;top:" + N(py - 1) + "px;width:44px;height:1px;background-color:#ffffff;z-index:13;\"></div>\n";
-            d += "<div class=\"txt dim\" style=\"left:" + N(px + 10) + "px;top:" + N(py + 10) + "px;width:" + N(pw - 20) + "px;height:9px;z-index:13;\">" +
+            const int labelX = m.accountHead.empty() ? 10 : 24;
+            if (!m.accountHead.empty())
+                d += Head(m.accountHead, px + 9, py + 8, 12, "z-index:13;") + "\n";
+            d += "<div class=\"txt dim\" style=\"left:" + N(px + labelX) + "px;top:" + N(py + 10) + "px;width:" + N(pw - labelX - 10) + "px;height:9px;z-index:13;\">" +
                  EscapeRml(m.accountLabel) + "</div>\n";
             d += "<div style=\"left:" + N(px + 2) + "px;top:" + N(py + 26) + "px;width:" + N(pw - 4) + "px;height:1px;background-color:#555555;z-index:12;\"></div>\n";
             int y = py + 32;
@@ -159,15 +189,21 @@ mcimg { display: block; position: absolute; }
                 d += "<div class=\"hl\" style=\"left:0px;top:0px;width:" + N(pw - 36) + "px;height:" + N(rowH - 2) + "px;background-color:#ffffff20;\"></div>";
                 if (a.active)
                     d += "<div style=\"left:0px;top:0px;width:2px;height:" + N(rowH - 2) + "px;background-color:#55ff55;\"></div>";
-                // Avatar: a coloured square with the first letter (green for Microsoft, grey offline).
-                const std::string initial = a.name.empty() ? "?" : std::string(1, static_cast<char>(std::toupper(static_cast<unsigned char>(a.name[0]))));
-                d += "<div style=\"left:5px;top:3px;width:16px;height:16px;background-color:" + std::string(a.microsoft ? "#3c8527" : "#5a5a5a") + ";\"></div>";
-                d += "<div class=\"txt ctr\" style=\"left:5px;top:7px;width:16px;height:9px;\">" + EscapeRml(initial) + "</div>";
+                // Avatar: the head of the skin last used with the account (a lettered square until
+                // the skin is known).
+                if (!a.headKey.empty()) {
+                    d += Head(a.headKey, 5, 3, 16);
+                } else {
+                    const std::string initial = a.name.empty() ? "?" : std::string(1, static_cast<char>(std::toupper(static_cast<unsigned char>(a.name[0]))));
+                    d += "<div style=\"left:5px;top:3px;width:16px;height:16px;background-color:" + std::string(a.microsoft ? "#3c8527" : "#5a5a5a") + ";\"></div>";
+                    d += "<div class=\"txt ctr\" style=\"left:5px;top:7px;width:16px;height:9px;\">" + EscapeRml(initial) + "</div>";
+                }
+                // The exact username, then what kind of account it is.
                 d += "<div class=\"txt\" style=\"left:26px;top:2px;width:" + N(pw - 70) + "px;height:9px;overflow:hidden;\">" +
-                     EscapeRml(a.name.empty() ? "Microsoft account" : a.name) + "</div>";
-                const std::string kind = a.microsoft ? "Microsoft account" : "Offline";
+                     EscapeRml(a.name.empty() ? (a.microsoft ? "(gamertag not known yet)" : "?") : a.name) + "</div>";
+                const std::string kind = std::string(a.microsoft ? "Microsoft account" : "Offline account") + (a.active ? " - in use" : "");
                 d += "<div class=\"txt " + std::string(a.active ? "green" : "gray") + "\" style=\"left:26px;top:12px;width:" + N(pw - 70) + "px;height:9px;\">" +
-                     EscapeRml(a.active ? "Playing as this account" : kind) + "</div>";
+                     EscapeRml(kind) + "</div>";
                 d += "</div>\n";
                 d += SmallBtn(std::string(kAccountRemovePrefix) + N(i), px + pw - 28, y + 1, 20, "x");
             }
@@ -236,14 +272,20 @@ mcimg { display: block; position: absolute; }
             } else {
                 d += "<mcimg src=\"mcres:ui_menu_logo.png\" style=\"left:" + N(cx - 128) + "px;top:30px;width:256px;height:64px;z-index:3;\"></mcimg>\n";
             }
+            // Java's layout with a third full-width row (where Realms sits): Mods, with the small
+            // Wardrobe button beside it.
             const int j = h / 4 + 48;
             d += Btn("", cx - 100, j, 200, "Singleplayer", true);
             d += Btn(kTitleMulti, cx - 100, j + 24, 200, "Multiplayer");
-            d += Btn(kTitleOptions, cx - 100, j + 60, 98, "Options...");
-            d += Btn(kTitleQuit, cx + 2, j + 60, 98, "Quit Game");
+            d += Btn(kTitleMods, cx - 100, j + 48, 200, "Mods");
+            d += IconBtn(kTitleWardrobe, cx + 104, j + 48, "textures/items/iron_chestplate");
+            d += Btn(kTitleOptions, cx - 100, j + 84, 98, "Options...");
+            d += Btn(kTitleQuit, cx + 2, j + 84, 98, "Quit Game");
             if (!m.accountLabel.empty()) {
-                const int bw = std::clamp(TextWidth(m.accountLabel) + 16, 90, std::max(90, w / 2 - 110));
-                d += Btn(kTitleAccounts, 4, 4, bw, m.accountLabel);
+                // Above the logo, so it may take whatever width the name needs.
+                const int headW = m.accountHead.empty() ? 0 : 18;
+                const int bw = std::clamp(TextWidth(m.accountLabel) + 20 + headW, 90, std::max(90, w - 8));
+                d += HeadBtn(kTitleAccounts, 4, 4, bw, m.accountLabel, m.accountHead);
             }
             d += Text(2, h - 10, w / 2, m.version);
             d += "<div class=\"txt\" style=\"left:" + N(w / 2) + "px;top:" + N(h - 10) + "px;width:" + N(w / 2 - 1) + "px;height:9px;text-align:right;\">" + EscapeRml(m.copyright) + "</div>\n";

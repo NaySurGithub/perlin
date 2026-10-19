@@ -880,59 +880,123 @@ namespace perlin {
         uiTextures[id - 1] = {};
     }
 
+    RenderContext_bgfx::UiMeshGpu* RenderContext_bgfx::LookupUiMesh(uint32_t id) {
+        const uint32_t slot = (id & kUiMeshSlotMask);
+        if (slot == 0 || slot > uiMeshes.size())
+            return nullptr;
+        UiMeshGpu& mesh = uiMeshes[slot - 1];
+        if (!mesh.used || mesh.generation != (id >> kUiMeshSlotBits))
+            return nullptr;
+        return &mesh;
+    }
+
+    uint32_t RenderContext_bgfx::StoreUiMesh(const UiMeshGpu& mesh) {
+        uint32_t slot;
+        if (!freeUiMeshes.empty()) {
+            slot = freeUiMeshes.back();
+            freeUiMeshes.pop_back();
+        } else {
+            if (uiMeshes.size() >= kUiMeshSlotMask)
+                return 0;
+            slot = static_cast<uint32_t>(uiMeshes.size());
+            uiMeshes.emplace_back();
+        }
+        const uint32_t generation = uiMeshes[slot].generation; // advanced when the slot was freed
+        uiMeshes[slot] = mesh;
+        uiMeshes[slot].generation = generation;
+        uiMeshes[slot].used = true;
+        if (!mesh.transient)
+            staticUiMeshes++;
+        return (generation << kUiMeshSlotBits) | (slot + 1);
+    }
+
+    void RenderContext_bgfx::ReleaseUiMeshSlot(uint32_t slot) {
+        UiMeshGpu& mesh = uiMeshes[slot];
+        if (!mesh.used)
+            return;
+        if (!mesh.transient) {
+            if (bgfx::isValid(mesh.vb))
+                bgfx::destroy(mesh.vb);
+            if (bgfx::isValid(mesh.ib))
+                bgfx::destroy(mesh.ib);
+            staticUiMeshes--;
+        }
+        const uint32_t next = (mesh.generation + 1) & ((1u << (32 - kUiMeshSlotBits)) - 1u);
+        mesh = {};
+        mesh.generation = next;
+        freeUiMeshes.push_back(slot);
+    }
+
     uint32_t RenderContext_bgfx::UiCreateMesh(const UiVertex* vertices, uint32_t vertexCount, const uint32_t* indices,
                                               uint32_t indexCount) {
-        if (!initialized || vertexCount == 0 || indexCount == 0)
+        if (!initialized || vertexCount == 0 || indexCount == 0 || !vertices || !indices)
             return 0;
         UiMeshGpu mesh;
         mesh.vb = bgfx::createVertexBuffer(bgfx::copy(vertices, vertexCount * sizeof(UiVertex)), uiLayout);
         mesh.ib = bgfx::createIndexBuffer(bgfx::copy(indices, indexCount * sizeof(uint32_t)), BGFX_BUFFER_INDEX32);
-        mesh.indexCount = indexCount;
-        mesh.used = true;
-        if (!freeUiMeshes.empty()) {
-            const uint32_t slot = freeUiMeshes.back();
-            freeUiMeshes.pop_back();
-            uiMeshes[slot] = mesh;
-            return slot + 1;
+        if (!bgfx::isValid(mesh.vb) || !bgfx::isValid(mesh.ib)) {
+            // Out of bgfx buffer handles: draw nothing rather than hand out a mesh that crashes
+            // bgfx when it is submitted.
+            if (bgfx::isValid(mesh.vb))
+                bgfx::destroy(mesh.vb);
+            if (bgfx::isValid(mesh.ib))
+                bgfx::destroy(mesh.ib);
+            static uint32_t reported = 0;
+            if (reported++ % 600 == 0)
+                std::cout << "[render] out of GPU buffer handles; skipping a UI mesh (" << staticUiMeshes
+                          << " UI meshes alive)" << std::endl;
+            return 0;
         }
-        uiMeshes.push_back(mesh);
-        return static_cast<uint32_t>(uiMeshes.size());
+        mesh.indexCount = indexCount;
+        const uint32_t id = StoreUiMesh(mesh);
+        if (!id) {
+            bgfx::destroy(mesh.vb);
+            bgfx::destroy(mesh.ib);
+            return 0;
+        }
+        if (staticUiMeshes >= staticUiMeshWarnAt) {
+            // A count that keeps doubling means something keeps meshes it never frees.
+            std::cout << "[render] " << staticUiMeshes << " UI meshes alive" << std::endl;
+            staticUiMeshWarnAt *= 2;
+        }
+        return id;
     }
 
     uint32_t RenderContext_bgfx::UiCreateFrameMesh(const UiVertex* vertices, uint32_t vertexCount, const uint32_t* indices,
                                                    uint32_t indexCount) {
-        if (!initialized || vertexCount == 0 || indexCount == 0)
+        // Frame meshes live until the end of the frame: the renderer frees them itself after
+        // bgfx::frame(), whether or not their owner remembers to (a later UiDestroyMesh of the id
+        // is a no-op thanks to the generation).
+        if (!initialized || vertexCount == 0 || indexCount == 0 || !vertices || !indices)
             return 0;
+        uint32_t id = 0;
         if (bgfx::getAvailTransientVertexBuffer(vertexCount, uiLayout) < vertexCount ||
-            bgfx::getAvailTransientIndexBuffer(indexCount, true) < indexCount)
-            return UiCreateMesh(vertices, vertexCount, indices, indexCount);
-        UiMeshGpu mesh;
-        bgfx::allocTransientVertexBuffer(&mesh.tvb, vertexCount, uiLayout);
-        bgfx::allocTransientIndexBuffer(&mesh.tib, indexCount, true);
-        std::memcpy(mesh.tvb.data, vertices, static_cast<size_t>(vertexCount) * sizeof(UiVertex));
-        std::memcpy(mesh.tib.data, indices, static_cast<size_t>(indexCount) * sizeof(uint32_t));
-        mesh.indexCount = indexCount;
-        mesh.used = true;
-        mesh.transient = true;
-        if (!freeUiMeshes.empty()) {
-            const uint32_t slot = freeUiMeshes.back();
-            freeUiMeshes.pop_back();
-            uiMeshes[slot] = mesh;
-            return slot + 1;
+            bgfx::getAvailTransientIndexBuffer(indexCount, true) < indexCount) {
+            id = UiCreateMesh(vertices, vertexCount, indices, indexCount);
+        } else {
+            UiMeshGpu mesh;
+            bgfx::allocTransientVertexBuffer(&mesh.tvb, vertexCount, uiLayout);
+            bgfx::allocTransientIndexBuffer(&mesh.tib, indexCount, true);
+            std::memcpy(mesh.tvb.data, vertices, static_cast<size_t>(vertexCount) * sizeof(UiVertex));
+            std::memcpy(mesh.tib.data, indices, static_cast<size_t>(indexCount) * sizeof(uint32_t));
+            mesh.indexCount = indexCount;
+            mesh.transient = true;
+            id = StoreUiMesh(mesh);
         }
-        uiMeshes.push_back(mesh);
-        return static_cast<uint32_t>(uiMeshes.size());
+        if (id)
+            frameUiMeshes.push_back(id);
+        return id;
     }
 
     void RenderContext_bgfx::UiDestroyMesh(uint32_t id) {
-        if (id == 0 || id > uiMeshes.size() || !uiMeshes[id - 1].used)
-            return;
-        if (!uiMeshes[id - 1].transient) {
-            bgfx::destroy(uiMeshes[id - 1].vb);
-            bgfx::destroy(uiMeshes[id - 1].ib);
-        }
-        uiMeshes[id - 1] = {};
-        freeUiMeshes.push_back(id - 1);
+        if (LookupUiMesh(id))
+            ReleaseUiMeshSlot((id & kUiMeshSlotMask) - 1);
+    }
+
+    void RenderContext_bgfx::ReleaseFrameMeshes() {
+        for (uint32_t id : frameUiMeshes)
+            UiDestroyMesh(id);
+        frameUiMeshes.clear();
     }
 
     namespace {
@@ -990,9 +1054,12 @@ namespace perlin {
     }
 
     void RenderContext_bgfx::UiSubmit(UiLayer layer, const UiDraw& draw) {
-        if (!initialized || draw.mesh == 0 || draw.mesh > uiMeshes.size() || !uiMeshes[draw.mesh - 1].used)
+        if (!initialized)
             return;
-        const UiMeshGpu& mesh = uiMeshes[draw.mesh - 1];
+        const UiMeshGpu* found = LookupUiMesh(draw.mesh);
+        if (!found || (!found->transient && (!bgfx::isValid(found->vb) || !bgfx::isValid(found->ib))))
+            return;
+        const UiMeshGpu& mesh = *found;
         bgfx::TextureHandle texture = uiWhite;
         if (draw.texture != 0 && draw.texture <= uiTextures.size() && uiTextures[draw.texture - 1].used)
             texture = uiTextures[draw.texture - 1].handle;
@@ -1080,7 +1147,9 @@ namespace perlin {
 
     void RenderContext_bgfx::DestroyUi() {
         for (size_t i = 0; i < uiMeshes.size(); i++)
-            UiDestroyMesh(static_cast<uint32_t>(i + 1));
+            ReleaseUiMeshSlot(static_cast<uint32_t>(i));
+        frameUiMeshes.clear();
+        staticUiMeshes = 0;
         for (size_t i = 0; i < uiTextures.size(); i++)
             UiDestroyTexture(static_cast<uint32_t>(i + 1));
         uiMeshes.clear();
@@ -1107,6 +1176,8 @@ namespace perlin {
         if (gpuTime && timedFrames == 0)
             bgfx::setDebug(BGFX_DEBUG_PROFILER);
         bgfx::frame();
+        // This frame's transient UI geometry has been consumed.
+        ReleaseFrameMeshes();
         if (gpuTime) {
             const bgfx::Stats* stats = bgfx::getStats();
             const double toMs = 1000.0 / static_cast<double>(stats->gpuTimerFreq ? stats->gpuTimerFreq : 1);

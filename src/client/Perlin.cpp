@@ -254,6 +254,8 @@ namespace perlin {
             return false;
 
         workers = std::make_unique<ThreadPool>(4);
+        if (args.server.empty() && !PERLIN_ENV("PERLIN_PREVIEW"))
+            FetchMissingGamertags();
         StartAssetDownloads();
         if (!PERLIN_ENV("PERLIN_PREVIEW")) {
             if (args.server.empty())
@@ -409,8 +411,7 @@ namespace perlin {
                     std::string gamertag, why;
                     if (acct->FetchGamertag(gamertag, why)) {
                         std::lock_guard lock(signInMutex);
-                        pendingRenameId = nameAccountId;
-                        pendingRename = gamertag;
+                        pendingRenames.emplace_back(nameAccountId, gamertag);
                     }
                 }
             }
@@ -469,6 +470,22 @@ namespace perlin {
         if (hud)
             hud->Reload();
         hotTexStamp.clear();
+    }
+
+    void Perlin::UnloadServerPacks() {
+        if (ServerPacks::Instance().Directories().empty())
+            return;
+        std::cout << "[packs] unloading the server's resource packs" << std::endl;
+        ServerPacks::Instance().Clear();
+        // Everything that may have read them: block textures, entity and item textures, UI, sounds, text.
+        if (levelRenderer)
+            levelRenderer->ReloadResources();
+        entityRenderer.ClearCaches();
+        ui::UiAssets::Instance().ClearItemCache();
+        i18n::Lang::Get().Invalidate();
+        sounds.Reload();
+        if (hud)
+            hud->Reload();
     }
 
     void Perlin::CommitTexturePacks() {
@@ -1573,7 +1590,10 @@ namespace perlin {
         const bool canOpen = (live || preview) && !deathShown && !formShown && !invShown && !chat.IsOpen();
         if (!pauseShown && titleOptions && titleActive) {
             pauseShown = true;
-            pauseView = 1;
+            pauseView = titleOpenView;
+            titleOpenView = 1;
+            if (pauseView == 5)
+                wardInit = false;
             optionsPage = 0;
             optionsSub = 0;
             pauseOpenedAt = now;
@@ -1951,6 +1971,7 @@ namespace perlin {
                 options.skin = wardSkin;
                 options.cape = wardCape;
                 options.skinSlim = wardSlim;
+                accounts.SetSkin(accounts.ActiveId(), options.skin, options.cape);
                 SkinConfig cfg = MakeSkinConfig(options.skin, options.cape);
                 LoadedSkin loaded;
                 std::string err;
@@ -3546,6 +3567,83 @@ namespace perlin {
         }
     }
 
+    namespace {
+        // The UI head image ("mchead:<key>") for a skin: its 8x8 face with the hat layer over it,
+        // as the player list draws heads. An empty path is the default skin.
+        std::string SkinHeadKey(const std::string& skinPath) {
+            const std::string key = "skinhead:" + std::to_string(std::hash<std::string>{}(skinPath));
+            ui::UiAssets& assets = ui::UiAssets::Instance();
+            if (assets.HasHead(key))
+                return key;
+            std::vector<uint8_t> rgba;
+            int w = 0, h = 0;
+            if (!skinPath.empty()) {
+                SkinConfig cfg;
+                cfg.skinPath = skinPath;
+                LoadedSkin loaded;
+                std::string err;
+                if (LoadSkinConfig(cfg, loaded, err)) {
+                    rgba = std::move(loaded.skinRgba);
+                    w = loaded.skinWidth;
+                    h = loaded.skinHeight;
+                }
+            }
+            if (rgba.empty()) {
+                Texture steve;
+                if (!assets.Image("textures/entity/steve.png", steve) || steve.width < 64)
+                    return {}; // assets not there yet: try again next time
+                rgba = std::move(steve.pixels);
+                w = steve.width;
+                h = steve.height;
+            }
+            const int sc = std::max(1, w / 64);
+            Texture t;
+            t.width = t.height = 8;
+            t.pixels.assign(8 * 8 * 4, 255);
+            for (int y = 0; y < 8; y++)
+                for (int x = 0; x < 8; x++) {
+                    const auto px = [&](int ox, int oy, uint8_t out[4]) {
+                        const size_t i = (static_cast<size_t>((oy + y) * sc + sc / 2) * static_cast<size_t>(w) + static_cast<size_t>((ox + x) * sc + sc / 2)) * 4;
+                        for (int c = 0; c < 4; c++)
+                            out[c] = i + 3 < rgba.size() ? rgba[i + c] : 255;
+                    };
+                    uint8_t face[4], hat[4];
+                    px(8, 8, face);
+                    px(40, 8, hat);
+                    if (h < 32)
+                        hat[3] = 0;
+                    uint8_t* o = &t.pixels[static_cast<size_t>(y * 8 + x) * 4];
+                    const float a = hat[3] / 255.0f;
+                    for (int c = 0; c < 3; c++)
+                        o[c] = static_cast<uint8_t>(face[c] * (1.0f - a) + hat[c] * a);
+                    o[3] = 255;
+                }
+            assets.SetHead(key, std::move(t));
+            return key;
+        }
+    }
+
+    void Perlin::FetchMissingGamertags() {
+        // Microsoft accounts added before the switcher kept their gamertag have no name yet: learn
+        // it in the background from the saved sign-in (never prompting), so the title screen can
+        // say who is logged in.
+        for (const AccountEntry& e : accounts.Entries()) {
+            if (!e.microsoft || !e.name.empty())
+                continue;
+            workers->Submit([this, id = e.id, path = accounts.AuthPath(e)] {
+                xbox::Account acct(path);
+                std::string error, gamertag;
+                if (!acct.HasSavedLogin() || !acct.SignInSaved(error) || !acct.FetchGamertag(gamertag, error)) {
+                    if (!error.empty())
+                        std::cout << "[auth] couldn't learn an account's gamertag: " << error << std::endl;
+                    return;
+                }
+                std::lock_guard lock(signInMutex);
+                pendingRenames.emplace_back(id, gamertag);
+            });
+        }
+    }
+
     void Perlin::ApplyActiveAccount() {
         const AccountEntry* a = accounts.Active();
         if (!a)
@@ -3554,6 +3652,22 @@ namespace perlin {
         if (!a->microsoft)
             options.playerName = a->name;
         onlineThisRun = options.onlineLogin && !args.offline;
+        // Each account keeps the skin it was last played with: switching to one puts its skin
+        // back on; an account seen for the first time takes the current skin.
+        if (a->skinKnown && (a->skin != options.skin || a->cape != options.cape)) {
+            options.skin = a->skin;
+            options.cape = a->cape;
+            SkinConfig cfg = MakeSkinConfig(options.skin, options.cape);
+            LoadedSkin loaded;
+            std::string err;
+            if (LoadSkinConfig(cfg, loaded, err))
+                options.slimArms = loaded.slimArms;
+            else
+                std::cout << "[accounts] skin: " << err << std::endl;
+            wardInit = false; // the wardrobe picks the new selection up next time it opens
+        } else if (!a->skinKnown) {
+            accounts.SetSkin(a->id, options.skin, options.cape);
+        }
         options.Save();
     }
 
@@ -3706,6 +3820,8 @@ namespace perlin {
         deathSignature.clear();
         if (chat.IsOpen())
             chat.Close();
+        // Leaving (also while still joining): the server's packs stop applying right away.
+        UnloadServerPacks();
         titleActive = true;
         titleReturnToServers = true;
     }
@@ -3961,6 +4077,9 @@ namespace perlin {
                     title.page = ui::TitlePage::Accounts;
                 } else if (page == "accounts") {
                     title.page = ui::TitlePage::Accounts;
+                } else if (page == "mods" || page == "wardrobe") {
+                    titleOpenView = page == "mods" ? 4 : 5; // as the title's Mods / Wardrobe buttons do
+                    titleOptions = true;
                 }
             }
             input.SetTextMode(true);
@@ -4089,6 +4208,11 @@ namespace perlin {
             title.accountScroll = std::clamp(title.accountScroll, 0, maxScroll);
         }
 
+        // A connect that was still running when it was abandoned may mount its server's packs
+        // after we left; once nothing is connecting, the title screen never keeps them.
+        if (connectsInFlight.load() == 0)
+            UnloadServerPacks();
+
         if (title.page == ui::TitlePage::Main || title.page == ui::TitlePage::Accounts || title.page == ui::TitlePage::AccountName ||
             title.page == ui::TitlePage::AccountSignIn)
             DrawTitlePanorama(fbW, fbH);
@@ -4096,10 +4220,9 @@ namespace perlin {
         // Account switcher state: a finished sign-in, gamertags learned while connecting.
         {
             std::lock_guard lock(signInMutex);
-            if (!pendingRenameId.empty()) {
-                accounts.Rename(pendingRenameId, pendingRename);
-                pendingRenameId.clear();
-            }
+            for (const auto& [id, gamertag] : pendingRenames)
+                accounts.Rename(id, gamertag);
+            pendingRenames.clear();
             if (signInState == 2) {
                 accounts.AddMicrosoft(signInGamertag, signInAuthFile);
                 signInAccount.reset();
@@ -4113,8 +4236,12 @@ namespace perlin {
             title.signInStatus = signInStatus;
         }
         title.accounts.clear();
-        for (const AccountEntry& e : accounts.Entries())
-            title.accounts.push_back({e.id, e.name, e.microsoft, e.id == accounts.ActiveId()});
+        for (const AccountEntry& e : accounts.Entries()) {
+            // Each account shows the head of the skin it was last played with.
+            const std::string head = SkinHeadKey(e.skinKnown ? e.skin : (e.id == accounts.ActiveId() ? options.skin : std::string()));
+            title.accounts.push_back({e.id, e.name, e.microsoft, e.id == accounts.ActiveId(), head});
+        }
+        title.accountHead = SkinHeadKey(options.skin);
         if (const AccountEntry* a = accounts.Active())
             title.accountLabel = "Logged in as " + (a->name.empty() ? std::string("Microsoft account") : a->name);
         else
@@ -4169,11 +4296,11 @@ namespace perlin {
         std::string signature = std::to_string(guiW) + "x" + std::to_string(guiH) + "|" + std::to_string(static_cast<int>(title.page)) + "|" +
                                 std::to_string(title.selected) + "|" + std::to_string(title.scroll) + "|" + std::to_string(title.focus) +
                                 (title.nativePanorama ? "|np" : "|sp") + "|" + title.logoSrc;
-        signature += "|" + title.accountLabel;
+        signature += "|" + title.accountLabel + "|" + title.accountHead;
         signature += "|" + std::to_string(title.accountScroll);
         if (title.page == ui::TitlePage::Accounts)
             for (const ui::AccountRow& a : title.accounts)
-                signature += "|" + a.id + a.name + (a.active ? "*" : "");
+                signature += "|" + a.id + a.name + (a.active ? "*" : "") + a.headKey;
         else if (title.page == ui::TitlePage::AccountName)
             signature += "|" + title.accountName + (title.caret ? "c" : "n");
         else if (title.page == ui::TitlePage::AccountSignIn)
@@ -4233,6 +4360,13 @@ namespace perlin {
             } else if (hover == ui::kTitleMulti) {
                 title.page = ui::TitlePage::Servers;
             } else if (hover == ui::kTitleOptions) {
+                titleOpenView = 1;
+                titleOptions = true;
+            } else if (hover == ui::kTitleMods) {
+                titleOpenView = 4;
+                titleOptions = true;
+            } else if (hover == ui::kTitleWardrobe) {
+                titleOpenView = 5;
                 titleOptions = true;
             } else if (hover == ui::kTitleQuit) {
                 platform->isRunning = false;
