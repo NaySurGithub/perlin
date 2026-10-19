@@ -917,7 +917,7 @@ if(PERLIN_BUILD_TESTS AND NOT EMSCRIPTEN AND NOT ANDROID)
     endif()
     target_compile_features(rak_selftest PRIVATE cxx_std_23)
 
-    add_executable(clientassets_selftest tests/clientassets_selftest.cpp src/client/resources/ClientAssets.cpp src/client/resources/TextureLoader.cpp)
+    add_executable(clientassets_selftest tests/clientassets_selftest.cpp src/client/resources/ClientAssets.cpp src/client/resources/TextureLoader.cpp src/util/Json.cpp)
     target_include_directories(clientassets_selftest PRIVATE src "${stb_SOURCE_DIR}")
     target_link_libraries(clientassets_selftest PRIVATE glaze::glaze miniz)
     target_compile_features(clientassets_selftest PRIVATE cxx_std_23)
