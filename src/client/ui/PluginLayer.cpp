@@ -1,5 +1,6 @@
 #include "client/ui/PluginLayer.hpp"
 
+#include "client/ui/FormatCodes.hpp"
 #include "client/ui/RmlEmit.hpp"
 
 #include <algorithm>
@@ -93,7 +94,7 @@ namespace perlin::ui {
                     const char* alignName = align == 1 ? "center" : align == 2 ? "right" : "left";
                     out += "<div style=\"left:" + F(left) + "px;top:" + F(y) + "px;width:" + F(boxW) + "px;height:" + F(9 * scale) +
                            "px;font-family:" + (shadow ? "minecraft-shadow" : "minecraft") + ";font-size:" + F(8 * scale) + "px;line-height:" +
-                           F(9 * scale) + "px;text-align:" + alignName + ";white-space:nowrap;color:" + Color(c) + ";\">" + EscapeRml(text) +
+                           F(9 * scale) + "px;text-align:" + alignName + ";white-space:nowrap;color:" + Color(c) + ";\">" + FormatCodesToRml(text) +
                            "</div>\n";
                 } else if (kind == abi::Draw::Item) {
                     const float x = r.get<float>(), y = r.get<float>(), size = std::clamp(r.get<float>(), 1.0f, 512.0f);

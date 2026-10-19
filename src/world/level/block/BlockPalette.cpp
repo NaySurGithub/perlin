@@ -388,6 +388,11 @@ namespace perlin {
         return false;
     }
 
+    std::vector<std::string> BlockPalette::BlockProperties(const std::string& fullName) const {
+        const auto it = propsByName.find(fullName);
+        return it == propsByName.end() ? std::vector<std::string>{} : it->second;
+    }
+
     bool BlockPalette::BlockHasProperty(const std::string& fullName, const std::string& prop) const {
         auto it = propsByName.find(fullName);
         if (it == propsByName.end())

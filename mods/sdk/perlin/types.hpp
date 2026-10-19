@@ -3,6 +3,7 @@
 #include <chrono>
 #include <cmath>
 #include <compare>
+#include <charconv>
 #include <cstdint>
 #include <format>
 #include <functional>
@@ -31,6 +32,7 @@ namespace perlin {
     using abi::Permission;
     using abi::PermissionLevel;
     using abi::Permissions;
+    using abi::Area;
     using abi::Screen;
 
     using meta::enum_cast;
@@ -270,7 +272,28 @@ namespace perlin {
                     return std::string_view(v);
             return std::nullopt;
         }
+        // A block state as a number or flag: `age`, `redstone_signal`, `open_bit`. Missing states give `fallback`.
+        int state_int(std::string_view key, int fallback = 0) const {
+            const auto v = state(key);
+            if (!v)
+                return fallback;
+            if (*v == "true")
+                return 1;
+            if (*v == "false")
+                return 0;
+            int out = fallback;
+            const auto [ptr, ec] = std::from_chars(v->data(), v->data() + v->size(), out);
+            return ec == std::errc{} ? out : fallback;
+        }
+        bool state_bool(std::string_view key, bool fallback = false) const { return state_int(key, fallback ? 1 : 0) != 0; }
     };
+
+    using BlockProps = abi::BlockProps;
+    using BlockEntityInfo = abi::BlockEntityInfo;
+    using BreakState = abi::BreakState;
+    using Tool = abi::Tool;
+    using NameKind = abi::NameKind;
+    using Attribute = abi::Attribute;
 
     inline std::string_view short_name(std::string_view id) {
         const size_t colon = id.find(':');

@@ -6,9 +6,13 @@
 #include "client/input/Keys.hpp"
 #include "client/mods/ModManager.hpp"
 #include "client/platform/AppPlatform.hpp"
+#include "client/player/BlockDestroy.hpp"
 #include "client/player/BlockUse.hpp"
+#include "client/multiplayer/BlockEntities.hpp"
+#include "client/ui/UiAssets.hpp"
 #include "client/player/Interaction.hpp"
 #include "client/resources/ShaderPack.hpp"
+#include "client/ui/FormatCodes.hpp"
 #include "client/ui/Json.hpp"
 #include "client/ui/McFont.hpp"
 #include "network/Transport.hpp"
@@ -83,6 +87,18 @@ namespace perlin {
             out.vehicleUid = e.vehicleUid;
             out.ownerUid = e.ownerUid;
             out.targetUid = e.targetUid;
+            out.variant = e.variant;
+            out.markVariant = e.markVariant;
+            out.color = e.color;
+            out.dying = e.dying;
+            const auto health = e.attributes.find("minecraft:health");
+            out.maxHealth = health != e.attributes.end() ? health->second.max : -1.0f;
+            for (const auto& [name, a] : e.attributes)
+                out.attributes.push_back({name, a.min, a.value, a.max});
+            for (const auto& [key, value] : e.props)
+                out.properties.emplace_back(key, value);
+            for (const auto& [key, text] : e.propText)
+                out.propertyText.emplace_back(key, text);
             return out;
         }
 
@@ -479,6 +495,86 @@ namespace perlin {
                 info.liquid = modLevel->GetLiquid(x, y, z);
             }
             w.write(info);
+            return Status::Ok;
+        });
+
+        mm.Register(Op::BlockProps, [](CallContext&, abi::Reader& r, abi::Writer& w) {
+            std::string name = r.str();
+            if (!r.Ok() || name.empty() || name.size() > 128)
+                return Status::BadArguments;
+            if (name.find(':') == std::string::npos)
+                name = "minecraft:" + name;
+            abi::BlockProps out;
+            const destroy::BlockInfo info = destroy::Lookup(name);
+            out.known = info.known;
+            out.hardness = info.hardness;
+            out.tool = static_cast<abi::Tool>(std::clamp(info.tool, 0, 6));
+            out.harvestLevel = info.harvestLevel;
+            out.needsSupportBelow = destroy::NeedsSupportBelow(name);
+            out.breaksWholeStack = destroy::BreaksWholeStack(name);
+            out.displayName = ui::UiAssets::Instance().ItemName(name);
+            out.properties = BlockPalette::Instance().BlockProperties(name);
+            w.write(out);
+            return Status::Ok;
+        });
+
+        mm.Register(Op::BlockEntityData, [this](CallContext&, abi::Reader& r, abi::Writer& w) {
+            const int32_t x = r.get<int32_t>(), y = r.get<int32_t>(), z = r.get<int32_t>();
+            if (!r.Ok())
+                return Status::BadArguments;
+            if (!modLive)
+                return Status::Unavailable;
+            abi::BlockEntityInfo out;
+            BlockEntity be;
+            if (modLive->BlockEntities().Get(x, y, z, be)) {
+                out.present = true;
+                out.id = be.id;
+                out.color = be.color;
+                out.waxed = be.waxed;
+                out.rotation = be.rotation;
+                out.frontText = be.front.text;
+                out.backText = be.back.text;
+                out.frontGlow = be.front.glow;
+                out.backGlow = be.back.glow;
+                out.base = be.base;
+                out.bannerType = be.bannerType;
+                for (const auto& [code, colour] : be.patterns)
+                    out.patterns.emplace_back(code, colour);
+                out.nbt = be.nbt;
+            }
+            w.write(out);
+            return Status::Ok;
+        });
+
+        mm.Register(Op::DisplayName, [](CallContext&, abi::Reader& r, abi::Writer& w) {
+            const auto kind = static_cast<abi::NameKind>(r.get<uint8_t>());
+            const std::string id = r.str();
+            const int32_t aux = r.get<int32_t>();
+            if (!r.Ok() || id.empty() || id.size() > 128)
+                return Status::BadArguments;
+            std::string text;
+            if (kind == abi::NameKind::Entity) {
+                std::string shortName = id;
+                if (const size_t colon = shortName.find(':'); colon != std::string::npos)
+                    shortName = shortName.substr(colon + 1);
+                if (!i18n::Lang::Get().Find("entity." + shortName + ".name", text) && !i18n::Lang::Get().Find("entity." + id + ".name", text))
+                    text = id;
+            } else {
+                text = ui::UiAssets::Instance().ItemName(id, aux);
+            }
+            w.raw(text.data(), text.size());
+            return Status::Ok;
+        });
+
+        mm.Register(Op::BreakProgress, [](CallContext&, abi::Reader&, abi::Writer& w) {
+            const LocalBreakState state = GetLocalBreakState();
+            abi::BreakState out;
+            out.active = state.active;
+            out.x = state.x;
+            out.y = state.y;
+            out.z = state.z;
+            out.progress = state.progress;
+            w.write(out);
             return Status::Ok;
         });
 
@@ -901,7 +997,7 @@ namespace perlin {
             return Status::Ok;
         });
 
-        SetupModIntents();
+        SetupModActions();
 
         mm.Register(Op::MousePosition, [this](CallContext&, abi::Reader&, abi::Writer& w) {
             const float scale = static_cast<float>(modHud ? std::max(1, modHud->Scale()) : 1);
@@ -1125,7 +1221,7 @@ namespace perlin {
             const float scale = r.get<float>();
             if (!r.Ok() || text.size() > 4000)
                 return Status::BadArguments;
-            w.put(ui::McFont::Instance().Width(text, std::clamp(scale, 0.25f, 16.0f)));
+            w.put(ui::McFont::Instance().Width(ui::StripFormatCodes(text), std::clamp(scale, 0.25f, 16.0f)));
             return Status::Ok;
         });
 
@@ -1203,181 +1299,149 @@ namespace perlin {
         options.Save();
     }
 
-    void Perlin::SetupModIntents() {
+    // The game's own actions, callable by name from a mod (perlin/act.hpp). Each one is a typed host call with its
+    // permission declared in the mod's manifest; the work itself runs on the main thread.
+    void Perlin::SetupModActions() {
         auto& mm = mods::ModManager::Instance();
-        using abi::HostAction;
-        using abi::IntentOutcome;
+        using abi::Op;
+        using abi::Status;
+        using mods::CallContext;
         const uint32_t network = static_cast<uint32_t>(abi::Permission::Network);
+        const uint32_t files = static_cast<uint32_t>(abi::Permission::Files);
 
-        const auto extraOf = [](const abi::Intent& in, const char* key) -> const abi::ExtraValue* {
-            for (const abi::Extra& e : in.extras)
-                if (e.key == key)
-                    return &e.value;
-            return nullptr;
-        };
-        const auto text = [extraOf](const abi::Intent& in, const char* key) {
-            const abi::ExtraValue* v = extraOf(in, key);
-            const auto* s = v ? std::get_if<std::string>(v) : nullptr;
-            return s ? *s : std::string();
-        };
-        const auto integer = [extraOf](const abi::Intent& in, const char* key, int64_t fallback) {
-            const abi::ExtraValue* v = extraOf(in, key);
-            if (!v)
-                return fallback;
-            if (const auto* i = std::get_if<int64_t>(v))
-                return *i;
-            if (const auto* d = std::get_if<double>(v))
-                return static_cast<int64_t>(*d);
-            return fallback;
-        };
-        const auto reg = [&](HostAction action, const char* description, uint32_t permission, mods::HostIntentFn fn) {
-            mm.RegisterHostIntent(std::string(abi::action_id(action)), description, permission, std::move(fn));
-        };
-
-        reg(HostAction::OpenScreen, "Opens a game screen (extra: screen)", 0,
-            [this, integer](const std::string&, const abi::Intent& in, mods::IntentExtras&) {
-                switch (static_cast<abi::Screen>(integer(in, "screen", static_cast<int64_t>(abi::Screen::Pause)))) {
-                case abi::Screen::Pause: modOpenView = 0; break;
-                case abi::Screen::Options: modOpenView = 1; break;
-                case abi::Screen::Mods: modOpenView = 4; break;
-                case abi::Screen::Wardrobe: modOpenView = 5; break;
-                default: return IntentOutcome::Failed;
-                }
+        mm.Register(Op::OpenScreen, [this](CallContext&, abi::Reader& r, abi::Writer&) {
+            const auto screen = r.read<abi::Screen>();
+            if (!r.Ok())
+                return Status::BadArguments;
+            int view = 0;
+            switch (screen) {
+            case abi::Screen::Pause: view = 0; break;
+            case abi::Screen::Options: view = 1; break;
+            case abi::Screen::Mods: view = 4; break;
+            case abi::Screen::Wardrobe: view = 5; break;
+            default: return Status::BadArguments;
+            }
+            mods::ModManager::Instance().PostMain([this, view] {
+                modOpenView = view;
                 modOpenPage = 0;
                 modSettingsFor.clear();
-                return IntentOutcome::Handled;
             });
+            return Status::Ok;
+        });
 
-        reg(HostAction::OpenModSettings, "Opens a mod's settings page (extra: mod)", 0,
-            [this, text](const std::string& sender, const abi::Intent& in, mods::IntentExtras&) {
-                std::string target = text(in, "mod");
-                if (target.empty() || target == "self")
-                    target = sender;
-                if (!mods::ModManager::Instance().HasSettings(target))
-                    return IntentOutcome::Failed;
+        mm.Register(Op::OpenModSettings, [this](CallContext& ctx, abi::Reader& r, abi::Writer&) {
+            std::string target = r.str(); // empty: the calling mod
+            if (!r.Ok())
+                return Status::BadArguments;
+            if (target.empty())
+                target = ctx.plugin;
+            if (!mods::ModManager::Instance().HasSettings(target))
+                return Status::NotFound;
+            mods::ModManager::Instance().PostMain([this, target] {
                 modOpenView = 1;
                 modOpenPage = 11;
                 modSettingsFor = target;
-                return IntentOutcome::Handled;
             });
-
-        reg(HostAction::Screenshot, "Takes a screenshot", 0, [this](const std::string&, const abi::Intent&, mods::IntentExtras&) {
-            TakeScreenshot();
-            return IntentOutcome::Handled;
+            return Status::Ok;
         });
 
-        reg(HostAction::SetPerspective, "Sets the camera perspective (extra: mode)", 0,
-            [this, integer](const std::string&, const abi::Intent& in, mods::IntentExtras&) {
-                const int64_t mode = integer(in, "mode", -1);
-                if (mode < 0 || mode > 2)
-                    return IntentOutcome::Failed;
-                camera.mode = static_cast<PerspectiveMode>(mode);
-                return IntentOutcome::Handled;
-            });
-
-        reg(HostAction::CyclePerspective, "Cycles the camera perspective", 0, [this](const std::string&, const abi::Intent&, mods::IntentExtras& out) {
-            camera.mode = static_cast<PerspectiveMode>((static_cast<int>(camera.mode) + 1) % 3);
-            out.push_back({"mode", static_cast<int64_t>(camera.mode)});
-            return IntentOutcome::Handled;
+        mm.Register(Op::TakeScreenshot, [this](CallContext&, abi::Reader&, abi::Writer&) {
+            mods::ModManager::Instance().PostMain([this] { TakeScreenshot(); });
+            return Status::Ok;
         });
 
-        reg(HostAction::CopyText, "Copies text to the clipboard (extra: text)", 0,
-            [this, text](const std::string&, const abi::Intent& in, mods::IntentExtras&) {
-                const std::string value = text(in, "text");
-                if (value.empty() || value.size() > 65536 || !platform)
-                    return IntentOutcome::Failed;
-                platform->SetClipboard(value);
-                return IntentOutcome::Handled;
-            });
-
-        reg(HostAction::ReloadResources, "Reloads resource packs", 0, [this](const std::string&, const abi::Intent&, mods::IntentExtras&) {
-            ApplyTexturePacks();
-            return IntentOutcome::Handled;
+        mm.Register(Op::CyclePerspective, [this](CallContext&, abi::Reader&, abi::Writer&) {
+            mods::ModManager::Instance().PostMain([this] { camera.mode = static_cast<PerspectiveMode>((static_cast<int>(camera.mode) + 1) % 3); });
+            return Status::Ok;
         });
 
-        reg(HostAction::OpenUrl, "Opens an https link in the browser (extra: url)", network,
-            [this, text](const std::string&, const abi::Intent& in, mods::IntentExtras&) {
-                const std::string url = text(in, "url");
-                if (url.rfind("https://", 0) != 0 || url.size() > 2048 || !platform)
-                    return IntentOutcome::Failed;
-                platform->OpenUrl(url);
-                return IntentOutcome::Handled;
+        mm.Register(Op::CopyToClipboard, [this](CallContext&, abi::Reader& r, abi::Writer&) {
+            std::string text = r.str();
+            if (!r.Ok() || text.empty() || text.size() > 65536)
+                return Status::BadArguments;
+            mods::ModManager::Instance().PostMain([this, text = std::move(text)] {
+                if (platform)
+                    platform->SetClipboard(text);
             });
+            return Status::Ok;
+        });
 
-        // ---- Files: between the mod's own folder and the game's pack/screenshot folders ----
-        const uint32_t files = static_cast<uint32_t>(abi::Permission::Files);
-        // "area:relative/path" -> absolute path. Areas: mod (the mod's own data folder), screenshots, resourcepacks, shaderpacks.
-        const auto resolve = [&mm](const std::string& sender, const std::string& spec, std::filesystem::path& out, std::string& area) {
-            const size_t colon = spec.find(':');
-            if (colon == std::string::npos || spec.size() > 300)
-                return false;
-            area = spec.substr(0, colon);
-            const std::string rel = spec.substr(colon + 1);
-            if (rel.empty() || rel[0] == '/' || rel[0] == '\\' || rel.find("..") != std::string::npos || rel.find('\\') != std::string::npos ||
-                rel.find(':') != std::string::npos)
+        mm.Register(Op::OpenUrl, [this](CallContext&, abi::Reader& r, abi::Writer&) {
+            std::string url = r.str();
+            if (!r.Ok() || url.rfind("https://", 0) != 0 || url.size() > 2048)
+                return Status::BadArguments;
+            mods::ModManager::Instance().PostMain([this, url = std::move(url)] {
+                if (platform)
+                    platform->OpenUrl(url);
+            });
+            return Status::Ok;
+        }, network);
+
+        mm.Register(Op::ToggleHud, [this](CallContext&, abi::Reader&, abi::Writer&) {
+            mods::ModManager::Instance().PostMain([this] { options.showHud = !options.showHud; });
+            return Status::Ok;
+        });
+
+        // ---- Files: between the mod's own folder and the game's pack and screenshot folders ----
+        const auto resolve = [](const CallContext& ctx, const abi::FileLocation& at, std::filesystem::path& out) {
+            const std::string& rel = at.path;
+            if (rel.empty() || rel.size() > 300 || rel[0] == '/' || rel[0] == '\\' || rel.find("..") != std::string::npos ||
+                rel.find('\\') != std::string::npos || rel.find(':') != std::string::npos)
                 return false;
             std::filesystem::path root;
-            if (area == "mod")
-                root = std::filesystem::path(mm.Directory()) / (sender + ".data");
-            else if (area == "screenshots")
-                root = std::filesystem::path(paths::DataDir()) / "screenshots";
-            else if (area == "resourcepacks")
-                root = std::filesystem::path(paths::DataDir()) / "texturepacks";
-            else if (area == "shaderpacks")
-                root = std::filesystem::path(paths::DataDir()) / "shaderpacks";
-            else
-                return false;
+            switch (at.area) {
+            case abi::Area::Mod: root = ctx.storageRoot; break;
+            case abi::Area::Screenshots: root = std::filesystem::path(paths::DataDir()) / "screenshots"; break;
+            case abi::Area::ResourcePacks: root = std::filesystem::path(paths::DataDir()) / "texturepacks"; break;
+            case abi::Area::ShaderPacks: root = std::filesystem::path(paths::DataDir()) / "shaderpacks"; break;
+            default: return false;
+            }
             out = root / rel;
             return true;
         };
-        const auto transfer = [resolve, text](bool move, const std::string& sender, const abi::Intent& in) {
-            std::filesystem::path from, to;
-            std::string fromArea, toArea;
-            if (!resolve(sender, text(in, "from"), from, fromArea) || !resolve(sender, text(in, "to"), to, toArea))
-                return IntentOutcome::Failed;
-            const bool toOwn = toArea == "mod";
+        const auto transfer = [resolve](bool move, const CallContext& ctx, abi::Reader& r) {
+            const auto from = r.read<abi::FileLocation>();
+            const auto to = r.read<abi::FileLocation>();
+            std::filesystem::path src, dst;
+            if (!r.Ok() || !resolve(ctx, from, src) || !resolve(ctx, to, dst))
+                return Status::BadArguments;
             std::error_code ec;
             // Mods may only take files out of their own folder or the screenshots folder, and never overwrite a game file.
-            if (!std::filesystem::is_regular_file(from, ec) || (!toOwn && std::filesystem::exists(to, ec)))
-                return IntentOutcome::Failed;
-            if (fromArea != "mod" && fromArea != "screenshots")
-                return IntentOutcome::Failed; // pack folders are only written to, never taken from
-            if (move && fromArea != "mod")
-                return IntentOutcome::Failed;
-            std::filesystem::create_directories(to.parent_path(), ec);
+            if (!std::filesystem::is_regular_file(src, ec))
+                return Status::NotFound;
+            if (from.area != abi::Area::Mod && from.area != abi::Area::Screenshots)
+                return Status::Denied; // pack folders are only written to, never taken from
+            if (move && from.area != abi::Area::Mod)
+                return Status::Denied;
+            if (to.area != abi::Area::Mod && std::filesystem::exists(dst, ec))
+                return Status::Failed;
+            std::filesystem::create_directories(dst.parent_path(), ec);
             if (move)
-                std::filesystem::rename(from, to, ec);
+                std::filesystem::rename(src, dst, ec);
             if (!move || ec) {
                 ec.clear();
-                std::filesystem::copy_file(from, to, std::filesystem::copy_options::overwrite_existing, ec);
+                std::filesystem::copy_file(src, dst, std::filesystem::copy_options::overwrite_existing, ec);
                 if (!ec && move)
-                    std::filesystem::remove(from, ec);
+                    std::filesystem::remove(src, ec);
             }
-            return ec ? IntentOutcome::Failed : IntentOutcome::Handled;
+            return ec ? Status::Failed : Status::Ok;
         };
-        reg(HostAction::CopyFile, "Copies a file (extras: from, to as area:path)", files,
-            [transfer](const std::string& sender, const abi::Intent& in, mods::IntentExtras&) { return transfer(false, sender, in); });
-        reg(HostAction::MoveFile, "Moves a file (extras: from, to as area:path)", files,
-            [transfer](const std::string& sender, const abi::Intent& in, mods::IntentExtras&) { return transfer(true, sender, in); });
-        reg(HostAction::DownloadFile, "Downloads an https file to disk (extras: url, to as area:path, request)", network | files,
-            [this, resolve, text, integer](const std::string& sender, const abi::Intent& in, mods::IntentExtras&) {
-                std::filesystem::path to;
-                std::string area;
-                const std::string url = text(in, "url");
-                if (url.rfind("https://", 0) != 0 || url.size() > 2048 || !resolve(sender, text(in, "to"), to, area))
-                    return IntentOutcome::Failed;
-                std::error_code ec;
-                if (area != "mod" && std::filesystem::exists(to, ec))
-                    return IntentOutcome::Failed;
-                if (modHttpActive.load() >= 6)
-                    return IntentOutcome::Failed;
-                StartModHttp(sender, static_cast<uint32_t>(integer(in, "request", 0)), "GET", url, 30000, {}, {}, to.string());
-                return IntentOutcome::Handled;
-            });
-
-        reg(HostAction::ToggleHud, "Shows or hides the HUD", 0, [this](const std::string&, const abi::Intent&, mods::IntentExtras&) {
-            options.showHud = !options.showHud;
-            return IntentOutcome::Handled;
-        });
+        mm.Register(Op::CopyFile, [transfer](CallContext& ctx, abi::Reader& r, abi::Writer&) { return transfer(false, ctx, r); }, files);
+        mm.Register(Op::MoveFile, [transfer](CallContext& ctx, abi::Reader& r, abi::Writer&) { return transfer(true, ctx, r); }, files);
+        mm.Register(Op::DownloadFile, [this, resolve](CallContext& ctx, abi::Reader& r, abi::Writer&) {
+            const uint32_t request = r.get<uint32_t>();
+            const std::string url = r.str();
+            const auto to = r.read<abi::FileLocation>();
+            std::filesystem::path dst;
+            if (!r.Ok() || url.rfind("https://", 0) != 0 || url.size() > 2048 || !resolve(ctx, to, dst))
+                return Status::BadArguments;
+            std::error_code ec;
+            if (to.area != abi::Area::Mod && std::filesystem::exists(dst, ec))
+                return Status::Failed;
+            if (modHttpActive.load() >= 6)
+                return Status::Unavailable;
+            StartModHttp(ctx.plugin, request, "GET", url, 30000, {}, {}, dst.string());
+            return Status::Ok;
+        }, network | files);
     }
 }

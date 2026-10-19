@@ -7,6 +7,7 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <variant>
 #include <vector>
 
 #include "perlin/rpc.hpp"
@@ -22,6 +23,12 @@ namespace perlin::game {
         const double yaw = p.yaw * std::numbers::pi / 180.0, pitch = p.pitch * std::numbers::pi / 180.0;
         return {-std::sin(yaw) * std::cos(pitch), -std::sin(pitch), std::cos(yaw) * std::cos(pitch)};
     }
+
+    // Where the camera points, in the same yaw and pitch `act::look` takes.
+    struct Look {
+        float yaw = 0, pitch = 0;
+    };
+    inline Result<Look> look() { return detail::call_as<Look>(Op::PlayerLook); }
 
     inline Result<std::vector<Effect>> effects() { return detail::call_list<Effect>(Op::PlayerEffects); }
 
@@ -82,6 +89,31 @@ namespace perlin::game {
         w.write(center.x, center.y, center.z, static_cast<int32_t>(options.radius), static_cast<int32_t>(options.max_results), options.exact, options.name);
         return detail::call_list<abi::FoundBlock>(Op::FindBlocks, w);
     }
+
+    // What the game knows about a kind of block: hardness, mining tool, display name, block properties.
+    inline Result<BlockProps> block_props(std::string_view name) {
+        abi::Writer w;
+        w.write(name);
+        return detail::call_as<BlockProps>(Op::BlockProps, w);
+    }
+
+    // The block entity at a position (sign text, banner patterns, ...), with the full tag as JSON in `nbt`.
+    inline Result<BlockEntityInfo> block_entity(const BlockPos& pos) {
+        abi::Writer w;
+        w.write(pos.x, pos.y, pos.z);
+        return detail::call_as<BlockEntityInfo>(Op::BlockEntityData, w);
+    }
+
+    // The player-facing name of an item, block or entity, translated and resource-pack aware: "Stone", "Cow".
+    inline std::string display_name(NameKind kind, std::string_view id, int aux = 0) {
+        abi::Writer w;
+        w.write(kind, id, static_cast<int32_t>(aux));
+        auto bytes = detail::call(Op::DisplayName, w);
+        return bytes ? std::string(bytes->begin(), bytes->end()) : std::string(id);
+    }
+
+    // The block being mined by the local player, and how far along it is.
+    inline Result<BreakState> break_state() { return detail::call_as<BreakState>(Op::BreakProgress); }
 
     // Every block name the game knows, for completion lists.
     inline Result<std::vector<std::string>> block_names() { return detail::call_list<std::string>(Op::BlockNames); }
@@ -200,6 +232,71 @@ namespace perlin::game {
                 return unexpected(Error{Status::Failed});
             return v;
         }
+    }
+
+    // ---------------------------------------------------------------------------------------------
+    // What the crosshair is on, with everything the game knows about it already looked up.
+    // ---------------------------------------------------------------------------------------------
+    struct BlockTarget {
+        BlockPos pos;
+        Face face = Face::Up;
+        double distance = 0;
+        BlockInfo block;
+        BlockProps props;
+        std::string display_name;
+        // The block entity, fetched on first use because most blocks have none.
+        const BlockEntityInfo& entity() const {
+            if (!fetched) {
+                if (auto e = block_entity(pos))
+                    cached = std::move(*e);
+                fetched = true;
+            }
+            return cached;
+        }
+
+    private:
+        mutable BlockEntityInfo cached;
+        mutable bool fetched = false;
+    };
+
+    struct EntityTarget {
+        Entity entity;
+        double distance = 0;
+        std::string display_name;
+    };
+
+    // Nothing, a block or an entity.
+    using Target = std::variant<std::monostate, BlockTarget, EntityTarget>;
+
+    inline Target target() {
+        const auto a = aim();
+        if (!a)
+            return {};
+        if (a->kind == AimKind::Block && a->block.hit) {
+            BlockTarget t;
+            t.pos = {a->block.x, a->block.y, a->block.z};
+            t.face = a->block.face;
+            t.distance = a->distance;
+            if (auto b = block(t.pos))
+                t.block = std::move(*b);
+            else
+                return {};
+            if (auto p = block_props(t.block.name))
+                t.props = std::move(*p);
+            t.display_name = t.props.displayName.empty() ? display_name(NameKind::Block, t.block.name) : t.props.displayName;
+            return t;
+        }
+        if (a->kind == AimKind::Entity) {
+            EntityTarget t;
+            if (auto e = entity(a->entity))
+                t.entity = std::move(*e);
+            else
+                return {};
+            t.distance = a->distance;
+            t.display_name = !t.entity.nameTag.empty() ? t.entity.nameTag : display_name(NameKind::Entity, t.entity.type);
+            return t;
+        }
+        return {};
     }
 
     inline std::string translate(std::string_view key) {

@@ -1,6 +1,7 @@
-// Verifies the reflection-driven wire encoding against the original hand-written one, byte for byte.
+// Verifies the reflection-driven wire encoding: every wire struct, filled with distinct values, survives a write/read/write
+// round trip byte for byte, a truncated read fails cleanly, and a hostile length prefix allocates nothing.
+//   g++ -std=c++23 -Isdk tests/abi_test.cpp
 #include <perlin/abi.hpp>
-#include "/tmp/abi_old.hpp"
 #include <cstdio>
 #include <cstdlib>
 #include <type_traits>
@@ -19,32 +20,26 @@ template <class T> void fill(T& v) {
     else if constexpr (abi::wire::is_pair<T>::value) { fill(v.first); fill(v.second); }
     else if constexpr (meta::Aggregate<T>) meta::for_each_field(v, [](auto& m) { fill(m); });
 }
-template <class New, class Old>
+template <class New>
 int check(const char* name) {
     New n{};
     fill(n);
     abi::Writer w1; w1.write(n);
-    perlin_old::abi::Reader r(w1.Data(), w1.Size());
-    Old o = Old::Read(r);
-    if (!r.Ok() || r.Remaining() != 0) { std::printf("FAIL %s: old reader consumed wrongly (rem %zu)\n", name, r.Remaining()); return 1; }
-    perlin_old::abi::Writer w2; o.Write(w2);
-    if (w1.data != w2.data) { std::printf("FAIL %s: bytes differ (%zu vs %zu)\n", name, w1.Size(), w2.Size()); return 1; }
-    // and back through the new reader
-    abi::Reader r2(w2.Data(), w2.Size());
-    New back = r2.read<New>();
-    abi::Writer w3; w3.write(back);
-    if (!r2.Ok() || r2.Remaining() != 0 || w3.data != w1.data) { std::printf("FAIL %s: new reader roundtrip\n", name); return 1; }
+    abi::Reader r(w1.Data(), w1.Size());
+    New back = r.read<New>();
+    abi::Writer w2; w2.write(back);
+    if (!r.Ok() || r.Remaining() != 0 || w1.data != w2.data) { std::printf("FAIL %s: round trip (%zu vs %zu bytes, %zu left)\n", name, w1.Size(), w2.Size(), r.Remaining()); return 1; }
     std::printf("ok   %s (%zu bytes, %zu fields)\n", name, w1.Size(), meta::field_count<New>);
     return 0;
 }
-#define T(N) rc |= check<abi::N, perlin_old::abi::N>(#N);
+#define T(N) rc |= check<abi::N>(#N);
 int main() {
     int rc = 0;
     T(Item) T(PlayerState) T(Effect) T(Inventory) T(Entity) T(PlayerEntry) T(WorldState) T(BlockInfo) T(RayHit) T(AimState)
     T(ScreenState) T(Meta) T(InputOverrideState) T(Region) T(FoundBlock)
     T(EventTick) T(EventFrame) T(EventChat) T(EventKey) T(EventCommand) T(EventConnection) T(EventDamage) T(EventText)
     T(EventSlot) T(EventEntity) T(EventSound) T(EventHttp) T(EventPacket) T(EventTitle)
-    rc |= check<abi::EventDimension, perlin_old::abi::EventChange>("EventChange");
+    T(EventDimension) T(Attribute) T(BlockProps) T(BlockEntityInfo) T(BreakState) T(FileLocation)
     // truncated input must fail cleanly
     abi::Writer w; abi::Inventory inv; fill(inv); w.write(inv);
     abi::Reader cut(w.Data(), w.Size() / 2);

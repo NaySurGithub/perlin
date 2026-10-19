@@ -936,9 +936,11 @@ namespace perlin {
                                p.headYaw, MetaFlags(p.metadata), 1.0f, 0, 0, 0);
             ApplyMetadata(entities, p.runtimeId, p.metadata);
             ApplyEntityProperties(p.runtimeId, p.entityType, p.properties);
-            for (const EntityAttributesEntry& a : p.attributes)
+            for (const EntityAttributesEntry& a : p.attributes) {
+                entities.SetAttribute(p.runtimeId, a.name, a.min, a.value, a.max);
                 if (a.name == "minecraft:health")
                     entities.SetHealth(p.runtimeId, a.value);
+            }
         });
 
         On<VoxelShapesPacket>([](const VoxelShapesPacket& p) {
@@ -1095,9 +1097,11 @@ namespace perlin {
 
         On<UpdateAttributesPacket>([this](const UpdateAttributesPacket& p) {
             if (runtimeId != 0 && p.runtimeEntityId != runtimeId) {
-                for (const PlayerAttributesEntry& a : p.attributes)
+                for (const PlayerAttributesEntry& a : p.attributes) {
+                    entities.SetAttribute(p.runtimeEntityId, a.name, a.min, a.current, a.max);
                     if (a.name == "minecraft:health")
                         entities.SetHealth(p.runtimeEntityId, a.current);
+                }
                 return;
             }
             {

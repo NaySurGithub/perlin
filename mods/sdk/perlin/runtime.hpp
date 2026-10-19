@@ -21,6 +21,7 @@
 #include "perlin/game.hpp"
 #include "perlin/io.hpp"
 #include "perlin/rpc.hpp"
+#include "perlin/settings.hpp"
 #include "perlin/types.hpp"
 #include "perlin/ui.hpp"
 
@@ -72,8 +73,6 @@ namespace perlin {
         PERLIN_EVENT_TAG(Packet);
         PERLIN_EVENT_TAG(Title);
         PERLIN_EVENT_TAG(SettingChanged);
-        PERLIN_EVENT_TAG(Intent);
-        PERLIN_EVENT_TAG(IntentResult);
 #undef PERLIN_EVENT_TAG
     }
 
@@ -120,17 +119,6 @@ namespace perlin {
         case Key::MouseRight: return "key.mouse.right";
         default: return {};
         }
-    }
-
-    // ---------------------------------------------------------------------------------------------
-    // Icons for settings and intents: "item:minecraft:feather", "texture:textures/items/apple",
-    // "file:icons/speed.png" (relative to the mod's data folder).
-    // ---------------------------------------------------------------------------------------------
-    namespace icon {
-        inline std::string item(std::string_view id) { return "item:" + std::string(id); }
-        inline std::string texture(std::string_view path) { return "texture:" + std::string(path); }
-        inline std::string file(std::string_view relative) { return "file:" + std::string(relative); }
-        inline constexpr std::string_view none = {};
     }
 
     // The mod's own icon in the Mods screen, replacing the one from the manifest. `relative_png` lives in the
@@ -198,8 +186,7 @@ namespace perlin {
                 out = *value;
                 return true;
             } else if constexpr (std::is_floating_point_v<T>) {
-                const auto r = std::from_chars(token.data(), token.data() + token.size(), out);
-                return r.ec == std::errc{} && r.ptr == token.data() + token.size();
+                return perlin::detail::parse_floating(token, out);
             } else {
                 static_assert(std::is_integral_v<T>, "unsupported command argument type");
                 const auto r = std::from_chars(token.data(), token.data() + token.size(), out);
@@ -269,189 +256,6 @@ namespace perlin {
                 return false;
         }
     }
-
-    // Folders a file intent can name. `Mod` is the mod's own data folder; the others are the game's.
-    // Files may be copied or moved out of `Mod` (and copied out of `Screenshots`) into any area; nothing already in
-    // a game folder is overwritten. Needs the "files" permission (downloads also need "network").
-    enum class Area { Mod, Screenshots, ResourcePacks, ShaderPacks };
-
-    inline std::string file_spec(Area area, std::string_view relative) {
-        constexpr std::array<std::string_view, 4> names{"mod", "screenshots", "resourcepacks", "shaderpacks"};
-        return std::string(names[static_cast<size_t>(area)]) + ":" + std::string(relative);
-    }
-
-    // ---------------------------------------------------------------------------------------------
-    // Extras and intents.
-    // ---------------------------------------------------------------------------------------------
-    class Extras {
-    public:
-        Extras() = default;
-        explicit Extras(std::vector<abi::Extra> raw) : items(std::move(raw)) {}
-
-        bool has(std::string_view key) const { return find(key) != nullptr; }
-        size_t size() const { return items.size(); }
-        const std::vector<abi::Extra>& raw() const { return items; }
-
-        // `get<int>("count")`, `get<Screen>("screen")`, `get<std::string>("text")`. Empty when absent or of another type.
-        template <class T>
-        std::optional<T> get(std::string_view key) const {
-            const abi::Extra* e = find(key);
-            if (!e) return std::nullopt;
-            if constexpr (std::is_same_v<T, bool>) {
-                if (const auto* v = std::get_if<bool>(&e->value)) return *v;
-            } else if constexpr (std::is_enum_v<T>) {
-                if (const auto* v = std::get_if<int64_t>(&e->value)) return static_cast<T>(*v);
-                if (const auto* s = std::get_if<std::string>(&e->value)) return meta::enum_cast_nocase<T>(*s);
-            } else if constexpr (std::is_integral_v<T>) {
-                if (const auto* v = std::get_if<int64_t>(&e->value)) return static_cast<T>(*v);
-            } else if constexpr (std::is_floating_point_v<T>) {
-                if (const auto* v = std::get_if<double>(&e->value)) return static_cast<T>(*v);
-                if (const auto* v = std::get_if<int64_t>(&e->value)) return static_cast<T>(*v);
-            } else if constexpr (std::is_same_v<T, std::string>) {
-                if (const auto* v = std::get_if<std::string>(&e->value)) return *v;
-            } else if constexpr (std::is_same_v<T, std::vector<uint8_t>>) {
-                if (const auto* v = std::get_if<std::vector<uint8_t>>(&e->value)) return *v;
-            }
-            return std::nullopt;
-        }
-
-        template <class T>
-        T get_or(std::string_view key, T fallback) const {
-            return get<T>(key).value_or(std::move(fallback));
-        }
-
-    private:
-        const abi::Extra* find(std::string_view key) const {
-            for (const abi::Extra& e : items)
-                if (e.key == key) return &e;
-            return nullptr;
-        }
-        std::vector<abi::Extra> items;
-    };
-
-    namespace detail_intent {
-        template <class T>
-        abi::ExtraValue to_value(const T& v) {
-            if constexpr (std::is_same_v<T, bool>) return v;
-            else if constexpr (std::is_enum_v<T>) return static_cast<int64_t>(v);
-            else if constexpr (std::is_integral_v<T>) return static_cast<int64_t>(v);
-            else if constexpr (std::is_floating_point_v<T>) return static_cast<double>(v);
-            else if constexpr (std::is_same_v<T, std::vector<uint8_t>>) return v;
-            else return std::string(std::string_view(v));
-        }
-    }
-
-    // A message to the game or to another mod: an action, an optional target mod, and typed extras.
-    //   Intent(abi::HostAction::OpenScreen).put("screen", Screen::Mods)
-    //   Intent("shop.action.BUY").to("shop.wasm").put("item", "minecraft:apple").put("count", 3)
-    class Intent {
-    public:
-        explicit Intent(std::string action) { data.action = std::move(action); }
-        explicit Intent(abi::HostAction action) { data.action = std::string(abi::action_id(action)); }
-
-        Intent& to(std::string mod) {
-            data.target = std::move(mod);
-            return *this;
-        }
-        template <class T>
-        Intent& put(std::string key, const T& value) {
-            data.extras.push_back({std::move(key), detail_intent::to_value(value)});
-            return *this;
-        }
-        const abi::Intent& raw() const { return data; }
-
-    private:
-        abi::Intent data;
-    };
-
-    // What a handler sees: the action, who sent it, the extras, and a way to answer.
-    class IntentCall {
-    public:
-        IntentCall(uint32_t request_id, std::string from, abi::Intent raw) : request(request_id), sender_(std::move(from)), intent_(std::move(raw)), extras_(intent_.extras) {}
-
-        std::string_view action() const { return intent_.action; }
-        const std::string& sender() const { return sender_; }
-        const Extras& extras() const { return extras_; }
-        template <class T>
-        std::optional<T> get(std::string_view key) const { return extras_.get<T>(key); }
-
-        // Sends extras back to the sender; they arrive in its IntentResult.
-        template <class... Pairs>
-        Result<void> reply(Pairs&&... pairs) const {
-            std::vector<abi::Extra> out;
-            (out.push_back({std::string(pairs.first), detail_intent::to_value(pairs.second)}), ...);
-            abi::Writer w;
-            w.write(request, out);
-            return detail::call_void(Op::IntentReply, w);
-        }
-
-    private:
-        uint32_t request;
-        std::string sender_;
-        abi::Intent intent_;
-        Extras extras_;
-    };
-
-    struct IntentResult {
-        abi::IntentOutcome outcome = abi::IntentOutcome::Unhandled;
-        std::string handler;
-        Extras extras;
-        bool handled() const { return outcome == abi::IntentOutcome::Handled; }
-    };
-
-    // Who would handle an action right now: the game ("perlin") and any mods that registered for it.
-    inline Result<std::vector<abi::IntentHandler>> intent_handlers(std::string_view action) {
-        abi::Writer w;
-        w.write(action);
-        return detail::call_list<abi::IntentHandler>(Op::IntentQuery, w);
-    }
-    inline Result<std::vector<abi::IntentHandler>> intent_handlers(abi::HostAction action) { return intent_handlers(abi::action_id(action)); }
-
-    // ---------------------------------------------------------------------------------------------
-    // Settings. Declared once; the game lists them on the mod's Settings page, stores them, and tells the mod
-    // when one changes. A `Setting<T>` handle always holds the current value.
-    // ---------------------------------------------------------------------------------------------
-    struct SettingOptions {
-        std::string description;
-        std::string icon; // icon::item(...), icon::texture(...), icon::file(...)
-        std::string unit;
-        bool restart = false; // reload the mod when the page closes
-    };
-
-    namespace detail_setting {
-        template <class T>
-        std::string to_text(const T& v) {
-            if constexpr (std::is_same_v<T, bool>) return v ? "true" : "false";
-            else if constexpr (std::is_same_v<T, std::string>) return v;
-            else if constexpr (std::is_enum_v<T>) return std::string(meta::enum_name(v));
-            else return std::format("{}", v);
-        }
-    }
-
-    template <class T>
-    class Setting {
-    public:
-        Setting() : state(std::make_shared<T>()) {}
-        const T& get() const { return *state; }
-        const T& operator*() const { return *state; }
-        operator const T&() const { return *state; }
-        const std::string& id() const { return id_; }
-
-        // Changes the value from the mod side (the game stores it and shows it on the settings page).
-        Result<void> set(const T& value) {
-            abi::Writer w;
-            w.write(id_, detail_setting::to_text(value));
-            auto r = detail::call_void(Op::SettingSet, w);
-            if (r) *state = value;
-            return r;
-        }
-
-    private:
-        friend class Context;
-        Setting(std::shared_ptr<T> s, std::string id) : state(std::move(s)), id_(std::move(id)) {}
-        std::shared_ptr<T> state;
-        std::string id_;
-    };
 
     // ---------------------------------------------------------------------------------------------
     // The context a plugin's entry point receives.
@@ -548,102 +352,25 @@ namespace perlin {
         template <class... Args>
         void print(std::format_string<Args...> fmt, Args&&... args) { (void)act::message(fmt, std::forward<Args>(args)...); }
 
-        // ---- Settings ----
-        Setting<bool> toggle(std::string id, std::string label, bool initial, SettingOptions options = {}) {
-            return declare<bool>(abi::SettingKind::Toggle, std::move(id), std::move(label), initial ? "true" : "false", options, 0, 1, 0, {});
+        // ---- Settings (declared in the mod's JSON; see settings.hpp) ----
+        // Runs after a setting changed, with its new value: `ctx.on_change(settings::unit, [](Unit u) { ... })`.
+        template <class T, class Fn>
+        void on_change(const Setting<T>& setting, Fn&& fn) {
+            change_handlers[std::string(setting.id())].push_back([f = std::forward<Fn>(fn)](const std::string& value) mutable {
+                if constexpr (std::is_invocable_v<Fn&, T>)
+                    f(detail_settings::parse<T>(value));
+                else
+                    f();
+            });
         }
-        template <std::integral T = int>
-        Setting<T> integer(std::string id, std::string label, T initial, T min, T max, SettingOptions options = {}) {
-            return declare<T>(abi::SettingKind::Integer, std::move(id), std::move(label), std::to_string(initial), options, static_cast<double>(min),
-                              static_cast<double>(max), 1, {});
-        }
-        Setting<double> number(std::string id, std::string label, double initial, double min, double max, double step = 0, SettingOptions options = {}) {
-            return declare<double>(abi::SettingKind::Number, std::move(id), std::move(label), std::format("{}", initial), options, min, max, step, {});
-        }
-        // A choice between the enumerators of E; the page shows their names.
-        template <meta::Enumeration E>
-        Setting<E> choice(std::string id, std::string label, E initial, SettingOptions options = {}) {
-            std::vector<std::string> names;
-            for (size_t i = 0; i < meta::enum_count<E>; i++) names.emplace_back(meta::enum_names<E>[i]);
-            return declare<E>(abi::SettingKind::Choice, std::move(id), std::move(label), std::string(meta::enum_name(initial)), options, 0, 1, 0, std::move(names));
-        }
-        Setting<std::string> choice(std::string id, std::string label, std::vector<std::string> values, std::string initial, SettingOptions options = {}) {
-            return declare<std::string>(abi::SettingKind::Choice, std::move(id), std::move(label), std::move(initial), options, 0, 1, 0, std::move(values));
-        }
+        // Runs when a button on the settings page is pressed.
         template <class Fn>
-        void button(std::string id, std::string label, Fn&& fn, SettingOptions options = {}) {
-            define(abi::SettingKind::Button, id, std::move(label), "", options, 0, 1, 0, {});
-            setting_handlers[id] = [f = std::forward<Fn>(fn)](const std::string&) mutable { f(); };
+        void on_press(const Button& button, Fn&& fn) {
+            press_handlers[std::string(button.id())] = std::forward<Fn>(fn);
         }
-        void header(std::string id, std::string label) { define(abi::SettingKind::Header, std::move(id), std::move(label), "", {}, 0, 1, 0, {}); }
-        void note(std::string id, std::string text) { define(abi::SettingKind::Label, std::move(id), std::move(text), "", {}, 0, 1, 0, {}); }
-        // Runs after any setting of this mod changed (after the handle was updated).
+        // Runs after any setting of this mod changed.
         template <class Fn>
         void on_setting_changed(Fn&& fn) { setting_observers.push_back(std::forward<Fn>(fn)); }
-
-        // Opens this mod's settings page.
-        Result<void> open_settings() { return send(Intent(abi::HostAction::OpenModSettings)); }
-
-        // ---- Intents ----
-        // Handles an action sent by the game's UI or another mod. `description` appears in intent queries.
-        template <class Fn>
-        void on_intent(std::string action, std::string description, Fn&& fn) {
-            abi::Writer w;
-            w.write(abi::IntentFilter{action, std::move(description)});
-            (void)detail::call_void(Op::IntentRegister, w);
-            intent_handlers_[action] = std::forward<Fn>(fn);
-        }
-        template <meta::fixed_string Action, class Fn>
-        void on_intent(std::string_view description, Fn&& fn) { on_intent(std::string(Action.view()), std::string(description), std::forward<Fn>(fn)); }
-
-        // Sends an intent; the callback gets the outcome and any reply extras.
-        template <class Fn>
-        Result<uint32_t> send(const Intent& intent, Fn&& callback) {
-            abi::Writer w;
-            w.write(intent.raw());
-            auto id = detail::call_as<uint32_t>(Op::IntentSend, w);
-            if (id) pending_intents[*id] = std::forward<Fn>(callback);
-            return id;
-        }
-        Result<void> send(const Intent& intent) {
-            auto id = send(intent, [](const IntentResult&) {});
-            if (!id) return unexpected(id.error());
-            return {};
-        }
-        Result<void> send(abi::HostAction action) { return send(Intent(action)); }
-
-        // File intents. The callback receives whether the game did it.
-        template <class Fn>
-        Result<uint32_t> copy_file(std::string from, std::string to, Fn&& done) {
-            return send(Intent(abi::HostAction::CopyFile).put("from", from).put("to", to), [f = std::forward<Fn>(done)](const IntentResult& r) mutable { f(r.handled()); });
-        }
-        template <class Fn>
-        Result<uint32_t> move_file(std::string from, std::string to, Fn&& done) {
-            return send(Intent(abi::HostAction::MoveFile).put("from", from).put("to", to), [f = std::forward<Fn>(done)](const IntentResult& r) mutable { f(r.handled()); });
-        }
-        // Downloads an https file straight to disk ("mod:name.zip", "resourcepacks:pack.zip", ...). The callback gets the
-        // HTTP status (the body is not kept) or the error.
-        template <class Fn>
-        Result<uint32_t> download(std::string url, std::string to, Fn&& done) {
-            const uint32_t request = net::detail_net::counter()++;
-            net::detail_net::pending()[request] = std::forward<Fn>(done);
-            auto sent = send(Intent(abi::HostAction::DownloadFile).put("url", url).put("to", to).put("request", static_cast<int64_t>(request)),
-                             [request](const IntentResult& r) {
-                                 if (r.handled()) return; // the HttpResponse event completes it
-                                 auto& pending = net::detail_net::pending();
-                                 if (const auto it = pending.find(request); it != pending.end()) {
-                                     auto cb = std::move(it->second);
-                                     pending.erase(it);
-                                     net::Response failed;
-                                     failed.error = r.outcome == abi::IntentOutcome::Denied ? "permission denied" : "the game refused the download";
-                                     if (cb) cb(failed);
-                                 }
-                             });
-            if (!sent) net::detail_net::pending().erase(request);
-            return sent;
-        }
-
-        Result<void> open_screen(Screen screen) { return send(Intent(abi::HostAction::OpenScreen).put("screen", screen)); }
 
         Config& config() {
             if (!cfg) cfg = std::make_unique<Config>();
@@ -658,14 +385,13 @@ namespace perlin {
 
         uint32_t subscriptions() const {
             // Replies and setting changes are always wanted: the game sends them without being asked.
-            uint32_t mask = bit(abi::Event::HttpResponse) | bit(abi::Event::SettingChanged) | bit(abi::Event::IntentResult);
+            uint32_t mask = bit(abi::Event::HttpResponse) | bit(abi::Event::SettingChanged);
             for (const auto& entry : handlers)
                 if (!entry.second.empty()) mask |= 1u << entry.first;
             if (!timers.empty()) mask |= bit(abi::Event::Tick);
             if (!layers.empty()) mask |= bit(abi::Event::Frame);
             if (!commands.empty()) mask |= bit(abi::Event::Command);
             if (!keys.empty()) mask |= bit(abi::Event::Key);
-            if (!intent_handlers_.empty()) mask |= bit(abi::Event::Intent);
             return mask;
         }
 
@@ -735,54 +461,23 @@ namespace perlin {
             commands[name] = std::move(fn);
         }
 
+    public:
+        // Removes a command this mod registered.
+        void remove_command(const std::string& name) {
+            abi::Writer w;
+            w.write(name);
+            (void)detail::call_void(Op::CommandUnregister, w);
+            commands.erase(name);
+        }
+        template <meta::fixed_string Name>
+        void remove_command() { remove_command(std::string(Name.view())); }
+
+    private:
         template <class Fn>
         TimerId add_timer(Duration delay, Duration period, Fn&& fn) {
             const TimerId id = static_cast<TimerId>(next_timer++);
             timers.push_back({id, elapsed + delay.count(), period.count(), std::forward<Fn>(fn), true});
             return id;
-        }
-
-        void define(abi::SettingKind kind, std::string id, std::string label, std::string value, const SettingOptions& options, double min, double max, double step,
-                    std::vector<std::string> choices, std::string* normalized = nullptr) {
-            abi::SettingDef def;
-            def.id = std::move(id);
-            def.kind = kind;
-            def.label = std::move(label);
-            def.description = options.description;
-            def.icon = options.icon;
-            def.value = value;
-            def.fallback = value;
-            def.min = min;
-            def.max = max;
-            def.step = step;
-            def.choices = std::move(choices);
-            def.unit = options.unit;
-            def.restart = options.restart;
-            abi::Writer w;
-            w.write(def);
-            auto reply = detail::call_as<std::string>(Op::SettingDefine, w);
-            if (normalized && reply) *normalized = *reply;
-        }
-
-        template <class T>
-        Setting<T> declare(abi::SettingKind kind, std::string id, std::string label, std::string initial, const SettingOptions& options, double min, double max,
-                           double step, std::vector<std::string> choices) {
-            std::string current = initial;
-            define(kind, id, std::move(label), std::move(initial), options, min, max, step, std::move(choices), &current);
-            auto state = std::make_shared<T>();
-            assign(*state, current);
-            setting_handlers[id] = [state](const std::string& value) { assign(*state, value); };
-            return Setting<T>(state, id);
-        }
-
-        template <class T>
-        static void assign(T& out, const std::string& text) {
-            if constexpr (std::is_same_v<T, std::string>) {
-                out = text;
-            } else {
-                T value{};
-                if (detail_cmd::parse_value<T>(text, value)) out = value;
-            }
         }
 
         void run_timers();
@@ -795,10 +490,9 @@ namespace perlin {
         std::vector<Layer> layers;
         std::unordered_map<std::string, std::function<void(const CommandCall&)>> commands;
         std::unordered_map<std::string, std::function<void(bool)>> keys;
-        std::unordered_map<std::string, std::function<void(const std::string&)>> setting_handlers;
+        std::unordered_map<std::string, std::vector<std::function<void(const std::string&)>>> change_handlers;
+        std::unordered_map<std::string, std::function<void()>> press_handlers;
         std::vector<std::function<void(const abi::EventSettingChanged&)>> setting_observers;
-        std::unordered_map<std::string, std::function<void(const IntentCall&)>> intent_handlers_;
-        std::unordered_map<uint32_t, std::function<void(const IntentResult&)>> pending_intents;
         std::unique_ptr<Config> cfg;
         uint32_t next_timer = 1;
         uint64_t ticks = 0;
@@ -882,27 +576,14 @@ namespace perlin {
         case abi::Event::SettingChanged: {
             abi::Reader copy = r;
             const auto e = copy.read<abi::payload_t<abi::Event::SettingChanged>>();
-            if (const auto it = setting_handlers.find(e.id); it != setting_handlers.end()) it->second(e.value);
+            if (e.kind == abi::SettingKind::Button) {
+                if (const auto it = press_handlers.find(e.id); it != press_handlers.end()) it->second();
+            } else {
+                detail_settings::store().put(e.id, e.value);
+                if (const auto it = change_handlers.find(e.id); it != change_handlers.end())
+                    for (auto& fn : it->second) fn(e.value);
+            }
             for (auto& observer : setting_observers) observer(e);
-            break;
-        }
-        case abi::Event::Intent: {
-            abi::Reader copy = r;
-            auto e = copy.read<abi::payload_t<abi::Event::Intent>>();
-            if (const auto it = intent_handlers_.find(e.intent.action); it != intent_handlers_.end()) {
-                const IntentCall call(e.request, e.sender, std::move(e.intent));
-                it->second(call);
-            }
-            break;
-        }
-        case abi::Event::IntentResult: {
-            abi::Reader copy = r;
-            auto e = copy.read<abi::payload_t<abi::Event::IntentResult>>();
-            if (const auto it = pending_intents.find(e.request); it != pending_intents.end()) {
-                auto cb = std::move(it->second);
-                pending_intents.erase(it);
-                if (cb) cb(IntentResult{e.outcome, std::move(e.handler), Extras(std::move(e.extras))});
-            }
             break;
         }
         case abi::Event::HttpResponse: {

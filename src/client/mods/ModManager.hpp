@@ -32,18 +32,6 @@ namespace perlin::mods {
         bool needsApproval = false; // asks for permissions the user has not allowed yet
     };
 
-    // A mod's reply to an intent the game or another mod sent it, plus who handled it.
-    using IntentExtras = std::vector<abi::Extra>;
-    // Runs on the main thread. `sender` is the sending mod ("perlin" for the game itself).
-    using HostIntentFn = std::function<abi::IntentOutcome(const std::string& sender, const abi::Intent&, IntentExtras& result)>;
-
-    struct PendingIntent {
-        uint32_t id = 0;
-        std::string sender;
-        uint32_t senderPermissions = 0;
-        abi::Intent intent;
-    };
-
     struct PluginCommand {
         std::string plugin, name, usage, description;
     };
@@ -112,12 +100,11 @@ namespace perlin::mods {
         // The settings page was closed: saves, and reloads the mod if a changed setting needs that.
         void SettingsClosed(const std::string& plugin);
 
-        // Intents. The game registers handlers for its own actions; mods register filters for theirs.
-        void RegisterHostIntent(std::string action, std::string description, uint32_t permission, HostIntentFn fn);
-        // Delivers queued intents and flushes settings. Call once per frame from the main thread.
+        // Mod calls run on the mod's own thread; anything that touches the game's UI or state is posted here and runs
+        // on the main thread inside Pump().
+        void PostMain(std::function<void()> task);
+        // Runs posted tasks and flushes settings. Call once per frame from the main thread.
         void Pump();
-        // Sends an intent as the game ("perlin").
-        uint32_t SendIntent(abi::Intent intent, const std::string& sender = "perlin");
         bool HasPermission(const std::string& plugin, abi::Permission p) const;
         uint64_t Tick() const { return tickCounter.load(); }
         void SetTick(uint64_t t) { tickCounter = t; }
@@ -151,10 +138,9 @@ namespace perlin::mods {
         void Spawn(Plugin& mod);
         std::string SettingsFile(const Plugin& mod) const;
         void LoadSettings(Plugin& mod);
+        void ApplySavedSettings(Plugin& mod);
         void SaveSettings(Plugin& mod);
-        void DeliverIntent(const PendingIntent& pending);
         void RegisterSettingOps();
-        void RegisterIntentOps();
 
         std::string directory;
         std::atomic<bool> running{false};
@@ -170,14 +156,7 @@ namespace perlin::mods {
         std::atomic<uint64_t> commandVersion{1};
         std::atomic<uint64_t> tickCounter{0};
         std::chrono::steady_clock::time_point lastScan{};
-        struct HostIntent {
-            std::string description;
-            uint32_t permission = 0;
-            HostIntentFn fn;
-        };
-        std::map<std::string, HostIntent> hostIntents;
-        std::vector<PendingIntent> intentQueue;
-        std::atomic<uint32_t> nextIntent{1};
+        std::vector<std::function<void()>> mainQueue;
         std::chrono::steady_clock::time_point lastFlush{};
         friend struct HostBridge;
     };

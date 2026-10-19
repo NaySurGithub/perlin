@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "perlin/rpc.hpp"
+#include "perlin/settings.hpp"
 
 namespace perlin::fs {
     inline Result<std::vector<uint8_t>> read_bytes(std::string_view path) {
@@ -61,6 +62,26 @@ namespace perlin::fs {
         w.str(path);
         return detail::call_list<std::string>(Op::StorageList, w);
     }
+
+    // ---- Files outside the mod's folder (the "files" permission in the manifest) ----
+    // A place in one of the game's folders: `fs::in(Area::ResourcePacks, "pack.zip")`.
+    using Location = abi::FileLocation;
+    inline Location in(Area area, std::string_view path) { return {area, std::string(path)}; }
+
+    // Copies a file. Allowed from the mod's folder and the screenshots folder into any area; an existing game file is
+    // never overwritten.
+    inline Result<void> copy(const Location& from, const Location& to) {
+        abi::Writer w;
+        w.write(from, to);
+        return detail::call_void(Op::CopyFile, w);
+    }
+
+    // Moves a file out of the mod's folder.
+    inline Result<void> move(const Location& from, const Location& to) {
+        abi::Writer w;
+        w.write(from, to);
+        return detail::call_void(Op::MoveFile, w);
+    }
 }
 
 namespace perlin {
@@ -79,8 +100,7 @@ namespace perlin {
                 return it->second == "true" || it->second == "1";
             } else if constexpr (std::is_floating_point_v<T>) {
                 T v{};
-                const auto r = std::from_chars(it->second.data(), it->second.data() + it->second.size(), v);
-                return r.ec == std::errc{} ? v : fallback;
+                return detail::parse_floating(it->second, v) ? v : fallback;
             } else {
                 T v{};
                 const auto r = std::from_chars(it->second.data(), it->second.data() + it->second.size(), v);
@@ -200,6 +220,19 @@ namespace perlin::net {
         r.headers.push_back({"Content-Type", std::move(content_type)});
         r.body.assign(body.begin(), body.end());
         return send(r, std::move(callback));
+    }
+
+    // Downloads an https file straight to disk (needs "network" and "files"). The callback gets the HTTP status or the
+    // error; the body is not kept.
+    inline Result<uint32_t> download(std::string_view url, const fs::Location& to, Callback callback) {
+        const uint32_t id = detail_net::counter()++;
+        abi::Writer w;
+        w.put(id).str(url).write(to);
+        auto r = detail::call_void(Op::DownloadFile, w);
+        if (!r)
+            return unexpected(r.error());
+        detail_net::pending()[id] = std::move(callback);
+        return id;
     }
 
     inline Result<std::string> packet_name(uint32_t id) {

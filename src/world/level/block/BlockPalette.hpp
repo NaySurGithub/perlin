@@ -53,6 +53,7 @@ namespace perlin {
         std::vector<std::string> AllNames() const;
         std::string ResourcePackKey(const std::string& fullName) const;
         bool BlockHasProperty(const std::string& fullName, const std::string& prop) const;
+        std::vector<std::string> BlockProperties(const std::string& fullName) const;
 
     private:
         BlockPalette();

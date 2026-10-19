@@ -176,4 +176,39 @@ namespace perlin::act {
     }
 
     inline Result<void> reload_resources() { return detail::call_void(Op::ReloadResources); }
+
+    // ---- The game's own actions: the same things its menus do ----
+
+    // Opens Pause, Options, Mods or Wardrobe.
+    inline Result<void> open_screen(Screen screen) {
+        abi::Writer w;
+        w.write(screen);
+        return detail::call_void(Op::OpenScreen, w);
+    }
+
+    // Opens a mod's settings page; with no argument, this mod's own.
+    inline Result<void> open_settings(std::string_view mod = {}) {
+        abi::Writer w;
+        w.str(mod);
+        return detail::call_void(Op::OpenModSettings, w);
+    }
+
+    inline Result<void> screenshot() { return detail::call_void(Op::TakeScreenshot); }
+
+    inline Result<void> cycle_perspective() { return detail::call_void(Op::CyclePerspective); }
+
+    inline Result<void> toggle_hud() { return detail::call_void(Op::ToggleHud); }
+
+    inline Result<void> copy_to_clipboard(std::string_view text) {
+        abi::Writer w;
+        w.str(text);
+        return detail::call_void(Op::CopyToClipboard, w);
+    }
+
+    // Opens an https link in the browser. Needs the "network" permission in the manifest.
+    inline Result<void> open_url(std::string_view url) {
+        abi::Writer w;
+        w.str(url);
+        return detail::call_void(Op::OpenUrl, w);
+    }
 }

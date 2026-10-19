@@ -50,6 +50,9 @@ namespace perlin {
             }
         if (const ui::Json* w = nbt.Find("IsWaxed"))
             be.waxed = w->NumberOr(0) != 0 || w->BoolOr(false);
+        be.nbt = nbt.Dump();
+        if (be.nbt.size() > 65536)
+            be.nbt.clear();
         std::lock_guard lock(mutex);
         entities[Key(x, y, z)] = std::move(be);
     }

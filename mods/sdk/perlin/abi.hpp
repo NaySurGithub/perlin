@@ -57,6 +57,10 @@ namespace perlin::abi {
         FindBlocks = 0x0305,
         ChunkLoaded = 0x0306,
         BlockNames = 0x0307,
+        BlockProps = 0x0308,
+        BlockEntityData = 0x0309,
+        DisplayName = 0x030A,
+        BreakProgress = 0x030B,
 
         Entities = 0x0400,
         EntityById = 0x0401,
@@ -116,17 +120,26 @@ namespace perlin::abi {
         PacketSend = 0x0B01,
         PacketName = 0x0B02,
 
-        SettingDefine = 0x0C00,
+        // Settings are declared in the mod's manifest; these read and change their values.
         SettingGet = 0x0C01,
         SettingSet = 0x0C02,
         SettingList = 0x0C03,
         ModList = 0x0C10,
         IconSet = 0x0C11,
 
-        IntentRegister = 0x0D00,
-        IntentSend = 0x0D01,
-        IntentReply = 0x0D02,
-        IntentQuery = 0x0D03,
+        // The game's own actions (the same things its menus do).
+        OpenScreen = 0x0D00,
+        OpenModSettings = 0x0D01,
+        TakeScreenshot = 0x0D02,
+        CyclePerspective = 0x0D03,
+        CopyToClipboard = 0x0D04,
+        OpenUrl = 0x0D05,
+        ToggleHud = 0x0D06,
+
+        // Files between the mod's folder and the game's pack and screenshot folders (needs the files permission).
+        CopyFile = 0x0E00,
+        MoveFile = 0x0E01,
+        DownloadFile = 0x0E02, // also needs the network permission
     };
 
     enum class Event : uint32_t {
@@ -153,8 +166,6 @@ namespace perlin::abi {
         Packet = 21,
         Title = 22,
         SettingChanged = 23,
-        Intent = 24,
-        IntentResult = 25,
     };
 
     enum class Status : int32_t {
@@ -305,7 +316,10 @@ namespace perlin::abi {
         Header,     // section heading
     };
 
-    enum class IntentOutcome : uint8_t { Unhandled = 0, Handled = 1, Denied = 2, Failed = 3 };
+    // Folders a file call can name. `Mod` is the mod's own data folder; the others belong to the game. Files may be
+    // copied or moved out of `Mod` (and copied out of `Screenshots`) into any area; nothing already in a game folder
+    // is overwritten.
+    enum class Area : uint8_t { Mod, Screenshots, ResourcePacks, ShaderPacks };
 
     // Actor flag bit positions (the protocol's ActorFlags). An entity's flags are an IndexSet<EntityFlag>.
     enum class EntityFlag : uint8_t {
@@ -336,19 +350,21 @@ struct perlin::meta::enum_range<perlin::abi::EffectId> {
     static constexpr int max = 63;
 };
 
-namespace perlin::meta {
-    // Enumerations that std::format prints by enumerator name.
+namespace perlin::abi {
+    // Marks every enumeration declared in perlin::abi (found by argument-dependent lookup), so each one is printable by name
+    // without being listed anywhere.
     template <class E>
         requires std::is_enum_v<E>
-    struct enable_format<E> : std::bool_constant<std::is_same_v<E, abi::Op> || std::is_same_v<E, abi::Event> || std::is_same_v<E, abi::Status> ||
-                                                  std::is_same_v<E, abi::Permission> || std::is_same_v<E, abi::Draw> ||
-                                                  std::is_same_v<E, abi::Screen> || std::is_same_v<E, abi::GameMode> ||
-                                                  std::is_same_v<E, abi::Dimension> || std::is_same_v<E, abi::Difficulty> ||
-                                                  std::is_same_v<E, abi::PermissionLevel> || std::is_same_v<E, abi::Face> ||
-                                                  std::is_same_v<E, abi::AimKind> || std::is_same_v<E, abi::ChatType> ||
-                                                  std::is_same_v<E, abi::DisconnectReason> || std::is_same_v<E, abi::EffectId> ||
-                                                  std::is_same_v<E, abi::EntityFlag> || std::is_same_v<E, abi::Perspective> ||
-                                                  std::is_same_v<E, abi::SettingKind> || std::is_same_v<E, abi::IntentOutcome>> {};
+    constexpr bool abi_enum_tag(E) {
+        return true;
+    }
+}
+
+namespace perlin::meta {
+    // Enumerations that std::format prints by enumerator name: all of perlin::abi's.
+    template <class E>
+        requires std::is_enum_v<E>
+    struct enable_format<E> : std::bool_constant<requires(E e) { abi_enum_tag(e); }> {};
 }
 
 namespace perlin::abi {
@@ -678,6 +694,12 @@ namespace perlin::abi {
         bool open = false;
     };
 
+    // One entity attribute (`minecraft:health`, `minecraft:movement`, ...), as the server last reported it.
+    struct Attribute {
+        std::string name;
+        float min = 0, value = 0, max = 0;
+    };
+
     struct Entity {
         uint64_t runtimeId = 0;
         int64_t uniqueId = 0;
@@ -691,6 +713,13 @@ namespace perlin::abi {
         std::string mainHand, offHand;
         std::array<std::string, 4> armor;
         int64_t vehicleUid = 0, ownerUid = 0, targetUid = 0;
+        // Everything else the game tracks about the entity.
+        int32_t variant = 0, markVariant = 0, color = 0;
+        float maxHealth = -1;
+        bool dying = false;
+        std::vector<Attribute> attributes;
+        std::vector<std::pair<std::string, float>> properties;       // entity properties (numbers, bools, enums as index)
+        std::vector<std::pair<std::string, std::string>> propertyText; // entity properties that are text
     };
 
     struct PlayerEntry {
@@ -719,6 +748,44 @@ namespace perlin::abi {
         int32_t biome = 0;
         uint32_t liquid = 0;
         std::vector<std::pair<std::string, std::string>> states;
+    };
+
+    // The tool a block is mined with.
+    enum class Tool : uint8_t { None, Pickaxe, Axe, Shovel, Hoe, Shears, Sword };
+
+    // What the game knows about a kind of block, whether or not one is in the world.
+    struct BlockProps {
+        bool known = false;
+        float hardness = 0; // -1 is unbreakable
+        Tool tool = Tool::None;
+        int32_t harvestLevel = 0; // 0 any tool, 1 any pickaxe, 2 stone, 3 iron, 4 diamond
+        bool needsSupportBelow = false, breaksWholeStack = false;
+        std::string displayName;
+        std::vector<std::string> properties; // block property names from the block definition
+    };
+
+    // The block entity (chest, sign, banner, ...) at a position.
+    struct BlockEntityInfo {
+        bool present = false;
+        std::string id;
+        int32_t color = -1;
+        bool waxed = false;
+        float rotation = 0;
+        std::string frontText, backText;
+        bool frontGlow = false, backGlow = false;
+        int32_t base = -1, bannerType = 0;
+        std::vector<std::pair<std::string, int32_t>> patterns;
+        std::string nbt; // the complete tag as JSON
+    };
+
+    // What kind of thing a name refers to.
+    enum class NameKind : uint8_t { Item, Block, Entity };
+
+    // The block the local player is currently mining.
+    struct BreakState {
+        bool active = false;
+        int32_t x = 0, y = 0, z = 0;
+        float progress = 0; // 0..1
     };
 
     struct RayHit {
@@ -798,31 +865,10 @@ namespace perlin::abi {
         std::string id, value;
     };
 
-    // ---------------------------------------------------------------------------------------------
-    // Intents: a message with an action and typed extras, delivered to whoever handles that action
-    // (the game, or another mod). Replies come back as an IntentResult event.
-    // ---------------------------------------------------------------------------------------------
-    using ExtraValue = std::variant<std::monostate, bool, int64_t, double, std::string, std::vector<uint8_t>>;
-
-    struct Extra {
-        std::string key;
-        ExtraValue value;
-    };
-
-    struct Intent {
-        std::string action;
-        std::string target; // a mod's file name; empty routes by action
-        std::vector<Extra> extras;
-    };
-
-    struct IntentFilter {
-        std::string action, description;
-    };
-
-    struct IntentHandler {
-        std::string name; // "perlin" for the game, otherwise the mod
-        std::string description;
-        bool host = false;
+    // A file in one of the areas, as the file calls take it.
+    struct FileLocation {
+        Area area = Area::Mod;
+        std::string path; // relative, no "..", forward slashes
     };
 
     // ---------------------------------------------------------------------------------------------
@@ -847,73 +893,6 @@ namespace perlin::abi {
         std::string title, subtitle, actionBar;
         float titleAlpha = 0, actionBarAlpha = 0;
     };
-
-    // ---------------------------------------------------------------------------------------------
-    // Actions the game itself handles when sent as an intent. The wire string is derived from the
-    // enumerator at compile time: OpenScreen -> "perlin.action.OPEN_SCREEN".
-    // ---------------------------------------------------------------------------------------------
-    enum class HostAction : uint8_t {
-        OpenScreen,      // extras: screen (Screen)
-        OpenModSettings, // extras: mod (string, default: the sender)
-        Screenshot,
-        SetPerspective,  // extras: mode (Perspective)
-        CyclePerspective,
-        CopyText,        // extras: text (string)
-        ReloadResources,
-        OpenUrl,         // extras: url (string); needs the network permission
-        ToggleHud,
-        CopyFile,     // extras: from, to ("area:relative/path"); needs files
-        MoveFile,     // extras: from, to; needs files
-        DownloadFile, // extras: url (https), to, request (int, echoed in HttpResponse); needs network and files
-    };
-
-    namespace detail {
-        inline constexpr std::string_view kActionPrefix = "perlin.action.";
-
-        template <HostAction A>
-        consteval auto make_action_id() {
-            constexpr std::string_view name = meta::enum_name(A);
-            std::array<char, kActionPrefix.size() + 2 * name.size() + 1> buffer{};
-            size_t n = 0;
-            for (const char c : kActionPrefix)
-                buffer[n++] = c;
-            for (size_t i = 0; i < name.size(); i++) {
-                const char c = name[i];
-                const bool upper = c >= 'A' && c <= 'Z';
-                if (upper && i > 0)
-                    buffer[n++] = '_';
-                buffer[n++] = upper ? c : static_cast<char>(c >= 'a' && c <= 'z' ? c - 'a' + 'A' : c);
-            }
-            return std::pair{buffer, n};
-        }
-
-        template <HostAction A>
-        inline constexpr auto action_storage = make_action_id<A>();
-
-        template <HostAction A>
-        inline constexpr std::string_view action_view = {action_storage<A>.first.data(), action_storage<A>.second};
-
-        template <size_t... I>
-        constexpr auto action_table(std::index_sequence<I...>) {
-            return std::array<std::string_view, sizeof...(I)>{action_view<meta::enum_values<HostAction>[I]>...};
-        }
-    }
-
-    inline constexpr auto kHostActionIds = detail::action_table(std::make_index_sequence<meta::enum_count<HostAction>>{});
-
-    constexpr std::string_view action_id(HostAction action) {
-        for (size_t i = 0; i < meta::enum_count<HostAction>; i++)
-            if (meta::enum_values<HostAction>[i] == action)
-                return kHostActionIds[i];
-        return {};
-    }
-
-    constexpr std::optional<HostAction> parse_action(std::string_view id) {
-        for (size_t i = 0; i < meta::enum_count<HostAction>; i++)
-            if (kHostActionIds[i] == id)
-                return meta::enum_values<HostAction>[i];
-        return std::nullopt;
-    }
 
     // ---------------------------------------------------------------------------------------------
     // Event payloads.
@@ -986,18 +965,6 @@ namespace perlin::abi {
         std::string id, value;
         SettingKind kind = SettingKind::Toggle;
     };
-    struct EventIntent {
-        uint32_t request = 0;
-        std::string sender;
-        Intent intent;
-    };
-    struct EventIntentResult {
-        uint32_t request = 0;
-        IntentOutcome outcome = IntentOutcome::Unhandled;
-        std::string handler;
-        std::vector<Extra> extras;
-    };
-
     // The payload type of every event, in enum order. The static_assert keeps this table honest: adding an
     // Event without a payload here fails to compile.
     using EventPayloads = std::tuple<EventNothing,    // Load
@@ -1022,9 +989,7 @@ namespace perlin::abi {
                                      EventHttp,       // HttpResponse
                                      EventPacket,     // Packet
                                      EventTitle,      // Title
-                                     EventSettingChanged, // SettingChanged
-                                     EventIntent,     // Intent
-                                     EventIntentResult>; // IntentResult
+                                     EventSettingChanged>; // SettingChanged
     static_assert(std::tuple_size_v<EventPayloads> == meta::enum_count<Event>, "every Event needs a payload type");
 
     template <Event E>

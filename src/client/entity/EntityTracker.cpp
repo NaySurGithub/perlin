@@ -155,6 +155,8 @@ namespace perlin::entity {
     PERLIN_ENTITY_SET(SetVariant(uint64_t rid, int variant, int markVariant, int color),
                       e.variant = variant; e.markVariant = markVariant; e.color = color)
     PERLIN_ENTITY_SET(SetHealth(uint64_t rid, float health), e.health = health; if (health <= 0.0f && !e.isItem) e.dying = true; else if (health > 0.0f) e.dying = false)
+    PERLIN_ENTITY_SET(SetAttribute(uint64_t rid, const std::string& name, float min, float value, float max),
+                      if (e.attributes.size() < 64 || e.attributes.count(name)) (e.attributes[name] = Entity::Attribute{min, value, max}))
     PERLIN_ENTITY_SET(SetTarget(uint64_t rid, int64_t targetUid), e.targetUid = targetUid)
     PERLIN_ENTITY_SET(SetOwner(uint64_t rid, int64_t ownerUid), e.ownerUid = ownerUid)
     PERLIN_ENTITY_SET(Die(uint64_t rid), e.dying = true)

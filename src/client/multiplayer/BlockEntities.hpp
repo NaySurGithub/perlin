@@ -24,6 +24,7 @@ namespace perlin {
         // Banners: Bedrock dye indices (0 black .. 15 white), Type 1 = ominous.
         int base = -1, bannerType = 0;
         std::vector<std::pair<std::string, int>> patterns; // pattern code, colour
+        std::string nbt;                                   // the whole tag as JSON (capped), for plugins
     };
 
     class BlockEntityStore {

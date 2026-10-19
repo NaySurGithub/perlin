@@ -40,7 +40,7 @@ mods/build.sh my_plugin.cpp
 
 Classic 32-bit plugins still work everywhere. `mods/build.sh --wasm32 my_plugin.cpp` builds one with a wasi-sdk install (<https://github.com/WebAssembly/wasi-sdk>, version 25 or newer, `WASI_SDK_PATH`); wasi-sdk has no 64-bit target. Any compiler that targets `wasm64` or `wasm32-wasip1` and exports `perlin_alloc`, `perlin_free`, `perlin_event` and `perlin_subscriptions` works; the headers in `mods/sdk/perlin` provide those exports and compile unchanged for both.
 
-Perlin runs plugins on [WasmEdge](https://wasmedge.org) (desktop and Android) and on wasm3 in the browser build; both take 32-bit and 64-bit modules, and the Mods screen's log line says which one loaded (`speedometer: wasm64 on WasmEdge 0.18.0`).
+Perlin runs plugins on [WasmEdge](https://wasmedge.org) (desktop and Android) and on wasm3 in the browser build; both take 32-bit and 64-bit modules, and the Mods screen's log line says which one loaded (`waila: wasm64 on WasmEdge 0.18.0`).
 
 ## Modern C++ API
 
@@ -54,56 +54,76 @@ The SDK leans on the compiler instead of strings:
 * **Chrono timers.** `ctx.after(2s, fn)`, `ctx.every(20_ticks, fn)` return a `TimerId`.
 * **Flags and sets.** `Permissions` is `meta::Flags<Permission>`; entity flags are a `meta::IndexSet<EntityFlag>`. `std::format("{}", abi::Screen::Mods)` prints `Mods`.
 
+## Everything is exposed
+
+The wire format is derived from the member list of each struct (`abi.hpp`), so adding a field to a struct the host already sends, such as an entity's attributes, exposes it to every plugin and every language with no wrapper to write. `tools/check_api.py` (run by CTest as `mod_api_check`) fails when an operation is declared without a host or without an SDK wrapper, or an event is never delivered. Every enumeration in `perlin::abi` prints by name with `std::format` without being listed anywhere. `perlin/json.hpp` is a small JSON reader for the text the game hands over (block entity tags, option dumps, HTTP bodies): `json::parse(text)` then `tag["Items"][0]["Name"].string()`; missing keys read as null, so chains never fail.
+
 ## Settings
 
-A mod declares settings once; the game lists them on the mod's **Settings** page (Mods screen, pick the mod, **Settings**), saves them to `<data dir>/mods/<name>.settings.json`, and tells the mod when one changes, live.
+Settings are written in the mod's JSON, not in code. The game shows them on the mod's **Settings** page (Mods screen, pick the mod, **Settings**), stores them in `<data dir>/mods/<name>.settings.json`, and keeps the mod up to date while it runs.
 
-```cpp
-enum class Unit { BlocksPerSecond, KilometersPerHour };
-
-PERLIN_PLUGIN(ctx) {
-    static auto shown = ctx.toggle("shown", "Show speedometer", true, {.description = "Draws your speed.", .icon = icon::item("minecraft:clock")});
-    static auto unit  = ctx.choice("unit", "Unit", Unit::BlocksPerSecond);        // choices are the enumerators
-    static auto warn  = ctx.number("warn", "Highlight above", 8.0, 1.0, 40.0, 0.5, {.unit = "b/s"});
-    static auto smooth = ctx.integer("smooth", "Smoothing", 4, 1, 20);
-    ctx.button("reset", "Reset peak", [] { /* pressed */ });
-    ctx.header("about", "About");
-    ctx.note("version", "Version 1.2");
-
-    ctx.on_setting_changed([](const abi::EventSettingChanged& e) { /* e.id, e.value */ });
-    // shown.get(), unit.get(), ... always hold the current value. shown.set(false) changes it from the mod side.
-}
+```json
+"settings": [
+  {"type": "header", "label": "Readout"},
+  {"id": "visible", "type": "toggle", "label": "Show overlay", "default": true, "icon": {"item": "minecraft:clock"}},
+  {"id": "unit", "type": "choice", "label": "Unit", "default": "BlocksPerSecond",
+   "choices": [{"value": "BlocksPerSecond", "label": "Blocks per second"}, {"value": "KilometersPerHour", "label": "Kilometers per hour"}]},
+  {"id": "warn_at", "type": "number", "label": "Highlight above", "default": 8, "min": 1, "max": 40, "step": 0.5, "unit": "b/s"},
+  {"id": "smoothing", "type": "integer", "label": "Smoothing", "default": 4, "min": 1, "max": 20},
+  {"id": "reset_peak", "type": "button", "label": "Reset peak"}
+]
 ```
 
-`SettingOptions` has `description` (shown as a tooltip), `icon`, `unit` and `restart` (reload the mod when the page closes). `ctx.open_settings()` opens the page.
+| `type` | C++ handle | Value |
+| --- | --- | --- |
+| `toggle` | `Toggle` | `bool` |
+| `integer` | `Integer` | `int` (`min`, `max`, `step`) |
+| `number` | `Number` | `double` (`min`, `max`, `step`, `unit`) |
+| `choice` | `Choice<E>` | an enumeration generated from `choices` |
+| `button` | `Button` | no value; handle presses with `ctx.on_press` |
+| `header`, `label` | | layout only |
 
-## Icons
+Every setting also takes `label`, `description`, `restart` (needs a restart to apply) and `icon`: `{"item": "minecraft:clock"}` draws an item, `{"texture": "textures/items/apple"}` a resource-pack texture (so a pack can restyle it), `{"file": "icons/speed.png"}` a PNG from the mod's folder. Choice values are C++ identifiers; they become the enumerators.
 
-* Mod icon: `name.png` next to the `.wasm`, `"icon"` in the manifest, `<name>.data/pack_icon.png` (the same file name resource packs use), or `set_mod_icon("icons/me.png")` at runtime.
-* Setting icons (`SettingOptions::icon`): `icon::item("minecraft:feather")` draws an item, `icon::texture("textures/items/apple")` a resource-pack texture (so a resource pack can restyle them), `icon::file("icons/speed.png")` a PNG from the mod's data folder.
-
-## Intents
-
-Intents are Android-style messages: an **action**, an optional **target** mod, and typed **extras**. They are how mods drive the game, and each other, without sharing code.
+`build.sh` reads `name.json` next to `name.cpp` (headers next to the source are found with `#include <dir/header.hpp>`) and generates `mod_settings.hpp` with one typed handle per setting. Use it like a plain value:
 
 ```cpp
-// Ask the game to do something.
-ctx.send(Intent(abi::HostAction::OpenScreen).put("screen", Screen::Mods));
-ctx.send(Intent(abi::HostAction::CopyText).put("text", "hello"), [](const IntentResult& r) { /* r.outcome, r.handler, r.extras */ });
+#include <mod_settings.hpp>
 
-// Handle an action (yours, or one another mod defines).
-ctx.on_intent<"speedometer.action.SET_UNIT">("Changes the unit", [](const IntentCall& call) {
-    if (auto u = call.get<Unit>("unit")) unit.set(*u);
-    (void)call.reply(std::pair{"ok", true});
-});
+if (settings::visible) { ... }                                   // bool
+const double limit = settings::warn_at;                          // double
+if (settings::unit == settings::Unit::KilometersPerHour) { ... }  // generated enum
+(void)settings::visible.set(false);                              // the settings page shows it too
 
-// Send to a specific mod.
-ctx.send(Intent("speedometer.action.SET_UNIT").to("speedometer.wasm").put("unit", Unit::KilometersPerHour));
+ctx.on_change(settings::unit, [](settings::Unit unit) { ... });  // fires for changes from the page or from set()
+ctx.on_press(settings::reset_peak, [] { ... });
 ```
 
-Extras are `bool`, integers (enumerations travel as integers), floating point, text and bytes. Game actions (`abi::HostAction`; the permission-gated ones follow the table above): `OpenScreen`, `OpenModSettings`, `Screenshot`, `SetPerspective`, `CyclePerspective`, `CopyText`, `ReloadResources`, `OpenUrl` (needs `network`; https only) and `ToggleHud`, `CopyFile`, `MoveFile` and `DownloadFile` (`ctx.copy_file`, `ctx.move_file`, `ctx.download`; paths are `file_spec(Area::ResourcePacks, "pack.zip")`). Their wire names are derived from the enumerators at compile time (`perlin.action.OPEN_SCREEN`). `intent_handlers("action")` lists who would handle an action. Mod-to-mod intents are queued and delivered on the next frame, so a handler never runs inside another mod's event.
+Without the generated header (another build system, another language) the same values are `perlin::setting<double>("warn_at")`. The generator is `mods/tools/perlin_settings.py`.
 
-Prebuilt examples live in `mods/prebuilt`: `speedometer`, `inspector` and `radar`, with sources in `mods/examples`.
+## Game actions
+
+Mods call the game directly with typed functions and enums; there are no messages to compose.
+
+```cpp
+act::open_screen(Screen::Mods);        // Pause, Options, Mods, Wardrobe
+act::open_settings();                  // this mod's settings page (or open_settings("other.wasm"))
+act::screenshot();
+act::cycle_perspective();
+act::toggle_hud();
+act::copy_to_clipboard("hello");
+act::open_url("https://example.com");  // needs `network`
+
+fs::copy(fs::in(Area::Screenshots, "a.png"), fs::in(Area::Mod, "keep/a.png"));   // needs `files`
+fs::move(fs::in(Area::Mod, "pack.zip"), fs::in(Area::ResourcePacks, "pack.zip"));
+net::download("https://example.com/pack.zip", fs::in(Area::ResourcePacks, "pack.zip"), [](Result<void> r) { ... });  // `network` and `files`
+```
+
+`Area` is `Mod`, `Screenshots`, `ResourcePacks` or `ShaderPacks`. Copies and moves never overwrite a game file.
+
+## WAILA
+
+`mods/waila` is a full plugin built on this API: a tooltip for the block or entity under your crosshair, styled after Jade (icon, name, mod name in italic blue, harvest tool with a check mark, breaking progress, crop growth, redstone, health hearts, pet owner, horse stats, container contents). Its source is the best example of the API, and it has an extension API of its own; see `mods/waila/README.md`. The prebuilt module is `mods/prebuilt/waila.wasm` with `waila.json` and `waila.png`; drop the three into `<data dir>/mods/`.
 
 ## Any language
 
@@ -123,7 +143,7 @@ The C++ SDK is a convenience. A plugin is any WebAssembly module (core wasm, no 
 
 ## Manifest
 
-`name.json` next to the `.wasm` is optional:
+`name.json` next to the `.wasm` is optional (it also holds the `settings`, see above):
 
 ```json
 {
@@ -140,14 +160,14 @@ The C++ SDK is a convenience. A plugin is any WebAssembly module (core wasm, no 
 
 ## Permissions
 
-The API exposes everything the game knows and can do. Only the dangerous operations are gated: those that act on your behalf or leave your machine have to be declared in the manifest and are shown in the Mods screen. Everything else (reading state, drawing, local messages, settings, intents between mods, storage in the plugin's own folder) is always allowed.
+The API exposes everything the game knows and can do. Only the dangerous operations are gated: those that act on your behalf or leave your machine have to be declared in the manifest and are shown in the Mods screen. Everything else (reading state, drawing, local messages, settings, storage in the plugin's own folder) is always allowed.
 
 | Permission | Allows |
 | --- | --- |
 | *(always)* | player, inventory, world, blocks, entities, player list, options (read), screen and input state, translations, HUD drawing, local messages, toasts, titles, sounds, commands, key binds, storage |
 | `control` | sending chat and commands, hotbar and inventory actions, swinging, using items, attacking, interacting, breaking blocks, looking, driving movement inputs, jumping, respawning, leaving the game, changing options |
-| `network` | HTTPS requests, `OpenUrl`, downloads |
-| `files` | `CopyFile`, `MoveFile` and (with `network`) `DownloadFile` intents between the mod's own folder and the game's screenshot, resource-pack and shader-pack folders; never overwrites a game file |
+| `network` | HTTPS requests, `act::open_url`, downloads |
+| `files` | `fs::copy`, `fs::move` and (with `network`) `net::download` between the mod's own folder and the game's screenshot, resource-pack and shader-pack folders; never overwrites a game file |
 | `packets` | sending raw protocol packets (login, handshake, resource pack and disconnect packets are refused) |
 | `storage` | always granted; reads and writes under `<data dir>/mods/<name>.data/` only |
 
@@ -174,12 +194,18 @@ All calls return `Result<T>` (`std::expected<T, Error>`); `Error::status` is one
 | `player()` | position, velocity, look, flags, health, hunger, xp, air, permission level, game mode, dimension |
 | `effects()`, `inventory()` | status effects, 36 slots + armor + offhand + cursor |
 | `world()` | dimension, difficulty, game rules, time of day, day count, weather, spawn |
-| `block(pos)` | name, block states, biome, liquid, loaded flag |
+| `target()` | what the crosshair is on, fully resolved: a `BlockTarget` (position, face, block with states, `props`, display name, `entity()`) or an `EntityTarget` (all entity data, display name) or nothing |
+| `block(pos)` | name, block states (`state_int("age")`, `state_bool(...)`), biome, liquid, loaded flag |
+| `block_props(name)` | hardness, mining tool, harvest level, display name, block properties |
+| `block_entity(pos)` | sign text, banner patterns, waxed, and the whole tag as JSON in `nbt` (read it with `json::parse`) |
+| `display_name(NameKind::Item\|Block\|Entity, id)` | the translated, resource-pack-aware name: "Stone", "Cow" |
+| `break_state()` | the block the local player is mining and how far along it is |
+| `look()` | camera yaw and pitch |
 | `region(a, b)` | up to 262 144 blocks as a palette + cells (`Region::at(x, y, z)`) |
 | `raycast(origin, dir, {max_distance, include_liquids})`, `aim()` | block hit; what the crosshair targets (block or entity) |
 | `find_blocks(center, {name, radius, max_results, exact})` | nearest matches first, radius up to 32 |
 | `chunk_loaded(cx, cz)` | whether the chunk is in memory |
-| `entities({radius, type, players_only, include_items})`, `entity(id)`, `players()` | nearby entities, one entity, the tab list |
+| `entities({radius, type, players_only, include_items})`, `entity(id)`, `players()` | nearby entities, one entity, the tab list. An `Entity` carries everything the game tracks: flags, health and max health, every attribute, entity properties, variant, owner, target, vehicle, held items, armor |
 | `screen()` | GUI size and scale, fps, which screen is open, platform, server, language |
 | `options_json()`, `option<Option::fov>()`, `option_text(key)` | settings |
 | `perspective()`, `chat_history(n)`, `title_state()`, `resource_packs()`, `mods()`, `block_names()` | camera mode, recent chat lines, current title/subtitle/action bar, active packs, installed mods, every block name |
@@ -190,11 +216,13 @@ All calls return `Result<T>` (`std::expected<T, Error>`); `Error::status` is one
 
 Free: `message`, `toast`, `title`, `play` (sound). Needs `control`: `say`, `run_command`, `select_slot`, `swing`, `use_item`, `use_on`, `attack`, `interact`, `break_block`, `look`, `look_at`, `jump`, `respawn`, `disconnect`, `drop`, `swap_slots`, `click_slot`, `open_inventory`, `close_inventory`, `drive(Inputs)`, `set_option`, `set_perspective`, `reload_resources`.
 
+Free game actions: `open_screen`, `open_settings`, `screenshot`, `cycle_perspective`, `toggle_hud`, `copy_to_clipboard`. Needs `network`: `open_url`.
+
 `drive` holds movement inputs for a number of ticks (`forward > 0` walks forward, `strafe > 0` goes right); call it every tick to keep moving. `look` takes the same yaw and pitch that `PlayerState` reports (yaw 0 faces south, pitch positive looks down). `break_block` breaks instantly in creative; in survival it starts mining, so keep the crosshair on the block and `drive` with `attack = true` until it breaks.
 
 ### `ui::` (HUD)
 
-`ctx.hud("name", [](ui::Canvas& g) { ... }, z)` redraws every frame and only sends the layer to the game when the drawing changed. `Canvas` has `rect`, `gradient`, `border`, `line`, `text` (with `TextStyle{.color, .scale, .shadow, .align}`), `item` (an item icon by id) and `image` (a resource-pack texture path). Coordinates are GUI pixels (the same units as the vanilla HUD); `g.width()` and `g.height()` are the current GUI size. `ui::text_width(text, scale)` measures with the game's font. Layers are hidden when the HUD is hidden or a menu is open.
+`ctx.hud("name", [](ui::Canvas& g) { ... }, z)` redraws every frame and only sends the layer to the game when the drawing changed. `Canvas` has `rect`, `gradient`, `border`, `line`, `text` (with `TextStyle{.color, .scale, .shadow, .align}`; `§` formatting codes work: `"§9§oMinecraft"` is italic blue), `item` (an item icon by id) and `image` (a resource-pack texture path). Coordinates are GUI pixels (the same units as the vanilla HUD); `g.width()` and `g.height()` are the current GUI size. `ui::text_width(text, scale)` measures with the game's font. Layers are hidden when the HUD is hidden or a menu is open.
 
 ### `io::` (`fs`, `Config`, `net`)
 
@@ -222,8 +250,7 @@ Register with `ctx.on<event::Name>([](const event::Name::Payload& e) { ... })`. 
 | `Title` | title, subtitle, action bar | |
 | `Packet` | id and body of every packet received from the server | |
 | `HttpResponse` | handled for you by `net::send` | |
-| `SettingChanged` | `id`, `value`, `kind` (also updates `Setting` handles) | |
-| `Intent`, `IntentResult` | handled for you by `ctx.on_intent` / `ctx.send` | |
+| `SettingChanged` | handled for you by `ctx.on_change` / `ctx.on_press` | |
 
 `ctx.after(delay, fn)` and `ctx.every(period, fn)` take any `std::chrono` duration (`20_ticks` too), run on the tick clock and return a `TimerId` for `ctx.cancel(id)`. `ctx.on_unload(fn)` runs before a reload.
 
@@ -246,7 +273,9 @@ mods/
     meta.hpp          compile-time reflection (enum names, aggregates, flags, fixed_string)
     detail/           field-binding helpers used by meta.hpp
     game.hpp act.hpp ui.hpp io.hpp types.hpp runtime.hpp
-  examples/           source for the prebuilt plugins
+  waila/              the WAILA plugin: waila.cpp, waila.json, waila/ (api, layout, vanilla providers), tests/
+  examples/c/         a plugin in plain C, no SDK
+  tools/              perlin_settings.py (manifest -> typed handles), check_api.py (every operation is hosted and wrapped)
   tests/              meta_test, abi_test (wire format), sdk_test (fake host); build each with g++ -std=c++23 -Isdk
   prebuilt/           built .wasm files and their manifests
 ```

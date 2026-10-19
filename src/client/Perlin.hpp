@@ -40,6 +40,10 @@
 class AppPlatform;
 
 namespace perlin {
+    // The block the local player is mining and how far along it is (0..1). Read from any thread; values may be a frame old.
+    struct LocalBreakState { bool active = false; int x = 0, y = 0, z = 0; float progress = 0.0f; };
+    LocalBreakState GetLocalBreakState();
+
     struct LaunchArgs {
         std::string server;
         std::string playerName;
@@ -239,10 +243,10 @@ namespace perlin {
         std::chrono::steady_clock::time_point playersAt{};
         void UpdateTitle(int fps);
         void SetupMods();
-        void SetupModIntents();
+        void SetupModActions();
     // Enables or disables a mod; enabling one that asks for dangerous permissions approves exactly what it asked for.
     void ToggleMod(const std::string& name);
-        // Set by intents; UpdatePauseScreen opens the requested screen: view 1 options, 3 world, 4 mods, 5 wardrobe.
+        // Set by mod actions; UpdatePauseScreen opens the requested screen: view 1 options, 3 world, 4 mods, 5 wardrobe.
         int modOpenView = -1, modOpenPage = 0;
         std::string modSettingsFor;
     std::vector<std::string> modRowTips;

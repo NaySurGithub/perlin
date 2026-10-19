@@ -143,11 +143,15 @@ namespace perlin {
         AimHit gAim;
         uint32_t gSelfSwing = 0;
         bool gItemSlow = false;
-        struct LocalCrack { bool active = false; int x = 0, y = 0, z = 0, stage = 0; };
+        struct LocalCrack { bool active = false; int x = 0, y = 0, z = 0, stage = 0; float progress = 0.0f; };
         LocalCrack gLocalCrack;
         bool showChunkBorders = false;
         bool softPaused = false;
         int switcherIndex = -1;
+    }
+
+    LocalBreakState GetLocalBreakState() {
+        return {gLocalCrack.active, gLocalCrack.x, gLocalCrack.y, gLocalCrack.z, gLocalCrack.progress};
     }
 }
 
@@ -1595,7 +1599,7 @@ namespace perlin {
         const auto now = Clock::now();
         const bool canOpen = (live || preview) && !deathShown && !formShown && !invShown && !chat.IsOpen();
         if (modOpenView >= 0 && canOpen) {
-            // A mod (or the game) asked for a screen through an intent.
+            // A mod asked for a screen.
             if (!pauseShown) {
                 pauseShown = true;
                 pauseOpenedAt = now;
@@ -5840,7 +5844,7 @@ namespace perlin {
                                 { handRenderer.Swing(options.hand); gSelfSwing++; }
                                 breakDelayTicks = 5;
                             } else {
-                                gLocalCrack = {breakProgress > 0.0f, bkx, bky, bkz, std::clamp(static_cast<int>(breakProgress * 10.0f), 0, 9)};
+                                gLocalCrack = {breakProgress > 0.0f, bkx, bky, bkz, std::clamp(static_cast<int>(breakProgress * 10.0f), 0, 9), std::clamp(breakProgress, 0.0f, 1.0f)};
                             }
                         }
                         if (swingClock > 0.3) {

@@ -919,7 +919,7 @@ if(PERLIN_BUILD_TESTS AND NOT EMSCRIPTEN AND NOT ANDROID)
 
     add_executable(clientassets_selftest tests/clientassets_selftest.cpp src/client/resources/ClientAssets.cpp src/client/resources/TextureLoader.cpp)
     target_include_directories(clientassets_selftest PRIVATE src "${stb_SOURCE_DIR}")
-    target_link_libraries(clientassets_selftest PRIVATE miniz)
+    target_link_libraries(clientassets_selftest PRIVATE glaze::glaze miniz)
     target_compile_features(clientassets_selftest PRIVATE cxx_std_23)
 
     add_executable(shaderpack_selftest tests/shaderpack_selftest.cpp src/client/resources/ShaderPack.cpp src/client/ui/Json.cpp tests/BundledShaderStub.cpp)
@@ -949,7 +949,39 @@ if(PERLIN_BUILD_TESTS AND NOT EMSCRIPTEN AND NOT ANDROID)
     add_test(NAME mod_selftest COMMAND mod_selftest
         "${PERLIN_TEST_PLUGINS}/hello64.wasm" "${PERLIN_TEST_PLUGINS}/hello32.wasm"
         "${PERLIN_TEST_PLUGINS}/loop_64.wasm" "${PERLIN_TEST_PLUGINS}/loop_32.wasm"
-        "${CMAKE_CURRENT_SOURCE_DIR}/mods/prebuilt/speedometer.wasm"
-        "${CMAKE_CURRENT_SOURCE_DIR}/mods/prebuilt/inspector.wasm"
-        "${CMAKE_CURRENT_SOURCE_DIR}/mods/prebuilt/radar.wasm")
+        "${CMAKE_CURRENT_SOURCE_DIR}/mods/prebuilt/waila.wasm")
+
+    # The plugin SDK: the API is complete (every operation has a host and a wrapper), and the SDK and WAILA's own tests.
+    find_package(Python3 QUIET COMPONENTS Interpreter)
+    if(Python3_FOUND)
+        add_test(NAME mod_api_check COMMAND ${Python3_EXECUTABLE} "${CMAKE_CURRENT_SOURCE_DIR}/mods/tools/check_api.py")
+        if(NOT MSVC)
+            set(PERLIN_MODS_GEN "${CMAKE_CURRENT_BINARY_DIR}/mods_gen")
+            foreach(spec "waila:mods/waila/waila.json" "sdk:mods/tests/data/settings_test.json")
+                string(REPLACE ":" ";" spec_parts "${spec}")
+                list(GET spec_parts 0 gen_name)
+                list(GET spec_parts 1 gen_manifest)
+                add_custom_command(OUTPUT "${PERLIN_MODS_GEN}/${gen_name}/mod_settings.hpp"
+                    COMMAND ${CMAKE_COMMAND} -E make_directory "${PERLIN_MODS_GEN}/${gen_name}"
+                    COMMAND ${Python3_EXECUTABLE} "${CMAKE_CURRENT_SOURCE_DIR}/mods/tools/perlin_settings.py"
+                            "${CMAKE_CURRENT_SOURCE_DIR}/${gen_manifest}" "${PERLIN_MODS_GEN}/${gen_name}/mod_settings.hpp"
+                    DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/${gen_manifest}" "${CMAKE_CURRENT_SOURCE_DIR}/mods/tools/perlin_settings.py")
+            endforeach()
+            add_executable(waila_test mods/waila/tests/waila_test.cpp "${PERLIN_MODS_GEN}/waila/mod_settings.hpp")
+            target_include_directories(waila_test PRIVATE mods/sdk mods/waila "${PERLIN_MODS_GEN}/waila")
+            target_compile_definitions(waila_test PRIVATE MANIFEST="${CMAKE_CURRENT_SOURCE_DIR}/mods/waila/waila.json")
+            target_compile_features(waila_test PRIVATE cxx_std_23)
+            add_test(NAME waila_test COMMAND waila_test)
+            add_executable(sdk_test mods/tests/sdk_test.cpp "${PERLIN_MODS_GEN}/sdk/mod_settings.hpp")
+            target_include_directories(sdk_test PRIVATE mods/sdk "${PERLIN_MODS_GEN}/sdk")
+            target_compile_features(sdk_test PRIVATE cxx_std_23)
+            add_test(NAME sdk_test COMMAND sdk_test)
+            foreach(wire_test abi_test meta_test)
+                add_executable(${wire_test} mods/tests/${wire_test}.cpp)
+                target_include_directories(${wire_test} PRIVATE mods/sdk)
+                target_compile_features(${wire_test} PRIVATE cxx_std_23)
+                add_test(NAME ${wire_test} COMMAND ${wire_test})
+            endforeach()
+        endif()
+    endif()
 endif()
