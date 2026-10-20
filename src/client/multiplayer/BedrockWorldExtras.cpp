@@ -323,11 +323,27 @@ namespace perlin {
         On<CameraInstructionPacket>([this](const CameraInstructionPacket& p) {
             if (p.clear && *p.clear)
                 cameraEffects.Clear();
-            if (p.fade)
-                cameraEffects.Fade(p.fade->fadeInDuration, p.fade->waitDuration, p.fade->fadeOutDuration,
-                                   {p.fade->colorRgb.x, p.fade->colorRgb.y, p.fade->colorRgb.z});
-            if (p.fov)
-                cameraEffects.SetFov(p.fov->fieldOfView, p.fov->easeTime, static_cast<int>(p.fov->easeType), p.fov->clear);
+            // Both parts of a fade are optional on the wire (time and colour are separate options).
+            if (p.fade && p.fade->timeData) {
+                const auto& t = *p.fade->timeData;
+                const Vec3F c = p.fade->colorRgb ? *p.fade->colorRgb : Vec3F{};
+                cameraEffects.Fade(t.fadeInDuration, t.waitDuration, t.fadeOutDuration, {c.x, c.y, c.z});
+            }
+            if (p.fov) {
+                // The field-of-view instruction names its easing as a string ("in_out_quad"), unlike the
+                // single-byte type used by the preset instruction; index it in the shared easing order.
+                static const char* const kEases[] = {
+                    "linear", "spring", "in_quad", "out_quad", "in_out_quad", "in_cubic", "out_cubic", "in_out_cubic",
+                    "in_quart", "out_quart", "in_out_quart", "in_quint", "out_quint", "in_out_quint", "in_sine",
+                    "out_sine", "in_out_sine", "in_expo", "out_expo", "in_out_expo", "in_circ", "out_circ", "in_out_circ",
+                    "in_bounce", "out_bounce", "in_out_bounce", "in_back", "out_back", "in_out_back", "in_elastic",
+                    "out_elastic", "in_out_elastic", "inverse_lerp"};
+                int ease = 0;
+                for (int i = 0; i < static_cast<int>(sizeof(kEases) / sizeof(kEases[0])); i++)
+                    if (p.fov->easeType == kEases[i])
+                        ease = i;
+                cameraEffects.SetFov(p.fov->fieldOfView, p.fov->easeTime, ease, p.fov->clear);
+            }
             if (p.target) {
                 std::optional<glm::vec3> off;
                 if (p.target->offset)

@@ -247,7 +247,20 @@ namespace perlin {
         return added + replaced > 0 || !nameByHash.empty();
     }
 
-    void BlockPalette::SetSequential(bool on) { sequential.store(on, std::memory_order_release); }
+    void BlockPalette::SetSequential(bool on) {
+        sequential.store(on, std::memory_order_release);
+        // The registry order is the retail one, so air sits at a known index. Without it every air
+        // cell of a sequential-id server (Lifeboat's survival games) read as whatever block the
+        // table holds at the server's air id, and the whole world filled with it.
+        int32_t air = -1;
+        if (on) {
+            std::lock_guard<std::mutex> lk(mutex);
+            const auto it = sequenceIndex.find(AirHash());
+            if (it != sequenceIndex.end())
+                air = it->second;
+        }
+        sequentialAir.store(air, std::memory_order_release);
+    }
 
     void BlockPalette::TruncateSequence() {
         std::lock_guard<std::mutex> lk(mutex);

@@ -48,6 +48,7 @@ namespace perlin {
         uint32_t UiCreateFrameMesh(const UiVertex* vertices, uint32_t vertexCount, const uint32_t* indices,
                                    uint32_t indexCount) override;
         void UiDestroyMesh(uint32_t mesh) override;
+        uint32_t UiLiveMeshes() const override;
         void UiSubmit(UiLayer layer, const UiDraw& draw) override;
         void FramebufferSize(int& w, int& h) const override { w = width; h = height; }
         void UpdateChunkMesh(int cx, int cz, const Tessellator& tess, uint64_t version) override;

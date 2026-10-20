@@ -157,6 +157,8 @@ namespace perlin {
             return UiCreateMesh(vertices, vertexCount, indices, indexCount);
         }
         virtual void UiDestroyMesh(uint32_t mesh) = 0;
+        // Meshes currently holding their own GPU buffers (the UI backend watches this for leaks).
+        virtual uint32_t UiLiveMeshes() const { return 0; }
         virtual void UiSubmit(UiLayer layer, const UiDraw& draw) = 0;
         virtual void FramebufferSize(int& width, int& height) const = 0;
 

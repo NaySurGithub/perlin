@@ -4,6 +4,7 @@
 #include "client/ui/Json.hpp"
 #include "client/renderer/block/BiomeTints.hpp"
 #include <cstring>
+#include <map>
 #include <unordered_set>
 #include <algorithm>
 #include "world/level/block/BlockPalette.hpp"
@@ -1219,6 +1220,41 @@ namespace perlin {
         }
         bool any = false;
         const std::vector<std::string> serverDirs = ServerPacks::Instance().Directories();
+        // A resource pack's blocks.json names the terrain_texture keys of blocks that carry no
+        // minecraft:material_instances of their own (a server that adds coloured stairs and slabs
+        // lists their textures only here). Later packs in the stack override earlier ones.
+        std::unordered_map<std::string, std::map<std::string, std::string>> legacyFaces;
+        for (const std::string& dir : serverDirs) {
+            std::ifstream in(dir + "/blocks.json", std::ios::binary);
+            if (!in)
+                continue;
+            std::stringstream ss;
+            ss << in.rdbuf();
+            ui::Json doc;
+            std::string error;
+            if (!ui::Json::Parse(ss.str(), doc, error) || !doc.IsObject())
+                continue;
+            for (const auto& [blockName, entry] : doc.object) {
+                if (!entry.IsObject())
+                    continue;
+                const ui::Json* tex = entry.Find("textures");
+                if (!tex)
+                    continue;
+                std::string key = blockName;
+                if (key.find(':') == std::string::npos)
+                    key = "minecraft:" + key;
+                std::map<std::string, std::string> faces;
+                if (tex->IsString()) {
+                    faces["*"] = tex->string;
+                } else if (tex->IsObject()) {
+                    for (const auto& [face, v] : tex->object)
+                        if (v.IsString())
+                            faces[face] = v.string;
+                }
+                if (!faces.empty())
+                    legacyFaces[key] = std::move(faces);
+            }
+        }
         std::unordered_map<std::string, std::string> stems;
         for (const std::string& dir : serverDirs) {
             std::error_code ec;
@@ -1265,10 +1301,14 @@ namespace perlin {
                 geometry.AddCustom(def.name, def.json, serverDirs, vanillaRpRoot, fetchGeometry);
                 any = true;
             }
+            std::map<std::string, std::string> faceTex = def.faceTexture;
+            if (faceTex.empty())
+                if (const auto legacy = legacyFaces.find(def.name); legacy != legacyFaces.end())
+                    faceTex = legacy->second;
             const auto resolve = [&](std::initializer_list<const char*> faces, std::string& pathOut) -> int {
                 for (const char* face : faces) {
-                    const auto f = def.faceTexture.find(face);
-                    if (f == def.faceTexture.end())
+                    const auto f = faceTex.find(face);
+                    if (f == faceTex.end())
                         continue;
                     const auto p = pathByKey.find(f->second);
                     const auto v = vanillaPathByKey.find(f->second);
@@ -1286,6 +1326,39 @@ namespace perlin {
             int side = resolve({"side", "north", "south", "east", "west", "*"}, pSide);
             int bottom = resolve({"down", "*"}, pBottom);
             if (top < 0 && side < 0 && bottom < 0) {
+                // No texture was declared anywhere. A stair, slab or wall of a block that exists in the game
+                // (black_wool_stairs, light_gray_concrete_slab) looks like that block, so borrow its look
+                // instead of a made-up tile.
+                const BlockAppearance* base = nullptr;
+                {
+                    std::string shortName = AfterColon(def.name);
+                    static const char* const kSuffixes[] = {"_double_slab", "_stairs", "_slab", "_wall", "_fence", "_pillar"};
+                    for (const char* suffix : kSuffixes) {
+                        const size_t n = std::strlen(suffix);
+                        if (shortName.size() <= n || shortName.compare(shortName.size() - n, n, suffix) != 0)
+                            continue;
+                        const std::string stem = shortName.substr(0, shortName.size() - n);
+                        for (const std::string& candidate : {stem, stem + "_planks", stem + "s", stem + "_block"}) {
+                            const auto found = appearances.find("minecraft:" + candidate);
+                            if (found != appearances.end() && found->second.shape == BlockAppearance::Shape::Cube &&
+                                (found->second.top | found->second.side | found->second.bottom) != 0) {
+                                base = &found->second;
+                                break;
+                            }
+                        }
+                        break;
+                    }
+                }
+                if (base) {
+                    BlockAppearance copy = *base;
+                    copy.cutout = def.cutout || base->cutout;
+                    {
+                        std::lock_guard<std::mutex> lock(lookMutex);
+                        appearances[def.name] = std::move(copy);
+                    }
+                    any = true;
+                    continue;
+                }
                 const std::string guess = "textures/blocks/" + AfterColon(def.name);
                 side = FetchOrSynth(guess, vanillaRpRoot, def.name, stems);
                 pSide = guess;
@@ -1301,7 +1374,7 @@ namespace perlin {
                 static constexpr const char* kFaces[4] = {"east", "west", "south", "north"};
                 for (int i = 0; i < 4; i++) {
                     std::string unusedPath;
-                    if (def.faceTexture.count(kFaces[i])) {
+                    if (faceTex.count(kFaces[i])) {
                         const int t = resolve({kFaces[i]}, unusedPath);
                         if (t > 0 && t != side)
                             a.sideTile[i] = t;

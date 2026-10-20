@@ -991,7 +991,14 @@ namespace perlin {
         uint32_t id = 0;
         if (bgfx::getAvailTransientVertexBuffer(vertexCount, uiLayout) < vertexCount ||
             bgfx::getAvailTransientIndexBuffer(indexCount, true) < indexCount) {
-            id = UiCreateMesh(vertices, vertexCount, indices, indexCount);
+            // Out of transient space this frame. Making a real GPU buffer pair per mesh here costs
+            // far more than the mesh is worth and, with hundreds of entities, used up every bgfx
+            // buffer handle within a frame or two (the UI then drew nothing and the game crawled).
+            // Dropping a mesh for one frame is invisible by comparison.
+            static uint32_t dropped = 0;
+            if (dropped++ % 600 == 0)
+                std::cout << "[render] transient buffers full; dropping frame meshes (" << dropped << " so far)" << std::endl;
+            return 0;
         } else {
             UiMeshGpu mesh;
             bgfx::allocTransientVertexBuffer(&mesh.tvb, vertexCount, uiLayout);
@@ -1006,6 +1013,8 @@ namespace perlin {
             frameUiMeshes.push_back(id);
         return id;
     }
+
+    uint32_t RenderContext_bgfx::UiLiveMeshes() const { return staticUiMeshes; }
 
     void RenderContext_bgfx::UiDestroyMesh(uint32_t id) {
         if (LookupUiMesh(id))

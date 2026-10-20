@@ -194,8 +194,10 @@ namespace perlin {
             info.blockRuntimeId = raw.blockRuntimeId;
             if (raw.blockRuntimeId != 0 && it != itemNames.end()) {
                 auto& pal = BlockPalette::Instance();
-                const int32_t hash = static_cast<int32_t>(raw.blockRuntimeId);
-                if (pal.Name(pal.Intern(hash)).empty() && pal.LearnName(hash, it->second)) {
+                // On sequential-id servers this is a table position, not a hash.
+                const uint16_t local = pal.InternRuntime(static_cast<int32_t>(raw.blockRuntimeId));
+                const int32_t hash = pal.NetworkId(local);
+                if (local != 0 && pal.Name(local).empty() && pal.LearnName(hash, it->second)) {
                     std::cout << "[blocks] learned " << it->second << " for block id " << hash << " from an item stack" << std::endl;
                     blockNamesLearned = true;
                 }

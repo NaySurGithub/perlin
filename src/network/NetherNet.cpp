@@ -292,6 +292,24 @@ namespace perlin {
     void NetherNet::Disconnect() {
         connected = false;
         if (impl) {
+            // The callbacks below capture `this`. libdatachannel runs them on its own threads and
+            // replacing a callback waits for one that is running, so clearing them first means none can
+            // touch this object (its inbound queue) after it is gone. A late message used to crash
+            // the game when a transfer attempt was abandoned.
+            try {
+                if (impl->reliable) {
+                    impl->reliable->onMessage(nullptr);
+                    impl->reliable->onOpen(nullptr);
+                    impl->reliable->onClosed(nullptr);
+                }
+                if (impl->unreliable)
+                    impl->unreliable->onMessage(nullptr);
+                if (impl->pc) {
+                    impl->pc->onStateChange(nullptr);
+                    impl->pc->onGatheringStateChange(nullptr);
+                }
+            } catch (...) {
+            }
             Impl* doomed = impl.release();
             std::thread([doomed] {
                 std::this_thread::sleep_for(std::chrono::milliseconds(750));

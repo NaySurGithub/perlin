@@ -1,3 +1,4 @@
+#include "world/level/block/BlockPalette.hpp"
 #include "client/ui/ItemTooltip.hpp"
 #include "client/Perlin.hpp"
 
@@ -98,7 +99,9 @@ namespace perlin {
                     item.entryId = id++;
                     item.info.name = name;
                     item.info.count = 1;
-                    item.info.blockRuntimeId = static_cast<uint32_t>(hash);
+                    // The server's own id space: the hash itself, or its place in the table on sequential-id servers.
+                    item.info.blockRuntimeId = static_cast<uint32_t>(
+                        BlockPalette::Instance().RuntimeId(BlockPalette::Instance().Intern(static_cast<int32_t>(hash))));
                     item.group = 0;
                     catalog.items.push_back(item);
                 }
