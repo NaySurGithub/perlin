@@ -77,6 +77,7 @@
 #include <iostream>
 
 #ifdef __EMSCRIPTEN__
+#include <emscripten.h>
 #define PERLIN_WEB_PERSIST static
 #else
 #define PERLIN_WEB_PERSIST
@@ -323,6 +324,16 @@ namespace perlin {
         }
         while (!serverText.empty() && serverText.back() == '/')
             serverText.pop_back();
+#ifdef __EMSCRIPTEN__
+        // An https page can't call plain-http signaling (mixed content), so every host except the
+        // local machine is reached over https there.
+        if (!secureSignaling) {
+            std::string bare = serverText.substr(0, serverText.find_first_of(":/"));
+            const bool local = bare == "localhost" || bare == "127.0.0.1" || bare == "[::1]";
+            if (!local && EM_ASM_INT({ return location.protocol === 'https:' ? 1 : 0; }))
+                secureSignaling = true;
+        }
+#endif
         NetherNet::SetSecureSignaling(secureSignaling);
         if (!args.stun.empty())
             NetherNet::SetIceServers(args.stun);
@@ -7039,11 +7050,11 @@ namespace perlin {
                         UpdateChatClicks(*hud, live, fbW, fbH);
                     }
                     {
-                        // Buttons click: the sound plays on the press, on any menu screen and on any clickable overlay element.
+                        // Like Minecraft, only a press on a button (or list row, tab, page arrow) clicks; panels,
+                        // slots and empty space stay silent.
                         const bool pressed = this->input.IsMouseDown(0);
-                        const bool onScreen = titleUp || disconnectUp || pauseShown || deathShown || formShown ||
-                                              !hud->Overlay().OverlayHover().empty();
-                        if (pressed && !uiClickWasDown && onScreen && !chat.IsOpen())
+                        const bool onButton = hud->Overlay().OverlayHoverIsButton();
+                        if (pressed && !uiClickWasDown && onButton && !chat.IsOpen())
                             sounds.PlayNamed("random.click", {camera.x, camera.y, camera.z}, 1.0f, 1.0f, false);
                         uiClickWasDown = pressed;
                     }

@@ -4,6 +4,7 @@
   var FILE_STORE = 'files';
   var DATA_DIR = '/perlin';
   var SAMPLES_REPO = DATA_DIR + '/bedrock-samples/repo';
+  var MOJANG_MANIFEST = 'https://piston-meta.mojang.com/mc/game/version_manifest_v2.json';
   var SKIP_PERSIST = {
     'bedrock-samples': 1, server_packs: 1, screenshots: 1, shaderpacks: 1, ui_generated: 1,
     ui_defaults: 1, animation_overrides: 1, 'perlin.log': 1, 'blocks.log': 1
@@ -14,8 +15,7 @@
   var statusEl = el('status');
   var barEl = el('bar');
   var progressEl = el('progress');
-  var startButton = el('start');
-  var form = el('form');
+  var bootEl = el('boot');
   var runtimeReady = false;
   var starting = false;
   var lastSaved = {};
@@ -94,6 +94,7 @@
     names.forEach(function (name) {
       if (name === '.' || name === '..') return;
       if (!relative && SKIP_PERSIST[name]) return;
+      if (name === 'client.jar' || name === 'client.jar.part') return;
       var full = dir + '/' + name;
       var rel = relative ? relative + '/' + name : name;
       var stat;
@@ -215,91 +216,134 @@
       persistence = flushing;
       if (failed.length) {
         var coreFailed = failed.filter(function (p) { return manifest.files.core.indexOf(p) >= 0; });
-        if (coreFailed.length) throw new Error(coreFailed.length + ' required files failed to download (first: ' + coreFailed[0] + '). Press Start to retry.');
+        if (coreFailed.length) throw new Error(coreFailed.length + ' required files failed to download (first: ' + coreFailed[0] + '). Reload the page to retry.');
       }
     }
     writeFile(DATA_DIR + '/bedrock-samples/.ready', new Uint8Array(0));
     setProgress(-1);
   }
 
-  function launchArguments() {
-    var server = el('server').value.trim();
-    var args = ['--join', server.replace(/^https?:\/\//, ''), '--name', el('name').value.trim() || 'Steve', '--nethernet', '--accept-eula'];
-    var mode = el('signaling').value;
-    var host = server.replace(/^https?:\/\//, '').replace(/[:\/].*$/, '');
-    var local = host === 'localhost' || host === '127.0.0.1' || host === '[::1]';
-    var secure = mode === 'https' || /^https:\/\//.test(server) ||
-      (mode === 'auto' && location.protocol === 'https:' && !local);
-    if (secure && !/^https:\/\//.test(server)) args[1] = 'https://' + args[1];
-    var stun = el('stun').value.trim();
-    if (stun) args.push('--stun', stun);
-    return args;
+  function hasFile(path) {
+    try { Module.FS.stat(path); return true; } catch (e) { return false; }
   }
 
-  function loadForm() {
-    try {
-      var saved = JSON.parse(localStorage.getItem('perlin-launcher') || '{}');
-      ['server', 'name', 'signaling', 'stun'].forEach(function (id) { if (saved[id] !== undefined) el(id).value = saved[id]; });
-      el('sounds').checked = !!saved.sounds;
-      el('eula').checked = !!saved.eula;
-    } catch (e) {}
-    var query = new URLSearchParams(location.search);
-    if (query.get('server')) el('server').value = query.get('server');
-    if (query.get('name')) el('name').value = query.get('name');
+  async function fetchJson(url) {
+    var response = await fetch(url, { mode: 'cors', credentials: 'omit' });
+    if (!response.ok) throw new Error('HTTP ' + response.status);
+    return response.json();
   }
 
-  function saveForm() {
+  // Mojang's client jar is where the game's fonts and menu/inventory art come from. The browser
+  // downloads it (nothing is bundled) and the engine unpacks it; the unpacked files are kept in
+  // IndexedDB with the rest of the data, so this happens once.
+  async function ensureClientAssets() {
+    if (hasFile(DATA_DIR + '/assets/.ready2') && hasFile(DATA_DIR + '/fonts/unifont.hex')) return;
+    setStatus('Looking up the current Minecraft version...');
+    var manifest = await fetchJson(MOJANG_MANIFEST);
+    var entry = manifest.versions.filter(function (v) { return v.id === manifest.latest.release; })[0];
+    if (!entry) throw new Error('Mojang version manifest has no release entry');
+    var version = await fetchJson(entry.url);
+    var jarUrl = version.downloads && version.downloads.client && version.downloads.client.url;
+    if (!jarUrl) throw new Error('Mojang version metadata has no client download');
+    var response = await fetch(jarUrl, { mode: 'cors', credentials: 'omit' });
+    if (!response.ok) throw new Error('client download failed (HTTP ' + response.status + ')');
+    var total = +response.headers.get('content-length') || 0;
+    var chunks = [];
+    var received = 0;
+    var reader = response.body.getReader();
+    for (;;) {
+      var part = await reader.read();
+      if (part.done) break;
+      chunks.push(part.value);
+      received += part.value.length;
+      if (total) setProgress(received / total);
+      setStatus('Downloading game data from Mojang: ' + Math.round(received / 1048576) + ' MB' + (total ? ' / ' + Math.round(total / 1048576) + ' MB' : ''));
+    }
+    var bytes = new Uint8Array(received);
+    var at = 0;
+    chunks.forEach(function (c) { bytes.set(c, at); at += c.length; });
+    writeFile(DATA_DIR + '/fonts/client.jar', bytes);
+    setProgress(-1);
+  }
+
+  // Sounds are large; they come in after the game is already running and are used from the next
+  // launch on (they are cached like everything else).
+  async function fetchSoundsInBackground(db) {
     try {
-      var data = { sounds: el('sounds').checked, eula: el('eula').checked };
-      ['server', 'name', 'signaling', 'stun'].forEach(function (id) { data[id] = el(id).value; });
-      localStorage.setItem('perlin-launcher', JSON.stringify(data));
+      var manifest = await (await fetch('assets-manifest.json', { cache: 'no-cache' })).json();
+      var queue = manifest.files.sounds.slice();
+      var stored = {};
+      await cursorAll(db, FILE_STORE, function (key, value) { if (value.ref === manifest.ref) stored[key] = 1; });
+      queue = queue.filter(function (p) { return !stored[p]; });
+      var next = 0;
+      var failed = 0;
+      async function worker() {
+        while (next < queue.length) {
+          var path = queue[next++];
+          try {
+            var bytes = await fetchWithRetry(rawUrl(manifest, path));
+            var tx = db.transaction(FILE_STORE, 'readwrite');
+            tx.objectStore(FILE_STORE).put({ bytes: bytes.slice().buffer, ref: manifest.ref }, path);
+            await transactionDone(tx);
+          } catch (e) { failed++; }
+        }
+      }
+      var workers = [];
+      for (var i = 0; i < 8; i++) workers.push(worker());
+      await Promise.all(workers);
+      if (!failed) {
+        var tx2 = db.transaction(STATE_STORE, 'readwrite');
+        tx2.objectStore(STATE_STORE).put({ bytes: new Uint8Array([1]).buffer, stamp: 'sounds' }, '.sounds-cached');
+        await transactionDone(tx2);
+      }
     } catch (e) {}
+  }
+
+  async function soundsCached(db) {
+    return new Promise(function (resolve) {
+      var request = db.transaction(STATE_STORE, 'readonly').objectStore(STATE_STORE).get('.sounds-cached');
+      request.onsuccess = function () { resolve(!!request.result); };
+      request.onerror = function () { resolve(false); };
+    });
   }
 
   async function start() {
     if (starting || !runtimeReady) return;
     starting = true;
-    startButton.disabled = true;
-    saveForm();
     try {
       var db = await openDb();
       setStatus('Restoring saved data...');
       await restoreState(db);
-      await ensureSamples(db, el('sounds').checked);
-      persistence.then(function () { db.close(); });
-      setStatus('Starting engine, compiling shaders...');
+      var withSounds = await soundsCached(db);
+      await ensureSamples(db, withSounds);
+      try {
+        await ensureClientAssets();
+      } catch (e) {
+        // The game still starts; menus fall back to what is available without Mojang's art.
+        console.warn('client assets unavailable: ' + e);
+      }
+      persistence.then(function () {});
+      setStatus('Starting...');
       setProgress(-1);
       await new Promise(function (resolve) { setTimeout(resolve, 30); });
       firstFrame = new Promise(function (resolve) { Module.onFirstFrame = resolve; });
-      firstFrame.then(function () { el('launcher').hidden = true; });
+      firstFrame.then(function () {
+        bootEl.hidden = true;
+        if (!withSounds) fetchSoundsInBackground(db);
+      });
       setInterval(saveState, 5000);
       window.addEventListener('pagehide', saveState);
       document.addEventListener('visibilitychange', function () { if (document.hidden) saveState(); });
       document.getElementById('canvas').focus();
-      Module.callMain(launchArguments());
+      // The title screen and the server list are the game's own; web builds can only join NetherNet.
+      Module.callMain(['--nethernet']);
     } catch (e) {
       setProgress(-1);
-      setStatus(String(e && e.message ? e.message : e), true);
-      el('launcher').hidden = false;
-      startButton.disabled = false;
+      setStatus(String(e && e.message ? e.message : e) + '\nReload the page to retry.', true);
+      bootEl.hidden = false;
       starting = false;
     }
   }
-
-  form.addEventListener('submit', function (event) {
-    event.preventDefault();
-    start();
-  });
-
-  el('clear').addEventListener('click', async function () {
-    if (!confirm('Delete all cached assets and saved settings?')) return;
-    await new Promise(function (resolve) {
-      var request = indexedDB.deleteDatabase(DB_NAME);
-      request.onsuccess = request.onerror = request.onblocked = function () { resolve(); };
-    });
-    try { localStorage.removeItem('perlin-launcher'); } catch (e) {}
-    setStatus('Cached data removed.');
-  });
 
   window.Module = {
     canvas: el('canvas'),
@@ -307,18 +351,28 @@
     print: function (text) { console.log(text); },
     printErr: function (text) { console.warn(text); },
     onAbort: function (what) {
-      el('launcher').hidden = false;
-      setStatus('The engine crashed: ' + what, true);
+      bootEl.hidden = false;
+      setStatus('The engine crashed: ' + what + '\nReload the page to restart.', true);
     },
     onRuntimeInitialized: function () {
       runtimeReady = true;
-      startButton.disabled = false;
-      startButton.textContent = 'Start';
+      begin();
     }
   };
 
-  loadForm();
+  // Start as soon as the page is isolated and the engine is up: no launcher form.
+  function begin() {
+    if (window.__perlinNoIsolation) {
+      setStatus(window.__perlinNoIsolation, true);
+      return;
+    }
+    if (!window.crossOriginIsolated) {
+      setStatus('Enabling cross-origin isolation...');
+      return;
+    }
+    start();
+  }
+
   if (window.__perlinNoIsolation) setStatus(window.__perlinNoIsolation, true);
-  else if (!window.crossOriginIsolated) setStatus('Enabling cross-origin isolation...');
-  else setStatus('');
+  else setStatus('Loading engine...');
 })();

@@ -164,7 +164,6 @@ jobs:
           if-no-files-found: error
 
   web:
-    if: false
     name: web
     runs-on: ubuntu-24.04
     needs: shaders
@@ -208,6 +207,11 @@ jobs:
             -DOPENSSL_SSL_LIBRARY="$GITHUB_WORKSPACE/ossl-wasm/lib/libssl.a"
       - name: Build
         run: cmake --build build-web
+      - name: Check build output
+        run: |
+          test -s build-web/index.wasm && test -s build-web/index.js && test -s build-web/index.html
+          ! grep -q 'id="launcher"' build-web/index.html
+          grep -q 'perlin-loader.js' build-web/index.html
       - name: Generate asset manifest
         run: |
           git clone --depth 1 --filter=blob:none --no-checkout https://github.com/Mojang/bedrock-samples bedrock-samples-index
@@ -219,7 +223,7 @@ jobs:
           cp build-web/*.worker.js site/ 2>/dev/null || true
           cp build-web/*.data site/ 2>/dev/null || true
           cp build-web/perlin-*.js build-web/coi-sw.js build-web/perlin.css build-web/assets-manifest.json site/
-          cp tools/web/serve.py site/serve.py
+          cp tools/web/serve.py tools/web/HOSTING.txt site/
           mkdir dist
           (cd site && zip -qr ../dist/Perlin-web.zip .)
       - uses: actions/upload-artifact@v4
@@ -229,7 +233,6 @@ jobs:
           if-no-files-found: error
 
   android:
-    if: false
     name: android
     runs-on: ubuntu-24.04
     needs: shaders
@@ -294,6 +297,12 @@ jobs:
             -Pabis="arm64-v8a,x86_64" \
             -PappVersionCode="$GITHUB_RUN_NUMBER" \
             -PappVersionName="1.0.$GITHUB_RUN_NUMBER"
+      - name: Check APK contents
+        run: |
+          apk=$(ls android/app/build/outputs/apk/release/*.apk | head -n1)
+          unzip -l "$apk" | grep -q 'lib/arm64-v8a/libmain.so'
+          unzip -l "$apk" | grep -q 'lib/arm64-v8a/libSDL3.so'
+          unzip -l "$apk" | grep -q 'assets-manifest.json'
       - name: Collect APK
         run: |
           mkdir dist
@@ -305,12 +314,15 @@ jobs:
           if-no-files-found: error
 
   release:
-    if: startsWith(github.ref, 'refs/tags/v')
-    needs: [native]
+    if: github.event_name != 'pull_request' && (startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main')
+    needs: [native, web, android]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v4
+        if: github.ref == 'refs/heads/main'
+
       - uses: actions/download-artifact@v4
         with:
           path: artifacts
@@ -327,7 +339,24 @@ jobs:
             esac
           done
 
+      # Every push to main refreshes one rolling "nightly" release, so a finished build is always a download away.
+      - name: Move the nightly tag
+        if: github.ref == 'refs/heads/main'
+        run: |
+          git tag -f nightly "$GITHUB_SHA"
+          git push -f origin refs/tags/nightly
+
       - uses: softprops/action-gh-release@v2
+        if: github.ref == 'refs/heads/main'
+        with:
+          tag_name: nightly
+          name: Nightly build
+          prerelease: true
+          files: release/*
+          body: "Automatic build of the latest commit on main (${{ github.sha }})."
+
+      - uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/v')
         with:
           files: release/*
           generate_release_notes: true

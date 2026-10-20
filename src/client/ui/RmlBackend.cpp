@@ -725,6 +725,20 @@ namespace perlin::ui {
         return {};
     }
 
+    bool RmlBackend::OverlayHoverIsButton() const {
+        if (!context || !overlay)
+            return false;
+        static const char* const kClickable[] = {"btn", "sbtn", "rbtn", "pg", "row", "ticon", "go", "acc"};
+        for (Rml::Element* e = context->GetHoverElement(); e && e->GetOwnerDocument() == overlay; e = e->GetParentNode()) {
+            if (e->IsClassSet("off"))
+                return false;
+            for (const char* name : kClickable)
+                if (e->IsClassSet(name))
+                    return true;
+        }
+        return false;
+    }
+
     std::string RmlBackend::HoverLink() const {
         if (!context)
             return {};

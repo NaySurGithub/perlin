@@ -21,7 +21,7 @@ namespace perlin {
         constexpr const char* kManifest = "https://piston-meta.mojang.com/mc/game/version_manifest_v2.json";
         constexpr const char* kResources = "https://resources.download.minecraft.net/";
 
-#if !defined(__EMSCRIPTEN__) && !defined(__ANDROID__)
+#ifndef __EMSCRIPTEN__
         bool Download(const std::string& url, const fs::path& target) {
             std::error_code ec;
             fs::create_directories(target.parent_path(), ec);
@@ -58,6 +58,7 @@ namespace perlin {
             std::string text, error;
             return Download(url, scratch) && ReadFile(scratch, text) && ui::Json::Parse(text, out, error);
         }
+#endif
 
         bool ExtractHexFromZipMemory(const void* data, size_t size, const fs::path& hexOut) {
             mz_zip_archive zip{};
@@ -122,7 +123,6 @@ namespace perlin {
             mz_zip_reader_end(&zip);
             return hexOk;
         }
-#endif
     }
 
     std::string MojangFonts::UnihexPath(const std::string& dataDir) {
@@ -142,8 +142,26 @@ namespace perlin {
             job.stage = assets::Stage::Done;
             return true;
         }
-#if defined(__EMSCRIPTEN__) || defined(__ANDROID__)
-        return false;
+#ifdef __EMSCRIPTEN__
+        // The page downloads Mojang's client jar before the engine starts (the browser's fetch is the
+        // only network route there) and leaves it at fonts/client.jar; this unpacks it.
+        {
+            job.stage = assets::Stage::Checking;
+            const fs::path jar = fs::path(dataDir) / "fonts" / "client.jar";
+            std::error_code ec;
+            if (!fs::exists(jar, ec)) {
+                std::cout << "[fonts] the page did not provide Mojang's client jar" << std::endl;
+                job.stage = assets::Stage::Failed;
+                return false;
+            }
+            job.stage = assets::Stage::Extracting;
+            const bool ok = ExtractFromJar(jar, UnihexPath(dataDir), fs::path(dataDir) / "font" / "ascii.png");
+            clientassets::BuildFromJar(jar, dataDir);
+            fs::remove(jar, ec);
+            std::cout << (ok ? "[fonts] Unicode font ready" : "[fonts] Unicode font extraction failed") << std::endl;
+            job.stage = (ok || clientassets::Ready(dataDir)) ? assets::Stage::Done : assets::Stage::Failed;
+            return ok;
+        }
 #else
         job.stage = assets::Stage::Checking;
         struct Finish {

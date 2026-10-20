@@ -1,0 +1,22 @@
+Perlin web - hosting your own copy
+==================================
+
+This folder is the whole site. Put it on any static host (GitHub Pages, Netlify, Cloudflare Pages,
+nginx, S3 + CDN, ...) and open index.html. Nothing is built in and no server code is needed.
+
+Requirements
+  * https (or http://localhost). The page makes itself cross-origin isolated with coi-sw.js, a
+    service worker, so it needs a secure context. If your host can send these headers on every
+    response you can also set them yourself (the page then skips the service worker):
+        Cross-Origin-Opener-Policy: same-origin
+        Cross-Origin-Embedder-Policy: require-corp
+  * Serve index.wasm as application/wasm.
+  * assets-manifest.json is the list of Minecraft Bedrock sample files the page downloads from
+    GitHub (Mojang/bedrock-samples) on first load, together with Mojang's client download for fonts
+    and menu art. Nothing from Mojang is included in this folder. Everything is cached in the
+    browser afterwards.
+
+Try it locally
+    python3 serve.py 8080      then open http://localhost:8080/
+
+The game opens on its own start screen. Web builds join NetherNet (WebRTC) servers only.

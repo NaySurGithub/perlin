@@ -53,11 +53,6 @@ endif()
 
 add_compile_definitions(GLM_FORCE_DEPTH_ZERO_TO_ONE)
 
-option(PERLIN_ALLOW_WEB_ANDROID "Allow the web and Android builds (disabled for now)" OFF)
-if((EMSCRIPTEN OR ANDROID) AND NOT PERLIN_ALLOW_WEB_ANDROID)
-    message(FATAL_ERROR "The web and Android builds are disabled. Pass -DPERLIN_ALLOW_WEB_ANDROID=ON to try them anyway.")
-endif()
-
 option(PERLIN_WEB_SHADERS_ONLY "Only compile the ESSL shaders used by the web build" OFF)
 set(PERLIN_WEB_SHADER_DIR "" CACHE PATH "Directory holding prebuilt essl shader headers for the web build")
 if(PERLIN_WEB_SHADERS_ONLY)
