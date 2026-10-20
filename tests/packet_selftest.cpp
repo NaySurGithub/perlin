@@ -5,7 +5,7 @@
 #include <cstdio>
 #include <string>
 
-namespace perlin::proto {
+namespace perlin::proto2193 {
     int RoundTripAll(std::string& failures, int& skipped);
 }
 
