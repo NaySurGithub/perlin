@@ -154,7 +154,7 @@ namespace perlin::entity {
         float limbSwing = 0, limbAmount = 0;
         float groundSpeed = 0, verticalSpeed = 0;
         float capeFlap = 0;
-        glm::dvec3 cloak{0.0}, cloakPrev{0.0}, tickPos{0.0}, tickPosPrev{0.0};
+        glm::dvec3 cloak{0.0}, cloakPrev{0.0}, cloakFree{0.0}, cloakFreePrev{0.0}, tickPos{0.0}, tickPosPrev{0.0};
         bool limbInit = false;
         double limbAcc = 0;
         float limbSpd = 0, limbSpdPrev = 0, limbPos = 0, limbPosPrev = 0;
@@ -511,6 +511,7 @@ namespace perlin::entity {
                 v.limbInit = true;
                 v.tickPos = v.tickPosPrev = v.pos;
                 v.cloak = v.cloakPrev = v.pos;
+                v.cloakFree = v.cloakFreePrev = v.pos;
             }
             v.limbAcc += dt;
             int ticks = 0;
@@ -525,6 +526,7 @@ namespace perlin::entity {
                     v.tickPosPrev = v.tickPos;
                     v.limbSpd = v.limbSpdPrev = 0.0f;
                     v.cloak = v.cloakPrev = v.tickPos;
+                    v.cloakFree = v.cloakFreePrev = v.tickPos;
                     continue;
                 }
                 v.limbSpdPrev = v.limbSpd;
@@ -544,11 +546,20 @@ namespace perlin::entity {
                     v.cloak = v.cloakPrev = v.tickPos;
                 else
                     v.cloak += off * 0.25;
+                // The same chase without Java's snap at 10 blocks: in a long drop Java's cloak keeps catching up with the
+                // player and the cape falls back, the physics cape keeps streaming for the whole fall.
+                v.cloakFreePrev = v.cloakFree;
+                const glm::dvec3 offFree = v.tickPos - v.cloakFree;
+                if (std::fabs(offFree.x) > 40.0 || std::fabs(offFree.y) > 40.0 || std::fabs(offFree.z) > 40.0)
+                    v.cloakFree = v.cloakFreePrev = v.tickPos;
+                else
+                    v.cloakFree += offFree * 0.25;
             }
             if (ticks > 1 || v.limbAcc > 0.25) {
                 v.limbPosPrev = v.limbPos;
                 v.limbSpdPrev = v.limbSpd;
                 v.cloakPrev = v.cloak;
+                v.cloakFreePrev = v.cloakFree;
                 v.tickPosPrev = v.tickPos;
                 v.bobPrev = v.bob;
                 v.walkDistPrev = v.walkDist;
@@ -576,15 +587,19 @@ namespace perlin::entity {
             v.capeZ = lean2 / 2.0f;
 
             if (e.isPlayer && in.capePhysics > 0) {
-                // The chain aims at Java's cape angles (v.capeX = 6 + lean / 2 + flap, v.capeZ = lean2 / 2, from the jar's
-                // formulas above). Java stops the flap at 32 degrees, so a long fall barely lifts its cape; here the fall
-                // speed lifts it much further, up to nearly horizontal behind the player, the way a cape streams in a
-                // drop from a great height.
-                const float falling = std::max(0.0f, -v.verticalSpeed);
-                const float fallLift = std::clamp((falling - 6.0f) * 2.4f, 0.0f, 94.0f);
+                // The chain aims at the very angles Java computes (v.capeX = 6 + lean / 2 + flap, v.capeZ = lean2 / 2, from the
+                // jar's AvatarRenderer.extractCapeState). Java clamps the height-lag part of the flap (dy * 10) to 32 degrees;
+                // here the same signal is only limited at 90, so a long drop lifts the cape much higher than Java's board,
+                // while a run, a sprint jump and a turn give exactly Java's numbers.
+                const glm::dvec3 cf = v.cloakFreePrev + (v.cloakFree - v.cloakFreePrev) * pd;
+                const double fx = cf.x - ps.x, fy = cf.y - ps.y, fz = cf.z - ps.z;
+                const float rawFlap = std::clamp(static_cast<float>(fy) * 10.0f, -6.0f, 90.0f);
+                const float freeLean = std::clamp(static_cast<float>(fx * sn - fz * cs) * 100.0f, 0.0f, 150.0f);
+                const float freeLean2 = std::clamp(static_cast<float>(-fx * cs - fz * sn) * 100.0f, -20.0f, 20.0f);
+                const float javaPitch = 6.0f + freeLean / 2.0f + rawFlap + std::sin(walk * 6.0f) * 32.0f * bob;
                 CapeInput ci;
-                ci.targetPitch = std::max(v.capeX, 6.0f + fallLift);
-                ci.targetRoll = v.capeZ * 2.0f;
+                ci.targetPitch = javaPitch;
+                ci.targetRoll = freeLean2;
                 ci.shoulders = in.capePhysics == 2;
                 ci.stride = walk * 6.0f;
                 ci.moving = std::clamp(v.groundSpeed / 3.0f, 0.0f, 1.0f) * (std::fabs(v.verticalSpeed) < 2.0f ? 1.0f : 0.0f);

@@ -47,7 +47,7 @@ namespace perlin {
             // is a curve rather than a board: the top follows the back, the hem swings out the furthest, and the shares
             // average to 1, so the cape as a whole sits at the target angle. With the shoulder pads on, the top strip
             // stays nearly pinned so it never pulls away from them.
-            const float pitchTarget = std::clamp(in.targetPitch, 0.0f, 125.0f);
+            const float pitchTarget = std::clamp(in.targetPitch, 0.0f, 150.0f);
             const float rollTarget = std::clamp(in.targetRoll, -20.0f, 20.0f);
             const float pitchBase = in.shoulders ? 0.30f : 0.55f, pitchSlope = in.shoulders ? 1.40f : 0.90f;
             const float rollBase = in.shoulders ? 0.15f : 0.35f, rollSlope = in.shoulders ? 1.70f : 1.30f;
@@ -56,7 +56,7 @@ namespace perlin {
                     const float along = static_cast<float>(i) / (kSegments - 1);
                     // The ripple of the stride: small at the top, growing towards the hem.
                     const float ripple = kFlutter * in.moving * along * std::sin(in.stride - kPhase * static_cast<float>(i));
-                    drive_[i] = std::clamp(pitchTarget * (pitchBase + pitchSlope * along), 0.0f, 125.0f) + ripple;
+                    drive_[i] = std::clamp(pitchTarget * (pitchBase + pitchSlope * along), 0.0f, 150.0f) + ripple;
                     driveRoll_[i] = rollTarget * (rollBase + rollSlope * along) + 0.5f * ripple;
                 }
                 step(pitch, pv_, drive_, h, true);
@@ -67,10 +67,10 @@ namespace perlin {
     private:
         static constexpr float kFlutter = 7.0f;   // degrees at the hem while walking
         static constexpr float kPhase = 0.45f;    // radians of stride between neighbouring strips
-        static constexpr float kTopSpring = 420.0f;  // 1/s^2, the strip at the shoulders follows quickly
-        static constexpr float kHemSpring = 45.0f;   // the hem follows slowly, which is what lets it lag and swing
+        static constexpr float kTopSpring = 1100.0f;  // 1/s^2, the strip at the shoulders follows quickly
+        static constexpr float kHemSpring = 200.0f;   // the hem follows slowly, which is what lets it lag and swing
         static constexpr float kDamping = 0.55f;     // fraction of critical damping
-        static constexpr float kCloth = 55.0f;       // stiffness between neighbouring strips
+        static constexpr float kCloth = 120.0f;       // stiffness between neighbouring strips
         std::array<float, kSegments> pv_{}, rv_{};
         std::array<float, kSegments> drive_{}, driveRoll_{};
 
@@ -95,8 +95,8 @@ namespace perlin {
                     angle[i] = 0.0f;
                     vel[i] = std::max(vel[i], 0.0f) * 0.2f;
                 }
-                if (angle[i] > 125.0f) {
-                    angle[i] = 125.0f;
+                if (angle[i] > 150.0f) {
+                    angle[i] = 150.0f;
                     vel[i] = std::min(vel[i], 0.0f);
                 }
             }

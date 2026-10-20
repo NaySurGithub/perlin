@@ -614,6 +614,9 @@ list(FILTER PERLIN_SOURCES EXCLUDE REGEX "/src/network/Nbt\\.cpp")
 # The mods (WAILA, the SDK tests) are built on their own, as WebAssembly or as test programs, from the top-level mods/
 # folder. A stray copy under src/mods must never be compiled into the game.
 list(FILTER PERLIN_SOURCES EXCLUDE REGEX "/src/mods/")
+# The same goes for copies of the repository's other top-level folders that ended up inside src/ (src/src, src/tests):
+# test programs have their own main() and are built as separate targets from the top-level tests/ folder.
+list(FILTER PERLIN_SOURCES EXCLUDE REGEX "/src/(src|tests)/")
 # WasmEdgeStop.cpp is part of perlin_wasmedge; each build uses one of the two plugin engines.
 list(FILTER PERLIN_SOURCES EXCLUDE REGEX "/src/client/mods/WasmEdgeStop\\.cpp$")
 if(EMSCRIPTEN)
