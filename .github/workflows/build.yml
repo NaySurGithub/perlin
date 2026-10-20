@@ -142,18 +142,36 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
+
+      # The ESSL output only depends on the shader sources and the pinned bgfx (its shaderc), so a
+      # hit skips building shaderc and compiling altogether.
+      - name: Work out the shader cache key
+        id: bgfx
+        run: echo "tag=$(grep -m1 -A3 'NAME bgfx' CMakeLists.txt | grep -o 'GIT_TAG [^ ]*' | cut -d' ' -f2)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache compiled ESSL shaders
+        id: essl-cache
+        uses: actions/cache@v4
+        with:
+          path: build-shaders/shaders/essl
+          key: essl-v1-${{ steps.bgfx.outputs.tag }}-${{ hashFiles('src/shaders/**') }}
+
       - uses: actions/setup-python@v5
+        if: steps.essl-cache.outputs.cache-hit != 'true'
         with:
           python-version: "3.12"
       - uses: actions/cache@v4
+        if: steps.essl-cache.outputs.cache-hit != 'true'
         with:
           path: .cpm-cache
           key: cpm-shaders-${{ hashFiles('CMakeLists.txt', 'cmake/CPM.cmake') }}
       - name: Install packages
+        if: steps.essl-cache.outputs.cache-hit != 'true'
         run: |
           sudo apt-get update
           sudo apt-get install -y ninja-build libgl-dev libegl-dev libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev libwayland-dev
       - name: Compile ESSL shaders
+        if: steps.essl-cache.outputs.cache-hit != 'true'
         run: |
           cmake -S . -B build-shaders -G Ninja -DPERLIN_WEB_SHADERS_ONLY=ON
           cmake --build build-shaders --target perlin_web_shaders
@@ -178,7 +196,11 @@ jobs:
           version: ${{ env.EMSDK_VERSION }}
           actions-cache-folder: emsdk-cache
       - name: Install tools
-        run: sudo apt-get update && sudo apt-get install -y ninja-build python3 perl
+        run: sudo apt-get update && sudo apt-get install -y ninja-build python3 perl ccache
+      - uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          key: web
+          max-size: 600M
       - uses: actions/download-artifact@v4
         with:
           name: essl-shaders
@@ -200,6 +222,7 @@ jobs:
       - name: Configure
         run: |
           emcmake cmake -S . -B build-web -G Ninja -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
             -DPERLIN_WEB_SHADER_DIR="$GITHUB_WORKSPACE/web-shaders" \
             -DOPENSSL_ROOT_DIR="$GITHUB_WORKSPACE/ossl-wasm" \
             -DOPENSSL_INCLUDE_DIR="$GITHUB_WORKSPACE/ossl-wasm/include" \
@@ -249,6 +272,14 @@ jobs:
         with:
           distribution: temurin
           java-version: "17"
+          cache: gradle
+          cache-dependency-path: |
+            android/**/*.gradle*
+            android/gradle/wrapper/gradle-wrapper.properties
+      - uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          key: android
+          max-size: 800M
       - name: Install SDK components
         run: |
           SDKMANAGER="$(ls "$ANDROID_HOME"/cmdline-tools/*/bin/sdkmanager | head -n1)"
@@ -265,7 +296,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ossl-android
-          key: openssl-android-${{ env.OPENSSL_VERSION }}-${{ env.NDK_VERSION }}-v1
+          key: openssl-android-${{ env.OPENSSL_VERSION }}-${{ env.NDK_VERSION }}-v2
       - name: Build OpenSSL for Android
         if: steps.openssl-cache.outputs.cache-hit != 'true'
         run: |
@@ -277,7 +308,7 @@ jobs:
             target="${pair##*:}"
             rm -rf "openssl-build-$abi"
             mkdir "openssl-build-$abi"
-            (cd "openssl-build-$abi" && ../openssl-src/Configure "$target" -D__ANDROID_API__=26 no-shared no-tests no-ui-console no-engine no-dso no-stdio --prefix="$GITHUB_WORKSPACE/ossl-android/$abi" --openssldir="$GITHUB_WORKSPACE/ossl-android/$abi/ssl" && make -j"$(nproc)" build_libs && make install_dev)
+            (cd "openssl-build-$abi" && ../openssl-src/Configure "$target" -D__ANDROID_API__=26 no-shared no-tests no-ui-console no-engine no-dso --prefix="$GITHUB_WORKSPACE/ossl-android/$abi" --openssldir="$GITHUB_WORKSPACE/ossl-android/$abi/ssl" && make -j"$(nproc)" build_libs && make install_dev)
           done
       - name: Generate asset manifest
         run: |
@@ -292,6 +323,7 @@ jobs:
             -PsdlDir="$GITHUB_WORKSPACE/android/sdl" \
             -PshaderDir="$GITHUB_WORKSPACE/android-shaders" \
             -PopensslBase="$GITHUB_WORKSPACE/ossl-android" \
+            -Pccache=true \
             -PndkVersion="$NDK_VERSION" \
             -PcmakeVersion="$CMAKE_VERSION" \
             -Pabis="arm64-v8a,x86_64" \

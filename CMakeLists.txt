@@ -138,7 +138,9 @@ add_library(wasm3_core STATIC ${WASM3_CORE_SOURCES})
 target_include_directories(wasm3_core PUBLIC "${wasm3_SOURCE_DIR}/source")
 target_compile_definitions(wasm3_core PRIVATE d_m3HasTracer=0)
 if(NOT MSVC)
-    target_compile_options(wasm3_core PRIVATE -w)
+    # wasm3's interpreter loop is written as guaranteed tail calls (clang musttail), which a
+    # WebAssembly target only accepts with the tail-call feature on (Chrome 112, Firefox 121, Safari 18.2).
+    target_compile_options(wasm3_core PRIVATE -w -mtail-call)
 endif()
 set_target_properties(wasm3_core PROPERTIES POSITION_INDEPENDENT_CODE ON C_STANDARD 11)
 set(PERLIN_WASM_ENGINE wasm3_core)

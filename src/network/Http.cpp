@@ -3,6 +3,9 @@
 
 #include <cctype>
 #include <cstdlib>
+#include <filesystem>
+#include <fstream>
+#include <iterator>
 #include <iostream>
 #include <mutex>
 #if !defined(_WIN32)
@@ -20,6 +23,38 @@ namespace perlin::http {
             struct stat st {};
             return path && *path && stat(path, &st) == 0 && S_ISDIR(st.st_mode);
         }
+    }
+#endif
+
+#if defined(__ANDROID__)
+    const std::string& AndroidCaBundle() {
+        static std::once_flag once;
+        static std::string bundle;
+        std::call_once(once, [] {
+            namespace fs = std::filesystem;
+            static const char* const kDirs[] = {"/apex/com.android.conscrypt/cacerts", "/system/etc/security/cacerts"};
+            int count = 0;
+            for (const char* dir : kDirs) {
+                std::error_code ec;
+                for (const auto& entry : fs::directory_iterator(dir, ec)) {
+                    std::ifstream in(entry.path(), std::ios::binary);
+                    if (!in)
+                        continue;
+                    const std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+                    const size_t begin = text.find("-----BEGIN CERTIFICATE-----");
+                    const size_t end = text.find("-----END CERTIFICATE-----");
+                    if (begin == std::string::npos || end == std::string::npos || end < begin)
+                        continue;
+                    bundle.append(text, begin, end + 25 - begin);
+                    bundle.push_back('\n');
+                    count++;
+                }
+                if (count > 0)
+                    break;
+            }
+            std::cout << "[tls] " << count << " system CA certificates loaded" << std::endl;
+        });
+        return bundle;
     }
 #endif
 
