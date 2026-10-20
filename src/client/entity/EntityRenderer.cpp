@@ -154,7 +154,7 @@ namespace perlin::entity {
         float limbSwing = 0, limbAmount = 0;
         float groundSpeed = 0, verticalSpeed = 0;
         float capeFlap = 0;
-        glm::dvec3 cloak{0.0}, cloakPrev{0.0}, cloakFree{0.0}, cloakFreePrev{0.0}, tickPos{0.0}, tickPosPrev{0.0};
+        glm::dvec3 cloak{0.0}, cloakPrev{0.0}, tickPos{0.0}, tickPosPrev{0.0};
         bool limbInit = false;
         double limbAcc = 0;
         float limbSpd = 0, limbSpdPrev = 0, limbPos = 0, limbPosPrev = 0;
@@ -511,7 +511,6 @@ namespace perlin::entity {
                 v.limbInit = true;
                 v.tickPos = v.tickPosPrev = v.pos;
                 v.cloak = v.cloakPrev = v.pos;
-                v.cloakFree = v.cloakFreePrev = v.pos;
             }
             v.limbAcc += dt;
             int ticks = 0;
@@ -526,7 +525,7 @@ namespace perlin::entity {
                     v.tickPosPrev = v.tickPos;
                     v.limbSpd = v.limbSpdPrev = 0.0f;
                     v.cloak = v.cloakPrev = v.tickPos;
-                    v.cloakFree = v.cloakFreePrev = v.tickPos;
+                    v.cape.Reset();
                     continue;
                 }
                 v.limbSpdPrev = v.limbSpd;
@@ -546,20 +545,24 @@ namespace perlin::entity {
                     v.cloak = v.cloakPrev = v.tickPos;
                 else
                     v.cloak += off * 0.25;
-                // The same chase without Java's snap at 10 blocks: in a long drop Java's cloak keeps catching up with the
-                // player and the cape falls back, the physics cape keeps streaming for the whole fall.
-                v.cloakFreePrev = v.cloakFree;
-                const glm::dvec3 offFree = v.tickPos - v.cloakFree;
-                if (std::fabs(offFree.x) > 40.0 || std::fabs(offFree.y) > 40.0 || std::fabs(offFree.z) > 40.0)
-                    v.cloakFree = v.cloakFreePrev = v.tickPos;
-                else
-                    v.cloakFree += offFree * 0.25;
+                // WaveyCapes: one simulation step per client tick, fed with the same cloak lag Java uses.
+                if (e.isPlayer) {
+                    CapeTick ct;
+                    ct.cloakX = static_cast<float>(v.cloak.x - v.tickPos.x);
+                    ct.cloakZ = static_cast<float>(v.cloak.z - v.tickPos.z);
+                    ct.bodyYaw = v.yaw;
+                    ct.yaw = v.headYaw;
+                    ct.moveX = static_cast<float>(moved.x);
+                    ct.moveY = static_cast<float>(moved.y);
+                    ct.moveZ = static_cast<float>(moved.z);
+                    ct.crouching = e.Has(flag::Sneaking);
+                    v.cape.Tick(ct);
+                }
             }
             if (ticks > 1 || v.limbAcc > 0.25) {
                 v.limbPosPrev = v.limbPos;
                 v.limbSpdPrev = v.limbSpd;
                 v.cloakPrev = v.cloak;
-                v.cloakFreePrev = v.cloakFree;
                 v.tickPosPrev = v.tickPos;
                 v.bobPrev = v.bob;
                 v.walkDistPrev = v.walkDist;
@@ -586,27 +589,8 @@ namespace perlin::entity {
             v.capeX = 6.0f + lean / 2.0f + flap;
             v.capeZ = lean2 / 2.0f;
 
-            if (e.isPlayer && in.capePhysics > 0) {
-                // The chain aims at the very angles Java computes (v.capeX = 6 + lean / 2 + flap, v.capeZ = lean2 / 2, from the
-                // jar's AvatarRenderer.extractCapeState). Java clamps the height-lag part of the flap (dy * 10) to 32 degrees;
-                // here the same signal is only limited at 90, so a long drop lifts the cape much higher than Java's board,
-                // while a run, a sprint jump and a turn give exactly Java's numbers.
-                const glm::dvec3 cf = v.cloakFreePrev + (v.cloakFree - v.cloakFreePrev) * pd;
-                const double fx = cf.x - ps.x, fy = cf.y - ps.y, fz = cf.z - ps.z;
-                const float rawFlap = std::clamp(static_cast<float>(fy) * 10.0f, -6.0f, 90.0f);
-                const float freeLean = std::clamp(static_cast<float>(fx * sn - fz * cs) * 100.0f, 0.0f, 150.0f);
-                const float freeLean2 = std::clamp(static_cast<float>(-fx * cs - fz * sn) * 100.0f, -20.0f, 20.0f);
-                const float javaPitch = 6.0f + freeLean / 2.0f + rawFlap + std::sin(walk * 6.0f) * 32.0f * bob;
-                CapeInput ci;
-                ci.targetPitch = javaPitch;
-                ci.targetRoll = freeLean2;
-                ci.shoulders = in.capePhysics == 2;
-                ci.stride = walk * 6.0f;
-                ci.moving = std::clamp(v.groundSpeed / 3.0f, 0.0f, 1.0f) * (std::fabs(v.verticalSpeed) < 2.0f ? 1.0f : 0.0f);
-                if (glm::length(step) > 6.0) // teleported: start over at the target
-                    v.cape.Reset();
-                v.cape.Step(ci, dt);
-            }
+            if (e.isPlayer)
+                v.cape.Sample(p, in.capePhysics == 2);
         }
 
         if (e.Has(flag::UsingItem) && !v.wasUsing)
@@ -922,13 +906,19 @@ namespace perlin::entity {
         }
         if (e.isPlayer) {
             auto& r = pose["cape"].rotation;
-            r.x = -v.capeX;
+            // The plain cape keeps Java's angle, and in a drop or a jump it rises as high as the simulated cape does: a rigid
+            // board at the simulation's average angle, so it flares up behind the player instead of staying at Java's 38 degrees.
+            float simulated = 0.0f;
+            for (const float a : v.cape.pitch)
+                simulated += a;
+            simulated /= static_cast<float>(CapeChain::kSegments);
+            r.x = -std::max(v.capeX, simulated);
             r.z = -v.capeZ;
             r.y = v.capeZ;
         }
         if (e.isPlayer && in.capePhysics > 0) {
             // The physics cape: every part turns by its angle relative to the part above it.
-            pose["cape"].rotation = glm::vec3(0.0f, in.capePhysics == 2 ? 0.0f : v.capeZ, 0.0f); // Java turns the cape's yaw with its side lean; with shoulder pads it stays on them
+            pose["cape"].rotation = glm::vec3(0.0f); // the simulation carries the whole movement, including the side swing
             float previousPitch = 0.0f, previousRoll = 0.0f;
             for (int i = 0; i < CapeChain::kSegments; i++) {
                 auto& part = pose["part" + std::to_string(i + 1)].rotation;
