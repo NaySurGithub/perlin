@@ -575,6 +575,7 @@ void RequestRespawn();
         bool SendRequestChunkRadius();
         bool SendClientCacheStatus();
         bool SendSetLocalPlayerAsInitialized();
+        void FinishLoadingIfReady();
 
         bool Transmit(uint32_t packetId, const std::vector<uint8_t>& body, bool reliable);
         void HandleLevelChunk(const proto::LevelChunkPacket& packet);
@@ -706,6 +707,8 @@ void RequestRespawn();
         bool flying = false;
         bool initializedSent = false;
         bool startGameSeen = false;
+        bool spawnSeen = false;
+        std::chrono::steady_clock::time_point spawnAt{};
         std::chrono::steady_clock::time_point startGameAt{};
         std::atomic<int> viewCenterChunk[2] = {0, 0};
         int viewRadiusChunks = 0;

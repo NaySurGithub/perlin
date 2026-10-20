@@ -188,7 +188,7 @@ namespace perlin {
                                      std::string(kBedrockVersion) + ")";
                     state = State::Failed;
                 } else if (!cacheStatusSent) {
-                    // gophertunnel's client answers LoginSuccess with ClientCacheStatus before anything else: the packs
+                    // The vanilla client answers LoginSuccess with ClientCacheStatus before anything else: the packs
                     // and the world are sent after the server has seen what the client supports.
                     SendClientCacheStatus();
                     cacheStatusSent = true;
@@ -198,10 +198,15 @@ namespace perlin {
                 SendClientCacheStatus();
                 cacheStatusSent = true;
             } else if (p.status == PlayStatusPacketStatus::PlayerSpawn) {
-                SendLoadingScreen(false);
-                SendSetLocalPlayerAsInitialized();
+                // Receiving PlayerSpawn alone does not finish loading. The client sends RequestChunkRadius and
+                // ServerboundLoadingScreen(Start) after StartGame, then LoadingScreen(End) + SetLocalPlayerAsInitialized
+                // only once its own terrain is ready (BedrockSession::Update -> FinishLoadingIfReady).
+                if (!spawnSeen) {
+                    spawnSeen = true;
+                    spawnAt = std::chrono::steady_clock::now();
+                }
                 state = State::InGame;
-                std::cout << "[bedrock] spawned -> InGame" << std::endl;
+                std::cout << "[bedrock] PlayerSpawn -> waiting for local terrain before initialising" << std::endl;
             }
         });
 

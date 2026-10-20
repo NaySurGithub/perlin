@@ -685,12 +685,8 @@ namespace perlin {
             if (clientGen)
                 FillUnstreamedColumns();
         }
-        if (startGameSeen && !initializedSent &&
-            std::chrono::steady_clock::now() - startGameAt > std::chrono::seconds(8)) {
-            std::cout << "[bedrock] no PlayerSpawn after 8s, initialising anyway" << std::endl;
-            SendLoadingScreen(false);
-            SendSetLocalPlayerAsInitialized();
-        }
+        if (startGameSeen && !initializedSent)
+            FinishLoadingIfReady();
         if (dimAckPending) {
             size_t columns;
             {
@@ -917,6 +913,29 @@ namespace perlin {
         return Send(p);
     }
 
+    void BedrockSession::FinishLoadingIfReady() {
+        const auto now = std::chrono::steady_clock::now();
+        bool ready = false;
+        if (spawnSeen) {
+            size_t columns;
+            {
+                std::lock_guard<std::mutex> lk(reqMutex);
+                columns = seenColumns.size();
+            }
+            // The 3x3 neighbourhood around the spawn is in, or a short grace for servers that hold chunks back until
+            // the client reports in.
+            ready = columns >= 9 || now - spawnAt > std::chrono::seconds(3);
+        } else if (now - startGameAt > std::chrono::seconds(8)) {
+            std::cout << "[bedrock] no PlayerSpawn after 8s, initialising anyway" << std::endl;
+            ready = true;
+        }
+        if (!ready)
+            return;
+        // Always in this order, once: LoadingScreen(End), then SetLocalPlayerAsInitialized.
+        SendLoadingScreen(false);
+        SendSetLocalPlayerAsInitialized();
+    }
+
     bool BedrockSession::SendClientCacheStatus() {
         return Send(proto::ClientCacheStatusPacket{.enabled = false});
     }
@@ -979,6 +998,7 @@ namespace perlin {
         cacheStatusSent = false;
         radiusSent = false;
         startGameSeen = false;
+        spawnSeen = false;
         initializedSent = false;
         gotSpawn = false;
         runtimeId = 0;
