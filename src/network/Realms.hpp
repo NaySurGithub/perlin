@@ -29,6 +29,9 @@ namespace perlin::realms {
     // gophertunnel's realms package does it).
     bool List(xbox::Account& account, std::vector<Realm>& out, std::string& error);
 
+    // Accepts a Realm invite (a code such as "AbCdEfGh" or a full realms.gg link) and returns the Realm it added.
+    bool AcceptInvite(xbox::Account& account, const std::string& codeOrLink, Realm& out, std::string& error);
+
     // POST /worlds/<id>/join: where the Realm is running now. Waits while the service says it is starting
     // (Retry-After), for up to about 40 seconds.
     bool Join(xbox::Account& account, int64_t id, Address& out, std::string& error);

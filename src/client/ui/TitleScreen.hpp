@@ -22,7 +22,7 @@ namespace perlin::ui {
         std::string xuid;
     };
 
-    enum class ServerTab : uint8_t { Saved, Lan, Realms, Friends };
+    enum class ServerTab : uint8_t { Saved, Lan, Realms, Friends, FriendsOffline }; // Friends = the online ones
 
     // One row of the account switcher.
     struct AccountRow {
@@ -33,13 +33,13 @@ namespace perlin::ui {
         std::string headKey; // "mchead:" image of the account's last skin (empty: none yet)
     };
 
-    enum class TitlePage { Main, Servers, Edit, Direct, Accounts, AccountName, AccountSignIn };
+    enum class TitlePage { Main, Servers, Edit, Direct, AddRealm, Accounts, AccountName, AccountSignIn };
 
     struct TitleModel {
         TitlePage page = TitlePage::Main;
         std::vector<ServerEntry> servers; // the saved list (the Servers tab)
         ServerTab tab = ServerTab::Saved;
-        std::vector<ServerEntry> lan, realms, friends;
+        std::vector<ServerEntry> lan, realms, friends, friendsOffline;
         std::string tabMessage;  // "Scanning...", an error, or empty (shown when the tab has no rows)
         std::string joinMessage; // a line above the buttons: what happened to the last Join
         std::vector<ServerEntry>& Shown() {
@@ -47,6 +47,7 @@ namespace perlin::ui {
                 case ServerTab::Lan: return lan;
                 case ServerTab::Realms: return realms;
                 case ServerTab::Friends: return friends;
+                case ServerTab::FriendsOffline: return friendsOffline;
                 default: return servers;
             }
         }
@@ -87,6 +88,7 @@ namespace perlin::ui {
     inline constexpr const char* kServerJoin = "servers_join";
     inline constexpr const char* kServerDirect = "servers_direct";
     inline constexpr const char* kServerAdd = "servers_add";
+    inline constexpr const char* kServerAddRealm = "servers_addrealm";
     inline constexpr const char* kServerEdit = "servers_edit";
     inline constexpr const char* kServerDelete = "servers_delete";
     inline constexpr const char* kServerRefresh = "servers_refresh";

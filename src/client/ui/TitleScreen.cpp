@@ -317,10 +317,10 @@ mcimg { display: block; position: absolute; }
             d += "<div style=\"left:0px;top:" + N(listTop - 1) + "px;width:" + N(w) + "px;height:1px;background-color:#000000;z-index:3;\"></div>\n";
             d += "<div style=\"left:0px;top:" + N(listBottom) + "px;width:" + N(w) + "px;height:1px;background-color:#000000;z-index:3;\"></div>\n";
             {
-                static const char* const kTabs[] = {"Servers", "LAN", "Realms", "Friends"};
-                const int tabW = 74, gap = 2;
-                const int x0 = cx - (4 * tabW + 3 * gap) / 2;
-                for (int t = 0; t < 4; t++)
+                static const char* const kTabs[] = {"Servers", "LAN", "Realms", "Online", "Offline"};
+                const int tabW = 60, gap = 2;
+                const int x0 = cx - (5 * tabW + 4 * gap) / 2;
+                for (int t = 0; t < 5; t++)
                     d += Btn(std::string(kServerTabPrefix) + N(t), x0 + t * (tabW + gap), 6, tabW, kTabs[t], static_cast<int>(m.tab) == t);
             }
             const std::vector<ServerEntry>& list = m.Shown();
@@ -386,9 +386,12 @@ mcimg { display: block; position: absolute; }
             const bool has = m.selected >= 0 && m.selected < static_cast<int>(list.size());
             const bool saved = m.tab == ServerTab::Saved;
             const int r1 = h - 52, r2 = h - 28;
-            d += Btn(has ? kServerJoin : "", cx - 154, r1, 100, m.tab == ServerTab::Friends ? "Join Friend" : (m.tab == ServerTab::Realms ? "Join Realm" : "Join Server"), !has);
+            d += Btn(has ? kServerJoin : "", cx - 154, r1, 100, (m.tab == ServerTab::Friends || m.tab == ServerTab::FriendsOffline) ? "Join Friend" : (m.tab == ServerTab::Realms ? "Join Realm" : "Join Server"), !has);
             d += Btn(kServerDirect, cx - 50, r1, 100, "Direct Connection");
-            d += Btn(saved ? kServerAdd : "", cx + 54, r1, 100, "Add Server", !saved);
+            if (m.tab == ServerTab::Realms)
+                d += Btn(kServerAddRealm, cx + 54, r1, 100, "Add Realm");
+            else
+                d += Btn(saved ? kServerAdd : "", cx + 54, r1, 100, "Add Server", !saved);
             d += Btn(has && saved ? kServerEdit : "", cx - 154, r2, 72, "Edit", !(has && saved));
             d += Btn(has && saved ? kServerDelete : "", cx - 74, r2, 72, "Delete", !(has && saved));
             d += Btn(kServerRefresh, cx + 4, r2, 72, "Refresh");
@@ -421,6 +424,21 @@ mcimg { display: block; position: absolute; }
         }
     }
 
+    namespace {
+        std::string AddRealm(const TitleModel& m, int w, int h) {
+            std::string d = Dirt(w, h, "0.25 0.25 0.25");
+            const int cx = w / 2;
+            d += "<div class=\"txt ctr\" style=\"left:0px;top:20px;width:" + N(w) + "px;height:9px;\">Add Realm</div>\n";
+            d += Text(cx - 100, 94, 200, "Realm invite code or link", "dim");
+            d += Field(kEditAddress, cx - 100, 106, 200, m.address, true, m.caret);
+            if (!m.joinMessage.empty())
+                d += "<div class=\"txt ctr yellow\" style=\"left:0px;top:132px;width:" + N(w) + "px;height:9px;\">" + EscapeRml(m.joinMessage) + "</div>\n";
+            d += Btn(kEditDone, cx - 100, h / 4 + 96 + 12, 200, "Add Realm");
+            d += Btn(kEditCancel, cx - 100, h / 4 + 120 + 12, 200, "Cancel");
+            return d;
+        }
+    }
+
     int TitleRowHeight() { return kRowH; }
     int TitleListTop() { return 32; }
     int TitleListBottom(int guiH) { return guiH - 64; }
@@ -440,6 +458,7 @@ mcimg { display: block; position: absolute; }
             case TitlePage::Servers: out += Servers(m, guiW, guiH); break;
             case TitlePage::Edit: out += Edit(m, guiW, guiH); break;
             case TitlePage::Direct: out += Direct(m, guiW, guiH); break;
+            case TitlePage::AddRealm: out += AddRealm(m, guiW, guiH); break;
             case TitlePage::Accounts: out += Accounts(m, guiW, guiH); break;
             case TitlePage::AccountName: out += AccountName(m, guiW, guiH); break;
             case TitlePage::AccountSignIn: out += AccountSignIn(m, guiW, guiH); break;

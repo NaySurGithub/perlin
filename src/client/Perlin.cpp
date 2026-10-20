@@ -4166,7 +4166,7 @@ namespace perlin {
             }).detach();
             return;
         }
-        if (tab != T::Realms && tab != T::Friends)
+        if (tab != T::Realms && tab != T::Friends && tab != T::FriendsOffline)
             return;
         const bool forRealms = tab == T::Realms;
         std::atomic<bool>& busy = forRealms ? realmsBusy : friendsBusy;
@@ -4230,6 +4230,30 @@ namespace perlin {
         }).detach();
     }
 
+    void Perlin::AddRealm(const std::string& code) {
+        if (!(accounts.Active() && accounts.Active()->microsoft)) {
+            SetJoinMessage("Sign in with a Microsoft account to add a Realm");
+            return;
+        }
+        if (realmAddBusy.exchange(true))
+            return;
+        SetJoinMessage("Adding the Realm...");
+        const std::string authPath = ActiveAuthPath();
+        std::thread([this, code, authPath] {
+            xbox::Account acct(authPath);
+            std::string error;
+            realms::Realm added;
+            if (acct.SignInSaved(error) && realms::AcceptInvite(acct, code, added, error)) {
+                SetJoinMessage("Added the Realm \"" + added.name + "\"");
+                realmAddedAt = Clock::now();
+                realmAddedFlag = true;
+            } else {
+                SetJoinMessage(error.empty() ? "Could not add the Realm" : error);
+            }
+            realmAddBusy = false;
+        }).detach();
+    }
+
     void Perlin::JoinRealm(long long id) {
         if (!(accounts.Active() && accounts.Active()->microsoft)) {
             SetJoinMessage("Sign in with a Microsoft account to join a Realm");
@@ -4257,6 +4281,16 @@ namespace perlin {
             }
             realmJoinBusy = false;
         }).detach();
+    }
+
+    void Perlin::JoinFriend(const ui::ServerEntry& entry) {
+        // Friend worlds are hosted peer-to-peer: joining needs an Xbox session-directory lookup, a
+        // real-time-activity websocket, NetherNet signalling and a WebRTC data channel. None of that
+        // is ported yet, so say so instead of failing silently.
+        if (entry.offline)
+            SetJoinMessage(entry.name + " is offline");
+        else
+            SetJoinMessage("Joining " + entry.name + "'s world needs Xbox session signalling and WebRTC, which Perlin can't do yet");
     }
 
     void Perlin::LeaveToServerList(ui::Hud& hud) {
@@ -4563,6 +4597,10 @@ namespace perlin {
                 JoinServer(title.address);
                 return;
             }
+            if (title.page == ui::TitlePage::AddRealm) {
+                AddRealm(title.address);
+                return;
+            }
             const ui::ServerEntry entry{title.name.empty() ? "Minecraft Server" : title.name, title.address};
             if (title.adding || title.selected < 0 || title.selected >= static_cast<int>(title.servers.size())) {
                 title.servers.push_back(entry);
@@ -4585,9 +4623,7 @@ namespace perlin {
             const ui::ServerEntry& e = list[static_cast<size_t>(row)];
             switch (e.kind) {
                 case ui::ServerEntry::Kind::Realm: JoinRealm(e.realmId); break;
-                case ui::ServerEntry::Kind::Friend:
-                    SetJoinMessage("Friends' worlds need Xbox signalling and WebRTC, which Perlin can't do yet - add their server address instead");
-                    break;
+                case ui::ServerEntry::Kind::Friend: JoinFriend(e); break;
                 default: JoinServer(e.address); break;
             }
         };
@@ -4595,7 +4631,8 @@ namespace perlin {
             switch (title.page) {
                 case ui::TitlePage::Servers: title.page = ui::TitlePage::Main; break;
                 case ui::TitlePage::Edit:
-                case ui::TitlePage::Direct: title.page = ui::TitlePage::Servers; break;
+                case ui::TitlePage::Direct:
+                case ui::TitlePage::AddRealm: title.page = ui::TitlePage::Servers; break;
                 case ui::TitlePage::Accounts: title.page = ui::TitlePage::Main; break;
                 case ui::TitlePage::AccountName: title.page = ui::TitlePage::Accounts; break;
                 case ui::TitlePage::AccountSignIn:
@@ -4632,7 +4669,7 @@ namespace perlin {
         for (const auto& t : inputManager.TakeTyped()) {
             if (!titleActive)
                 break;
-            const bool fields = title.page == ui::TitlePage::Edit || title.page == ui::TitlePage::Direct;
+            const bool fields = title.page == ui::TitlePage::Edit || title.page == ui::TitlePage::Direct || title.page == ui::TitlePage::AddRealm;
             if (!t.character && t.key == Key::Escape) {
                 back();
             } else if (title.page == ui::TitlePage::AccountName) {
@@ -4643,7 +4680,7 @@ namespace perlin {
                 else if (t.character && !t.ctrl && title.accountName.size() < 16 && t.key != ' ')
                     AppendUtf8(title.accountName, t.key);
             } else if (fields) {
-                std::string& field = title.page == ui::TitlePage::Direct || title.focus == 1 ? title.address : title.name;
+                std::string& field = title.page == ui::TitlePage::Direct || title.page == ui::TitlePage::AddRealm || title.focus == 1 ? title.address : title.name;
                 if (!t.character && t.key == Key::Backspace)
                     PopUtf8(field);
                 else if (!t.character && t.key == Key::Tab && title.page == ui::TitlePage::Edit)
@@ -4731,7 +4768,7 @@ namespace perlin {
 
         // Server list: ping everything when the list opens, and show what came back.
         if (title.page == ui::TitlePage::Servers && titleLastPage != ui::TitlePage::Servers && titleLastPage != ui::TitlePage::Edit &&
-            titleLastPage != ui::TitlePage::Direct) {
+            titleLastPage != ui::TitlePage::Direct && titleLastPage != ui::TitlePage::AddRealm) {
             std::vector<std::string> addresses;
             for (const ui::ServerEntry& e : title.servers)
                 addresses.push_back(e.address);
@@ -4745,10 +4782,17 @@ namespace perlin {
                 if (tabDirty) {
                     title.lan = tabLan;
                     title.realms = tabRealms;
-                    title.friends = tabFriends;
+                    title.friends.clear();
+                    title.friendsOffline.clear();
+                    for (const ui::ServerEntry& f : tabFriends)
+                        (f.offline ? title.friendsOffline : title.friends).push_back(f);
                     tabDirty = false;
                 }
                 title.tabMessage = title.tab == ui::ServerTab::Lan ? tabLanMsg : title.tab == ui::ServerTab::Realms ? tabRealmsMsg : tabFriendsMsg;
+                if (title.tabMessage.empty() && title.tab == ui::ServerTab::Friends)
+                    title.tabMessage = "None of your friends are online";
+                if (title.tabMessage.empty() && title.tab == ui::ServerTab::FriendsOffline)
+                    title.tabMessage = "No offline friends";
                 title.joinMessage = tabJoinMsg;
                 if (realmJoinReady) {
                     realmJoinReady = false;
@@ -4758,6 +4802,12 @@ namespace perlin {
             }
             if (!joinAddress.empty())
                 JoinServer(joinAddress);
+            if (realmAddedFlag.exchange(false)) {
+                title.page = ui::TitlePage::Servers;
+                title.tab = ui::ServerTab::Realms;
+                title.selected = -1;
+                RefreshTab(ui::ServerTab::Realms);
+            }
         }
         {
             std::lock_guard lock(pingMutex);
@@ -4808,8 +4858,8 @@ namespace perlin {
             signature += "|" + title.accountName + (title.caret ? "c" : "n");
         else if (title.page == ui::TitlePage::AccountSignIn)
             signature += "|" + title.signInUrl + "|" + title.signInCode + "|" + title.signInStatus;
-        if (title.page == ui::TitlePage::Edit || title.page == ui::TitlePage::Direct)
-            signature += "|" + title.name + "|" + title.address + "|" + (title.caret ? "c" : "n") + (title.adding ? "a" : "e");
+        if (title.page == ui::TitlePage::Edit || title.page == ui::TitlePage::Direct || title.page == ui::TitlePage::AddRealm)
+            signature += "|" + title.joinMessage + "|" + title.name + "|" + title.address + "|" + (title.caret ? "c" : "n") + (title.adding ? "a" : "e");
         else if (title.page == ui::TitlePage::Servers) {
             signature += "|t" + std::to_string(static_cast<int>(title.tab)) + "|" + title.tabMessage + "|" + title.joinMessage;
             signature += "|" + std::to_string(title.Shown().size());
@@ -4885,6 +4935,10 @@ namespace perlin {
             } else if (hover == ui::kServerDirect) {
                 title.page = ui::TitlePage::Direct;
                 title.address = options.server;
+            } else if (hover == ui::kServerAddRealm) {
+                title.page = ui::TitlePage::AddRealm;
+                title.address.clear();
+                SetJoinMessage({});
             } else if (hover == ui::kServerAdd) {
                 edit(true);
             } else if (hover == ui::kServerEdit) {
@@ -4895,7 +4949,7 @@ namespace perlin {
                     title.selected = -1;
                     SaveServers(title.servers);
                 }
-            } else if (const int tb = rowOf(ui::kServerTabPrefix); tb >= 0 && tb < 4) {
+            } else if (const int tb = rowOf(ui::kServerTabPrefix); tb >= 0 && tb < 5) {
                 title.tab = static_cast<ui::ServerTab>(tb);
                 title.selected = -1;
                 title.scroll = 0;
@@ -7350,7 +7404,7 @@ namespace perlin {
                         {
                             bool keyboard = chat.IsOpen();
                             if (titleUp)
-                                keyboard = keyboard || title.page == ui::TitlePage::Edit || title.page == ui::TitlePage::Direct ||
+                                keyboard = keyboard || title.page == ui::TitlePage::Edit || title.page == ui::TitlePage::Direct || title.page == ui::TitlePage::AddRealm ||
                                            title.page == ui::TitlePage::AccountName;
                             if (formShown && formModel.focus >= 0 && static_cast<size_t>(formModel.focus) < formModel.elements.size())
                                 keyboard = keyboard || formModel.elements[static_cast<size_t>(formModel.focus)].kind == ui::FormElement::Kind::Input;

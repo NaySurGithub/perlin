@@ -74,6 +74,38 @@ namespace perlin::realms {
         return true;
     }
 
+    bool AcceptInvite(xbox::Account& account, const std::string& codeOrLink, Realm& out, std::string& error) {
+        // Keep the last path segment of a link and drop any query, then require plain code characters.
+        std::string code = codeOrLink.substr(0, codeOrLink.find_first_of("?#"));
+        while (!code.empty() && (code.back() == '/' || code.back() == ' '))
+            code.pop_back();
+        if (const size_t slash = code.rfind('/'); slash != std::string::npos)
+            code.erase(0, slash + 1);
+        while (!code.empty() && code.front() == ' ')
+            code.erase(code.begin());
+        bool plain = !code.empty() && code.size() <= 32;
+        for (char ch : code)
+            plain = plain && (std::isalnum(static_cast<unsigned char>(ch)) || ch == '_' || ch == '-');
+        if (!plain) {
+            error = "that is not a Realm invite code or link";
+            return false;
+        }
+        std::string authorization, xuid;
+        if (!account.AuthorizationHeader(kRelyingParty, authorization, xuid, error))
+            return false;
+        const http::Response r = Call("POST", "/invites/v1/link/accept/" + code, {}, authorization);
+        auto doc = r.status == 200 ? json::Document::Parse(r.body) : std::nullopt;
+        if (!doc) {
+            error = r.status == 404 ? "that invite code was not found or has expired" : Failure(r, "Realms");
+            return false;
+        }
+        const json::View s = doc->root();
+        out = {};
+        out.id = s["id"].isNumber() ? static_cast<int64_t>(s["id"].number()) : 0;
+        out.name = s["name"].str();
+        return out.id != 0;
+    }
+
     bool Join(xbox::Account& account, int64_t id, Address& out, std::string& error) {
         std::string authorization, xuid;
         if (!account.AuthorizationHeader(kRelyingParty, authorization, xuid, error))
@@ -81,7 +113,7 @@ namespace perlin::realms {
         const std::string body = "{\"joinIntention\":\"VANILLA\",\"pingRegions\":[]}";
         const auto giveUp = std::chrono::steady_clock::now() + std::chrono::seconds(40);
         while (true) {
-            const http::Response r = Call("POST", "/worlds/" + std::to_string(id) + "/join", body, authorization);
+            http::Response r = Call("POST", "/worlds/" + std::to_string(id) + "/join", body, authorization);
             if ((r.status == 503 || r.status == 277) && std::chrono::steady_clock::now() < giveUp) {
                 // The Realm is starting: wait as long as the service asks (5 s when it does not say).
                 int wait = 5;
@@ -92,13 +124,19 @@ namespace perlin::realms {
                 std::this_thread::sleep_for(std::chrono::seconds(wait));
                 continue;
             }
-            if (r.status == 403) {
-                error = "you are not a member of this Realm";
-                return false;
-            }
-            if (r.status == 404) {
-                error = "this Realm no longer exists";
-                return false;
+            if (r.status >= 400) {
+                std::cout << "[realms] join POST answered " << r.status << ": " << r.body.substr(0, 400) << std::endl;
+                // The older front ends joined with a plain GET; try that before giving up on a 403/404/405.
+                if (r.status == 403 || r.status == 404 || r.status == 405) {
+                    const http::Response g = Call("GET", "/worlds/" + std::to_string(id) + "/join", {}, authorization);
+                    std::cout << "[realms] join GET answered " << g.status << ": " << g.body.substr(0, 400) << std::endl;
+                    if (g.status == 200) {
+                        r = g;
+                    } else {
+                        error = Failure(r, "Realms") + (r.status == 403 ? " (the Realms service refused this account)" : "");
+                        return false;
+                    }
+                }
             }
             auto doc = r.status == 200 ? json::Document::Parse(r.body) : std::nullopt;
             if (!doc || !doc->root()["address"].isString()) {

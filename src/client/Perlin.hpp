@@ -183,6 +183,10 @@ namespace perlin {
         // title screen copies them into its model.
         void RefreshTab(ui::ServerTab tab);
         void JoinRealm(long long id);
+        void JoinFriend(const ui::ServerEntry& entry);
+        void AddRealm(const std::string& code);
+        std::atomic<bool> realmAddBusy{false}, realmAddedFlag{false};
+        std::chrono::steady_clock::time_point realmAddedAt{};
         void SetJoinMessage(const std::string& text);
         std::mutex tabMutex;
         std::vector<ui::ServerEntry> tabLan, tabRealms, tabFriends;
