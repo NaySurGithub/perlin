@@ -1,8 +1,0 @@
-build/
-out/
-.cache/
-.cpm-cache/
-dist/
-.vs/
-.idea/
-CMakeUserPresets.json
