@@ -590,7 +590,8 @@ namespace perlin::entity {
             v.capeZ = lean2 / 2.0f;
 
             if (e.isPlayer)
-                v.cape.Sample(p, in.capePhysics == 2);
+                v.cape.Sample(p, in.capePhysics == 2, walk * 6.0f,
+                              in.capePhysics > 0 ? std::clamp(v.groundSpeed / 3.0f, 0.0f, 1.0f) * (std::fabs(v.verticalSpeed) < 2.0f ? 1.0f : 0.0f) : 0.0f);
         }
 
         if (e.Has(flag::UsingItem) && !v.wasUsing)
