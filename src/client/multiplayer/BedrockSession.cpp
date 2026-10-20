@@ -330,9 +330,6 @@ namespace perlin {
             std::random_device rd;
             const DeviceProfile device = LoadDeviceProfile();
             const int64_t clientRandomId = static_cast<int64_t>(((static_cast<uint64_t>(rd()) << 32) | rd()) >> 1);
-            char skinUuid[37];
-            snprintf(skinUuid, sizeof(skinUuid), "%08x-%04x-4%03x-%04x-%08x%04x", rd(), rd() & 0xFFFF, rd() & 0xFFF,
-                     0x8000 | (rd() & 0x3FFF), rd(), rd() & 0xFFFF);
             claims::ClientData skin;
             skin.ClientRandomId = clientRandomId;
             skin.MaxViewDistance = maxViewDistance;
@@ -344,7 +341,8 @@ namespace perlin {
                     c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
             }
             skin.SelfSignedId = DeriveSelfSignedId(clientRandomId, device.id);
-            skin.SkinId = std::string(skinUuid) + ".Custom";
+            // The classic skin ids Cinnabar sends: the stock pack id plus the model name.
+            skin.SkinId = std::string("c18e65aa-7b21-4637-9b63-8ad63622ef01.") + (loadedSkin.slimArms ? "CustomSlim" : "Custom");
             skin.SkinColor = "#b37b62";
             skin.ServerAddress = serverAddress;
             skin.SkinData = B64Standard(skinData);
@@ -356,8 +354,10 @@ namespace perlin {
             }
             const char* geometry = loadedSkin.slimArms ? "geometry.humanoid.customSlim" : "geometry.humanoid.custom";
             skin.ArmSize = loadedSkin.slimArms ? "slim" : "wide";
-            skin.SkinGeometryData = B64Standard("null");
-            skin.SkinGeometryDataEngineVersion = B64Standard("1.14.0");
+            // Cinnabar's login claims carry no geometry data or engine version for a classic skin: the resource patch
+            // alone names the model.
+            skin.SkinGeometryData.clear();
+            skin.SkinGeometryDataEngineVersion.clear();
             skin.SkinResourcePatch = B64Standard(std::string("{\"geometry\":{\"default\":\"") + geometry + "\"}}");
             if (loadedSkin.hasCape()) {
                 skin.CapeData = B64Standard(std::string(loadedSkin.capeRgba.begin(), loadedSkin.capeRgba.end()));
@@ -374,7 +374,7 @@ namespace perlin {
             skin.DeviceModel = device.model;
             skin.PlatformType = 0;
             skin.CurrentInputMode = 1;
-            skin.DefaultInputMode = 1;
+            skin.DefaultInputMode = 2; // an Android device's default is touch; CurrentInputMode stays mouse
             // Hardware tier as Bedrock reports it: 0 <1.5 GB, 1 <2 GB, 2 <4 GB, 3 <8 GB, 4 more.
             {
                 const uint64_t gib = sysinfo::TotalMemory() >> 20; // MiB

@@ -152,7 +152,7 @@ namespace perlin::claims {
         std::string SkinResourcePatch = "{}";
         std::string ThirdPartyName;
         bool ThirdPartyNameOnly = false;
-        bool TrustedSkin = true;
+        bool TrustedSkin = false;
         int UIProfile = 0;
         // Sent by every Bedrock client: the party the player is in (empty when none), whether they lead it, and
         // the hash of the equipped persona skin (empty for a classic skin).
