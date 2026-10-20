@@ -611,6 +611,9 @@ set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${PERLIN_RESOURCE
 
 file(GLOB_RECURSE PERLIN_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp")
 list(FILTER PERLIN_SOURCES EXCLUDE REGEX "/src/network/Nbt\\.cpp")
+# The mods (WAILA, the SDK tests) are built on their own, as WebAssembly or as test programs, from the top-level mods/
+# folder. A stray copy under src/mods must never be compiled into the game.
+list(FILTER PERLIN_SOURCES EXCLUDE REGEX "/src/mods/")
 # WasmEdgeStop.cpp is part of perlin_wasmedge; each build uses one of the two plugin engines.
 list(FILTER PERLIN_SOURCES EXCLUDE REGEX "/src/client/mods/WasmEdgeStop\\.cpp$")
 if(EMSCRIPTEN)
@@ -982,6 +985,14 @@ if(PERLIN_BUILD_TESTS AND NOT EMSCRIPTEN AND NOT ANDROID)
                 target_compile_features(${wire_test} PRIVATE cxx_std_23)
                 add_test(NAME ${wire_test} COMMAND ${wire_test})
             endforeach()
+            # std::format of a floating point value needs std::to_chars(double), which libc++ only provides from macOS
+            # 13.3 on. These test programs run on the build machine, not on players' Macs, so they use the system
+            # library as it is instead of the game's macOS 12 deployment target.
+            if(APPLE)
+                foreach(native_test waila_test sdk_test abi_test meta_test)
+                    target_compile_definitions(${native_test} PRIVATE _LIBCPP_DISABLE_AVAILABILITY)
+                endforeach()
+            endif()
         endif()
     endif()
 endif()

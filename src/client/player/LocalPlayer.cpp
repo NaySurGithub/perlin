@@ -185,7 +185,10 @@ namespace perlin {
         const bool sprintKey = sprintToggle ? sprintLatch : sprintHeldKey;
 
         const bool wasSprinting = sprinting;
-        if (forward <= 0.0f || sneakKey || itemSlow || state.horizontalCollision)
+        // Sprinting needs food: at 3 shanks (6 points) or fewer it cannot start and stops at once.
+        const BedrockSession::Vitals vitals = session.GetVitals();
+        tooHungryToSprint = vitals.known && vitals.hunger <= 6.0f;
+        if (forward <= 0.0f || sneakKey || itemSlow || state.horizontalCollision || tooHungryToSprint)
             sprinting = false;
         else if (sprintKey)
             sprinting = true;
@@ -431,7 +434,7 @@ namespace perlin {
             }
         }
         if (input.Pressed(Action::Forward)) {
-            if (now - lastForwardPress <= kSprintTapWindow && !sneaking)
+            if (now - lastForwardPress <= kSprintTapWindow && !sneaking && !tooHungryToSprint)
                 sprinting = true;
             lastForwardPress = now;
         }

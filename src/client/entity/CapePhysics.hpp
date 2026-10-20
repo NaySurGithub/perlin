@@ -1,7 +1,7 @@
 #pragma once
 // Cape physics: the cape is a chain of kSegments hinged strips (the 16 parts of the Cape Physics geometry).
 //
-// Where the cape wants to be is exactly what Java Edition's cape does (AvatarRenderer.extractCapeState and
+// Where the cape wants to be is what Java Edition's cape does (AvatarRenderer.extractCapeState and
 // PlayerCapeModel.setupAnim in the client jar): the whole cape swings out by 6 + capeLean/2 + capeFlap degrees, where
 // capeLean (0..150) is how far the cloak trails behind the player, capeFlap (-6..32) is the cloak's height lag plus the
 // walking bob, and it leans sideways by capeLean2/2 (-10..10). Those come in as `targetPitch` / `targetRoll`.
@@ -20,6 +20,7 @@ namespace perlin {
         float targetRoll = 0.0f;  // degrees to the right, Java: capeLean2 / 2
         float stride = 0.0f;      // walk phase in radians
         float moving = 0.0f;      // 0..1, how much the player is walking
+        bool shoulders = false;   // the shoulder pads are on: the top of the cape stays pinned to them
     };
 
     class CapeChain {
@@ -42,16 +43,21 @@ namespace perlin {
             constexpr float kSub = 1.0f / 120.0f;
             const int n = std::max(1, static_cast<int>(std::ceil(dt / kSub)));
             const float h = dt / static_cast<float>(n);
-            // Java's own ceiling: 6 + 75 + 32 degrees plus the bob. Nothing goes beyond it, and nothing into the back.
+            // The target angle for the whole cape; each strip takes its share of it. A cape that hangs from the shoulders
+            // is a curve rather than a board: the top follows the back, the hem swings out the furthest, and the shares
+            // average to 1, so the cape as a whole sits at the target angle. With the shoulder pads on, the top strip
+            // stays nearly pinned so it never pulls away from them.
             const float pitchTarget = std::clamp(in.targetPitch, 0.0f, 125.0f);
-            const float rollTarget = std::clamp(in.targetRoll, -10.0f, 10.0f);
+            const float rollTarget = std::clamp(in.targetRoll, -20.0f, 20.0f);
+            const float pitchBase = in.shoulders ? 0.30f : 0.55f, pitchSlope = in.shoulders ? 1.40f : 0.90f;
+            const float rollBase = in.shoulders ? 0.15f : 0.35f, rollSlope = in.shoulders ? 1.70f : 1.30f;
             for (int s = 0; s < n; s++) {
                 for (int i = 0; i < kSegments; i++) {
                     const float along = static_cast<float>(i) / (kSegments - 1);
                     // The ripple of the stride: small at the top, growing towards the hem.
                     const float ripple = kFlutter * in.moving * along * std::sin(in.stride - kPhase * static_cast<float>(i));
-                    drive_[i] = pitchTarget + ripple;
-                    driveRoll_[i] = rollTarget + 0.4f * ripple;
+                    drive_[i] = std::clamp(pitchTarget * (pitchBase + pitchSlope * along), 0.0f, 125.0f) + ripple;
+                    driveRoll_[i] = rollTarget * (rollBase + rollSlope * along) + 0.5f * ripple;
                 }
                 step(pitch, pv_, drive_, h, true);
                 step(roll, rv_, driveRoll_, h, false);
@@ -59,10 +65,10 @@ namespace perlin {
         }
 
     private:
-        static constexpr float kFlutter = 4.5f;   // degrees at the hem while walking
+        static constexpr float kFlutter = 7.0f;   // degrees at the hem while walking
         static constexpr float kPhase = 0.45f;    // radians of stride between neighbouring strips
         static constexpr float kTopSpring = 420.0f;  // 1/s^2, the strip at the shoulders follows quickly
-        static constexpr float kHemSpring = 70.0f;   // the hem follows slowly, which is what lets it lag and swing
+        static constexpr float kHemSpring = 45.0f;   // the hem follows slowly, which is what lets it lag and swing
         static constexpr float kDamping = 0.55f;     // fraction of critical damping
         static constexpr float kCloth = 55.0f;       // stiffness between neighbouring strips
         std::array<float, kSegments> pv_{}, rv_{};

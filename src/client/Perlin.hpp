@@ -303,6 +303,7 @@ namespace perlin {
         LaunchArgs args;
         AppPlatform* platform = nullptr;
         Options options;
+        std::string runningRenderer; // the graphics API this run started with; a different setting restarts the game
         Input input;
         InputManager inputManager{input, options};
 

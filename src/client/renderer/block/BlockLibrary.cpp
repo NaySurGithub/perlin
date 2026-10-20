@@ -189,7 +189,8 @@ namespace perlin {
                         const bool frame = l || r || tp || bt;
                         uint8_t* px = out + ((size_t)y * T + x) * 4;
                         if (!frame) {
-                            if (mode >= 2 && !keepInterior)
+                            // Connected Clear and Clear empty the pane, stained and tinted glass included.
+                            if (mode >= 2)
                                 px[3] = 0;
                             continue;
                         }
@@ -198,7 +199,7 @@ namespace perlin {
                         const bool exposed = (l && (mask & 1)) || (r && (mask & 2)) || (tp && (mask & 4)) || (bt && (mask & 8));
                         if (exposed)
                             continue;
-                        if (keepInterior) {
+                        if (keepInterior && mode < 2) {
                             // Stained/tinted glass has a coloured interior (alpha ~100), so erasing
                             // the frame on a connected edge leaves a clear stripe through the colour.
                             // Continue the interior instead: copy the nearest interior texel.
@@ -328,7 +329,19 @@ namespace perlin {
         int tile = 0;
         bool ok = false;
         TexturePack& pack = TexturePack::Instance();
-        if (pack.Active())
+        // The server's resource packs sit on top of the player's own texture packs, as in the game.
+        for (const std::string& dir : ServerPacks::Instance().Directories()) {
+            for (auto& t : tries)
+                if (LoadTexture(dir + "/" + t, tex) && tex.width > 0 && tex.height > 0) {
+                    w = tex.width;
+                    h = tex.height;
+                    ok = true;
+                    break;
+                }
+            if (ok)
+                break;
+        }
+        if (!ok && pack.Active())
             for (auto& t : tries)
                 if (pack.Load(t, tex)) {
                     w = tex.width;
@@ -336,18 +349,6 @@ namespace perlin {
                     ok = true;
                     break;
                 }
-        if (!ok)
-            for (const std::string& dir : ServerPacks::Instance().Directories()) {
-                for (auto& t : tries)
-                    if (LoadTexture(dir + "/" + t, tex) && tex.width > 0 && tex.height > 0) {
-                        w = tex.width;
-                        h = tex.height;
-                        ok = true;
-                        break;
-                    }
-                if (ok)
-                    break;
-            }
         if (!ok)
             for (auto& t : tries) {
                 full = vanillaRpRoot + "/" + t;

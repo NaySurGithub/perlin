@@ -6,6 +6,7 @@
 #include "client/resources/TextureLoader.hpp"
 #include "client/resources/ServerBlocks.hpp"
 #include "client/resources/TexturePack.hpp"
+#include "client/resources/ServerPacks.hpp"
 #include <iostream>
 #include "client/renderer/chunk/ChunkMesher.hpp"
 #include "util/Paths.hpp"
@@ -74,6 +75,9 @@ namespace perlin {
         const std::string root = options.bedrockSamplesDir + "/repo/resource_pack/textures/environment/";
         Texture sun, moon, clouds;
         auto load = [&](const char* file, Texture& out) {
+            for (const std::string& dir : ServerPacks::Instance().Directories()) // the server's packs come first
+                if (LoadTexture(dir + "/textures/environment/" + file, out) && out.width > 0)
+                    return true;
             if (TexturePack::Instance().Load(std::string("textures/environment/") + file, out))
                 return true;
             return LoadTexture(root + file, out);

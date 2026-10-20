@@ -225,6 +225,7 @@ namespace perlin {
     bool Perlin::Initialize(AppPlatform* p) {
         platform = p;
         options = Options::Load();
+        runningRenderer = options.renderer;
         i18n::Lang::Get().Configure(std::string(), paths::DataDir(), options.language);
         SetupMods();
         mods::ModManager::Instance().SetApproved(options.approvedMods);
@@ -2981,9 +2982,18 @@ namespace perlin {
 #else
                     apis.insert(apis.end(), {{"vulkan", "Vulkan"}, {"opengl", "OpenGL"}});
 #endif
-                    choice("Renderer", options.renderer, apis);
+                    // A slider through the available APIs. It applies when the mouse is let go (see the restart check
+                    // in the frame update): dragging only moves the value.
+                    size_t at = 0;
+                    for (size_t i = 0; i < apis.size(); i++)
+                        if (apis[i].first == options.renderer)
+                            at = i;
+                    const size_t last = apis.size() - 1;
+                    slider("Renderer", apis[at].second, last ? static_cast<float>(at) / static_cast<float>(last) : 0.0f,
+                           [this, apis, last](float f) {
+                               options.renderer = apis[static_cast<size_t>(std::lround(std::clamp(f, 0.0f, 1.0f) * static_cast<float>(last)))].first;
+                           });
                 }
-                choice("Cape Physics", options.capePhysics, {{"noshoulder", "No Shoulder"}, {"shoulder", "Shoulder"}, {"off", "Off"}});
                 choice("Glass", options.glass, {{"normal", "Normal"}, {"connected", "Connected"}, {"connectedClear", "Connected Clear"}, {"clear", "Clear"}});
                 {
                     static const char* const kQuality[5] = {"Off", "Low", "Medium", "High", "Ultra"};
@@ -3349,6 +3359,7 @@ namespace perlin {
             } else if (optionsPage == 9) {
                 title = tr("options.skinCustomisation.title", "Skin Customization");
                 toggle(tr("options.modelPart.cape", "Cape"), options.skinParts.cape);
+                choice("Cape Physics", options.capePhysics, {{"noshoulder", "No Shoulder"}, {"shoulder", "Shoulder"}, {"off", "Off"}});
                 toggle(tr("options.modelPart.jacket", "Jacket"), options.skinParts.jacket);
                 toggle(tr("options.modelPart.left_sleeve", "Left Sleeve"), options.skinParts.leftSleeve);
                 toggle(tr("options.modelPart.right_sleeve", "Right Sleeve"), options.skinParts.rightSleeve);
@@ -5604,9 +5615,8 @@ namespace perlin {
                 options.glass = g;
             {
                 // A different graphics API can only start with the window, so changing it saves and restarts.
-                static std::string appliedRenderer = options.renderer;
-                if (options.renderer != appliedRenderer) {
-                    appliedRenderer = options.renderer;
+                if (options.renderer != runningRenderer && optionsDrag < 0) { // not while the slider is still held
+                    runningRenderer = options.renderer;
                     options.Save();
                     if (perlin::RelaunchSelf(true))
                         std::_Exit(0);

@@ -66,6 +66,7 @@ namespace perlin {
         bool flying = false;
         bool serverFlying = false;
         bool sprinting = false;
+        bool tooHungryToSprint = false;
         bool swimming = false;
         bool headUnderwater = false;
         bool sentSwimming = false;

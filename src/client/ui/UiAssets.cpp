@@ -177,13 +177,7 @@ namespace perlin::ui {
         const bool hasExt = base.size() > 4 && base[base.size() - 4] == '.';
         const char* exts[] = {".png", ".tga"};
         auto& pack = TexturePack::Instance();
-        if (pack.Active()) {
-            if (hasExt && pack.Load(base, out))
-                return true;
-            for (const char* e : exts)
-                if (!hasExt && pack.Load(base + e, out))
-                    return true;
-        }
+        // The server's packs come before the player's texture packs.
         for (const std::string& dir : ServerPacks::Instance().Directories()) {
             if (hasExt && LoadTexture(dir + "/" + base, out))
                 return true;
@@ -191,6 +185,13 @@ namespace perlin::ui {
                 for (const char* e : exts)
                     if (LoadTexture(dir + "/" + base + e, out))
                         return true;
+        }
+        if (pack.Active()) {
+            if (hasExt && pack.Load(base, out))
+                return true;
+            for (const char* e : exts)
+                if (!hasExt && pack.Load(base + e, out))
+                    return true;
         }
         if (root.empty())
             return false;

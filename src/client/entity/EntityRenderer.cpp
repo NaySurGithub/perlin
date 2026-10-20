@@ -576,11 +576,16 @@ namespace perlin::entity {
             v.capeZ = lean2 / 2.0f;
 
             if (e.isPlayer && in.capePhysics > 0) {
-                // The chain aims at Java's cape angles (v.capeX = 6 + lean / 2 + flap, v.capeZ = lean2 / 2, both from the
-                // jar's formulas above) and adds the lag and ripple between its strips.
+                // The chain aims at Java's cape angles (v.capeX = 6 + lean / 2 + flap, v.capeZ = lean2 / 2, from the jar's
+                // formulas above). Java stops the flap at 32 degrees, so a long fall barely lifts its cape; here the fall
+                // speed lifts it much further, up to nearly horizontal behind the player, the way a cape streams in a
+                // drop from a great height.
+                const float falling = std::max(0.0f, -v.verticalSpeed);
+                const float fallLift = std::clamp((falling - 6.0f) * 2.4f, 0.0f, 94.0f);
                 CapeInput ci;
-                ci.targetPitch = v.capeX;
-                ci.targetRoll = v.capeZ;
+                ci.targetPitch = std::max(v.capeX, 6.0f + fallLift);
+                ci.targetRoll = v.capeZ * 2.0f;
+                ci.shoulders = in.capePhysics == 2;
                 ci.stride = walk * 6.0f;
                 ci.moving = std::clamp(v.groundSpeed / 3.0f, 0.0f, 1.0f) * (std::fabs(v.verticalSpeed) < 2.0f ? 1.0f : 0.0f);
                 if (glm::length(step) > 6.0) // teleported: start over at the target
@@ -594,7 +599,10 @@ namespace perlin::entity {
         v.wasUsing = e.Has(flag::UsingItem);
         if (e.swingSerial != v.swingSerial) {
             v.swingSerial = e.swingSerial;
-            v.attackTime = 0.0001f;
+            // Java's LivingEntity.swing(): a new swing only starts when none is running or the running one is at least
+            // half done. Restarting a swing in the middle is what made the arm jerk back and never finish.
+            if (v.attackTime <= 0.0f || v.attackTime >= 0.5f)
+                v.attackTime = 0.0001f;
         }
         if (static const char* forced = PERLIN_ENV("PERLIN_PREVIEW_ATTACK"); forced && e.isSelf)
             v.attackTime = static_cast<float>(std::atof(forced));
@@ -905,7 +913,7 @@ namespace perlin::entity {
         }
         if (e.isPlayer && in.capePhysics > 0) {
             // The physics cape: every part turns by its angle relative to the part above it.
-            pose["cape"].rotation = glm::vec3(0.0f, v.capeZ, 0.0f); // Java turns the cape's yaw with its side lean
+            pose["cape"].rotation = glm::vec3(0.0f, in.capePhysics == 2 ? 0.0f : v.capeZ, 0.0f); // Java turns the cape's yaw with its side lean; with shoulder pads it stays on them
             float previousPitch = 0.0f, previousRoll = 0.0f;
             for (int i = 0; i < CapeChain::kSegments; i++) {
                 auto& part = pose["part" + std::to_string(i + 1)].rotation;
