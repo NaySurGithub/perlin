@@ -1,0 +1,103 @@
+#include "client/input/InputManager.hpp"
+
+#include <algorithm>
+
+namespace perlin {
+    bool InputManager::Matches(Action action, const Binding& binding) const {
+        return options.GetKey(action) == binding;
+    }
+
+    void InputManager::Dispatch(const Binding& binding) {
+        if (rebinding) {
+            if (binding.device == Binding::Device::Keyboard && binding.code == Key::Escape) {
+                rebinding.reset();
+                return;
+            }
+            options.SetKey(*rebinding, binding);
+            rebinding.reset();
+            options.Save();
+            return;
+        }
+        for (size_t i = 0; i < kActionCount; i++)
+            if (Matches(static_cast<Action>(i), binding))
+                pressed.set(i);
+    }
+
+    void InputManager::Poll() {
+        pressed.reset();
+        InputEvent ev;
+        typed.clear();
+        while (input.events.try_dequeue(ev)) {
+            if (input.TextMode()) {
+                if (ev.type == InputEvent::Char)
+                    typed.push_back({true, ev.key, false});
+                else if (ev.type == InputEvent::KeyDown || ev.type == InputEvent::KeyRepeat)
+                    typed.push_back({false, ev.key, input.IsKeyDown(Key::Control)});
+                continue;
+            }
+            if (ev.type == InputEvent::KeyDown) {
+                if (ev.key != Key::F3 && input.IsKeyDown(Key::F3))
+                    continue;
+                Dispatch(Binding::KeyboardKey(ev.key));
+            }
+            else if (ev.type == InputEvent::MouseDown)
+                Dispatch(Binding::MouseButton(ev.key));
+        }
+
+        const float mx = input.MouseX();
+        const float my = input.MouseY();
+        look = {};
+        scroll = input.TakeWheel();
+        float dx = 0, dy = 0;
+        input.TakeMouseDelta(dx, dy);
+        if (blocked) {
+            look = {};
+            pressed.reset();
+        } else if (input.Captured()) {
+            const float sens = options.mouseSensitivity;
+            look.yaw = dx * sens;
+            look.pitch = dy * sens * (options.invertMouse ? 1.0f : -1.0f);
+        } else if (haveMouse && IsDown(Action::Look)) {
+            const float sens = options.mouseSensitivity;
+            look.yaw = (mx - lastMouseX) * sens;
+            look.pitch = (my - lastMouseY) * sens * (options.invertMouse ? 1.0f : -1.0f);
+        }
+        lastMouseX = mx;
+        lastMouseY = my;
+        haveMouse = true;
+    }
+
+    bool InputManager::IsDown(Action action) const {
+        if (blocked && action != Action::DebugScreen)
+            return false;
+        if (input.TextMode())
+            return false;
+        if (locks) {
+            const bool all = (locks & 4u) != 0;
+            switch (action) {
+                case Action::Forward: if (all || (locks & 512u)) return false; break;
+                case Action::Back: if (all || (locks & 1024u)) return false; break;
+                case Action::Left: if (all || (locks & 2048u) || (locks & 16u)) return false; break;
+                case Action::Right: if (all || (locks & 4096u) || (locks & 16u)) return false; break;
+                case Action::Jump: if (all || (locks & 64u)) return false; break;
+                case Action::Sneak: if (locks & 32u) return false; break;
+                default: break;
+            }
+        }
+        if (holds[static_cast<size_t>(action)] > std::chrono::steady_clock::now())
+            return true;
+        const Binding& b = options.GetKey(action);
+        switch (b.device) {
+        case Binding::Device::Keyboard:
+            return input.IsKeyDown(b.code);
+        case Binding::Device::Mouse:
+            return input.IsMouseDown(b.code);
+        default:
+            return false;
+        }
+    }
+
+    float InputManager::Axis(Action positive, Action negative) const {
+        return (IsDown(positive) ? 1.0f : 0.0f) - (IsDown(negative) ? 1.0f : 0.0f);
+    }
+}

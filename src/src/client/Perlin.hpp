@@ -1,0 +1,388 @@
+#pragma once
+#include "client/audio/SoundSystem.hpp"
+#include "client/audio/Subtitles.hpp"
+#include <chrono>
+#include "client/Accounts.hpp"
+#include "client/Camera.hpp"
+#include "client/Options.hpp"
+#include "client/entity/EntityRenderer.hpp"
+#include "client/hand/HandRenderer.hpp"
+#include "client/input/Input.hpp"
+#include "client/input/InputManager.hpp"
+#include "client/multiplayer/BedrockSession.hpp"
+#include "client/particle/ParticleSystem.hpp"
+#include "client/particle/DataParticles.hpp"
+#include "client/renderer/FogDefs.hpp"
+#include "client/player/LocalPlayer.hpp"
+#include "client/renderer/LevelRenderer.hpp"
+#include "client/renderer/Lightmap.hpp"
+#include "client/renderer/RenderContext.hpp"
+#include "client/ui/TitleScreen.hpp"
+#include "client/ui/FormScreen.hpp"
+#include "client/ui/ChatLog.hpp"
+#include "client/ui/Hud.hpp"
+#include "client/ui/InventoryScreen.hpp"
+#include "client/mods/ModManager.hpp"
+#include "util/ThreadPool.hpp"
+
+#include <atomic>
+#include <vector>
+#include <future>
+#include "client/resources/PackInfo.hpp"
+#include <memory>
+#include <map>
+#include <mutex>
+#include <string>
+#include <thread>
+#include <unordered_map>
+#include <unordered_set>
+
+class AppPlatform;
+
+namespace perlin {
+    // The block the local player is mining and how far along it is (0..1). Read from any thread; values may be a frame old.
+    struct LocalBreakState { bool active = false; int x = 0, y = 0, z = 0; float progress = 0.0f; };
+    LocalBreakState GetLocalBreakState();
+
+    struct LaunchArgs {
+        std::string server;
+        std::string playerName;
+        std::string skin;
+        std::string cape;
+        bool slimArms = false;
+        bool login = false;
+        bool offline = false;
+        std::string transport;
+        bool logout = false;
+        bool secure = false;
+        bool acceptEula = false;
+        std::string stun;
+    };
+
+    class Perlin {
+    public:
+        explicit Perlin(LaunchArgs args) : args(std::move(args)) {}
+
+        bool Initialize(AppPlatform* platform);
+        void Shutdown();
+
+        Input& GetInput() { return input; }
+
+    private:
+        void RenderThreadMain();
+        void FillHudState(ui::HudState& state, BedrockSession* live, bool preview);
+        void Connect();
+        bool AcceptEula();
+        void TakeScreenshot();
+        void UpdateDeathScreen(ui::Hud& hud, BedrockSession* live, const ui::HudState& state, int fbW, int fbH);
+        bool deathShown = false, deathLeftDown = false, deathRespawnSent = false, deathTextMode = false;
+        void UpdateFormScreen(ui::Hud& hud, BedrockSession* live, int fbW, int fbH);
+        void UpdateServerLayer(ui::Hud& hud, BedrockSession* live, int fbW, int fbH);
+        bool formShown = false, formLeftDown = false;
+        ui::FormModel formModel;
+        ui::FormUi formUi;
+        bool formEngine = false;
+        std::string formSignature, serverLayerSignature;
+        float formScroll = 0.0f, formContentH = 0.0f, formViewH = 0.0f;
+        std::chrono::steady_clock::time_point formOpenedAt{};
+        double toastUntil = 0.0;
+        std::string toastText, lastToastTitle, lastToastMessage;
+        std::chrono::steady_clock::time_point toastAt{};
+        std::chrono::steady_clock::time_point deathAt{}, deathSentAt{};
+        std::string deathSignature, deathTemplate;
+        uint64_t deathTemplateVersion = 0;
+        bool deathHoverLogged = false;
+        std::chrono::steady_clock::time_point deathCheckAt{};
+        void UpdateCreativeScreen(ui::Hud& hud, BedrockSession* live, const ui::HudState& state, int fbW, int fbH);
+        void UpdateInventoryScreen(ui::Hud& hud, BedrockSession* live, const ui::HudState& state, int fbW, int fbH);
+        bool invShown = false, invLeftDown = false, invRightDown = false, invPreviewOpened = false;
+        float invMouseX = 0, invMouseY = 0;
+        int creativeTab = 0;
+        bool creativeDollVisible = false;
+        float creativeScroll = 0.0f;
+        bool creativeDragging = false;
+        std::string creativeSearch, creativeSignature, creativeTemplate;
+        uint64_t creativeTemplateVersion = 0;
+        std::optional<entity::Entity> dollSelf;
+        int invHoverAddr = -1;
+        bool invWorkbench = false, invBook = false;
+        int invDragButton = 0;
+        bool invMiddleDown = false;
+        std::vector<int> invDragSlots;
+        int invBookPage = 0;
+        std::string invHoverId;
+        std::vector<ui::RecipeCard> invCards;
+        std::vector<BedrockSession::RecipeEntry> invRecipeAll;
+        std::chrono::steady_clock::time_point invRecipeAt{};
+        const Level* particleLevel = nullptr;
+        int invPicked = -1, invHover = -1;
+        std::chrono::steady_clock::time_point invOpenedAt{}, invCheckAt{};
+        std::string invSignature, invTemplate;
+        uint64_t invTemplateVersion = 0;
+        void UpdatePauseScreen(ui::Hud& hud, BedrockSession* live, int fbW, int fbH);
+        bool UpdateDisconnectScreen(ui::Hud& hud, int fbW, int fbH);
+        bool UpdateLoadingScreen(ui::Hud& hud, int fbW, int fbH);
+        bool UpdateTitleScreen(ui::Hud& hud, int fbW, int fbH);
+        void JoinServer(const std::string& address);
+        // First-start asset download screen (shown instead of the title while assets download).
+        bool UpdateAssetScreen(ui::Hud& hud, int fbW, int fbH);
+        bool assetShown = false, assetSkip = false, assetLeftDown = false;
+        std::string assetSignature;
+        std::chrono::steady_clock::time_point assetOpenedAt{}, assetSampleAt{};
+        uint64_t assetLastBytes[2] = {0, 0};
+        double assetSpeed[2] = {0.0, 0.0};
+        void StartAssetDownloads();
+        // Drop the current connection (or connection attempt) and show the server list.
+        void LeaveToServerList(ui::Hud& hud);
+        bool titleReturnToServers = false;
+        bool loadingLeftDown = false, loadingTextMode = false;
+        std::chrono::steady_clock::time_point loadingOpenedAt{};
+        // Title logo: Bedrock's textures/ui/title, looked up once assets exist.
+        std::chrono::steady_clock::time_point logoRetryAt{};
+        bool logoBedrock = false;
+        bool loadingShown = false, loadingDone = false;
+        std::string loadingSignature, loadingTemplate;
+        uint64_t loadingTemplateVersion = 0;
+        std::chrono::steady_clock::time_point loadingCheckAt{}, loadingReadyAt{}, loadingStartAt{};
+        bool loadingReadyArmed = false;
+        bool titleActive = false, titleShown = false, titleLeftDown = false;
+        ui::TitleModel title;
+        std::string titleSignature;
+        std::chrono::steady_clock::time_point titleOpenedAt{}, titleClickAt{};
+        // Options opened from the title screen (reuses the pause menu's options screen).
+        bool titleOptions = false;
+        int titleOpenView = 1; // what the title screen opens: 1 options, 4 mods, 5 wardrobe
+        // Native cube panorama behind the title screen.
+        void DrawTitlePanorama(int fbW, int fbH);
+        uint32_t panoramaTextures[6] = {};
+        bool panoramaReady = false;
+        std::chrono::steady_clock::time_point panoramaClock{}, panoramaRetryAt{};
+        int titleClickRow = -1;
+        ui::TitlePage titleLastPage = ui::TitlePage::Main;
+
+        // Account switcher (title screen): the saved accounts and a Microsoft sign-in in progress.
+        AccountList accounts;
+        void ApplyActiveAccount();
+        std::string ActiveAuthPath() const;
+        void StartAccountSignIn();
+        void CancelAccountSignIn();
+        std::mutex signInMutex;
+        std::shared_ptr<xbox::Account> signInAccount;
+        std::string signInAuthFile, signInUrl, signInCode, signInStatus, signInGamertag;
+        std::vector<std::pair<std::string, std::string>> pendingRenames; // account id, gamertag (under signInMutex)
+        void FetchMissingGamertags();
+        std::chrono::steady_clock::time_point gamertagFetchAt{}; // last background gamertag lookup
+        std::atomic<int> signInState{0}; // 0 idle, 1 working, 2 signed in, 3 failed
+
+        // Server list status pings (filled in by worker threads, keyed by address).
+        void PingServers(const std::vector<std::string>& addresses);
+        std::mutex pingMutex;
+        std::map<std::string, ui::ServerEntry> pingResults;
+        bool disconnectShown = false, disconnectLeftDown = false, disconnectTextMode = false;
+        std::chrono::steady_clock::time_point disconnectOpenedAt{}, disconnectCheckAt{};
+        std::string disconnectSignature, disconnectTemplate;
+        uint64_t disconnectTemplateVersion = 0;
+        bool pauseShown = false, pauseLeftDown = false, pausePreviewOpened = false;
+        bool pausePlayers = false;
+        int pauseView = 0, optionsDrag = -1, optionsPage = 0, optionsSub = 0, bindCapture = -1;
+        bool bindWasCapturing = false;
+        float kbScroll = 0.0f, optScroll = 0.0f;
+        std::atomic<bool> fontsDownloaded{false};
+        int optScrollKey = -1;
+        int wardLine = 0;
+        bool wardSkinOpen = false, wardCapeOpen = false, wardDrag = false;
+        float wardYaw = -25.0f, wardPitch = 0.0f, wardDragX = 0.0f, wardDragY = 0.0f;
+        int wardPreviewSerial = 0;
+        std::string wardPreviewKey;
+        std::vector<std::string> wardSkins, wardCapes;
+        std::chrono::steady_clock::time_point wardListedAt{};
+        std::unordered_map<std::string, std::string> wardStamp;
+        std::unordered_map<std::string, bool> wardSlimGuess;
+        std::string wardSkin, wardCape, wardPreviewSource;
+        bool wardInit = false;
+        std::map<std::string, bool> wardSlim;
+        LoadedSkin wardPreviewLoaded;
+        SkinConfig MakeSkinConfig(const std::string& skinPath, const std::string& capePath) const;
+        int optHoverRow = -1;
+        std::chrono::steady_clock::time_point optHoverSince{};
+        std::map<std::string, std::pair<int, double>> worldOverride;
+        float packScrollA = 0.0f, packScrollS = 0.0f, shaderScroll = 0.0f, modScroll = 0.0f, modDetailScroll = 0.0f;
+        std::string modSelected, modSearch, shaderPendingPack, packMetaStampDir;
+        bool shaderPendingEnabled = false, shaderPendingInit = false;
+        struct PackMetaCacheEntry {
+            std::string stamp;
+            PackMeta meta;
+        };
+        std::map<std::string, PackMetaCacheEntry> packMetaCache;
+        std::map<std::string, std::string> modIconStamp;
+        std::vector<std::string> packFoundCache;
+        std::chrono::steady_clock::time_point packFoundAt{};
+        int packRowsHover = -1;
+        void ApplyTexturePacks();
+        // Drops the last server's resource packs (if any) and reloads what they replaced.
+        void UnloadServerPacks();
+        void CommitTexturePacks();
+        std::vector<std::string> packPending;
+        bool packPendingInit = false;
+        void ApplyShaderPack();
+        struct HotStamps {
+            std::string tex, shader;
+        };
+        void PollHotReload();
+        std::future<HotStamps> hotScan;
+        std::chrono::steady_clock::time_point hotPollAt{};
+        std::string hotTexStamp, hotShaderStamp, shaderBuildReport;
+        std::chrono::steady_clock::time_point bindStartedAt{};
+        std::string optionsSignature;
+        std::chrono::steady_clock::time_point pauseOpenedAt{}, pauseCheckAt{};
+        std::string pauseSignature, pauseTemplate;
+        uint64_t pauseTemplateVersion = 0;
+        void UpdateChatClicks(ui::Hud& hud, BedrockSession* live, int fbW, int fbH);
+        bool chatLeftDown = false;
+        uint32_t commandsSeen = 0;
+        std::chrono::steady_clock::time_point playersAt{};
+        void UpdateTitle(int fps);
+        void SetupMods();
+        void SetupModActions();
+    // Enables or disables a mod; enabling one that asks for dangerous permissions approves exactly what it asked for.
+    void ToggleMod(const std::string& name);
+        // Set by mod actions; UpdatePauseScreen opens the requested screen: view 1 options, 3 world, 4 mods, 5 wardrobe.
+        int modOpenView = -1, modOpenPage = 0;
+        std::string modSettingsFor;
+    std::vector<std::string> modRowTips;
+        bool modSettingsReload = false;
+        void PumpMods(BedrockSession* live, Level* level, ui::Hud* hudPtr, float dt);
+        void TickMods(BedrockSession* live);
+        bool InterceptOutgoing(BedrockSession* live, const std::string& text);
+        bool FilterIncomingChat(const std::string& line);
+        void UpdateModLayer(ui::Hud& hud);
+        void ApplyModHud(ui::HudState& s);
+        void NoteModSound(const std::string& name, double x, double y, double z, float volume, float pitch);
+        void MergePluginCommands(BedrockSession* live);
+        void StartModHttp(const std::string& plugin, uint32_t id, std::string method, std::string url, int timeoutMs,
+                          std::vector<std::pair<std::string, std::string>> headers, std::vector<uint8_t> body, std::string savePath = {});
+        abi::Screen CurrentScreen() const;
+        BedrockSession* modLive = nullptr;
+        Level* modLevel = nullptr;
+        ui::Hud* modHud = nullptr;
+        float modDt = 0.0f;
+        int modGuiW = 0, modGuiH = 0;
+        std::mutex modMutex;
+        std::vector<std::pair<std::string, abi::EventHttp>> modHttp;
+        std::atomic<int> modHttpActive{0};
+        std::vector<abi::EventSound> modSounds;
+        std::map<std::string, bool> modKeyDown;
+        std::atomic<bool> modWantPackets{false};
+        bool modWasConnected = false, modWasDead = false;
+        int modLastDim = 0, modLastSlot = -1;
+        uint32_t modLastHurt = 0, modTitleSerial = 0;
+        abi::Screen modLastScreen = abi::Screen::None;
+        std::unordered_set<uint64_t> modEntityIds;
+        bool modEntitySeeded = false;
+        std::string modToastText, modTitleText, modSubtitleText;
+        std::chrono::steady_clock::time_point modToastUntil{}, modTitleStart{};
+        int modTitleFadeIn = 500, modTitleStay = 3500, modTitleFadeOut = 1000;
+        uint64_t modLayerVersion = 0;
+        int modLayerW = 0, modLayerH = 0;
+        bool modLayerShown = false;
+        std::string modCommandSig;
+        uint32_t modCommandsVersion = 0;
+        std::vector<std::pair<uint32_t, std::vector<uint8_t>>> modPackets;
+        std::chrono::steady_clock::time_point modLastFrame{};
+        double modTickAccum = 0.0;
+        void FillDebug(ui::HudState& state, BedrockSession* live, Level* level);
+        bool debugOn = false;
+        int fpsShown = 0;
+        uint64_t rateTx = 0, rateRx = 0;
+        int txRate = 0, rxRate = 0;
+        std::chrono::steady_clock::time_point rateAt{};
+        int heightSurface = 0;
+        int dbgSky = 15, dbgBlock = 0;
+        std::chrono::steady_clock::time_point heightAt{};
+
+        LaunchArgs args;
+        AppPlatform* platform = nullptr;
+        Options options;
+        std::string runningRenderer; // the graphics API this run started with; a different setting restarts the game
+        Input input;
+        InputManager inputManager{input, options};
+
+        std::unique_ptr<RenderContext> renderer;
+        std::unique_ptr<LevelRenderer> levelRenderer;
+        std::unique_ptr<ui::Hud> hud;
+        ui::HudState hudState;
+        HandRenderer handRenderer;
+        entity::EntityRenderer entityRenderer;
+        particle::ParticleSystem particles;
+        particle::DataParticles dataParticles;
+        FogDefs fogDefs;
+        double particleClock = 0;
+        std::vector<particle::Quad> particleQuads;
+        struct LocalBreak {
+            int x = 0, y = 0, z = 0;
+            std::chrono::steady_clock::time_point at{};
+        } lastLocalBreak;
+        audio::AudioEngine audioEngine;
+        audio::SoundSystem sounds{audioEngine};
+        audio::Subtitles subtitles;
+        void UpdateAudio(BedrockSession* live, double now, float dt);
+        entity::EntityTracker previewEntities;
+        bool previewEntitiesSpawned = false;
+        std::vector<uint64_t> previewWalk;
+        void SpawnPreviewEntities();
+        std::shared_ptr<const entity::SkinData> selfSkinData;
+        std::string selfSkinKey;
+        struct EntityLightEntry {
+            std::chrono::steady_clock::time_point at{};
+            glm::vec3 colour{1.0f};
+            int sky = 0, block = 0;
+        };
+        std::unordered_map<int64_t, EntityLightEntry> entityLight;
+        ui::ChatLog chat;
+        std::chrono::steady_clock::time_point chatOpenedAt{};
+        struct HudAnim {
+            uint64_t ticks = 0;
+            int toolTimer = 0;
+            ui::HudItem lastTool;
+            std::chrono::steady_clock::time_point titleAtSeen{}, actionAtSeen{};
+            int overlayTime = 0, titleTime = 0, titleFadeIn = 10, titleStay = 70, titleFadeOut = 20;
+            bool haveHealth = false;
+            int lastHealth = 0;
+            int lastHealthTick = 0, lastHurtTick = -1000;
+            int blinkUntil = 0, displayHealth = 0;
+        } hudAnim;
+        float hudPartial = 0.0f;
+        bool headUnderwater = false;
+        bool headInLava = false;
+        float waterSurfaceAbove = 0.0f; // underwater: water surface height above the eye
+        int previewSlot = 0;
+        void TickHud();
+        std::unique_ptr<ThreadPool> workers;
+        std::thread renderThread;
+        std::atomic<bool> renderRunning{false};
+        std::atomic<bool> renderReady{false};
+
+        Camera camera;
+        LocalPlayer player;
+        BlockLightFlicker blockLight;
+        double tickDebt = 0.0;
+        float rainLevel = 0.0f;
+        float thunderLevel = 0.0f;
+        float previousRainLevel = 0.0f;
+        float previousThunderLevel = 0.0f;
+
+        std::unique_ptr<BedrockSession> session;
+        std::shared_ptr<xbox::Account> account;
+        std::mutex statusMutex;
+        std::string statusHint;
+        void SetStatusHint(const std::string& text);
+        bool onlineThisRun = false;
+        std::atomic<bool> sessionReady{false};
+        // Each Connect() bumps the generation; a background connect that finishes after the user
+        // cancelled sees a stale generation and backs out. Sessions left behind stay alive until
+        // no connect is running on them.
+        std::atomic<uint64_t> connectGeneration{0};
+        std::atomic<int> connectsInFlight{0};
+        std::vector<std::unique_ptr<BedrockSession>> retiredSessions;
+    };
+}

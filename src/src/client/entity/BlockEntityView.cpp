@@ -1,0 +1,231 @@
+#include "client/entity/BlockEntityView.hpp"
+
+#include "world/level/block/BlockPalette.hpp"
+
+#include <cstdlib>
+#include <algorithm>
+#include <unordered_map>
+#include <unordered_set>
+
+namespace perlin::entity {
+    namespace {
+        float BedYaw(int direction) {
+            switch (direction & 3) {
+                case 0: return 0.0f;
+                case 1: return 90.0f;
+                case 2: return 180.0f;
+                default: return 270.0f;
+            }
+        }
+
+        void BedStep(int direction, int& dx, int& dz) {
+            switch (direction & 3) {
+                case 0: dx = 0; dz = 1; break;
+                case 1: dx = -1; dz = 0; break;
+                case 2: dx = 0; dz = -1; break;
+                default: dx = 1; dz = 0; break;
+            }
+        }
+
+        float FacingYaw(int facing) {
+            switch (facing) {
+                case 2: return 180.0f;
+                case 4: return 90.0f;
+                case 5: return 270.0f;
+                default: return 0.0f;
+            }
+        }
+
+        // Bedrock banner pattern codes -> texture names (textures/entity/banner/banner_<name>).
+        const char* BannerPatternName(const std::string& code) {
+            static const std::unordered_map<std::string, const char*> kNames = {
+                {"bl", "square_bottom_left"}, {"br", "square_bottom_right"}, {"tl", "square_top_left"}, {"tr", "square_top_right"},
+                {"bs", "stripe_bottom"}, {"ts", "stripe_top"}, {"ls", "stripe_left"}, {"rs", "stripe_right"},
+                {"cs", "stripe_center"}, {"ms", "stripe_middle"}, {"drs", "stripe_downright"}, {"dls", "stripe_downleft"},
+                {"ss", "small_stripes"}, {"cr", "cross"}, {"sc", "straight_cross"}, {"bt", "triangle_bottom"},
+                {"tt", "triangle_top"}, {"bts", "triangles_bottom"}, {"tts", "triangles_top"}, {"ld", "diagonal_left"},
+                {"rd", "diagonal_up_right"}, {"lud", "diagonal_up_left"}, {"rud", "diagonal_right"}, {"mc", "circle"},
+                {"mr", "rhombus"}, {"vh", "half_vertical"}, {"hh", "half_horizontal"}, {"vhr", "half_vertical_right"},
+                {"hhb", "half_horizontal_bottom"}, {"bo", "border"}, {"cbo", "curly_border"}, {"gra", "gradient"},
+                {"gru", "gradient_up"}, {"bri", "bricks"}, {"glb", "globe"}, {"cre", "creeper"}, {"sku", "skull"},
+                {"flo", "flower"}, {"moj", "mojang"}, {"pig", "piglin"}, {"flw", "flow"}, {"gus", "guster"}};
+            const auto it = kNames.find(code);
+            return it == kNames.end() ? nullptr : it->second;
+        }
+
+        // Base colour and layers of a banner block entity, as Java dye indices (white = 0).
+        void BannerLayers(const BlockEntity* be, BlockEntityDraw& d) {
+            int base = 15;
+            std::vector<std::pair<std::string, int>> layers;
+            if (be) {
+                if (be->base >= 0)
+                    base = be->base;
+                layers = be->patterns;
+                if (be->bannerType == 1 && layers.empty()) {
+                    // The ominous banner (Raid.getOminousBannerInstance).
+                    base = 15;
+                    layers = {{"mr", 6}, {"bs", 7}, {"cs", 8}, {"bo", 7}, {"ms", 0}, {"hh", 7}, {"mc", 7}, {"bo", 0}};
+                }
+            } else if (const char* forced = std::getenv("PERLIN_PREVIEW_BANNER")) {
+                // Preview: "base;code:colour;code:colour..." in Bedrock colours.
+                std::string spec = forced;
+                size_t at = 0;
+                bool first = true;
+                while (at <= spec.size()) {
+                    const size_t end = std::min(spec.find(';', at), spec.size());
+                    const std::string part = spec.substr(at, end - at);
+                    if (first)
+                        base = std::atoi(part.c_str());
+                    else if (const size_t colon = part.find(':'); colon != std::string::npos)
+                        layers.emplace_back(part.substr(0, colon), std::atoi(part.c_str() + colon + 1));
+                    first = false;
+                    at = end + 1;
+                }
+            }
+            d.color = 15 - std::clamp(base, 0, 15);
+            for (const auto& [code, colour] : layers)
+                if (const char* name = BannerPatternName(code))
+                    d.patterns.emplace_back(std::string("textures/entity/banner/banner_") + name, 15 - std::clamp(colour, 0, 15));
+        }
+
+        int FacingToGround(int facing) {
+            switch (facing) {
+                case 2: return 8;
+                case 4: return 4;
+                case 5: return 12;
+                default: return 0;
+            }
+        }
+    }
+
+    void BuildBlockEntityDraws(const std::vector<SpecialBlock>& specials, const BlockEntityStore& store, std::vector<BlockEntityDraw>& out) {
+        BlockPalette& palette = BlockPalette::Instance();
+        std::unordered_set<uint64_t> beds;
+        const char* forced = std::getenv("PERLIN_PREVIEW_SIGNTEXT");
+        for (const SpecialBlock& s : specials) {
+            const std::string name = palette.Name(s.id);
+            const std::string shortName = name.rfind("minecraft:", 0) == 0 ? name.substr(10) : name;
+            BlockEntity be;
+            if (shortName == "bed") {
+                const int direction = palette.StateInt(s.id, "direction", 0);
+                const bool head = palette.StateInt(s.id, "head_piece_bit", 0) != 0;
+                int dx = 0, dz = 0;
+                BedStep(direction, dx, dz);
+                const int fx = head ? s.x - dx : s.x, fz = head ? s.z - dz : s.z;
+                const int ox = head ? fx : fx + dx, oz = head ? fz : fz + dz;
+                const uint64_t key = (static_cast<uint64_t>(static_cast<uint32_t>(fx)) << 40) ^ (static_cast<uint64_t>(static_cast<uint32_t>(fz)) << 8) ^
+                                     static_cast<uint64_t>(s.y + 4096);
+                if (!beds.insert(key).second)
+                    continue;
+                BlockEntityDraw d;
+                d.kind = BlockEntityDraw::Kind::Bed;
+                d.origin = {static_cast<double>(fx), static_cast<double>(s.y), static_cast<double>(fz)};
+                d.yaw = BedYaw(direction);
+                int color = -1;
+                if (store.Get(s.x, s.y, s.z, be))
+                    color = be.color;
+                if (color < 0 && store.Get(ox, s.y, oz, be))
+                    color = be.color;
+                d.color = color < 0 ? 14 : color;
+                out.push_back(std::move(d));
+                continue;
+            }
+            static const char* const kSkulls[] = {"skeleton_skull", "wither_skeleton_skull", "zombie_head", "player_head",
+                                                   "creeper_head", "dragon_head", "piglin_head"};
+            int skull = -1;
+            for (int k = 0; k < 7; k++)
+                if (shortName == kSkulls[k])
+                    skull = k;
+            if (shortName == "standing_banner" || shortName == "wall_banner") {
+                // BannerRenderer: standing banners turn in 22.5 degree steps; wall banners hang on the
+                // wall behind them, facing away from it.
+                BlockEntityDraw d;
+                d.kind = BlockEntityDraw::Kind::Skull;
+                d.origin = {static_cast<double>(s.x), static_cast<double>(s.y), static_cast<double>(s.z)};
+                if (shortName == "wall_banner") {
+                    d.skull = 13;
+                    d.yaw = FacingYaw(palette.StateInt(s.id, "facing_direction", 3));
+                } else {
+                    d.skull = 12;
+                    d.yaw = static_cast<float>(palette.StateInt(s.id, "ground_sign_direction", 0) % 16) * 22.5f;
+                }
+                const bool has = store.Get(s.x, s.y, s.z, be);
+                BannerLayers(has ? &be : nullptr, d);
+                out.push_back(std::move(d));
+                continue;
+            }
+            if (shortName == "conduit") {
+                BlockEntityDraw d;
+                d.kind = BlockEntityDraw::Kind::Skull;
+                d.skull = 11;
+                d.origin = {static_cast<double>(s.x), static_cast<double>(s.y), static_cast<double>(s.z)};
+                out.push_back(std::move(d));
+                continue;
+            }
+            if (shortName.find("copper_golem_statue") != std::string::npos) {
+                const int level = shortName.find("oxidized") != std::string::npos ? 3
+                                  : shortName.find("weathered") != std::string::npos ? 2
+                                  : shortName.find("exposed") != std::string::npos ? 1 : 0;
+                BlockEntityDraw d;
+                d.kind = BlockEntityDraw::Kind::Skull;
+                d.skull = 7 + level;
+                d.origin = {static_cast<double>(s.x), static_cast<double>(s.y), static_cast<double>(s.z)};
+                const std::string dir = palette.StateString(s.id, "minecraft:cardinal_direction", "south");
+                d.yaw = dir == "west" ? 90.0f : dir == "north" ? 180.0f : dir == "east" ? 270.0f : 0.0f;
+                out.push_back(std::move(d));
+                continue;
+            }
+            if (skull >= 0) {
+                // facing_direction: 1 on the floor (turned by the block entity's Rotation), 2-5 on a
+                // wall, facing away from it.
+                BlockEntityDraw d;
+                d.kind = BlockEntityDraw::Kind::Skull;
+                d.skull = skull;
+                d.origin = {static_cast<double>(s.x), static_cast<double>(s.y), static_cast<double>(s.z)};
+                const int facing = palette.StateInt(s.id, "facing_direction", 1);
+                if (facing >= 2 && facing <= 5) {
+                    d.onWall = true;
+                    d.yaw = FacingYaw(facing);
+                } else {
+                    d.yaw = store.Get(s.x, s.y, s.z, be) ? be.rotation : 0.0f;
+                }
+                out.push_back(std::move(d));
+                continue;
+            }
+            BlockEntityDraw d;
+            d.kind = BlockEntityDraw::Kind::Sign;
+            d.origin = {static_cast<double>(s.x), static_cast<double>(s.y), static_cast<double>(s.z)};
+            const bool wall = shortName.find("wall_sign") != std::string::npos;
+            const bool hangingSign = shortName.find("hanging_sign") != std::string::npos;
+            if (!store.Get(s.x, s.y, s.z, be) && !forced)
+                continue;
+            if (forced && be.front.text.empty())
+                be.front.text = forced;
+            if (be.front.text.empty() && be.back.text.empty())
+                continue;
+            d.front = be.front.text;
+            d.back = be.back.text;
+            d.frontColor = be.front.color;
+            d.backColor = be.back.color;
+            d.frontGlow = be.front.glow;
+            d.backGlow = be.back.glow;
+            const int facing = palette.StateInt(s.id, "facing_direction", 2);
+            if (wall) {
+                d.wall = true;
+                d.yaw = FacingYaw(facing);
+            } else if (hangingSign) {
+                d.hanging = true;
+                const bool hangs = palette.StateInt(s.id, "hanging", 0) != 0;
+                if (hangs) {
+                    const bool attached = palette.StateInt(s.id, "attached_bit", 0) != 0;
+                    const int k = attached ? palette.StateInt(s.id, "ground_sign_direction", 0) % 16 : FacingToGround(facing);
+                    d.yaw = static_cast<float>(k) * 22.5f;
+                } else
+                    d.yaw = FacingYaw(facing);
+            } else {
+                d.yaw = static_cast<float>(palette.StateInt(s.id, "ground_sign_direction", 0) % 16) * 22.5f;
+            }
+            out.push_back(std::move(d));
+        }
+    }
+}

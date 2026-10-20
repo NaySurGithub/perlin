@@ -1,0 +1,997 @@
+#pragma once
+// The wire contract between plugins and the game.
+//
+// Every structure below is a plain aggregate: the order of its members *is* the wire format. Reader and
+// Writer serialise any such type generically (arithmetic types, enums, strings, vectors, arrays, pairs,
+// optionals and nested aggregates), so there is no per-struct encode/decode code to keep in sync:
+//
+//     abi::Writer w;  w.write(player_state);
+//     abi::Reader r(bytes, size);  auto s = r.read<abi::PlayerState>();
+//
+// Integers and floats are little-endian at their natural width, strings and vectors carry a u32 length,
+// bool is one byte, fixed std::array has no length. Enums travel as their underlying type.
+#include <array>
+#include <cstdint>
+#include <cstring>
+#include <optional>
+#include <string>
+#include <string_view>
+#include <tuple>
+#include <type_traits>
+#include <utility>
+#include <variant>
+#include <vector>
+
+#include "perlin/meta.hpp"
+
+namespace perlin::abi {
+    inline constexpr uint32_t kApiVersion = 1;
+    inline constexpr int32_t kNeedMoreBase = 16;
+    inline constexpr uint32_t kEventCancel = 1;
+
+    // ---------------------------------------------------------------------------------------------
+    // Operations (host calls) and events.
+    // ---------------------------------------------------------------------------------------------
+    enum class Op : uint32_t {
+        Log = 0x0001,
+        Meta = 0x0002,
+        Clock = 0x0003,
+
+        PlayerState = 0x0100,
+        PlayerEffects = 0x0101,
+        PlayerLook = 0x0102,
+
+        Inventory = 0x0200,
+        InventorySelect = 0x0201,
+        InventoryDrop = 0x0202,
+        InventorySwap = 0x0203,
+        InventoryClick = 0x0204,
+        InventoryOpen = 0x0205,
+        InventoryClose = 0x0206,
+
+        WorldState = 0x0300,
+        Block = 0x0301,
+        Region = 0x0302,
+        Raycast = 0x0303,
+        Aim = 0x0304,
+        FindBlocks = 0x0305,
+        ChunkLoaded = 0x0306,
+        BlockNames = 0x0307,
+        BlockProps = 0x0308,
+        BlockEntityData = 0x0309,
+        DisplayName = 0x030A,
+        BreakProgress = 0x030B,
+
+        Entities = 0x0400,
+        EntityById = 0x0401,
+        PlayerList = 0x0402,
+
+        Options = 0x0500,
+        OptionGet = 0x0501,
+        OptionSet = 0x0502,
+        Screen = 0x0503,
+        Translate = 0x0504,
+        ReloadResources = 0x0505,
+        PerspectiveGet = 0x0506,
+        PerspectiveSet = 0x0507,
+        ResourcePacks = 0x0508,
+
+        InputDown = 0x0600,
+        InputOverride = 0x0601,
+        KeyRegister = 0x0602,
+        InputActions = 0x0603,
+        MousePosition = 0x0604,
+
+        Chat = 0x0700,
+        Command = 0x0701,
+        LocalMessage = 0x0702,
+        CommandRegister = 0x0703,
+        CommandUnregister = 0x0704,
+        ServerCommands = 0x0705,
+        Toast = 0x0706,
+        Title = 0x0707,
+        ChatHistory = 0x0708,
+        TitleState = 0x0709,
+
+        SwingArm = 0x0800,
+        UseItem = 0x0801,
+        UseOnBlock = 0x0802,
+        AttackEntity = 0x0803,
+        InteractEntity = 0x0804,
+        BreakBlock = 0x0805,
+        Look = 0x0806,
+        Respawn = 0x0807,
+        Disconnect = 0x0808,
+        PlaySound = 0x0809,
+        Jump = 0x080B,
+
+        UiSubmit = 0x0900,
+        UiClear = 0x0901,
+        UiMeasure = 0x0902,
+
+        StorageRead = 0x0A00,
+        StorageWrite = 0x0A01,
+        StorageList = 0x0A02,
+        StorageRemove = 0x0A03,
+        StorageExists = 0x0A04,
+        StorageMakeDir = 0x0A05,
+
+        HttpRequest = 0x0B00,
+        PacketSend = 0x0B01,
+        PacketName = 0x0B02,
+
+        // Settings are declared in the mod's manifest; these read and change their values.
+        SettingGet = 0x0C01,
+        SettingSet = 0x0C02,
+        SettingList = 0x0C03,
+        ModList = 0x0C10,
+        IconSet = 0x0C11,
+
+        // The game's own actions (the same things its menus do).
+        OpenScreen = 0x0D00,
+        OpenModSettings = 0x0D01,
+        TakeScreenshot = 0x0D02,
+        CyclePerspective = 0x0D03,
+        CopyToClipboard = 0x0D04,
+        OpenUrl = 0x0D05,
+        ToggleHud = 0x0D06,
+
+        // Files between the mod's folder and the game's pack and screenshot folders (needs the files permission).
+        CopyFile = 0x0E00,
+        MoveFile = 0x0E01,
+        DownloadFile = 0x0E02, // also needs the network permission
+    };
+
+    enum class Event : uint32_t {
+        Load = 1,
+        Unload = 2,
+        Tick = 3,
+        Frame = 4,
+        ChatReceived = 5,
+        ChatSending = 6,
+        Connected = 7,
+        Disconnected = 8,
+        Key = 9,
+        Command = 10,
+        Damage = 11,
+        Death = 12,
+        Respawned = 13,
+        DimensionChanged = 14,
+        ScreenChanged = 15,
+        SlotChanged = 16,
+        EntityAdded = 17,
+        EntityRemoved = 18,
+        Sound = 19,
+        HttpResponse = 20,
+        Packet = 21,
+        Title = 22,
+        SettingChanged = 23,
+    };
+
+    enum class Status : int32_t {
+        Ok = 0,
+        UnknownOp = -1,
+        Denied = -2,
+        BadArguments = -3,
+        Unavailable = -4,
+        NotFound = -5,
+        Failed = -6,
+    };
+
+    enum class Permission : uint32_t {
+        None = 0,
+        Network = 1u << 0,
+        Packets = 1u << 1,
+        Control = 1u << 2,
+        Storage = 1u << 3,
+        Files = 1u << 4, // copy/move/download files between the mod's folder and the game's pack and screenshot folders
+    };
+
+    enum class Draw : uint8_t {
+        Rect = 1,
+        Text = 2,
+        Item = 3,
+        Image = 4,
+        Line = 5,
+        Gradient = 6,
+        Border = 7,
+    };
+
+    // ---------------------------------------------------------------------------------------------
+    // Game vocabulary. Values are the Bedrock protocol values.
+    // ---------------------------------------------------------------------------------------------
+    enum class Screen : int32_t {
+        None = 0,
+        Pause = 1,
+        Chat = 2,
+        Inventory = 3,
+        Options = 4,
+        Mods = 5,
+        Wardrobe = 6,
+        Death = 7,
+        Workbench = 8,
+        Menu = 9,
+        Other = 10,
+    };
+
+    enum class GameMode : int32_t {
+        Survival = 0,
+        Creative = 1,
+        Adventure = 2,
+        SurvivalSpectator = 3,
+        CreativeSpectator = 4,
+        Default = 5,
+        Spectator = 6,
+    };
+
+    enum class Dimension : int32_t { Overworld = 0, Nether = 1, End = 2 };
+
+    enum class Difficulty : int32_t { Peaceful = 0, Easy = 1, Normal = 2, Hard = 3 };
+
+    enum class PermissionLevel : int32_t { Unknown = -1, Visitor = 0, Member = 1, Operator = 2, Custom = 3 };
+
+    // Block faces in protocol order. North is -Z, South +Z, West -X, East +X.
+    enum class Face : int32_t { Down = 0, Up = 1, North = 2, South = 3, West = 4, East = 5 };
+
+    enum class AimKind : int32_t { None = 0, Block = 1, Entity = 2 };
+
+    enum class ChatType : int32_t {
+        Raw = 0,
+        Chat = 1,
+        Translation = 2,
+        Popup = 3,
+        JukeboxPopup = 4,
+        Tip = 5,
+        System = 6,
+        Whisper = 7,
+        Announcement = 8,
+        ObjectWhisper = 9,
+        Object = 10,
+        ObjectAnnouncement = 11,
+    };
+
+    enum class DisconnectReason : int32_t {
+        Unknown = 0,
+        CantConnectNoInternet = 1,
+        NoPermissions = 2,
+        UnrecoverableError = 3,
+        ThirdPartyBlocked = 4,
+        ThirdPartyNoInternet = 5,
+        ThirdPartyBadIp = 6,
+        ThirdPartyNoServerOrServerLocked = 7,
+        VersionMismatch = 8,
+        SkinIssue = 9,
+        InviteSessionNotFound = 10,
+    };
+
+    enum class EffectId : int32_t {
+        Speed = 1,
+        Slowness = 2,
+        Haste = 3,
+        MiningFatigue = 4,
+        Strength = 5,
+        InstantHealth = 6,
+        InstantDamage = 7,
+        JumpBoost = 8,
+        Nausea = 9,
+        Regeneration = 10,
+        Resistance = 11,
+        FireResistance = 12,
+        WaterBreathing = 13,
+        Invisibility = 14,
+        Blindness = 15,
+        NightVision = 16,
+        Hunger = 17,
+        Weakness = 18,
+        Poison = 19,
+        Wither = 20,
+        HealthBoost = 21,
+        Absorption = 22,
+        Saturation = 23,
+        Levitation = 24,
+        FatalPoison = 25,
+        ConduitPower = 26,
+        SlowFalling = 27,
+        BadOmen = 28,
+        VillageHero = 29,
+        Darkness = 30,
+        TrialOmen = 31,
+        RaidOmen = 32,
+        WindCharged = 33,
+        Weaving = 34,
+        Oozing = 35,
+        Infested = 36,
+    };
+
+    enum class Perspective : int32_t { FirstPerson = 0, ThirdPersonBack = 1, ThirdPersonFront = 2 };
+
+    // How a setting is edited on the mod's settings page.
+    enum class SettingKind : uint8_t {
+        Toggle = 0, // on/off
+        Integer,    // slider over [min, max] in whole steps
+        Number,     // slider over [min, max]
+        Choice,     // cycles through `choices`
+        Button,     // fires SettingChanged with the value "pressed"
+        Label,      // read-only line of text
+        Header,     // section heading
+    };
+
+    // Folders a file call can name. `Mod` is the mod's own data folder; the others belong to the game. Files may be
+    // copied or moved out of `Mod` (and copied out of `Screenshots`) into any area; nothing already in a game folder
+    // is overwritten.
+    enum class Area : uint8_t { Mod, Screenshots, ResourcePacks, ShaderPacks };
+
+    // Actor flag bit positions (the protocol's ActorFlags). An entity's flags are an IndexSet<EntityFlag>.
+    enum class EntityFlag : uint8_t {
+        OnFire = 0, Sneaking = 1, Riding = 2, Sprinting = 3, UsingItem = 4, Invisible = 5, Tempted = 6, InLove = 7,
+        Saddled = 8, Powered = 9, Ignited = 10, Baby = 11, Converting = 12, Critical = 13, CanShowName = 14,
+        AlwaysShowName = 15, NoAi = 16, Silent = 17, WallClimbing = 18, CanClimb = 19, CanSwim = 20, CanFly = 21,
+        CanWalk = 22, Resting = 23, Sitting = 24, Angry = 25, Interested = 26, Charged = 27, Tamed = 28, Orphaned = 29,
+        Leashed = 30, Sheared = 31, Gliding = 32, Elder = 33, Moving = 34, Breathing = 35, Chested = 36, Stackable = 37,
+        ShowBase = 38, Rearing = 39, Vibrating = 40, Idling = 41, EvokerSpell = 42, ChargeAttack = 43, WasdControlled = 44,
+        CanPowerJump = 45, Lingering = 46, HasCollision = 47, HasGravity = 48, FireImmune = 49, Dancing = 50,
+        Enchanted = 51, ReturnTrident = 52, ContainerPrivate = 53, Transforming = 54, DamageNearbyMobs = 55,
+        Swimming = 56, Bribed = 57, Pregnant = 58, LayingEgg = 59, PassengerCanPick = 60, TransitionSitting = 61,
+        Eating = 62, LayingDown = 63,
+    };
+    using EntityFlags = meta::IndexSet<EntityFlag, uint64_t>;
+}
+
+template <>
+struct perlin::meta::enable_flags<perlin::abi::Permission> : std::true_type {};
+template <>
+struct perlin::meta::enum_range<perlin::abi::EntityFlag> {
+    static constexpr int min = 0;
+    static constexpr int max = 63;
+};
+template <>
+struct perlin::meta::enum_range<perlin::abi::EffectId> {
+    static constexpr int min = 1;
+    static constexpr int max = 63;
+};
+
+namespace perlin::abi {
+    // Marks every enumeration declared in perlin::abi (found by argument-dependent lookup), so each one is printable by name
+    // without being listed anywhere.
+    template <class E>
+        requires std::is_enum_v<E>
+    constexpr bool abi_enum_tag(E) {
+        return true;
+    }
+}
+
+namespace perlin::meta {
+    // Enumerations that std::format prints by enumerator name: all of perlin::abi's.
+    template <class E>
+        requires std::is_enum_v<E>
+    struct enable_format<E> : std::bool_constant<requires(E e) { abi_enum_tag(e); }> {};
+}
+
+namespace perlin::abi {
+    using Permissions = meta::Flags<Permission>;
+
+    // ---------------------------------------------------------------------------------------------
+    // Generic serialisation.
+    // ---------------------------------------------------------------------------------------------
+    namespace wire {
+        template <class T>
+        concept Raw = (std::is_arithmetic_v<T> && !std::is_same_v<T, bool>) || std::is_enum_v<T> || requires { T::wire_raw_tag; };
+
+        template <class T>
+        struct is_vector : std::false_type {};
+        template <class T, class A>
+        struct is_vector<std::vector<T, A>> : std::true_type {};
+
+        template <class T>
+        struct is_array : std::false_type {};
+        template <class T, size_t N>
+        struct is_array<std::array<T, N>> : std::true_type {};
+
+        template <class T>
+        struct is_pair : std::false_type {};
+        template <class A, class B>
+        struct is_pair<std::pair<A, B>> : std::true_type {};
+
+        template <class T>
+        struct is_optional : std::false_type {};
+        template <class T>
+        struct is_optional<std::optional<T>> : std::true_type {};
+
+        template <class T>
+        struct is_variant : std::false_type {};
+        template <class... Ts>
+        struct is_variant<std::variant<Ts...>> : std::true_type {};
+    }
+
+    class Writer {
+    public:
+        Writer() = default;
+        explicit Writer(size_t reserve) { data.reserve(reserve); }
+
+        // Low-level primitives.
+        template <class T>
+        Writer& put(T value) {
+            static_assert(std::is_trivially_copyable_v<T>);
+            const size_t at = data.size();
+            data.resize(at + sizeof(T));
+            std::memcpy(data.data() + at, &value, sizeof(T));
+            return *this;
+        }
+        Writer& str(std::string_view text) {
+            put<uint32_t>(static_cast<uint32_t>(text.size()));
+            data.insert(data.end(), text.begin(), text.end());
+            return *this;
+        }
+        Writer& bytes(const void* p, size_t n) {
+            put<uint32_t>(static_cast<uint32_t>(n));
+            const auto* b = static_cast<const uint8_t*>(p);
+            data.insert(data.end(), b, b + n);
+            return *this;
+        }
+        Writer& raw(const void* p, size_t n) {
+            const auto* b = static_cast<const uint8_t*>(p);
+            data.insert(data.end(), b, b + n);
+            return *this;
+        }
+        Writer& boolean(bool v) { return put<uint8_t>(v ? 1 : 0); }
+
+        // Generic: any number of values, each encoded by its type.
+        template <class... Ts>
+        Writer& write(const Ts&... values) {
+            (write_one(values), ...);
+            return *this;
+        }
+
+        const uint8_t* Data() const { return data.data(); }
+        size_t Size() const { return data.size(); }
+        void Clear() { data.clear(); }
+        std::vector<uint8_t> data;
+
+    private:
+        template <class T>
+        void write_one(const T& v) {
+            if constexpr (std::is_same_v<T, bool>) {
+                boolean(v);
+            } else if constexpr (wire::Raw<T>) {
+                put(v);
+            } else if constexpr (std::is_convertible_v<const T&, std::string_view>) {
+                str(std::string_view(v));
+            } else if constexpr (wire::is_array<T>::value) {
+                using E = typename T::value_type;
+                if constexpr (wire::Raw<E>)
+                    raw(v.data(), v.size() * sizeof(E));
+                else
+                    for (const E& e : v)
+                        write_one(e);
+            } else if constexpr (wire::is_vector<T>::value) {
+                using E = typename T::value_type;
+                put<uint32_t>(static_cast<uint32_t>(v.size()));
+                if constexpr (wire::Raw<E>)
+                    raw(v.data(), v.size() * sizeof(E));
+                else
+                    for (const E& e : v)
+                        write_one(e);
+            } else if constexpr (wire::is_pair<T>::value) {
+                write_one(v.first);
+                write_one(v.second);
+            } else if constexpr (wire::is_optional<T>::value) {
+                boolean(v.has_value());
+                if (v)
+                    write_one(*v);
+            } else if constexpr (wire::is_variant<T>::value) {
+                put<uint8_t>(static_cast<uint8_t>(v.index()));
+                std::visit([this](const auto& alternative) { write_one(alternative); }, v);
+            } else if constexpr (std::is_same_v<T, std::monostate>) {
+                // no bytes
+            } else if constexpr (meta::Aggregate<T>) {
+                meta::for_each_field(v, [&](const auto& member) { write_one(member); });
+            } else {
+                static_assert(sizeof(T) == 0, "type has no wire encoding");
+            }
+        }
+    };
+
+    class Reader {
+    public:
+        Reader() = default;
+        Reader(const uint8_t* p, size_t n) : cur(p), end(p + n) {}
+
+        template <class T>
+        T get() {
+            T value{};
+            if (static_cast<size_t>(end - cur) < sizeof(T)) {
+                failed = true;
+                cur = end;
+                return value;
+            }
+            std::memcpy(&value, cur, sizeof(T));
+            cur += sizeof(T);
+            return value;
+        }
+        std::string str() {
+            const uint32_t n = get<uint32_t>();
+            if (failed || static_cast<size_t>(end - cur) < n) {
+                failed = true;
+                cur = end;
+                return {};
+            }
+            std::string out(reinterpret_cast<const char*>(cur), n);
+            cur += n;
+            return out;
+        }
+        std::vector<uint8_t> bytes() {
+            const uint32_t n = get<uint32_t>();
+            if (failed || static_cast<size_t>(end - cur) < n) {
+                failed = true;
+                cur = end;
+                return {};
+            }
+            std::vector<uint8_t> out(cur, cur + n);
+            cur += n;
+            return out;
+        }
+        bool boolean() { return get<uint8_t>() != 0; }
+
+        // Generic: decode one value of type T.
+        template <class T>
+        T read() {
+            T value{};
+            read_into(value);
+            return value;
+        }
+        template <class T>
+        Reader& read_into(T& v) {
+            if constexpr (std::is_same_v<T, bool>) {
+                v = boolean();
+            } else if constexpr (wire::Raw<T>) {
+                v = get<T>();
+            } else if constexpr (std::is_same_v<T, std::string>) {
+                v = str();
+            } else if constexpr (wire::is_array<T>::value) {
+                using E = typename T::value_type;
+                if constexpr (wire::Raw<E>) {
+                    const size_t n = v.size() * sizeof(E);
+                    if (Remaining() < n) {
+                        fail();
+                    } else {
+                        std::memcpy(v.data(), cur, n);
+                        cur += n;
+                    }
+                } else {
+                    for (E& e : v)
+                        read_into(e);
+                }
+            } else if constexpr (wire::is_vector<T>::value) {
+                using E = typename T::value_type;
+                const uint32_t n = get<uint32_t>();
+                v.clear();
+                if (failed)
+                    return *this;
+                if constexpr (wire::Raw<E>) {
+                    if (static_cast<size_t>(n) * sizeof(E) > Remaining()) {
+                        fail();
+                        return *this;
+                    }
+                    v.resize(n);
+                    if (n)
+                        std::memcpy(v.data(), cur, static_cast<size_t>(n) * sizeof(E));
+                    cur += static_cast<size_t>(n) * sizeof(E);
+                } else {
+                    if (n > Remaining()) { // every element takes at least one byte
+                        fail();
+                        return *this;
+                    }
+                    v.reserve(n);
+                    for (uint32_t i = 0; i < n && !failed; i++) {
+                        E e{};
+                        read_into(e);
+                        v.push_back(std::move(e));
+                    }
+                }
+            } else if constexpr (wire::is_pair<T>::value) {
+                read_into(v.first);
+                read_into(v.second);
+            } else if constexpr (wire::is_optional<T>::value) {
+                if (boolean()) {
+                    typename T::value_type e{};
+                    read_into(e);
+                    v = std::move(e);
+                } else {
+                    v.reset();
+                }
+            } else if constexpr (wire::is_variant<T>::value) {
+                const uint8_t index = get<uint8_t>();
+                if (failed || index >= std::variant_size_v<T>)
+                    fail();
+                else
+                    read_alternative<0>(v, index);
+            } else if constexpr (std::is_same_v<T, std::monostate>) {
+                // no bytes
+            } else if constexpr (meta::Aggregate<T>) {
+                meta::for_each_field(v, [&](auto& member) { read_into(member); });
+            } else {
+                static_assert(sizeof(T) == 0, "type has no wire encoding");
+            }
+            return *this;
+        }
+
+        size_t Remaining() const { return static_cast<size_t>(end - cur); }
+        bool Ok() const { return !failed; }
+        const uint8_t* Cursor() const { return cur; }
+        void Skip(size_t n) {
+            if (Remaining() < n)
+                fail();
+            else
+                cur += n;
+        }
+
+    private:
+        template <size_t I, class V>
+        void read_alternative(V& v, size_t index) {
+            if constexpr (I < std::variant_size_v<V>) {
+                if (index == I) {
+                    std::variant_alternative_t<I, V> alt{};
+                    read_into(alt);
+                    v = std::move(alt);
+                } else {
+                    read_alternative<I + 1>(v, index);
+                }
+            }
+        }
+
+        void fail() {
+            failed = true;
+            cur = end;
+        }
+
+        const uint8_t* cur = nullptr;
+        const uint8_t* end = nullptr;
+        bool failed = false;
+    };
+
+    // ---------------------------------------------------------------------------------------------
+    // Data. Member order is wire order.
+    // ---------------------------------------------------------------------------------------------
+    struct Item {
+        std::string name;
+        int32_t count = 0, aux = 0, damage = 0;
+        bool enchanted = false;
+        std::string customName;
+        std::vector<std::pair<int32_t, int32_t>> enchants; // (enchantment id, level)
+        std::vector<std::string> lore;
+
+        bool Empty() const { return name.empty() || count <= 0; }
+    };
+
+    struct PlayerState {
+        uint64_t runtimeId = 0;
+        int64_t uniqueId = 0;
+        std::string name;
+        double x = 0, y = 0, z = 0;
+        double vx = 0, vy = 0, vz = 0;
+        float yaw = 0, pitch = 0, headYaw = 0, eyeHeight = 1.62f;
+        bool onGround = false, sprinting = false, sneaking = false, swimming = false, gliding = false, flying = false, mayFly = false,
+             spectator = false, onFire = false, riding = false, connected = false;
+        GameMode gameMode = GameMode::Survival;
+        Dimension dimension = Dimension::Overworld;
+        int32_t selectedSlot = 0;
+        PermissionLevel permission = PermissionLevel::Unknown;
+        float health = 20, maxHealth = 20, absorption = 0, hunger = 20, saturation = 5, xpProgress = 0, walkSpeed = 0.1f;
+        int32_t xpLevel = 0, air = 300, maxAir = 300;
+    };
+
+    struct Effect {
+        EffectId id{};
+        int32_t amplifier = 0, ticks = 0;
+        bool ambient = false, particles = true;
+    };
+
+    struct Inventory {
+        std::array<Item, 36> slots;
+        std::array<Item, 4> armor;
+        Item offhand, cursor;
+        int32_t selected = 0;
+        bool open = false;
+    };
+
+    // One entity attribute (`minecraft:health`, `minecraft:movement`, ...), as the server last reported it.
+    struct Attribute {
+        std::string name;
+        float min = 0, value = 0, max = 0;
+    };
+
+    struct Entity {
+        uint64_t runtimeId = 0;
+        int64_t uniqueId = 0;
+        std::string type, name, nameTag, uuid;
+        double x = 0, y = 0, z = 0;
+        float yaw = 0, pitch = 0, headYaw = 0, health = -1, scale = 1;
+        bool onGround = false, isPlayer = false, isItem = false, isSelf = false;
+        EntityFlags flags;
+        std::string itemName;
+        int32_t itemCount = 0;
+        std::string mainHand, offHand;
+        std::array<std::string, 4> armor;
+        int64_t vehicleUid = 0, ownerUid = 0, targetUid = 0;
+        // Everything else the game tracks about the entity.
+        int32_t variant = 0, markVariant = 0, color = 0;
+        float maxHealth = -1;
+        bool dying = false;
+        std::vector<Attribute> attributes;
+        std::vector<std::pair<std::string, float>> properties;       // entity properties (numbers, bools, enums as index)
+        std::vector<std::pair<std::string, std::string>> propertyText; // entity properties that are text
+    };
+
+    struct PlayerEntry {
+        std::string uuid, name;
+        int64_t uid = 0;
+        PermissionLevel permission = PermissionLevel::Unknown;
+    };
+
+    struct WorldState {
+        Dimension dimension = Dimension::Overworld;
+        Difficulty difficulty = Difficulty::Normal;
+        GameMode worldGameMode = GameMode::Survival;
+        int64_t day = 0;
+        int32_t timeOfDay = 0;
+        double totalTicks = 0;
+        float rain = 0, thunder = 0;
+        bool commandsEnabled = true, haveSpawn = false;
+        int32_t spawnX = 0, spawnY = 0, spawnZ = 0;
+        std::vector<std::pair<std::string, int32_t>> rules;
+    };
+
+    struct BlockInfo {
+        bool loaded = false;
+        uint32_t runtimeId = 0;
+        std::string name;
+        int32_t biome = 0;
+        uint32_t liquid = 0;
+        std::vector<std::pair<std::string, std::string>> states;
+    };
+
+    // The tool a block is mined with.
+    enum class Tool : uint8_t { None, Pickaxe, Axe, Shovel, Hoe, Shears, Sword };
+
+    // What the game knows about a kind of block, whether or not one is in the world.
+    struct BlockProps {
+        bool known = false;
+        float hardness = 0; // -1 is unbreakable
+        Tool tool = Tool::None;
+        int32_t harvestLevel = 0; // 0 any tool, 1 any pickaxe, 2 stone, 3 iron, 4 diamond
+        bool needsSupportBelow = false, breaksWholeStack = false;
+        std::string displayName;
+        std::vector<std::string> properties; // block property names from the block definition
+    };
+
+    // The block entity (chest, sign, banner, ...) at a position.
+    struct BlockEntityInfo {
+        bool present = false;
+        std::string id;
+        int32_t color = -1;
+        bool waxed = false;
+        float rotation = 0;
+        std::string frontText, backText;
+        bool frontGlow = false, backGlow = false;
+        int32_t base = -1, bannerType = 0;
+        std::vector<std::pair<std::string, int32_t>> patterns;
+        std::string nbt; // the complete tag as JSON
+    };
+
+    // What kind of thing a name refers to.
+    enum class NameKind : uint8_t { Item, Block, Entity };
+
+    // The block the local player is currently mining.
+    struct BreakState {
+        bool active = false;
+        int32_t x = 0, y = 0, z = 0;
+        float progress = 0; // 0..1
+    };
+
+    struct RayHit {
+        bool hit = false;
+        int32_t x = 0, y = 0, z = 0;
+        Face face = Face::Up;
+        double hx = 0, hy = 0, hz = 0, distance = 0;
+        std::string block;
+    };
+
+    struct AimState {
+        AimKind kind = AimKind::None;
+        RayHit block;
+        uint64_t entity = 0;
+        std::string entityType;
+        double distance = 0;
+    };
+
+    struct ScreenState {
+        int32_t guiWidth = 0, guiHeight = 0, guiScale = 1, framebufferWidth = 0, framebufferHeight = 0;
+        float fps = 0, frameMs = 0;
+        Screen screen = Screen::None;
+        bool paused = false, connected = false, hudHidden = false, debug = false;
+        std::string server, language, platform, gameVersion;
+    };
+
+    struct Meta {
+        uint32_t apiVersion = kApiVersion;
+        std::string gameVersion, plugin, platform;
+        Permissions permissions;
+        int64_t nowMs = 0;
+        uint64_t tick = 0;
+    };
+
+    struct InputOverrideState {
+        float forward = 0, strafe = 0;
+        bool jump = false, sneak = false, sprint = false, attack = false, use = false;
+        int32_t ticks = 1;
+    };
+
+    struct Region {
+        int32_t x0 = 0, y0 = 0, z0 = 0, sx = 0, sy = 0, sz = 0;
+        std::vector<std::string> palette;
+        std::vector<uint16_t> cells;
+
+        const std::string& at(int x, int y, int z) const {
+            static const std::string empty;
+            if (x < x0 || y < y0 || z < z0 || x >= x0 + sx || y >= y0 + sy || z >= z0 + sz)
+                return empty;
+            const size_t i = (static_cast<size_t>(y - y0) * static_cast<size_t>(sz) + static_cast<size_t>(z - z0)) * static_cast<size_t>(sx) +
+                             static_cast<size_t>(x - x0);
+            return i < cells.size() && cells[i] < palette.size() ? palette[cells[i]] : empty;
+        }
+    };
+
+    struct FoundBlock {
+        int32_t x = 0, y = 0, z = 0;
+        std::string name;
+    };
+
+    // ---------------------------------------------------------------------------------------------
+    // Mod settings.
+    // ---------------------------------------------------------------------------------------------
+    struct SettingDef {
+        std::string id; // stable key, also the key in <mod>.settings.json
+        SettingKind kind = SettingKind::Toggle;
+        std::string label, description;
+        std::string icon; // "item:<id>", "texture:<path>", "file:<path in the mod's data folder>" or empty
+        std::string value, fallback; // current and default value, as text
+        double min = 0, max = 1, step = 0;
+        std::vector<std::string> choices, choiceLabels;
+        std::string unit;
+        bool restart = false; // the mod is reloaded after the settings page closes
+    };
+
+    struct SettingEntry {
+        std::string id, value;
+    };
+
+    // A file in one of the areas, as the file calls take it.
+    struct FileLocation {
+        Area area = Area::Mod;
+        std::string path; // relative, no "..", forward slashes
+    };
+
+    // ---------------------------------------------------------------------------------------------
+    // Misc reads.
+    // ---------------------------------------------------------------------------------------------
+    struct ModEntry {
+        std::string name, displayName, description, version, author, state;
+        bool enabled = true, self = false, hasSettings = false;
+    };
+
+    struct ChatLine {
+        std::string text;
+        float alpha = 1;
+    };
+
+    struct PackEntry {
+        std::string name;
+        bool server = false;
+    };
+
+    struct TitleStateData {
+        std::string title, subtitle, actionBar;
+        float titleAlpha = 0, actionBarAlpha = 0;
+    };
+
+    // ---------------------------------------------------------------------------------------------
+    // Event payloads.
+    // ---------------------------------------------------------------------------------------------
+    struct EventNothing {};
+    struct EventTick {
+        float dt = 0.05f;
+        uint64_t tick = 0;
+    };
+    struct EventFrame {
+        float dt = 0, fps = 0;
+        int32_t guiWidth = 0, guiHeight = 0;
+    };
+    struct EventChat {
+        ChatType type = ChatType::Raw;
+        std::string sender, message, raw;
+    };
+    struct EventKey {
+        std::string id;
+        bool down = false;
+    };
+    struct EventCommand {
+        std::string name, args;
+    };
+    struct EventConnection {
+        std::string server, message;
+        DisconnectReason reason = DisconnectReason::Unknown;
+    };
+    struct EventDamage {
+        bool known = false;
+        float dx = 0, dz = 0, health = 0;
+    };
+    struct EventText {
+        std::string text;
+    };
+    template <class T>
+    struct EventChange {
+        T from{}, to{};
+    };
+    using EventDimension = EventChange<Dimension>;
+    using EventScreen = EventChange<Screen>;
+    struct EventSlot {
+        int32_t slot = 0;
+        Item item;
+    };
+    struct EventEntity {
+        Entity entity;
+    };
+    struct EventSound {
+        std::string name;
+        double x = 0, y = 0, z = 0;
+        float volume = 1, pitch = 1;
+    };
+    struct EventHttp {
+        uint32_t id = 0;
+        int32_t status = 0;
+        std::string error;
+        std::vector<std::pair<std::string, std::string>> headers;
+        std::vector<uint8_t> body;
+    };
+    struct EventPacket {
+        uint32_t id = 0;
+        bool outgoing = false;
+        std::vector<uint8_t> body;
+    };
+    struct EventTitle {
+        std::string title, subtitle, actionBar;
+    };
+    struct EventSettingChanged {
+        std::string id, value;
+        SettingKind kind = SettingKind::Toggle;
+    };
+    // The payload type of every event, in enum order. The static_assert keeps this table honest: adding an
+    // Event without a payload here fails to compile.
+    using EventPayloads = std::tuple<EventNothing,    // Load
+                                     EventNothing,    // Unload
+                                     EventTick,       // Tick
+                                     EventFrame,      // Frame
+                                     EventChat,       // ChatReceived
+                                     EventText,       // ChatSending
+                                     EventConnection, // Connected
+                                     EventConnection, // Disconnected
+                                     EventKey,        // Key
+                                     EventCommand,    // Command
+                                     EventDamage,     // Damage
+                                     EventText,       // Death
+                                     EventNothing,    // Respawned
+                                     EventDimension,  // DimensionChanged
+                                     EventScreen,     // ScreenChanged
+                                     EventSlot,       // SlotChanged
+                                     EventEntity,     // EntityAdded
+                                     EventEntity,     // EntityRemoved
+                                     EventSound,      // Sound
+                                     EventHttp,       // HttpResponse
+                                     EventPacket,     // Packet
+                                     EventTitle,      // Title
+                                     EventSettingChanged>; // SettingChanged
+    static_assert(std::tuple_size_v<EventPayloads> == meta::enum_count<Event>, "every Event needs a payload type");
+
+    template <Event E>
+    using payload_t = std::tuple_element_t<static_cast<size_t>(E) - 1, EventPayloads>;
+}
