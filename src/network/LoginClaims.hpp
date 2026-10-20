@@ -159,6 +159,8 @@ namespace perlin::claims {
         std::string PartyId;
         bool IsPartyLeader = false;
         std::string ProfileHash;
+        // Issued by the host of a friend's world to each joining player (empty elsewhere).
+        std::string Nonce;
     };
 
 }

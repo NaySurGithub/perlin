@@ -142,6 +142,11 @@ namespace perlin {
         connected = false;
     }
 
+    bool NetherNet::ConnectFriend(friendworld::Lease&, const ClientIdentity&) {
+        lastError = "joining a friend's world isn't available in the browser";
+        return false;
+    }
+
     bool NetherNet::Connect(const std::string& host, uint16_t port, const ClientIdentity& identity) {
         Disconnect();
         lastError.clear();

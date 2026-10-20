@@ -341,11 +341,14 @@ namespace perlin {
         NetherNet::SetSecureSignaling(secureSignaling);
         if (!args.stun.empty())
             NetherNet::SetIceServers(args.stun);
-        if (!ParseServer(serverText, host, port)) {
+        if (friendLease) {
+            host = friendLease->worldName.empty() ? "friend" : friendLease->worldName; // shown only; the lease is dialled
+            port = 0;
+        } else if (!ParseServer(serverText, host, port)) {
             std::cout << "[perlin] invalid server address '" << options.server << "'" << std::endl;
             return;
         }
-        if (secureSignaling && serverText.rfind(':') == std::string::npos)
+        if (!friendLease && secureSignaling && serverText.rfind(':') == std::string::npos)
             port = 443;
 
         particleLevel = nullptr;
@@ -367,6 +370,7 @@ namespace perlin {
         });
         session->SetPlayerName(options.playerName);
         session->SetTransport(args.transport.empty() ? options.transport : args.transport);
+        session->SetFriendLease(friendLease);
         session->SetChunkRadius(options.renderDistance);
         session->SetMaxViewDistance(std::max(32, options.renderDistance));
         session->SetNearRadius(options.renderDistance > LodStore::kRealChunks ? LodStore::kRealChunks : 1 << 20);
@@ -4102,6 +4106,7 @@ namespace perlin {
     void Perlin::JoinServer(const std::string& address) {
         if (address.empty())
             return;
+        ReleaseFriendLease();
         options.server = address;
         options.Save();
         titleActive = false;
@@ -4166,7 +4171,7 @@ namespace perlin {
             }).detach();
             return;
         }
-        if (tab != T::Realms && tab != T::Friends && tab != T::FriendsOffline)
+        if (tab != T::Realms && tab != T::Friends)
             return;
         const bool forRealms = tab == T::Realms;
         std::atomic<bool>& busy = forRealms ? realmsBusy : friendsBusy;
@@ -4284,13 +4289,44 @@ namespace perlin {
     }
 
     void Perlin::JoinFriend(const ui::ServerEntry& entry) {
-        // Friend worlds are hosted peer-to-peer: joining needs an Xbox session-directory lookup, a
-        // real-time-activity websocket, NetherNet signalling and a WebRTC data channel. None of that
-        // is ported yet, so say so instead of failing silently.
-        if (entry.offline)
+        if (entry.offline) {
             SetJoinMessage(entry.name + " is offline");
-        else
-            SetJoinMessage("Joining " + entry.name + "'s world needs Xbox session signalling and WebRTC, which Perlin can't do yet");
+            return;
+        }
+        if (!(accounts.Active() && accounts.Active()->microsoft)) {
+            SetJoinMessage("Sign in with a Microsoft account to join a friend");
+            return;
+        }
+        if (friendJoinBusy.exchange(true))
+            return;
+        SetJoinMessage("Joining " + entry.name + "...");
+        const std::string authPath = ActiveAuthPath();
+        const std::string xuid = entry.xuid;
+        const std::string name = entry.name;
+        std::thread([this, authPath, xuid, name] {
+            xbox::Account acct(authPath);
+            std::string error;
+            std::shared_ptr<friendworld::Lease> lease;
+            if (acct.SignInSaved(error) &&
+                friendworld::Join(acct, xuid, kBedrockVersion, lease, [this](const std::string& text) { SetJoinMessage(text); }, error)) {
+                std::lock_guard lock(tabMutex);
+                friendLeaseReady = std::move(lease);
+                tabJoinMsg = "Connecting to " + name + "...";
+            } else {
+                std::cout << "[friends] join failed: " << error << std::endl;
+                SetJoinMessage(error.empty() ? "Could not join " + name : error);
+            }
+            friendJoinBusy = false;
+        }).detach();
+    }
+
+    void Perlin::ReleaseFriendLease() {
+        std::shared_ptr<friendworld::Lease> lease = std::move(friendLease);
+        friendLease.reset();
+        if (!lease)
+            return;
+        // The last reference may be dropped here, and leaving the Xbox session takes a network round trip.
+        std::thread([lease = std::move(lease)]() mutable { lease.reset(); }).detach();
     }
 
     void Perlin::LeaveToServerList(ui::Hud& hud) {
@@ -4303,10 +4339,13 @@ namespace perlin {
         if (session) {
             // Hang up now unless a background connect/transfer is still using the session; then
             // it hangs up itself (stale generation) and is freed on the next Connect().
-            if (connectsInFlight.load() == 0 && !session->Transferring())
+            if (connectsInFlight.load() == 0 && !session->Transferring()) {
                 session->Disconnect();
+                session->SetFriendLease(nullptr);
+            }
             retiredSessions.push_back(std::move(session));
         }
+        ReleaseFriendLease();
         particleLevel = nullptr;
         hud.Overlay().ClearOverlay();
         disconnectShown = disconnectTextMode = disconnectLeftDown = false;
@@ -4622,6 +4661,7 @@ namespace perlin {
                 return;
             const ui::ServerEntry& e = list[static_cast<size_t>(row)];
             switch (e.kind) {
+                case ui::ServerEntry::Kind::Header: break;
                 case ui::ServerEntry::Kind::Realm: JoinRealm(e.realmId); break;
                 case ui::ServerEntry::Kind::Friend: JoinFriend(e); break;
                 default: JoinServer(e.address); break;
@@ -4777,28 +4817,53 @@ namespace perlin {
         titleLastPage = title.page;
         {
             std::string joinAddress;
+            std::shared_ptr<friendworld::Lease> joinedFriend;
             {
                 std::lock_guard lock(tabMutex);
+                joinedFriend = std::move(friendLeaseReady);
                 if (tabDirty) {
                     title.lan = tabLan;
                     title.realms = tabRealms;
-                    title.friends.clear();
-                    title.friendsOffline.clear();
-                    for (const ui::ServerEntry& f : tabFriends)
-                        (f.offline ? title.friendsOffline : title.friends).push_back(f);
                     tabDirty = false;
                 }
+                {
+                    int onlineCount = 0, offlineCount = 0;
+                    for (const ui::ServerEntry& f : tabFriends)
+                        (f.offline ? offlineCount : onlineCount)++;
+                    title.friends.clear();
+                    if (onlineCount + offlineCount > 0) {
+                        ui::ServerEntry head;
+                        head.kind = ui::ServerEntry::Kind::Header;
+                        head.name = "Online [" + std::to_string(onlineCount) + "]";
+                        head.realmId = 0;
+                        title.friends.push_back(head);
+                        if (title.friendsOnlineOpen)
+                            for (const ui::ServerEntry& f : tabFriends)
+                                if (!f.offline)
+                                    title.friends.push_back(f);
+                        head.name = "Offline [" + std::to_string(offlineCount) + "]";
+                        head.realmId = 1;
+                        title.friends.push_back(head);
+                        if (title.friendsOfflineOpen)
+                            for (const ui::ServerEntry& f : tabFriends)
+                                if (f.offline)
+                                    title.friends.push_back(f);
+                    }
+                }
                 title.tabMessage = title.tab == ui::ServerTab::Lan ? tabLanMsg : title.tab == ui::ServerTab::Realms ? tabRealmsMsg : tabFriendsMsg;
-                if (title.tabMessage.empty() && title.tab == ui::ServerTab::Friends)
-                    title.tabMessage = "None of your friends are online";
-                if (title.tabMessage.empty() && title.tab == ui::ServerTab::FriendsOffline)
-                    title.tabMessage = "No offline friends";
                 title.joinMessage = tabJoinMsg;
                 if (realmJoinReady) {
                     realmJoinReady = false;
                     joinAddress = realmJoinAddress;
                     tabJoinMsg.clear();
                 }
+            }
+            if (joinedFriend) {
+                ReleaseFriendLease();
+                friendLease = std::move(joinedFriend);
+                SetJoinMessage({});
+                titleActive = false;
+                Connect();
             }
             if (!joinAddress.empty())
                 JoinServer(joinAddress);
@@ -4862,7 +4927,7 @@ namespace perlin {
             signature += "|" + title.joinMessage + "|" + title.name + "|" + title.address + "|" + (title.caret ? "c" : "n") + (title.adding ? "a" : "e");
         else if (title.page == ui::TitlePage::Servers) {
             signature += "|t" + std::to_string(static_cast<int>(title.tab)) + "|" + title.tabMessage + "|" + title.joinMessage;
-            signature += "|" + std::to_string(title.Shown().size());
+            signature += "|" + std::to_string(title.Shown().size()) + (title.friendsOnlineOpen ? "O" : "o") + (title.friendsOfflineOpen ? "F" : "f");
             for (const ui::ServerEntry& s : title.Shown())
                 signature += "|" + s.name + "|" + s.address + "|" + std::to_string(static_cast<int>(s.status)) + s.motd + "|" + std::to_string(s.players) + "/" +
                              std::to_string(s.maxPlayers) + "|" + std::to_string(s.pingMs) + s.right + s.note + (s.offline ? "o" : "") +
@@ -4949,7 +5014,7 @@ namespace perlin {
                     title.selected = -1;
                     SaveServers(title.servers);
                 }
-            } else if (const int tb = rowOf(ui::kServerTabPrefix); tb >= 0 && tb < 5) {
+            } else if (const int tb = rowOf(ui::kServerTabPrefix); tb >= 0 && tb < 4) {
                 title.tab = static_cast<ui::ServerTab>(tb);
                 title.selected = -1;
                 title.scroll = 0;
@@ -4979,11 +5044,17 @@ namespace perlin {
             } else if (const int go = rowOf(ui::kServerJoinPrefix); go >= 0) {
                 join(go);
             } else if (const int row = rowOf(ui::kServerRowPrefix); row >= 0) {
-                if (row == titleClickRow && now - titleClickAt < std::chrono::milliseconds(400))
-                    join(row);
-                title.selected = row;
-                titleClickRow = row;
-                titleClickAt = now;
+                const std::vector<ui::ServerEntry>& shown = title.Shown();
+                if (row < static_cast<int>(shown.size()) && shown[static_cast<size_t>(row)].kind == ui::ServerEntry::Kind::Header) {
+                    (shown[static_cast<size_t>(row)].realmId == 0 ? title.friendsOnlineOpen : title.friendsOfflineOpen) ^= true;
+                    title.selected = -1;
+                } else {
+                    if (row == titleClickRow && now - titleClickAt < std::chrono::milliseconds(400))
+                        join(row);
+                    title.selected = row;
+                    titleClickRow = row;
+                    titleClickAt = now;
+                }
             }
         }
         titleLeftDown = down;

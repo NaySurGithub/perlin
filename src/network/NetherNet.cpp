@@ -1,12 +1,16 @@
 #include "util/Paths.hpp"
 #include "network/NetherNet.hpp"
 
+#include "network/FriendWorld.hpp"
 #include "network/Http.hpp"
 #include "client/Options.hpp"
 
 #include <rtc/rtc.hpp>
 
+#include <algorithm>
 #include <chrono>
+#include <condition_variable>
+#include <deque>
 #include <cstring>
 #include <iostream>
 #include "util/Json.hpp"
@@ -284,6 +288,270 @@ namespace perlin {
             return false;
         }
 
+        connected = true;
+        std::cout << "[nethernet] ReliableDataChannel open" << std::endl;
+        return true;
+    }
+
+
+    namespace {
+        std::string LowerAscii(std::string s) {
+            for (char& c : s)
+                c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+            return s;
+        }
+
+        // "turn:host:port?transport=udp" and friends.
+        bool MakeIceServer(const friendworld::IceServerInfo& info, const std::string& url, rtc::IceServer& out) {
+            const size_t colon = url.find(':');
+            if (colon == std::string::npos)
+                return false;
+            const std::string scheme = LowerAscii(url.substr(0, colon));
+            std::string rest = url.substr(colon + 1);
+            std::string transport = "udp";
+            if (const size_t q = rest.find('?'); q != std::string::npos) {
+                const std::string query = LowerAscii(rest.substr(q + 1));
+                if (query.find("transport=tcp") != std::string::npos)
+                    transport = "tcp";
+                rest.resize(q);
+            }
+            std::string host = rest;
+            uint16_t port = scheme == "turns" || scheme == "stuns" ? 5349 : 3478;
+            if (const size_t p = rest.rfind(':'); p != std::string::npos && rest.find(']') == std::string::npos) {
+                host = rest.substr(0, p);
+                port = static_cast<uint16_t>(std::atoi(rest.c_str() + p + 1));
+            }
+            if (host.empty())
+                return false;
+            if (scheme == "stun" || scheme == "stuns") {
+                out = rtc::IceServer(host, port);
+            } else if (scheme == "turn" || scheme == "turns") {
+                const auto relay = scheme == "turns" ? rtc::IceServer::RelayType::TurnTls
+                                   : transport == "tcp" ? rtc::IceServer::RelayType::TurnTcp
+                                                        : rtc::IceServer::RelayType::TurnUdp;
+                out = rtc::IceServer(host, port, info.username, info.password, relay);
+            } else {
+                return false;
+            }
+            return true;
+        }
+    }
+
+    bool NetherNet::ConnectFriend(friendworld::Lease& lease, const ClientIdentity& identity) {
+        Disconnect();
+        lastError.clear();
+        if (!lease.signaling || !lease.signaling->Alive()) {
+            lastError = "the signalling connection to Minecraft is closed";
+            return false;
+        }
+        if (!identity.Valid() || identity.MultiplayerToken().empty()) {
+            lastError = "no client identity for offer";
+            return false;
+        }
+        serverInfo = {};
+        serverInfo.name = lease.worldName.empty() ? lease.hostName : lease.worldName;
+        serverInfo.protocol = lease.protocol > 0 ? lease.protocol : kBedrockProtocol;
+        serverInfo.version = lease.version.empty() ? kBedrockVersion : lease.version;
+
+        std::vector<friendworld::IceServerInfo> relays;
+        std::string relayError;
+        if (!lease.signaling->Credentials(relays, relayError))
+            std::cout << "[nethernet] no relay servers: " << relayError << std::endl;
+
+        impl = std::make_unique<Impl>();
+        try {
+            rtc::Configuration config;
+            for (const auto& relay : relays)
+                for (const std::string& url : relay.urls) {
+                    rtc::IceServer server("localhost", uint16_t(0));
+                    if (MakeIceServer(relay, url, server))
+                        config.iceServers.push_back(server);
+                }
+            std::cout << "[nethernet] " << config.iceServers.size() << " ICE servers" << std::endl;
+            impl->pc = std::make_shared<rtc::PeerConnection>(config);
+        } catch (const std::exception& e) {
+            lastError = std::string("PeerConnection create failed: ") + e.what();
+            Disconnect();
+            return false;
+        }
+        impl->pc->onGatheringStateChange([this](rtc::PeerConnection::GatheringState state) {
+            if (state == rtc::PeerConnection::GatheringState::Complete)
+                impl->gatheringDone = true;
+        });
+        impl->pc->onStateChange([this](rtc::PeerConnection::State state) {
+            if (state == rtc::PeerConnection::State::Failed || state == rtc::PeerConnection::State::Closed)
+                impl->failed = true;
+        });
+        try {
+            impl->reliable = impl->pc->createDataChannel("ReliableDataChannel");
+            rtc::DataChannelInit unrel;
+            unrel.reliability.unordered = true;
+            unrel.reliability.maxRetransmits = 0u;
+            impl->unreliable = impl->pc->createDataChannel("UnreliableDataChannel", unrel);
+        } catch (const std::exception& e) {
+            lastError = std::string("DataChannel create failed: ") + e.what();
+            Disconnect();
+            return false;
+        }
+        impl->reliable->onOpen([this]() { impl->reliableOpen = true; });
+        impl->reliable->onClosed([this]() { impl->failed = true; });
+        impl->reliable->onMessage([this](rtc::message_variant msg) {
+            if (auto* b = std::get_if<rtc::binary>(&msg))
+                OnReliableMessage(reinterpret_cast<const uint8_t*>(b->data()), b->size());
+        });
+        impl->unreliable->onMessage([this](rtc::message_variant msg) {
+            if (auto* b = std::get_if<rtc::binary>(&msg))
+                OnUnreliableMessage(reinterpret_cast<const uint8_t*>(b->data()), b->size());
+        });
+
+        // Signals from the host for this connection.
+        std::random_device rd;
+        std::mt19937_64 rng((static_cast<uint64_t>(rd()) << 32) | rd());
+        uint64_t connectionId = rng();
+        if (connectionId == 0)
+            connectionId = 1;
+        struct Inbox {
+            std::mutex m;
+            std::condition_variable cv;
+            std::deque<std::pair<std::string, std::string>> items; // type, data
+        };
+        auto inbox = std::make_shared<Inbox>();
+        const std::string hostId = LowerAscii(lease.hostNetworkId);
+        const std::string idText = std::to_string(connectionId);
+        lease.signaling->SetHandler([inbox, hostId, idText](const std::string& from, const std::string& text) {
+            if (LowerAscii(from) != hostId)
+                return;
+            const size_t a = text.find(' ');
+            const size_t b = a == std::string::npos ? a : text.find(' ', a + 1);
+            if (b == std::string::npos || text.substr(a + 1, b - a - 1) != idText)
+                return;
+            std::lock_guard lock(inbox->m);
+            inbox->items.emplace_back(text.substr(0, a), text.substr(b + 1));
+            inbox->cv.notify_all();
+        });
+        const auto detach = [&] { lease.signaling->SetHandler(nullptr); };
+
+        impl->pc->setLocalDescription();
+        {
+            const auto start = std::chrono::steady_clock::now();
+            while (!impl->gatheringDone.load() && !impl->failed.load() &&
+                   std::chrono::steady_clock::now() - start < std::chrono::seconds(15))
+                std::this_thread::sleep_for(std::chrono::milliseconds(25));
+        }
+        if (!impl->gatheringDone.load()) {
+            detach();
+            lastError = "ICE gathering did not complete (no usable candidates?)";
+            Disconnect();
+            return false;
+        }
+        std::string offer;
+        try {
+            auto desc = impl->pc->localDescription();
+            if (!desc) {
+                detach();
+                lastError = "no local description after gathering";
+                Disconnect();
+                return false;
+            }
+            offer = std::string(*desc);
+        } catch (const std::exception& e) {
+            detach();
+            lastError = std::string("localDescription failed: ") + e.what();
+            Disconnect();
+            return false;
+        }
+        std::string clean;
+        clean.reserve(offer.size());
+        for (size_t i = 0; i < offer.size(); i++) {
+            if (offer[i] == '\r' && i + 1 < offer.size() && offer[i + 1] == '\r')
+                continue;
+            clean.push_back(offer[i]);
+        }
+        offer.swap(clean);
+        std::string identified = identity.AssertOffer(offer, lease.issuer);
+        if (identified.empty()) {
+            detach();
+            lastError = "failed to build offer identity assertion";
+            Disconnect();
+            return false;
+        }
+
+        std::cout << "[nethernet] sending the offer to " << lease.hostNetworkId << " (connection " << idText << ")" << std::endl;
+        std::string sendError;
+        if (!lease.signaling->Send(lease.hostNetworkId, "CONNECTREQUEST " + idText + " " + identified, true, sendError)) {
+            detach();
+            lastError = "could not reach the host: " + sendError;
+            Disconnect();
+            return false;
+        }
+
+        // The answer, then the host's candidates as they trickle in.
+        bool haveAnswer = false;
+        std::vector<std::string> pendingCandidates;
+        const auto addCandidate = [&](const std::string& text) {
+            try {
+                std::string mid = "0";
+                if (auto remote = impl->pc->remoteDescription(); remote && remote->mediaCount() > 0)
+                    mid = std::visit([](auto* m) { return m->mid(); }, remote->media(0));
+                impl->pc->addRemoteCandidate(rtc::Candidate(text, mid));
+            } catch (const std::exception& e) {
+                std::cout << "[nethernet] bad remote candidate: " << e.what() << std::endl;
+            }
+        };
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(30);
+        while (!impl->reliableOpen.load()) {
+            if (impl->failed.load())
+                break;
+            if (std::chrono::steady_clock::now() > deadline)
+                break;
+            if (!lease.signaling->Alive() && !haveAnswer)
+                break;
+            std::pair<std::string, std::string> item;
+            bool got = false;
+            {
+                std::unique_lock lock(inbox->m);
+                inbox->cv.wait_for(lock, std::chrono::milliseconds(50), [&] { return !inbox->items.empty(); });
+                if (!inbox->items.empty()) {
+                    item = std::move(inbox->items.front());
+                    inbox->items.pop_front();
+                    got = true;
+                }
+            }
+            if (!got)
+                continue;
+            if (item.first == "CONNECTRESPONSE" && !haveAnswer) {
+                try {
+                    impl->pc->setRemoteDescription(rtc::Description(StripIdentityLines(item.second), rtc::Description::Type::Answer));
+                    haveAnswer = true;
+                    std::cout << "[nethernet] answer received" << std::endl;
+                    for (const std::string& c : pendingCandidates)
+                        addCandidate(c);
+                    pendingCandidates.clear();
+                } catch (const std::exception& e) {
+                    detach();
+                    lastError = std::string("setRemoteDescription failed: ") + e.what();
+                    Disconnect();
+                    return false;
+                }
+            } else if (item.first == "CANDIDATEADD") {
+                if (haveAnswer)
+                    addCandidate(item.second);
+                else
+                    pendingCandidates.push_back(item.second);
+            } else if (item.first == "CONNECTERROR") {
+                detach();
+                lastError = "the host refused the connection (error " + item.second + ")";
+                Disconnect();
+                return false;
+            }
+        }
+        detach();
+        if (!impl || !impl->reliableOpen.load()) {
+            lastError = haveAnswer ? "the connection to the host never opened (ICE/DTLS failed; the host's network may block peer-to-peer)"
+                                   : "the host did not answer";
+            Disconnect();
+            return false;
+        }
         connected = true;
         std::cout << "[nethernet] ReliableDataChannel open" << std::endl;
         return true;

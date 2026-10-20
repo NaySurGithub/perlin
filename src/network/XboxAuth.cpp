@@ -769,6 +769,7 @@ namespace perlin::xbox {
         struct ServiceEnv {
             std::string serviceUri = kFallbackServiceUri;
             std::string playFabTitle = kFallbackPlayFabTitle;
+            std::string issuer, signalingUri, signalingAfdUri;
         };
 
         ServiceEnv Discover(const std::string& gameVersion) {
@@ -784,6 +785,13 @@ namespace perlin::xbox {
                     env.serviceUri = prod["serviceUri"].str();
                 if (prod["playFabTitleId"].isString())
                     env.playFabTitle = prod["playFabTitleId"].str();
+                if (prod["issuer"].isString())
+                    env.issuer = prod["issuer"].str();
+                const json::View environments = doc->root()["result"]["serviceEnvironments"];
+                if (environments["signaling"]["prod"]["serviceUri"].isString())
+                    env.signalingUri = environments["signaling"]["prod"]["serviceUri"].str();
+                if (environments["signaling-afd"]["prod"]["serviceUri"].isString())
+                    env.signalingAfdUri = environments["signaling-afd"]["prod"]["serviceUri"].str();
             } else {
                 std::cout << "[auth] service discovery failed (" << r.status << "), using built-in endpoints" << std::endl;
             }
@@ -853,6 +861,33 @@ namespace perlin::xbox {
                 return false;
             }
             token = doc->root()["result"]["signedToken"].str();
+            return true;
+        }
+
+        // The service token ("MCToken ...") of a Minecraft services session.
+        bool ServiceAuthorization(const ServiceEnv& env, const std::string& ticket, const std::string& gameVersion,
+                                  std::string& authorization, std::string& error) {
+            if (cache.minecraftDeviceId.empty()) {
+                cache.minecraftDeviceId = RandomUuid();
+                SaveCache();
+            }
+            Url u;
+            ParseUrl(env.serviceUri + "/api/v1.0/session/start", u);
+            const std::string sessionBody =
+                "{\"device\":{\"applicationType\":\"MinecraftPE\",\"capabilities\":[],\"gameVersion\":" + Q(gameVersion) +
+                ",\"id\":" + Q(cache.minecraftDeviceId) + ",\"memory\":\"17179869184\",\"platform\":\"Windows10\","
+                "\"playFabTitleId\":" + Q(env.playFabTitle) + ",\"storePlatform\":\"uwp.store\",\"type\":\"Windows10\"},"
+                "\"user\":{\"language\":\"en\",\"languageCode\":\"en-US\",\"regionCode\":\"US\",\"token\":" + Q(ticket) +
+                ",\"tokenType\":\"PlayFab\"}}";
+            const http::Response r = Post(u, sessionBody, "application/json",
+                                          {{"Accept", "application/json"}, {"User-Agent", "libhttpclient/1.0.0.0"}});
+            auto doc = json::Document::Parse(r.body);
+            if (r.status != 200 || !doc || !doc->root()["result"]["authorizationHeader"].isString()) {
+                error = doc && doc->root()["message"].isString() ? "Minecraft services: " + doc->root()["message"].str()
+                                                                 : NetworkError(r, "the Minecraft authorization service");
+                return false;
+            }
+            authorization = doc->root()["result"]["authorizationHeader"].str();
             return true;
         }
 
@@ -962,6 +997,35 @@ namespace perlin::xbox {
             return false;
         header = Impl::XblHeader(xsts);
         xuid = xsts.xid;
+        return true;
+    }
+
+    bool Account::ServiceSession(const std::string& gameVersion, ServiceInfo& out, std::string& error) {
+        out = {};
+        Impl& s = *impl;
+        if (!s.EnsureUserAndTitle(error))
+            return false;
+        const Impl::ServiceEnv env = s.Discover(gameVersion);
+        std::string ticket, playFabId;
+        if (!s.PlayFabTicket(env, ticket, playFabId, error))
+            return false;
+        if (!s.ServiceAuthorization(env, ticket, gameVersion, out.authorization, error))
+            return false;
+        // The player-messaging id is the "pmid" claim of the token's payload.
+        const std::string jwt = out.authorization.rfind("MCToken ", 0) == 0 ? out.authorization.substr(8) : out.authorization;
+        const size_t a = jwt.find('.');
+        const size_t b = a == std::string::npos ? a : jwt.find('.', a + 1);
+        if (b != std::string::npos)
+            if (auto payload = json::Document::Parse(B64Decode(jwt.substr(a + 1, b - a - 1))))
+                if (payload->root()["pmid"].isString())
+                    out.playerMessagingId = payload->root()["pmid"].str();
+        out.issuer = env.issuer;
+        out.signalingUri = env.signalingUri;
+        out.signalingAfdUri = env.signalingAfdUri;
+        if (out.playerMessagingId.empty()) {
+            error = "the Minecraft services token has no player messaging id";
+            return false;
+        }
         return true;
     }
 

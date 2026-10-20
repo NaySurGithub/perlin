@@ -12,6 +12,10 @@
 
 namespace perlin {
 
+    namespace friendworld {
+        struct Lease;
+    }
+
     class NetherNet : public Transport {
     public:
         static constexpr size_t kFragmentSize = 262143;
@@ -32,6 +36,8 @@ namespace perlin {
                           std::string& error, int timeoutSecs = 15);
 
         bool Connect(const std::string& host, uint16_t port, const ClientIdentity& identity);
+        // Dials a friend's world through the signalling channel of a joined session (see FriendWorld.hpp).
+        bool ConnectFriend(friendworld::Lease& lease, const ClientIdentity& identity);
         void Disconnect() override;
 
         bool SendReliable(const std::vector<uint8_t>& data) override;

@@ -125,8 +125,10 @@ namespace perlin::http {
             httplib::Headers headers;
             for (auto& [k, v] : extra)
                 headers.emplace(k, v);
-            httplib::Result res =
-                method == "GET" ? cli.Get(path, headers) : cli.Post(path, headers, body, contentType.c_str());
+            httplib::Result res = method == "GET"    ? cli.Get(path, headers)
+                                  : method == "PUT"  ? cli.Put(path, headers, body, contentType.c_str())
+                                  : method == "DELETE" ? cli.Delete(path, headers, body, contentType.c_str())
+                                                       : cli.Post(path, headers, body, contentType.c_str());
             if (!res) {
                 std::cout << "[http] " << method << " " << host << path.substr(0, path.find('?')) << " failed: " << Describe(res) << std::endl;
                 return {};

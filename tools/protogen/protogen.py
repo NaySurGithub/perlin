@@ -756,6 +756,8 @@ def main():
     ap.add_argument("--out", required=True)
     ap.add_argument("--parts", type=int, default=6)
     ap.add_argument("--list", action="store_true")
+    ap.add_argument("--namespace", default="proto2193", help="C++ namespace (inside perlin) for this protocol version, e.g. proto2193")
+    ap.add_argument("--no-current-alias", action="store_true", help="do not make perlin::proto an alias of this version")
     opts = ap.parse_args()
 
     spec = json.load(open(opts.spec))
@@ -800,7 +802,7 @@ def main():
 
     os.makedirs(opts.out, exist_ok=True)
     hdr = ["#pragma once", '#include "network/Stream.hpp"', "", "#include <array>", "#include <cstdint>", "#include <optional>",
-           "#include <string>", "#include <variant>", "#include <vector>", "", "namespace perlin::proto {", "",
+           "#include <string>", "#include <variant>", "#include <vector>", "", "namespace perlin::" + opts.namespace + " {", "",
            "using net::Nbt;", "using net::ReadStream;", "using net::Uuid;", "using net::WriteStream;", ""]
     type_decls = order_decls([d for d in gen.decls if d.packet is None])
     defer_incomplete(type_decls)
@@ -815,13 +817,16 @@ def main():
             hdr.append(f"bool Read(ReadStream&, {decl.name}&);")
         hdr.append("")
     hdr.append("}")
+    if not opts.no_current_alias:
+        hdr += ["", "// The version the client is built against. Code says proto::; switching versions means pointing this at another",
+                "// generated namespace.", "namespace perlin {", f"namespace proto = {opts.namespace};", "}"]
     write_if_changed(os.path.join(opts.out, "Types.hpp"), "\n".join(hdr) + "\n")
 
     pk = ["#pragma once", '#include "protocol/Types.hpp"', ""]
     for number, name, struct, mode, info in registry:
         if mode == "custom":
             pk.append(f'#include "{info}"')
-    pk += ["", "namespace perlin::proto {", ""]
+    pk += ["", "namespace perlin::" + opts.namespace + " {", ""]
     by_name = {d.name: d for d in packet_decls}
     for number, name, struct, mode, info in registry:
         if mode == "custom":
@@ -856,7 +861,7 @@ def main():
         parts[i].append(decl)
         weights[i] += len(decl.codec) + 3
     for i, group in enumerate(parts):
-        src = ['#include "protocol/Packets.hpp"', "", "namespace perlin::proto {", "namespace {", "using net::Transfer;", "using net::Frame;",
+        src = ['#include "protocol/Packets.hpp"', "", "namespace perlin::" + opts.namespace + " {", "namespace {", "using net::Transfer;", "using net::Frame;",
                "using net::Pick;", "using net::PickAt;", "using net::Present;", "using net::PresentIfRemaining;", "}", ""]
         for decl in group:
             src.extend(emit_codec(decl))
@@ -872,7 +877,7 @@ def main():
         src.append("}")
         write_if_changed(os.path.join(opts.out, f"Codec{i}.cpp"), "\n".join(src) + "\n")
 
-    rt = ['#include "protocol/Packets.hpp"', "", "#include <string>", "", "namespace perlin::proto {", "namespace {",
+    rt = ['#include "protocol/Packets.hpp"', "", "#include <string>", "", "namespace perlin::" + opts.namespace + " {", "namespace {",
           "template <class P> int Check(std::string& failures, int& skipped) {",
           "    P value{};", "    std::vector<uint8_t> first;", "    net::WriteStream out(first);", "    Write(out, value);",
           "    if (!out.ok) {", "        skipped++;", "        return 0;", "    }",

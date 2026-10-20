@@ -32,6 +32,27 @@ namespace perlin::realms {
                                  headers, 20);
         }
 
+        // Realms refuses the join until the player has opted in to the realm's Stories timeline
+        // (gophertunnel: Client.OptInToStoryTimeline). Read the settings and write them back with
+        // playerOptIn = OPT_IN.
+        bool OptInToTimeline(int64_t id, const std::string& authorization) {
+            const std::string path = "/worlds/" + std::to_string(id) + "/stories/settings";
+            const http::Response g = Call("GET", path, {}, authorization);
+            std::cout << "[realms] stories settings GET answered " << g.status << ": " << g.body.substr(0, 300) << std::endl;
+            auto doc = g.status == 200 ? json::Document::Parse(g.body) : std::nullopt;
+            if (!doc)
+                return false;
+            const json::View v = doc->root();
+            const auto flag = [&](const char* k) { return v[k].boolean() ? "true" : "false"; };
+            const std::string realmOptIn = v["realmOptIn"].isString() ? v["realmOptIn"].str() : "NONE";
+            const std::string body = std::string("{\"autostories\":") + flag("autostories") + ",\"coordinates\":" + flag("coordinates") +
+                                     ",\"notifications\":" + flag("notifications") + ",\"playerOptIn\":\"OPT_IN\",\"realmOptIn\":\"" + realmOptIn +
+                                     "\",\"timeline\":" + flag("timeline") + "}";
+            const http::Response p = Call("POST", path, body, authorization);
+            std::cout << "[realms] timeline opt-in answered " << p.status << ": " << p.body.substr(0, 300) << std::endl;
+            return p.status >= 200 && p.status < 300;
+        }
+
         std::string Failure(const http::Response& r, const char* what) {
             if (r.status == 0)
                 return std::string("could not reach ") + what;
@@ -112,6 +133,7 @@ namespace perlin::realms {
             return false;
         const std::string body = "{\"joinIntention\":\"VANILLA\",\"pingRegions\":[]}";
         const auto giveUp = std::chrono::steady_clock::now() + std::chrono::seconds(40);
+        bool optedIn = false;
         while (true) {
             http::Response r = Call("POST", "/worlds/" + std::to_string(id) + "/join", body, authorization);
             if ((r.status == 503 || r.status == 277) && std::chrono::steady_clock::now() < giveUp) {
@@ -123,6 +145,11 @@ namespace perlin::realms {
                 std::cout << "[realms] Realm " << id << " is starting, retrying in " << wait << "s" << std::endl;
                 std::this_thread::sleep_for(std::chrono::seconds(wait));
                 continue;
+            }
+            if (r.status == 403 && !optedIn && (r.body.find("Opt-In") != std::string::npos || r.body.find("opt-in") != std::string::npos)) {
+                optedIn = true;
+                if (OptInToTimeline(id, authorization))
+                    continue; // joined the timeline; ask to join again
             }
             if (r.status >= 400) {
                 std::cout << "[realms] join POST answered " << r.status << ": " << r.body.substr(0, 400) << std::endl;

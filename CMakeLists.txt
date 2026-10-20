@@ -554,6 +554,9 @@ if(PERLIN_WEB_SHADERS_ONLY)
 endif()
 
 set(PERLIN_PROTOCOL_OUT "${CMAKE_CURRENT_BINARY_DIR}/generated/protocol")
+# The Bedrock protocol version the generated codecs are for; they live in perlin::proto<version>, and perlin::proto
+# is an alias of the current one.
+set(PERLIN_PROTOCOL_VERSION 2193)
 set(PERLIN_PROTOCOL_CODEC_COUNT 6)
 set(PERLIN_PROTOCOL_SOURCES)
 foreach(i RANGE 0 5)
@@ -569,6 +572,7 @@ add_custom_command(
             --overrides "${CMAKE_CURRENT_SOURCE_DIR}/protocol/overrides.json"
             --out "${PERLIN_PROTOCOL_OUT}"
             --parts ${PERLIN_PROTOCOL_CODEC_COUNT}
+            --namespace proto${PERLIN_PROTOCOL_VERSION}
     DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/tools/protogen/protogen.py"
             "${CMAKE_CURRENT_SOURCE_DIR}/protocol/bedrock-1.26.51.json"
             "${CMAKE_CURRENT_SOURCE_DIR}/protocol/overrides.json"

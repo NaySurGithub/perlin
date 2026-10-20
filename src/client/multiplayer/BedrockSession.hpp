@@ -1,4 +1,5 @@
 #pragma once
+#include "network/FriendWorld.hpp"
 #include "client/ui/CommandInfo.hpp"
 #include "world/level/Level.hpp"
 #include "network/PacketDispatcher.hpp"
@@ -63,6 +64,8 @@ namespace perlin {
         const std::string& PlayerName() const { return playerName; }
         void SetPlayerName(const std::string& name) { playerName = name.empty() ? std::string("Perlin") : name; }
         void SetTransport(const std::string& mode) { transportMode = mode; }
+        // Connects to a joined friend's world through its signalling channel instead of to an address.
+        void SetFriendLease(std::shared_ptr<friendworld::Lease> lease) { friendLease = std::move(lease); }
         void SetSkin(LoadedSkin loaded) { skin = std::move(loaded); }
         const LoadedSkin& Skin() const { return skin; }
         entity::EntityTracker& Entities() { return entities; }
@@ -684,6 +687,7 @@ void RequestRespawn();
         LoadedSkin skin;
         entity::EntityTracker entities;
         std::shared_ptr<xbox::Account> account;
+        std::shared_ptr<friendworld::Lease> friendLease;
         xbox::Credentials onlineCreds;
         std::string playerUuid;
         std::string serverAddress;

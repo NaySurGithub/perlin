@@ -317,10 +317,10 @@ mcimg { display: block; position: absolute; }
             d += "<div style=\"left:0px;top:" + N(listTop - 1) + "px;width:" + N(w) + "px;height:1px;background-color:#000000;z-index:3;\"></div>\n";
             d += "<div style=\"left:0px;top:" + N(listBottom) + "px;width:" + N(w) + "px;height:1px;background-color:#000000;z-index:3;\"></div>\n";
             {
-                static const char* const kTabs[] = {"Servers", "LAN", "Realms", "Online", "Offline"};
-                const int tabW = 60, gap = 2;
-                const int x0 = cx - (5 * tabW + 4 * gap) / 2;
-                for (int t = 0; t < 5; t++)
+                static const char* const kTabs[] = {"Servers", "LAN", "Realms", "Friends"};
+                const int tabW = 70, gap = 2;
+                const int x0 = cx - (4 * tabW + 3 * gap) / 2;
+                for (int t = 0; t < 4; t++)
                     d += Btn(std::string(kServerTabPrefix) + N(t), x0 + t * (tabW + gap), 6, tabW, kTabs[t], static_cast<int>(m.tab) == t);
             }
             const std::vector<ServerEntry>& list = m.Shown();
@@ -332,6 +332,14 @@ mcimg { display: block; position: absolute; }
                 if (i == m.selected) {
                     d += "<div style=\"left:" + N(rowX - 2) + "px;top:" + N(y - 2) + "px;width:" + N(kRowW + 4) + "px;height:" + N(kRowH + 0) + "px;background-color:#ffffff;z-index:2;\"></div>\n";
                     d += "<div style=\"left:" + N(rowX - 1) + "px;top:" + N(y - 1) + "px;width:" + N(kRowW + 2) + "px;height:" + N(kRowH - 2) + "px;background-color:#000000;z-index:2;\"></div>\n";
+                }
+                if (s.kind == ServerEntry::Kind::Header) {
+                    const bool open = s.realmId == 0 ? m.friendsOnlineOpen : m.friendsOfflineOpen;
+                    d += "<div id=\"" + std::string(kServerRowPrefix) + N(i) + "\" class=\"row\" style=\"left:" + N(rowX) + "px;top:" + N(y) + "px;width:" + N(kRowW) + "px;height:" + N(kRowH - 4) + "px;\">\n";
+                    d += "<mcimg src=\"" + std::string(open ? "textures/ui/chevron_white_down.png" : "textures/ui/chevron_white_up.png") + "\" style=\"left:4px;top:11px;width:8px;height:8px;\"></mcimg>\n";
+                    d += Text(18, 11, kRowW - 20, s.name, s.realmId == 0 ? "green" : "gray");
+                    d += "</div>\n";
+                    continue;
                 }
                 d += "<div id=\"" + std::string(kServerRowPrefix) + N(i) + "\" class=\"row\" style=\"left:" + N(rowX) + "px;top:" + N(y) + "px;width:" + N(kRowW) + "px;height:" + N(kRowH - 4) + "px;\">\n";
                 d += "<div style=\"left:0px;top:0px;width:32px;height:32px;background-color:#3a2f26;\"></div>\n";
@@ -386,7 +394,7 @@ mcimg { display: block; position: absolute; }
             const bool has = m.selected >= 0 && m.selected < static_cast<int>(list.size());
             const bool saved = m.tab == ServerTab::Saved;
             const int r1 = h - 52, r2 = h - 28;
-            d += Btn(has ? kServerJoin : "", cx - 154, r1, 100, (m.tab == ServerTab::Friends || m.tab == ServerTab::FriendsOffline) ? "Join Friend" : (m.tab == ServerTab::Realms ? "Join Realm" : "Join Server"), !has);
+            d += Btn(has ? kServerJoin : "", cx - 154, r1, 100, m.tab == ServerTab::Friends ? "Join Friend" : (m.tab == ServerTab::Realms ? "Join Realm" : "Join Server"), !has);
             d += Btn(kServerDirect, cx - 50, r1, 100, "Direct Connection");
             if (m.tab == ServerTab::Realms)
                 d += Btn(kServerAddRealm, cx + 54, r1, 100, "Add Realm");

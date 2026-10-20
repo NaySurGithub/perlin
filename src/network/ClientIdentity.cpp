@@ -152,7 +152,7 @@ namespace perlin {
         return mpToken;
     }
 
-    std::string ClientIdentity::AssertOffer(const std::string& sdp) const {
+    std::string ClientIdentity::AssertOffer(const std::string& sdp, const std::string& identityProvider) const {
         if (!key || mpToken.empty())
             return {};
         claims::Fingerprints entries;
@@ -177,7 +177,7 @@ namespace perlin {
         std::string fps = headerB64 + ".." + B64Url(raw.data(), raw.size());
 
         const std::string assertion = json::Write(claims::Assertion{fps, mpToken});
-        const std::string outer = json::Write(claims::Envelope{assertion, {}});
+        const std::string outer = json::Write(claims::Envelope{assertion, claims::IdentityProvider{identityProvider, "default"}});
         std::string env = B64Standard(outer);
 
         size_t mpos = sdp.find("m=");

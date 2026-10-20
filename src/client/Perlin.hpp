@@ -1,4 +1,5 @@
 #pragma once
+#include "network/FriendWorld.hpp"
 #include "client/audio/SoundSystem.hpp"
 #include "client/audio/Subtitles.hpp"
 #include <chrono>
@@ -184,6 +185,11 @@ namespace perlin {
         void RefreshTab(ui::ServerTab tab);
         void JoinRealm(long long id);
         void JoinFriend(const ui::ServerEntry& entry);
+        // Drops the joined friend world (leaves its Xbox session) without stalling the main thread.
+        void ReleaseFriendLease();
+        std::shared_ptr<friendworld::Lease> friendLease;      // the friend world being connected to / played
+        std::shared_ptr<friendworld::Lease> friendLeaseReady; // joined by the worker, taken by the main loop
+        std::atomic<bool> friendJoinBusy{false};
         void AddRealm(const std::string& code);
         std::atomic<bool> realmAddBusy{false}, realmAddedFlag{false};
         std::chrono::steady_clock::time_point realmAddedAt{};

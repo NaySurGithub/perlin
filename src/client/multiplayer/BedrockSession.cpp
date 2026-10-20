@@ -301,7 +301,8 @@ namespace perlin {
                                                             const std::string& serverAddress,
                                                             ClientIdentity& identity, int maxViewDistance,
                                                             const LoadedSkin& loadedSkin,
-                                                            const xbox::Credentials* online, std::string& error) {
+                                                            const xbox::Credentials* online, const std::string& nonce,
+                                                            std::string& error) {
             if (!identity.Valid() || identity.MultiplayerToken().empty()) {
                 error = "no client identity";
                 return std::nullopt;
@@ -343,6 +344,7 @@ namespace perlin {
             skin.SkinId = std::string("c18e65aa-7b21-4637-9b63-8ad63622ef01.") + (loadedSkin.slimArms ? "CustomSlim" : "Custom");
             skin.SkinColor = "#b37b62";
             skin.ServerAddress = serverAddress;
+            skin.Nonce = nonce;
             skin.SkinData = B64Standard(skinData);
             skin.ThirdPartyName = playerName;
             if (loadedSkin.hasSkin()) {
@@ -520,7 +522,9 @@ namespace perlin {
             return true;
         };
         bool useRak = transportMode == "raknet";
-        if (transfer && transportMode == "auto") {
+        if (friendLease) {
+            useRak = false;
+        } else if (transfer && transportMode == "auto") {
             useRak = usedRak;
         } else if (transportMode == "auto") {
             NetherNetServerInfo probe;
@@ -542,7 +546,7 @@ namespace perlin {
             if (!finishAuth())
                 return false;
             auto nether = std::make_unique<NetherNet>();
-            if (!nether->Connect(host, port, *identity)) {
+            if (!(friendLease ? nether->ConnectFriend(*friendLease, *identity) : nether->Connect(host, port, *identity))) {
                 lastError = "transport: " + nether->LastError();
                 state = State::Failed;
                 return false;
@@ -556,7 +560,7 @@ namespace perlin {
             return false;
         }
 
-        serverAddress = host + ":" + std::to_string(port);
+        serverAddress = friendLease ? friendLease->hostNetworkId : host + ":" + std::to_string(port);
         gameVersion = net->Info().version;
         if (gameVersion.empty())
             gameVersion = "1.26.50";
@@ -879,7 +883,7 @@ namespace perlin {
         std::string error;
         const auto login =
             BuildOfflineLogin(serverProtocol, playerName, gameVersion, serverAddress, *identity, maxViewDistance, skin,
-                              account ? &onlineCreds : nullptr, error);
+                              account ? &onlineCreds : nullptr, friendLease ? friendLease->nonce : std::string(), error);
         if (!login) {
             lastError = "login build failed: " + error;
             return false;

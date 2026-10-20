@@ -14,6 +14,15 @@ namespace perlin::xbox {
         std::string playFabId;
     };
 
+    // What the Minecraft services hand a signed-in player for peer-to-peer play.
+    struct ServiceInfo {
+        std::string authorization;   // "MCToken <jwt>": the service token (signalling and other services)
+        std::string playerMessagingId; // the "pmid" claim: this player's address for signalling messages
+        std::string issuer;          // identity provider of the multiplayer token (NetherNet identity domain)
+        std::string signalingUri;    // wss base of the plain WebSocket signalling service
+        std::string signalingAfdUri; // https base that names the nearest JSON-RPC signalling service
+    };
+
     using PromptFn = std::function<void(const std::string& url, const std::string& code)>;
 
     class Account {
@@ -38,6 +47,9 @@ namespace perlin::xbox {
         // Realms (https://pocket.realms.minecraft.net/) and the friends list (http://xboxlive.com). Needs a signed-in
         // account. xuid is filled in when the token carries it.
         bool AuthorizationHeader(const std::string& relyingParty, std::string& header, std::string& xuid, std::string& error);
+
+        // Logs in to PlayFab with the Xbox account and starts a Minecraft services session.
+        bool ServiceSession(const std::string& gameVersion, ServiceInfo& out, std::string& error);
 
         bool LoginMinecraft(const std::string& identityPublicKeyB64, const std::string& gameVersion,
                             Credentials& out, std::string& error);
