@@ -54,6 +54,7 @@ namespace perlin {
         float scroll = 0;
         float lastMouseX = 0, lastMouseY = 0;
         bool haveMouse = false;
+        std::chrono::steady_clock::time_point lastPoll{};
         bool blocked = false;
         uint32_t locks = 0;
         std::array<std::chrono::steady_clock::time_point, kActionCount> holds{};

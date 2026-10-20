@@ -1,9 +1,13 @@
 #include "client/input/InputManager.hpp"
 
 #include <algorithm>
+#include <chrono>
+#include <cmath>
 
 namespace perlin {
     bool InputManager::Matches(Action action, const Binding& binding) const {
+        if (binding.device == Binding::Device::Gamepad)
+            return options.GetPadKey(action) == binding;
         return options.GetKey(action) == binding;
     }
 
@@ -42,6 +46,8 @@ namespace perlin {
             }
             else if (ev.type == InputEvent::MouseDown)
                 Dispatch(Binding::MouseButton(ev.key));
+            else if (ev.type == InputEvent::PadDown)
+                Dispatch(Binding::PadButton(ev.key));
         }
 
         const float mx = input.MouseX();
@@ -57,6 +63,17 @@ namespace perlin {
             const float sens = options.mouseSensitivity;
             look.yaw = dx * sens;
             look.pitch = dy * sens * (options.invertMouse ? 1.0f : -1.0f);
+            // Right stick: degrees per second, curved so small pushes stay precise.
+            const auto now = std::chrono::steady_clock::now();
+            const float dt = lastPoll.time_since_epoch().count() == 0 ? 0.0f : std::min(0.1f, std::chrono::duration<float>(now - lastPoll).count());
+            lastPoll = now;
+            const float sx = input.PadLookX(), sy = input.PadLookY();
+            if (dt > 0.0f && (sx != 0.0f || sy != 0.0f)) {
+                const float speed = 170.0f * options.padSensitivity;
+                const auto curve = [](float v) { return v * std::fabs(v); };
+                look.yaw += curve(sx) * speed * dt;
+                look.pitch += curve(sy) * speed * dt * (options.padInvertY ? 1.0f : -1.0f);
+            }
         } else if (haveMouse && IsDown(Action::Look)) {
             const float sens = options.mouseSensitivity;
             look.yaw = (mx - lastMouseX) * sens;
@@ -85,6 +102,9 @@ namespace perlin {
             }
         }
         if (holds[static_cast<size_t>(action)] > std::chrono::steady_clock::now())
+            return true;
+        const Binding& pb = options.GetPadKey(action);
+        if (pb.device == Binding::Device::Gamepad && input.IsPadDown(pb.code))
             return true;
         const Binding& b = options.GetKey(action);
         switch (b.device) {

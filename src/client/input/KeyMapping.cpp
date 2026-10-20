@@ -7,12 +7,44 @@ namespace perlin {
             return KeyName(code);
         case Device::Mouse:
             return MouseName(code);
+        case Device::Gamepad:
+            return std::string("pad.") + Pad::Name(code);
         default:
             return {};
         }
     }
 
+    namespace Pad {
+        namespace {
+            struct Entry { int code; const char* name; };
+            constexpr Entry kEntries[] = {
+                {A, "a"}, {B, "b"}, {X, "x"}, {Y, "y"}, {Back, "back"}, {Guide, "guide"}, {Start, "start"},
+                {LeftStick, "left_stick_click"}, {RightStick, "right_stick_click"}, {LeftShoulder, "left_bumper"},
+                {RightShoulder, "right_bumper"}, {DpadUp, "dpad_up"}, {DpadDown, "dpad_down"}, {DpadLeft, "dpad_left"},
+                {DpadRight, "dpad_right"}, {LeftTrigger, "left_trigger"}, {RightTrigger, "right_trigger"},
+                {LeftStickUp, "left_stick_up"}, {LeftStickDown, "left_stick_down"}, {LeftStickLeft, "left_stick_left"},
+                {LeftStickRight, "left_stick_right"}, {RightStickUp, "right_stick_up"}, {RightStickDown, "right_stick_down"},
+                {RightStickLeft, "right_stick_left"}, {RightStickRight, "right_stick_right"}};
+        }
+        const char* Name(int code) {
+            for (const Entry& e : kEntries)
+                if (e.code == code)
+                    return e.name;
+            return "unknown";
+        }
+        int FromName(const std::string& name) {
+            for (const Entry& e : kEntries)
+                if (name == e.name)
+                    return e.code;
+            return -1;
+        }
+    }
+
     Binding Binding::Parse(const std::string& text) {
+        if (text.rfind("pad.", 0) == 0) {
+            const int code = Pad::FromName(text.substr(4));
+            return code >= 0 ? PadButton(code) : Binding{};
+        }
         if (int key = KeyFromName(text))
             return KeyboardKey(key);
         if (int button = MouseFromName(text); button >= 0)
@@ -107,6 +139,29 @@ namespace perlin {
         set(Action::Inventory, Binding::KeyboardKey('E'));
         set(Action::Pause, Binding::KeyboardKey(Key::Escape));
         set(Action::PlayerList, Binding::KeyboardKey(Key::Tab));
+        return b;
+    }
+
+    KeyBindings DefaultPadBindings() {
+        KeyBindings b{};
+        auto set = [&](Action a, int code) { b[static_cast<size_t>(a)] = Binding::PadButton(code); };
+        set(Action::Forward, Pad::LeftStickUp);
+        set(Action::Back, Pad::LeftStickDown);
+        set(Action::Left, Pad::LeftStickLeft);
+        set(Action::Right, Pad::LeftStickRight);
+        set(Action::Jump, Pad::A);
+        set(Action::Sneak, Pad::B);
+        set(Action::Sprint, Pad::LeftStick);
+        set(Action::Attack, Pad::RightTrigger);
+        set(Action::Use, Pad::LeftTrigger);
+        set(Action::Inventory, Pad::Y);
+        set(Action::Drop, Pad::X);
+        set(Action::Chat, Pad::DpadRight);
+        set(Action::Command, Pad::DpadLeft);
+        set(Action::CyclePerspective, Pad::DpadUp);
+        set(Action::PlayerList, Pad::Back);
+        set(Action::Pause, Pad::Start);
+        set(Action::PickBlock, Pad::RightStick);
         return b;
     }
 }

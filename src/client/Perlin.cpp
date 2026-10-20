@@ -1777,7 +1777,7 @@ namespace perlin {
                                    {Action::CyclePerspective, "Toggle Perspective"}, {Action::Zoom, "Zoom"}}}};
             const auto keyText = [](const Binding& b) {
                 std::string v = b.Serialize();
-                for (const char* prefix : {"key.keyboard.", "key.mouse."}) {
+                for (const char* prefix : {"key.keyboard.", "key.mouse.", "pad."}) {
                     const std::string pre = prefix;
                     if (v.rfind(pre, 0) == 0)
                         v = v.substr(pre.size());
@@ -1802,7 +1802,7 @@ namespace perlin {
                 }
                 return v;
             };
-            const KeyBindings defaults = DefaultBindings();
+            const KeyBindings defaults = bindDevice == 1 ? DefaultPadBindings() : DefaultBindings();
             std::vector<ui::KeybindRow> rows;
             std::vector<int> rowAction;
             for (const Cat& c : kCats) {
@@ -1814,11 +1814,11 @@ namespace perlin {
                 for (const auto& it : c.items) {
                     ui::KeybindRow r;
                     r.label = it.second;
-                    const Binding& b = options.GetKey(it.first);
+                    const Binding& b = BindingOf(it.first);
                     const bool waiting = bindCapture == static_cast<int>(it.first);
                     bool conflict = false;
                     for (size_t o = 0; o < kActionCount; o++)
-                        if (o != static_cast<size_t>(it.first) && b.device != Binding::Device::None && options.keys[o] == b &&
+                        if (o != static_cast<size_t>(it.first) && b.device != Binding::Device::None && (bindDevice == 1 ? options.padKeys[o] : options.keys[o]) == b &&
                             !((it.first == Action::Attack || it.first == Action::Look) && static_cast<Action>(o) == Action::Look) &&
                             !(it.first == Action::Look))
                             conflict = true;
@@ -1829,7 +1829,7 @@ namespace perlin {
                     rowAction.push_back(static_cast<int>(it.first));
                 }
             }
-            const std::vector<mods::PluginKey> pluginKeys = mods::ModManager::Instance().Keys();
+            const std::vector<mods::PluginKey> pluginKeys = bindDevice == 1 ? std::vector<mods::PluginKey>{} : mods::ModManager::Instance().Keys();
             std::string lastPlugin;
             for (size_t k = 0; k < pluginKeys.size(); k++) {
                 const mods::PluginKey& pk = pluginKeys[k];
@@ -1862,33 +1862,44 @@ namespace perlin {
             if (signature != optionsSignature || !hud.Overlay().HasOverlay()) {
                 optionsSignature = signature;
                 std::string error;
-                if (!hud.Overlay().SetOverlay(ui::BuildKeybindsScreenRml(rows, tr("controls.keybinds.title", "Key Binds"), tr("gui.done", "Done"), tr("controls.reset", "Reset"), kbScroll, guiW, guiH), error))
+                if (!hud.Overlay().SetOverlay(ui::BuildKeybindsScreenRml(rows, bindDevice == 1 ? std::string("Controller Binds") : tr("controls.keybinds.title", "Key Binds"), tr("gui.done", "Done"), tr("controls.reset", "Reset"), kbScroll, guiW, guiH), error))
                     std::cout << "[ui] keybinds screen: " << error << std::endl;
             }
             const float gx = mx / static_cast<float>(scale), gy = my / static_cast<float>(scale);
             hud.Overlay().MouseMove(gx, gy);
             hud.UpdateOverlay(fbW, fbH, options.guiScale);
+            input.SetPadCapture(bindCapture >= 0 && bindDevice == 1);
             if (bindCapture >= 0) {
                 bool captured = false;
+                if (bindDevice == 1 && bindCapture < 1000 && Clock::now() - bindStartedAt > std::chrono::milliseconds(300))
+                    for (int code = 0; code < 40 && !captured; code++)
+                        if (input.IsPadDown(code)) {
+                            SetBindingOf(static_cast<Action>(bindCapture), Binding::PadButton(code));
+                            captured = true;
+                        }
                 for (const auto& t : inputManager.TakeTyped()) {
                     if (t.character || Clock::now() - bindStartedAt < std::chrono::milliseconds(120))
                         continue;
+                    if (captured)
+                        continue;
+                    if (t.key != Key::Escape && bindDevice == 1)
+                        { captured = true; continue; }
                     if (t.key != Key::Escape) {
                         if (bindCapture >= 1000) {
                             if (const size_t k = static_cast<size_t>(bindCapture - 1000); k < pluginKeys.size())
                                 mods::ModManager::Instance().SetKeyBinding(pluginKeys[k].plugin, pluginKeys[k].id, Binding::KeyboardKey(t.key).Serialize());
                         } else
-                            options.SetKey(static_cast<Action>(bindCapture), Binding::KeyboardKey(t.key));
+                            SetBindingOf(static_cast<Action>(bindCapture), Binding::KeyboardKey(t.key));
                     }
                     captured = true;
                 }
-                for (int b = 1; b <= 2 && !captured; b++)
+                for (int b = 1; b <= 2 && !captured && bindDevice == 0; b++)
                     if (input.IsMouseDown(b) && Clock::now() - bindStartedAt > std::chrono::milliseconds(120)) {
                         if (bindCapture >= 1000) {
                             if (const size_t k = static_cast<size_t>(bindCapture - 1000); k < pluginKeys.size())
                                 mods::ModManager::Instance().SetKeyBinding(pluginKeys[k].plugin, pluginKeys[k].id, Binding::MouseButton(b).Serialize());
                         } else
-                            options.SetKey(static_cast<Action>(bindCapture), Binding::MouseButton(b));
+                            SetBindingOf(static_cast<Action>(bindCapture), Binding::MouseButton(b));
                         captured = true;
                     }
                 if (captured) {
@@ -1920,7 +1931,7 @@ namespace perlin {
                             break;
                         }
                         if (inside(kl.resetX, y, kl.resetW, 20.0f) && rows[static_cast<size_t>(i)].canReset) {
-                            options.SetKey(static_cast<Action>(action), defaults[static_cast<size_t>(action)]);
+                            SetBindingOf(static_cast<Action>(action), defaults[static_cast<size_t>(action)]);
                             options.Save();
                             optionsSignature.clear();
                             break;
@@ -2741,6 +2752,7 @@ namespace perlin {
                 bool header = false;
                 bool locked = false;
                 bool wide = false;
+                int tab = 0;
                 std::string icon;
             };
             modRowTips.clear();
@@ -3150,12 +3162,71 @@ namespace perlin {
                 toggle(tr("options.showSubtitles", "Show Subtitles"), options.sound.subtitles);
             } else if (optionsPage == 3) {
                 title = tr("options.controls", "Controls");
-                slider(tr("options.sensitivity", "Sensitivity"), percent(options.mouseSensitivity / 0.15f), options.mouseSensitivity / 0.30f,
-                       [this](float f) { options.mouseSensitivity = std::round(std::clamp(f, 0.0f, 1.0f) * 200.0f) / 100.0f * 0.15f; });
-                toggle(tr("options.invertMouse", "Invert Mouse"), options.invertMouse);
-                choice(tr("key.sprint", "Sprint"), options.sprintMode, {{"hold", tr("options.key.hold", "Hold")}, {"toggle", tr("options.key.toggle", "Toggle")}});
-                choice(tr("key.sneak", "Sneak"), options.sneakMode, {{"hold", tr("options.key.hold", "Hold")}, {"toggle", tr("options.key.toggle", "Toggle")}});
-                nav(tr("controls.keybinds", "Key Binds..."), 5);
+                static const char* kTabs[3] = {"Keyboard", "Controller", "Touch"};
+                for (int t = 0; t < 3; t++) {
+                    OptRow tab{kTabs[t], "", -1.0f, [this, t](float, bool click) {
+                                   if (click && controlsTab != t) {
+                                       controlsTab = t;
+                                       optionsSignature.clear();
+                                   }
+                               }};
+                    tab.tab = t + 1;
+                    tab.locked = controlsTab == t;
+                    model.push_back(tab);
+                }
+                const auto bindsRow = [&](const std::string& label, int device) {
+                    model.push_back({label, "", -1.0f, [this, device](float, bool click) {
+                                         if (click) {
+                                             bindDevice = device;
+                                             optionsPage = 5;
+                                             optionsSub = 0;
+                                             optionsSignature.clear();
+                                             bindCapture = -1;
+                                         }
+                                     }});
+                };
+                if (controlsTab == 0) {
+                    slider(tr("options.sensitivity", "Sensitivity"), percent(options.mouseSensitivity / 0.15f), options.mouseSensitivity / 0.30f,
+                           [this](float f) { options.mouseSensitivity = std::round(std::clamp(f, 0.0f, 1.0f) * 200.0f) / 100.0f * 0.15f; });
+                    toggle(tr("options.invertMouse", "Invert Mouse"), options.invertMouse);
+                    choice(tr("key.sprint", "Sprint"), options.sprintMode, {{"hold", tr("options.key.hold", "Hold")}, {"toggle", tr("options.key.toggle", "Toggle")}});
+                    choice(tr("key.sneak", "Sneak"), options.sneakMode, {{"hold", tr("options.key.hold", "Hold")}, {"toggle", tr("options.key.toggle", "Toggle")}});
+                    bindsRow(tr("controls.keybinds", "Key Binds..."), 0);
+                } else if (controlsTab == 1) {
+                    model.push_back({"Gamepad", input.PadConnected() ? "Connected" : "Not connected", -1.0f, [](float, bool) {}});
+                    model.back().locked = true;
+                    slider("Look Sensitivity", percent(options.padSensitivity), options.padSensitivity / 2.0f,
+                           [this](float f) { options.padSensitivity = std::round(std::clamp(f, 0.05f, 1.0f) * 200.0f) / 100.0f; });
+                    slider("Stick Dead Zone", percent(options.padDeadzone), options.padDeadzone / 0.6f,
+                           [this](float f) { options.padDeadzone = std::round(std::clamp(f, 0.0f, 1.0f) * 60.0f) / 100.0f; });
+                    toggle("Invert Look Y", options.padInvertY);
+                    bindsRow("Controller Binds...", 1);
+                } else {
+                    slider("Look Sensitivity", percent(options.touchSensitivity), options.touchSensitivity / 2.0f,
+                           [this](float f) { options.touchSensitivity = std::round(std::clamp(f, 0.05f, 1.0f) * 200.0f) / 100.0f; });
+                    slider("Button Size", percent(options.touchScale), (options.touchScale - 0.5f) / 1.3f,
+                           [this](float f) { options.touchScale = std::round((0.5f + std::clamp(f, 0.0f, 1.0f) * 1.3f) * 20.0f) / 20.0f; });
+                    slider("Button Opacity", percent(options.touchOpacity), (options.touchOpacity - 0.2f) / 0.8f,
+                           [this](float f) { options.touchOpacity = std::round((0.2f + std::clamp(f, 0.0f, 1.0f) * 0.8f) * 20.0f) / 20.0f; });
+                    OptRow edit{"Edit Touch Layout...", "", -1.0f, [this](float, bool click) {
+                                    if (click) {
+                                        touchEditing = true;
+                                        touchEditHidden = false;
+                                        options.Save();
+                                        optionsSignature.clear();
+                                    }
+                                }};
+                    edit.wide = true;
+                    model.push_back(edit);
+                    OptRow reset{"Reset Touch Layout", "", -1.0f, [this](float, bool click) {
+                                     if (click) {
+                                         options.touchLayout.clear();
+                                         options.Save();
+                                     }
+                                 }};
+                    reset.wide = true;
+                    model.push_back(reset);
+                }
             } else if (optionsPage == 11) {
                 // A mod's own settings, declared by the mod and changed here while the game runs.
                 auto& mm = mods::ModManager::Instance();
@@ -3450,7 +3521,7 @@ namespace perlin {
                                      }
                                  }});
             } else {
-                title = tr("controls.keybinds.title", "Key Binds");
+                title = bindDevice == 1 ? std::string("Controller Binds") : tr("controls.keybinds.title", "Key Binds");
                 static const std::pair<Action, const char*> kBinds[] = {
                     {Action::Forward, "Forward"}, {Action::Left, "Left"}, {Action::Back, "Back"}, {Action::Right, "Right"},
                     {Action::Jump, "Jump"}, {Action::Sneak, "Sneak"}, {Action::Sprint, "Sprint"}, {Action::Attack, "Attack"},
@@ -3470,8 +3541,8 @@ namespace perlin {
                     const Action a = kBinds[i].first;
                     const std::string name = kBinds[i].second;
                     const bool waiting = bindCapture == static_cast<int>(a);
-                    std::string value = waiting ? "> ? <" : options.GetKey(a).Serialize();
-                    for (const char* prefix : {"key.keyboard.", "key.mouse."}) {
+                    std::string value = waiting ? "> ? <" : BindingOf(a).Serialize();
+                    for (const char* prefix : {"key.keyboard.", "key.mouse.", "pad."}) {
                         const std::string pre = prefix;
                         if (value.rfind(pre, 0) == 0)
                             value = value.substr(pre.size());
@@ -3500,7 +3571,10 @@ namespace perlin {
                 }
                 model.push_back({tr("controls.resetAll", "Reset Keys"), "", -1.0f, [this](float, bool click) {
                                      if (click) {
-                                         options.keys = DefaultBindings();
+                                         if (bindDevice == 1)
+                                             options.padKeys = DefaultPadBindings();
+                                         else
+                                             options.keys = DefaultBindings();
                                          bindCapture = -1;
                                      }
                                  }});
@@ -3520,6 +3594,7 @@ namespace perlin {
                 row.header = r.header;
                 row.locked = r.locked;
                 row.wide = r.wide;
+                row.tab = r.tab;
                 ui::SettingInfo info;
                 if (!r.header && ui::FindSettingInfo(r.label, info)) {
                     row.tip = info.description;
@@ -3570,18 +3645,27 @@ namespace perlin {
             hud.UpdateOverlay(fbW, fbH, options.guiScale);
             const auto inside = [&](float x, float y, float w, float h) { return gx >= x && gx < x + w && gy >= y && gy < y + h; };
             const auto sliderFraction = [&](int row) { return (gx - layout.x[row] - 4.0f) / (layout.rowW[static_cast<size_t>(row)] - 8.0f); };
+            input.SetPadCapture(bindCapture >= 0 && bindDevice == 1);
             if (bindCapture >= 0) {
                 bool captured = false;
+                if (bindDevice == 1 && Clock::now() - bindStartedAt > std::chrono::milliseconds(300))
+                    for (int code = 0; code < 40 && !captured; code++)
+                        if (input.IsPadDown(code)) {
+                            SetBindingOf(static_cast<Action>(bindCapture), Binding::PadButton(code));
+                            captured = true;
+                        }
                 for (const auto& t : inputManager.TakeTyped()) {
                     if (t.character || Clock::now() - bindStartedAt < std::chrono::milliseconds(120))
                         continue;
-                    if (t.key != Key::Escape)
-                        options.SetKey(static_cast<Action>(bindCapture), Binding::KeyboardKey(t.key));
+                    if (captured)
+                        continue;
+                    if (t.key != Key::Escape && bindDevice == 0)
+                        SetBindingOf(static_cast<Action>(bindCapture), Binding::KeyboardKey(t.key));
                     captured = true;
                 }
-                for (int b = 1; b <= 2 && !captured; b++)
+                for (int b = 1; b <= 2 && !captured && bindDevice == 0; b++)
                     if (input.IsMouseDown(b) && Clock::now() - bindStartedAt > std::chrono::milliseconds(120)) {
-                        options.SetKey(static_cast<Action>(bindCapture), Binding::MouseButton(b));
+                        SetBindingOf(static_cast<Action>(bindCapture), Binding::MouseButton(b));
                         captured = true;
                     }
                 if (captured) {
@@ -5513,6 +5597,7 @@ namespace perlin {
             if (dt <= 0.0f || dt > kMaxFrameDelta)
                 dt = kDefaultFrameDelta;
 
+            input.SetPadDeadzone(options.padDeadzone);
             inputManager.Poll();
             if (inputManager.Pressed(Action::CyclePerspective))
                 camera.CycleMode();
@@ -7042,12 +7127,21 @@ namespace perlin {
                     renderer->FramebufferSize(fbW, fbH);
                     ProfScope hudScope(5);
                     hud->Update(hudState, fbW, fbH, options.guiScale);
-                    UpdateModLayer(*hud);
-                    UpdateServerLayer(*hud, live, fbW, fbH);
-                    const bool titleUp = UpdateTitleScreen(*hud, fbW, fbH);
-                    const bool disconnectUp = !titleUp && UpdateDisconnectScreen(*hud, fbW, fbH);
-                    const bool loadingUp = !titleUp && !disconnectUp && UpdateLoadingScreen(*hud, fbW, fbH);
-                    if (!titleUp && !disconnectUp && !loadingUp) {
+                    if (touchEditing) {
+                        // The touch layout editor owns the screen: no menu is drawn behind it.
+                        if (!touchEditHidden) {
+                            touchEditHidden = true;
+                            hud->Overlay().ClearOverlay();
+                        }
+                    } else {
+                        touchEditHidden = false;
+                        UpdateModLayer(*hud);
+                        UpdateServerLayer(*hud, live, fbW, fbH);
+                    }
+                    const bool titleUp = !touchEditing && UpdateTitleScreen(*hud, fbW, fbH);
+                    const bool disconnectUp = !touchEditing && !titleUp && UpdateDisconnectScreen(*hud, fbW, fbH);
+                    const bool loadingUp = !touchEditing && !titleUp && !disconnectUp && UpdateLoadingScreen(*hud, fbW, fbH);
+                    if (!touchEditing && !titleUp && !disconnectUp && !loadingUp) {
                         UpdateDeathScreen(*hud, live, hudState, fbW, fbH);
                         UpdateFormScreen(*hud, live, fbW, fbH);
                         UpdateInventoryScreen(*hud, live, hudState, fbW, fbH);
@@ -7112,16 +7206,29 @@ namespace perlin {
                         renderer->DrawHudCursor(cx, cy, cw, ch);
                 }
             }
-            if (!deathShown && !pauseShown && !invShown && !disconnectShown && !loadingShown && !titleShown) {
+            {
                 TouchState touchState;
                 touchState.flying = player.Flying();
-                touchState.inWater = player.InWater();
+                touchState.inWater = player.InWater() && !player.State().onGround;
                 touchState.riding = live && live->RidingUid() != 0;
+                touchState.editing = touchEditing;
                 touchState.hudScale = hud ? hud->Scale() : 0;
+                touchState.scale = options.touchScale;
+                touchState.opacity = options.touchOpacity;
+                touchState.sensitivity = options.touchSensitivity;
+                touchState.layout = options.touchLayout;
                 for (size_t a = 0; a < kActionCount; a++)
                     touchState.bindings[a] = options.GetKey(static_cast<Action>(a));
                 platform->SetTouchState(touchState);
-                platform->DrawTouchOverlay(*renderer);
+                std::map<std::string, TouchPlace> edited;
+                if (platform->TakeTouchLayout(edited)) {
+                    options.touchLayout = edited;
+                    options.Save();
+                    touchEditing = false;
+                    optionsSignature.clear();
+                }
+                if (touchEditing || (!deathShown && !pauseShown && !invShown && !disconnectShown && !loadingShown && !titleShown))
+                    platform->DrawTouchOverlay(*renderer);
             }
             if (inputManager.Pressed(Action::Screenshot))
                 TakeScreenshot();

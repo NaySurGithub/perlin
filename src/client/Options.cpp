@@ -69,6 +69,15 @@ namespace perlin {
             float bloom = 0.5f;
             std::string renderer = "auto";
             std::string capePhysics = "noshoulder";
+            bool webTuned = false;
+            std::map<std::string, std::string> padKeys;
+            float padSensitivity = 1.0f;
+            float padDeadzone = 0.15f;
+            bool padInvertY = false;
+            float touchSensitivity = 1.0f;
+            float touchScale = 1.0f;
+            float touchOpacity = 0.85f;
+            std::map<std::string, TouchPlace> touchLayout;
         };
     }
 
@@ -80,8 +89,31 @@ namespace perlin {
         }
     }
 
+    namespace {
+        // A browser tab renders on one thread next to the meshing workers, so it starts from a cheaper
+        // look: shorter view distance, no shader-pack shadows or bloom, no menu blur. Everything can be
+        // turned back up in the options.
+        void TuneForWeb(Options& o) {
+            o.renderDistance = 6;
+            o.shadows = false;
+            o.shadowQuality = 0;
+            o.shadowEntities = false;
+            o.bloom = 0.0f;
+            o.motionBlur = 0.0f;
+            o.rgss = false;
+            o.fancyGraphics = false;
+            o.cloudRange = 32;
+            o.menuBlur = 0;
+            o.dynamicLights = "off";
+            o.webTuned = true;
+        }
+    }
+
     Options Options::Load() {
         Options o;
+#ifdef __EMSCRIPTEN__
+        TuneForWeb(o);
+#endif
         const std::string dir = paths::DataDir();
         paths::EnsureDir(dir);
         o.resourcePackDir = dir + "/resourcepacks";
@@ -239,6 +271,27 @@ namespace perlin {
             if (binding.device != Binding::Device::None)
                 o.keys[i] = binding;
         }
+        for (size_t i = 0; i < kActionCount; i++) {
+            const auto it = stored.padKeys.find(ActionId(static_cast<Action>(i)));
+            if (it == stored.padKeys.end())
+                continue;
+            const Binding binding = Binding::Parse(it->second);
+            if (binding.device == Binding::Device::Gamepad || it->second.empty())
+                o.padKeys[i] = binding;
+        }
+#ifdef __EMSCRIPTEN__
+        if (!stored.webTuned)
+            TuneForWeb(o);
+        else
+            o.webTuned = true;
+#endif
+        o.padSensitivity = std::clamp(stored.padSensitivity, 0.1f, 3.0f);
+        o.padDeadzone = std::clamp(stored.padDeadzone, 0.0f, 0.6f);
+        o.padInvertY = stored.padInvertY;
+        o.touchSensitivity = std::clamp(stored.touchSensitivity, 0.1f, 3.0f);
+        o.touchScale = std::clamp(stored.touchScale, 0.5f, 1.8f);
+        o.touchOpacity = std::clamp(stored.touchOpacity, 0.2f, 1.0f);
+        o.touchLayout = stored.touchLayout;
         return o;
     }
 
@@ -301,6 +354,16 @@ namespace perlin {
                       capePhysics};
         for (size_t i = 0; i < kActionCount; i++)
             stored.keys[ActionId(static_cast<Action>(i))] = keys[i].Serialize();
+        for (size_t i = 0; i < kActionCount; i++)
+            stored.padKeys[ActionId(static_cast<Action>(i))] = padKeys[i].Serialize();
+        stored.webTuned = webTuned;
+        stored.padSensitivity = padSensitivity;
+        stored.padDeadzone = padDeadzone;
+        stored.padInvertY = padInvertY;
+        stored.touchSensitivity = touchSensitivity;
+        stored.touchScale = touchScale;
+        stored.touchOpacity = touchOpacity;
+        stored.touchLayout = touchLayout;
 
         std::string out;
         if (glz::write<glz::opts{.prettify = true}>(stored, out))

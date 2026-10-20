@@ -37,6 +37,16 @@ int main() {
     }
     CHECK(Binding::Parse("").device == Binding::Device::None);
 
+    // Controller bindings round-trip through their saved names, and the defaults cover movement and combat.
+    for (int code : {Pad::A, Pad::Y, Pad::Start, Pad::LeftStick, Pad::LeftTrigger, Pad::RightTrigger, Pad::LeftStickUp, Pad::RightStickRight}) {
+        const Binding b = Binding::PadButton(code);
+        CHECK(Binding::Parse(b.Serialize()) == b);
+    }
+    CHECK(Binding::Parse("pad.nonsense").device == Binding::Device::None);
+    const KeyBindings pad = DefaultPadBindings();
+    for (Action a : {Action::Forward, Action::Back, Action::Left, Action::Right, Action::Jump, Action::Sneak, Action::Attack, Action::Use, Action::Pause})
+        CHECK(pad[static_cast<size_t>(a)].device == Binding::Device::Gamepad);
+
     const auto near = [](float a, float b, float tolerance = 1.0e-3f) { return std::fabs(a - b) <= tolerance; };
     const auto at = [](double ticks) {
         EnvironmentInput input;

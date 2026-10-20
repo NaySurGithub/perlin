@@ -30,7 +30,7 @@ namespace perlin {
             Jump, JumpP, WaterUp, WaterUpP, FlyUp, FlyUpP,
             Sneak, SneakP, WaterDown, WaterDownP, FlyDown, FlyDownP, Dismount, DismountP,
             Attack, AttackP, Interact, InteractP, Sprint, SprintP,
-            PauseIcon, ChatIcon, Dots,
+            PauseIcon, ChatIcon, Dots, PerspectiveIcon, DebugIcon, PlayersIcon, HudIcon,
             SpriteCount
         };
         constexpr const char* kSpriteNames[SpriteCount] = {
@@ -42,7 +42,9 @@ namespace perlin {
             "textures/ui/attack", "textures/ui/attack_pressed", "textures/ui/interact", "textures/ui/interact_pressed",
             "textures/ui/sprint", "textures/ui/sprint_pressed",
             "textures/ui/pause_icon", "textures/ui/comment", "textures/ui/more_dots",
+            "textures/ui/perspective", "textures/ui/debug_glyph", "textures/ui/icon_multiplayer", "textures/ui/camera-small",
         };
+        constexpr const char* kButtonNames[] = {"jump", "sneak", "attack", "use", "sprint", "pause", "chat", "f5", "f3", "tab", "f1", "inventory"};
 
         uint32_t Pack(float r, float g, float b, float a) {
             const auto byte = [](float v) { return static_cast<uint32_t>(std::clamp(v, 0.0f, 1.0f) * 255.0f + 0.5f); };
@@ -85,21 +87,49 @@ namespace perlin {
 
     void TouchControls::SetState(const TouchState& s) {
         std::lock_guard lock(mutex);
-        const bool relayout = s.hudScale != state.hudScale;
+        const bool relayout = s.hudScale != state.hudScale || s.scale != state.scale || (!editing && s.layout != state.layout);
+        const bool startEditing = s.editing && !editing;
         state = s;
-        if (relayout && width > 0)
+        if (startEditing) {
+            editing = true;
+            editDone = false;
+            editSelected = -1;
+            editLayout = s.layout;
+            fingers.clear();
+        } else if (!s.editing && editing) {
+            editing = false;
+            fingers.clear();
+        }
+        if ((relayout || startEditing || !s.editing) && width > 0)
             BuildLayout();
+    }
+
+    bool TouchControls::TakeEditResult(std::map<std::string, TouchPlace>& out) {
+        std::lock_guard lock(mutex);
+        if (!editDone)
+            return false;
+        editDone = false;
+        out = editLayout;
+        return true;
+    }
+
+    TouchPlace TouchControls::Place(const char* name) const {
+        const auto& source = editing ? editLayout : state.layout;
+        const auto it = source.find(name);
+        return it == source.end() ? TouchPlace{} : it->second;
     }
 
     void TouchControls::BuildLayout() {
         const float u = static_cast<float>(std::min(width, height));
         const float W = static_cast<float>(width);
         const float H = static_cast<float>(height);
+        const float global = state.scale;
         auto set = [&](Button b, float cx, float cy, float r, Action action, Kind kind, const char* label, bool system) {
+            const TouchPlace p = Place(kButtonNames[b]);
             Layout& l = layout[b];
-            l.cx = cx;
-            l.cy = cy;
-            l.r = r;
+            l.cx = p.x >= 0.0f ? p.x * W : cx;
+            l.cy = p.y >= 0.0f ? p.y * H : cy;
+            l.r = r * global * std::max(0.4f, p.scale);
             l.action = action;
             l.kind = kind;
             l.label = label;
@@ -110,8 +140,8 @@ namespace perlin {
         set(Sneak, W - 0.36f * u, H - 0.13f * u, 0.07f * u, Action::Sneak, Kind::SneakKey, "v", false);
         set(Use, W - 0.14f * u, H - 0.42f * u, 0.08f * u, Action::Use, Kind::Hold, "+", false);
         set(Attack, W - 0.36f * u, H - 0.36f * u, 0.085f * u, Action::Attack, Kind::Hold, "X", false);
-        // Sprint sits above the joystick's resting place.
-        set(Sprint, 0.14f * u, H - 0.50f * u, 0.058f * u, Action::Sprint, Kind::SprintToggle, ">>", false);
+        // Sprint sits above the joystick.
+        set(Sprint, 0.20f * u, H - 0.52f * u, 0.058f * u, Action::Sprint, Kind::SprintToggle, ">>", false);
 
         // Six buttons across the top, three each side of the centre line.
         const float r = 0.043f * u, pitch = 0.112f * u;
@@ -119,7 +149,7 @@ namespace perlin {
         const Action topAction[6] = {Action::Pause, Action::Chat, Action::CyclePerspective, Action::DebugScreen, Action::PlayerList, Action::ToggleHud};
         const char* topLabel[6] = {"II", "T", "F5", "F3", "Tab", "F1"};
         for (int i = 0; i < 6; i++)
-            set(top[i], W * 0.5f + (static_cast<float>(i) - 2.5f) * pitch, r + 0.02f * u, r, topAction[i], Kind::Tap, topLabel[i], true);
+            set(top[i], W * 0.5f + (static_cast<float>(i) - 2.5f) * pitch, r + 0.02f * u, r, topAction[i], topAction[i] == Action::PlayerList ? Kind::Hold : Kind::Tap, topLabel[i], true);
 
         // Hotbar: 182x22 gui pixels centred at the bottom, with the "..." button to its right.
         const float scale = state.hudScale > 0 ? static_cast<float>(state.hudScale) : std::max(1.0f, std::floor(u / 240.0f));
@@ -129,6 +159,64 @@ namespace perlin {
         hotbarY = H - hotbarH;
         const float ir = std::max(0.035f * u, 10.0f * scale);
         set(Inventory, hotbarX + hotbarW + ir * 1.3f, H - hotbarH * 0.5f - 2.0f * scale, ir, Action::Inventory, Kind::Tap, "...", true);
+
+        // The joystick stays where it is.
+        const TouchPlace sp = Place("stick");
+        stickR = kStickRadius * u * global * std::max(0.4f, sp.scale);
+        stickCX = sp.x >= 0.0f ? sp.x * W : 0.20f * u;
+        stickCY = sp.y >= 0.0f ? sp.y * H : H - 0.20f * u;
+    }
+
+    // Editor tool buttons, bottom middle: smaller, bigger, reset, done.
+    namespace {
+        struct ToolBox { float x, y, w, h; const char* label; };
+    }
+
+    static void ToolBoxes(int width, int height, ToolBox out[4]) {
+        const float u = static_cast<float>(std::min(width, height));
+        const float w = 0.15f * u, h = 0.075f * u, gap = 0.02f * u;
+        const float total = 4 * w + 3 * gap;
+        const float x0 = static_cast<float>(width) * 0.5f - total * 0.5f;
+        const float y = static_cast<float>(height) * 0.5f - h * 0.5f;
+        const char* labels[4] = {"-", "+", "Reset", "Done"};
+        for (int i = 0; i < 4; i++)
+            out[i] = {x0 + static_cast<float>(i) * (w + gap), y, w, h, labels[i]};
+    }
+
+    int TouchControls::EditorHit(float x, float y) const {
+        ToolBox boxes[4];
+        ToolBoxes(width, height, boxes);
+        for (int i = 0; i < 4; i++)
+            if (x >= boxes[i].x && x < boxes[i].x + boxes[i].w && y >= boxes[i].y && y < boxes[i].y + boxes[i].h)
+                return i;
+        return -1;
+    }
+
+    void TouchControls::EditorPress(int which) {
+        if (which == 0 || which == 1) {
+            if (editSelected < 0)
+                return;
+            const char* name = editSelected == ButtonCount ? "stick" : kButtonNames[editSelected];
+            TouchPlace p = editLayout.count(name) ? editLayout[name] : TouchPlace{};
+            p.scale = std::clamp(p.scale * (which == 1 ? 1.12f : 1.0f / 1.12f), 0.4f, 2.5f);
+            if (p.x < 0.0f && editSelected != ButtonCount) {
+                p.x = layout[editSelected].cx / static_cast<float>(width);
+                p.y = layout[editSelected].cy / static_cast<float>(height);
+            } else if (p.x < 0.0f) {
+                p.x = stickCX / static_cast<float>(width);
+                p.y = stickCY / static_cast<float>(height);
+            }
+            editLayout[name] = p;
+            BuildLayout();
+        } else if (which == 2) {
+            editLayout.clear();
+            editSelected = -1;
+            BuildLayout();
+        } else if (which == 3) {
+            editDone = true;
+            editing = false;
+            fingers.clear();
+        }
     }
 
     bool TouchControls::InHotbar(float x, float y, int& slot) const {
@@ -185,8 +273,32 @@ namespace perlin {
             input.OnMouseUp(b.code);
     }
 
+    // A tap holds its key for a few frames: some actions (the debug screen, the player list) look at the key
+    // being held, not just pressed, and a same-frame press+release would be missed.
     void TouchControls::Tap(Input& input, Action action) {
-        ReleaseBinding(input, PressAction(input, action));
+        // The debug screen is driven by F3 itself (it combines with other keys), so that button always sends F3.
+        Binding b;
+        if (action == Action::DebugScreen) {
+            b = Binding::KeyboardKey(Key::F3);
+            input.OnKeyDown(Key::F3);
+        } else {
+            b = PressAction(input, action);
+        }
+        if (b.device == Binding::Device::None)
+            return;
+        pendingReleases.push_back({b, Clock::now() + std::chrono::milliseconds(120)});
+    }
+
+    void TouchControls::FlushReleases(Input& input, bool all) {
+        const auto now = Clock::now();
+        for (size_t i = 0; i < pendingReleases.size();) {
+            if (all || now >= pendingReleases[i].at) {
+                ReleaseBinding(input, pendingReleases[i].binding);
+                pendingReleases.erase(pendingReleases.begin() + static_cast<long>(i));
+            } else {
+                i++;
+            }
+        }
     }
 
     void TouchControls::PressButton(Input& input, int index) {
@@ -253,7 +365,7 @@ namespace perlin {
     void TouchControls::ApplyStick(Input& input) {
         bool want[5] = {false, false, false, false, false};
         if (stickActive) {
-            const float radius = kStickRadius * static_cast<float>(std::min(width, height));
+            const float radius = std::max(1.0f, stickR);
             const float nx = knobX / radius, ny = knobY / radius;
             const float len = std::sqrt(nx * nx + ny * ny);
             if (len > kDeadZone) {
@@ -278,6 +390,7 @@ namespace perlin {
     }
 
     void TouchControls::ReleaseAll(Input& input) {
+        FlushReleases(input, true);
         stickActive = false;
         knobX = knobY = 0.0f;
         sprintLatched = false;
@@ -309,6 +422,32 @@ namespace perlin {
         f.id = id;
         f.startX = f.lastX = x;
         f.startY = f.lastY = y;
+        if (editing) {
+            const int tool = EditorHit(x, y);
+            if (tool >= 0) {
+                f.role = Role::EditorButton;
+                f.button = tool;
+                EditorPress(tool);
+            } else {
+                const int hit = HitButton(x, y);
+                const float dx = x - stickCX, dy = y - stickCY;
+                if (hit >= 0) {
+                    editSelected = hit;
+                    f.role = Role::Drag;
+                    f.grabX = layout[hit].cx - x;
+                    f.grabY = layout[hit].cy - y;
+                } else if (dx * dx + dy * dy <= stickR * stickR * 2.25f) {
+                    editSelected = ButtonCount;
+                    f.role = Role::Drag;
+                    f.grabX = stickCX - x;
+                    f.grabY = stickCY - y;
+                } else {
+                    editSelected = -1;
+                }
+            }
+            fingers.push_back(f);
+            return;
+        }
         if (!Gameplay(input)) {
             const bool havePointer = std::any_of(fingers.begin(), fingers.end(), [](const Finger& o) { return o.role == Role::Pointer; });
             if (!havePointer) {
@@ -330,12 +469,19 @@ namespace perlin {
         } else if (InHotbar(x, y, slot)) {
             Tap(input, static_cast<Action>(static_cast<int>(Action::Hotbar1) + slot));
             f.role = Role::None;
-        } else if (!stickActive && x < static_cast<float>(width) * 0.40f && y > static_cast<float>(height) * 0.30f) {
+        } else if (!stickActive && (x - stickCX) * (x - stickCX) + (y - stickCY) * (y - stickCY) <= stickR * stickR * 2.56f) {
             f.role = Role::Stick;
             stickActive = true;
-            stickX = x;
-            stickY = y;
-            knobX = knobY = 0.0f;
+            stickX = stickCX;
+            stickY = stickCY;
+            knobX = x - stickCX;
+            knobY = y - stickCY;
+            const float len = std::sqrt(knobX * knobX + knobY * knobY);
+            if (len > stickR) {
+                knobX *= stickR / len;
+                knobY *= stickR / len;
+            }
+            ApplyStick(input);
         } else {
             f.role = Role::Look;
         }
@@ -390,8 +536,8 @@ namespace perlin {
             Scroll(input, dy);
             break;
         case Role::Stick: {
-            const float radius = kStickRadius * static_cast<float>(std::min(width, height));
-            float ox = x - stickX, oy = y - stickY;
+            const float radius = std::max(1.0f, stickR);
+            float ox = x - stickCX, oy = y - stickCY;
             const float len = std::sqrt(ox * ox + oy * oy);
             if (len > radius) {
                 ox *= radius / len;
@@ -405,11 +551,22 @@ namespace perlin {
         case Role::Button:
             // Dragging a finger that is holding attack or place keeps turning the camera, as in Bedrock.
             if (f->button == Attack || f->button == Use || f->button == Jump)
-                input.OnMouseDelta(dx * kLookScale, dy * kLookScale);
+                input.OnMouseDelta(dx * kLookScale * state.sensitivity, dy * kLookScale * state.sensitivity);
             break;
         case Role::Look:
-            input.OnMouseDelta(dx * kLookScale, dy * kLookScale);
+            input.OnMouseDelta(dx * kLookScale * state.sensitivity, dy * kLookScale * state.sensitivity);
             break;
+        case Role::Drag: {
+            if (editSelected < 0)
+                break;
+            const char* name = editSelected == ButtonCount ? "stick" : kButtonNames[editSelected];
+            TouchPlace p = editLayout.count(name) ? editLayout[name] : TouchPlace{};
+            p.x = std::clamp((x + f->grabX) / static_cast<float>(width), 0.02f, 0.98f);
+            p.y = std::clamp((y + f->grabY) / static_cast<float>(height), 0.03f, 0.97f);
+            editLayout[name] = p;
+            BuildLayout();
+            break;
+        }
         default:
             break;
         }
@@ -444,6 +601,9 @@ namespace perlin {
 
     void TouchControls::Update(Input& input) {
         std::lock_guard lock(mutex);
+        FlushReleases(input, false);
+        if (editing)
+            return;
         const bool gameplay = Gameplay(input);
         if (wasGameplay != gameplay) {
             wasGameplay = gameplay;
@@ -462,7 +622,7 @@ namespace perlin {
 
     void TouchControls::Draw(RenderContext& renderer, bool visible) {
         std::lock_guard lock(mutex);
-        if (!visible || width <= 0 || height <= 0)
+        if ((!visible && !editing) || width <= 0 || height <= 0)
             return;
 
         if (!discTexture) {
@@ -561,30 +721,34 @@ namespace perlin {
         };
         auto have = [&](int sprite) { return sprites[sprite].id != 0; };
 
-        // Joystick: resting frame at the bottom left, or under the thumb while dragging.
+        const float base = std::clamp(state.opacity, 0.2f, 1.0f);
+        // Joystick: fixed in place, the knob follows the thumb.
         {
-            const float radius = kStickRadius * u;
-            const float cx = stickActive ? stickX : radius * 1.5f;
-            const float cy = stickActive ? stickY : static_cast<float>(height) - radius * 1.6f;
-            if (have(Frame)) {
-                icon(Frame, cx, cy, radius, radius, stickActive ? 0.95f : 0.65f);
-            } else {
-                Disc(discs, cx, cy, radius, Pack(1, 1, 1, 0.10f), false);
-                Disc(discs, cx, cy, radius, Pack(1, 1, 1, stickActive ? 0.55f : 0.30f), true);
+            const float radius = stickR;
+            const float cx = stickCX, cy = stickCY;
+            const float a = stickActive ? 1.0f : 0.8f;
+            if (have(Frame))
+                icon(Frame, cx, cy, radius, radius, base * a);
+            else {
+                Disc(discs, cx, cy, radius, Pack(1, 1, 1, 0.10f * base), false);
+                Disc(discs, cx, cy, radius, Pack(1, 1, 1, 0.45f * base), true);
             }
             const float kr = radius * 0.46f;
             const float kx = cx + (stickActive ? knobX : 0.0f), ky = cy + (stickActive ? knobY : 0.0f);
             if (have(Knob))
-                icon(Knob, kx, ky, kr, kr, stickActive ? 0.95f : 0.65f);
+                icon(Knob, kx, ky, kr, kr, base * (stickActive ? 1.0f : 0.85f));
             else
-                Disc(discs, kx, ky, kr, Pack(1, 1, 1, stickActive ? 0.50f : 0.28f), false);
+                Disc(discs, kx, ky, kr, Pack(1, 1, 1, 0.40f * base), false);
+            if (editing && editSelected == ButtonCount)
+                Disc(discs, cx, cy, radius * 1.08f, Pack(1, 1, 0.3f, 0.95f), true);
         }
 
         for (int i = 0; i < ButtonCount; i++) {
             const Layout& l = layout[i];
             const bool active = down[i];
-            const float alpha = active ? 1.0f : 0.82f;
+            const float alpha = (active ? 1.0f : 0.9f) * base;
             int sprite = -1;
+            int glyph = -1;
             switch (i) {
             case Jump:
                 sprite = state.inWater ? (active ? WaterUpP : WaterUp) : state.flying ? (active ? FlyUpP : FlyUp) : (active ? JumpP : Jump);
@@ -597,25 +761,51 @@ namespace perlin {
             case Attack: sprite = active ? AttackP : Attack; break;
             case Use: sprite = active ? InteractP : Interact; break;
             case Sprint: sprite = active ? SprintP : Sprint; break;
+            case Perspective: sprite = PerspectiveIcon; break; // already a framed button in the pack
+            case Pause: glyph = PauseIcon; break;
+            case Chat: glyph = ChatIcon; break;
+            case Debug: glyph = DebugIcon; break;
+            case Players: glyph = PlayersIcon; break;
+            case HideHud: glyph = HudIcon; break;
+            case Inventory: glyph = Dots; break;
             default: break;
             }
+            const bool selected = editing && editSelected == i;
             if (sprite >= 0 && have(sprite)) {
                 icon(sprite, l.cx, l.cy, l.r, l.r, alpha);
-                continue;
-            }
-            const float shade = active ? 1.0f : 0.1f;
-            Disc(discs, l.cx, l.cy, l.r, Pack(shade, shade, shade, active ? 0.55f : (l.system ? 0.55f : 0.32f)), false);
-            Disc(discs, l.cx, l.cy, l.r, Pack(1, 1, 1, active ? 0.9f : 0.55f), true);
-
-            // System buttons: pause and chat use pack icons, the rest are labelled (F5, F3, ...).
-            const int glyph = i == Pause ? PauseIcon : i == Chat ? ChatIcon : i == Inventory ? Dots : -1;
-            if (glyph >= 0 && have(glyph)) {
+                if (active && i == Perspective)
+                    Disc(discs, l.cx, l.cy, l.r, Pack(1, 1, 1, 0.25f), false);
+            } else if (glyph >= 0 && have(Knob) && have(glyph)) {
+                // The pack's own button frame with its icon on top.
+                icon(Knob, l.cx, l.cy, l.r, l.r, alpha);
+                if (active)
+                    icon(Knob, l.cx, l.cy, l.r, l.r, 0.35f);
                 const Sprite& sp = sprites[glyph];
                 const float k = std::max(1.0f, std::floor(l.r * 1.1f / std::max(sp.w, sp.h)));
                 icon(glyph, l.cx, l.cy, sp.w * k * 0.5f, sp.h * k * 0.5f, 1.0f);
             } else {
+                const float shade = active ? 1.0f : 0.1f;
+                Disc(discs, l.cx, l.cy, l.r, Pack(shade, shade, shade, (active ? 0.55f : (l.system ? 0.55f : 0.32f)) * base), false);
+                Disc(discs, l.cx, l.cy, l.r, Pack(1, 1, 1, active ? 0.9f : 0.55f), true);
                 label(l.label, l.cx, l.cy, std::max(1.0f, std::floor(l.r / (l.system ? 11.0f : 9.0f))), 0.95f);
             }
+            if (selected)
+                Disc(discs, l.cx, l.cy, l.r * 1.12f, Pack(1, 1, 0.3f, 0.95f), true);
+        }
+
+        if (editing) {
+            ToolBox boxes[4];
+            ToolBoxes(width, height, boxes);
+            for (const ToolBox& b : boxes) {
+                const float cx = b.x + b.w * 0.5f, cy = b.y + b.h * 0.5f;
+                if (have(Knob))
+                    icons[Knob].Quad(b.x, b.y, b.x + b.w, b.y + b.h, 0.0f, 0.0f, 1.0f, 1.0f, Pack(1, 1, 1, 0.95f));
+                else
+                    Disc(discs, cx, cy, b.h * 0.5f, Pack(0.1f, 0.1f, 0.1f, 0.7f), false);
+                label(b.label, cx, cy, std::max(1.0f, std::floor(b.h / 22.0f)), 1.0f);
+            }
+            label("Drag buttons to move them. Select one and use - / + to resize.", static_cast<float>(width) * 0.5f,
+                  static_cast<float>(height) * 0.5f - u * 0.12f, std::max(1.0f, std::floor(u / 220.0f)), 1.0f);
         }
 
         auto submit = [&](Mesh& mesh, uint32_t texture) {

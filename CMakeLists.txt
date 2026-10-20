@@ -321,6 +321,26 @@ if(ANDROID AND TARGET bgfx)
     endif()
 endif()
 
+# bgfx creates the browser's WebGL context with an alpha channel (and composites it against the page
+# unpremultiplied), so wherever a fragment wrote alpha < 1 the page showed through: terrain drawn with
+# non-opaque alpha looked invisible, and the page has to blend the whole canvas every frame. The game never
+# needs a transparent canvas, so the context is created opaque and asked for the high-performance GPU.
+if(EMSCRIPTEN AND TARGET bgfx)
+    set(PERLIN_BGFX_HTML5 "${bgfx_SOURCE_DIR}/bgfx/src/glcontext_html5.cpp")
+    file(READ "${PERLIN_BGFX_HTML5}" perlin_html5_src)
+    if(NOT perlin_html5_src MATCHES "perlin opaque canvas")
+        string(REGEX REPLACE "s_attrs\\.alpha[ \t]*=[ \t]*0 != colorBlockInfo\\.aBits;"
+               "s_attrs.alpha = false; /* perlin opaque canvas */" perlin_html5_src "${perlin_html5_src}")
+        string(REGEX REPLACE "s_attrs\\.antialias[ \t]*=[ \t]*false;"
+               "s_attrs.antialias = false; s_attrs.powerPreference = EM_WEBGL_POWER_PREFERENCE_HIGH_PERFORMANCE;"
+               perlin_html5_src "${perlin_html5_src}")
+        if(NOT perlin_html5_src MATCHES "perlin opaque canvas")
+            message(FATAL_ERROR "Perlin: could not patch bgfx's glcontext_html5.cpp (bgfx changed?)")
+        endif()
+        file(WRITE "${PERLIN_BGFX_HTML5}" "${perlin_html5_src}")
+    endif()
+endif()
+
 # shaderc runs Microsoft's FXC (D3DCompile) in-process for the Direct3D shaders. FXC recurses
 # deeply on bigger shaders (the Vibrant Visuals water shader) and overflowed the 1 MB default
 # Windows stack (exit code 0xC00000FD). Give shaderc a 64 MB stack reserve; it is only address

@@ -48,6 +48,7 @@ namespace perlin::ui {
         bool header = false;
         bool locked = false;
         bool wide = false;
+        int tab = 0; // 1..3: one of three tab buttons sharing a row
         std::string tip;
         int impact = 0;
         std::string icon; // "mchead:<key>", "item:<id>" or an image path; empty for none

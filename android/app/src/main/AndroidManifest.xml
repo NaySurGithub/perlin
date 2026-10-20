@@ -28,6 +28,7 @@
             android:launchMode="singleInstance"
             android:screenOrientation="sensorLandscape"
             android:configChanges="layoutDirection|locale|fontScale|orientation|uiMode|screenLayout|screenSize|smallestScreenSize|keyboard|keyboardHidden|navigation"
+            android:windowSoftInputMode="stateAlwaysHidden|adjustNothing"
             android:preferMinimalPostProcessing="true"
             android:exported="true">
             <intent-filter>

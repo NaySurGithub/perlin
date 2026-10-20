@@ -35,7 +35,23 @@ namespace perlin {
         events.enqueue({InputEvent::MouseUp, button, mouseX, mouseY});
     }
 
+    void Input::OnPadDown(int code) {
+        if (code < 0 || code >= 64)
+            return;
+        pad[code] = true;
+        events.enqueue({InputEvent::PadDown, code, 0, 0});
+    }
+
+    void Input::OnPadUp(int code) {
+        if (code < 0 || code >= 64)
+            return;
+        pad[code] = false;
+        events.enqueue({InputEvent::PadUp, code, 0, 0});
+    }
+
     void Input::ReleaseAll() {
+        for (auto& p : pad)
+            p = false;
         for (auto& k : keys)
             k = false;
         for (auto& b : buttons)

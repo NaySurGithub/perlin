@@ -5,6 +5,7 @@
 #include <array>
 #include <chrono>
 #include <cstdint>
+#include <map>
 #include <mutex>
 #include <string>
 #include <vector>
@@ -44,9 +45,12 @@ namespace perlin {
         void Update(Input& input);
         void Draw(RenderContext& renderer, bool visible);
         bool Gameplay(const Input& input) const;
+        // Layout editor: true once after the player pressed Done, with the layout to keep.
+        bool TakeEditResult(std::map<std::string, TouchPlace>& out);
+        bool Editing() const { return editing; }
 
     private:
-        enum class Role { None, Stick, Button, Look, Pointer, Scroll };
+        enum class Role { None, Stick, Button, Look, Pointer, Scroll, Drag, EditorButton };
 
         struct Finger {
             int64_t id = 0;
@@ -58,6 +62,7 @@ namespace perlin {
             bool scrolling = false;
             std::chrono::steady_clock::time_point restoreAt;
             bool pointerParked = false;
+            float grabX = 0, grabY = 0; // editor: finger offset from the dragged button's centre
         };
 
         enum class Kind { Hold, Tap, SneakKey, SprintToggle };
@@ -77,6 +82,11 @@ namespace perlin {
         };
 
         void BuildLayout();
+        TouchPlace Place(const char* name) const;
+        float BaseScale(const char* name) const;
+        int EditorHit(float x, float y) const;
+        void EditorPress(int which);
+        void FlushReleases(Input& input, bool all);
         int HitButton(float x, float y) const;
         void PressButton(Input& input, int index);
         void ReleaseButton(Input& input, int index);
@@ -105,6 +115,16 @@ namespace perlin {
         bool sneakLatched = false, sneakMomentary = false;
         bool sprintLatched = false;
         bool wasGameplay = false;
+        bool editing = false;
+        bool editDone = false;
+        int editSelected = -1; // a Button, or ButtonCount for the joystick
+        std::map<std::string, TouchPlace> editLayout;
+        float stickCX = 0, stickCY = 0, stickR = 0;
+        struct PendingRelease {
+            Binding binding;
+            std::chrono::steady_clock::time_point at;
+        };
+        std::vector<PendingRelease> pendingReleases;
         float scrollAccum = 0.0f;
 
         std::array<Binding, ButtonCount> pressedBinding{};

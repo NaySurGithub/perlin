@@ -1,5 +1,6 @@
 #pragma once
 #include "client/input/KeyMapping.hpp"
+#include "client/input/TouchState.hpp"
 
 #include <map>
 #include <string>
@@ -56,6 +57,8 @@ namespace perlin {
     };
 
     struct Options {
+        // Web builds start from lighter settings once (the browser has far less headroom than a desktop).
+        bool webTuned = false;
         int maxFps = 120;
         bool vsync = true;
         bool eulaAccepted = false;
@@ -117,8 +120,18 @@ namespace perlin {
         std::map<std::string, bool> skinSlim;
         std::map<std::string, double> shaderSettings;
         KeyBindings keys = DefaultBindings();
+        KeyBindings padKeys = DefaultPadBindings();
+        float padSensitivity = 1.0f;
+        float padDeadzone = 0.15f;
+        bool padInvertY = false;
+        float touchSensitivity = 1.0f;
+        float touchScale = 1.0f;
+        float touchOpacity = 0.85f;
+        std::map<std::string, TouchPlace> touchLayout;
 
         const Binding& GetKey(Action action) const { return keys[static_cast<size_t>(action)]; }
+        const Binding& GetPadKey(Action action) const { return padKeys[static_cast<size_t>(action)]; }
+        void SetPadKey(Action action, Binding binding) { padKeys[static_cast<size_t>(action)] = binding; }
         void SetKey(Action action, Binding binding) { keys[static_cast<size_t>(action)] = binding; }
 
         static Options Load();

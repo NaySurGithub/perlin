@@ -6,7 +6,7 @@
 
 namespace perlin {
     struct InputEvent {
-        enum Type { KeyDown, KeyUp, MouseMove, MouseDown, MouseUp, KeyRepeat, Char };
+        enum Type { KeyDown, KeyUp, MouseMove, MouseDown, MouseUp, KeyRepeat, Char, PadDown, PadUp };
         Type type;
         int key;
         float x, y;
@@ -33,6 +33,20 @@ namespace perlin {
             dx = lookX.exchange(0.0f, std::memory_order_relaxed);
             dy = lookY.exchange(0.0f, std::memory_order_relaxed);
         }
+        void OnPadDown(int code);
+        void OnPadUp(int code);
+        bool IsPadDown(int code) const { return code >= 0 && code < 64 && pad[code]; }
+        // Right stick, already dead-zoned, -1..1 (y is down-positive).
+        void SetPadLook(float x, float y) { padLookX = x; padLookY = y; }
+        float PadLookX() const { return padLookX; }
+        float PadLookY() const { return padLookY; }
+        // The key-bind screen is waiting for a controller button: deliver them even while a menu is open.
+        void SetPadCapture(bool on) { padCapture = on; }
+        bool PadCapture() const { return padCapture; }
+        void SetPadDeadzone(float v) { padDeadzone = v; }
+        float PadDeadzone() const { return padDeadzone; }
+        bool PadConnected() const { return padConnected; }
+        void SetPadConnected(bool on) { padConnected = on; }
         void OnMouseWheel(float dy) { AtomicAdd(wheel, dy); }
         float TakeWheel() { return wheel.exchange(0.0f, std::memory_order_relaxed); }
         void SetCaptured(bool c) { captured = c; }
@@ -58,6 +72,11 @@ namespace perlin {
     private:
         std::atomic<bool> keys[256]{};
         std::atomic<bool> buttons[8]{};
+        std::atomic<bool> pad[64]{};
+        std::atomic<float> padLookX{0}, padLookY{0};
+        std::atomic<bool> padConnected{false};
+        std::atomic<bool> padCapture{false};
+        std::atomic<float> padDeadzone{0.15f};
         std::atomic<float> mouseX{0}, mouseY{0};
         std::atomic<float> lookX{0}, lookY{0};
         std::atomic<float> wheel{0};

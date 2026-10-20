@@ -117,6 +117,18 @@ mcimg { display: block; position: absolute; }
                 y += 22.0f;
                 continue;
             }
+            if (rows[i].tab > 0) {
+                if (col == 1) {
+                    y += 24.0f;
+                    col = 0;
+                }
+                l.x[i] = cx - 155.0f + static_cast<float>(rows[i].tab - 1) * 105.0f;
+                l.rowW[i] = 100.0f;
+                l.y[i] = y;
+                if (rows[i].tab == 3)
+                    y += 28.0f;
+                continue;
+            }
             if (rows[i].wide) {
                 if (col == 1) {
                     y += 24.0f;

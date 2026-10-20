@@ -185,6 +185,12 @@ namespace perlin {
         bool pauseShown = false, pauseLeftDown = false, pausePreviewOpened = false;
         bool pausePlayers = false;
         int pauseView = 0, optionsDrag = -1, optionsPage = 0, optionsSub = 0, bindCapture = -1;
+        int controlsTab = 0;  // Controls page: 0 keyboard, 1 controller, 2 touch
+        int bindDevice = 0;   // which device the key-bind screens edit: 0 keyboard, 1 controller
+        bool touchEditing = false;
+        bool touchEditHidden = false;
+        const Binding& BindingOf(Action a) const { return bindDevice == 1 ? options.GetPadKey(a) : options.GetKey(a); }
+        void SetBindingOf(Action a, const Binding& b) { if (bindDevice == 1) options.SetPadKey(a, b); else options.SetKey(a, b); }
         bool bindWasCapturing = false;
         float kbScroll = 0.0f, optScroll = 0.0f;
         std::atomic<bool> fontsDownloaded{false};

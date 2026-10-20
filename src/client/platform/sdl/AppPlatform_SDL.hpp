@@ -4,6 +4,7 @@
 #include "client/platform/AppPlatform.hpp"
 
 #include <atomic>
+#include <chrono>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -27,11 +28,17 @@ public:
     bool ConfirmDialog(const std::string& title, const std::string& message) override;
     std::unique_ptr<perlin::RenderContext> CreateRenderContext() override;
     void SetTouchState(const perlin::TouchState& state) override;
+    bool TakeTouchLayout(std::map<std::string, perlin::TouchPlace>& out) override;
     void DrawTouchOverlay(perlin::RenderContext& renderer) override;
 
 private:
     void HandleEvent(const SDL_Event& event);
     void SetTouchMode(bool on);
+    void PumpGamepad();
+    struct SDL_Gamepad* gamepad = nullptr;
+    bool padState[64] = {};
+    std::chrono::steady_clock::time_point padLast{};
+    float padScroll = 0.0f;
     void SetClipboard(const std::string& text) override;
     void OpenUrl(const std::string& url) override;
     bool PickFile(const std::string& kind) override;
@@ -40,6 +47,8 @@ private:
     bool cursorCaptured = false;
     bool textActive = false;
     bool keyboardShown = false;
+    int keyboardPending = 0;
+    bool editMouseDown = false;
     std::atomic<bool> surfaceChanged{false};
     void* lastNativeWindow = nullptr;
     bool surfaceLost = false;

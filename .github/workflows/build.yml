@@ -21,6 +21,10 @@ env:
   SDL_REF: release-3.4.18
   NDK_VERSION: 27.2.12479018
   CMAKE_VERSION: 3.31.5
+  CCACHE_BASEDIR: ${{ github.workspace }}
+  CCACHE_NOHASHDIR: "true"
+  CCACHE_COMPRESS: "true"
+  CCACHE_COMPRESSLEVEL: "6"
 
 jobs:
   native:
@@ -185,6 +189,8 @@ jobs:
     name: web
     runs-on: ubuntu-24.04
     needs: shaders
+    env:
+      CCACHE_COMPILERCHECK: string:emsdk-3.1.50
     steps:
       - uses: actions/checkout@v4
       - uses: actions/cache@v4
@@ -259,6 +265,8 @@ jobs:
     name: android
     runs-on: ubuntu-24.04
     needs: shaders
+    env:
+      CCACHE_COMPILERCHECK: string:ndk-27.2.12479018
     steps:
       - uses: actions/checkout@v4
       - uses: actions/cache@v4
@@ -280,11 +288,22 @@ jobs:
         with:
           key: android
           max-size: 800M
+      - name: Cache Android NDK and CMake
+        id: sdk-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            /usr/local/lib/android/sdk/ndk/${{ env.NDK_VERSION }}
+            /usr/local/lib/android/sdk/cmake/${{ env.CMAKE_VERSION }}
+          key: android-sdk-${{ env.NDK_VERSION }}-${{ env.CMAKE_VERSION }}
       - name: Install SDK components
         run: |
           SDKMANAGER="$(ls "$ANDROID_HOME"/cmdline-tools/*/bin/sdkmanager | head -n1)"
           yes | "$SDKMANAGER" --licenses >/dev/null || true
-          "$SDKMANAGER" "platforms;android-35" "build-tools;35.0.0" "ndk;${NDK_VERSION}" "cmake;${CMAKE_VERSION}"
+          packages=("platforms;android-35" "build-tools;35.0.0")
+          [ -d "$ANDROID_HOME/ndk/$NDK_VERSION" ] || packages+=("ndk;${NDK_VERSION}")
+          [ -d "$ANDROID_HOME/cmake/$CMAKE_VERSION" ] || packages+=("cmake;${CMAKE_VERSION}")
+          "$SDKMANAGER" "${packages[@]}"
       - uses: actions/download-artifact@v4
         with:
           name: essl-shaders
@@ -296,14 +315,14 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ossl-android
-          key: openssl-android-${{ env.OPENSSL_VERSION }}-${{ env.NDK_VERSION }}-v2
+          key: openssl-android-${{ env.OPENSSL_VERSION }}-${{ env.NDK_VERSION }}-arm64-v3
       - name: Build OpenSSL for Android
         if: steps.openssl-cache.outputs.cache-hit != 'true'
         run: |
           export ANDROID_NDK_ROOT="$ANDROID_HOME/ndk/$NDK_VERSION"
           export PATH="$ANDROID_NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin:$PATH"
           git clone --depth 1 -b "$OPENSSL_VERSION" https://github.com/openssl/openssl openssl-src
-          for pair in arm64-v8a:android-arm64 x86_64:android-x86_64; do
+          for pair in arm64-v8a:android-arm64; do
             abi="${pair%%:*}"
             target="${pair##*:}"
             rm -rf "openssl-build-$abi"
@@ -326,7 +345,8 @@ jobs:
             -Pccache=true \
             -PndkVersion="$NDK_VERSION" \
             -PcmakeVersion="$CMAKE_VERSION" \
-            -Pabis="arm64-v8a,x86_64" \
+            -Pabis="arm64-v8a" \
+            --build-cache \
             -PappVersionCode="$GITHUB_RUN_NUMBER" \
             -PappVersionName="1.0.$GITHUB_RUN_NUMBER"
       - name: Check APK contents

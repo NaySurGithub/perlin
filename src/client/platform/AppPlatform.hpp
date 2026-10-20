@@ -1,4 +1,5 @@
 #pragma once
+#include <map>
 #include <mutex>
 #include <vector>
 #include <atomic>
@@ -9,6 +10,7 @@
 namespace perlin {
     class RenderContext;
     struct TouchState;
+    struct TouchPlace;
 }
 
 struct NativeWindowInfo {
@@ -59,6 +61,8 @@ public:
     virtual bool PickFile(const std::string& kind) { (void)kind; return false; }
 
     virtual void SetTouchState(const perlin::TouchState& state) { (void)state; }
+    // True once after the touch layout editor was closed with Done, with the layout to keep.
+    virtual bool TakeTouchLayout(std::map<std::string, perlin::TouchPlace>& out) { (void)out; return false; }
     virtual void DrawTouchOverlay(perlin::RenderContext& renderer) { (void)renderer; }
 
     virtual std::unique_ptr<perlin::RenderContext> CreateRenderContext() = 0;

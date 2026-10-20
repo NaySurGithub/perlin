@@ -1,11 +1,14 @@
 #include "client/platform/sdl/AppPlatform_SDL.hpp"
 #include "client/renderer/bgfx/RenderContext_bgfx.hpp"
 #include "client/input/Keys.hpp"
+#include "client/input/KeyMapping.hpp"
 
 #include <SDL3/SDL.h>
 #include <bgfx/bgfx.h>
 
 #include <atomic>
+#include <chrono>
+#include <cmath>
 #include <cstdio>
 #include <filesystem>
 #include "util/Paths.hpp"
@@ -237,8 +240,12 @@ bool AppPlatform_SDL::ConfirmDialog(const std::string& title, const std::string&
 }
 
 void AppPlatform_SDL::SetTouchState(const perlin::TouchState& state) {
-    if (touchMode)
+    if (touchMode || state.editing || touch.Editing())
         touch.SetState(state);
+}
+
+bool AppPlatform_SDL::TakeTouchLayout(std::map<std::string, perlin::TouchPlace>& out) {
+    return touch.TakeEditResult(out);
 }
 
 void AppPlatform_SDL::SetTouchMode(bool on) {
@@ -265,7 +272,7 @@ void AppPlatform_SDL::SetTouchMode(bool on) {
 }
 
 void AppPlatform_SDL::DrawTouchOverlay(perlin::RenderContext& renderer) {
-    if (!touchMode || !game)
+    if ((!touchMode && !touch.Editing()) || !game)
         return;
     touch.SetViewport(framebufferWidth, framebufferHeight);
     touch.Draw(renderer, touch.Gameplay(game->GetInput()));
@@ -286,7 +293,7 @@ bool AppPlatform_SDL::Initialize() {
     SDL_SetHint(SDL_HINT_MOUSE_TOUCH_EVENTS, "0");
     if (const char* t = std::getenv("PERLIN_TOUCH"))
         touchMode = touchMode || std::atoi(t) != 0;
-    if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS)) {
+    if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS | SDL_INIT_GAMEPAD)) {
         std::cout << "[sdl] SDL_Init failed: " << SDL_GetError() << std::endl;
         return false;
     }
@@ -296,7 +303,11 @@ bool AppPlatform_SDL::Initialize() {
     SDL_SetNumberProperty(props, SDL_PROP_WINDOW_CREATE_WIDTH_NUMBER, 1280);
     SDL_SetNumberProperty(props, SDL_PROP_WINDOW_CREATE_HEIGHT_NUMBER, 720);
     SDL_SetBooleanProperty(props, SDL_PROP_WINDOW_CREATE_RESIZABLE_BOOLEAN, true);
+#ifndef __EMSCRIPTEN__
+    // In a browser the canvas is left at CSS-pixel size: on a 2x or 3x display a native-resolution canvas
+    // costs four to nine times the fragment work, which is what pins most laptops near 30 fps.
     SDL_SetBooleanProperty(props, SDL_PROP_WINDOW_CREATE_HIGH_PIXEL_DENSITY_BOOLEAN, true);
+#endif
 #ifdef SDL_PLATFORM_ANDROID
     SDL_SetBooleanProperty(props, SDL_PROP_WINDOW_CREATE_FULLSCREEN_BOOLEAN, true);
 #endif
@@ -401,6 +412,63 @@ void AppPlatform_SDL::HandleEvent(const SDL_Event& e) {
             input->ReleaseAll();
         SetCursorCaptured(false);
         break;
+    case SDL_EVENT_SCREEN_KEYBOARD_HIDDEN:
+        // Dismissed with the system back gesture: the next tap on the field brings it back.
+        keyboardShown = false;
+        break;
+    case SDL_EVENT_GAMEPAD_ADDED:
+        if (!gamepad && (gamepad = SDL_OpenGamepad(e.gdevice.which)) && input)
+            input->SetPadConnected(true);
+        break;
+    case SDL_EVENT_GAMEPAD_REMOVED:
+        if (gamepad && SDL_GetGamepadID(gamepad) == e.gdevice.which) {
+            SDL_CloseGamepad(gamepad);
+            gamepad = nullptr;
+            if (input) {
+                input->SetPadConnected(false);
+                input->SetPadLook(0, 0);
+                for (int c = 0; c < 64; c++)
+                    if (padState[c]) {
+                        padState[c] = false;
+                        input->OnPadUp(c);
+                    }
+            }
+        }
+        break;
+    case SDL_EVENT_GAMEPAD_BUTTON_DOWN:
+    case SDL_EVENT_GAMEPAD_BUTTON_UP: {
+        if (!input || !gamepad)
+            break;
+        const bool pressed = e.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN;
+        const int code = e.gbutton.button;
+        if (code < 0 || code >= 15)
+            break;
+        if (input->TextMode() && !input->PadCapture()) {
+            // Menus: A clicks where the pointer is, B / Start back out.
+            if (code == perlin::Pad::A) {
+                if (pressed)
+                    input->OnMouseDown(0);
+                else
+                    input->OnMouseUp(0);
+            } else if ((code == perlin::Pad::B || code == perlin::Pad::Start) && pressed) {
+                input->OnKeyDown(perlin::Key::Escape);
+                input->OnKeyUp(perlin::Key::Escape);
+            }
+            break;
+        }
+        if (code == perlin::Pad::LeftShoulder && pressed)
+            input->OnMouseWheel(1.0f);
+        else if (code == perlin::Pad::RightShoulder && pressed)
+            input->OnMouseWheel(-1.0f);
+        if (padState[code] != pressed) {
+            padState[code] = pressed;
+            if (pressed)
+                input->OnPadDown(code);
+            else
+                input->OnPadUp(code);
+        }
+        break;
+    }
     case SDL_EVENT_KEY_DOWN:
         if (input) {
             const int k = KeyFromScancode(e.key.scancode);
@@ -440,6 +508,14 @@ void AppPlatform_SDL::HandleEvent(const SDL_Event& e) {
     case SDL_EVENT_MOUSE_MOTION:
         if (e.motion.which == SDL_TOUCH_MOUSEID)
             break;
+        if (!touchMode && touch.Editing() && input) {
+            // Layout editor on a desktop: the mouse drags buttons like a finger would.
+            if (editMouseDown) {
+                const float d = SDL_GetWindowPixelDensity(window);
+                touch.FingerMove(*input, 9999, e.motion.x * d, e.motion.y * d, e.motion.xrel * d, e.motion.yrel * d);
+            }
+            break;
+        }
         if (touchMode) {
 #ifdef SDL_PLATFORM_ANDROID
             break;
@@ -456,6 +532,13 @@ void AppPlatform_SDL::HandleEvent(const SDL_Event& e) {
     case SDL_EVENT_MOUSE_BUTTON_DOWN:
         if (e.button.which == SDL_TOUCH_MOUSEID)
             break;
+        if (!touchMode && touch.Editing() && input) {
+            const float d = SDL_GetWindowPixelDensity(window);
+            touch.SetViewport(framebufferWidth, framebufferHeight);
+            editMouseDown = true;
+            touch.FingerDown(*input, 9999, e.button.x * d, e.button.y * d);
+            break;
+        }
         if (touchMode) {
 #ifdef SDL_PLATFORM_ANDROID
             break;
@@ -489,9 +572,9 @@ void AppPlatform_SDL::HandleEvent(const SDL_Event& e) {
             const int64_t id = static_cast<int64_t>(e.tfinger.fingerID);
             const float x = e.tfinger.x * w, y = e.tfinger.y * h;
             if (e.type == SDL_EVENT_FINGER_DOWN) {
-                // A tap brings the keyboard back if it was dismissed while a text field still has focus.
-                if (input->Keyboard() && keyboardShown)
-                    SDL_StartTextInput(window);
+                // A tap while a text field has focus (re)opens the keyboard.
+                if (input->Keyboard())
+                    keyboardPending = 4;
                 touch.FingerDown(*input, id, x, y);
             }
             else if (e.type == SDL_EVENT_FINGER_MOTION)
@@ -503,6 +586,12 @@ void AppPlatform_SDL::HandleEvent(const SDL_Event& e) {
         }
         break;
     case SDL_EVENT_MOUSE_BUTTON_UP:
+        if (editMouseDown && input) {
+            const float d = SDL_GetWindowPixelDensity(window);
+            editMouseDown = false;
+            touch.FingerUp(*input, 9999, e.button.x * d, e.button.y * d);
+            break;
+        }
         if (input)
             if (int b = ButtonIndex(e.button.button); b >= 0)
                 input->OnMouseUp(b);
@@ -512,10 +601,76 @@ void AppPlatform_SDL::HandleEvent(const SDL_Event& e) {
     }
 }
 
+void AppPlatform_SDL::PumpGamepad() {
+    if (!game)
+        return;
+    perlin::Input& in = game->GetInput();
+    const auto now = std::chrono::steady_clock::now();
+    const float dt = padLast.time_since_epoch().count() == 0 ? 0.0f : std::min(0.1f, std::chrono::duration<float>(now - padLast).count());
+    padLast = now;
+    if (!gamepad) {
+        in.SetPadLook(0, 0);
+        return;
+    }
+    const auto axis = [&](SDL_GamepadAxis a) { return static_cast<float>(SDL_GetGamepadAxis(gamepad, a)) / 32767.0f; };
+    const float lx = axis(SDL_GAMEPAD_AXIS_LEFTX), ly = axis(SDL_GAMEPAD_AXIS_LEFTY);
+    const float rx = axis(SDL_GAMEPAD_AXIS_RIGHTX), ry = axis(SDL_GAMEPAD_AXIS_RIGHTY);
+    const float lt = axis(SDL_GAMEPAD_AXIS_LEFT_TRIGGER), rt = axis(SDL_GAMEPAD_AXIS_RIGHT_TRIGGER);
+    const float dz = in.PadDeadzone();
+    const auto shape = [&](float v) {
+        const float m = std::fabs(v);
+        return m <= dz ? 0.0f : std::copysign(std::min(1.0f, (m - dz) / (1.0f - dz)), v);
+    };
+
+    if (in.TextMode() && !in.PadCapture()) {
+        // Menus: the left stick drives the real mouse cursor, the right stick scrolls.
+        for (int c = 0; c < 64; c++)
+            if (padState[c]) {
+                padState[c] = false;
+                in.OnPadUp(c);
+            }
+        in.SetPadLook(0, 0);
+        const float sx = shape(lx), sy = shape(ly);
+        if (sx != 0.0f || sy != 0.0f) {
+            float x = 0, y = 0;
+            SDL_GetMouseState(&x, &y);
+            const float speed = 700.0f * dt / std::max(1.0f, SDL_GetWindowPixelDensity(window));
+            SDL_WarpMouseInWindow(window, x + sx * std::fabs(sx) * speed * 1.4f, y + sy * std::fabs(sy) * speed * 1.4f);
+        }
+        padScroll += -shape(ry) * dt * 9.0f;
+        if (std::fabs(padScroll) >= 1.0f) {
+            in.OnMouseWheel(std::trunc(padScroll));
+            padScroll -= std::trunc(padScroll);
+        }
+        return;
+    }
+
+    in.SetPadLook(shape(rx), shape(ry));
+    // Sticks and triggers become buttons so any of them can be bound to any action.
+    struct Virtual { int code; bool on; };
+    const float hi = 0.5f;
+    const Virtual virtuals[] = {
+        {perlin::Pad::LeftTrigger, lt > 0.4f}, {perlin::Pad::RightTrigger, rt > 0.4f},
+        {perlin::Pad::LeftStickUp, ly < -hi}, {perlin::Pad::LeftStickDown, ly > hi},
+        {perlin::Pad::LeftStickLeft, lx < -hi}, {perlin::Pad::LeftStickRight, lx > hi},
+        {perlin::Pad::RightStickUp, ry < -hi}, {perlin::Pad::RightStickDown, ry > hi},
+        {perlin::Pad::RightStickLeft, rx < -hi}, {perlin::Pad::RightStickRight, rx > hi}};
+    for (const Virtual& v : virtuals) {
+        if (padState[v.code] == v.on)
+            continue;
+        padState[v.code] = v.on;
+        if (v.on)
+            in.OnPadDown(v.code);
+        else
+            in.OnPadUp(v.code);
+    }
+}
+
 void AppPlatform_SDL::PumpFrame() {
     SDL_Event e;
     while (SDL_PollEvent(&e))
         HandleEvent(e);
+    PumpGamepad();
 
 #ifdef SDL_PLATFORM_ANDROID
     {
@@ -567,14 +722,19 @@ void AppPlatform_SDL::PumpFrame() {
             }
         }
         if (touchMode) {
-            // The on-screen keyboard only comes up for a focused text field, not for every menu.
+            // The on-screen keyboard never opens by itself when a screen appears: a tap while a text field
+            // has focus asks for it (a few frames later, so tapping a button that closes the screen doesn't
+            // flash it), and it goes away when no field is focused any more.
             const bool keyboard = in.Keyboard();
-            if (keyboard != keyboardShown) {
-                keyboardShown = keyboard;
-                if (keyboard)
-                    SDL_StartTextInput(window);
-                else
+            if (!keyboard) {
+                keyboardPending = 0;
+                if (keyboardShown) {
+                    keyboardShown = false;
                     SDL_StopTextInput(window);
+                }
+            } else if (keyboardPending > 0 && --keyboardPending == 0) {
+                keyboardShown = true;
+                SDL_StartTextInput(window);
             }
         }
     }
