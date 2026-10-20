@@ -19,6 +19,9 @@ namespace perlin {
         bool ValidId(const std::string& id) {
             if (id.size() != 32)
                 return false;
+            // The shape gophertunnel generates: a version-4 UUID without dashes.
+            if (id[12] != '4' || !(id[16] == '8' || id[16] == '9' || id[16] == 'a' || id[16] == 'b'))
+                return false;
             for (char c : id)
                 if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')))
                     return false;
@@ -55,7 +58,8 @@ namespace perlin {
             return profile;
         std::random_device rd;
         char buf[33];
-        std::snprintf(buf, sizeof(buf), "%08x%08x%08x%08x", rd(), rd(), rd(), rd());
+        std::snprintf(buf, sizeof(buf), "%08x%04x4%03x%04x%08x%04x", rd(), rd() & 0xFFFF, rd() & 0xFFF, 0x8000 | (rd() & 0x3FFF),
+                      rd(), rd() & 0xFFFF);
         profile.id = buf;
         profile.model = kAndroidModels[rd() % (sizeof(kAndroidModels) / sizeof(kAndroidModels[0]))];
         paths::EnsureDir(paths::DataDir());

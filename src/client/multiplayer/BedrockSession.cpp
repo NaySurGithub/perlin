@@ -3,6 +3,7 @@
 #include "util/SystemInfo.hpp"
 #include "client/multiplayer/NbtJson.hpp"
 #include "client/multiplayer/DeviceProfile.hpp"
+#include "client/multiplayer/DefaultSkinGeometry.hpp"
 
 #include "network/ClientIdentity.hpp"
 #include "network/NetherNet.hpp"
@@ -335,11 +336,8 @@ namespace perlin {
             skin.MaxViewDistance = maxViewDistance;
             skin.DeviceId = device.id;
             skin.GameVersion = gameVersion;
-            if (online) {
-                skin.PlayFabId = online->playFabId;
-                for (char& c : skin.PlayFabId)
-                    c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-            }
+            // Clients since 1.21.100 send no PlayFabId in the login claims (Cinnabar sends it empty and its dialer leaves
+            // it so).
             skin.SelfSignedId = DeriveSelfSignedId(clientRandomId, device.id);
             // The classic skin ids Cinnabar sends: the stock pack id plus the model name.
             skin.SkinId = std::string("c18e65aa-7b21-4637-9b63-8ad63622ef01.") + (loadedSkin.slimArms ? "CustomSlim" : "Custom");
@@ -354,10 +352,10 @@ namespace perlin {
             }
             const char* geometry = loadedSkin.slimArms ? "geometry.humanoid.customSlim" : "geometry.humanoid.custom";
             skin.ArmSize = loadedSkin.slimArms ? "slim" : "wide";
-            // Cinnabar's login claims carry no geometry data or engine version for a classic skin: the resource patch
-            // alone names the model.
-            skin.SkinGeometryData.clear();
-            skin.SkinGeometryDataEngineVersion.clear();
+            // Cinnabar's client leaves these empty and its dialer fills in the stock geometry and "0.0.0", so that is what
+            // the server sees.
+            skin.SkinGeometryData = kDefaultSkinGeometryB64;
+            skin.SkinGeometryDataEngineVersion = B64Standard("0.0.0");
             skin.SkinResourcePatch = B64Standard(std::string("{\"geometry\":{\"default\":\"") + geometry + "\"}}");
             if (loadedSkin.hasCape()) {
                 skin.CapeData = B64Standard(std::string(loadedSkin.capeRgba.begin(), loadedSkin.capeRgba.end()));
@@ -372,20 +370,13 @@ namespace perlin {
             // persisted device profile so they stay stable between sessions.
             skin.DeviceOS = 1;
             skin.DeviceModel = device.model;
-            skin.PlatformType = 0;
+            skin.PlatformType = 1; // mobile: the dialer supplies it for Android claims
             skin.CurrentInputMode = 1;
             skin.DefaultInputMode = 2; // an Android device's default is touch; CurrentInputMode stays mouse
             // Hardware tier as Bedrock reports it: 0 <1.5 GB, 1 <2 GB, 2 <4 GB, 3 <8 GB, 4 more.
             {
                 const uint64_t gib = sysinfo::TotalMemory() >> 20; // MiB
                 skin.MemoryTier = gib < 1536 ? 0 : gib < 2048 ? 1 : gib < 4096 ? 2 : gib < 8192 ? 3 : 4;
-            }
-            if (skin.PlayFabId.empty()) {
-                // Every client sends a PlayFab id; offline there is no account, so use a random 16 digit hex one
-                // (the shape the service issues).
-                char pf[17];
-                snprintf(pf, sizeof(pf), "%08x%08x", rd(), rd());
-                skin.PlayFabId = pf;
             }
             const claims::Header skinHeader{.x5u = cpk};
             std::string skinJwt = signJwt(skinHeader, skin);

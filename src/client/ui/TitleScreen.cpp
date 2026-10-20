@@ -316,12 +316,19 @@ mcimg { display: block; position: absolute; }
             d += "<div style=\"left:0px;top:" + N(listBottom - 4) + "px;width:" + N(w) + "px;height:4px;decorator:vertical-gradient(#00000000 #000000ff);z-index:2;\"></div>\n";
             d += "<div style=\"left:0px;top:" + N(listTop - 1) + "px;width:" + N(w) + "px;height:1px;background-color:#000000;z-index:3;\"></div>\n";
             d += "<div style=\"left:0px;top:" + N(listBottom) + "px;width:" + N(w) + "px;height:1px;background-color:#000000;z-index:3;\"></div>\n";
-            d += "<div class=\"txt ctr\" style=\"left:0px;top:12px;width:" + N(w) + "px;height:9px;\">Play Multiplayer</div>\n";
+            {
+                static const char* const kTabs[] = {"Servers", "LAN", "Realms", "Friends"};
+                const int tabW = 74, gap = 2;
+                const int x0 = cx - (4 * tabW + 3 * gap) / 2;
+                for (int t = 0; t < 4; t++)
+                    d += Btn(std::string(kServerTabPrefix) + N(t), x0 + t * (tabW + gap), 6, tabW, kTabs[t], static_cast<int>(m.tab) == t);
+            }
+            const std::vector<ServerEntry>& list = m.Shown();
             const int rows = TitleVisibleRows(h);
             const int rowX = cx - kRowW / 2;
             int y = listTop + 4;
-            for (int i = m.scroll; i < static_cast<int>(m.servers.size()) && i < m.scroll + rows; i++, y += kRowH) {
-                const ServerEntry& s = m.servers[static_cast<size_t>(i)];
+            for (int i = m.scroll; i < static_cast<int>(list.size()) && i < m.scroll + rows; i++, y += kRowH) {
+                const ServerEntry& s = list[static_cast<size_t>(i)];
                 if (i == m.selected) {
                     d += "<div style=\"left:" + N(rowX - 2) + "px;top:" + N(y - 2) + "px;width:" + N(kRowW + 4) + "px;height:" + N(kRowH + 0) + "px;background-color:#ffffff;z-index:2;\"></div>\n";
                     d += "<div style=\"left:" + N(rowX - 1) + "px;top:" + N(y - 1) + "px;width:" + N(kRowW + 2) + "px;height:" + N(kRowH - 2) + "px;background-color:#000000;z-index:2;\"></div>\n";
@@ -333,6 +340,14 @@ mcimg { display: block; position: absolute; }
                 // Live status (from the ping): players and latency top right, MOTD below the name.
                 std::string right, rightCls = "gray";
                 using St = ServerEntry::Status;
+                if (s.kind != ServerEntry::Kind::Server) {
+                    d += "<div class=\"txt " + std::string(s.offline ? "dark" : "green") + "\" style=\"left:" + N(kRowW - 105) + "px;top:1px;width:100px;height:9px;text-align:right;\">" +
+                         EscapeRml(s.right) + "</div>\n";
+                    d += Text(35, 12, kRowW - 40, s.motd.empty() ? " " : s.motd, s.offline ? "dark" : "gray");
+                    d += Text(35, 23, kRowW - 40, s.note, "dark");
+                    d += "</div>\n";
+                    continue;
+                }
                 if (s.status == St::Pinging || s.status == St::Unknown) {
                     static const char* const kDots[] = {"Pinging", "Pinging.", "Pinging..", "Pinging..."};
                     right = kDots[m.spinner & 3];
@@ -359,18 +374,23 @@ mcimg { display: block; position: absolute; }
                 }
                 d += "</div>\n";
             }
-            if (m.servers.empty()) {
+            if (list.empty() && m.tab != ServerTab::Saved) {
+                d += "<div class=\"txt ctr\" style=\"left:0px;top:" + N(listTop + 28) + "px;width:" + N(w) + "px;height:9px;\">" + EscapeRml(m.tabMessage) + "</div>\n";
+            } else if (list.empty()) {
                 d += "<div class=\"txt ctr\" style=\"left:0px;top:" + N(listTop + 28) + "px;width:" + N(w) + "px;height:9px;\">Scanning for games on your local network</div>\n";
                 static const char* const kSpin[] = {"O o o", "o O o", "o o O", "o O o"};
                 d += "<div class=\"txt ctr gray\" style=\"left:0px;top:" + N(listTop + 40) + "px;width:" + N(w) + "px;height:9px;\">" + std::string(kSpin[m.spinner & 3]) + "</div>\n";
             }
-            const bool has = m.selected >= 0 && m.selected < static_cast<int>(m.servers.size());
+            if (!m.joinMessage.empty())
+                d += "<div class=\"txt ctr yellow\" style=\"left:0px;top:" + N(h - 62) + "px;width:" + N(w) + "px;height:9px;z-index:4;\">" + EscapeRml(m.joinMessage) + "</div>\n";
+            const bool has = m.selected >= 0 && m.selected < static_cast<int>(list.size());
+            const bool saved = m.tab == ServerTab::Saved;
             const int r1 = h - 52, r2 = h - 28;
-            d += Btn(has ? kServerJoin : "", cx - 154, r1, 100, "Join Server", !has);
+            d += Btn(has ? kServerJoin : "", cx - 154, r1, 100, m.tab == ServerTab::Friends ? "Join Friend" : (m.tab == ServerTab::Realms ? "Join Realm" : "Join Server"), !has);
             d += Btn(kServerDirect, cx - 50, r1, 100, "Direct Connection");
-            d += Btn(kServerAdd, cx + 54, r1, 100, "Add Server");
-            d += Btn(has ? kServerEdit : "", cx - 154, r2, 72, "Edit", !has);
-            d += Btn(has ? kServerDelete : "", cx - 74, r2, 72, "Delete", !has);
+            d += Btn(saved ? kServerAdd : "", cx + 54, r1, 100, "Add Server", !saved);
+            d += Btn(has && saved ? kServerEdit : "", cx - 154, r2, 72, "Edit", !(has && saved));
+            d += Btn(has && saved ? kServerDelete : "", cx - 74, r2, 72, "Delete", !(has && saved));
             d += Btn(kServerRefresh, cx + 4, r2, 72, "Refresh");
             d += Btn(kServerCancel, cx + 82, r2, 72, "Cancel");
             return d;

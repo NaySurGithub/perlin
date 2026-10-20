@@ -952,6 +952,19 @@ namespace perlin::xbox {
         return !gamertag.empty();
     }
 
+    bool Account::AuthorizationHeader(const std::string& relyingParty, std::string& header, std::string& xuid,
+                                      std::string& error) {
+        Impl& s = *impl;
+        if (!s.EnsureUserAndTitle(error))
+            return false;
+        Tok xsts;
+        if (!s.Xsts(relyingParty, xsts, error))
+            return false;
+        header = Impl::XblHeader(xsts);
+        xuid = xsts.xid;
+        return true;
+    }
+
     bool Account::LoginMinecraft(const std::string& publicKeyB64, const std::string& gameVersion, Credentials& out,
                                  std::string& error) {
         out = {};

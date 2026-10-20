@@ -11,6 +11,11 @@ namespace perlin {
         return false;
     }
 
+    bool RakNet::Discover(std::vector<LanServer>&, std::string& error, int) {
+        error = "LAN discovery needs UDP sockets, which browsers do not provide";
+        return false;
+    }
+
     bool RakNet::Connect(const std::string&, uint16_t) {
         lastError = "RakNet needs UDP sockets, which browsers do not provide - use a NetherNet (WebRTC) server";
         return false;

@@ -13,7 +13,16 @@ namespace perlin::ui {
         std::string version; // game version the server reports
         int players = 0, maxPlayers = 0;
         int pingMs = 0;
+        // LAN games, Realms and friends are listed with the same rows but carry their own text instead of a ping.
+        enum class Kind : uint8_t { Server, Lan, Realm, Friend } kind = Kind::Server;
+        std::string right; // top-right text of a non-Server row ("Open", "Online", ...)
+        std::string note;  // third line of a non-Server row
+        bool offline = false; // dim a Realm that is closed or a friend who is offline
+        long long realmId = 0;
+        std::string xuid;
     };
+
+    enum class ServerTab : uint8_t { Saved, Lan, Realms, Friends };
 
     // One row of the account switcher.
     struct AccountRow {
@@ -28,7 +37,20 @@ namespace perlin::ui {
 
     struct TitleModel {
         TitlePage page = TitlePage::Main;
-        std::vector<ServerEntry> servers;
+        std::vector<ServerEntry> servers; // the saved list (the Servers tab)
+        ServerTab tab = ServerTab::Saved;
+        std::vector<ServerEntry> lan, realms, friends;
+        std::string tabMessage;  // "Scanning...", an error, or empty (shown when the tab has no rows)
+        std::string joinMessage; // a line above the buttons: what happened to the last Join
+        std::vector<ServerEntry>& Shown() {
+            switch (tab) {
+                case ServerTab::Lan: return lan;
+                case ServerTab::Realms: return realms;
+                case ServerTab::Friends: return friends;
+                default: return servers;
+            }
+        }
+        const std::vector<ServerEntry>& Shown() const { return const_cast<TitleModel*>(this)->Shown(); }
         int selected = -1;
         int scroll = 0;
         bool adding = false;
@@ -82,6 +104,7 @@ namespace perlin::ui {
     inline constexpr const char* kAccountNameField = "acc_name";
     inline constexpr const char* kAccountNameDone = "acc_name_ok";
     inline constexpr const char* kAccountCancel = "acc_cancel";
+    inline constexpr const char* kServerTabPrefix = "stab_";
     inline constexpr const char* kServerRowPrefix = "row_";
     inline constexpr const char* kServerJoinPrefix = "go_";
 

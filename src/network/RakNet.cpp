@@ -603,6 +603,59 @@ namespace perlin {
         return ok;
     }
 
+    bool RakNet::Discover(std::vector<LanServer>& found, std::string& error, int timeoutMs) {
+        EnsureSockets();
+        Socket s = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+        if (s == kInvalid) {
+            error = "cannot open a UDP socket";
+            return false;
+        }
+        int on = 1;
+        setsockopt(s, SOL_SOCKET, SO_BROADCAST, reinterpret_cast<const char*>(&on), sizeof(on));
+        SetTimeout(s, 100);
+        std::mt19937_64 rng(std::random_device{}());
+        const auto ping = UnconnectedPing(ClientGuid(rng()));
+        // The game broadcasts on 19132; a world hosted on this machine answers on loopback.
+        sockaddr_in targets[2]{};
+        for (sockaddr_in& t : targets) {
+            t.sin_family = AF_INET;
+            t.sin_port = htons(19132);
+        }
+        targets[0].sin_addr.s_addr = htonl(INADDR_BROADCAST);
+        targets[1].sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+        uint8_t buf[2048];
+        const int64_t end = NowMs() + timeoutMs;
+        int64_t nextPing = 0;
+        while (NowMs() < end) {
+            if (NowMs() >= nextPing) {
+                for (const sockaddr_in& t : targets)
+                    sendto(s, reinterpret_cast<const char*>(ping.data()), static_cast<int>(ping.size()), 0,
+                           reinterpret_cast<const sockaddr*>(&t), sizeof(t));
+                nextPing = NowMs() + 500;
+            }
+            sockaddr_in from{};
+#ifdef _WIN32
+            int fromLen = sizeof(from);
+#else
+            socklen_t fromLen = sizeof(from);
+#endif
+            const int n = static_cast<int>(recvfrom(s, reinterpret_cast<char*>(buf), sizeof(buf), 0, reinterpret_cast<sockaddr*>(&from), &fromLen));
+            std::string ad;
+            if (n <= 0 || !ParsePong(buf, n, ad))
+                continue;
+            char ip[INET_ADDRSTRLEN] = {};
+            inet_ntop(AF_INET, &from.sin_addr, ip, sizeof(ip));
+            const uint16_t port = ntohs(from.sin_port);
+            bool known = false;
+            for (const LanServer& f : found)
+                known = known || (f.host == ip && f.port == port);
+            if (!known)
+                found.push_back({ip, port, ad});
+        }
+        CloseSocket(s);
+        return true;
+    }
+
     bool RakNet::Connect(const std::string& host, uint16_t port) {
         Disconnect();
         lastError.clear();

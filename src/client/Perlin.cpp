@@ -33,6 +33,9 @@
 #include "client/ui/CreativeScreen.hpp"
 #include "client/ui/DisconnectScreen.hpp"
 #include "client/ui/LoadingScreen.hpp"
+#include "network/Friends.hpp"
+#include "network/RakNet.hpp"
+#include "network/Realms.hpp"
 #include "client/ui/TitleScreen.hpp"
 #include "client/ui/TitlePanorama.hpp"
 #include "client/ui/UiLayout.hpp"
@@ -4105,6 +4108,157 @@ namespace perlin {
         Connect();
     }
 
+    void Perlin::SetJoinMessage(const std::string& text) {
+        std::lock_guard lock(tabMutex);
+        tabJoinMsg = text;
+    }
+
+    void Perlin::RefreshTab(ui::ServerTab tab) {
+        using T = ui::ServerTab;
+        const bool microsoft = accounts.Active() && accounts.Active()->microsoft;
+        const std::string authPath = ActiveAuthPath();
+        if (tab == T::Lan) {
+            if (lanBusy.exchange(true))
+                return;
+            {
+                std::lock_guard lock(tabMutex);
+                tabLan.clear();
+                tabLanMsg = "Scanning for games on your local network";
+                tabDirty = true;
+            }
+            std::thread([this] {
+                std::vector<RakNet::LanServer> found;
+                std::string error;
+                RakNet::Discover(found, error, 2000);
+                std::vector<ui::ServerEntry> rows;
+                for (const RakNet::LanServer& f : found) {
+                    std::vector<std::string> parts;
+                    size_t a = 0;
+                    for (size_t i = 0; i <= f.advertisement.size(); i++)
+                        if (i == f.advertisement.size() || f.advertisement[i] == ';') {
+                            parts.push_back(f.advertisement.substr(a, i - a));
+                            a = i + 1;
+                        }
+                    ui::ServerEntry e;
+                    e.kind = ui::ServerEntry::Kind::Lan;
+                    e.address = f.host + ":" + std::to_string(f.port);
+                    e.name = parts.size() > 1 && !parts[1].empty() ? parts[1] : "LAN Game";
+                    // MOTD lines carry formatting codes; keep the text.
+                    std::string plain;
+                    for (size_t i = 0; i < e.name.size(); i++) {
+                        if (static_cast<unsigned char>(e.name[i]) == 0xC2 && i + 2 < e.name.size() && static_cast<unsigned char>(e.name[i + 1]) == 0xA7) {
+                            i += 2;
+                            continue;
+                        }
+                        plain += e.name[i];
+                    }
+                    e.name = plain;
+                    e.right = parts.size() > 5 ? parts[4] + "/" + parts[5] : "";
+                    e.motd = parts.size() > 7 ? parts[7] : "";
+                    e.note = e.address + (parts.size() > 3 ? "  -  " + parts[3] : "");
+                    rows.push_back(std::move(e));
+                }
+                std::lock_guard lock(tabMutex);
+                tabLan = std::move(rows);
+                tabLanMsg = tabLan.empty() ? "No games found on your local network" + (error.empty() ? std::string() : " (" + error + ")") : "";
+                tabDirty = true;
+                lanBusy = false;
+            }).detach();
+            return;
+        }
+        if (tab != T::Realms && tab != T::Friends)
+            return;
+        const bool forRealms = tab == T::Realms;
+        std::atomic<bool>& busy = forRealms ? realmsBusy : friendsBusy;
+        if (!microsoft) {
+            std::lock_guard lock(tabMutex);
+            (forRealms ? tabRealms : tabFriends).clear();
+            (forRealms ? tabRealmsMsg : tabFriendsMsg) = std::string("Sign in with a Microsoft account to see your ") + (forRealms ? "Realms" : "friends");
+            tabDirty = true;
+            return;
+        }
+        if (busy.exchange(true))
+            return;
+        {
+            std::lock_guard lock(tabMutex);
+            (forRealms ? tabRealms : tabFriends).clear();
+            (forRealms ? tabRealmsMsg : tabFriendsMsg) = forRealms ? "Loading your Realms..." : "Loading your friends...";
+            tabDirty = true;
+        }
+        std::thread([this, forRealms, authPath, &busy] {
+            xbox::Account acct(authPath);
+            std::string error;
+            std::vector<ui::ServerEntry> rows;
+            bool ok = acct.SignInSaved(error);
+            if (ok && forRealms) {
+                std::vector<realms::Realm> list;
+                ok = realms::List(acct, list, error);
+                for (const realms::Realm& r : list) {
+                    ui::ServerEntry e;
+                    e.kind = ui::ServerEntry::Kind::Realm;
+                    e.name = r.name.empty() ? "Realm" : r.name;
+                    e.realmId = r.id;
+                    const bool open = r.state == "OPEN" && !r.expired;
+                    e.offline = !open;
+                    e.right = r.expired ? "Expired" : (r.state == "OPEN" ? "Open" : "Closed");
+                    e.motd = !r.owner.empty() ? "Owned by " + r.owner : (r.member ? "Invited" : "Your Realm");
+                    e.note = r.motd;
+                    rows.push_back(std::move(e));
+                }
+            } else if (ok) {
+                std::vector<friends::Friend> list;
+                ok = friends::List(acct, list, error);
+                for (const friends::Friend& f : list) {
+                    ui::ServerEntry e;
+                    e.kind = ui::ServerEntry::Kind::Friend;
+                    e.name = f.gamertag;
+                    e.xuid = f.xuid;
+                    e.offline = !f.online;
+                    e.right = f.playingMinecraft ? "In Minecraft" : (f.online ? "Online" : "Offline");
+                    e.motd = f.presence;
+                    e.note = "Xbox friend";
+                    rows.push_back(std::move(e));
+                }
+            }
+            std::lock_guard lock(tabMutex);
+            auto& target = forRealms ? tabRealms : tabFriends;
+            auto& message = forRealms ? tabRealmsMsg : tabFriendsMsg;
+            target = std::move(rows);
+            message = !ok ? error : (target.empty() ? (forRealms ? "You have no Realms yet" : "Your friends list is empty") : std::string());
+            tabDirty = true;
+            busy = false;
+        }).detach();
+    }
+
+    void Perlin::JoinRealm(long long id) {
+        if (!(accounts.Active() && accounts.Active()->microsoft)) {
+            SetJoinMessage("Sign in with a Microsoft account to join a Realm");
+            return;
+        }
+        if (realmJoinBusy.exchange(true))
+            return;
+        SetJoinMessage("Finding your Realm...");
+        const std::string authPath = ActiveAuthPath();
+        std::thread([this, id, authPath] {
+            xbox::Account acct(authPath);
+            std::string error;
+            realms::Address address;
+            if (acct.SignInSaved(error) && realms::Join(acct, id, address, error)) {
+                if (address.protocol != "DEFAULT") {
+                    SetJoinMessage("This Realm connects through NetherNet signalling, which Perlin can't do yet");
+                } else {
+                    std::lock_guard lock(tabMutex);
+                    realmJoinAddress = address.host + ":" + std::to_string(address.port);
+                    realmJoinReady = true;
+                    tabJoinMsg = "Joining the Realm...";
+                }
+            } else {
+                SetJoinMessage(error.empty() ? "Could not join the Realm" : error);
+            }
+            realmJoinBusy = false;
+        }).detach();
+    }
+
     void Perlin::LeaveToServerList(ui::Hud& hud) {
         std::cout << "[perlin] left " << options.server << ", back to the server list" << std::endl;
         connectGeneration++; // any connect still running for this session backs out
@@ -4425,8 +4579,17 @@ namespace perlin {
             PingServers({entry.address});
         };
         const auto join = [&](int row) {
-            if (row >= 0 && row < static_cast<int>(title.servers.size()))
-                JoinServer(title.servers[static_cast<size_t>(row)].address);
+            const std::vector<ui::ServerEntry>& list = title.Shown();
+            if (row < 0 || row >= static_cast<int>(list.size()))
+                return;
+            const ui::ServerEntry& e = list[static_cast<size_t>(row)];
+            switch (e.kind) {
+                case ui::ServerEntry::Kind::Realm: JoinRealm(e.realmId); break;
+                case ui::ServerEntry::Kind::Friend:
+                    SetJoinMessage("Friends' worlds need Xbox signalling and WebRTC, which Perlin can't do yet - add their server address instead");
+                    break;
+                default: JoinServer(e.address); break;
+            }
         };
         const auto back = [&] {
             switch (title.page) {
@@ -4490,7 +4653,7 @@ namespace perlin {
                 else if (t.character && !t.ctrl && field.size() < 120)
                     AppendUtf8(field, t.key);
             } else if (title.page == ui::TitlePage::Servers) {
-                const int count = static_cast<int>(title.servers.size());
+                const int count = static_cast<int>(title.Shown().size());
                 if (!t.character && t.key == Key::Enter)
                     join(title.selected);
                 else if (!t.character && t.key == Key::Down && count)
@@ -4504,7 +4667,7 @@ namespace perlin {
 
         if (title.page == ui::TitlePage::Servers) {
             const int rows = ui::TitleVisibleRows(guiH);
-            const int maxScroll = std::max(0, static_cast<int>(title.servers.size()) - rows);
+            const int maxScroll = std::max(0, static_cast<int>(title.Shown().size()) - rows);
             if (const float wheel = inputManager.Scroll(); wheel != 0.0f)
                 title.scroll -= wheel > 0 ? 1 : -1;
             if (title.selected >= 0) {
@@ -4576,6 +4739,27 @@ namespace perlin {
         }
         titleLastPage = title.page;
         {
+            std::string joinAddress;
+            {
+                std::lock_guard lock(tabMutex);
+                if (tabDirty) {
+                    title.lan = tabLan;
+                    title.realms = tabRealms;
+                    title.friends = tabFriends;
+                    tabDirty = false;
+                }
+                title.tabMessage = title.tab == ui::ServerTab::Lan ? tabLanMsg : title.tab == ui::ServerTab::Realms ? tabRealmsMsg : tabFriendsMsg;
+                title.joinMessage = tabJoinMsg;
+                if (realmJoinReady) {
+                    realmJoinReady = false;
+                    joinAddress = realmJoinAddress;
+                    tabJoinMsg.clear();
+                }
+            }
+            if (!joinAddress.empty())
+                JoinServer(joinAddress);
+        }
+        {
             std::lock_guard lock(pingMutex);
             for (ui::ServerEntry& e : title.servers) {
                 const auto it = pingResults.find(e.address);
@@ -4627,12 +4811,13 @@ namespace perlin {
         if (title.page == ui::TitlePage::Edit || title.page == ui::TitlePage::Direct)
             signature += "|" + title.name + "|" + title.address + "|" + (title.caret ? "c" : "n") + (title.adding ? "a" : "e");
         else if (title.page == ui::TitlePage::Servers) {
-            signature += "|" + std::to_string(title.servers.size());
-            for (const ui::ServerEntry& s : title.servers)
+            signature += "|t" + std::to_string(static_cast<int>(title.tab)) + "|" + title.tabMessage + "|" + title.joinMessage;
+            signature += "|" + std::to_string(title.Shown().size());
+            for (const ui::ServerEntry& s : title.Shown())
                 signature += "|" + s.name + "|" + s.address + "|" + std::to_string(static_cast<int>(s.status)) + s.motd + "|" + std::to_string(s.players) + "/" +
-                             std::to_string(s.maxPlayers) + "|" + std::to_string(s.pingMs) +
+                             std::to_string(s.maxPlayers) + "|" + std::to_string(s.pingMs) + s.right + s.note + (s.offline ? "o" : "") +
                              (s.status == ui::ServerEntry::Status::Pinging ? std::to_string(title.spinner & 3) : std::string());
-            if (title.servers.empty())
+            if (title.Shown().empty())
                 signature += "|" + std::to_string(title.spinner & 3);
         }
         if (signature != titleSignature || !hud.Overlay().HasOverlay()) {
@@ -4678,6 +4863,10 @@ namespace perlin {
                     ApplyActiveAccount();
             } else if (hover == ui::kTitleMulti) {
                 title.page = ui::TitlePage::Servers;
+                title.tab = ui::ServerTab::Saved;
+                title.selected = -1;
+                title.scroll = 0;
+                SetJoinMessage({});
             } else if (hover == ui::kTitleOptions) {
                 titleOpenView = 1;
                 titleOptions = true;
@@ -4701,11 +4890,20 @@ namespace perlin {
             } else if (hover == ui::kServerEdit) {
                 edit(false);
             } else if (hover == ui::kServerDelete) {
-                if (title.selected >= 0 && title.selected < static_cast<int>(title.servers.size())) {
+                if (title.tab == ui::ServerTab::Saved && title.selected >= 0 && title.selected < static_cast<int>(title.servers.size())) {
                     title.servers.erase(title.servers.begin() + title.selected);
                     title.selected = -1;
                     SaveServers(title.servers);
                 }
+            } else if (const int tb = rowOf(ui::kServerTabPrefix); tb >= 0 && tb < 4) {
+                title.tab = static_cast<ui::ServerTab>(tb);
+                title.selected = -1;
+                title.scroll = 0;
+                SetJoinMessage({});
+                RefreshTab(title.tab);
+            } else if (hover == ui::kServerRefresh && title.tab != ui::ServerTab::Saved) {
+                SetJoinMessage({});
+                RefreshTab(title.tab);
             } else if (hover == ui::kServerRefresh) {
                 LoadServers(title.servers, options.server);
                 title.selected = -1;

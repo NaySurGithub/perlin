@@ -34,6 +34,11 @@ namespace perlin::xbox {
         // After SignIn: the account's gamertag (one Xbox Live token request).
         bool FetchGamertag(std::string& gamertag, std::string& error);
 
+        // An Xbox Live authorization header ("XBL3.0 x=<uhs>;<token>") for a relying party, for services such as
+        // Realms (https://pocket.realms.minecraft.net/) and the friends list (http://xboxlive.com). Needs a signed-in
+        // account. xuid is filled in when the token carries it.
+        bool AuthorizationHeader(const std::string& relyingParty, std::string& header, std::string& xuid, std::string& error);
+
         bool LoginMinecraft(const std::string& identityPublicKeyB64, const std::string& gameVersion,
                             Credentials& out, std::string& error);
 

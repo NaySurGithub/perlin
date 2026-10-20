@@ -178,6 +178,17 @@ namespace perlin {
         void PingServers(const std::vector<std::string>& addresses);
         std::mutex pingMutex;
         std::map<std::string, ui::ServerEntry> pingResults;
+
+        // The LAN, Realms and Friends tabs of the server list: worker threads fill these (under tabMutex) and the
+        // title screen copies them into its model.
+        void RefreshTab(ui::ServerTab tab);
+        void JoinRealm(long long id);
+        void SetJoinMessage(const std::string& text);
+        std::mutex tabMutex;
+        std::vector<ui::ServerEntry> tabLan, tabRealms, tabFriends;
+        std::string tabLanMsg, tabRealmsMsg, tabFriendsMsg, tabJoinMsg, realmJoinAddress;
+        bool tabDirty = false, realmJoinReady = false;
+        std::atomic<bool> lanBusy{false}, realmsBusy{false}, friendsBusy{false}, realmJoinBusy{false};
         bool disconnectShown = false, disconnectLeftDown = false, disconnectTextMode = false;
         std::chrono::steady_clock::time_point disconnectOpenedAt{}, disconnectCheckAt{};
         std::string disconnectSignature, disconnectTemplate;
