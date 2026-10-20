@@ -6,7 +6,7 @@
 namespace perlin {
 
     constexpr int kBedrockProtocol = 2193;
-    constexpr const char* kBedrockVersion = "1.26.52";
+    constexpr const char* kBedrockVersion = "1.26.50";
 
     struct NetherNetServerInfo {
         std::string name;

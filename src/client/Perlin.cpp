@@ -1073,7 +1073,8 @@ namespace perlin {
     void Perlin::UpdateAudio(BedrockSession* live, double now, float dt) {
         static bool opened = false, hooked = false;
         const std::string& root = ui::UiAssets::Instance().VanillaRoot();
-        if (!opened && (live != nullptr || PERLIN_ENV("PERLIN_AUDIO"))) {
+        // Open the output right away: the menus click before there is any connection.
+        if (!opened) {
             opened = true;
             if (!audioEngine.Open())
                 std::cout << "[audio] running without an output device" << std::endl;

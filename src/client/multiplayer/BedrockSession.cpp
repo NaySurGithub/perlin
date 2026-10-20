@@ -568,7 +568,7 @@ namespace perlin {
         serverAddress = host + ":" + std::to_string(port);
         gameVersion = net->Info().version;
         if (gameVersion.empty())
-            gameVersion = "1.26.51";
+            gameVersion = "1.26.50";
         if (!SendRequestNetworkSettings()) {
             lastError = "failed to send RequestNetworkSettings";
             state = State::Failed;
@@ -924,7 +924,7 @@ namespace perlin {
     bool BedrockSession::SendRequestChunkRadius() {
         proto::RequestChunkRadiusPacket p;
         p.chunkRadius = chunkRadius;
-        p.maxRadius = 8;
+        p.maxRadius = std::max(chunkRadius, maxViewDistance); // the same ceiling the Login's MaxViewDistance reports
         std::cout << "[bedrock] RequestChunkRadius " << chunkRadius << std::endl;
         return Send(p);
     }

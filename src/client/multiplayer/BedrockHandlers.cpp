@@ -187,7 +187,16 @@ namespace perlin {
                         lastError += " (the server runs a different Minecraft version than Perlin's " +
                                      std::string(kBedrockVersion) + ")";
                     state = State::Failed;
+                } else if (!cacheStatusSent) {
+                    // gophertunnel's client answers LoginSuccess with ClientCacheStatus before anything else: the packs
+                    // and the world are sent after the server has seen what the client supports.
+                    SendClientCacheStatus();
+                    cacheStatusSent = true;
                 }
+            } else if (p.status == PlayStatusPacketStatus::LoginSuccess && !cacheStatusSent) {
+                // Some servers send ResourcePacksInfo ahead of LoginSuccess; the answer is the same either way.
+                SendClientCacheStatus();
+                cacheStatusSent = true;
             } else if (p.status == PlayStatusPacketStatus::PlayerSpawn) {
                 SendLoadingScreen(false);
                 SendSetLocalPlayerAsInitialized();
@@ -206,7 +215,7 @@ namespace perlin {
                     break;
                 case 35:
                 case 8:
-                    lastError += " (version mismatch with Perlin's 1.26.52)";
+                    lastError += " (version mismatch with Perlin's 1.26.50)";
                     break;
                 case 46:
                     lastError += " (the server wants an Xbox login: use --login)";
@@ -329,10 +338,6 @@ namespace perlin {
                 SendClientCacheStatus();
                 cacheStatusSent = true;
             }
-            if (!radiusSent) {
-                SendRequestChunkRadius();
-                radiusSent = true;
-            }
         });
 
         On<ResourcePacksReadyForValidationPacket>([this](const ResourcePacksReadyForValidationPacket&) {
@@ -341,10 +346,6 @@ namespace perlin {
             if (!cacheStatusSent) {
                 SendClientCacheStatus();
                 cacheStatusSent = true;
-            }
-            if (!radiusSent) {
-                SendRequestChunkRadius();
-                radiusSent = true;
             }
         });
 
