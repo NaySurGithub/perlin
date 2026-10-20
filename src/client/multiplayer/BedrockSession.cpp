@@ -1317,9 +1317,13 @@ namespace perlin {
         return Send(p);
     }
 
+    // The reply to a server latency probe. The probe carries milliseconds; vanilla answers with the same moment in
+    // nanoseconds (the value times one million, wrapping) and keeps the from-server flag set. A server that
+    // matches replies against the probes it sent (CubeCraft's proxy, anti-cheats) times the player out otherwise.
     bool BedrockSession::SendTickSync(uint64_t timestamp) {
         proto::NetworkStackLatencyPacket p;
-        p.timestamp = timestamp;
+        p.timestamp = timestamp * 1000000ULL;
+        p.needsResponse = 1;
         return Send(p);
     }
 

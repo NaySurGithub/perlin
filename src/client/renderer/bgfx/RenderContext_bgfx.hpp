@@ -25,7 +25,6 @@ namespace perlin {
 
         bool Initialize(AppPlatform& platform, const Options& options) override;
         std::string RendererName() const override { return rendererName; }
-        size_t MeshUploadsPerFrame() const override { return bgfx::getRendererType() == bgfx::RendererType::Direct3D12 ? 10 : SIZE_MAX; }
         std::string GpuVendor() const override;
         std::string GpuDescription() const override;
         void Shutdown() override;

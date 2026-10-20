@@ -216,11 +216,8 @@ namespace perlin {
         }
         const uint32_t current = generation.load();
         const auto uploadStart = std::chrono::steady_clock::now();
-        const size_t uploadCap = std::max<size_t>(1, context.MeshUploadsPerFrame());
         size_t consumed = 0;
         for (MeshResult& r : finished) {
-            if (consumed >= uploadCap)
-                break;
             if (consumed > 0 && std::chrono::steady_clock::now() - uploadStart > std::chrono::milliseconds(6))
                 break;
             consumed++;

@@ -194,7 +194,6 @@ namespace perlin::entity {
         double bodyTickAcc = 0;
         glm::dvec3 bodyTickPos{0.0};
         CapeChain cape;
-        float capeLean = 0;
     };
 
     namespace {
@@ -378,47 +377,32 @@ namespace perlin::entity {
         return 0;
     }
 
-    // Bedrock's body rotation for players: the body tracks the look direction closely. The head may lead by a
-    // few degrees (a dead zone that is dragged along), never far enough to read as a free look, and while
-    // moving the body faces the look direction, backwards walking included.
+    // Bedrock's body rotation for players, as the reference footage shows it: the head is the leader and the body
+    // follows it with a smooth catch-up (an exponential approach, every frame, no dead zone), so during a quick turn
+    // the body trails by a few tens of degrees and the moment the head stops the body settles under it. The head can
+    // never be held away from the body: the gap is capped, tighter while walking, when the body is already facing the
+    // way the player is heading.
     void EntityRenderer::TickPlayerBody(View& v, float dt, float prevYaw) {
-        constexpr float kDeadZone = 12.0f; // head lead before the body starts turning
-        constexpr float kMaxLead = 22.0f;  // hard limit between head and body
         const float look = v.headYaw;
         if (!v.bodyInit) {
             v.bodyInit = true;
             v.body = v.bodyPrev = look;
             v.bodyTickPos = v.pos;
-            v.bodyTickAcc = 0.0;
         }
-        v.bodyTickAcc += dt;
-        int ticks = 0;
-        while (v.bodyTickAcc >= 0.05 && ticks < 8) {
-            v.bodyTickAcc -= 0.05;
-            ticks++;
-            v.bodyPrev = v.body;
-            const double xd = v.pos.x - v.bodyTickPos.x, zd = v.pos.z - v.bodyTickPos.z;
-            v.bodyTickPos = v.pos;
-            const bool moving = xd * xd + zd * zd > 0.0025000002 || v.attackTime > 0.0f;
-            float diff = WrapDegrees(look - v.body);
-            const float lead = moving ? 4.0f : kDeadZone;
-            if (std::fabs(diff) > lead)
-                v.body += (diff - (diff > 0.0f ? lead : -lead)) * (moving ? 0.55f : 0.4f);
-            diff = WrapDegrees(look - v.body);
-            const float maxLead = moving ? 14.0f : kMaxLead;
-            if (std::fabs(diff) > maxLead)
-                v.body += diff - (diff > 0.0f ? maxLead : -maxLead);
-        }
-        if (ticks > 1 || v.bodyTickAcc > 0.25)
-            v.bodyPrev = v.body; // a long frame: no catch-up sweep
-        v.bodyTickAcc = std::min(v.bodyTickAcc, 0.05);
-        const float partial = static_cast<float>(v.bodyTickAcc / 0.05);
-        float shown = v.bodyPrev + WrapDegrees(v.body - v.bodyPrev) * partial;
-        // The head moves every frame; keep it within reach of the drawn body between ticks too.
-        const float headDiff = WrapDegrees(look - shown);
-        if (std::fabs(headDiff) > kMaxLead)
-            shown += headDiff - (headDiff > 0.0f ? kMaxLead : -kMaxLead);
-        v.yaw = shown;
+        const double xd = v.pos.x - v.bodyTickPos.x, zd = v.pos.z - v.bodyTickPos.z;
+        v.bodyTickPos = v.pos;
+        const float speed = static_cast<float>(std::sqrt(xd * xd + zd * zd)) / std::max(dt, 0.001f);
+        v.bodyTickAcc += (speed - static_cast<float>(v.bodyTickAcc)) * std::min(1.0f, dt * 12.0f); // smoothed blocks/s
+        const bool moving = v.bodyTickAcc > 0.35 || v.attackTime > 0.0f;
+        const float tau = moving ? 0.06f : 0.11f;
+        const float cap = moving ? 20.0f : 40.0f;
+        float diff = WrapDegrees(look - v.body);
+        v.body += diff * (1.0f - std::exp(-dt / tau));
+        diff = WrapDegrees(look - v.body);
+        if (std::fabs(diff) > cap)
+            v.body += diff - (diff > 0.0f ? cap : -cap);
+        v.body = WrapDegrees(v.body);
+        v.yaw = v.body;
         v.yawSpeed = WrapDegrees(v.yaw - prevYaw) / std::max(dt, 0.001f);
     }
 
@@ -592,21 +576,15 @@ namespace perlin::entity {
             v.capeZ = lean2 / 2.0f;
 
             if (e.isPlayer && in.capePhysics > 0) {
-                // Velocity in the body's frame (Java yaw: forward = (-sin, cos), right = (-cos, -sin)).
-                const float vx = static_cast<float>(step.x) / dt, vz = static_cast<float>(step.z) / dt;
-                const float fs = static_cast<float>(sn), fc = static_cast<float>(cs);
+                // The chain aims at Java's cape angles (v.capeX = 6 + lean / 2 + flap, v.capeZ = lean2 / 2, both from the
+                // jar's formulas above) and adds the lag and ripple between its strips.
                 CapeInput ci;
-                const bool jumped = glm::length(step) > 6.0; // teleport: no wind from it
-                ci.forward = jumped ? 0.0f : -fs * vx + fc * vz;
-                ci.right = jumped ? 0.0f : -fc * vx - fs * vz;
-                ci.up = jumped ? 0.0f : v.verticalSpeed;
-                ci.yawRate = std::clamp(v.yawSpeed, -720.0f, 720.0f);
-                const float leanTarget = e.Has(flag::Sneaking) ? 28.6f : 0.0f;
-                const float body = std::max(v.swimAmount, v.lieAmount);
-                v.capeLean += (std::max(leanTarget, 70.0f * body) - v.capeLean) * std::min(1.0f, dt * 10.0f);
-                ci.lean = v.capeLean;
+                ci.targetPitch = v.capeX;
+                ci.targetRoll = v.capeZ;
                 ci.stride = walk * 6.0f;
                 ci.moving = std::clamp(v.groundSpeed / 3.0f, 0.0f, 1.0f) * (std::fabs(v.verticalSpeed) < 2.0f ? 1.0f : 0.0f);
+                if (glm::length(step) > 6.0) // teleported: start over at the target
+                    v.cape.Reset();
                 v.cape.Step(ci, dt);
             }
         }
@@ -927,7 +905,7 @@ namespace perlin::entity {
         }
         if (e.isPlayer && in.capePhysics > 0) {
             // The physics cape: every part turns by its angle relative to the part above it.
-            pose["cape"].rotation = glm::vec3(0.0f);
+            pose["cape"].rotation = glm::vec3(0.0f, v.capeZ, 0.0f); // Java turns the cape's yaw with its side lean
             float previousPitch = 0.0f, previousRoll = 0.0f;
             for (int i = 0; i < CapeChain::kSegments; i++) {
                 auto& part = pose["part" + std::to_string(i + 1)].rotation;

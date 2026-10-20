@@ -99,8 +99,6 @@ namespace perlin {
             std::cout << "[bgfx] FATAL " << filePath << ":" << line << " (" << (int)code << "): " << str
                       << std::endl;
             const std::string message = str ? str : "";
-            if (bgfx::getRendererType() == bgfx::RendererType::Direct3D12)
-                gpu::RememberD3D12Failure(message);
             if (code == bgfx::Fatal::DeviceLost || message.find("DEVICE_REMOVED") != std::string::npos ||
                 message.find("DEVICE_RESET") != std::string::npos || message.find("DEVICE_HUNG") != std::string::npos) {
                 std::cout << "[bgfx] the GPU driver reset the device; restarting Perlin" << std::endl;
@@ -174,8 +172,6 @@ namespace perlin {
             init.type = bgfx::RendererType::OpenGL;
         else if (forced == "d3d11")
             init.type = bgfx::RendererType::Direct3D11;
-        else if (forced == "d3d12")
-            init.type = bgfx::RendererType::Direct3D12;
         else if (forced == "metal")
             init.type = bgfx::RendererType::Metal;
 
@@ -203,10 +199,9 @@ namespace perlin {
                     init.type = bgfx::RendererType::OpenGL;
             }
         }
-        // No explicit choice: on Windows pick the fastest GPU and Direct3D 12 where it runs well. bgfx's own
-        // ranking always prefers Direct3D 11 on Windows, so Direct3D 12 was never chosen automatically.
-        // An explicit API still gets the fastest adapter (the chooser's vendor/device), so picking Direct3D 12 or 11
-        // by hand never lands on the integrated GPU of a laptop.
+        // On Windows the fastest GPU is picked and Direct3D 11 is used.
+        // An explicit API still gets the fastest adapter (the chooser's vendor/device), so picking an API by hand
+        // never lands on the integrated GPU of a laptop.
         gpu::Choice gpuChoice;
         const bool autoType = init.type == bgfx::RendererType::Count || forced == "auto";
         gpuChoice = gpu::ChooseRenderer();
@@ -226,10 +221,8 @@ namespace perlin {
         init.swapChain.width = (uint32_t)width;
         init.swapChain.height = (uint32_t)height;
         init.reset = ResetFlags();
-        init.debug = false;   // no D3D12/Vulkan validation layers or debug text
+        init.debug = false;   // no validation layers or debug text
         init.profile = false;
-        // Direct3D 12 keeps one more frame in flight than the default, so the CPU is not stalled on the GPU's fence.
-        init.swapChain.numBackBuffers = 3;
         init.limits.maxTransientVbSize = 48u << 20;
         init.limits.maxTransientIbSize = 24u << 20;
         init.callback = callback.get();
@@ -311,8 +304,6 @@ namespace perlin {
         const bool shadersOk = shaders.Initialize();
         shadowConfigDirty = true; // built on the first frame from FrameParams
         if (!shadersOk) {
-            if (bgfx::getRendererType() == bgfx::RendererType::Direct3D12)
-                gpu::RememberD3D12Failure("shader program creation failed");
             std::cout << "[bgfx] shader program creation failed for "
                       << bgfx::getRendererName(bgfx::getRendererType()) << std::endl;
             return false;

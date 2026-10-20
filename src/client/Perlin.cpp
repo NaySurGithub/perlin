@@ -2975,9 +2975,9 @@ namespace perlin {
                     // The graphics API; picking another one restarts the game (see below).
                     std::vector<std::pair<std::string, std::string>> apis = {{"auto", "Auto"}};
 #if defined(_WIN32)
-                    apis.insert(apis.end(), {{"d3d11", "Direct3D 11"}, {"d3d12", "Direct3D 12"}, {"vulkan", "Vulkan"}, {"opengl", "OpenGL"}});
+                    apis.insert(apis.end(), {{"d3d11", "Direct3D 11"}, {"vulkan", "Vulkan"}, {"opengl", "OpenGL"}});
 #elif defined(__APPLE__)
-                    apis.insert(apis.end(), {{"metal", "Metal"}});
+                    apis.push_back({"metal", "Metal"});
 #else
                     apis.insert(apis.end(), {{"vulkan", "Vulkan"}, {"opengl", "OpenGL"}});
 #endif
