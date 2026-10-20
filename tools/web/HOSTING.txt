@@ -20,3 +20,7 @@ Try it locally
     python3 serve.py 8080      then open http://localhost:8080/
 
 The game opens on its own start screen. Web builds join NetherNet (WebRTC) servers only.
+
+LOCAL / LAN SERVERS
+  serve.py relays /__relay/<host>/<port>/... to servers on this machine or private network, so a
+  NetherNet server with no CORS headers (e.g. localhost:19132) can be joined from the page.

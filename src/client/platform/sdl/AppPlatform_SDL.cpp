@@ -236,6 +236,34 @@ bool AppPlatform_SDL::ConfirmDialog(const std::string& title, const std::string&
 #endif
 }
 
+void AppPlatform_SDL::SetTouchState(const perlin::TouchState& state) {
+    if (touchMode)
+        touch.SetState(state);
+}
+
+void AppPlatform_SDL::SetTouchMode(bool on) {
+    if (on == touchMode)
+        return;
+    if (game)
+        touch.Cancel(game->GetInput());
+    touchMode = on;
+    if (on) {
+        // Touch has no mouse to capture: the game always counts as "captured" (looking with a finger) and
+        // menus are told apart by TextMode alone.
+        if (cursorCaptured) {
+            SDL_SetWindowRelativeMouseMode(window, false);
+            cursorCaptured = false;
+        }
+        if (game)
+            game->GetInput().SetCaptured(true);
+    } else {
+        if (game)
+            game->GetInput().SetCaptured(false);
+        keyboardShown = false;
+        SDL_StopTextInput(window);
+    }
+}
+
 void AppPlatform_SDL::DrawTouchOverlay(perlin::RenderContext& renderer) {
     if (!touchMode || !game)
         return;
@@ -250,10 +278,12 @@ bool AppPlatform_SDL::Initialize() {
 #ifdef SDL_PLATFORM_ANDROID
     touchMode = true;
     SDL_SetHint(SDL_HINT_ORIENTATIONS, "LandscapeLeft LandscapeRight");
-    SDL_SetHint(SDL_HINT_TOUCH_MOUSE_EVENTS, "0");
-    SDL_SetHint(SDL_HINT_MOUSE_TOUCH_EVENTS, "0");
     SDL_SetHint(SDL_HINT_ANDROID_TRAP_BACK_BUTTON, "1");
 #endif
+    // Fingers are handled as fingers (touch controls) on every platform; the first touch switches the touch
+    // layout on, a real mouse switches it off again.
+    SDL_SetHint(SDL_HINT_TOUCH_MOUSE_EVENTS, "0");
+    SDL_SetHint(SDL_HINT_MOUSE_TOUCH_EVENTS, "0");
     if (const char* t = std::getenv("PERLIN_TOUCH"))
         touchMode = touchMode || std::atoi(t) != 0;
     if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS)) {
@@ -322,6 +352,8 @@ bool AppPlatform_SDL::Initialize() {
     game = std::make_unique<perlin::Perlin>(args);
     if (!game->Initialize(this))
         return false;
+    if (touchMode)
+        game->GetInput().SetCaptured(true);
 #ifndef __EMSCRIPTEN__
     SDL_RaiseWindow(window);
     if (SDL_GetWindowFlags(window) & SDL_WINDOW_INPUT_FOCUS)
@@ -331,6 +363,11 @@ bool AppPlatform_SDL::Initialize() {
 }
 
 void AppPlatform_SDL::SetCursorCaptured(bool captured) {
+    if (touchMode) {
+        if (game)
+            game->GetInput().SetCaptured(true);
+        return;
+    }
     if (!window || captured == cursorCaptured)
         return;
     if (SDL_SetWindowRelativeMouseMode(window, captured)) {
@@ -401,6 +438,15 @@ void AppPlatform_SDL::HandleEvent(const SDL_Event& e) {
                 input->OnKeyUp(k);
         break;
     case SDL_EVENT_MOUSE_MOTION:
+        if (e.motion.which == SDL_TOUCH_MOUSEID)
+            break;
+        if (touchMode) {
+#ifdef SDL_PLATFORM_ANDROID
+            break;
+#else
+            SetTouchMode(false);
+#endif
+        }
         if (input) {
             if (cursorCaptured)
                 input->OnMouseDelta(e.motion.xrel, e.motion.yrel);
@@ -408,6 +454,15 @@ void AppPlatform_SDL::HandleEvent(const SDL_Event& e) {
         }
         break;
     case SDL_EVENT_MOUSE_BUTTON_DOWN:
+        if (e.button.which == SDL_TOUCH_MOUSEID)
+            break;
+        if (touchMode) {
+#ifdef SDL_PLATFORM_ANDROID
+            break;
+#else
+            SetTouchMode(false);
+#endif
+        }
         if (!cursorCaptured && !(input && input->TextMode())) {
             SetCursorCaptured(true);
             break;
@@ -424,6 +479,10 @@ void AppPlatform_SDL::HandleEvent(const SDL_Event& e) {
     case SDL_EVENT_FINGER_MOTION:
     case SDL_EVENT_FINGER_UP:
     case SDL_EVENT_FINGER_CANCELED:
+        if (e.tfinger.touchID == SDL_MOUSE_TOUCHID || e.tfinger.touchID == SDL_PEN_TOUCHID)
+            break;
+        if (input && !touchMode && e.type == SDL_EVENT_FINGER_DOWN)
+            SetTouchMode(true);
         if (input && touchMode) {
             touch.SetViewport(framebufferWidth, framebufferHeight);
             const float w = static_cast<float>(framebufferWidth), h = static_cast<float>(framebufferHeight);

@@ -29,6 +29,7 @@ namespace perlin {
         void SetToggleModes(bool sprint, bool sneak) { sprintToggle = sprint; sneakToggle = sneak; }
         bool SprintLatched() const { return sprintToggle && sprintLatch; }
         bool SneakLatched() const { return sneakToggle && sneakLatch; }
+        bool Flying() const { return flying; }
         bool Gliding() const { return gliding; }
         void SetElytra(bool value) { hasElytra = value; }
         void SetItemSlow(bool slow) { itemSlow = slow; }

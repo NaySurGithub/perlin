@@ -1,4 +1,6 @@
+import http.client
 import http.server
+import ipaddress
 import os
 import socketserver
 import sys
@@ -16,6 +18,49 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         self.send_header("Cross-Origin-Embedder-Policy", "require-corp")
         self.send_header("Cache-Control", "no-store")
         super().end_headers()
+
+    def _relay(self):
+        # /__relay/<host>/<port>/<path>: forwards to a server on this machine or LAN so the browser can
+        # reach NetherNet signaling endpoints that send no CORS headers. Public hosts are refused.
+        parts = self.path.split("/", 4)
+        if len(parts) < 5 or not parts[3].isdigit():
+            self.send_error(400)
+            return
+        host, port, rest = parts[2], int(parts[3]), "/" + parts[4]
+        try:
+            ip = ipaddress.ip_address(__import__("socket").gethostbyname(host))
+            if not (ip.is_loopback or ip.is_private):
+                self.send_error(403, "relay only reaches local/private addresses")
+                return
+            length = int(self.headers.get("Content-Length") or 0)
+            body = self.rfile.read(length) if length else None
+            headers = {}
+            if self.headers.get("Content-Type"):
+                headers["Content-Type"] = self.headers["Content-Type"]
+            conn = http.client.HTTPConnection(host, port, timeout=30)
+            conn.request(self.command, rest, body, headers)
+            r = conn.getresponse()
+            data = r.read()
+            self.send_response(r.status)
+            self.send_header("Content-Type", r.getheader("Content-Type", "application/octet-stream"))
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+            conn.close()
+        except Exception as e:
+            self.send_error(502, str(e))
+
+    def do_POST(self):
+        if self.path.startswith("/__relay/"):
+            self._relay()
+        else:
+            self.send_error(501)
+
+    def do_GET(self):
+        if self.path.startswith("/__relay/"):
+            self._relay()
+        else:
+            super().do_GET()
 
     def log_message(self, *args):
         pass

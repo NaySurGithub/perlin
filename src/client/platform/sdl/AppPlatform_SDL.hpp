@@ -26,10 +26,12 @@ public:
     void ShowSignInCode(const std::string& url, const std::string& code) override;
     bool ConfirmDialog(const std::string& title, const std::string& message) override;
     std::unique_ptr<perlin::RenderContext> CreateRenderContext() override;
+    void SetTouchState(const perlin::TouchState& state) override;
     void DrawTouchOverlay(perlin::RenderContext& renderer) override;
 
 private:
     void HandleEvent(const SDL_Event& event);
+    void SetTouchMode(bool on);
     void SetClipboard(const std::string& text) override;
     void OpenUrl(const std::string& url) override;
     bool PickFile(const std::string& kind) override;

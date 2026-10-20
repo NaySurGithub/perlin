@@ -11,14 +11,10 @@ namespace {
 }
 
 namespace perlin::http {
-    Response Request(const std::string& host, uint16_t port, bool tls, const std::string& method,
-                     const std::string& path, const std::string& body, const std::string& contentType,
-                     const std::map<std::string, std::string>& extra, int timeoutSecs) {
-        std::string url;
-        if (host.empty() && (path.rfind("http://", 0) == 0 || path.rfind("https://", 0) == 0))
-            url = path;
-        else
-            url = std::string(tls ? "https://" : "http://") + host + ":" + std::to_string(port) + path;
+    namespace {
+    Response Fetch(const std::string& url, const std::string& method, const std::string& body,
+                   const std::string& contentType, const std::map<std::string, std::string>& extra,
+                   int timeoutSecs) {
 
         emscripten_fetch_attr_t attr;
         emscripten_fetch_attr_init(&attr);
@@ -85,5 +81,25 @@ namespace perlin::http {
         }
         emscripten_fetch_close(fetch);
         return out;
+    }
+    }
+
+    Response Request(const std::string& host, uint16_t port, bool tls, const std::string& method,
+                     const std::string& path, const std::string& body, const std::string& contentType,
+                     const std::map<std::string, std::string>& extra, int timeoutSecs) {
+        if (host.empty() && (path.rfind("http://", 0) == 0 || path.rfind("https://", 0) == 0))
+            return Fetch(path, method, body, contentType, extra, timeoutSecs);
+        const std::string url = std::string(tls ? "https://" : "http://") + host + ":" + std::to_string(port) + path;
+        Response direct = Fetch(url, method, body, contentType, extra, timeoutSecs);
+        if (direct.status != 0 || tls)
+            return direct;
+        // A status of 0 means the browser refused the reply, almost always because the server sends no
+        // CORS headers (a stock BDS does not). The page's own server (serve.py) relays such requests
+        // same-origin, so try that before giving up.
+        Response relayed = Fetch("/__relay/" + host + "/" + std::to_string(port) + path, method, body, contentType,
+                                 extra, timeoutSecs);
+        if (relayed.status != 0 && relayed.status != 404 && relayed.status != 501)
+            return relayed;
+        return direct;
     }
 }

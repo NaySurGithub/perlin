@@ -8,6 +8,7 @@
 
 namespace perlin {
     class RenderContext;
+    struct TouchState;
 }
 
 struct NativeWindowInfo {
@@ -57,6 +58,7 @@ public:
     virtual bool TakeSurfaceChanged() { return false; }
     virtual bool PickFile(const std::string& kind) { (void)kind; return false; }
 
+    virtual void SetTouchState(const perlin::TouchState& state) { (void)state; }
     virtual void DrawTouchOverlay(perlin::RenderContext& renderer) { (void)renderer; }
 
     virtual std::unique_ptr<perlin::RenderContext> CreateRenderContext() = 0;

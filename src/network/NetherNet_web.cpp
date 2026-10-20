@@ -97,7 +97,8 @@ namespace perlin {
         if (r.status == 0) {
             error = "could not reach the signaling endpoint from the browser (server down, blocked by CORS, "
                     "or http:// from an https:// page - the server must answer /v1/join with "
-                    "Access-Control-Allow-Origin and be served over https unless it is localhost)";
+                    "Access-Control-Allow-Origin and be served over https unless it is localhost; a server on this "
+                    "machine or LAN also works when Perlin is served by the bundled serve.py, which relays it)";
             return false;
         }
         if (r.status < 200 || r.status >= 300) {

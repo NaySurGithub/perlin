@@ -49,6 +49,7 @@
 #include "world/level/lighting/ChunkLighting.hpp"
 #include "client/ui/DebugScreen.hpp"
 #include "client/ui/GuiScale.hpp"
+#include "client/input/TouchState.hpp"
 #include "client/ui/ItemData.hpp"
 #include "client/ui/HudRenderers.hpp"
 #include "util/SystemInfo.hpp"
@@ -7111,8 +7112,17 @@ namespace perlin {
                         renderer->DrawHudCursor(cx, cy, cw, ch);
                 }
             }
-            if (!deathShown && !pauseShown && !invShown && !disconnectShown && !loadingShown && !titleShown)
+            if (!deathShown && !pauseShown && !invShown && !disconnectShown && !loadingShown && !titleShown) {
+                TouchState touchState;
+                touchState.flying = player.Flying();
+                touchState.inWater = player.InWater();
+                touchState.riding = live && live->RidingUid() != 0;
+                touchState.hudScale = hud ? hud->Scale() : 0;
+                for (size_t a = 0; a < kActionCount; a++)
+                    touchState.bindings[a] = options.GetKey(static_cast<Action>(a));
+                platform->SetTouchState(touchState);
                 platform->DrawTouchOverlay(*renderer);
+            }
             if (inputManager.Pressed(Action::Screenshot))
                 TakeScreenshot();
             { ProfScope p(6); renderer->EndFrame(); }
