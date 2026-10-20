@@ -47,6 +47,10 @@ namespace perlin {
             std::chrono::steady_clock::time_point since;
             bool moved = false;
             bool holding = false;
+            // A menu finger that turned into a vertical drag: it scrolls instead of pressing.
+            bool scrolling = false;
+            std::chrono::steady_clock::time_point restoreAt;
+            bool pointerParked = false;
         };
 
         struct Layout {

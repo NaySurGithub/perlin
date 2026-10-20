@@ -298,6 +298,29 @@ if(TARGET bgfx)
     target_compile_definitions(bgfx PRIVATE BGFX_CONFIG_MAX_VERTEX_BUFFERS=16384 BGFX_CONFIG_MAX_INDEX_BUFFERS=16384)
 endif()
 
+# bgfx's EGL context keeps the Android window it was created with and rebuilds its surface from it
+# on every reset. When the app comes back from the background Android hands out a new window, so
+# the old pointer is dead and the screen stays black. bgfx has no way to be given the new one, so
+# its source is patched (once, text only) to read it from perlin_bgfx_android_window, which the
+# app sets before resetting.
+if(ANDROID AND TARGET bgfx)
+    set(PERLIN_BGFX_EGL "${bgfx_SOURCE_DIR}/bgfx/src/glcontext_egl.cpp")
+    file(READ "${PERLIN_BGFX_EGL}" perlin_egl_src)
+    if(NOT perlin_egl_src MATCHES "perlin_bgfx_android_window")
+        string(REPLACE "namespace bgfx { namespace gl" "extern \"C\" { void* perlin_bgfx_android_window = NULL; }\n\nnamespace bgfx { namespace gl" perlin_egl_src "${perlin_egl_src}")
+        string(REPLACE "EGLNativeWindowType nwh = (EGLNativeWindowType )m_nwh;\n\t\t\teglMakeCurrent(m_display, EGL_NO_SURFACE"
+                       "EGLNativeWindowType nwh = (EGLNativeWindowType )(NULL != perlin_bgfx_android_window ? perlin_bgfx_android_window : m_nwh);\n\t\t\teglMakeCurrent(m_display, EGL_NO_SURFACE"
+                       perlin_egl_src "${perlin_egl_src}")
+        string(REPLACE "\t\t\t\t  (ANativeWindow*)m_nwh\n\t\t\t\t, _swapChain.width"
+                       "\t\t\t\t  (ANativeWindow*)nwh\n\t\t\t\t, _swapChain.width"
+                       perlin_egl_src "${perlin_egl_src}")
+        if(NOT perlin_egl_src MATCHES "perlin_bgfx_android_window \\? perlin_bgfx_android_window")
+            message(FATAL_ERROR "Perlin: could not patch bgfx's glcontext_egl.cpp for Android resume (bgfx changed?)")
+        endif()
+        file(WRITE "${PERLIN_BGFX_EGL}" "${perlin_egl_src}")
+    endif()
+endif()
+
 # shaderc runs Microsoft's FXC (D3DCompile) in-process for the Direct3D shaders. FXC recurses
 # deeply on bigger shaders (the Vibrant Visuals water shader) and overflowed the 1 MB default
 # Windows stack (exit code 0xC00000FD). Give shaderc a 64 MB stack reserve; it is only address

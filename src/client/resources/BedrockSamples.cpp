@@ -25,7 +25,16 @@ namespace perlin {
 
     bool BedrockSamples::Ensure(const std::string& targetDir) {
 #ifdef __EMSCRIPTEN__
-        return Available(targetDir);
+        // The page downloads the files before the engine starts. Judge by the files themselves rather than the
+        // page's marker, so the two can never disagree and leave the download screen waiting forever.
+        assets::Job& job = assets::Samples();
+        if (Complete(fs::path(targetDir) / "repo")) {
+            std::ofstream((fs::path(targetDir) / kMarker).string()).close();
+            job.stage = assets::Stage::Done;
+            return true;
+        }
+        job.stage = assets::Stage::Failed;
+        return false;
 #else
         assets::Job& job = assets::Samples();
         if (Available(targetDir)) {

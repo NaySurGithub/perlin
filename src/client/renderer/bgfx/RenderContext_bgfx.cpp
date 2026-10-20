@@ -692,8 +692,18 @@ namespace perlin {
     void RenderContext_bgfx::BeginFrame(const FrameParams& params) {
         int w = 0, h = 0;
         platform->GetFramebufferSize(w, h);
-        if (w > 0 && h > 0 && (w != width || h != height))
+        if (platform->TakeSurfaceChanged() && w > 0 && h > 0 && initialized) {
+            // The window behind the swap chain was replaced. A reset at an unchanged size is ignored, so go one
+            // pixel off now; the next frame sees the mismatch and resets to the real size.
+            width = w + 1;
+            height = h;
+            bgfx::SwapChain sc;
+            sc.width = static_cast<uint32_t>(w + 1);
+            sc.height = static_cast<uint32_t>(h);
+            bgfx::reset(ResetFlags(), &sc);
+        } else if (w > 0 && h > 0 && (w != width || h != height)) {
             Resize(w, h);
+        }
 
         auto quantize = [](float c) -> uint32_t {
             return static_cast<uint32_t>(std::clamp(c, 0.0f, 1.0f) * 255.0f + 0.5f);

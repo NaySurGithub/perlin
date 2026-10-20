@@ -18,6 +18,7 @@ namespace perlin {
         constexpr float kSprintZone = 0.92f;
         constexpr float kLookScale = 0.55f;
         constexpr float kTapSlop = 18.0f;
+        constexpr float kScrollStep = 36.0f; // finger travel (px) per wheel notch in menus
         constexpr double kHoldSeconds = 0.28;
         constexpr double kTapSeconds = 0.30;
         constexpr int kDiscTile = 64;
@@ -249,17 +250,43 @@ namespace perlin {
         f->lastY = y;
         switch (f->role) {
         case Role::Pointer:
-            input.OnMouseMove(x, y);
+            if (!f->scrolling && f->moved && std::fabs(fromStartY) > std::fabs(fromStartX) * 1.2f) {
+                // A vertical drag in a menu scrolls (like a phone list). The press that started it is
+                // released with the pointer parked off screen so it can't click what is under the finger.
+                f->scrolling = true;
+                f->pointerParked = true;
+                f->restoreAt = Clock::now() + std::chrono::milliseconds(120);
+                scrollAccum = 0.0f;
+                input.OnMouseMove(-10000.0f, -10000.0f);
+                input.OnMouseUp(Mouse::Left);
+            }
+            if (f->scrolling) {
+                scrollAccum += dy;
+                while (scrollAccum >= kScrollStep) {
+                    input.OnMouseWheel(1.0f);
+                    scrollAccum -= kScrollStep;
+                }
+                while (scrollAccum <= -kScrollStep) {
+                    input.OnMouseWheel(-1.0f);
+                    scrollAccum += kScrollStep;
+                }
+                if (f->pointerParked && Clock::now() >= f->restoreAt) {
+                    f->pointerParked = false;
+                    input.OnMouseMove(x, y);
+                }
+            } else {
+                input.OnMouseMove(x, y);
+            }
             break;
         case Role::Scroll:
             scrollAccum += dy;
-            while (scrollAccum >= 40.0f) {
-                input.OnMouseWheel(-1.0f);
-                scrollAccum -= 40.0f;
-            }
-            while (scrollAccum <= -40.0f) {
+            while (scrollAccum >= kScrollStep) {
                 input.OnMouseWheel(1.0f);
-                scrollAccum += 40.0f;
+                scrollAccum -= kScrollStep;
+            }
+            while (scrollAccum <= -kScrollStep) {
+                input.OnMouseWheel(-1.0f);
+                scrollAccum += kScrollStep;
             }
             break;
         case Role::Stick: {
@@ -290,6 +317,11 @@ namespace perlin {
             return;
         switch (f->role) {
         case Role::Pointer:
+            if (f->scrolling) {
+                // The press was already released when the drag began; leave the pointer where the finger ended.
+                input.OnMouseMove(x, y);
+                break;
+            }
             input.OnMouseMove(x, y);
             input.OnMouseUp(Mouse::Left);
             break;
@@ -324,8 +356,15 @@ namespace perlin {
             ReleaseAll(input);
             return;
         }
-        if (!gameplay)
+        if (!gameplay) {
+            const auto t = Clock::now();
+            for (Finger& f : fingers)
+                if (f.role == Role::Pointer && f.pointerParked && t >= f.restoreAt) {
+                    f.pointerParked = false;
+                    input.OnMouseMove(f.lastX, f.lastY);
+                }
             return;
+        }
         const auto now = Clock::now();
         for (Finger& f : fingers) {
             if (f.role != Role::Look || f.holding || f.moved)

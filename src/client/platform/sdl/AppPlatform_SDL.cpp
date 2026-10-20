@@ -6,6 +6,9 @@
 #include <bgfx/bgfx.h>
 
 #include <atomic>
+#include <cstdio>
+#include <filesystem>
+#include "util/Paths.hpp"
 #include <cstdlib>
 #include <memory>
 #include <iostream>
@@ -142,6 +145,72 @@ void AppPlatform_SDL::OpenUrl(const std::string& url) {
         new std::string(url), false);
 }
 
+#ifdef SDL_PLATFORM_ANDROID
+extern "C" void* perlin_bgfx_android_window; // set in bgfx's EGL code by the patch in CMakeLists.txt
+#endif
+
+bool AppPlatform_SDL::PickFile(const std::string& kind) {
+#ifdef SDL_PLATFORM_ANDROID
+    struct Request {
+        AppPlatform_SDL* self;
+        std::string kind;
+    };
+    SDL_RunOnMainThread(
+        [](void* data) {
+            std::unique_ptr<Request> request(static_cast<Request*>(data));
+            static const SDL_DialogFileFilter kImages[] = {{"PNG image", "png"}};
+            const bool image = request->kind == "skin" || request->kind == "cape";
+            SDL_PropertiesID props = SDL_CreateProperties();
+            if (image) {
+                SDL_SetPointerProperty(props, SDL_PROP_FILE_DIALOG_FILTERS_POINTER, const_cast<SDL_DialogFileFilter*>(kImages));
+                SDL_SetNumberProperty(props, SDL_PROP_FILE_DIALOG_NFILTERS_NUMBER, 1);
+            }
+            SDL_SetBooleanProperty(props, SDL_PROP_FILE_DIALOG_MANY_BOOLEAN, false);
+            SDL_ShowFileDialogWithProperties(
+                SDL_FILEDIALOG_OPENFILE,
+                [](void* userdata, const char* const* files, int) {
+                    std::unique_ptr<Request> req(static_cast<Request*>(userdata));
+                    if (!files)
+                        return;
+                    for (const char* const* f = files; *f; f++) {
+                        // Android hands back content:// addresses; SDL can read those, so the bytes are copied
+                        // into the data folder and handed on as an ordinary file.
+                        size_t size = 0;
+                        void* bytes = SDL_LoadFile(*f, &size);
+                        if (!bytes)
+                            continue;
+                        const unsigned char* b = static_cast<const unsigned char*>(bytes);
+                        std::string ext = ".png";
+                        if (size >= 4 && b[0] == 'P' && b[1] == 'K')
+                            ext = ".zip";
+                        else if (size >= 4 && b[0] == 0 && b[1] == 'a' && b[2] == 's' && b[3] == 'm')
+                            ext = ".wasm";
+                        const std::string dir = perlin::paths::DataDir() + "/imports";
+                        std::error_code ec;
+                        std::filesystem::create_directories(dir, ec);
+                        // "cape" in the name is how a dropped png is told from a skin.
+                        const std::string name = (req->kind == "cape" ? "cape_" : req->kind == "skin" ? "skin_" : "import_") +
+                                                 std::to_string(SDL_GetTicks()) + ext;
+                        const std::string path = dir + "/" + name;
+                        if (FILE* out = std::fopen(path.c_str(), "wb")) {
+                            std::fwrite(bytes, 1, size, out);
+                            std::fclose(out);
+                            req->self->PushDropped(path);
+                        }
+                        SDL_free(bytes);
+                    }
+                },
+                new Request(*request), props);
+            SDL_DestroyProperties(props);
+        },
+        new Request{this, kind}, false);
+    return true;
+#else
+    (void)kind;
+    return false;
+#endif
+}
+
 bool AppPlatform_SDL::ConfirmDialog(const std::string& title, const std::string& message) {
 #ifdef __EMSCRIPTEN__
     return perlin_js_confirm(title.c_str(), message.c_str()) == 1;
@@ -223,6 +292,7 @@ bool AppPlatform_SDL::Initialize() {
     native.window = SDL_GetPointerProperty(wp, SDL_PROP_WINDOW_COCOA_WINDOW_POINTER, nullptr);
 #elif defined(SDL_PLATFORM_ANDROID)
     native.window = SDL_GetPointerProperty(wp, SDL_PROP_WINDOW_ANDROID_WINDOW_POINTER, nullptr);
+    lastNativeWindow = native.window;
 #else
     if (drv == "wayland") {
         native.wayland = true;
@@ -359,8 +429,12 @@ void AppPlatform_SDL::HandleEvent(const SDL_Event& e) {
             const float w = static_cast<float>(framebufferWidth), h = static_cast<float>(framebufferHeight);
             const int64_t id = static_cast<int64_t>(e.tfinger.fingerID);
             const float x = e.tfinger.x * w, y = e.tfinger.y * h;
-            if (e.type == SDL_EVENT_FINGER_DOWN)
+            if (e.type == SDL_EVENT_FINGER_DOWN) {
+                // A tap brings the keyboard back if it was dismissed while a text field still has focus.
+                if (input->Keyboard() && keyboardShown)
+                    SDL_StartTextInput(window);
                 touch.FingerDown(*input, id, x, y);
+            }
             else if (e.type == SDL_EVENT_FINGER_MOTION)
                 touch.FingerMove(*input, id, x, y, e.tfinger.dx * w, e.tfinger.dy * h);
             else if (e.type == SDL_EVENT_FINGER_UP)
@@ -384,6 +458,26 @@ void AppPlatform_SDL::PumpFrame() {
     while (SDL_PollEvent(&e))
         HandleEvent(e);
 
+#ifdef SDL_PLATFORM_ANDROID
+    {
+        // Coming back from the background Android gives the app a new window; the graphics context has to be
+        // pointed at it or the screen stays black. SDL swaps the window property to null while there is none.
+        void* nw = SDL_GetPointerProperty(SDL_GetWindowProperties(window), SDL_PROP_WINDOW_ANDROID_WINDOW_POINTER, nullptr);
+        if (!nw) {
+            surfaceLost = true;
+        } else if (nw != lastNativeWindow || surfaceLost) {
+            const bool resumed = lastNativeWindow != nullptr;
+            lastNativeWindow = nw;
+            if (resumed || surfaceLost) {
+                perlin_bgfx_android_window = nw;
+                surfaceChanged = true;
+                std::cout << "[sdl] window surface replaced, rebuilding the swap chain" << std::endl;
+            }
+            surfaceLost = false;
+        }
+    }
+#endif
+
     {
         std::lock_guard lock(titleMutex);
         if (titleDirty) {
@@ -396,18 +490,32 @@ void AppPlatform_SDL::PumpFrame() {
         touch.Update(game->GetInput());
 
     if (game) {
-        const bool text = game->GetInput().TextMode();
+        perlin::Input& in = game->GetInput();
+        const bool text = in.TextMode();
         if (text != textActive) {
             textActive = text;
             if (text) {
                 recaptureAfterText = cursorCaptured;
                 SetCursorCaptured(false);
-                SDL_StartTextInput(window);
+                if (!touchMode)
+                    SDL_StartTextInput(window);
             } else {
-                SDL_StopTextInput(window);
+                if (!touchMode)
+                    SDL_StopTextInput(window);
                 if (recaptureAfterText)
                     SetCursorCaptured(true);
                 recaptureAfterText = false;
+            }
+        }
+        if (touchMode) {
+            // The on-screen keyboard only comes up for a focused text field, not for every menu.
+            const bool keyboard = in.Keyboard();
+            if (keyboard != keyboardShown) {
+                keyboardShown = keyboard;
+                if (keyboard)
+                    SDL_StartTextInput(window);
+                else
+                    SDL_StopTextInput(window);
             }
         }
     }

@@ -42,6 +42,10 @@ namespace perlin {
         void OnChar(int codepoint);
         void SetTextMode(bool on) { textMode = on; }
         bool TextMode() const { return textMode; }
+        // A text field has focus (chat, a server address, a search box). TextMode only means "a menu is open";
+        // on a touch device the on-screen keyboard follows this, not that.
+        void SetKeyboard(bool on) { keyboard = on; }
+        bool Keyboard() const { return keyboard; }
         void ReleaseAll();
 
         bool IsKeyDown(int key) const;
@@ -59,5 +63,6 @@ namespace perlin {
         std::atomic<float> wheel{0};
         std::atomic<bool> captured{false};
         std::atomic<bool> textMode{false};
+        std::atomic<bool> keyboard{false};
     };
 }

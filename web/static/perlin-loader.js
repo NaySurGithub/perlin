@@ -9,7 +9,8 @@
     'bedrock-samples': 1, server_packs: 1, screenshots: 1, shaderpacks: 1, ui_generated: 1,
     ui_defaults: 1, animation_overrides: 1, 'perlin.log': 1, 'blocks.log': 1
   };
-  var CONCURRENCY = 24;
+  var CONCURRENCY = 64;
+  var CDN_BASE = 'https://cdn.jsdelivr.net/gh/';
 
   var el = function (id) { return document.getElementById(id); };
   var statusEl = el('status');
@@ -137,11 +138,17 @@
       path.split('/').map(encodeURIComponent).join('/');
   }
 
-  async function fetchWithRetry(url) {
+  // jsDelivr serves the same Mojang repository at the same commit from a CDN (HTTP/2, no per-IP throttling),
+  // which is far quicker than raw.githubusercontent.com for thousands of small files; GitHub is the fallback.
+  function cdnUrl(manifest, path) {
+    return CDN_BASE + manifest.repository + '@' + manifest.ref + '/' + path.split('/').map(encodeURIComponent).join('/');
+  }
+
+  async function fetchWithRetry(url, fallbackUrl) {
     var lastError;
     for (var attempt = 0; attempt < 4; attempt++) {
       try {
-        var response = await fetch(url, { mode: 'cors', credentials: 'omit' });
+        var response = await fetch(attempt % 2 === 0 || !fallbackUrl ? url : fallbackUrl, { mode: 'cors', credentials: 'omit' });
         if (!response.ok) throw new Error('HTTP ' + response.status);
         return new Uint8Array(await response.arrayBuffer());
       } catch (e) {
@@ -195,7 +202,7 @@
         while (next < missing.length) {
           var path = missing[next++];
           try {
-            var bytes = await fetchWithRetry(rawUrl(manifest, path));
+            var bytes = await fetchWithRetry(cdnUrl(manifest, path), rawUrl(manifest, path));
             writeFile(SAMPLES_REPO + '/' + path, bytes);
             pending.push({ path: path, bytes: bytes });
             if (pending.length >= 200) { flush(pending); pending = []; }
@@ -219,7 +226,7 @@
         if (coreFailed.length) throw new Error(coreFailed.length + ' required files failed to download (first: ' + coreFailed[0] + '). Reload the page to retry.');
       }
     }
-    writeFile(DATA_DIR + '/bedrock-samples/.ready', new Uint8Array(0));
+    writeFile(DATA_DIR + '/bedrock-samples/.ready3', new Uint8Array(0));
     setProgress(-1);
   }
 
@@ -256,14 +263,12 @@
       if (part.done) break;
       chunks.push(part.value);
       received += part.value.length;
-      if (total) setProgress(received / total);
       setStatus('Downloading game data from Mojang: ' + Math.round(received / 1048576) + ' MB' + (total ? ' / ' + Math.round(total / 1048576) + ' MB' : ''));
     }
     var bytes = new Uint8Array(received);
     var at = 0;
     chunks.forEach(function (c) { bytes.set(c, at); at += c.length; });
     writeFile(DATA_DIR + '/fonts/client.jar', bytes);
-    setProgress(-1);
   }
 
   // Sounds are large; they come in after the game is already running and are used from the next
@@ -281,7 +286,7 @@
         while (next < queue.length) {
           var path = queue[next++];
           try {
-            var bytes = await fetchWithRetry(rawUrl(manifest, path));
+            var bytes = await fetchWithRetry(cdnUrl(manifest, path), rawUrl(manifest, path));
             var tx = db.transaction(FILE_STORE, 'readwrite');
             tx.objectStore(FILE_STORE).put({ bytes: bytes.slice().buffer, ref: manifest.ref }, path);
             await transactionDone(tx);
@@ -315,13 +320,14 @@
       setStatus('Restoring saved data...');
       await restoreState(db);
       var withSounds = await soundsCached(db);
-      await ensureSamples(db, withSounds);
-      try {
-        await ensureClientAssets();
-      } catch (e) {
-        // The game still starts; menus fall back to what is available without Mojang's art.
-        console.warn('client assets unavailable: ' + e);
-      }
+      // Mojang's client jar and the sample files download side by side.
+      await Promise.all([
+        ensureSamples(db, withSounds),
+        ensureClientAssets().catch(function (e) {
+          // The game still starts; menus fall back to what is available without Mojang's art.
+          console.warn('client assets unavailable: ' + e);
+        })
+      ]);
       persistence.then(function () {});
       setStatus('Starting...');
       setProgress(-1);

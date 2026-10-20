@@ -329,9 +329,6 @@ namespace {
 
 namespace perlin {
     bool DownloadSamples(const std::string& targetDir) {
-#ifdef __ANDROID__
-        return DownloadFromManifest(targetDir);
-#else
         const fs::path zipDone = fs::path(targetDir) / "repo" / ".from-release-zip";
         std::error_code zec;
         if (fs::exists(zipDone, zec) || DownloadReleaseZip(targetDir)) {
@@ -349,6 +346,11 @@ namespace perlin {
             perlin::assets::Samples().bytes.total = 0;
             return FetchAll(std::string("/") + kRepository + "/" + kBranch + "/", extra, fs::path(targetDir) / "repo", "extra");
         }
+#ifdef __ANDROID__
+        // Where the archive can't be had, the build's own file list (one request per file) is the slow way round.
+        if (DownloadFromManifest(targetDir))
+            return true;
+#endif
         std::cout << "[samples] falling back to downloading files one by one" << std::endl;
         perlin::assets::Samples().bytes.total = 0;
         perlin::assets::Samples().stage = perlin::assets::Stage::Downloading;
@@ -370,7 +372,6 @@ namespace perlin {
         std::cout << "[samples] downloading " << files.size() << " files" << std::endl;
         const std::string prefix = std::string("/") + kRepository + "/" + kBranch + "/";
         return FetchAll(prefix, files, repo, "samples");
-#endif
     }
 }
 #else

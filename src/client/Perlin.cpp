@@ -2189,7 +2189,8 @@ namespace perlin {
                         const bool isSkin = line.kind < 2;
                         if (line.kind % 2 == 0) {
                             if (inside(l.AddX(), line.y, l.addW, l.headH))
-                                folder(isSkin ? skinDir : capeDir);
+                                if (!platform->PickFile(isSkin ? "skin" : "cape"))
+                                    folder(isSkin ? skinDir : capeDir);
                             else if (inside(l.TrashX(), line.y, l.trashW, l.headH)) {
                                 if (isSkin && !wardSkin.empty())
                                     removeFile(wardSkin);
@@ -2233,6 +2234,9 @@ namespace perlin {
                 return s;
             };
             const auto openFolder = [&](const std::string& dir) {
+                // Where there is no file manager to open (Android), the Add button picks the file instead.
+                if (platform->PickFile("pack"))
+                    return;
                 std::error_code e;
                 std::filesystem::create_directories(dir, e);
                 platform->OpenUrl("file://" + std::filesystem::absolute(dir, e).generic_string());
@@ -7050,6 +7054,17 @@ namespace perlin {
                         UpdateChatClicks(*hud, live, fbW, fbH);
                     }
                     {
+                        {
+                            bool keyboard = chat.IsOpen();
+                            if (titleUp)
+                                keyboard = keyboard || title.page == ui::TitlePage::Edit || title.page == ui::TitlePage::Direct ||
+                                           title.page == ui::TitlePage::AccountName;
+                            if (formShown && formModel.focus >= 0 && static_cast<size_t>(formModel.focus) < formModel.elements.size())
+                                keyboard = keyboard || formModel.elements[static_cast<size_t>(formModel.focus)].kind == ui::FormElement::Kind::Input;
+                            if (invShown && creativeTab == ui::kCreativeSearchTab)
+                                keyboard = true;
+                            this->input.SetKeyboard(keyboard);
+                        }
                         // Like Minecraft, only a press on a button (or list row, tab, page arrow) clicks; panels,
                         // slots and empty space stay silent.
                         const bool pressed = this->input.IsMouseDown(0);

@@ -32,9 +32,15 @@ private:
     void HandleEvent(const SDL_Event& event);
     void SetClipboard(const std::string& text) override;
     void OpenUrl(const std::string& url) override;
+    bool PickFile(const std::string& kind) override;
+    bool TakeSurfaceChanged() override { return surfaceChanged.exchange(false); }
     void SetCursorCaptured(bool captured) override;
     bool cursorCaptured = false;
     bool textActive = false;
+    bool keyboardShown = false;
+    std::atomic<bool> surfaceChanged{false};
+    void* lastNativeWindow = nullptr;
+    bool surfaceLost = false;
     bool recaptureAfterText = false;
     bool touchMode = false;
     perlin::TouchControls touch;

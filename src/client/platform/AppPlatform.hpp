@@ -50,6 +50,12 @@ public:
 
     virtual void SetClipboard(const std::string& text) { (void)text; }
     virtual void OpenUrl(const std::string& url) { (void)url; }
+    // Asks the user for a file to import ("skin", "cape" or "pack"); the chosen file arrives through
+    // TakeDropped() like a dragged-in one. Returns false where the platform has no picker.
+    // True once after the window's surface was replaced (Android: back from the background), so the renderer
+    // rebuilds its swap chain.
+    virtual bool TakeSurfaceChanged() { return false; }
+    virtual bool PickFile(const std::string& kind) { (void)kind; return false; }
 
     virtual void DrawTouchOverlay(perlin::RenderContext& renderer) { (void)renderer; }
 
