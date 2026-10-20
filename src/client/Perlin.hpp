@@ -187,6 +187,9 @@ namespace perlin {
         void RefreshTab(ui::ServerTab tab);
         void JoinRealm(long long id);
         void JoinFriend(const ui::ServerEntry& entry);
+        void BeginLeaseJoin(const std::string& text);
+        void FailLeaseJoin(const std::string& text);
+        std::atomic<bool> leaseJoining{false}, leaseJoinFailed{false};
         void JoinLanGame(const ui::ServerEntry& entry);
         std::shared_ptr<lan::Session> lanSession; // Minecraft LAN discovery socket; also the signalling channel to the games it found
         std::mutex lanSessionMutex;

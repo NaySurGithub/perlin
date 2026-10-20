@@ -378,7 +378,20 @@ namespace perlin {
             if (state == rtc::PeerConnection::GatheringState::Complete)
                 impl->gatheringDone = true;
         });
+        auto localCandidates = std::make_shared<std::vector<std::string>>();
+        auto localMutex = std::make_shared<std::mutex>();
+        impl->pc->onLocalCandidate([localCandidates, localMutex](rtc::Candidate c) {
+            std::string text = std::string(c);
+            if (text.rfind("a=", 0) == 0)
+                text.erase(0, 2);
+            std::lock_guard lock(*localMutex);
+            localCandidates->push_back(std::move(text));
+        });
+        impl->pc->onIceStateChange([](rtc::PeerConnection::IceState state) {
+            std::cout << "[nethernet] ICE state " << static_cast<int>(state) << " (0 new, 1 checking, 2 connected, 3 completed, 4 failed, 5 disconnected, 6 closed)" << std::endl;
+        });
         impl->pc->onStateChange([this](rtc::PeerConnection::State state) {
+            std::cout << "[nethernet] peer state " << static_cast<int>(state) << " (0 new, 1 connecting, 2 connected, 3 disconnected, 4 failed, 5 closed)" << std::endl;
             if (state == rtc::PeerConnection::State::Failed || state == rtc::PeerConnection::State::Closed)
                 impl->failed = true;
         });
@@ -485,6 +498,20 @@ namespace perlin {
             return false;
         }
 
+        // Hosts expect candidates trickled as CANDIDATEADD signals too (the SDP's own copies are not always used).
+        {
+            std::vector<std::string> mine;
+            {
+                std::lock_guard lock(*localMutex);
+                mine = *localCandidates;
+            }
+            std::cout << "[nethernet] sending " << mine.size() << " local candidates" << std::endl;
+            for (const std::string& c : mine) {
+                std::string ignored;
+                lease.signaling->Send(lease.hostNetworkId, "CANDIDATEADD " + idText + " " + c, false, ignored);
+            }
+        }
+
         // The answer, then the host's candidates as they trickle in.
         bool haveAnswer = false;
         std::vector<std::string> pendingCandidates;
@@ -493,6 +520,7 @@ namespace perlin {
                 std::string mid = "0";
                 if (auto remote = impl->pc->remoteDescription(); remote && remote->mediaCount() > 0)
                     mid = std::visit([](auto* m) { return m->mid(); }, remote->media(0));
+                std::cout << "[nethernet] remote candidate: " << text << std::endl;
                 impl->pc->addRemoteCandidate(rtc::Candidate(text, mid));
             } catch (const std::exception& e) {
                 std::cout << "[nethernet] bad remote candidate: " << e.what() << std::endl;
@@ -523,7 +551,7 @@ namespace perlin {
                 try {
                     impl->pc->setRemoteDescription(rtc::Description(StripIdentityLines(item.second), rtc::Description::Type::Answer));
                     haveAnswer = true;
-                    std::cout << "[nethernet] answer received" << std::endl;
+                    std::cout << "[nethernet] answer received:\n" << StripIdentityLines(item.second) << std::endl;
                     for (const std::string& c : pendingCandidates)
                         addCandidate(c);
                     pendingCandidates.clear();

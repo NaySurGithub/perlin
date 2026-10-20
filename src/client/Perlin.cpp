@@ -4125,8 +4125,31 @@ namespace perlin {
     }
 
     void Perlin::SetJoinMessage(const std::string& text) {
+        if (leaseJoining) {
+            SetStatusHint(text); // the loading screen shows the progress
+            return;
+        }
         std::lock_guard lock(tabMutex);
         tabJoinMsg = text;
+    }
+
+    // Friend, LAN and Realm joins take a while before there is anything to connect to: go straight to the loading screen.
+    void Perlin::BeginLeaseJoin(const std::string& text) {
+        leaseJoining = true;
+        SetStatusHint(text);
+        titleActive = false;
+    }
+
+    // Back to the title screen with the reason (worker threads call this).
+    void Perlin::FailLeaseJoin(const std::string& text) {
+        const bool loading = leaseJoining.exchange(false);
+        SetStatusHint({});
+        {
+            std::lock_guard lock(tabMutex);
+            tabJoinMsg = text;
+        }
+        if (loading)
+            leaseJoinFailed = true;
     }
 
     void Perlin::RefreshTab(ui::ServerTab tab) {
@@ -4387,7 +4410,7 @@ namespace perlin {
         }
         if (realmJoinBusy.exchange(true))
             return;
-        SetJoinMessage("Finding your Realm...");
+        BeginLeaseJoin("Finding your Realm...");
         const std::string authPath = ActiveAuthPath();
         std::thread([this, id, authPath] {
             xbox::Account acct(authPath);
@@ -4402,16 +4425,15 @@ namespace perlin {
                         std::lock_guard lock(tabMutex);
                         friendLeaseReady = std::move(lease);
                     } else {
-                        SetJoinMessage(error.empty() ? "Could not reach the Realm" : error);
+                        FailLeaseJoin(error.empty() ? "Could not reach the Realm" : error);
                     }
                 } else {
                     std::lock_guard lock(tabMutex);
                     realmJoinAddress = address.host + ":" + std::to_string(address.port);
                     realmJoinReady = true;
-                    tabJoinMsg = "Joining the Realm...";
                 }
             } else {
-                SetJoinMessage(error.empty() ? "Could not join the Realm" : error);
+                FailLeaseJoin(error.empty() ? "Could not join the Realm" : error);
             }
             realmJoinBusy = false;
         }).detach();
@@ -4428,7 +4450,7 @@ namespace perlin {
         }
         if (friendJoinBusy.exchange(true))
             return;
-        SetJoinMessage("Joining " + entry.name + "...");
+        BeginLeaseJoin("Joining " + entry.name + "...");
         const std::string authPath = ActiveAuthPath();
         const std::string xuid = entry.xuid;
         const std::string name = entry.name;
@@ -4440,10 +4462,9 @@ namespace perlin {
                 friendworld::Join(acct, xuid, kBedrockVersion, lease, [this](const std::string& text) { SetJoinMessage(text); }, error)) {
                 std::lock_guard lock(tabMutex);
                 friendLeaseReady = std::move(lease);
-                tabJoinMsg = "Connecting to " + name + "...";
             } else {
                 std::cout << "[friends] join failed: " << error << std::endl;
-                SetJoinMessage(error.empty() ? "Could not join " + name : error);
+                FailLeaseJoin(error.empty() ? "Could not join " + name : error);
             }
             friendJoinBusy = false;
         }).detach();
@@ -4479,7 +4500,7 @@ namespace perlin {
         }
         if (friendJoinBusy.exchange(true))
             return;
-        SetJoinMessage("Joining " + entry.name + "...");
+        BeginLeaseJoin("Joining " + entry.name + "...");
         const std::string authPath = ActiveAuthPath();
         const uint64_t id = std::strtoull(entry.xuid.c_str() + 4, nullptr, 10);
         const std::string name = entry.name, version = entry.version;
@@ -4496,10 +4517,9 @@ namespace perlin {
                 lease->version = version;
                 std::lock_guard lock(tabMutex);
                 friendLeaseReady = std::move(lease);
-                tabJoinMsg = "Connecting to " + name + "...";
             } else {
                 std::cout << "[lan] join failed: " << error << std::endl;
-                SetJoinMessage(error.empty() ? "Could not join " + name : error);
+                FailLeaseJoin(error.empty() ? "Could not join " + name : error);
             }
             friendJoinBusy = false;
         }).detach();
@@ -4780,6 +4800,7 @@ namespace perlin {
             if (titleReturnToServers) {
                 titleReturnToServers = false;
                 title.page = ui::TitlePage::Servers;
+                title.tab = ui::ServerTab::Saved; // back to the list the player just left
                 for (size_t i = 0; i < title.servers.size(); i++)
                     if (title.servers[i].address == options.server)
                         title.selected = static_cast<int>(i);
@@ -4834,6 +4855,7 @@ namespace perlin {
             }
             SaveServers(title.servers);
             title.page = ui::TitlePage::Servers;
+            title.tab = ui::ServerTab::Saved;
             {
                 std::lock_guard lock(pingMutex);
                 pingResults.erase(entry.address); // ping it again now, filling in its info
@@ -5163,10 +5185,11 @@ namespace perlin {
                     ApplyActiveAccount();
             } else if (hover == ui::kTitleMulti) {
                 title.page = ui::TitlePage::Servers;
-                title.tab = ui::ServerTab::Saved;
+                title.tab = ui::ServerTab::Lan;
                 title.selected = -1;
                 title.scroll = 0;
                 SetJoinMessage({});
+                RefreshTab(title.tab);
             } else if (hover == ui::kTitleOptions) {
                 titleOpenView = 1;
                 titleOptions = true;
@@ -5247,6 +5270,36 @@ namespace perlin {
     }
 
     bool Perlin::UpdateLoadingScreen(ui::Hud& hud, int fbW, int fbH) {
+        if (leaseJoinFailed.exchange(false)) {
+            hud.Overlay().ClearOverlay();
+            loadingShown = loadingTextMode = loadingLeftDown = false;
+            loadingSignature.clear();
+            titleActive = true; // the reason waits on the title screen
+            return false;
+        }
+        if (leaseJoining) {
+            std::shared_ptr<friendworld::Lease> lease;
+            std::string address;
+            {
+                std::lock_guard lock(tabMutex);
+                lease = std::move(friendLeaseReady);
+                if (realmJoinReady) {
+                    realmJoinReady = false;
+                    address = realmJoinAddress;
+                }
+            }
+            if (lease) {
+                leaseJoining = false;
+                SetStatusHint({});
+                ReleaseFriendLease();
+                friendLease = std::move(lease);
+                Connect();
+            } else if (!address.empty()) {
+                leaseJoining = false;
+                SetStatusHint({});
+                JoinServer(address);
+            }
+        }
         if (titleActive || titleShown)
             return false;
         const auto now = Clock::now();

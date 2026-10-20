@@ -45,7 +45,7 @@ namespace perlin::ui {
     struct TitleModel {
         TitlePage page = TitlePage::Main;
         std::vector<ServerEntry> servers; // the saved list (the Servers tab)
-        ServerTab tab = ServerTab::Saved;
+        ServerTab tab = ServerTab::Lan;
         std::vector<ServerEntry> lan, realms, friends; // friends: Header rows (Online/Offline) between the friends
         bool friendsOpen[3] = {true, true, false}; // Hosting, Online, Offline sections of the Friends tab
         std::string tabMessage;  // "Scanning...", an error, or empty (shown when the tab has no rows)
