@@ -45,7 +45,8 @@ namespace perlin {
                 pz_[i] = z_[i];
             }
             sneaking_ = false;
-            Sample(1.0f, false);
+            snap_ = true;
+            Sample(1.0f, false, 0.0f, 0.0f, 0.0f);
         }
 
         // One client tick of the simulation (PlayerMixin.moveCloakUpdate -> CapeHolder.simulate).
@@ -77,7 +78,8 @@ namespace perlin {
         }
 
         // The strips' angles for a frame, `partial` (0..1) of the way from the previous tick to the latest one.
-        void Sample(float partial, bool shoulders, float stridePhase = 0.0f, float waviness = 0.0f) {
+        void Sample(float partial, bool shoulders, float stridePhase, float waviness, float dt) {
+            std::array<float, kSegments> tp{}, tr{};
             std::array<float, kSegments> lx, ly, lz;
             for (int i = 0; i < kSegments; i++) {
                 lx[i] = px_[i] + (x_[i] - px_[i]) * partial;
@@ -110,25 +112,44 @@ namespace perlin {
                 // at the shoulders, growing towards the hem.
                 const float along = static_cast<float>(i) / static_cast<float>(kSegments - 1);
                 p += waviness * 7.0f * along * std::sin(stridePhase - 0.45f * static_cast<float>(i));
-                pitch[i] = 6.0f + p;
-                roll[i] = std::clamp(r, -45.0f, 45.0f);
+                tp[i] = 6.0f + p;
+                tr[i] = std::clamp(r, -45.0f, 45.0f);
                 // A strip that points straight up flips between +180 and -180: keep the chain continuous.
                 if (i > 0) {
-                    while (pitch[i] - pitch[i - 1] > 180.0f)
-                        pitch[i] -= 360.0f;
-                    while (pitch[i] - pitch[i - 1] < -180.0f)
-                        pitch[i] += 360.0f;
+                    while (tp[i] - tp[i - 1] > 180.0f)
+                        tp[i] -= 360.0f;
+                    while (tp[i] - tp[i - 1] < -180.0f)
+                        tp[i] += 360.0f;
                 }
             }
             // The cape never folds over itself and the strips never fan apart: it can't go through the player's back or
             // past straight up, and neighbouring strips differ by a few degrees at most, so there is no visible gap at a bend.
-            constexpr float kMaxBend = 9.0f, kMaxRollBend = 7.0f;
-            for (int i = 0; i < kSegments; i++) {
-                pitch[i] = std::clamp(pitch[i], 1.0f, 178.0f);
-                if (i > 0) {
-                    pitch[i] = std::clamp(pitch[i], pitch[i - 1] - kMaxBend, pitch[i - 1] + kMaxBend);
-                    roll[i] = std::clamp(roll[i], roll[i - 1] - kMaxRollBend, roll[i - 1] + kMaxRollBend);
+            // Smooth along the cape (three neighbouring strips, the ends extended in a straight line so they are not special),
+            // so a strip never kinks against its neighbours, then limit the bend between neighbours.
+            for (int pass = 0; pass < 2; pass++) {
+                std::array<float, kSegments> sp = tp, sr = tr;
+                for (int i = 0; i < kSegments; i++) {
+                    const float pl = i > 0 ? sp[i - 1] : 2.0f * sp[0] - sp[1], pr = i + 1 < kSegments ? sp[i + 1] : 2.0f * sp[i] - sp[i - 1];
+                    const float rl = i > 0 ? sr[i - 1] : 2.0f * sr[0] - sr[1], rr = i + 1 < kSegments ? sr[i + 1] : 2.0f * sr[i] - sr[i - 1];
+                    tp[i] = 0.25f * pl + 0.5f * sp[i] + 0.25f * pr;
+                    tr[i] = 0.25f * rl + 0.5f * sr[i] + 0.25f * rr;
                 }
+            }
+            constexpr float kMaxBend = 7.0f, kMaxRollBend = 6.0f;
+            for (int i = 0; i < kSegments; i++) {
+                tp[i] = std::clamp(tp[i], 1.0f, 178.0f);
+                if (i > 0) {
+                    tp[i] = std::clamp(tp[i], tp[i - 1] - kMaxBend, tp[i - 1] + kMaxBend);
+                    tr[i] = std::clamp(tr[i], tr[i - 1] - kMaxRollBend, tr[i - 1] + kMaxRollBend);
+                }
+            }
+            // Everything on screen is eased: the angles chase the simulation with a short time constant, so nothing can jump
+            // from one frame to the next, however the player turns or stops.
+            const float k = snap_ ? 1.0f : 1.0f - std::exp(-std::clamp(dt, 0.0f, 0.1f) / 0.045f);
+            snap_ = false;
+            for (int i = 0; i < kSegments; i++) {
+                pitch[i] += (tp[i] - pitch[i]) * k;
+                roll[i] += (tr[i] - roll[i]) * k;
             }
         }
 
@@ -137,6 +158,7 @@ namespace perlin {
         std::array<float, kSegments> x_{}, y_{}, z_{}, px_{}, py_{}, pz_{};
         float gravity_ = 25.0f;
         bool sneaking_ = false;
+        bool snap_ = true;
         float dirX_ = 0, dirY_ = 0, dirZ_ = 0;
 
         void direction(int a, int b) {

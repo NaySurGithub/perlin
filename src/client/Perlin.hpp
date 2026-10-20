@@ -78,7 +78,7 @@ namespace perlin {
         bool deathShown = false, deathLeftDown = false, deathRespawnSent = false, deathTextMode = false;
         void UpdateFormScreen(ui::Hud& hud, BedrockSession* live, int fbW, int fbH);
         void UpdateServerLayer(ui::Hud& hud, BedrockSession* live, int fbW, int fbH);
-        bool formShown = false, formLeftDown = false;
+        bool formShown = false, formLeftDown = false, uiClickWasDown = false;
         ui::FormModel formModel;
         ui::FormUi formUi;
         bool formEngine = false;

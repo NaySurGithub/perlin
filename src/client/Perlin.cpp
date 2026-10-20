@@ -7037,6 +7037,15 @@ namespace perlin {
                         UpdatePauseScreen(*hud, live, fbW, fbH);
                         UpdateChatClicks(*hud, live, fbW, fbH);
                     }
+                    {
+                        // Buttons click: the sound plays on the press, on any menu screen and on any clickable overlay element.
+                        const bool pressed = this->input.IsMouseDown(0);
+                        const bool onScreen = titleUp || disconnectUp || pauseShown || deathShown || formShown ||
+                                              !hud->Overlay().OverlayHover().empty();
+                        if (pressed && !uiClickWasDown && onScreen && !chat.IsOpen())
+                            sounds.PlayNamed("random.click", {camera.x, camera.y, camera.z}, 1.0f, 1.0f, false);
+                        uiClickWasDown = pressed;
+                    }
                     hud->Render();
                     const bool creativeUi = hudState.mode == ui::GameMode::Creative || PERLIN_ENV("PERLIN_PREVIEW_CREATIVE");
                     if (invShown && dollSelf && !invWorkbench && (!creativeUi || creativeDollVisible)) {
