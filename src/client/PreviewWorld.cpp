@@ -20,32 +20,25 @@ namespace perlin {
     namespace {
         class Ids {
         public:
-            Ids() {
-                resources::Read("block_states.json", text);
-            }
+            // stateFragment is the old `"key":["kind",value]` form; it is reduced to key and value text.
             uint16_t Get(const std::string& name, const std::string& stateFragment = "") {
                 const std::string key = name + "|" + stateFragment;
                 if (const auto it = cache.find(key); it != cache.end())
                     return it->second;
-                uint16_t id = 0;
-                size_t at = 0;
-                const std::string needle = ",\"minecraft:" + name + "\",";
-                while ((at = text.find(needle, at)) != std::string::npos) {
-                    const size_t open = text.rfind('[', at);
-                    const size_t close = text.find("}]", at);
-                    const std::string entry = text.substr(open, close - open + 2);
-                    at += needle.size();
-                    if (!stateFragment.empty() && entry.find(stateFragment) == std::string::npos)
-                        continue;
-                    id = BlockPalette::Instance().Intern(std::stoi(text.substr(open + 1)));
-                    break;
+                std::string stateKey, valueText;
+                if (!stateFragment.empty()) {
+                    const size_t q1 = stateFragment.find('"'), q2 = stateFragment.find('"', q1 + 1);
+                    stateKey = stateFragment.substr(q1 + 1, q2 - q1 - 1);
+                    const size_t comma = stateFragment.find(',', q2);
+                    valueText = stateFragment.substr(comma + 1, stateFragment.rfind(']') - comma - 1);
+                    valueText.erase(std::remove(valueText.begin(), valueText.end(), '"'), valueText.end());
                 }
+                const uint16_t id = BlockPalette::Instance().Intern(BlockPalette::Instance().FindHash("minecraft:" + name, stateKey, valueText));
                 cache[key] = id;
                 return id;
             }
 
         private:
-            std::string text;
             std::map<std::string, uint16_t> cache;
         };
 
@@ -71,24 +64,10 @@ namespace perlin {
     }
 
     std::vector<std::pair<int32_t, std::string>> PreviewBlockList() {
-        std::string text;
-        resources::Read("block_states.json", text);
         std::vector<std::pair<int32_t, std::string>> blocks;
-        std::string last;
-        for (size_t at = 0; (at = text.find(",\"minecraft:", at)) != std::string::npos;) {
-            const size_t end = text.find('"', at + 13);
-            const size_t open = text.rfind('[', at);
-            if (end == std::string::npos || open == std::string::npos)
-                break;
-            const std::string name = text.substr(at + 2, end - at - 2);
-            const char first = text[open + 1];
-            const bool entry = (first == '-' || (first >= '0' && first <= '9')) && text.find(',', open) == at;
-            if (entry && name != last) {
-                blocks.push_back({std::stoi(text.substr(open + 1)), name});
-                last = name;
-            }
-            at = end;
-        }
+        for (auto& entry : BlockPalette::Instance().OneStatePerName())
+            if (entry.second.rfind("minecraft:", 0) == 0)
+                blocks.push_back(std::move(entry));
         return blocks;
     }
 
@@ -174,11 +153,8 @@ namespace perlin {
                     for (const auto& b : blocks)
                         (void)b;
                 if (index < partners.size() && !partners[index].empty()) {
-                    std::string pt;
-                    resources::Read("block_states.json", pt);
-                    const size_t at = pt.find(",\"minecraft:" + partners[index] + "\"");
-                    if (at != std::string::npos)
-                        level.SetBlock(x + 1, 61, z, BlockPalette::Instance().Intern(std::stoi(pt.substr(pt.rfind('[', at) + 1))));
+                    const int32_t partner = BlockPalette::Instance().FindHash("minecraft:" + partners[index], "", "");
+                    level.SetBlock(x + 1, 61, z, BlockPalette::Instance().Intern(partner));
                 }
                 names += std::to_string(row) + "," + std::to_string(col) + " " + blocks[index].second + "\n";
             }

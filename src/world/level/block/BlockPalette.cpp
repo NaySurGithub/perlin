@@ -1,6 +1,7 @@
 #include "world/level/block/BlockPalette.hpp"
 
 #include <algorithm>
+#include <atomic>
 #include <cstdio>
 #include <fstream>
 #include <iostream>
@@ -276,6 +277,46 @@ namespace perlin {
             sequence.push_back(hash);
     }
 
+    std::vector<std::pair<int32_t, std::string>> BlockPalette::OneStatePerName() const {
+        std::lock_guard<std::mutex> lk(mutex);
+        std::map<std::string, int32_t> lowest;
+        for (const auto& [hash, name] : nameByHash) {
+            const auto it = lowest.find(name);
+            if (it == lowest.end() || hash < it->second)
+                lowest[name] = hash;
+        }
+        std::vector<std::pair<int32_t, std::string>> out;
+        for (const auto& [name, hash] : lowest)
+            out.emplace_back(hash, name);
+        return out;
+    }
+
+    int32_t BlockPalette::FindHash(const std::string& fullName, const std::string& key, const std::string& valueText) const {
+        std::lock_guard<std::mutex> lk(mutex);
+        bool have = false;
+        int32_t best = 0;
+        for (const auto& [hash, name] : nameByHash) {
+            if (name != fullName || (have && hash >= best))
+                continue;
+            if (!key.empty()) {
+                const auto st = statesByHash.find(hash);
+                if (st == statesByHash.end())
+                    continue;
+                bool match = false;
+                for (const auto& [k, v] : st->second)
+                    if (k == key) {
+                        const std::string text = v.kind == StateValue::String ? v.s : std::to_string(v.i);
+                        match = text == valueText;
+                    }
+                if (!match)
+                    continue;
+            }
+            best = hash;
+            have = true;
+        }
+        return best;
+    }
+
     uint16_t BlockPalette::InternRuntime(int32_t runtimeId) {
         if (sequential.load(std::memory_order_acquire)) {
             if (runtimeId >= 0 && runtimeId == sequentialAir.load(std::memory_order_acquire))
@@ -291,6 +332,14 @@ namespace perlin {
             }
             if (found)
                 return Intern(hash);
+            // Sequential ids are positions in the game's internal block table, which Mojang does not
+            // publish. Without that table an unknown id cannot be told apart from any other, so it
+            // reads as air rather than as a random block.
+            static std::atomic<bool> warned{false};
+            if (!warned.exchange(true))
+                std::cout << "[blocks] server uses sequential block ids but no sequence table is loaded; "
+                             "blocks it sends will read as air" << std::endl;
+            return 0;
         }
         return Intern(runtimeId);
     }

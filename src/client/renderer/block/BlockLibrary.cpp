@@ -599,7 +599,6 @@ namespace perlin {
                 std::cout << "[blocks] cannot load " << defs << std::endl;
                 return false;
             }
-            BlockPalette::Instance().LoadServerStatesText(resources::ReadText("block_states.json"), "block_states.json");
         }
         const std::vector<std::string> allNames = BlockPalette::Instance().AllNames();
         int noTexture = 0;

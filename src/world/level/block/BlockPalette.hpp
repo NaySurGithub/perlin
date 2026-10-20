@@ -27,11 +27,15 @@ namespace perlin {
         bool LoadServerStates(const std::string& path);
         bool LoadServerStatesText(const std::string& text, const std::string& source);
         bool NamesLoaded() const { return namesLoaded; }
+        // First (lowest-hash) state of every named block, sorted by name; and the lowest-hash state of
+        // a block whose named state equals the given value (rendered as text: 1, true, "y").
+        std::vector<std::pair<int32_t, std::string>> OneStatePerName() const;
+        int32_t FindHash(const std::string& fullName, const std::string& key, const std::string& valueText) const;
         size_t StateCount() const { return nameByHash.size(); }
 
         uint16_t Intern(int32_t networkId);
         // Sequential runtime ids (StartGame blockNetworkIdsAreHashes=false): the id is an index into the
-        // canonical block-state list (resources/block_states.json order, custom blocks appended).
+        // canonical block-state list (position in the game's internal table, which is not published; nothing is bundled for it).
         void SetSequential(bool on);
         bool Sequential() const { return sequential.load(std::memory_order_acquire); }
         void SetSequentialAir(int32_t runtimeId) { sequentialAir.store(runtimeId, std::memory_order_release); }
