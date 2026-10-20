@@ -168,6 +168,12 @@ namespace perlin {
             return static_cast<int>(recv(s, reinterpret_cast<char*>(buf), static_cast<int>(cap), 0));
         }
 
+        // The client GUID the way Cinnabar's transport makes it: fresh entropy with the two variant bits set to 10
+        // (0x8000... through 0xbfff...), so it never reads as a plain random or time-seeded value.
+        int64_t ClientGuid(uint64_t entropy) {
+            return static_cast<int64_t>((entropy & 0x3fffffffffffffffull) | 0x8000000000000000ull);
+        }
+
         std::vector<uint8_t> UnconnectedPing(int64_t guid) {
             std::vector<uint8_t> p{IdUnconnectedPing};
             PutBe64(p, static_cast<uint64_t>(NowMs()));
@@ -576,7 +582,7 @@ namespace perlin {
             return false;
         }
         std::mt19937_64 rng(std::random_device{}());
-        const auto ping = UnconnectedPing(-static_cast<int64_t>(rng() >> 2) - 1);
+        const auto ping = UnconnectedPing(ClientGuid(rng()));
         uint8_t buf[2048];
         const int64_t end = NowMs() + timeoutMs;
         bool ok = false;
@@ -604,7 +610,7 @@ namespace perlin {
         impl->owner = this;
         Impl& s = *impl;
         std::mt19937_64 rng(std::random_device{}());
-        s.guid = -static_cast<int64_t>(rng() >> 2) - 1;
+        s.guid = ClientGuid(rng());
 
         if (!Resolve(host, port, s.server, lastError))
             return false;
