@@ -13,6 +13,7 @@
 #include "client/mods/ModManager.hpp"
 #include "client/resources/ShaderPack.hpp"
 #include "client/resources/PackInfo.hpp"
+#include "client/resources/TextureLoader.hpp"
 #include "client/resources/TexturePack.hpp"
 #include "client/resources/BundledShaderPack.hpp"
 #include "client/resources/AssetJobs.hpp"
@@ -34,6 +35,8 @@
 #include "client/ui/DisconnectScreen.hpp"
 #include "client/ui/LoadingScreen.hpp"
 #include "network/Friends.hpp"
+#include "network/Http.hpp"
+#include "network/LanDiscovery.hpp"
 #include "network/RakNet.hpp"
 #include "network/Realms.hpp"
 #include "client/ui/TitleScreen.hpp"
@@ -67,6 +70,13 @@
 #include <glm/gtc/matrix_inverse.hpp>
 
 #include <algorithm>
+#if !defined(_WIN32) && !defined(__EMSCRIPTEN__)
+#include <arpa/inet.h>
+#include <ifaddrs.h>
+#include <net/if.h>
+#include <netinet/in.h>
+#include <sys/socket.h>
+#endif
 #include <functional>
 #include <map>
 #include <cctype>
@@ -76,6 +86,7 @@
 #include <stdexcept>
 #include <cstdio>
 #include <cstdlib>
+#include <set>
 #include <filesystem>
 #include <ctime>
 #include <iostream>
@@ -4136,7 +4147,42 @@ namespace perlin {
                 std::string error;
                 RakNet::Discover(found, error, 2000);
                 std::vector<ui::ServerEntry> rows;
+                // Minecraft's own LAN discovery: encrypted UDP on port 7551. Every game that answers is joined over WebRTC.
+                std::set<std::string> discoveredIps;
+                {
+                    std::string lanError;
+                    std::shared_ptr<lan::Session> session;
+                    {
+                        std::lock_guard lock(lanSessionMutex);
+                        if (!lanSession || !lanSession->Alive())
+                            lanSession = lan::Session::Open(lanError);
+                        session = lanSession;
+                    }
+                    if (session) {
+                        for (int i = 0; i < 4; i++) {
+                            session->Scan();
+                            std::this_thread::sleep_for(std::chrono::milliseconds(400));
+                        }
+                        for (const lan::Host& h : session->Hosts()) {
+                            ui::ServerEntry e;
+                            e.kind = ui::ServerEntry::Kind::Lan;
+                            e.xuid = "lan:" + std::to_string(h.networkId);
+                            e.address = h.ip + ":" + std::to_string(h.port);
+                            e.name = h.name.empty() ? "LAN Game" : h.name;
+                            e.right = std::to_string(h.players) + "/" + std::to_string(h.maxPlayers);
+                            e.motd = h.level;
+                            e.version = h.version;
+                            e.note = h.ip + (h.version.empty() ? "" : "  -  " + h.version);
+                            discoveredIps.insert(h.ip);
+                            rows.push_back(std::move(e));
+                        }
+                    } else if (!lanError.empty()) {
+                        std::cout << "[lan] discovery unavailable: " << lanError << std::endl;
+                    }
+                }
                 for (const RakNet::LanServer& f : found) {
+                    if (discoveredIps.count(f.host))
+                        continue;
                     std::vector<std::string> parts;
                     size_t a = 0;
                     for (size_t i = 0; i <= f.advertisement.size(); i++)
@@ -4162,6 +4208,56 @@ namespace perlin {
                     e.motd = parts.size() > 7 ? parts[7] : "";
                     e.note = e.address + (parts.size() > 3 ? "  -  " + parts[3] : "");
                     rows.push_back(std::move(e));
+                }
+                // NetherNet servers (a dedicated server's signalling port) don't answer RakNet pings: ask this machine and
+                // the local /24 networks directly.
+                {
+                    std::vector<std::string> hosts{"127.0.0.1"};
+#if !defined(_WIN32) && !defined(__EMSCRIPTEN__)
+                    if (ifaddrs* list = nullptr; getifaddrs(&list) == 0) {
+                        for (ifaddrs* a = list; a; a = a->ifa_next) {
+                            if (!a->ifa_addr || a->ifa_addr->sa_family != AF_INET || (a->ifa_flags & IFF_LOOPBACK) || !(a->ifa_flags & IFF_UP))
+                                continue;
+                            const uint32_t ip = ntohl(reinterpret_cast<sockaddr_in*>(a->ifa_addr)->sin_addr.s_addr);
+                            for (uint32_t last = 1; last < 255; last++) {
+                                const uint32_t host = (ip & 0xFFFFFF00u) | last;
+                                char text[32];
+                                std::snprintf(text, sizeof text, "%u.%u.%u.%u", host >> 24, (host >> 16) & 255, (host >> 8) & 255, host & 255);
+                                hosts.push_back(text);
+                            }
+                        }
+                        freeifaddrs(list);
+                    }
+#endif
+                    std::sort(hosts.begin(), hosts.end());
+                    hosts.erase(std::unique(hosts.begin(), hosts.end()), hosts.end());
+                    std::mutex foundMutex;
+                    std::atomic<size_t> next{0};
+                    const auto worker = [&] {
+                        for (size_t i = next++; i < hosts.size(); i = next++) {
+                            NetherNetServerInfo info;
+                            std::string why;
+                            if (discoveredIps.count(hosts[i]))
+                                continue;
+                            if (!NetherNet::Probe(hosts[i], 19132, info, why, 1))
+                                continue;
+                            ui::ServerEntry e;
+                            e.kind = ui::ServerEntry::Kind::Lan;
+                            e.address = hosts[i] + ":19132";
+                            e.name = info.name.empty() ? "LAN Game" : info.name;
+                            e.right = std::to_string(info.players) + "/" + std::to_string(info.maxPlayers);
+                            e.motd = info.level;
+                            e.note = e.address + (info.version.empty() ? "" : "  -  " + info.version);
+                            std::lock_guard lock(foundMutex);
+                            if (std::none_of(rows.begin(), rows.end(), [&](const ui::ServerEntry& r) { return r.address == e.address; }))
+                                rows.push_back(std::move(e));
+                        }
+                    };
+                    std::vector<std::thread> pool;
+                    for (int i = 0; i < 48; i++)
+                        pool.emplace_back(worker);
+                    for (std::thread& t : pool)
+                        t.join();
                 }
                 std::lock_guard lock(tabMutex);
                 tabLan = std::move(rows);
@@ -4213,15 +4309,40 @@ namespace perlin {
             } else if (ok) {
                 std::vector<friends::Friend> list;
                 ok = friends::List(acct, list, error);
+                // Gamerpics, a few at a time (cached once fetched). A hosted world has no icon of its own that Xbox
+                // publishes, so the gamerpic is the row's picture in every case.
+                {
+                    std::atomic<size_t> next{0};
+                    const auto fetch = [&] {
+                        for (size_t i = next++; i < list.size(); i = next++) {
+                            const friends::Friend& f = list[i];
+                            const std::string key = "gp:" + f.xuid;
+                            if (f.pictureUrl.empty() || ui::UiAssets::Instance().HasHead(key))
+                                continue;
+                            const http::Response pic = http::GetUrl(f.pictureUrl + (f.pictureUrl.find('?') == std::string::npos ? "?w=64&h=64" : ""), {}, 8);
+                            Texture t;
+                            if (pic.status == 200 && LoadTextureMemory(reinterpret_cast<const unsigned char*>(pic.body.data()), pic.body.size(), t))
+                                ui::UiAssets::Instance().SetHead(key, std::move(t));
+                        }
+                    };
+                    std::vector<std::thread> pool;
+                    for (int i = 0; i < 6; i++)
+                        pool.emplace_back(fetch);
+                    for (std::thread& t : pool)
+                        t.join();
+                }
                 for (const friends::Friend& f : list) {
                     ui::ServerEntry e;
                     e.kind = ui::ServerEntry::Kind::Friend;
                     e.name = f.gamertag;
                     e.xuid = f.xuid;
+                    e.hosting = f.hosting;
                     e.offline = !f.online;
-                    e.right = f.playingMinecraft ? "In Minecraft" : (f.online ? "Online" : "Offline");
-                    e.motd = f.presence;
-                    e.note = "Xbox friend";
+                    if (ui::UiAssets::Instance().HasHead("gp:" + f.xuid))
+                        e.icon = "gp:" + f.xuid;
+                    e.right = f.hosting ? "Hosting" : (f.playingMinecraft ? "In Minecraft" : (f.online ? "Online" : "Offline"));
+                    e.motd = f.hosting && !f.worldName.empty() ? f.worldName : f.presence;
+                    e.note = f.hosting ? std::to_string(f.players) + "/" + std::to_string(f.maxPlayers) + " players  -  click to join" : "Not hosting a world";
                     rows.push_back(std::move(e));
                 }
             }
@@ -4274,7 +4395,15 @@ namespace perlin {
             realms::Address address;
             if (acct.SignInSaved(error) && realms::Join(acct, id, address, error)) {
                 if (address.protocol != "DEFAULT") {
-                    SetJoinMessage("This Realm connects through NetherNet signalling, which Perlin can't do yet");
+                    // The Realm is reached through NetherNet: signalling (WebSocket or JSON-RPC) to the address Realms returned.
+                    SetJoinMessage("Connecting to the Realm...");
+                    std::shared_ptr<friendworld::Lease> lease;
+                    if (friendworld::JoinRealm(acct, address.host, address.protocol, kBedrockVersion, address.host, lease, error)) {
+                        std::lock_guard lock(tabMutex);
+                        friendLeaseReady = std::move(lease);
+                    } else {
+                        SetJoinMessage(error.empty() ? "Could not reach the Realm" : error);
+                    }
                 } else {
                     std::lock_guard lock(tabMutex);
                     realmJoinAddress = address.host + ":" + std::to_string(address.port);
@@ -4289,8 +4418,8 @@ namespace perlin {
     }
 
     void Perlin::JoinFriend(const ui::ServerEntry& entry) {
-        if (entry.offline) {
-            SetJoinMessage(entry.name + " is offline");
+        if (!entry.hosting) {
+            SetJoinMessage(entry.name + (entry.offline ? " is offline" : " isn't hosting a world you can join"));
             return;
         }
         if (!(accounts.Active() && accounts.Active()->microsoft)) {
@@ -4314,6 +4443,62 @@ namespace perlin {
                 tabJoinMsg = "Connecting to " + name + "...";
             } else {
                 std::cout << "[friends] join failed: " << error << std::endl;
+                SetJoinMessage(error.empty() ? "Could not join " + name : error);
+            }
+            friendJoinBusy = false;
+        }).detach();
+    }
+
+    namespace {
+        // The LAN socket outlives a single join (it keeps discovering), so a lease must not close it.
+        struct SharedSignaling : friendworld::Signaling {
+            std::shared_ptr<friendworld::Signaling> inner;
+            explicit SharedSignaling(std::shared_ptr<friendworld::Signaling> s) : inner(std::move(s)) {}
+            bool Send(const std::string& to, const std::string& t, bool w, std::string& e) override { return inner->Send(to, t, w, e); }
+            void SetHandler(std::function<void(const std::string&, const std::string&)> h) override { inner->SetHandler(std::move(h)); }
+            bool Credentials(std::vector<friendworld::IceServerInfo>& s, std::string& e) override { return inner->Credentials(s, e); }
+            bool Alive() const override { return inner->Alive(); }
+            void Close() override { inner->SetHandler(nullptr); }
+        };
+    }
+
+    // A game found by Minecraft's LAN discovery: signals go to it over the discovery socket, then WebRTC carries the game.
+    void Perlin::JoinLanGame(const ui::ServerEntry& entry) {
+        if (!(accounts.Active() && accounts.Active()->microsoft)) {
+            SetJoinMessage("Sign in with a Microsoft account to join a LAN game");
+            return;
+        }
+        std::shared_ptr<lan::Session> session;
+        {
+            std::lock_guard lock(lanSessionMutex);
+            session = lanSession;
+        }
+        if (!session || !session->Alive()) {
+            SetJoinMessage("Refresh the LAN list first");
+            return;
+        }
+        if (friendJoinBusy.exchange(true))
+            return;
+        SetJoinMessage("Joining " + entry.name + "...");
+        const std::string authPath = ActiveAuthPath();
+        const uint64_t id = std::strtoull(entry.xuid.c_str() + 4, nullptr, 10);
+        const std::string name = entry.name, version = entry.version;
+        std::thread([this, authPath, id, name, version, session] {
+            xbox::Account acct(authPath);
+            std::string error;
+            xbox::ServiceInfo info;
+            if (acct.SignInSaved(error) && acct.ServiceSession(kBedrockVersion, info, error)) {
+                auto lease = std::make_shared<friendworld::Lease>();
+                lease->signaling = std::make_shared<SharedSignaling>(session);
+                lease->hostNetworkId = std::to_string(id);
+                lease->issuer = info.issuer;
+                lease->hostName = name;
+                lease->version = version;
+                std::lock_guard lock(tabMutex);
+                friendLeaseReady = std::move(lease);
+                tabJoinMsg = "Connecting to " + name + "...";
+            } else {
+                std::cout << "[lan] join failed: " << error << std::endl;
                 SetJoinMessage(error.empty() ? "Could not join " + name : error);
             }
             friendJoinBusy = false;
@@ -4664,6 +4849,12 @@ namespace perlin {
                 case ui::ServerEntry::Kind::Header: break;
                 case ui::ServerEntry::Kind::Realm: JoinRealm(e.realmId); break;
                 case ui::ServerEntry::Kind::Friend: JoinFriend(e); break;
+                case ui::ServerEntry::Kind::Lan:
+                    if (e.xuid.rfind("lan:", 0) == 0)
+                        JoinLanGame(e);
+                    else
+                        JoinServer(e.address);
+                    break;
                 default: JoinServer(e.address); break;
             }
         };
@@ -4827,28 +5018,22 @@ namespace perlin {
                     tabDirty = false;
                 }
                 {
-                    int onlineCount = 0, offlineCount = 0;
+                    // Friends: Hosting (joinable), Online, Offline sections, each with a header that opens and closes it.
+                    std::vector<ui::ServerEntry> sections[3];
                     for (const ui::ServerEntry& f : tabFriends)
-                        (f.offline ? offlineCount : onlineCount)++;
+                        sections[f.hosting ? 0 : (f.offline ? 2 : 1)].push_back(f);
                     title.friends.clear();
-                    if (onlineCount + offlineCount > 0) {
-                        ui::ServerEntry head;
-                        head.kind = ui::ServerEntry::Kind::Header;
-                        head.name = "Online [" + std::to_string(onlineCount) + "]";
-                        head.realmId = 0;
-                        title.friends.push_back(head);
-                        if (title.friendsOnlineOpen)
-                            for (const ui::ServerEntry& f : tabFriends)
-                                if (!f.offline)
-                                    title.friends.push_back(f);
-                        head.name = "Offline [" + std::to_string(offlineCount) + "]";
-                        head.realmId = 1;
-                        title.friends.push_back(head);
-                        if (title.friendsOfflineOpen)
-                            for (const ui::ServerEntry& f : tabFriends)
-                                if (f.offline)
-                                    title.friends.push_back(f);
-                    }
+                    static const char* const kNames[3] = {"Hosting", "Online", "Offline"};
+                    if (!tabFriends.empty())
+                        for (int i = 0; i < 3; i++) {
+                            ui::ServerEntry head;
+                            head.kind = ui::ServerEntry::Kind::Header;
+                            head.name = std::string(kNames[i]) + " [" + std::to_string(sections[i].size()) + "]";
+                            head.realmId = i;
+                            title.friends.push_back(head);
+                            if (title.friendsOpen[i])
+                                title.friends.insert(title.friends.end(), sections[i].begin(), sections[i].end());
+                        }
                 }
                 title.tabMessage = title.tab == ui::ServerTab::Lan ? tabLanMsg : title.tab == ui::ServerTab::Realms ? tabRealmsMsg : tabFriendsMsg;
                 title.joinMessage = tabJoinMsg;
@@ -4927,7 +5112,7 @@ namespace perlin {
             signature += "|" + title.joinMessage + "|" + title.name + "|" + title.address + "|" + (title.caret ? "c" : "n") + (title.adding ? "a" : "e");
         else if (title.page == ui::TitlePage::Servers) {
             signature += "|t" + std::to_string(static_cast<int>(title.tab)) + "|" + title.tabMessage + "|" + title.joinMessage;
-            signature += "|" + std::to_string(title.Shown().size()) + (title.friendsOnlineOpen ? "O" : "o") + (title.friendsOfflineOpen ? "F" : "f");
+            signature += "|" + std::to_string(title.Shown().size()) + (title.friendsOpen[0] ? "H" : "h") + (title.friendsOpen[1] ? "O" : "o") + (title.friendsOpen[2] ? "F" : "f");
             for (const ui::ServerEntry& s : title.Shown())
                 signature += "|" + s.name + "|" + s.address + "|" + std::to_string(static_cast<int>(s.status)) + s.motd + "|" + std::to_string(s.players) + "/" +
                              std::to_string(s.maxPlayers) + "|" + std::to_string(s.pingMs) + s.right + s.note + (s.offline ? "o" : "") +
@@ -5046,7 +5231,7 @@ namespace perlin {
             } else if (const int row = rowOf(ui::kServerRowPrefix); row >= 0) {
                 const std::vector<ui::ServerEntry>& shown = title.Shown();
                 if (row < static_cast<int>(shown.size()) && shown[static_cast<size_t>(row)].kind == ui::ServerEntry::Kind::Header) {
-                    (shown[static_cast<size_t>(row)].realmId == 0 ? title.friendsOnlineOpen : title.friendsOfflineOpen) ^= true;
+                    title.friendsOpen[std::clamp<long long>(shown[static_cast<size_t>(row)].realmId, 0, 2)] ^= true;
                     title.selected = -1;
                 } else {
                     if (row == titleClickRow && now - titleClickAt < std::chrono::milliseconds(400))

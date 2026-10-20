@@ -17,6 +17,8 @@ namespace perlin::ui {
         enum class Kind : uint8_t { Server, Lan, Realm, Friend, Header } kind = Kind::Server;
         std::string right; // top-right text of a non-Server row ("Open", "Online", ...)
         std::string note;  // third line of a non-Server row
+        bool hosting = false; // a friend with a joinable world open
+        std::string icon;     // "mchead:" key of the row's picture (a gamerpic); empty for the default
         bool offline = false; // dim a Realm that is closed or a friend who is offline
         long long realmId = 0;
         std::string xuid;
@@ -33,6 +35,11 @@ namespace perlin::ui {
         std::string headKey; // "mchead:" image of the account's last skin (empty: none yet)
     };
 
+    // Friends can only be joined while they host a world.
+    inline bool Joinable(const ServerEntry& e) {
+        return e.kind == ServerEntry::Kind::Header ? false : (e.kind == ServerEntry::Kind::Friend ? e.hosting : true);
+    }
+
     enum class TitlePage { Main, Servers, Edit, Direct, AddRealm, Accounts, AccountName, AccountSignIn };
 
     struct TitleModel {
@@ -40,9 +47,10 @@ namespace perlin::ui {
         std::vector<ServerEntry> servers; // the saved list (the Servers tab)
         ServerTab tab = ServerTab::Saved;
         std::vector<ServerEntry> lan, realms, friends; // friends: Header rows (Online/Offline) between the friends
-        bool friendsOnlineOpen = true, friendsOfflineOpen = false;
+        bool friendsOpen[3] = {true, true, false}; // Hosting, Online, Offline sections of the Friends tab
         std::string tabMessage;  // "Scanning...", an error, or empty (shown when the tab has no rows)
         std::string joinMessage; // a line above the buttons: what happened to the last Join
+        // Header rows carry their section in realmId: 0 Hosting, 1 Online, 2 Offline.
         std::vector<ServerEntry>& Shown() {
             switch (tab) {
                 case ServerTab::Lan: return lan;

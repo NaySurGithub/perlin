@@ -72,5 +72,8 @@ namespace perlin {
         bool Join(xbox::Account& account, const std::string& friendXuid, const std::string& gameVersion,
                   std::shared_ptr<Lease>& out, const ProgressFn& progress, std::string& error);
 
+
+        bool JoinRealm(xbox::Account& account, const std::string& address, const std::string& protocol, const std::string& gameVersion,
+                       const std::string& realmName, std::shared_ptr<Lease>& out, std::string& error);
     }
 }

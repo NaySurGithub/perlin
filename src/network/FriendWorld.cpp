@@ -9,6 +9,10 @@ namespace perlin::friendworld {
         error = "joining a friend's world isn't available in the browser";
         return false;
     }
+    bool JoinRealm(xbox::Account&, const std::string&, const std::string&, const std::string&, const std::string&, std::shared_ptr<Lease>&, std::string& error) {
+        error = "this Realm needs NetherNet signalling, which isn't available in the browser";
+        return false;
+    }
 }
 
 #else
@@ -787,6 +791,60 @@ namespace perlin::friendworld {
         };
     }
 
+
+    namespace {
+        // Opens the signalling channel of the given connection type (JSON-RPC or plain WebSocket) into the lease.
+        bool OpenSignaling(const xbox::ServiceInfo& service, int type, Lease& lease, std::string& error) {
+            if (type == kConnectionJsonRpc) {
+                if (service.signalingAfdUri.empty()) {
+                    error = "Minecraft did not name a signalling service";
+                    return false;
+                }
+                const http::Response config = http::GetUrl(service.signalingAfdUri + "/api/v1.0/configuration",
+                                                           {{"Authorization", service.authorization}, {"User-Agent", "libhttpclient/1.0.0.0"}}, 20);
+                std::string signalingUri;
+                if (auto doc = config.status == 200 ? json::Document::Parse(config.body) : std::nullopt)
+                    signalingUri = doc->root()["result"]["signalingUri"].str();
+                if (signalingUri.empty()) {
+                    error = Failure(config, "the Minecraft signalling directory");
+                    return false;
+                }
+                auto signaling = std::make_shared<JsonRpcSignaling>();
+                if (!signaling->Open(signalingUri, service.authorization, error))
+                    return false;
+                lease.signaling = signaling;
+                return true;
+            }
+            if (service.signalingUri.empty()) {
+                error = "Minecraft did not name a signalling service";
+                return false;
+            }
+            auto signaling = std::make_shared<WebSocketSignaling>();
+            if (!signaling->Open(service.signalingUri, service.authorization, error))
+                return false;
+            lease.signaling = signaling;
+            return true;
+        }
+    }
+
+    bool JoinRealm(xbox::Account& account, const std::string& address, const std::string& protocol, const std::string& gameVersion,
+                   const std::string& realmName, std::shared_ptr<Lease>& out, std::string& error) {
+        out.reset();
+        xbox::ServiceInfo service;
+        if (!account.ServiceSession(gameVersion, service, error))
+            return false;
+        auto lease = std::make_shared<Lease>();
+        const int type = protocol == "NETHERNET_JSONRPC" ? kConnectionJsonRpc : kConnectionWebSocket;
+        if (!OpenSignaling(service, type, *lease, error))
+            return false;
+        lease->hostNetworkId = type == kConnectionJsonRpc ? Lower(address) : address;
+        lease->issuer = service.issuer;
+        lease->worldName = realmName;
+        lease->hostName = realmName;
+        out = std::move(lease);
+        return true;
+    }
+
     bool Join(xbox::Account& account, const std::string& friendXuid, const std::string& gameVersion, std::shared_ptr<Lease>& out,
               const ProgressFn& progress, std::string& error) {
         out.reset();
@@ -929,29 +987,10 @@ namespace perlin::friendworld {
         // 4. Signalling.
         say("Opening a connection to the host...");
         auto lease = std::make_shared<Lease>();
-        if (connection.type == kConnectionJsonRpc) {
-            if (service.signalingAfdUri.empty())
-                return fail("Minecraft did not name a signalling service");
-            const http::Response config = http::GetUrl(service.signalingAfdUri + "/api/v1.0/configuration",
-                                                       {{"Authorization", service.authorization}, {"User-Agent", "libhttpclient/1.0.0.0"}}, 20);
-            std::string signalingUri;
-            if (auto doc = config.status == 200 ? json::Document::Parse(config.body) : std::nullopt)
-                signalingUri = doc->root()["result"]["signalingUri"].str();
-            if (signalingUri.empty())
-                return fail(Failure(config, "the Minecraft signalling directory"));
-            auto signaling = std::make_shared<JsonRpcSignaling>();
+        {
             std::string openError;
-            if (!signaling->Open(signalingUri, service.authorization, openError))
+            if (!OpenSignaling(service, connection.type, *lease, openError))
                 return fail(openError);
-            lease->signaling = signaling;
-        } else {
-            if (service.signalingUri.empty())
-                return fail("Minecraft did not name a signalling service");
-            auto signaling = std::make_shared<WebSocketSignaling>();
-            std::string openError;
-            if (!signaling->Open(service.signalingUri, service.authorization, openError))
-                return fail(openError);
-            lease->signaling = signaling;
         }
         lease->hostNetworkId = connection.hostNetworkId;
         lease->nonce = nonce;

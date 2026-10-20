@@ -317,11 +317,15 @@ mcimg { display: block; position: absolute; }
             d += "<div style=\"left:0px;top:" + N(listTop - 1) + "px;width:" + N(w) + "px;height:1px;background-color:#000000;z-index:3;\"></div>\n";
             d += "<div style=\"left:0px;top:" + N(listBottom) + "px;width:" + N(w) + "px;height:1px;background-color:#000000;z-index:3;\"></div>\n";
             {
-                static const char* const kTabs[] = {"Servers", "LAN", "Realms", "Friends"};
+                // Shown left to right: LAN, Friends, Realms, Servers (the ids are the ServerTab values).
+                static const struct {
+                    ServerTab tab;
+                    const char* label;
+                } kTabs[] = {{ServerTab::Lan, "LAN"}, {ServerTab::Friends, "Friends"}, {ServerTab::Realms, "Realms"}, {ServerTab::Saved, "Servers"}};
                 const int tabW = 70, gap = 2;
                 const int x0 = cx - (4 * tabW + 3 * gap) / 2;
                 for (int t = 0; t < 4; t++)
-                    d += Btn(std::string(kServerTabPrefix) + N(t), x0 + t * (tabW + gap), 6, tabW, kTabs[t], static_cast<int>(m.tab) == t);
+                    d += Btn(std::string(kServerTabPrefix) + N(static_cast<int>(kTabs[t].tab)), x0 + t * (tabW + gap), 6, tabW, kTabs[t].label, m.tab == kTabs[t].tab);
             }
             const std::vector<ServerEntry>& list = m.Shown();
             const int rows = TitleVisibleRows(h);
@@ -334,15 +338,18 @@ mcimg { display: block; position: absolute; }
                     d += "<div style=\"left:" + N(rowX - 1) + "px;top:" + N(y - 1) + "px;width:" + N(kRowW + 2) + "px;height:" + N(kRowH - 2) + "px;background-color:#000000;z-index:2;\"></div>\n";
                 }
                 if (s.kind == ServerEntry::Kind::Header) {
-                    const bool open = s.realmId == 0 ? m.friendsOnlineOpen : m.friendsOfflineOpen;
+                    const bool open = m.friendsOpen[std::clamp<long long>(s.realmId, 0, 2)];
                     d += "<div id=\"" + std::string(kServerRowPrefix) + N(i) + "\" class=\"row\" style=\"left:" + N(rowX) + "px;top:" + N(y) + "px;width:" + N(kRowW) + "px;height:" + N(kRowH - 4) + "px;\">\n";
                     d += "<mcimg src=\"" + std::string(open ? "textures/ui/chevron_white_down.png" : "textures/ui/chevron_white_up.png") + "\" style=\"left:4px;top:11px;width:8px;height:8px;\"></mcimg>\n";
-                    d += Text(18, 11, kRowW - 20, s.name, s.realmId == 0 ? "green" : "gray");
+                    d += Text(18, 11, kRowW - 20, s.name, s.realmId == 2 ? "gray" : "green");
                     d += "</div>\n";
                     continue;
                 }
                 d += "<div id=\"" + std::string(kServerRowPrefix) + N(i) + "\" class=\"row\" style=\"left:" + N(rowX) + "px;top:" + N(y) + "px;width:" + N(kRowW) + "px;height:" + N(kRowH - 4) + "px;\">\n";
                 d += "<div style=\"left:0px;top:0px;width:32px;height:32px;background-color:#3a2f26;\"></div>\n";
+                if (!s.icon.empty())
+                    d += "<mcimg src=\"mchead:" + EscapeRml(s.icon) + "\" style=\"left:0px;top:0px;width:32px;height:32px;" + (s.offline ? "opacity:0.5;" : "") + "\"></mcimg>\n";
+                if (Joinable(s))
                 d += "<div id=\"" + std::string(kServerJoinPrefix) + N(i) + "\" class=\"go\" style=\"left:0px;top:0px;width:32px;height:32px;\"><mcimg src=\"mcres:ui_menu_join_hi.png\" style=\"left:0px;top:0px;width:32px;height:32px;\"></mcimg></div>\n";
                 d += Text(35, 1, kRowW - 110, s.name.empty() ? "Minecraft Server" : s.name);
                 // Live status (from the ping): players and latency top right, MOTD below the name.
@@ -391,7 +398,8 @@ mcimg { display: block; position: absolute; }
             }
             if (!m.joinMessage.empty())
                 d += "<div class=\"txt ctr yellow\" style=\"left:0px;top:" + N(h - 62) + "px;width:" + N(w) + "px;height:9px;z-index:4;\">" + EscapeRml(m.joinMessage) + "</div>\n";
-            const bool has = m.selected >= 0 && m.selected < static_cast<int>(list.size());
+            const bool has = m.selected >= 0 && m.selected < static_cast<int>(list.size()) && Joinable(list[static_cast<size_t>(m.selected)]);
+            const bool hasRow = m.selected >= 0 && m.selected < static_cast<int>(list.size());
             const bool saved = m.tab == ServerTab::Saved;
             const int r1 = h - 52, r2 = h - 28;
             d += Btn(has ? kServerJoin : "", cx - 154, r1, 100, m.tab == ServerTab::Friends ? "Join Friend" : (m.tab == ServerTab::Realms ? "Join Realm" : "Join Server"), !has);
@@ -400,8 +408,8 @@ mcimg { display: block; position: absolute; }
                 d += Btn(kServerAddRealm, cx + 54, r1, 100, "Add Realm");
             else
                 d += Btn(saved ? kServerAdd : "", cx + 54, r1, 100, "Add Server", !saved);
-            d += Btn(has && saved ? kServerEdit : "", cx - 154, r2, 72, "Edit", !(has && saved));
-            d += Btn(has && saved ? kServerDelete : "", cx - 74, r2, 72, "Delete", !(has && saved));
+            d += Btn(hasRow && saved ? kServerEdit : "", cx - 154, r2, 72, "Edit", !(hasRow && saved));
+            d += Btn(hasRow && saved ? kServerDelete : "", cx - 74, r2, 72, "Delete", !(hasRow && saved));
             d += Btn(kServerRefresh, cx + 4, r2, 72, "Refresh");
             d += Btn(kServerCancel, cx + 82, r2, 72, "Cancel");
             return d;

@@ -1,5 +1,7 @@
 #pragma once
 #include "network/FriendWorld.hpp"
+#include "network/LanDiscovery.hpp"
+#include <mutex>
 #include "client/audio/SoundSystem.hpp"
 #include "client/audio/Subtitles.hpp"
 #include <chrono>
@@ -185,6 +187,9 @@ namespace perlin {
         void RefreshTab(ui::ServerTab tab);
         void JoinRealm(long long id);
         void JoinFriend(const ui::ServerEntry& entry);
+        void JoinLanGame(const ui::ServerEntry& entry);
+        std::shared_ptr<lan::Session> lanSession; // Minecraft LAN discovery socket; also the signalling channel to the games it found
+        std::mutex lanSessionMutex;
         // Drops the joined friend world (leaves its Xbox session) without stalling the main thread.
         void ReleaseFriendLease();
         std::shared_ptr<friendworld::Lease> friendLease;      // the friend world being connected to / played

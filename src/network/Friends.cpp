@@ -4,6 +4,7 @@
 #include "util/Json.hpp"
 
 #include <algorithm>
+#include <iostream>
 
 namespace perlin::friends {
     namespace {
@@ -50,6 +51,7 @@ namespace perlin::friends {
                 f.gamertag = TextOf(p["displayName"]);
             if (f.xuid.empty() || f.gamertag.empty())
                 continue;
+            f.pictureUrl = TextOf(p["displayPicRaw"]);
             f.online = p["presenceState"].str() == "Online";
             f.presence = TextOf(p["presenceText"]);
             for (const json::View d : p["presenceDetails"].items()) {
@@ -63,7 +65,37 @@ namespace perlin::friends {
             }
             out.push_back(std::move(f));
         }
+        // Worlds friends have open: the session directory's activity handles of everyone in the friend list.
+        {
+            const std::string query = "{\"type\":\"activity\",\"scid\":\"4fc10100-5f7a-4470-899b-280835760c07\",\"owners\":{\"people\":{\"moniker\":\"people\",\"monikerXuid\":\"" +
+                                      xuid + "\"}}}";
+            const http::Response h = http::Request("sessiondirectory.xboxlive.com", 443, true, "POST",
+                                                   "/handles/query?include=relatedInfo,customProperties", query, "application/json",
+                                                   {{"Authorization", authorization}, {"x-xbl-contract-version", "107"}, {"Accept", "application/json"}}, 20);
+            if (auto handles = h.status == 200 ? json::Document::Parse(h.body) : std::nullopt) {
+                for (const json::View handle : handles->root()["results"].items()) {
+                    if (handle["relatedInfo"]["closed"].boolean())
+                        continue;
+                    const std::string owner = TextOf(handle["ownerXuid"]);
+                    const json::View custom = handle["customProperties"];
+                    if (custom["TransportLayer"].integer() != 2) // NetherNet worlds only
+                        continue;
+                    for (Friend& f : out)
+                        if (f.xuid == owner) {
+                            f.hosting = true;
+                            f.online = true;
+                            f.worldName = custom["worldName"].str();
+                            f.players = custom["MemberCount"].integer();
+                            f.maxPlayers = custom["MaxMemberCount"].integer();
+                        }
+                }
+            } else {
+                std::cout << "[friends] could not list hosted worlds (HTTP " << h.status << ")" << std::endl;
+            }
+        }
         std::stable_sort(out.begin(), out.end(), [](const Friend& a, const Friend& b) {
+            if (a.hosting != b.hosting)
+                return a.hosting;
             if (a.playingMinecraft != b.playingMinecraft)
                 return a.playingMinecraft;
             if (a.online != b.online)

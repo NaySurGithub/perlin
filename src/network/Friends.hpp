@@ -11,6 +11,10 @@ namespace perlin::friends {
         std::string gamertag;
         bool online = false;
         bool playingMinecraft = false;
+        std::string pictureUrl; // the gamerpic
+        bool hosting = false;   // has a world open that can be joined
+        std::string worldName;
+        int players = 0, maxPlayers = 0;
         std::string presence; // "Minecraft", "Online", "Last seen ..." or similar, as Xbox reports it
     };
 
