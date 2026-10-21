@@ -100,6 +100,7 @@ namespace perlin {
         };
         void UpdateCaveVisibility(float camX, float camY, float camZ);
         uint64_t meshGeneration = 1;
+        double caveLastRun = 0.0;
         uint64_t caveGeneration = 0;
         int caveCam[3] = {0, 0, 0};
         bool caveCulling = true;
@@ -161,6 +162,7 @@ namespace perlin {
             float fadeT = 0.0f;
             float fadeWeight = 0.0f;
             double lastTime = 0.0;
+            double lastBuildAt = 0.0;
             float sampleB[16] = {};
             float infoB[4] = {};
             bgfx::TextureHandle sampledB = BGFX_INVALID_HANDLE;

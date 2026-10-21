@@ -1888,11 +1888,12 @@ namespace perlin {
         for (size_t pi = 0; pi < pages.size(); pi++)
             if (tryPage(pages[pi], (int)pi))
                 return true;
-        constexpr uint32_t kBase = kPageIdx;
+        const uint32_t pageVerts = std::min<uint32_t>(kPageVerts, (1u << 18) << std::min<size_t>(pages.size(), 2));
+        const uint32_t kBase = (pageVerts / 4) * 6;
         std::array<uint32_t, kRenderLayerCount> caps = {kBase, kBase / 2, kBase / 2, kBase / 4, kBase / 8};
         for (int l = 0; l < kRenderLayerCount; l++)
             caps[l] = std::max(caps[l], need[l]);
-        if (!CreatePage(std::max(kPageVerts, v), caps))
+        if (!CreatePage(std::max(pageVerts, v), caps))
             return false;
         return tryPage(pages.back(), (int)pages.size() - 1);
     }
@@ -2212,8 +2213,15 @@ namespace perlin {
     void RenderContext_bgfx::UpdateCaveVisibility(float camX, float camY, float camZ) {
         const int ccx = (int)std::floor(camX / 16.0f), ccz = (int)std::floor(camZ / 16.0f);
         int csy = (int)std::floor(camY / 16.0f);
-        if (caveGeneration == meshGeneration && caveCam[0] == ccx && caveCam[1] == csy && caveCam[2] == ccz)
-            return;
+        const bool camMoved = caveCam[0] != ccx || caveCam[1] != csy || caveCam[2] != ccz;
+        if (!camMoved) {
+            if (caveGeneration == meshGeneration)
+                return;
+            const double now = frame.timeSeconds;
+            if (now - caveLastRun < 0.15)
+                return;
+        }
+        caveLastRun = frame.timeSeconds;
 
         int minX = INT_MAX, maxX = INT_MIN, minZ = INT_MAX, maxZ = INT_MIN, minS = INT_MAX, maxS = INT_MIN;
         bool allData = true;
@@ -2503,8 +2511,11 @@ namespace perlin {
                                 static_cast<int64_t>(std::llround(std::floor(glm::dot(cam, kb.fwd) / step))),
                                 lightKey[0], lightKey[1], static_cast<int64_t>(meshGeneration)};
         shadow.framesSince++;
+        const bool keyChanged = !shadow.haveKey || std::memcmp(key, shadow.key, 5 * sizeof(int64_t)) != 0;
+        const bool meshOnly = !keyChanged && key[5] != shadow.key[5];
         if (!shadow.building && !shadow.fading &&
-            (!shadow.haveKey || std::memcmp(key, shadow.key, sizeof(key)) != 0 || shadow.framesSince > 600)) {
+            (keyChanged || shadow.framesSince > 600 || (meshOnly && nowSeconds - shadow.lastBuildAt > 0.5))) {
+            shadow.lastBuildAt = nowSeconds;
             shadow.building = true;
             shadow.haveKey = true;
             shadow.framesSince = 0;

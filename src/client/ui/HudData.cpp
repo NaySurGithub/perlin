@@ -131,6 +131,7 @@ namespace perlin::ui {
         uint64_t h = 1469598103934665603ull;
         const auto mix = [&](uint64_t v) { h = (h ^ v) * 1099511628211ull; };
         const auto mixf = [&](float v) { mix(static_cast<uint64_t>(static_cast<int64_t>(std::lround(v * 256.0f)))); };
+        const auto mixq = [&](float v) { mix(static_cast<uint64_t>(static_cast<int64_t>(std::lround(v * 24.0f)))); };
         const auto mixs = [&](const std::string& t) { for (const char c : t) mix(static_cast<uint8_t>(c)); mix(0xff); };
         mix(i18n::Lang::Get().Version());
         mix(s.visible);
@@ -164,16 +165,16 @@ namespace perlin::ui {
         mix(s.burning);
         if (s.burning)
             mix(static_cast<uint64_t>(s.fireFrame));
-        mixf(s.itemNameAlpha);
+        mixq(s.itemNameAlpha);
         mixs(s.actionBar);
-        mixf(s.actionBarAlpha);
+        mixq(s.actionBarAlpha);
         mixs(s.title);
         mixs(s.subtitle);
-        mixf(s.titleAlpha);
+        mixq(s.titleAlpha);
         for (const HudState::SubtitleLine& l : s.subtitles) {
             mixs(l.text);
             mix(static_cast<uint64_t>(l.direction + 2));
-            mixf(l.brightness);
+            mixq(l.brightness);
         }
         const bool animated = s.health + s.absorption <= 4.0f || s.regeneration || s.healthBlinkUntil > static_cast<int>(s.tick) ||
                               s.saturation <= 0.0f;
@@ -203,7 +204,7 @@ namespace perlin::ui {
         }
         for (const auto& l : s.chatLines) {
             mixs(l.text);
-            mixf(l.alpha);
+            mixq(l.alpha);
             mix(static_cast<uint64_t>(l.row));
         }
         if (s.chatOpen) {
