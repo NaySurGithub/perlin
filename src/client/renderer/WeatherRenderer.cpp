@@ -141,13 +141,14 @@ namespace perlin {
                 }
                 if (c.kind == 0)
                     continue;
-                const int yTop = camY + radius, yBottom = std::max(c.top, camY - radius);
+                const int yTop = camY + 5, yBottom = std::max(c.top, camY - radius);
                 if (yBottom >= yTop)
                     continue;
                 const double px = x + 0.5 - in.camera.x, pz = z + 0.5 - in.camera.z;
                 const double dist = std::sqrt(px * px + pz * pz);
                 const float fade = static_cast<float>(1.0 - dist * dist / static_cast<double>((radius + 1) * (radius + 1)));
-                const float alpha = std::clamp((fade * 0.5f + 0.5f) * in.rain * (c.kind == 2 ? 0.85f : 0.7f), 0.0f, 1.0f);
+                const float nearFade = 0.2f + 0.8f * std::clamp(static_cast<float>(dist - 1.0) / 2.5f, 0.0f, 1.0f);
+                const float alpha = std::clamp((fade * 0.5f + 0.5f) * in.rain * nearFade * (c.kind == 2 ? 0.8f : 0.5f), 0.0f, 1.0f);
                 if (alpha < 0.02f)
                     continue;
                 const double len = std::max(dist, 0.001);
@@ -161,11 +162,11 @@ namespace perlin {
                 const float y0 = static_cast<float>(yBottom), y1 = static_cast<float>(yTop);
                 float u0, u1, v0, v1;
                 if (c.kind == 1) {
-                    const float fall = static_cast<float>(std::fmod(t * 12.0 + (h >> 8 & 31), 2.0));
+                    const float fall = static_cast<float>(std::fmod(t * 12.0 + (h >> 8 & 31), 1.5));
                     u0 = offset;
-                    u1 = offset + 1.0f;
-                    v0 = -(y1 + fall) * 0.5f;
-                    v1 = -(y0 + fall) * 0.5f;
+                    u1 = offset + 0.25f;
+                    v0 = -(y1 + fall) / 1.5f;
+                    v1 = -(y0 + fall) / 1.5f;
                 } else {
                     const float fall = static_cast<float>(std::fmod(t * 1.4 + (h >> 8 & 31) * 0.1, 1.0));
                     const float sway = static_cast<float>(std::sin(t * 0.8 + (h & 63)) * 0.25);
