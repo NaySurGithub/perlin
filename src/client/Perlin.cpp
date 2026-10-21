@@ -36,6 +36,7 @@
 #include "client/player/BlockDestroy.hpp"
 #include "client/player/BlockUse.hpp"
 #include "client/ui/DeathScreen.hpp"
+#include "client/ui/BedScreen.hpp"
 #include "client/ui/InventoryScreen.hpp"
 #include "client/ui/CreativeScreen.hpp"
 #include "client/ui/DisconnectScreen.hpp"
@@ -226,6 +227,35 @@ namespace perlin {
             h.point = {sx + 0.5 + kOff[best][0] * 0.5, sy + 0.5, sz + 0.5 + kOff[best][2] * 0.5};
             h.distance = glm::length(h.point - eye);
             return h;
+        }
+
+        // Puts a sleeping player on the bed next to them: feet toward the foot end, head on the pillow, lying on the bed top.
+        void ApplyBedPose(Level& level, entity::Entity& e) {
+            BlockPalette& pal = BlockPalette::Instance();
+            double bestD = 1e9;
+            for (int dy = 0; dy >= -1; dy--)
+                for (int dz = -2; dz <= 2; dz++)
+                    for (int dx = -2; dx <= 2; dx++) {
+                        const int x = static_cast<int>(std::floor(e.pos.x)) + dx, y = static_cast<int>(std::floor(e.pos.y + 0.3)) + dy,
+                                  z = static_cast<int>(std::floor(e.pos.z)) + dz;
+                        bool loaded = false;
+                        const uint16_t id = level.GetBlock(x, y, z, loaded);
+                        if (!loaded || id == 0 || pal.Name(id) != "minecraft:bed")
+                            continue;
+                        const int dir = pal.StateInt(id, "direction", 0) & 3;
+                        const bool head = pal.StateInt(id, "head_piece_bit", 0) != 0;
+                        static const int kStep[4][2] = {{0, 1}, {-1, 0}, {0, -1}, {1, 0}};
+                        const int hx = head ? x : x + kStep[dir][0], hz = head ? z : z + kStep[dir][1];
+                        const double cx = hx + 0.5, cz = hz + 0.5;
+                        const double d = (cx - e.pos.x) * (cx - e.pos.x) + (cz - e.pos.z) * (cz - e.pos.z);
+                        if (d >= bestD)
+                            continue;
+                        bestD = d;
+                        e.pos = {cx - kStep[dir][0] * 1.3, y + 0.5625, cz - kStep[dir][1] * 1.3};
+                        e.yaw = static_cast<float>(dir * 90 + 180);
+                        e.headYaw = e.yaw;
+                        e.pitch = 0.0f;
+                    }
         }
         bool showChunkBorders = false;
         bool showHitboxes = false;
@@ -982,6 +1012,48 @@ namespace perlin {
         formLeftDown = down;
     }
 
+    void Perlin::UpdateBedScreen(ui::Hud& hud, BedrockSession* live, int fbW, int fbH) {
+        const bool asleep = live && live->Sleeping() && !deathShown && !pauseShown && !invShown && !formShown && !chat.IsOpen();
+        if (!asleep) {
+            if (bedShown) {
+                bedShown = false;
+                bedLeftDown = false;
+                bedSignature.clear();
+                hud.Overlay().ClearOverlay();
+                if (!chat.IsOpen())
+                    input.SetTextMode(false);
+            }
+            return;
+        }
+        if (!bedShown) {
+            bedShown = true;
+            bedLeftDown = input.IsMouseDown(0);
+            input.SetTextMode(true);
+        }
+        const int scale = hud.OverlayScale();
+        const int guiW = static_cast<int>(std::ceil(static_cast<float>(fbW) / static_cast<float>(scale)));
+        const int guiH = static_cast<int>(std::ceil(static_cast<float>(fbH) / static_cast<float>(scale)));
+        std::string label = i18n::Tr("multiplayer.stopSleeping");
+        if (label.empty() || label == "multiplayer.stopSleeping")
+            label = "Leave Bed";
+        const std::string signature = label + "|" + std::to_string(guiW) + "x" + std::to_string(guiH);
+        if (signature != bedSignature || !hud.Overlay().HasOverlay()) {
+            bedSignature = signature;
+            std::string error;
+            if (!hud.Overlay().SetOverlay(ui::BuildBedScreenRml(label, guiW, guiH), error))
+                std::cout << "[ui] bed screen: " << error << std::endl;
+        }
+        hud.Overlay().MouseMove(input.MouseX() / static_cast<float>(scale), input.MouseY() / static_cast<float>(scale));
+        hud.UpdateOverlay(fbW, fbH, options.guiScale);
+        const bool down = input.IsMouseDown(0);
+        bool leave = inputManager.Pressed(Action::Pause);
+        if (!down && bedLeftDown && hud.Overlay().OverlayHover() == ui::kBedLeaveId)
+            leave = true;
+        bedLeftDown = down;
+        if (leave)
+            live->SendStopSleeping();
+    }
+
     void Perlin::UpdateDeathScreen(ui::Hud& hud, BedrockSession* live, const ui::HudState& state, int fbW, int fbH) {
         const bool preview = PERLIN_ENV("PERLIN_PREVIEW_DEATH") != nullptr;
         bool dead = preview || (live && state.mode != ui::GameMode::Spectator && (state.health <= 0.0f || live->DeathPending()));
@@ -1398,7 +1470,8 @@ namespace perlin {
             live->InvPump();
         const bool canOpen = (live || preview) && !deathShown && !formShown && !pauseShown && !chat.IsOpen() && state.mode != ui::GameMode::Spectator;
         const bool workbenchOpened = live && live->TakeWorkbenchOpened();
-        if (!invShown && workbenchOpened && !deathShown) {
+        const bool horseOpened = live && live->TakeHorseOpened();
+        if (!invShown && (workbenchOpened || horseOpened) && !deathShown) {
             invShown = true;
             invOpenedAt = now;
             invPicked = -1;
@@ -1414,19 +1487,28 @@ namespace perlin {
             invSignature.clear();
             inputManager.TakeTyped();
             input.SetTextMode(true);
-            if (live)
+            if (live) {
                 live->OpenInventory();
+                invMountAsk = live->RidingUid() != 0 ? now : std::chrono::steady_clock::time_point{};
+            }
+        }
+        // Riding: if the plain open request didn't bring up the mount's container, ask the server about the mount itself.
+        if (invShown && live && invMountAsk != std::chrono::steady_clock::time_point{} && now - invMountAsk > std::chrono::milliseconds(450)) {
+            invMountAsk = std::chrono::steady_clock::time_point{};
+            if (live->RidingUid() != 0 && !live->HorseOpen())
+                live->OpenMountInventory();
         }
         if (!invShown)
             return;
         bool close = false;
         invWorkbench = live ? live->WorkbenchOpen() : (preview && PERLIN_ENV("PERLIN_PREVIEW_WORKBENCH") != nullptr);
+        invHorse = live && live->HorseOpen();
         static bool bookInit = false;
         if (preview && !bookInit && PERLIN_ENV("PERLIN_PREVIEW_BOOK")) {
             bookInit = true;
             invBook = true;
         }
-        const bool creativeMode = (live || preview) && state.mode == ui::GameMode::Creative && !invWorkbench;
+        const bool creativeMode = (live || preview) && state.mode == ui::GameMode::Creative && !invWorkbench && !invHorse;
         const bool searching = creativeMode && creativeTab == ui::kCreativeSearchTab;
         if (deathShown || (live && live->TakeServerClosedInventory()))
             close = true;
@@ -1489,6 +1571,10 @@ namespace perlin {
             }
             for (int i = 0; i < 9; i++)
                 v.work[i] = ToHudItem(inv.work[i]);
+            v.horse = inv.horseOpen;
+            v.horseChest = inv.horseChestSlots;
+            for (int i = 0; i < 17; i++)
+                v.horseItems[static_cast<size_t>(i)] = ToHudItem(inv.horse[i]);
             v.offhand = ToHudItem(inv.offhand);
             v.output = ToHudItem(inv.output);
             v.cursor = ToHudItem(inv.cursor);
@@ -1617,6 +1703,7 @@ namespace perlin {
         for (const auto& it : v.armor) sig(it);
         for (const auto& it : v.craft) sig(it);
         for (const auto& it : v.work) sig(it);
+        if (v.horse) { signature += "H" + std::to_string(v.horseChest); for (const auto& it : v.horseItems) sig(it); }
         for (const auto& c : v.recipes) { signature += c.craftable ? "c" : "n"; sig(c.out); }
         sig(v.offhand);
         sig(v.output);
@@ -1702,7 +1789,7 @@ namespace perlin {
     void Perlin::UpdatePauseScreen(ui::Hud& hud, BedrockSession* live, int fbW, int fbH) {
         const bool preview = PERLIN_ENV("PERLIN_PREVIEW_PAUSE") != nullptr;
         const auto now = Clock::now();
-        const bool canOpen = (live || preview) && !deathShown && !formShown && !invShown && !chat.IsOpen();
+        const bool canOpen = (live || preview) && !deathShown && !formShown && !invShown && !chat.IsOpen() && !bedShown;
         if (modOpenView >= 0 && canOpen) {
             if (!pauseShown) {
                 pauseShown = true;
@@ -7552,6 +7639,10 @@ namespace perlin {
                     entities[1].vehicleUid = entities[0].uniqueId;
                 }
                 entityRenderer.ResolveSeats(entities);
+                if (live)
+                    for (entity::Entity& e : entities)
+                        if (e.sleeping && e.isPlayer)
+                            ApplyBedPose(live->NetLevel(), e);
                 if (!live && !previewWalk.empty()) {
                     static std::unordered_map<uint64_t, glm::dvec3> base;
                     static const auto t0 = std::chrono::steady_clock::now();
@@ -7616,9 +7707,15 @@ namespace perlin {
                         self.skin = selfSkinData;
                     }
                     fpSelf = self;
-                    if (live && live->RidingUid() != 0)
+                    if (live && live->RidingUid() != 0) {
                         self.vehicleUid = live->RidingUid();
+                        self.flags |= entity::flag::Riding;
+                    }
                     dollSelf = self;
+                    if (live && live->Sleeping()) {
+                        self.sleeping = true;
+                        ApplyBedPose(live->NetLevel(), self);
+                    }
                     entities.push_back(std::move(self));
                 }
                 entity::EntityRenderer::FrameIn ein;
@@ -7744,15 +7841,28 @@ namespace perlin {
                     if (!particles.tileFor && levelRenderer) {
                         particles.tileFor = [this](uint16_t id, int bx, int by, int bz, particle::TileChoice& out) {
                             const BlockAppearance& app = levelRenderer->Blocks().Look(id);
-                            int tile = app.overlayTile > 0 ? app.bottom : (app.side ? app.side : app.top);
+                            const std::string pname = BlockPalette::Instance().Name(id);
+                            const auto pHas = [&](const char* part) { return pname.find(part) != std::string::npos; };
+                            const bool untinted = pHas("cherry_leaves") || pHas("azalea") || pHas("pale_oak_leaves") || pHas("leaf_litter");
+                            // Biome-tinted blocks are tinted at mesh time, so the appearance flags don't tell us; go by name.
+                            const bool foliageLike = !untinted && (pHas("leaves") || pHas("vine"));
+                            const bool grassLike = !untinted && (pHas("grass") || pHas("fern") || pHas("sugar_cane"));
+                            const bool grassBlock = pHas("grass_block");
+                            int tile = (app.overlayTile > 0 && !grassBlock) ? app.bottom : (app.side ? app.side : app.top);
+                            if (grassBlock && app.top)
+                                tile = app.top;
                             if (!tile)
                                 tile = app.top ? app.top : app.bottom;
                             if (!tile)
                                 return false;
                             out.tile = tile;
-                            out.tint = (app.overlayTile <= 0 && (app.tintSide || app.tintTop)) ? glm::vec3(app.tintR, app.tintG, app.tintB)
-                                                                                               : glm::vec3(1.0f);
-                            if (out.tint != glm::vec3(1.0f) && particleLevel && levelRenderer->Tints().Ready()) {
+                            out.tint = (foliageLike || grassLike || (app.overlayTile <= 0 && (app.tintSide || app.tintTop)))
+                                           ? glm::vec3(app.tintR, app.tintG, app.tintB)
+                                           : glm::vec3(1.0f);
+                            if ((foliageLike || grassLike) && out.tint == glm::vec3(0.0f))
+                                out.tint = glm::vec3(0.45f, 0.75f, 0.3f);
+                            const bool wantTint = foliageLike || grassLike || out.tint != glm::vec3(1.0f);
+                            if (wantTint && particleLevel && levelRenderer->Tints().Ready()) {
                                 const BiomeTints& tints = levelRenderer->Tints();
                                 const std::string name = BlockPalette::Instance().Name(id);
                                 const auto has = [&](const char* part) { return name.find(part) != std::string::npos; };
@@ -7808,6 +7918,21 @@ namespace perlin {
                         }
                         return s == 1;
                     };
+                    if (live) {
+                        // Dropped items fall and slide locally at 20 Hz so broken-block drops move smoothly; the
+                        // server's position updates only nudge them.
+                        static double itemAcc = 0.0;
+                        itemAcc = std::min(itemAcc + static_cast<double>(dt), 0.15);
+                        const auto itemSolid = [&](int x, int y, int z) {
+                            bool loaded = false;
+                            const uint16_t id = entityLevel.GetBlock(x, y, z, loaded);
+                            return !loaded || (id != 0 && LevelCollision::ShapeOf(id).count > 0);
+                        };
+                        while (itemAcc >= 0.05) {
+                            itemAcc -= 0.05;
+                            live->Entities().StepItems(itemSolid);
+                        }
+                    }
                     pw.light = ein.light;
                     particle::DataWorld dataWorld;
                     dataWorld.solid = pw.solid;
@@ -8025,6 +8150,7 @@ namespace perlin {
                         UpdateFormScreen(*hud, live, fbW, fbH);
                         UpdateInventoryScreen(*hud, live, hudState, fbW, fbH);
                         UpdatePauseScreen(*hud, live, fbW, fbH);
+                        UpdateBedScreen(*hud, live, fbW, fbH);
                         UpdateChatClicks(*hud, live, fbW, fbH);
                     }
                     {
@@ -8047,7 +8173,7 @@ namespace perlin {
                     }
                     hud->Render();
                     const bool creativeUi = hudState.mode == ui::GameMode::Creative || PERLIN_ENV("PERLIN_PREVIEW_CREATIVE");
-                    if (invShown && dollSelf && !invWorkbench && (!creativeUi || creativeDollVisible)) {
+                    if (invShown && dollSelf && !invWorkbench && !invHorse && (!creativeUi || creativeDollVisible)) {
                         const int scale = hud->OverlayScale();
                         const int guiW = static_cast<int>(std::ceil(static_cast<float>(fbW) / static_cast<float>(scale)));
                         const int guiH = static_cast<int>(std::ceil(static_cast<float>(fbH) / static_cast<float>(scale)));
@@ -8075,6 +8201,40 @@ namespace perlin {
                                              (creativeDoll ? 32 : 49) * scale, (creativeDoll ? 43 : 70) * scale};
                         entityRenderer.RenderDoll(doll, din, (creativeDoll ? px + 89.0f : px + 50.5f) * scale,
                                                   (centerY + (1.8f / 2.0f + 0.0625f) * dollScale) * scale, dollScale * scale, clip);
+                    }
+                    if (invShown && invHorse && live) {
+                        std::vector<entity::Entity> all;
+                        live->Entities().Snapshot(all);
+                        const int64_t mountRuntime = live->GetInventory().horseEntity;
+                        const entity::Entity* found = nullptr;
+                        for (const entity::Entity& e : all)
+                            if (static_cast<int64_t>(e.runtimeId) == mountRuntime || (live->RidingUid() != 0 && e.uniqueId == live->RidingUid())) {
+                                found = &e;
+                                break;
+                            }
+                        if (found) {
+                            const int scale = hud->OverlayScale();
+                            const int guiW = static_cast<int>(std::ceil(static_cast<float>(fbW) / static_cast<float>(scale)));
+                            const int guiH = static_cast<int>(std::ceil(static_cast<float>(fbH) / static_cast<float>(scale)));
+                            const float px = static_cast<float>((guiW - ui::kInvPanelW) / 2), py = static_cast<float>((guiH - ui::kInvPanelH) / 2);
+                            entity::Entity doll = *found;
+                            doll.runtimeId = 0xFFFFFFFFFFFF0003ull;
+                            doll.pos = {0.0, 0.0, 0.0};
+                            doll.vehicleUid = 0;
+                            doll.flags &= ~(entity::flag::Riding | entity::flag::Sneaking);
+                            const float f = std::atan((px + 52.0f - invMouseX) / 40.0f), g = std::atan((py + 43.0f - invMouseY) / 40.0f);
+                            doll.yaw = 0.0f + f * 20.0f;
+                            doll.headYaw = f * 40.0f;
+                            doll.pitch = -g * 20.0f;
+                            doll.moveSerial = 1;
+                            entity::EntityRenderer::FrameIn din;
+                            din.time = std::chrono::duration<double>(frameStart - startedAt).count();
+                            din.dt = dt;
+                            din.firstPerson = false;
+                            din.camera = {0, 0, 0};
+                            const int clip[4] = {static_cast<int>((px + 26) * scale), static_cast<int>((py + 17) * scale), 52 * scale, 53 * scale};
+                            entityRenderer.RenderDoll(doll, din, (px + 52.0f) * scale, (py + 65.0f) * scale, 22.0f * scale, clip);
+                        }
                     }
                     float cx, cy, cw, ch;
                     if (options.showHud && !deathShown && !formShown && !invShown && !pauseShown && !disconnectShown && !loadingShown && !titleShown && (camera.mode == PerspectiveMode::FirstPerson || options.thirdPersonCrosshair) &&

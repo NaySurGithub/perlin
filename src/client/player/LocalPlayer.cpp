@@ -174,11 +174,14 @@ namespace perlin {
         const physics::State before = state;
 
         const float useScale = itemSlow ? 0.2f : 1.0f;
-        const float forwardKeys = rideLock ? 0.0f : input.Axis(Action::Forward, Action::Back);
-        const float strafeKeys = rideLock ? 0.0f : input.Axis(Action::Right, Action::Left);
+        // While mounted our own body stays on the seat, but the keys still have to reach the server: it steers the
+        // saddled horse/pig/strider/boat from the rider's move input and look direction.
+        const bool asleep = session.Sleeping();
+        const float forwardKeys = asleep ? 0.0f : input.Axis(Action::Forward, Action::Back);
+        const float strafeKeys = asleep ? 0.0f : input.Axis(Action::Right, Action::Left);
         const float forward = forwardKeys * useScale;
         const float strafe = strafeKeys * useScale;
-        const bool jump = !rideLock && input.IsDown(Action::Jump);
+        const bool jump = !asleep && input.IsDown(Action::Jump);
         const bool sneakHeldKey = input.IsDown(Action::Sneak);
         const bool sneakKey = sneakToggle ? sneakLatch : sneakHeldKey;
         if (rideLock && sneakKey && !sneakHeld)
@@ -287,7 +290,7 @@ namespace perlin {
         rec.attributes = attributes;
         rec.yaw = state.yaw;
         rec.before = state;
-        if (column) {
+        if (column && !asleep) {
             physics::Step(state, in, attributes, world);
         } else {
             state.vx = state.vy = state.vz = 0;
@@ -569,7 +572,7 @@ namespace perlin {
         const double x = previous.x + (state.x - previous.x) * t;
         const double y = previous.y + (state.y - previous.y) * t;
         const double z = previous.z + (state.z - previous.z) * t;
-        const float targetEye = rideLock ? 1.2f : (crawling || gliding || swimming) ? static_cast<float>(physics::kCrawlEye) : sneaking ? static_cast<float>(physics::kSneakEye) : static_cast<float>(physics::kStandEye);
+        const float targetEye = session.Sleeping() ? 0.35f : rideLock ? 1.2f : (crawling || gliding || swimming) ? static_cast<float>(physics::kCrawlEye) : sneaking ? static_cast<float>(physics::kSneakEye) : static_cast<float>(physics::kStandEye);
         eyeOffset += (targetEye - eyeOffset) * (1.0f - std::exp(-dt * 20.0f));
         const double offsetSize = std::sqrt(smoothOffset[0] * smoothOffset[0] + smoothOffset[1] * smoothOffset[1] +
                                             smoothOffset[2] * smoothOffset[2]);

@@ -869,6 +869,13 @@ namespace perlin::entity {
             for (const auto& [bn, xf] : pose)
                 std::cout << "[pose] " << e.type << " " << bn << " rot " << xf.rotation.x << "," << xf.rotation.y << "," << xf.rotation.z
                           << " pos " << xf.position.x << "," << xf.position.y << "," << xf.position.z << std::endl;
+        if (e.isPlayer && e.Has(flag::Riding) && v.swimAmount < 0.01f && v.lieAmount < 0.01f) {
+            // Seated pose on a mount (same angles as Java's riding pose): legs forward and splayed, arms held out.
+            pose["rightleg"].rotation = {-81.0f, 18.0f, 4.5f};
+            pose["leftleg"].rotation = {-81.0f, -18.0f, -4.5f};
+            pose["rightarm"].rotation.x += -36.0f;
+            pose["leftarm"].rotation.x += -36.0f;
+        }
         if (e.isPlayer && !v.fp && e.Has(flag::Sneaking) && v.swimAmount < 0.01f && v.lieAmount < 0.01f && !e.Has(flag::Riding))
             ApplyJavaCrouch(pose, bindGeometry);
         if (e.isPlayer && e.isSelf) {
@@ -1255,6 +1262,8 @@ namespace perlin::entity {
             model = glm::translate(model, glm::vec3(0, 0.0f, 0));
             model = glm::rotate(model, f * 90.0f * kDeg, glm::vec3(0, 0, 1));
         }
+        if (e.sleeping && e.isPlayer)
+            model = glm::rotate(model, -90.0f * kDeg, glm::vec3(1, 0, 0));  // lying on the back, head toward the pillow
         if (v.glideTime > 0.0f && e.isPlayer) {
             const float t = std::min(v.glideTime * 20.0f, 10.0f);
             const float amount = std::clamp(t * t / 100.0f, 0.0f, 1.0f);
@@ -2291,8 +2300,10 @@ namespace perlin::entity {
         };
 
         const BedCube kBedCubes[] = {
-            {{0, 0, 0}, {16, 32, 6}, {0, 0}},   {{3, 31, 6}, {10, 1, 3}, {38, 2}}, {{3, 0, 6}, {10, 1, 3}, {38, 38}},
-            {{15, 3, 6}, {1, 26, 3}, {52, 6}},  {{0, 3, 6}, {1, 26, 3}, {44, 6}},  {{13, 29, 6}, {3, 3, 3}, {12, 38}},
+            // Java 26.x bed: one 16x32x6 mattress (3..9 px above the floor) plus a 3x3x3 leg in each outer corner.
+            // The extra frame rails the old Bedrock-style model had (cubes 1-4) don't exist on the Java bed.
+            {{0, 0, 0}, {16, 32, 6}, {0, 0}},
+            {{13, 29, 6}, {3, 3, 3}, {12, 38}},
             {{0, 29, 6}, {3, 3, 3}, {0, 38}},   {{13, 0, 6}, {3, 3, 3}, {12, 44}}, {{0, 0, 6}, {3, 3, 3}, {0, 44}},
         };
 

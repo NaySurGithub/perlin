@@ -96,6 +96,8 @@ mcitem { display: block; position: absolute; }
             return kInvAddrCraft + v;
         if (id[0] == 'w' && v >= 0 && v < 9)
             return kInvAddrWork + v;
+        if (id[0] == 'h' && v >= 0 && v < 17)
+            return kInvAddrHorse + v;
         return -1;
     }
 
@@ -105,6 +107,13 @@ mcitem { display: block; position: absolute; }
 
     void InventorySlotPos(int addr, int& x, int& y, bool workbench) {
         x = y = 0;
+        if (addr >= kInvAddrHorse) {
+            const int h = addr - kInvAddrHorse;
+            if (h == 0) { x = 7; y = 17; }
+            else if (h == 1) { x = 7; y = 35; }
+            else { x = 79 + ((h - 2) % 5) * 18; y = 17 + ((h - 2) / 5) * 18; }
+            return;
+        }
         if (addr >= kInvAddrWork) { x = 30 + ((addr - kInvAddrWork) % 3) * 18; y = 17 + ((addr - kInvAddrWork) / 3) * 18; return; }
         if (addr == kInvAddrOutput && workbench) { x = 124; y = 35; return; }
         if (addr < 9) { x = 7 + addr * 18; y = 141; }
@@ -116,7 +125,9 @@ mcitem { display: block; position: absolute; }
     }
 
     namespace {
-        std::string Chrome(bool workbench) {
+        std::string Chrome(bool workbench, bool horse = false) {
+            if (horse)
+                return SpriteRml("ui_horse.png", 0, 0, 176, 166, 0, 0);
             return SpriteRml(workbench ? "ui_crafting_table.png" : "ui_inventory.png", 0, 0, 176, 166, 0, 0);
         }
 
@@ -125,6 +136,11 @@ mcitem { display: block; position: absolute; }
             InventorySlotPos(addr, x, y, workbench);
             std::string s = "  <div id=\"" + id + "\" class=\"slot\" style=\"left:" + std::to_string(px + x) + "px;top:" + std::to_string(py + y) +
                             "px;\">";
+            if (addr == kInvAddrHorse || addr == kInvAddrHorse + 1) {
+                s += SpriteRml("ui_horse_slot.png", 0, 0, 18, 18, 0, 0);
+                if (item.Empty())
+                    s += SpriteRml("ui_horse_icons.png", (addr - kInvAddrHorse) * 16, 0, 16, 16, 1, 1);
+            }
             if (item.Empty() && ((addr >= kInvAddrArmor && addr < kInvAddrOffhand) || addr == kInvAddrOffhand)) {
                 const int icon = addr == kInvAddrOffhand ? 4 : addr - kInvAddrArmor;
                 s += SpriteRml("ui_slot_icons.png", icon * 16, 0, 16, 16, 1, 1);
@@ -176,7 +192,18 @@ mcitem { display: block; position: absolute; }
         const int px = InventoryPanelX(v, guiW), py = (guiH - kInvPanelH) / 2;
         const bool wb = v.workbench;
         std::string slots;
-        if (!wb) {
+        if (v.horse) {
+            slots += Cell("h0", px, py, kInvAddrHorse, v.horseItems[0], false);
+            slots += Cell("h1", px, py, kInvAddrHorse + 1, v.horseItems[1], false);
+            if (v.horseChest > 0) {
+                slots += "  <div style=\"left:" + std::to_string(px + 79) + "px;top:" + std::to_string(py + 17) + "px;width:90px;height:54px;z-index:1;\">" +
+                         SpriteRml("ui_horse_chest.png", 0, 0, 90, 54, 0, 0) + "</div>\n";
+                for (int i = 0; i < std::min(v.horseChest, 15); i++)
+                    slots += Cell("h" + std::to_string(i + 2), px, py, kInvAddrHorse + 2 + i, v.horseItems[static_cast<size_t>(i + 2)], false);
+            }
+            slots += "  <div class=\"label\" style=\"left:" + std::to_string(px + 8) + "px;top:" + std::to_string(py + 72) + "px;z-index:3;\">" +
+                     EscapeRml(i18n::Tr("container.inventory")) + "</div>\n";
+        } else if (!wb) {
             for (int i = 0; i < 4; i++)
                 slots += Cell("a" + std::to_string(i), px, py, kInvAddrArmor + i, v.armor[static_cast<size_t>(i)], wb);
             slots += Cell("off", px, py, kInvAddrOffhand, v.offhand, wb);
@@ -186,7 +213,8 @@ mcitem { display: block; position: absolute; }
             for (int i = 0; i < 9; i++)
                 slots += Cell("w" + std::to_string(i), px, py, kInvAddrWork + i, v.work[static_cast<size_t>(i)], wb);
         }
-        slots += Cell("co", px, py, kInvAddrOutput, v.output, wb);
+        if (!v.horse)
+            slots += Cell("co", px, py, kInvAddrOutput, v.output, wb);
         for (int i = 0; i < 36; i++)
             slots += Cell("s" + std::to_string(i), px, py, i, v.slots[static_cast<size_t>(i)], wb);
 
@@ -215,7 +243,7 @@ mcitem { display: block; position: absolute; }
                     std::to_string(v.bookPage + 1) + "/" + std::to_string(std::max(1, v.bookPages)) + "</div>\n";
         }
         const int btnX = wb ? px + 5 : px + 104, btnY = wb ? py + 34 : py + 61;
-        const std::string bookButton = "  <div id=\"rb\" class=\"rbtn\" style=\"left:" + std::to_string(btnX) + "px;top:" + std::to_string(btnY) + "px;\"><div class=\"rn\">" +
+        const std::string bookButton = v.horse ? std::string() : "  <div id=\"rb\" class=\"rbtn\" style=\"left:" + std::to_string(btnX) + "px;top:" + std::to_string(btnY) + "px;\"><div class=\"rn\">" +
                                        SpriteRml("ui_recipe_button.png", 0, 0, 20, 18, 0, 0) + "</div><div class=\"rh\">" +
                                        SpriteRml("ui_recipe_button.png", 0, 18, 20, 18, 0, 0) + "</div></div>\n";
 
@@ -235,7 +263,8 @@ mcitem { display: block; position: absolute; }
         if (v.cursor.Empty()) {
             const HudItem* it = nullptr;
             if (v.hovered >= 0) {
-                if (v.hovered < 36) it = &v.slots[static_cast<size_t>(v.hovered)];
+                if (v.hovered >= kInvAddrHorse) it = &v.horseItems[static_cast<size_t>(std::min(v.hovered - kInvAddrHorse, 16))];
+                else if (v.hovered < 36) it = &v.slots[static_cast<size_t>(v.hovered)];
                 else if (v.hovered < kInvAddrOffhand) it = &v.armor[static_cast<size_t>(v.hovered - kInvAddrArmor)];
                 else if (v.hovered == kInvAddrOffhand) it = &v.offhand;
                 else if (v.hovered < kInvAddrOutput) it = &v.craft[static_cast<size_t>(v.hovered - kInvAddrCraft)];
@@ -255,10 +284,10 @@ mcitem { display: block; position: absolute; }
         ReplaceAll(d, "h", std::to_string(guiH));
         ReplaceAll(d, "x", std::to_string(px));
         ReplaceAll(d, "y", std::to_string(py));
-        ReplaceAll(d, "lx", std::to_string(px + (wb ? 28 : 97)));
-        ReplaceAll(d, "ly", std::to_string(py + (wb ? 6 : 8)));
-        ReplaceAll(d, "title", EscapeRml(v.title.empty() ? i18n::Tr("container.crafting") : v.title));
-        ReplaceAll(d, "chrome", Chrome(wb));
+        ReplaceAll(d, "lx", std::to_string(px + (v.horse ? 8 : wb ? 28 : 97)));
+        ReplaceAll(d, "ly", std::to_string(py + (v.horse ? 6 : wb ? 6 : 8)));
+        ReplaceAll(d, "title", EscapeRml(v.title.empty() ? i18n::Tr(v.horse ? "entity.minecraft.horse" : "container.crafting") : v.title));
+        ReplaceAll(d, "chrome", Chrome(wb, v.horse));
         ReplaceAll(d, "book", book);
         ReplaceAll(d, "effects", effects);
         ReplaceAll(d, "bookbutton", bookButton);

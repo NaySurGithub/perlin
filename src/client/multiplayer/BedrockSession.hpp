@@ -348,6 +348,9 @@ void RequestRespawn();
         bool MayFly() const { return mayFly; }
         bool IsFlying() const { return isFlying; }
         // Entity flag 32 (gliding) as last reported by the server for the local player.
+        // Actor flag 75 (sleeping) lives in the extended flag word.
+        bool Sleeping() const { std::lock_guard lock(attrMutex); return ((ownFlagWords[1] >> 11) & 1ull) != 0; }
+        bool SendStopSleeping() { return SendPlayerAction(6, 0, 0, 0, 0); }
         bool ServerGliding() const {
             std::lock_guard<std::mutex> lk(attrMutex);
             return ((ownFlagWords[0] >> 32) & 1ull) != 0;
@@ -408,8 +411,13 @@ void RequestRespawn();
             ItemStackInfo output;
             ItemStackInfo cursor;
             int selected = 0;
+            // Open horse / donkey / llama screen: [0] saddle, [1] armor, [2..] the chest slots.
+            ItemStackInfo horse[17];
+            bool horseOpen = false;
+            int horseChestSlots = 0;
+            int64_t horseEntity = 0;
         };
-        static constexpr int kInvArmor0 = 36, kInvOffhand = 40, kInvCraft0 = 41, kInvOutput = 45, kInvCursor = 46, kInvWork0 = 47, kInvSlots = 56;
+        static constexpr int kInvArmor0 = 36, kInvOffhand = 40, kInvCraft0 = 41, kInvOutput = 45, kInvCursor = 46, kInvWork0 = 47, kInvSlots = 56, kInvHorse0 = 56, kInvHorseCount = 17, kInvTotal = 73;
         static bool IsCraftAddr(int a) { return (a >= kInvCraft0 && a < kInvOutput) || (a >= kInvWork0 && a < kInvSlots); }
         struct CreativeGroup {
             int category = 0;
@@ -477,6 +485,7 @@ void RequestRespawn();
         bool SendPickBlock(int bx, int by, int bz);
         bool SendDropSelected(int count);
         bool OpenInventory();
+        bool OpenMountInventory();
         bool CloseInventory();
         bool SwapInventorySlots(int a, int b);
         bool DropInventorySlot(int slot, bool whole);
@@ -484,6 +493,8 @@ void RequestRespawn();
         std::vector<EffectState> GetEffects() const;
         bool WorkbenchOpen() const { std::lock_guard lock(statusMutex); return workbenchOpen; }
         bool TakeWorkbenchOpened();
+        bool TakeHorseOpened();
+        bool HorseOpen() const { std::lock_guard lock(statusMutex); return inventory.horseOpen; }
         struct RecipeEntry { int index = 0; bool craftable = false; ItemStackInfo out; };
         std::vector<RecipeEntry> GetRecipes(int side) const;
         void InvFillRecipe(int index);
@@ -868,6 +879,8 @@ void RequestRespawn();
         proto::ItemV4 inventoryRaw[36];
         std::atomic<int64_t> ridingUid{0};
         proto::ItemV4 extraRaw[20];
+        proto::ItemV4 horseRaw[17];
+        int horseWindow = -1;
         std::chrono::steady_clock::time_point invServerAt[36]{};
         struct RecipeIngredientInfo { bool empty = true; std::string name, tag; int meta = 0; };
         struct RecipeInfo {
@@ -897,6 +910,7 @@ void RequestRespawn();
         struct ActiveEffect { int id = 0; int amplifier = 0; std::chrono::steady_clock::time_point expires{}; bool infinite = false, ambient = false, particles = true; };
         std::vector<ActiveEffect> activeEffects;
         bool inventoryOpen = false, serverClosedInventory = false, workbenchOpen = false, workbenchJustOpened = false;
+        bool horseJustOpened = false;
         int inventoryWindow = 0;
         int32_t nextStackRequestId = -3;
         struct PendingDrop { int slot; int count; int attempt; };

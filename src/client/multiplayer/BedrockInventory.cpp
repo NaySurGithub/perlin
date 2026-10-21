@@ -116,6 +116,11 @@ namespace perlin {
             else if (a >= BedrockSession::kInvWork0 && a < BedrockSession::kInvSlots) { type = C::CraftingInput; slot = 32 + a - BedrockSession::kInvWork0; }
             else if (a == BedrockSession::kInvOutput) { type = C::CreativeOutput; slot = 50; }
             else if (a == BedrockSession::kInvCursor) { type = C::Cursor; slot = 0; }
+            else if (a >= BedrockSession::kInvHorse0 && a < BedrockSession::kInvTotal) {
+                const int h = a - BedrockSession::kInvHorse0;
+                if (h < 2) { type = C::HorseEquip; slot = h; }
+                else { type = C::Container; slot = h - 2; }
+            }
             s.slotType.containerId = type;
             s.slotType.dynamicContainerId.reset();
             s.slot = static_cast<uint8_t>(slot);
@@ -130,11 +135,15 @@ namespace perlin {
         if (a == kInvOffhand) return inventory.offhand;
         if (a < kInvOutput) return inventory.craft[a - kInvCraft0];
         if (a == kInvOutput) return inventory.output;
+        if (a >= kInvHorse0 && a < kInvTotal) return inventory.horse[a - kInvHorse0];
         if (a >= kInvWork0) return inventory.work[a - kInvWork0];
         return inventory.cursor;
     }
 
-    ItemV4& BedrockSession::InvRawLocked(int a) { return a < 36 ? inventoryRaw[a] : extraRaw[a - 36]; }
+    ItemV4& BedrockSession::InvRawLocked(int a) {
+        if (a >= kInvHorse0 && a < kInvTotal) return horseRaw[a - kInvHorse0];
+        return a < 36 ? inventoryRaw[a] : extraRaw[a - 36];
+    }
 
     namespace {
         struct Ing {
@@ -421,7 +430,7 @@ namespace perlin {
     }
 
     void BedrockSession::InvClick(int addr, bool right) {
-        if (addr < 0 || addr >= kInvSlots || addr == kInvCursor)
+        if (addr < 0 || addr >= kInvTotal || addr == kInvCursor)
             return;
         InvEnqueue([this, addr, right](ItemStackRequest& r) {
             Mover m{*this, r, [this](int a) -> ItemStackInfo& { return InvInfoLocked(a); }, [this](int a) -> ItemV4& { return InvRawLocked(a); }};
@@ -450,6 +459,10 @@ namespace perlin {
                 if (addr >= kInvArmor0 && addr < kInvOffhand && ArmorSlotOf(C.name) != addr - kInvArmor0)
                     return false;
                 if (addr == kInvOffhand && !OffhandAllowed(C.name))
+                    return false;
+                if (addr == kInvHorse0 && C.name.find("saddle") == std::string::npos)
+                    return false;
+                if (addr == kInvHorse0 + 1 && C.name.find("horse_armor") == std::string::npos && C.name.find("carpet") == std::string::npos)
                     return false;
             }
             const int max = cEmpty ? 64 : MaxStack(C.name);
@@ -486,7 +499,7 @@ namespace perlin {
     }
 
     void BedrockSession::InvShiftClick(int addr) {
-        if (addr < 0 || addr >= kInvSlots || addr == kInvCursor)
+        if (addr < 0 || addr >= kInvTotal || addr == kInvCursor)
             return;
         InvEnqueue([this, addr](ItemStackRequest& r) {
             Mover m{*this, r, [this](int a) -> ItemStackInfo& { return InvInfoLocked(a); }, [this](int a) -> ItemV4& { return InvRawLocked(a); }};
@@ -511,7 +524,16 @@ namespace perlin {
                 InvRecomputeOutputLocked();
                 return ok;
             }
-            if (addr < 36) {
+            if (addr >= kInvHorse0) {
+                ok = QuickMove(m, addr, mainThenHotbar);
+            } else if (addr < 36 && inventory.horseOpen &&
+                       ((S.name.find("saddle") != std::string::npos && inventory.horse[0].Empty()) ||
+                        ((S.name.find("horse_armor") != std::string::npos || S.name.find("carpet") != std::string::npos) && inventory.horse[1].Empty()))) {
+                const int target = S.name.find("saddle") != std::string::npos ? kInvHorse0 : kInvHorse0 + 1;
+                ok = QuickMove(m, addr, {{target, target}});
+            } else if (addr < 36 && inventory.horseOpen && inventory.horseChestSlots > 0) {
+                ok = QuickMove(m, addr, {{kInvHorse0 + 2, kInvHorse0 + 1 + inventory.horseChestSlots}});
+            } else if (addr < 36) {
                 const int slot = ArmorSlotOf(S.name);
                 if (slot >= 0 && InvInfoLocked(kInvArmor0 + slot).Empty())
                     ok = QuickMove(m, addr, {{kInvArmor0 + slot, kInvArmor0 + slot}});
@@ -759,6 +781,13 @@ namespace perlin {
 }
 
 namespace perlin {
+    bool BedrockSession::TakeHorseOpened() {
+        std::lock_guard lock(statusMutex);
+        const bool v = horseJustOpened;
+        horseJustOpened = false;
+        return v;
+    }
+
     bool BedrockSession::TakeWorkbenchOpened() {
         std::lock_guard lock(statusMutex);
         const bool v = workbenchJustOpened;

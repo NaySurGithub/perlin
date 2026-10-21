@@ -245,7 +245,19 @@ namespace perlin {
             const bool mainOnly = type == ContainerSlotType::Inventory && whole && items.size() == 27;
             const bool uiWindow = window == WindowIDVarint::Ui || type == ContainerSlotType::Cursor || type == ContainerSlotType::CraftingInput ||
                                   type == ContainerSlotType::CraftingOutput || type == ContainerSlotType::CreativeOutput;
+            const bool horseWin = inventory.horseOpen && horseWindow > 0 && static_cast<int>(window) == horseWindow;
             for (size_t i = 0; i < items.size(); i++) {
+                if (horseWin) {
+                    const int rawSlot = firstSlot + static_cast<int>(i);
+                    const int h = type == ContainerSlotType::HorseEquip ? rawSlot : type == ContainerSlotType::Container ? rawSlot + 2 : rawSlot;
+                    if (h >= 0 && h < kInvHorseCount) {
+                        inventory.horse[h] = convert(items[i]);
+                        horseRaw[h] = items[i];
+                        if (h >= 2)
+                            inventory.horseChestSlots = std::max(inventory.horseChestSlots, h - 1);
+                    }
+                    continue;
+                }
                 const int slot = firstSlot + static_cast<int>(i) + (type == ContainerSlotType::Inventory && !whole && firstSlot < 27 ? 9 : 0);
                 const ItemStackInfo info = convert(items[i]);
                 if (uiWindow) {
@@ -516,6 +528,19 @@ namespace perlin {
             inventoryWindow = static_cast<int>(p.windowId);
             inventoryOpen = true;
             workbenchOpen = p.windowType == WindowType::Workbench;
+            if (p.windowType == WindowType::Horse) {
+                inventory.horseOpen = true;
+                inventory.horseChestSlots = 0;
+                inventory.horseEntity = p.runtimeEntityId;
+                horseWindow = static_cast<int>(p.windowId);
+                horseJustOpened = true;
+                for (int h = 0; h < kInvHorseCount; h++) {
+                    inventory.horse[h] = ItemStackInfo{};
+                    horseRaw[h] = ItemV4{};
+                }
+            } else {
+                inventory.horseOpen = false;
+            }
             if (workbenchOpen) {
                 workbenchJustOpened = true;
                 for (auto& w : inventory.work)
@@ -528,6 +553,8 @@ namespace perlin {
             std::lock_guard lock(statusMutex);
             inventoryOpen = false;
             workbenchOpen = false;
+            inventory.horseOpen = false;
+            horseWindow = -1;
             for (auto& w : inventory.work)
                 w = ItemStackInfo{};
             if (p.server)

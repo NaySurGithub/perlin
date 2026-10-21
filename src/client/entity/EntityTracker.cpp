@@ -103,6 +103,16 @@ namespace perlin::entity {
         if (it == entities.end())
             return;
         Entity& e = it->second;
+        if (e.isItem && e.simulated) {
+            // Keep our own smooth simulation unless the server disagrees noticeably.
+            if (glm::length(pos - e.pos) < 0.6) {
+                e.pos += (pos - e.pos) * 0.35;
+                if (onGround)
+                    e.vel = glm::dvec3(0.0);
+                return;
+            }
+            e.vel = glm::dvec3(0.0);
+        }
         const glm::dvec3 next = e.isPlayer ? glm::dvec3(pos.x, pos.y - kPlayerEye, pos.z) : pos;
         if (e.dying && e.isPlayer && glm::dot(next - e.pos, next - e.pos) > 2.25)
             e.dying = false;
@@ -121,6 +131,16 @@ namespace perlin::entity {
         if (it == entities.end())
             return;
         Entity& e = it->second;
+        if (e.isItem && e.simulated) {
+            const glm::dvec3 target(x ? *x : e.pos.x, y ? *y : e.pos.y, z ? *z : e.pos.z);
+            if (glm::length(target - e.pos) < 0.6) {
+                e.pos += (target - e.pos) * 0.35;
+                if (onGround)
+                    e.vel = glm::dvec3(0.0);
+                return;
+            }
+            e.vel = glm::dvec3(0.0);
+        }
         if (x) e.pos.x = *x;
         if (y) e.pos.y = *y;
         if (z) e.pos.z = *z;
@@ -285,5 +305,72 @@ namespace perlin::entity {
     size_t EntityTracker::Count() const {
         std::lock_guard lock(mutex);
         return entities.size();
+    }
+}
+
+namespace perlin::entity {
+    void EntityTracker::SetMotion(uint64_t rid, glm::dvec3 velocity) {
+        std::lock_guard lock(mutex);
+        const auto it = entities.find(rid);
+        if (it == entities.end() || !it->second.isItem)
+            return;
+        it->second.vel = velocity;
+        it->second.simulated = true;
+    }
+
+    void EntityTracker::StepItems(const std::function<bool(int, int, int)>& solid) {
+        std::lock_guard lock(mutex);
+        constexpr double kHalf = 0.125, kHeight = 0.25;
+        const auto blocked = [&](double x, double y, double z) {
+            for (int bx = static_cast<int>(std::floor(x - kHalf)); bx <= static_cast<int>(std::floor(x + kHalf)); bx++)
+                for (int by = static_cast<int>(std::floor(y)); by <= static_cast<int>(std::floor(y + kHeight)); by++)
+                    for (int bz = static_cast<int>(std::floor(z - kHalf)); bz <= static_cast<int>(std::floor(z + kHalf)); bz++)
+                        if (solid(bx, by, bz))
+                            return true;
+            return false;
+        };
+        for (auto& [rid, e] : entities) {
+            if (!e.isItem || !e.simulated)
+                continue;
+            e.vel.y -= 0.04;
+            glm::dvec3 p = e.pos;
+            bool grounded = false;
+            const double ny = p.y + e.vel.y;
+            if (blocked(p.x, ny, p.z)) {
+                if (e.vel.y < 0.0) {
+                    grounded = true;
+                    const double top = std::floor(ny) + 1.0;
+                    if (!blocked(p.x, top, p.z))
+                        p.y = top;
+                }
+                e.vel.y = 0.0;
+            } else {
+                p.y = ny;
+            }
+            const double nx = p.x + e.vel.x;
+            if (blocked(nx, p.y, p.z)) e.vel.x = 0.0; else p.x = nx;
+            const double nz = p.z + e.vel.z;
+            if (blocked(p.x, p.y, nz)) e.vel.z = 0.0; else p.z = nz;
+            const double friction = grounded ? 0.98 * 0.6 : 0.98;
+            e.vel.x *= friction;
+            e.vel.z *= friction;
+            e.vel.y *= 0.98;
+            if (grounded && std::fabs(e.vel.x) < 1e-3 && std::fabs(e.vel.z) < 1e-3)
+                e.vel.x = e.vel.z = 0.0;
+            if (glm::dot(p - e.pos, p - e.pos) > 1e-10) {
+                e.pos = p;
+                e.moveSerial++;
+            }
+            e.onGround = grounded;
+        }
+    }
+}
+
+namespace perlin::entity {
+    void EntityTracker::SetSleeping(uint64_t rid, bool sleeping) {
+        std::lock_guard lock(mutex);
+        const auto it = entities.find(rid);
+        if (it != entities.end())
+            it->second.sleeping = sleeping;
     }
 }

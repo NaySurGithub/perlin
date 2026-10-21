@@ -366,6 +366,19 @@ namespace perlin {
         return Send(p);
     }
 
+    bool BedrockSession::OpenMountInventory() {
+        const int64_t uid = ridingUid.load();
+        entity::Entity mount;
+        if (uid == 0 || !entities.FindUnique(uid, mount))
+            return false;
+        InteractPacket p;
+        p.actionId = InteractPacketActionId::OpenInventory;
+        p.targetEntityId = mount.runtimeId;
+        p.hasPosition = false;
+        std::cout << "[inventory] open mount inventory (target " << mount.runtimeId << ")" << std::endl;
+        return Send(p);
+    }
+
     bool BedrockSession::CloseInventory() {
         InvReturnCursor();
         {

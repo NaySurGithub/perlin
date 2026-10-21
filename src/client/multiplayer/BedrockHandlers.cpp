@@ -66,7 +66,10 @@ namespace perlin {
                     continue;
                 switch (m.key) {
                 case MetadataDictionaryEntryKey::Flags: tracker.SetFlags(rid, static_cast<uint64_t>(static_cast<int64_t>(n))); break;
-                case MetadataDictionaryEntryKey::FlagsExtended: tracker.SetCrawling(rid, ((static_cast<uint64_t>(static_cast<int64_t>(n)) >> 50) & 1ull) != 0); break;
+                case MetadataDictionaryEntryKey::FlagsExtended:
+                    tracker.SetCrawling(rid, ((static_cast<uint64_t>(static_cast<int64_t>(n)) >> 50) & 1ull) != 0);
+                    tracker.SetSleeping(rid, ((static_cast<uint64_t>(static_cast<int64_t>(n)) >> 11) & 1ull) != 0);
+                    break;
                 case MetadataDictionaryEntryKey::Scale: tracker.SetScale(rid, static_cast<float>(n)); break;
                 case MetadataDictionaryEntryKey::Variant: variant = static_cast<int>(n); break;
                 case MetadataDictionaryEntryKey::ExperienceValue: {
@@ -975,6 +978,10 @@ namespace perlin {
             droppedRaw[p.runtimeEntityId] = p.item;
             entities.AddItem(p.runtimeEntityId, p.entityIdSelf, {p.position.x, p.position.y, p.position.z}, it->second, p.item.count,
                              static_cast<int>(p.item.metadata), p.item.blockRuntimeId, false);
+            entities.SetMotion(p.runtimeEntityId, {p.velocity.x, p.velocity.y, p.velocity.z});
+        });
+        On<SetEntityMotionPacket>([this](const SetEntityMotionPacket& p) {
+            entities.SetMotion(p.runtimeEntityId, {p.velocity.x, p.velocity.y, p.velocity.z});
         });
 
         On<TakeItemEntityPacket>([this](const TakeItemEntityPacket& p) {

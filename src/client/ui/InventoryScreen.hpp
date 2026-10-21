@@ -28,12 +28,15 @@ namespace perlin::ui {
         int hovered = -1;
         float mouseX = 0, mouseY = 0;
         std::string title;
+        bool horse = false;
+        int horseChest = 0;
+        std::array<HudItem, 17> horseItems;
         bool advancedTooltips = false;
     };
 
     inline constexpr int kInvPanelW = 176;
     inline constexpr int kInvPanelH = 166;
-    inline constexpr int kInvAddrArmor = 36, kInvAddrOffhand = 40, kInvAddrCraft = 41, kInvAddrOutput = 45, kInvAddrWork = 47;
+    inline constexpr int kInvAddrArmor = 36, kInvAddrOffhand = 40, kInvAddrCraft = 41, kInvAddrOutput = 45, kInvAddrWork = 47, kInvAddrHorse = 56;
     void InventorySlotPos(int addr, int& x, int& y, bool workbench = false);
     std::string BuildEffectsPanel(const std::vector<HudEffect>& effects, int x, int y, int guiW);
     int InventoryPanelX(const InventoryView& view, int guiW);

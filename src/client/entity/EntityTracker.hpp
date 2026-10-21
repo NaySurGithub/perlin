@@ -1,4 +1,5 @@
 #pragma once
+#include <functional>
 #include <glm/glm.hpp>
 
 #include <cstdint>
@@ -58,6 +59,10 @@ namespace perlin::entity {
         bool dying = false;
         uint32_t swingSerial = 0;
         bool isItem = false;
+        // Dropped items are simulated locally (blocks/tick) between the server's rare position updates.
+        glm::dvec3 vel{0.0};
+        bool sleeping = false;
+        bool simulated = false;
         std::string itemName;
         int itemCount = 0, itemAux = 0;
         uint32_t itemBlock = 0;
@@ -89,6 +94,9 @@ namespace perlin::entity {
         void RemoveRuntime(uint64_t rid);
         void Pickup(uint64_t rid, uint64_t collector);
         void SetViewer(uint64_t rid, glm::dvec3 feet);
+        void SetMotion(uint64_t rid, glm::dvec3 velocity);
+        void SetSleeping(uint64_t rid, bool sleeping);
+        void StepItems(const std::function<bool(int, int, int)>& solid);
         void Move(uint64_t rid, glm::dvec3 pos, float pitch, float yaw, float headYaw, bool onGround);
         void MoveDelta(uint64_t rid, const double* x, const double* y, const double* z, const float* pitch, const float* yaw,
                        const float* headYaw, bool onGround);
