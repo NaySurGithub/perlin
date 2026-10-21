@@ -95,6 +95,12 @@ namespace perlin {
         bool sneakHeld = false;
         bool sendStartFlying = false;
         bool sendStopFlying = false;
+        // Client-side prediction bookkeeping: our own flight toggle is trusted until the server answers (or a
+        // timeout passes), so a stale ability update can't flip it back. The server still has the final say.
+        bool flyPending = false;
+        std::chrono::steady_clock::time_point flyPendingAt{};
+        bool glideReported = false, glideLocal = false;
+        std::chrono::steady_clock::time_point glideChangedAt{};
         bool rideLock = false;
         bool itemSlow = false;
         double rideX = 0, rideY = 0, rideZ = 0;

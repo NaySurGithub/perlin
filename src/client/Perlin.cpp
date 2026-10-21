@@ -6683,7 +6683,9 @@ namespace perlin {
                     const bool usePressed = inputManager.Pressed(Action::Use) && !ammoBlocked;
                     static auto lastUseSent = Clock::time_point{};
                     const bool tooSoon = Clock::now() - lastUseSent < std::chrono::milliseconds(60);
-                    if ((usePressed || (useHeld && useClock >= 0.2)) && !tooSoon) {
+                    // A fresh click must never be swallowed by the repeat throttle, or the single use packet that
+                    // starts eating can get lost and the food just doesn't start.
+                    if (usePressed || (useHeld && useClock >= 0.2 && !tooSoon)) {
                         lastUseSent = Clock::now();
                         useClock = 0;
                         const bool holdsItem = !held.Empty();
@@ -6720,7 +6722,11 @@ namespace perlin {
                             }
                         }
                         const bool allowed = usePressed || (use == blockuse::Use::Place);
-                        if (gAim.kind == AimHit::Kind::Block && allowed) {
+                        // Food and drinks start with a plain in-air use, same as when aiming at the sky. Sending a
+                        // failed block click first (which happens when standing still and looking at the ground)
+                        // made eating start only some of the time.
+                        const bool consumableInAir = holdsItem && !holdsBlock && use == blockuse::Use::Nothing && HandRenderer::IsFood(held.name);
+                        if (gAim.kind == AimHit::Kind::Block && allowed && !consumableInAir) {
                             if (use != blockuse::Use::Nothing && usePressed)
                                 { handRenderer.Swing(options.hand); gSelfSwing++; }
                             if (live) {
@@ -7822,6 +7828,8 @@ namespace perlin {
                     handFrame.light = {px[0] / 255.0f, px[1] / 255.0f, px[2] / 255.0f};
                 }
                 handFrame.viewEffect = handViewEffect;
+                handFrame.skins3d = options.skins3d;
+                handFrame.hurt = damage.HurtFraction(partial);
                 if (session) {
                     handFrame.skin = &session->Skin();
                     handFrame.skinSerial = std::hash<std::string>{}(session->Skin().skinId) * 2 + (session->Skin().slimArms ? 1 : 0);
@@ -8074,7 +8082,7 @@ namespace perlin {
                     background = ProcessInBackground();
                 }
                 if (background) {
-                    const auto target = frameStart + std::chrono::milliseconds(50);
+                    const auto target = frameStart + std::chrono::microseconds(1000000 / 60);
                     if (Clock::now() < target)
                         std::this_thread::sleep_until(target);
                 }

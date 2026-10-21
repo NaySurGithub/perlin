@@ -1285,9 +1285,15 @@ namespace perlin {
             if (uniqueId != 0 && p.playerUniqueId != uniqueId)
                 return;
             gameType = static_cast<int>(p.gamemode);
+            // Creative always allows flight, so don't wait for the abilities packet (it may arrive later or not
+            // at all on some servers); a later abilities update still overrides this.
+            if (gameType == 1)
+                mayFly = true;
         });
         On<SetPlayerGameTypePacket>([this](const SetPlayerGameTypePacket& p) {
             gameType = static_cast<int>(p.gamemode);
+            if (gameType == 1)
+                mayFly = true;
         });
 
         On<NetworkStackLatencyPacket>([this](const NetworkStackLatencyPacket& p) {

@@ -346,6 +346,11 @@ void RequestRespawn();
         int ServerProtocol() const { return serverProtocol; }
         bool MayFly() const { return mayFly; }
         bool IsFlying() const { return isFlying; }
+        // Entity flag 32 (gliding) as last reported by the server for the local player.
+        bool ServerGliding() const {
+            std::lock_guard<std::mutex> lk(attrMutex);
+            return ((ownFlagWords[0] >> 32) & 1ull) != 0;
+        }
         bool Spectator() const { return gameType == 6 || gameType == 3 || gameType == 4 || noClip; }
         bool NoClip() const { return noClip || gameType == 6; }
         int GameType() const { return gameType; }

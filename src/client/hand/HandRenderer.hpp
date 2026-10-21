@@ -55,6 +55,8 @@ namespace perlin {
             glm::mat4 viewEffect{1.0f};
             const LoadedSkin* skin = nullptr;
             uint64_t skinSerial = 0;
+            bool skins3d = false;
+            float hurt = 0.0f;
         };
         void Render(const FrameIn& in, const HandSettings& settings);
 
@@ -95,7 +97,11 @@ namespace perlin {
 
         bool DrawGeometryItem(const ui::HudItem& item, const glm::mat4& base, bool leftHand, bool firstPerson, const glm::vec3& light);
         void DrawModel(const std::vector<Quad>& quads, uint32_t texture, const glm::mat4& model, const glm::vec3& light,
-                       float alphaCutoff, bool glint = false);
+                       float alphaCutoff, bool glint = false, float redTint = 0.0f);
+        void EnsureSleeves3d(const FrameIn& in);
+        std::vector<Quad> sleeve3d[2];
+        uint64_t sleeve3dSerial = ~0ull;
+        bool sleeve3dFlags = false, sleeve3dValid = false, sleeve3dFallback = true;
         const Model& ItemModel(const ui::HudItem& item);
         void EnsureSkin(const FrameIn& in);
         void BuildArms(bool slim);

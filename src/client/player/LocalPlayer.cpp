@@ -225,6 +225,29 @@ namespace perlin {
         else if (!gliding && hasElytra && jump && !jumpHeld && !state.onGround && !state.inWater && !state.inLava &&
                  !state.onClimbable && !flying && !rideLock && !levitating && !crawling)
             gliding = true;
+        {
+            // Predict gliding locally, but let the server's own-player Gliding flag correct us once it has shown
+            // that it reports it (some servers never do, so we don't cancel glides before that).
+            const auto glideNow = std::chrono::steady_clock::now();
+            const bool serverGlide = session.ServerGliding();
+            if (serverGlide)
+                glideReported = true;
+            if (gliding != glideLocal) {
+                glideLocal = gliding;
+                glideChangedAt = glideNow;
+            }
+            if (glideReported && glideNow - glideChangedAt > std::chrono::milliseconds(600)) {
+                if (gliding && !serverGlide) {
+                    gliding = false;
+                    glideLocal = false;
+                    glideChangedAt = glideNow;
+                } else if (!gliding && serverGlide && hasElytra && !state.onGround && !state.inWater && !flying && !rideLock) {
+                    gliding = true;
+                    glideLocal = true;
+                    glideChangedAt = glideNow;
+                }
+            }
+        }
         physics::Input in;
         in.gliding = gliding;
         in.crawl = crawling;
@@ -285,6 +308,8 @@ namespace perlin {
         if (flying && state.onGround && state.verticalCollision && !in.flyUp && !in.noClip) {
             flying = false;
             sendStopFlying = true;
+            flyPending = true;
+            flyPendingAt = std::chrono::steady_clock::now();
         }
 
         BedrockSession::MoveInput packet;
@@ -481,18 +506,26 @@ namespace perlin {
             flying = false;
             sendStopFlying = true;
         }
+        if (flyPending && (session.IsFlying() == flying || now - flyPendingAt > std::chrono::milliseconds(750)))
+            flyPending = false;
         if (session.IsFlying() != serverFlying) {
             serverFlying = session.IsFlying();
-            if (serverFlying && session.MayFly() && !flying) {
-                flying = true;
-            } else if (!serverFlying && flying && !spectator) {
-                flying = false;
+            // While our own toggle is still unanswered, an incoming ability update may just be the answer to an
+            // earlier toggle; don't let it undo what the player did since.
+            if (!flyPending) {
+                if (serverFlying && session.MayFly() && !flying) {
+                    flying = true;
+                } else if (!serverFlying && flying && !spectator) {
+                    flying = false;
+                }
             }
         }
         if (session.MayFly() && !spectator && input.Pressed(Action::Jump)) {
             if (now - lastJumpPress <= kDoubleTapWindow) {
                 flying = !flying;
                 (flying ? sendStartFlying : sendStopFlying) = true;
+                flyPending = true;
+                flyPendingAt = now;
                 lastJumpPress = {};
             } else {
                 lastJumpPress = now;

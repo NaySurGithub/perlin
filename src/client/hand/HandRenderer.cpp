@@ -659,7 +659,7 @@ namespace perlin {
     }
 
     void HandRenderer::DrawModel(const std::vector<Quad>& quads, uint32_t texture, const glm::mat4& model,
-                                 const glm::vec3& light, float alphaCutoff, bool glint) {
+                                 const glm::vec3& light, float alphaCutoff, bool glint, float redTint) {
         if (!renderer || quads.empty())
             return;
         static const glm::vec3 l0 = glm::normalize(glm::vec3(0.2f, 1.0f, -0.7f));
@@ -695,6 +695,10 @@ namespace perlin {
         draw.alphaCutoff = alphaCutoff;
         draw.blend = 1;
         draw.depth = true;
+        if (redTint > 0.0f) {
+            // Same red hurt overlay mobs get in EntityRenderer.
+            draw.overlay[0] = 1.0f; draw.overlay[1] = 0.0f; draw.overlay[2] = 0.0f; draw.overlay[3] = 0.3f;
+        }
         draw.shadowOnly = worldPass && worldShadowOnly;
         renderer->UiSubmit(worldPass ? UiLayer::World : UiLayer::Hand, draw);
         if (glint) {
@@ -841,9 +845,67 @@ namespace perlin {
                                S(1.0f / 16.0f) * S(s.scale);
         m = m * part;
         const ArmModel& arm = (in.slimArm ? armSlim : armClassic)[rightArm ? 0 : 1];
-        DrawModel(arm.base, skinTexture, m, in.light, 0.1f);
-        if (rightArm ? in.rightSleeve : in.leftSleeve)
-            DrawModel(arm.sleeve, skinTexture, m, in.light, 0.1f);
+        DrawModel(arm.base, skinTexture, m, in.light, 0.1f, false, in.hurt);
+        if (rightArm ? in.rightSleeve : in.leftSleeve) {
+            EnsureSleeves3d(in);
+            const std::vector<Quad>& voxels = sleeve3d[rightArm ? 0 : 1];
+            if (sleeve3dValid && !voxels.empty())
+                DrawModel(voxels, skinTexture, m, in.light, 0.1f, false, in.hurt);
+            else
+                DrawModel(arm.sleeve, skinTexture, m, in.light, 0.1f, false, in.hurt);
+        }
+    }
+
+    // Builds the "3D Skins" sleeve layer for the first-person arms. Entities already extrude their second skin
+    // layer into voxels; the hand used to draw the flat sleeve box, so the option had no effect in first person.
+    void HandRenderer::EnsureSleeves3d(const FrameIn& in) {
+        if (sleeve3dSerial == in.skinSerial && sleeve3dFlags == in.skins3d && sleeve3dFallback == skinFallback)
+            return;
+        sleeve3dSerial = in.skinSerial;
+        sleeve3dFlags = in.skins3d;
+        sleeve3dFallback = skinFallback;
+        sleeve3d[0].clear();
+        sleeve3d[1].clear();
+        sleeve3dValid = false;
+        const LoadedSkin* skin = in.skin;
+        if (!in.skins3d || skinFallback || !skin || !skin->hasSkin() || skin->skinWidth < 64 || skin->skinHeight < 64)
+            return;
+        attachable::Geometry source;
+        source.textureWidth = 64.0f;
+        source.textureHeight = 64.0f;
+        const float w = in.slimArm ? 3.0f : 4.0f;
+        for (int side = 0; side < 2; side++) {
+            const bool right = side == 0;
+            attachable::Bone bone;
+            bone.name = right ? "rightsleeve" : "leftsleeve";
+            bone.inflate = 0.25f;
+            attachable::Cube cube;
+            cube.size = {w, 12.0f, 4.0f};
+            // Bedrock-style space (y up); converted into the hand's Java-style space (y down) below.
+            cube.origin = {right ? (in.slimArm ? -7.0f : -8.0f) : 4.0f, 0.0f, -2.0f};
+            cube.uv = right ? glm::vec2(40.0f, 32.0f) : glm::vec2(48.0f, 48.0f);
+            cube.inflate = 0.25f;
+            cube.boxUv = true;
+            cube.mirror = true;
+            bone.cubes.push_back(cube);
+            source.bones.push_back(std::move(bone));
+        }
+        const attachable::Geometry voxel =
+            attachable::VoxelizeSkinLayers(source, skin->skinRgba.data(), skin->skinWidth, skin->skinHeight);
+        for (size_t i = 0; i < voxel.bones.size() && i < 2; i++) {
+            const float dx = i == 0 ? 5.0f : -5.0f;
+            for (Quad q : voxel.bones[i].voxels) {
+                for (glm::vec3& p : q.p) {
+                    p.x += dx;
+                    p.y = 10.0f - p.y;
+                }
+                q.n.y = -q.n.y;
+                if (glm::dot(glm::cross(q.p[1] - q.p[0], q.p[2] - q.p[0]), q.n) > 0.0f)
+                    std::swap(q.p[1], q.p[3]);
+                sleeve3d[i].push_back(q);
+            }
+        }
+        sleeve3dValid = true;
     }
 
     void HandRenderer::RenderItem(const FrameIn& in, const HandSettings& s, const ui::HudItem& item, bool rightArm,

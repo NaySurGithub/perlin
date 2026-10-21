@@ -44,6 +44,12 @@ namespace perlin {
 
         bool Active() const { return hurtTime > 0; }
 
+        // 0 when idle, up to 1 right after a hit; used to flash the first-person hand red.
+        float HurtFraction(float partialTick) const {
+            const float f = (static_cast<float>(hurtTime) - partialTick) / static_cast<float>(kDuration);
+            return hurtTime > 0 ? (f < 0.0f ? 0.0f : (f > 1.0f ? 1.0f : f)) : 0.0f;
+        }
+
         glm::mat4 ViewMatrix(float partialTick, int strength) const {
             float f = static_cast<float>(hurtTime) - partialTick;
             if (f < 0.0f || strength <= 0)
