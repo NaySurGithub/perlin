@@ -18,6 +18,7 @@
 #include "client/particle/ParticleSystem.hpp"
 #include "client/particle/DataParticles.hpp"
 #include "client/renderer/FogDefs.hpp"
+#include "client/player/FlightRoll.hpp"
 #include "client/player/LocalPlayer.hpp"
 #include "client/renderer/LevelRenderer.hpp"
 #include "client/renderer/Lightmap.hpp"
@@ -355,6 +356,7 @@ namespace perlin {
         HandRenderer handRenderer;
         entity::EntityRenderer entityRenderer;
         WeatherRenderer weather;
+        FlightRoll flight;
         particle::ParticleSystem particles;
         particle::DataParticles dataParticles;
         FogDefs fogDefs;

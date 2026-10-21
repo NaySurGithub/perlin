@@ -3069,6 +3069,7 @@ namespace perlin {
                 choice("Dynamic Lights", options.dynamicLights, {{"off", "Off"}, {"fast", "Fast"}, {"fancy", "Fancy"}});
                 toggle("Third Person Crosshair", options.thirdPersonCrosshair);
                 toggle("Third Person Nametag", options.thirdPersonNametag);
+                toggle("Elytra Free Flight", options.elytraFreeFlight);
                 {
                     OptRow h{"Zoom", "", -1.0f, [](float, bool) {}};
                     h.header = true;
@@ -3544,6 +3545,7 @@ namespace perlin {
                 toggle(tr("perlin.options.offhand", "Show Offhand"), options.hand.showOffhand);
                 toggle(tr("perlin.options.thirdCrosshair", "Third Person Crosshair"), options.thirdPersonCrosshair);
                 toggle(tr("perlin.options.thirdNametag", "Third Person Nametag"), options.thirdPersonNametag);
+                toggle(tr("perlin.options.elytraFlight", "Elytra Free Flight (Barrel Roll)"), options.elytraFreeFlight);
                 slider(tr("perlin.options.handScale", "Hand Size"), percent(options.hand.scale), (options.hand.scale - 0.5f) / 1.5f,
                        [this](float f) { options.hand.scale = 0.5f + std::round(std::clamp(f, 0.0f, 1.0f) * 150.0f) / 100.0f; });
                 const auto fieldSlider = [&](const std::string& label, float& ref, float lo, float hi, float step, const char* unit) {
@@ -6205,7 +6207,19 @@ namespace perlin {
             inputManager.SetServerLocks(sessionReady && session && session->GetState() == BedrockSession::State::InGame ? session->InputLocks() : 0u);
             const LookDelta look = zoom.Update(dt, inputManager.IsDown(Action::Zoom), inputManager.Scroll(),
                                                inputManager.Look());
-            camera.Rotate(look.yaw, look.pitch);
+            if (options.elytraFreeFlight && player.Gliding()) {
+                if (!flight.Active())
+                    flight.Begin(camera.yaw, camera.pitch);
+                const FlightRoll::Result turned = flight.Step(dt, look.yaw, look.pitch, inputManager.Axis(Action::Right, Action::Left), 0.0f, 0.0f);
+                camera.yaw = turned.yaw;
+                camera.pitch = turned.pitch;
+            } else {
+                if (flight.Active())
+                    flight.End();
+                camera.Rotate(look.yaw, look.pitch);
+                if (flight.Engaged())
+                    flight.Settle(dt, camera.yaw, camera.pitch);
+            }
             {
                 const float target = handRenderer.Scoping() && camera.mode == PerspectiveMode::FirstPerson ? 0.1f : 1.0f;
                 scopeFov += (target - scopeFov) * (1.0f - std::pow(0.5f, dt * 20.0f));
@@ -7023,6 +7037,8 @@ namespace perlin {
                 camera.nearPlane = std::clamp(0.05f + (camera.farPlane - 1500.0f) * 0.00004f, 0.05f, 0.25f);
             }
             ApplyModCamera(camera.fov, camera.viewEffect);
+            if (flight.Engaged())
+                camera.viewEffect = glm::rotate(glm::mat4(1.0f), glm::radians(flight.Roll()), glm::vec3(0.0f, 0.0f, 1.0f)) * camera.viewEffect;
             const glm::mat4 viewProjection = camera.ViewProjection();
             {
                 std::lock_guard lock(modAdv.mutex);
@@ -7431,6 +7447,8 @@ namespace perlin {
                     std::lock_guard lock(modAdv.mutex);
                     if (std::chrono::steady_clock::now() < modAdv.poseUntil)
                         ein.ownPose = glm::vec3(modAdv.pose.pitch, modAdv.pose.yaw, modAdv.pose.roll);
+                    if (flight.Engaged() && player.Gliding())
+                        ein.ownPose.y -= flight.Roll();
                     if (!modAdv.frameLines.empty())
                         ein.modLines = &modAdv.frameLines;
                 }

@@ -16,12 +16,47 @@ namespace perlin {
         }
 
         uint32_t Hash(int x, int z) {
-            uint32_t h = static_cast<uint32_t>(x * x * 3121 + x * 45238971) ^ static_cast<uint32_t>(z * z * 418711 + z * 13761);
-            h ^= h >> 15;
-            h *= 0x2c1b3c6du;
-            h ^= h >> 12;
-            return h;
+            return static_cast<uint32_t>(x * x * 3121 + x * 45238971) ^ static_cast<uint32_t>(z * z * 418711 + z * 13761);
         }
+
+        class JavaRandom {
+        public:
+            void SetSeed(int64_t seed) {
+                state = (static_cast<uint64_t>(seed) ^ 0x5DEECE66Dull) & ((1ull << 48) - 1);
+                haveGaussian = false;
+            }
+            float NextFloat() {
+                return static_cast<float>(Next(24)) / static_cast<float>(1 << 24);
+            }
+            double NextDouble() {
+                return static_cast<double>((static_cast<int64_t>(Next(26)) << 27) + Next(27)) * (1.0 / static_cast<double>(1ll << 53));
+            }
+            double NextGaussian() {
+                if (haveGaussian) {
+                    haveGaussian = false;
+                    return nextGaussian;
+                }
+                double v1, v2, sq;
+                do {
+                    v1 = 2.0 * NextDouble() - 1.0;
+                    v2 = 2.0 * NextDouble() - 1.0;
+                    sq = v1 * v1 + v2 * v2;
+                } while (sq >= 1.0 || sq == 0.0);
+                const double mul = std::sqrt(-2.0 * std::log(sq) / sq);
+                nextGaussian = v2 * mul;
+                haveGaussian = true;
+                return v1 * mul;
+            }
+
+        private:
+            int32_t Next(int bits) {
+                state = (state * 0x5DEECE66Dull + 0xBull) & ((1ull << 48) - 1);
+                return static_cast<int32_t>(static_cast<int64_t>(state) >> (48 - bits));
+            }
+            uint64_t state = 0;
+            bool haveGaussian = false;
+            double nextGaussian = 0.0;
+        };
 
         uint32_t Pack(float brightness, float alpha) {
             const auto q = [](float v) { return static_cast<uint32_t>(std::clamp(v, 0.0f, 1.0f) * 255.0f + 0.5f); };
@@ -80,7 +115,7 @@ namespace perlin {
         if (!rainTexture || !snowTexture)
             return;
         Level& level = *in.level;
-        const int radius = std::clamp(in.radius, 3, 12);
+        const int radius = std::clamp(in.radius, 3, 15);
         const int cx = static_cast<int>(std::floor(in.camera.x)), cz = static_cast<int>(std::floor(in.camera.z));
         const int camY = static_cast<int>(std::floor(in.camera.y));
 
@@ -128,10 +163,15 @@ namespace perlin {
 
         std::vector<UiVertex> rainV, snowV;
         std::vector<uint32_t> rainI, snowI;
-        const double t = in.seconds;
+        const double ticks = in.seconds * 20.0;
+        const int64_t gameTime = static_cast<int64_t>(std::floor(ticks));
+        const float partial = static_cast<float>(ticks - static_cast<double>(gameTime));
+        const float radiusSq = static_cast<float>(radius * radius);
+        const float brightness = std::clamp(0.3f + 0.7f * in.light, 0.0f, 1.0f);
+        JavaRandom random;
         for (int dz = -radius; dz <= radius; dz++) {
             for (int dx = -radius; dx <= radius; dx++) {
-                if (dx * dx + dz * dz > radius * radius)
+                if (dx == 0 && dz == 0)
                     continue;
                 const int x = cx + dx, z = cz + dz;
                 Column& c = columns[Key(x, z)];
@@ -141,49 +181,50 @@ namespace perlin {
                 }
                 if (c.kind == 0)
                     continue;
-                const int yTop = camY + 5, yBottom = std::max(c.top, camY - radius);
-                if (yBottom >= yTop)
+                const int yTop = std::max(camY + radius, c.top), yBottom = std::max(camY - radius, c.top);
+                if (yTop - yBottom == 0)
                     continue;
-                const double px = x + 0.5 - in.camera.x, pz = z + 0.5 - in.camera.z;
-                const double dist = std::sqrt(px * px + pz * pz);
-                const float fade = static_cast<float>(1.0 - dist * dist / static_cast<double>((radius + 1) * (radius + 1)));
-                const float nearFade = 0.2f + 0.8f * std::clamp(static_cast<float>(dist - 1.0) / 2.5f, 0.0f, 1.0f);
-                const float alpha = std::clamp((fade * 0.5f + 0.5f) * in.rain * nearFade * (c.kind == 2 ? 0.8f : 0.5f), 0.0f, 1.0f);
-                if (alpha < 0.02f)
+                random.SetSeed(static_cast<int64_t>(static_cast<int32_t>(Hash(x, z))));
+                const float px = static_cast<float>(x + 0.5 - in.camera.x), pz = static_cast<float>(z + 0.5 - in.camera.z);
+                const float distSq = px * px + pz * pz;
+                const float mixed = std::min(distSq / radiusSq, 1.0f);
+                const float base = c.kind == 1 ? 1.0f : 0.8f;
+                const float alpha = std::clamp((base + (0.5f - base) * mixed) * in.rain, 0.0f, 1.0f);
+                if (alpha < 0.01f)
                     continue;
-                const double len = std::max(dist, 0.001);
-                const float ax = static_cast<float>(-pz / len * 0.5), az = static_cast<float>(px / len * 0.5);
-                const uint32_t h = Hash(x, z);
-                const float offset = static_cast<float>(h & 255) / 255.0f;
-                const float bright = 0.6f + 0.4f * std::clamp(in.light, 0.0f, 1.0f);
-                const uint32_t color = Pack(c.kind == 2 ? std::min(1.0f, bright + 0.1f) : bright * 0.92f, alpha);
+                const float len = std::sqrt(static_cast<float>(dx * dx + dz * dz));
+                const float ax = -static_cast<float>(dz) / len * 0.5f, az = static_cast<float>(dx) / len * 0.5f;
+                const float lightBright = c.kind == 2 ? std::min(1.0f, brightness + 0.1f) : brightness;
+                const uint32_t color = Pack(lightBright, alpha);
                 const float x0 = static_cast<float>(x + 0.5) - ax, x1 = static_cast<float>(x + 0.5) + ax;
                 const float z0 = static_cast<float>(z + 0.5) - az, z1 = static_cast<float>(z + 0.5) + az;
                 const float y0 = static_cast<float>(yBottom), y1 = static_cast<float>(yTop);
-                float u0, u1, v0, v1;
+                const float time = static_cast<float>(gameTime & 131071) + partial;
+                float uOffset = 0.0f, uSpan = 2.0f, vOffset;
                 if (c.kind == 1) {
-                    const float fall = static_cast<float>(std::fmod(t * 12.0 + (h >> 8 & 31), 1.5));
-                    u0 = offset;
-                    u1 = offset + 0.25f;
-                    v0 = -(y1 + fall) / 1.5f;
-                    v1 = -(y0 + fall) / 1.5f;
+                    const uint32_t mix = static_cast<uint32_t>(x * x * 3121 + x * 45238971 + z * z * 418711 + z * 13761) & 255u;
+                    const float speed = 3.0f + random.NextFloat();
+                    const float raw = -(static_cast<float>(gameTime & 131071) + static_cast<float>(mix) + partial) / 32.0f * speed;
+                    vOffset = std::fmod(raw, 32.0f);
                 } else {
-                    const float fall = static_cast<float>(std::fmod(t * 1.4 + (h >> 8 & 31) * 0.1, 1.0));
-                    const float sway = static_cast<float>(std::sin(t * 0.8 + (h & 63)) * 0.25);
-                    u0 = offset * 2.0f + sway;
-                    u1 = u0 + 0.5f;
-                    v0 = -(y1 + fall);
-                    v1 = -(y0 + fall);
+                    uSpan = 1.0f;
+                    uOffset = static_cast<float>(random.NextDouble() + static_cast<double>(time * 0.01f) * random.NextGaussian());
+                    const float drift = static_cast<float>(random.NextDouble() + static_cast<double>(time * static_cast<float>(random.NextGaussian())) * 0.001);
+                    vOffset = -(static_cast<float>(gameTime & 511) + partial) / 512.0f + drift;
                 }
+                constexpr float kVScale = 8.0f;
+                const float vTop = (static_cast<float>(yBottom) * 0.25f + vOffset) * kVScale;
+                const float vBottom = (static_cast<float>(yTop) * 0.25f + vOffset) * kVScale;
+                const float u0 = uOffset, u1 = uOffset + uSpan;
                 std::vector<UiVertex>& vs = c.kind == 1 ? rainV : snowV;
                 std::vector<uint32_t>& is = c.kind == 1 ? rainI : snowI;
-                const uint32_t base = static_cast<uint32_t>(vs.size());
-                vs.push_back({x0, y0, z0, color, u0, v1});
-                vs.push_back({x1, y0, z1, color, u1, v1});
-                vs.push_back({x1, y1, z1, color, u1, v0});
-                vs.push_back({x0, y1, z0, color, u0, v0});
+                const uint32_t first = static_cast<uint32_t>(vs.size());
+                vs.push_back({x0, y1, z0, color, u0, vTop});
+                vs.push_back({x1, y1, z1, color, u1, vTop});
+                vs.push_back({x1, y0, z1, color, u1, vBottom});
+                vs.push_back({x0, y0, z0, color, u0, vBottom});
                 for (uint32_t k : {0u, 1u, 2u, 0u, 2u, 3u})
-                    is.push_back(base + k);
+                    is.push_back(first + k);
             }
         }
         const auto submit = [&](const std::vector<UiVertex>& vs, const std::vector<uint32_t>& is, uint32_t texture) {

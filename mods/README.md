@@ -298,7 +298,6 @@ For mods that need to reach into the game itself. Everything that changes the ga
 | `game::inject_packet(id, bytes)` | Handles a packet as if the server had sent it; needs `packets` too. |
 | `game::packet_counters` | How many packets of each id have arrived. |
 
-`examples/barrel_roll` is a complete elytra barrel roll in thirty lines; the built module (`prebuilt/barrel_roll.wasm`, `barrel_roll.json`, `barrel_roll.png`) can be dropped into `<data dir>/mods/` as is (it asks for `control`).
 
 <!-- API-REFERENCE-BEGIN -->
 

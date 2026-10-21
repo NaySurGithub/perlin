@@ -34,6 +34,7 @@ namespace perlin {
             bool thirdPersonCrosshair = false;
             std::string glass = "normal";
             bool thirdPersonNametag = false;
+            bool elytraFreeFlight = true;
             int damageTilt = 100;
             bool damageTint = false;
             std::string texturePack;
@@ -150,6 +151,7 @@ namespace perlin {
                       o.thirdPersonCrosshair,
                       o.glass,
                       o.thirdPersonNametag,
+                      o.elytraFreeFlight,
                       o.damageTilt,
                       o.damageTint,
                       o.texturePack,
@@ -224,6 +226,7 @@ namespace perlin {
         o.thirdPersonCrosshair = stored.thirdPersonCrosshair;
         o.glass = (stored.glass == "connected" || stored.glass == "connectedClear" || stored.glass == "clear") ? stored.glass : std::string("normal");
         o.thirdPersonNametag = stored.thirdPersonNametag;
+        o.elytraFreeFlight = stored.elytraFreeFlight;
         o.damageTilt = std::clamp(stored.damageTilt, 0, 100);
         o.damageTint = stored.damageTint;
         o.texturePack = stored.texturePack;
@@ -340,6 +343,7 @@ namespace perlin {
                       thirdPersonCrosshair,
                       glass,
                       thirdPersonNametag,
+                      elytraFreeFlight,
                       damageTilt,
                       damageTint,
                       texturePack,

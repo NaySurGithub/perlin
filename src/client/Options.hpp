@@ -83,6 +83,7 @@ namespace perlin {
         bool thirdPersonCrosshair = false;
         std::string glass = "normal";
         bool thirdPersonNametag = false;
+        bool elytraFreeFlight = true;
         bool fovEffects = true;
         int damageTilt = 100;
         bool damageTint = false;
