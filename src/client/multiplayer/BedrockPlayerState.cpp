@@ -292,6 +292,39 @@ namespace perlin {
             store(p.windowId, p.container, static_cast<int>(p.slot), std::vector<ItemV4>{p.item}, false);
         });
 
+        // Some servers (including play.venitymc.com) hand out picked-up items with a server-to-client
+        // inventory_transaction instead of inventory_slot. Without this the new stack is never stored, so
+        // it stays invisible in the hotbar/inventory until a later request makes the server resend it.
+        On<InventoryTransactionPacket>([store](const InventoryTransactionPacket& p) {
+            static int logged = 0;
+            if (logged < 12) {
+                logged++;
+                std::cout << "[inventory] server transaction type " << static_cast<int>(p.transaction.transactionType) << " actions "
+                          << p.transaction.actions.size();
+                for (const TransactionActionsEntry& a : p.transaction.actions)
+                    std::cout << " (src " << static_cast<uint32_t>(a.sourceType) << " win " << (a.windowId ? static_cast<int>(*a.windowId) : -1)
+                              << " slot " << a.slot << " new " << a.newItem.networkId << "x" << a.newItem.count << ")";
+                std::cout << std::endl;
+            }
+            if (p.transaction.transactionType != TransactionTransactionType::Normal)
+                return;
+            for (const TransactionActionsEntry& a : p.transaction.actions) {
+                if (a.sourceType != TransactionActionsEntrySourceType::Container)
+                    continue;
+                const int window = a.windowId ? static_cast<int>(*a.windowId) : 0;
+                WindowIDVarint w;
+                switch (window) {
+                case 0: w = WindowIDVarint::Inventory; break;
+                case 119: w = WindowIDVarint::Offhand; break;
+                case 120: w = WindowIDVarint::Armor; break;
+                case 122: w = WindowIDVarint::Hotbar; break;
+                case 123: w = WindowIDVarint::FixedInventory; break;
+                default: continue;
+                }
+                store(w, std::nullopt, static_cast<int>(a.slot), std::vector<ItemV4>{a.newItem}, false);
+            }
+        });
+
         On<ItemStackResponsePacket>([this](const ItemStackResponsePacket& p) {
             std::vector<std::array<int, 3>> retries;
             {

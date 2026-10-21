@@ -35,7 +35,7 @@ namespace perlin {
             std::string glass = "normal";
             bool thirdPersonNametag = false;
             int damageTilt = 100;
-            bool damageTint = false;
+            bool damageTint = true;
             std::string texturePack;
             bool shadows = true;
             int heldLight = 0;

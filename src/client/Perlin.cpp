@@ -6398,12 +6398,9 @@ namespace perlin {
             {
                 static auto lastTrim = std::chrono::steady_clock::now();
                 const auto nowTrim = std::chrono::steady_clock::now();
-                if (nowTrim - lastTrim > std::chrono::seconds(10)) {
-                    const bool background = ProcessInBackground();
-                    if (background || nowTrim - lastTrim > std::chrono::seconds(45)) {
-                        lastTrim = nowTrim;
-                        std::thread([background] { TrimMemory(background); }).detach();
-                    }
+                if (nowTrim - lastTrim > std::chrono::seconds(45)) {
+                    lastTrim = nowTrim;
+                    std::thread([] { TrimMemory(false); }).detach();
                 }
             }
             levelRenderer->SetBetterGrass(options.betterGrass ? 1 : 0);
@@ -7476,6 +7473,9 @@ namespace perlin {
                     self.pitch = -camera.pitch;
                     self.moveSerial = 1;
                     self.swingSerial = gSelfSwing;
+                    // Drive the same red hurt flash other mobs get; the own player isn't in the tracker so its
+                    // hurt events never reached the renderer before.
+                    self.hurtSerial = live ? live->HurtCount() : 0;
                     self.mainHand = hudState.hotbar[std::clamp(hudState.selectedSlot, 0, 8)].name;
                     for (int i = 0; i < 4; i++)
                         self.armor[i] = hudState.armorItems[i].name;

@@ -85,7 +85,7 @@ namespace perlin {
         bool thirdPersonNametag = false;
         bool fovEffects = true;
         int damageTilt = 100;
-        bool damageTint = false;
+        bool damageTint = true;
         bool shadows = true;
         int heldLight = 0;
         int shadowDistance = 0;

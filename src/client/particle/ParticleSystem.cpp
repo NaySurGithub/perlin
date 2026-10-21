@@ -9,7 +9,8 @@ namespace perlin::particle {
 
     namespace {
         enum Ambient : int8_t {
-            kNone = -1, kUnknown = 0, kTorch = 1, kSoulTorch = 2, kRedstoneTorch = 3, kLava = 4, kFire = 5, kCandle = 6
+            kNone = -1, kUnknown = 0, kTorch = 1, kSoulTorch = 2, kRedstoneTorch = 3, kLava = 4, kFire = 5, kCandle = 6,
+            kBubbleUp = 7, kBubbleDown = 8
         };
 
         uint32_t Pack(const glm::vec3& c, float a) {
@@ -440,6 +441,8 @@ namespace perlin::particle {
                     kind = kLava;
                 else if (name == "minecraft:fire")
                     kind = kFire;
+                else if (name == "minecraft:bubble_column")
+                    kind = pal.StateInt(id, "drag_down", 0) != 0 ? kBubbleDown : kBubbleUp;
             }
             if (kind == kNone)
                 continue;
@@ -475,6 +478,21 @@ namespace perlin::particle {
             case kFire: {
                 for (int n = 0; n < 3; n++)
                     Spawn(Kind::LargeSmoke, {x + Rand(), y + Rand() * 0.5 + 0.5, z + Rand()});
+                break;
+            }
+            case kBubbleUp: {
+                // Soul sand column: bubbles stream upward through the whole column.
+                Spawn(Kind::Bubble, {bx, y + 0.1, bz}, glm::dvec3(0.0, 0.2, 0.0));
+                Spawn(Kind::Bubble, {x + Rand(), y + Rand(), z + Rand()}, glm::dvec3(0.0, 0.2, 0.0));
+                break;
+            }
+            case kBubbleDown: {
+                // Magma column: the current pulls bubbles down towards the block.
+                Spawn(Kind::Bubble, {bx, y + 0.8, z + Rand()}, glm::dvec3(0.0, -0.2, 0.0));
+                if (!particles.empty()) {
+                    particles.back().gravity = 0.05f;
+                    particles.back().colour = glm::vec3(0.75f, 0.8f, 1.0f);
+                }
                 break;
             }
             default:

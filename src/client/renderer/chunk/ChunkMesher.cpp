@@ -684,6 +684,21 @@ namespace perlin {
         return l != 0 && IsLiquidId(library, l) ? l : 0;
     }
 
+    // Water id to draw inside a bubble column cell whose own liquid layer was never sent: borrow it from a neighbour.
+    static uint16_t ColumnWater(const BlockCache& cache, BlockLibrary* library, int x, int y, int z) {
+        static const int dirs[6][3] = {{0, 1, 0}, {0, -1, 0}, {1, 0, 0}, {-1, 0, 0}, {0, 0, 1}, {0, 0, -1}};
+        for (const auto& d : dirs) {
+            const int nx = x + d[0], ny = y + d[1], nz = z + d[2];
+            const uint16_t layer = cache.Liquid(nx, ny, nz);
+            if (layer != 0 && IsLiquidId(library, layer) && SpecialKind(layer) != 4)
+                return layer;
+            const uint16_t block = cache.Get(nx, ny, nz);
+            if (block != 0 && SpecialKind(block) != 4 && LiquidKind(library, block) == 1)
+                return block;
+        }
+        return 0;
+    }
+
     static float WaterCornerHeight(const BlockCache& cache, BlockLibrary* library, int kind, int y, int cx, int cz) {
         float total = 0.0f;
         int weight = 0;
@@ -894,9 +909,16 @@ namespace perlin {
                             continue;
                     }
                     if (pass == 0) {
+                        // A bubble column (soul sand / magma) is counted as liquid, so neighbours cull their faces
+                        // against it, yet it is never drawn as a block. Draw water for the column cell itself, or the
+                        // column shows up as a see-through hole in the water.
+                        const uint16_t here = cache.Get(x, y, z);
+                        const bool column = here != 0 && SpecialKind(here) == 4;
                         id = cache.Liquid(x, y, z);
+                        if (column && library && (id == 0 || !IsLiquidId(library, id)))
+                            id = ColumnWater(cache, library, x, y, z);
                         if (id == 0 || !library || !IsLiquidId(library, id) ||
-                            IsLiquidId(library, cache.Get(x, y, z)))
+                            (!column && IsLiquidId(library, here)))
                             continue;
                     }
                     if (id == 0)
