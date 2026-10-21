@@ -619,6 +619,17 @@ namespace perlin {
                     if (it != crackStates.end())
                         crackStates.erase(it);
                 } else {
+                    // A late "break speed" update for a block we just stopped/finished breaking would resurrect a
+                    // crack that never goes away; likewise the block may already be gone.
+                    if (it == crackStates.end()) {
+                        if (bx == lastClearedCrack[0] && by == lastClearedCrack[1] && bz == lastClearedCrack[2] &&
+                            now - lastClearedAt < std::chrono::milliseconds(750))
+                            return;
+                        bool present = false;
+                        const uint16_t cur = netLevel.GetBlock(bx, by, bz, present);
+                        if (present && cur == 0)
+                            return;
+                    }
                     CrackState* c = it != crackStates.end() ? &*it : &crackStates.emplace_back();
                     if (it == crackStates.end() || c->since == std::chrono::steady_clock::time_point{}) {
                         c->x = bx; c->y = by; c->z = bz; c->progress = 0.0;

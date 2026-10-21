@@ -886,7 +886,7 @@ namespace perlin {
             cube.uv = right ? glm::vec2(40.0f, 32.0f) : glm::vec2(48.0f, 48.0f);
             cube.inflate = 0.25f;
             cube.boxUv = true;
-            cube.mirror = true;
+            cube.mirror = false;
             bone.cubes.push_back(cube);
             source.bones.push_back(std::move(bone));
         }

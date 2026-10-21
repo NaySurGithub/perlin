@@ -115,6 +115,7 @@ namespace perlin {
         int upscaleTargetFps = 0;
         std::string frameGen = "off";
         bool skins3d = true;
+        bool bedrockBridging = true;
         bool enableLods = false;
         std::string renderer = "auto";
         std::string capePhysics = "noshoulder";

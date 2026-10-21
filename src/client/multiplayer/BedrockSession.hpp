@@ -224,6 +224,7 @@ namespace perlin {
             int32_t held = 0;
         };
         bool SendCommand(const std::string& command);
+        bool SendSettingsCommand(const std::string& command);
         bool SendSkinUpdate();
         uint32_t CommandsVersion() const { std::lock_guard<std::mutex> lk(commandMutex); return commandVersion; }
         std::vector<ui::CommandInfo> Commands() const { std::lock_guard<std::mutex> lk(commandMutex); return commands; }
@@ -705,6 +706,8 @@ void RequestRespawn();
         };
         std::mutex crackMutex;
         std::vector<CrackState> crackStates;
+        int lastClearedCrack[3] = {0, 0, 0};
+        std::chrono::steady_clock::time_point lastClearedAt{};
         std::set<std::tuple<int, int, int, int>> requestedSlots;
         class NearestQueue {
         public:

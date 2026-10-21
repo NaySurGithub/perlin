@@ -1354,6 +1354,15 @@ namespace perlin {
         return Send(p);
     }
 
+    bool BedrockSession::SendSettingsCommand(const std::string& command) {
+        // The settings screen uses this dedicated packet rather than a chat command request.
+        proto::SettingsCommandPacket p;
+        p.commandLine = !command.empty() && command[0] == '/' ? command : "/" + command;
+        p.suppressOutput = false;
+        std::cout << "[bedrock] settings command> " << command << std::endl;
+        return Send(p);
+    }
+
     bool BedrockSession::SendSkinUpdate() {
         if (!skin.hasSkin() && !skin.hasCape())
             return false;

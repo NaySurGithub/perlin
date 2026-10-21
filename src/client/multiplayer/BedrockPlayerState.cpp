@@ -720,6 +720,8 @@ namespace perlin {
     void BedrockSession::ClearCrack(int x, int y, int z) {
         std::lock_guard lock(crackMutex);
         std::erase_if(crackStates, [&](const CrackState& c) { return c.x == x && c.y == y && c.z == z; });
+        lastClearedCrack[0] = x; lastClearedCrack[1] = y; lastClearedCrack[2] = z;
+        lastClearedAt = std::chrono::steady_clock::now();
     }
 
     std::vector<BedrockSession::BlockCrack> BedrockSession::Cracks() {

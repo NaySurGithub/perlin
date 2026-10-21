@@ -77,6 +77,7 @@ namespace perlin {
             float bloom = 0.5f;
             std::string renderer = "auto";
             std::string capePhysics = "noshoulder";
+            bool bedrockBridging = true;
             bool webTuned = false;
             std::map<std::string, std::string> padKeys;
             float padSensitivity = 1.0f;
@@ -192,7 +193,8 @@ namespace perlin {
                       o.shadowEntities,
                       o.bloom,
                       o.renderer,
-                      o.capePhysics};
+                      o.capePhysics,
+                      o.bedrockBridging};
         auto parsed = json::Read<Stored>(text);
         if (!parsed)
             return o;
@@ -236,6 +238,7 @@ namespace perlin {
         o.betterGrass = stored.betterGrass;
         o.enableLods = stored.enableLods;
         o.skins3d = stored.skins3d;
+        o.bedrockBridging = stored.bedrockBridging;
         o.upscaler = stored.upscaler;
         o.upscaleQuality = stored.upscaleQuality;
         o.upscaleSharpness = std::clamp(stored.upscaleSharpness, 0, 100);
@@ -382,7 +385,8 @@ namespace perlin {
                       shadowEntities,
                       bloom,
                       renderer,
-                      capePhysics};
+                      capePhysics,
+                      bedrockBridging};
         for (size_t i = 0; i < kActionCount; i++)
             stored.keys[ActionId(static_cast<Action>(i))] = keys[i].Serialize();
         for (size_t i = 0; i < kActionCount; i++)

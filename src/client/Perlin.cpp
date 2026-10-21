@@ -85,6 +85,7 @@
 #include <sys/socket.h>
 #endif
 #include <functional>
+#include <optional>
 #include <map>
 #include <cctype>
 #include <chrono>
@@ -175,6 +176,57 @@ namespace perlin {
         bool gItemSlow = false;
         struct LocalCrack { bool active = false; int x = 0, y = 0, z = 0, stage = 0; float progress = 0.0f; };
         LocalCrack gLocalCrack;
+        struct BreakState { bool breaking = false; int x = 0, y = 0, z = 0, face = 1; float progress = 0.0f; };
+        BreakState gBreak;
+
+        // Bedrock-style bridging: with the crosshair on empty air (nothing to place against) and a block in hand,
+        // place against the side of the block we're standing on, toward the air cell the crosshair points at.
+        std::optional<AimHit> BridgeTarget(Level& level, const physics::State& st, const glm::dvec3& eye, const glm::dvec3& dir,
+                                           const std::function<bool(int, int, int)>& solid) {
+            if (dir.y > -0.15)
+                return std::nullopt;
+            const int sx = static_cast<int>(std::floor(st.x));
+            const int sz = static_cast<int>(std::floor(st.z));
+            const int sy = static_cast<int>(std::floor(st.y - 0.01)) - 1;
+            if (!solid(sx, sy, sz))
+                return std::nullopt;
+            static const int kOff[4][3] = {{0, 0, -1}, {0, 0, 1}, {-1, 0, 0}, {1, 0, 0}};
+            static const int kFace[4] = {2, 3, 4, 5};
+            int best = -1;
+            double bestScore = 1e9;
+            for (int i = 0; i < 4; i++) {
+                const int tx = sx + kOff[i][0], ty = sy, tz = sz + kOff[i][2];
+                if (solid(tx, ty, tz))
+                    continue;
+                bool loaded = false;
+                (void)level.GetBlock(tx, ty, tz, loaded);
+                if (!loaded)
+                    continue;
+                // Distance from the look ray to the middle of the target cell; the ray must be heading at it.
+                const glm::dvec3 c{tx + 0.5, ty + 0.5, tz + 0.5};
+                const glm::dvec3 v = c - eye;
+                const double along = glm::dot(v, dir);
+                if (along <= 0.0 || along > 6.0)
+                    continue;
+                const double perp = glm::length(v - dir * along);
+                if (perp > 0.9)
+                    continue;
+                // Prefer the cell the player is actually facing horizontally.
+                if (perp < bestScore) {
+                    bestScore = perp;
+                    best = i;
+                }
+            }
+            if (best < 0)
+                return std::nullopt;
+            AimHit h;
+            h.kind = AimHit::Kind::Block;
+            h.bx = sx; h.by = sy; h.bz = sz;
+            h.face = kFace[best];
+            h.point = {sx + 0.5 + kOff[best][0] * 0.5, sy + 0.5, sz + 0.5 + kOff[best][2] * 0.5};
+            h.distance = glm::length(h.point - eye);
+            return h;
+        }
         bool showChunkBorders = false;
         bool showHitboxes = false;
         bool softPaused = false;
@@ -2924,7 +2976,13 @@ namespace perlin {
                     model.push_back({"Activate Cheats", onOff(on), -1.0f, [=](float, bool click) {
                                          if (click && isOp) {
                                              worldOverride["commandsenabled"] = {on ? 0 : 1, nowSec};
-                                             run(std::string("changesetting allow-cheats ") + (on ? "false" : "true"));
+                                             // changesetting is a console command, so a normal command request is refused for
+                                             // players. The settings screen goes through the settings_command packet instead.
+                                             // (Unverified against a live BDS: the server decides whether to honour it.)
+                                             if (live)
+                                                 live->SendSettingsCommand(std::string("changesetting allow-cheats ") + (on ? "false" : "true"));
+                                             else
+                                                 run(std::string("changesetting allow-cheats ") + (on ? "false" : "true"));
                                          }
                                      }});
                     model.back().locked = !isOp;
@@ -3556,6 +3614,7 @@ namespace perlin {
                 toggle(tr("options.modelPart.right_pants_leg", "Right Pants Leg"), options.skinParts.rightPants);
                 toggle(tr("options.modelPart.hat", "Hat"), options.skinParts.hat);
                 toggle("3D Skins", options.skins3d);
+                toggle("Bedrock Bridging", options.bedrockBridging);
                 model.push_back({tr("perlin.wardrobe", "Wardrobe..."), "", -1.0f, [this, &hud](float, bool click) {
                                      if (click) {
                                          options.Save();
@@ -6526,9 +6585,10 @@ namespace perlin {
                     live->NetLevel().MarkAllDirty();
                 }
                 static double breakClock = 0, useClock = 0, swingClock = 0;
-                static bool breaking = false, usingItem = false;
-                static int bkx = 0, bky = 0, bkz = 0, bkFace = 1;
-                static float breakProgress = 0.0f;
+                static bool usingItem = false;
+                bool& breaking = gBreak.breaking;
+                int& bkx = gBreak.x; int& bky = gBreak.y; int& bkz = gBreak.z; int& bkFace = gBreak.face;
+                float& breakProgress = gBreak.progress;
                 static int breakDelayTicks = 0;
                 static int hitTicks = 0;
                 breakClock += dt;
@@ -6678,6 +6738,24 @@ namespace perlin {
                         breakDelayTicks--;
                     }
 
+                    // Bedrock bridging: aim at nothing while holding a block => aim at the side of the block underfoot.
+                    const bool bridgeWanted = options.bedrockBridging && live && gAim.kind == AimHit::Kind::None && !held.Empty() &&
+                                              held.blockRuntimeId != 0 && !player.Flying() &&
+                                              inputManager.IsDown(Action::Use);
+                    const AimHit savedAim = gAim;
+                    if (bridgeWanted) {
+                        Level& bl = live->NetLevel();
+                        const auto solidAt = [&](int x, int y, int z) {
+                            bool loaded = false;
+                            const uint16_t id = bl.GetBlock(x, y, z, loaded);
+                            if (!loaded || id == 0)
+                                return false;
+                            const std::string& nm = BlockPalette::Instance().Name(id);
+                            return nm != "minecraft:air" && nm.find("water") == std::string::npos && nm.find("lava") == std::string::npos;
+                        };
+                        if (auto b = BridgeTarget(bl, player.State(), {camera.x, camera.y, camera.z}, glm::dvec3(camera.Direction()), solidAt))
+                            gAim = *b;
+                    }
                     const bool ammoBlocked = !HasAmmo(hudState, live, held.name);
                     const bool useHeld = inputManager.IsDown(Action::Use) && !ammoBlocked;
                     const bool usePressed = inputManager.Pressed(Action::Use) && !ammoBlocked;
@@ -6740,8 +6818,15 @@ namespace perlin {
                                 sounds.PlayBlockEvent(held.name, "place", glm::dvec3(dest[0] + 0.5, dest[1] + 0.5, dest[2] + 0.5));
                                 if (live && !player.Flying()) {
                                     const physics::State& pst = player.State();
-                                    const bool overlaps = pst.x + 0.35 > dest[0] && pst.x - 0.35 < dest[0] + 1 && pst.z + 0.35 > dest[2] && pst.z - 0.35 < dest[2] + 1 &&
-                                                          pst.y + 1.85 > dest[1] && pst.y < dest[1] + 1;
+                                    // While airborne the server checks the placement against where we'll be a moment from now and
+                                    // delays/rejects it, so predicting it here showed a block in mid-air for a split second. Widen
+                                    // the player box by the vertical motion and a safety margin so those placements wait for the server.
+                                    const double pad = pst.onGround ? 0.0 : 0.6;
+                                    const double lo = pst.y - pad + std::min(0.0, pst.vy * 2.0);
+                                    const double hi = pst.y + 1.85 + pad + std::max(0.0, pst.vy * 2.0);
+                                    const bool overlaps = pst.x + 0.35 + pad * 0.3 > dest[0] && pst.x - 0.35 - pad * 0.3 < dest[0] + 1 &&
+                                                          pst.z + 0.35 + pad * 0.3 > dest[2] && pst.z - 0.35 - pad * 0.3 < dest[2] + 1 &&
+                                                          hi > dest[1] && lo < dest[1] + 1;
                                     if (!overlaps)
                                         live->PredictPlace(dest[0], dest[1], dest[2], static_cast<int32_t>(held.blockRuntimeId));
                                 } else if (live) {
@@ -6754,6 +6839,7 @@ namespace perlin {
                             usingItem = true;
                         }
                     }
+                    gAim = savedAim;
                     if (!useHeld && live)
                         live->EndItemUseOn();
                     if (usingItem && !useHeld) {
@@ -6770,6 +6856,17 @@ namespace perlin {
                 }
             } else {
                 gAim = AimHit{};
+                // Input is no longer captured (menu, chat, disconnect...): finish any in-progress break properly so
+                // the server and our crack overlay don't keep a half-broken block around.
+                if (gBreak.breaking) {
+                    if (live) {
+                        live->SendPlayerAuthInputBlockAction(1, gBreak.x, gBreak.y, gBreak.z, gBreak.face);
+                        live->ClearCrack(gBreak.x, gBreak.y, gBreak.z);
+                    }
+                    gBreak.breaking = false;
+                    gBreak.progress = 0.0f;
+                }
+                gLocalCrack.active = false;
             }
 
             double worldTicks = preview ? previewTicks : kNoonTick;
@@ -7615,8 +7712,18 @@ namespace perlin {
                     if (frameStart - entry.at > std::chrono::milliseconds(300)) {
                         entry.at = frameStart;
                         const uint8_t packed = CachedLight(entityLevel, bx, by, bz, frameStart);
-                        const int sky = std::clamp<int>(ChunkLighting::Result::Sky(packed), 0, 15);
-                        const int blk = std::clamp<int>(ChunkLighting::Result::Block(packed), 0, 15);
+                        int sky = std::clamp<int>(ChunkLighting::Result::Sky(packed), 0, 15);
+                        int blk = std::clamp<int>(ChunkLighting::Result::Block(packed), 0, 15);
+                        if (sky == 0 && blk == 0) {
+                            // A particle that drifted inside a solid block reads zero light there and went pitch black.
+                            // Borrow the brightest neighbouring cell instead (real dark caves stay dark: all zero).
+                            static const int kN[6][3] = {{0, 1, 0}, {0, -1, 0}, {1, 0, 0}, {-1, 0, 0}, {0, 0, 1}, {0, 0, -1}};
+                            for (const auto& n : kN) {
+                                const uint8_t q = CachedLight(entityLevel, bx + n[0], by + n[1], bz + n[2], frameStart);
+                                sky = std::max<int>(sky, std::clamp<int>(ChunkLighting::Result::Sky(q), 0, 15));
+                                blk = std::max<int>(blk, std::clamp<int>(ChunkLighting::Result::Block(q), 0, 15));
+                            }
+                        }
                         const uint8_t* px = params.lightmap + (static_cast<size_t>(sky) * kLightmapSize + blk) * 4;
                         entry.colour = {px[0] / 255.0f, px[1] / 255.0f, px[2] / 255.0f};
                         entry.sky = sky;
