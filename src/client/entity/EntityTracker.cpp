@@ -150,6 +150,7 @@ namespace perlin::entity {
         body;                                                                                                          \
     }
     PERLIN_ENTITY_SET(SetFlags(uint64_t rid, uint64_t flags), e.flags = flags)
+    PERLIN_ENTITY_SET(SetCrawling(uint64_t rid, bool crawling), e.crawling = crawling)
     PERLIN_ENTITY_SET(SetScale(uint64_t rid, float scale), e.scale = scale)
     PERLIN_ENTITY_SET(SetNameTag(uint64_t rid, const std::string& nameTag), e.nameTag = nameTag)
     PERLIN_ENTITY_SET(SetVariant(uint64_t rid, int variant, int markVariant, int color),

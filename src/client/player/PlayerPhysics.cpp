@@ -363,7 +363,7 @@ namespace perlin::physics {
 
         void ApplyCurrent(State& s, const World& w, bool sneaking) {
             const float half = static_cast<float>(kWidth) * 0.5f;
-            const float h = static_cast<float>(sneaking ? kSneakHeight : kStandHeight);
+            const float h = static_cast<float>(s.crawling ? kCrawlHeight : sneaking ? kSneakHeight : kStandHeight);
             const float px = static_cast<float>(s.x), py = static_cast<float>(s.y), pz = static_cast<float>(s.z);
             for (int mat = 2; mat >= 1; mat--) {
                 const bool water = mat == 1;
@@ -495,7 +495,7 @@ namespace perlin::physics {
     Box BoundingBox(const State& s, bool sneaking) {
         const float half = static_cast<float>(kWidth) * 0.5f;
         const float x = static_cast<float>(s.x), y = static_cast<float>(s.y), z = static_cast<float>(s.z);
-        const float h = static_cast<float>(sneaking ? kSneakHeight : kStandHeight);
+        const float h = static_cast<float>(s.crawling ? kCrawlHeight : sneaking ? kSneakHeight : kStandHeight);
         if (s.hasBox && BoxCentre(s.box.x0, s.box.x1) == F(s.x) && BoxCentre(s.box.z0, s.box.z1) == F(s.z) &&
             static_cast<float>(s.box.y0) == y) {
             Box b = s.box;
@@ -506,9 +506,18 @@ namespace perlin::physics {
                 static_cast<double>(x + half), static_cast<double>(y + h), static_cast<double>(z + half)};
     }
 
+    bool PoseFits(const State& s, const World& world, double height) {
+        thread_local std::vector<Box> scratch;
+        const double half = kWidth * 0.5;
+        const Box box{s.x - half + 0.0001, s.y + 0.0001, s.z - half + 0.0001, s.x + half - 0.0001, s.y + height - 0.0001, s.z + half - 0.0001};
+        return NoCollision(world, box, scratch);
+    }
+
     void Step(State& s, const Input& in, const Attributes& attr, const World& world) {
         thread_local std::vector<Box> scratch;
+        s.crawling = in.crawl && !in.flying;
         const bool sneaking = in.sneak && !in.flying;
+        const bool crouched = (in.sneak || in.forceCrouch) && !in.flying;
 
         s.x = F(s.x); s.y = F(s.y); s.z = F(s.z);
         s.vx = F(s.vx); s.vy = F(s.vy); s.vz = F(s.vz);
@@ -516,14 +525,14 @@ namespace perlin::physics {
             s.vx = s.vy = s.vz = 0;
 
         if (!in.flying)
-            ApplyCurrent(s, world, sneaking);
+            ApplyCurrent(s, world, crouched);
 
         const bool prevHorizontal = s.horizontalCollision;
         const bool grounded = s.onGround;
         if (!in.jump)
             s.jumpDelay = 0;
 
-        const Environment env = Scan(world, BoundingBox(s, sneaking));
+        const Environment env = Scan(world, BoundingBox(s, crouched));
         s.inWater = env.water;
         s.inLava = env.lava && !env.water;
         const BlockShape feet = world.Query(static_cast<int>(std::floor(s.x)), static_cast<int>(std::floor(s.y)),
@@ -707,7 +716,7 @@ namespace perlin::physics {
             req = clipped;
         }
         const Vec3 pre = req;
-        const Box box = BoundingBox(s, sneaking);
+        const Box box = BoundingBox(s, crouched);
         const Motion m = ResolveMotion(world, box, req, grounded, scratch);
         s.x = m.position.x; s.y = m.position.y; s.z = m.position.z;
         s.box = m.box;
@@ -798,7 +807,7 @@ namespace perlin::physics {
         }
         s.vx = v.x; s.vy = v.y; s.vz = v.z;
         {
-            const Box inside = BoundingBox(s, sneaking);
+            const Box inside = BoundingBox(s, crouched);
             const int x0 = static_cast<int>(std::floor(static_cast<float>(inside.x0) + 0.001f)), x1 = static_cast<int>(std::floor(static_cast<float>(inside.x1) - 0.001f));
             const int y0 = static_cast<int>(std::floor(static_cast<float>(inside.y0) + 0.001f)), y1 = static_cast<int>(std::floor(static_cast<float>(inside.y1) - 0.001f));
             const int z0 = static_cast<int>(std::floor(static_cast<float>(inside.z0) + 0.001f)), z1 = static_cast<int>(std::floor(static_cast<float>(inside.z1) - 0.001f));

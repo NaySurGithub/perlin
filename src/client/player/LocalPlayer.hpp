@@ -33,6 +33,7 @@ namespace perlin {
         bool SneakLatched() const { return sneakToggle && sneakLatch; }
         bool Flying() const { return flying; }
         bool Gliding() const { return gliding; }
+        bool Crawling() const { return crawling; }
         void SetElytra(bool value) { hasElytra = value; }
         void SetItemSlow(bool slow) { itemSlow = slow; }
         void SetRidePosition(bool riding, double x, double y, double z) { rideLock = riding; rideX = x; rideY = y; rideZ = z; }
@@ -84,6 +85,8 @@ namespace perlin {
         bool sentSwimming = false;
         bool sprintToggle = false, sneakToggle = false, sprintLatch = false, sneakLatch = false;
         bool gliding = false;
+        bool crawling = false;
+        bool sentCrawling = false;
         bool sentGliding = false;
         bool hasElytra = false;
         bool sneaking = false;

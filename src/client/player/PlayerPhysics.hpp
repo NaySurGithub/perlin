@@ -6,6 +6,8 @@ namespace perlin::physics {
     constexpr double kWidth = 0.6;
     constexpr double kStandHeight = 1.8;
     constexpr double kSneakHeight = 1.5;
+    constexpr double kCrawlHeight = 0.6;
+    constexpr double kCrawlEye = 0.4;
     constexpr double kStandEye = 1.62;
     constexpr double kSneakEye = 1.27;
     constexpr double kStepHeight = 0.5625;
@@ -72,6 +74,8 @@ namespace perlin::physics {
         float lookY = 0;
         bool gliding = false;
         float javaPitch = 0;
+        bool crawl = false;
+        bool forceCrouch = false;
     };
 
     struct State {
@@ -84,6 +88,7 @@ namespace perlin::physics {
         bool inWater = false;
         bool inLava = false;
         bool onClimbable = false;
+        bool crawling = false;
         int jumpDelay = 0;
         float stuckX = 0, stuckY = 0, stuckZ = 0;
 
@@ -94,6 +99,7 @@ namespace perlin::physics {
     };
 
     Box BoundingBox(const State& state, bool sneaking);
+    bool PoseFits(const State& state, const World& world, double height);
 
     struct MoveVector {
         float forward = 0, strafe = 0;

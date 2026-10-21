@@ -66,6 +66,7 @@ namespace perlin {
                     continue;
                 switch (m.key) {
                 case MetadataDictionaryEntryKey::Flags: tracker.SetFlags(rid, static_cast<uint64_t>(static_cast<int64_t>(n))); break;
+                case MetadataDictionaryEntryKey::FlagsExtended: tracker.SetCrawling(rid, ((static_cast<uint64_t>(static_cast<int64_t>(n)) >> 50) & 1ull) != 0); break;
                 case MetadataDictionaryEntryKey::Scale: tracker.SetScale(rid, static_cast<float>(n)); break;
                 case MetadataDictionaryEntryKey::Variant: variant = static_cast<int>(n); break;
                 case MetadataDictionaryEntryKey::ExperienceValue: {

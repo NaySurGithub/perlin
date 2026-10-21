@@ -250,7 +250,7 @@ namespace perlin::entity {
 
     std::pair<float, float> EntityRenderer::HitBox(const Entity& e) const {
         if (e.isPlayer)
-            return {0.6f, e.Has(flag::Sneaking) ? 1.5f : 1.8f};
+            return {0.6f, (e.Has(flag::Gliding) || e.Has(flag::Swimming)) ? 0.6f : e.Has(flag::Sneaking) ? 1.5f : 1.8f};
         if (e.isItem)
             return {0.25f, 0.25f};
         float w, h;

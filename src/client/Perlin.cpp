@@ -7378,10 +7378,11 @@ namespace perlin {
                         if (rig.using_ || rig.blocking || handRenderer.EatTicks() > 0)
                             self.flags |= entity::flag::UsingItem;
                     }
-                    if (player.Sneaking())
+                    if (player.Sneaking() && !player.Crawling())
                         self.flags |= entity::flag::Sneaking;
+                    self.crawling = player.Crawling();
                     player.SetHeadUnderwater(live && headUnderwater);
-                    player.SetElytra(hudState.armorItems[1].name == "minecraft:elytra");
+                    player.SetElytra(hudState.armorItems[1].name == "minecraft:elytra" && hudState.armorItems[1].aux < 431);
                     if (player.Gliding())
                         self.flags |= entity::flag::Gliding;
                     if (player.Swimming())

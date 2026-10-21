@@ -52,6 +52,8 @@ namespace perlin {
             constexpr uint32_t StartJumping = 31;
             constexpr uint32_t StartGliding = 32;
             constexpr uint32_t StopGliding = 33;
+            constexpr uint32_t StartCrawling = 40;
+            constexpr uint32_t StopCrawling = 41;
             constexpr uint32_t HorizontalCollision = 49;
             constexpr uint32_t VerticalCollision = 50;
             constexpr uint32_t DownLeft = 51;
@@ -193,19 +195,40 @@ namespace perlin {
             sprinting = true;
 
         const bool wasSneaking = sneaking;
-        sneaking = sneakKey && !flying;
+        bool forcedSneak = false;
+        bool wantCrawl = false;
+        if (!flying && !rideLock && !gliding && !swimming) {
+            if (!physics::PoseFits(state, world, physics::kStandHeight)) {
+                if (physics::PoseFits(state, world, physics::kSneakHeight))
+                    forcedSneak = true;
+                else
+                    wantCrawl = true;
+            }
+        }
+        crawling = wantCrawl;
+        sneaking = (sneakKey || forcedSneak) && !flying;
+        if (crawling) {
+            sprinting = false;
+            sneaking = true;
+        }
 
         const bool column = session.ColumnSettled(static_cast<int>(std::floor(state.x)) >> 4,
                                                   static_cast<int>(std::floor(state.z)) >> 4);
 
+        bool levitating = false;
+        for (const auto& effect : session.GetEffects())
+            if (effect.id == 24)
+                levitating = true;
         swimming = sprinting && !flying && (swimming ? state.inWater : headUnderwater);
         if (gliding && (!hasElytra || state.onGround || state.inWater || flying || rideLock))
             gliding = false;
-        else if (!gliding && hasElytra && jump && !jumpHeld && !state.onGround && !state.inWater && !flying &&
-                 !rideLock && state.vy < 0)
+        else if (!gliding && hasElytra && jump && !jumpHeld && !state.onGround && !state.inWater && !state.inLava &&
+                 !state.onClimbable && !flying && !rideLock && !levitating && !crawling)
             gliding = true;
         physics::Input in;
         in.gliding = gliding;
+        in.crawl = crawling;
+        in.forceCrouch = forcedSneak;
         in.javaPitch = -camera.pitch;
         in.swimming = swimming && !gliding;
         in.headInWater = headUnderwater;
@@ -322,6 +345,11 @@ namespace perlin {
         if (!swimming && sentSwimming)
             f.push_back(Flag::StopSwimming);
         sentSwimming = swimming;
+        if (crawling && !sentCrawling)
+            f.push_back(Flag::StartCrawling);
+        if (!crawling && sentCrawling)
+            f.push_back(Flag::StopCrawling);
+        sentCrawling = crawling;
         if (gliding && !sentGliding)
             f.push_back(Flag::StartGliding);
         if (!gliding && sentGliding)
@@ -508,7 +536,7 @@ namespace perlin {
         const double x = previous.x + (state.x - previous.x) * t;
         const double y = previous.y + (state.y - previous.y) * t;
         const double z = previous.z + (state.z - previous.z) * t;
-        const float targetEye = rideLock ? 1.2f : sneaking ? static_cast<float>(physics::kSneakEye) : static_cast<float>(physics::kStandEye);
+        const float targetEye = rideLock ? 1.2f : (crawling || gliding || swimming) ? static_cast<float>(physics::kCrawlEye) : sneaking ? static_cast<float>(physics::kSneakEye) : static_cast<float>(physics::kStandEye);
         eyeOffset += (targetEye - eyeOffset) * (1.0f - std::exp(-dt * 20.0f));
         const double offsetSize = std::sqrt(smoothOffset[0] * smoothOffset[0] + smoothOffset[1] * smoothOffset[1] +
                                             smoothOffset[2] * smoothOffset[2]);

@@ -49,6 +49,7 @@ namespace perlin::entity {
         float yaw = 0, pitch = 0, headYaw = 0;
         bool onGround = true;
         uint64_t flags = 0;
+        bool crawling = false;
         float scale = 1.0f;
         int variant = 0, markVariant = 0, color = 0;
         float health = -1.0f;
@@ -72,7 +73,7 @@ namespace perlin::entity {
         std::map<std::string, std::string> propText;
         struct Attribute { float min = 0, value = 0, max = 0; };
         std::map<std::string, Attribute> attributes;
-        bool Has(uint64_t f) const { return (flags & f) != 0; }
+        bool Has(uint64_t f) const { return (flags & f) != 0 || (crawling && (f & flag::Swimming) != 0); }
     };
 
     class EntityTracker {
@@ -90,6 +91,7 @@ namespace perlin::entity {
         void MoveDelta(uint64_t rid, const double* x, const double* y, const double* z, const float* pitch, const float* yaw,
                        const float* headYaw, bool onGround);
         void SetFlags(uint64_t rid, uint64_t flags);
+        void SetCrawling(uint64_t rid, bool crawling);
         void SetScale(uint64_t rid, float scale);
         void SetNameTag(uint64_t rid, const std::string& nameTag);
         void SetVariant(uint64_t rid, int variant, int markVariant, int color);

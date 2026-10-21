@@ -198,7 +198,8 @@ namespace perlin::entity {
         if (name == "ticks_since_last_kinetic_weapon_hit") return num(-1);
         if (name == "owner_identifier") { out = Value::Str(""); return true; }
         if (name == "life_span") return num(22);
-        if (name == "is_in_lava" || name == "is_crawling" || name == "is_searching" || name == "is_sniffing" ||
+        if (name == "is_crawling") return yes(e.crawling);
+        if (name == "is_in_lava" || name == "is_searching" || name == "is_sniffing" ||
             name == "is_sonic_boom" || name == "is_shaking_wetness" || name == "has_dash_cooldown" || name == "has_player_rider" ||
             name == "can_damage_nearby_mobs" || name == "is_riding_any_entity_of_type" || name == "has_any_leashed_entity_of_type" ||
             name == "timer_flag_1" || name == "timer_flag_2" || name == "timer_flag_3")

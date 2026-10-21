@@ -22,7 +22,7 @@ namespace perlin {
             double seconds = 0.0;
             float light = 1.0f;
             bool enabled = true;
-            int radius = 7;
+            int radius = 6;
         };
         void Draw(const In& in);
         void Reset();
