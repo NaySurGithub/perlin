@@ -3069,7 +3069,6 @@ namespace perlin {
                 choice("Dynamic Lights", options.dynamicLights, {{"off", "Off"}, {"fast", "Fast"}, {"fancy", "Fancy"}});
                 toggle("Third Person Crosshair", options.thirdPersonCrosshair);
                 toggle("Third Person Nametag", options.thirdPersonNametag);
-                toggle("Elytra Free Flight", options.elytraFreeFlight);
                 {
                     OptRow h{"Zoom", "", -1.0f, [](float, bool) {}};
                     h.header = true;
@@ -3545,7 +3544,6 @@ namespace perlin {
                 toggle(tr("perlin.options.offhand", "Show Offhand"), options.hand.showOffhand);
                 toggle(tr("perlin.options.thirdCrosshair", "Third Person Crosshair"), options.thirdPersonCrosshair);
                 toggle(tr("perlin.options.thirdNametag", "Third Person Nametag"), options.thirdPersonNametag);
-                toggle(tr("perlin.options.elytraFlight", "Elytra Free Flight (Barrel Roll)"), options.elytraFreeFlight);
                 slider(tr("perlin.options.handScale", "Hand Size"), percent(options.hand.scale), (options.hand.scale - 0.5f) / 1.5f,
                        [this](float f) { options.hand.scale = 0.5f + std::round(std::clamp(f, 0.0f, 1.0f) * 150.0f) / 100.0f; });
                 const auto fieldSlider = [&](const std::string& label, float& ref, float lo, float hi, float step, const char* unit) {
@@ -6207,18 +6205,48 @@ namespace perlin {
             inputManager.SetServerLocks(sessionReady && session && session->GetState() == BedrockSession::State::InGame ? session->InputLocks() : 0u);
             const LookDelta look = zoom.Update(dt, inputManager.IsDown(Action::Zoom), inputManager.Scroll(),
                                                inputManager.Look());
-            if (options.elytraFreeFlight && player.Gliding()) {
-                if (!flight.Active())
-                    flight.Begin(camera.yaw, camera.pitch);
-                const FlightRoll::Result turned = flight.Step(dt, look.yaw, look.pitch, inputManager.Axis(Action::Right, Action::Left), 0.0f, 0.0f);
-                camera.yaw = turned.yaw;
-                camera.pitch = turned.pitch;
-            } else {
-                if (flight.Active())
-                    flight.End();
-                camera.Rotate(look.yaw, look.pitch);
-                if (flight.Engaged())
-                    flight.Settle(dt, camera.yaw, camera.pitch);
+            {
+                auto& lookMods = mods::ModManager::Instance();
+                bool lookTaken = false;
+                if (lookMods.WantsEvent(abi::Event::Look)) {
+                    abi::EventLook ev;
+                    ev.dx = look.yaw;
+                    ev.dy = look.pitch;
+                    ev.dt = dt;
+                    const glm::vec3 dir = camera.Direction();
+                    ev.dirX = dir.x;
+                    ev.dirY = dir.y;
+                    ev.dirZ = dir.z;
+                    const physics::State& ps = player.State();
+                    ev.vx = ps.vx;
+                    ev.vy = ps.vy;
+                    ev.vz = ps.vz;
+                    ev.keys = (inputManager.IsDown(Action::Forward) ? 1u : 0u) | (inputManager.IsDown(Action::Back) ? 2u : 0u) |
+                              (inputManager.IsDown(Action::Left) ? 4u : 0u) | (inputManager.IsDown(Action::Right) ? 8u : 0u) |
+                              (inputManager.IsDown(Action::Jump) ? 16u : 0u) | (inputManager.IsDown(Action::Sneak) ? 32u : 0u) |
+                              (inputManager.IsDown(Action::Sprint) ? 64u : 0u);
+                    ev.gliding = player.Gliding();
+                    ev.underwater = headUnderwater;
+                    ev.thirdPerson = camera.mode != PerspectiveMode::FirstPerson;
+                    ev.onGround = ps.onGround;
+                    {
+                        std::lock_guard lock(modAdv.mutex);
+                        modAdv.lookTaken = false;
+                    }
+                    abi::Writer lw;
+                    lw.write(ev);
+                    lookMods.Dispatch(abi::Event::Look, lw, 20.0);
+                    std::lock_guard lock(modAdv.mutex);
+                    if (modAdv.lookTaken) {
+                        lookTaken = true;
+                        const glm::dvec3 d = modAdv.lookDir;
+                        camera.yaw = static_cast<float>(glm::degrees(std::atan2(d.z, d.x)));
+                        camera.pitch = std::clamp(static_cast<float>(glm::degrees(std::asin(std::clamp(d.y, -1.0, 1.0)))), -89.9f, 89.9f);
+                        modAdv.lookTaken = false;
+                    }
+                }
+                if (!lookTaken)
+                    camera.Rotate(look.yaw, look.pitch);
             }
             {
                 const float target = handRenderer.Scoping() && camera.mode == PerspectiveMode::FirstPerson ? 0.1f : 1.0f;
@@ -7037,8 +7065,6 @@ namespace perlin {
                 camera.nearPlane = std::clamp(0.05f + (camera.farPlane - 1500.0f) * 0.00004f, 0.05f, 0.25f);
             }
             ApplyModCamera(camera.fov, camera.viewEffect);
-            if (flight.Engaged())
-                camera.viewEffect = glm::rotate(glm::mat4(1.0f), glm::radians(flight.Roll()), glm::vec3(0.0f, 0.0f, 1.0f)) * camera.viewEffect;
             const glm::mat4 viewProjection = camera.ViewProjection();
             {
                 std::lock_guard lock(modAdv.mutex);
@@ -7447,8 +7473,6 @@ namespace perlin {
                     std::lock_guard lock(modAdv.mutex);
                     if (std::chrono::steady_clock::now() < modAdv.poseUntil)
                         ein.ownPose = glm::vec3(modAdv.pose.pitch, modAdv.pose.yaw, modAdv.pose.roll);
-                    if (flight.Engaged() && player.Gliding())
-                        ein.ownPose.y -= flight.Roll();
                     if (!modAdv.frameLines.empty())
                         ein.modLines = &modAdv.frameLines;
                 }

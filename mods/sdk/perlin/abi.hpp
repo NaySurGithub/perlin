@@ -130,6 +130,7 @@ namespace perlin::abi {
         PlayerMotion = 0x0F10,
         PlayerTeleport = 0x0F11,
         PlayerModelPose = 0x0F20,
+        PlayerSetLook = 0x0F21,
         WorldLines = 0x0F30,
         WorldBoxes = 0x0F31,
         ClientBlockSet = 0x0F40,
@@ -163,6 +164,7 @@ namespace perlin::abi {
         Packet = 21,
         Title = 22,
         SettingChanged = 23,
+        Look = 24,
     };
 
     enum class Status : int32_t {
@@ -835,6 +837,10 @@ namespace perlin::abi {
         int32_t ticks = 2;
     };
 
+    struct LookSet {
+        double x = 0, y = 0, z = -1;
+    };
+
     struct WorldLine {
         double x1 = 0, y1 = 0, z1 = 0, x2 = 0, y2 = 0, z2 = 0;
         uint32_t color = 0xFFFFFFFF;
@@ -1011,6 +1017,13 @@ namespace perlin::abi {
     struct EventTitle {
         std::string title, subtitle, actionBar;
     };
+    struct EventLook {
+        float dx = 0, dy = 0, dt = 0;
+        double dirX = 0, dirY = 0, dirZ = -1;
+        double vx = 0, vy = 0, vz = 0;
+        uint32_t keys = 0;
+        bool gliding = false, underwater = false, thirdPerson = false, onGround = false;
+    };
     struct EventSettingChanged {
         std::string id, value;
         SettingKind kind = SettingKind::Toggle;
@@ -1037,7 +1050,8 @@ namespace perlin::abi {
                                      EventHttp,
                                      EventPacket,
                                      EventTitle,
-                                     EventSettingChanged>;
+                                     EventSettingChanged,
+                                     EventLook>;
     static_assert(std::tuple_size_v<EventPayloads> == meta::enum_count<Event>, "every Event needs a payload type");
 
     template <Event E>

@@ -49,6 +49,11 @@ namespace perlin::game {
         w.write(abi::TeleportRequest{x, y, z, keep_velocity});
         return detail::call_void(Op::PlayerTeleport, w);
     }
+    inline Result<void> set_look(double x, double y, double z) {
+        abi::Writer w;
+        w.write(abi::LookSet{x, y, z});
+        return detail::call_void(Op::PlayerSetLook, w);
+    }
     inline Result<void> model_pose(const ModelPose& pose) {
         abi::Writer w;
         w.write(pose);

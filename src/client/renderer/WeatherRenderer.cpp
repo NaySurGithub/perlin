@@ -94,17 +94,19 @@ namespace perlin {
         Texture t;
         if (!ui::UiAssets::Instance().Image("textures/environment/weather", t) || t.width < 32 || t.height < 20)
             return;
-        const auto crop = [&](int firstRow, int rows) {
-            std::vector<uint8_t> px(static_cast<size_t>(t.width) * 16 * 4, 0);
-            for (int y = 0; y < rows && y < 16; y++)
-                std::copy_n(t.pixels.begin() + (static_cast<size_t>(firstRow + y) * t.width) * 4, static_cast<size_t>(t.width) * 4,
-                            px.begin() + static_cast<size_t>(y) * t.width * 4);
+        constexpr int kTile = 64;
+        const auto tile = [&](int firstRow, int rows, int copies) {
+            std::vector<uint8_t> px(static_cast<size_t>(kTile) * kTile * 4, 0);
+            for (int c = 0; c < copies; c++)
+                for (int y = 0; y < rows; y++)
+                    std::copy_n(t.pixels.begin() + (static_cast<size_t>(firstRow + y) * t.width) * 4, static_cast<size_t>(t.width) * 4,
+                                px.begin() + (static_cast<size_t>((y + c * 40) % kTile) * kTile + static_cast<size_t>(c) * 32) * 4);
             return px;
         };
-        const std::vector<uint8_t> rainPx = crop(4, 16);
-        const std::vector<uint8_t> snowPx = crop(0, 4);
-        rainTexture = renderer.UiCreateTexture(t.width, 16, rainPx.data(), false, true);
-        snowTexture = renderer.UiCreateTexture(t.width, 16, snowPx.data(), false, true);
+        const std::vector<uint8_t> rainPx = tile(4, 16, 1);
+        const std::vector<uint8_t> snowPx = tile(0, 4, 1);
+        rainTexture = renderer.UiCreateTexture(kTile, kTile, rainPx.data(), false, true);
+        snowTexture = renderer.UiCreateTexture(kTile, kTile, snowPx.data(), false, true);
     }
 
     void WeatherRenderer::Draw(const In& in) {
@@ -200,19 +202,19 @@ namespace perlin {
                 const float z0 = static_cast<float>(z + 0.5) - az, z1 = static_cast<float>(z + 0.5) + az;
                 const float y0 = static_cast<float>(yBottom), y1 = static_cast<float>(yTop);
                 const float time = static_cast<float>(gameTime & 131071) + partial;
-                float uOffset = 0.0f, uSpan = 2.0f, vOffset;
+                float uOffset = 0.0f, uSpan = 1.0f, vOffset;
                 if (c.kind == 1) {
+                    uOffset = static_cast<float>((Hash(x, z) >> 3) & 255u) / 256.0f;
                     const uint32_t mix = static_cast<uint32_t>(x * x * 3121 + x * 45238971 + z * z * 418711 + z * 13761) & 255u;
                     const float speed = 3.0f + random.NextFloat();
                     const float raw = -(static_cast<float>(gameTime & 131071) + static_cast<float>(mix) + partial) / 32.0f * speed;
                     vOffset = std::fmod(raw, 32.0f);
                 } else {
-                    uSpan = 1.0f;
                     uOffset = static_cast<float>(random.NextDouble() + static_cast<double>(time * 0.01f) * random.NextGaussian());
                     const float drift = static_cast<float>(random.NextDouble() + static_cast<double>(time * static_cast<float>(random.NextGaussian())) * 0.001);
                     vOffset = -(static_cast<float>(gameTime & 511) + partial) / 512.0f + drift;
                 }
-                constexpr float kVScale = 8.0f;
+                constexpr float kVScale = 4.0f;
                 const float vTop = (static_cast<float>(yBottom) * 0.25f + vOffset) * kVScale;
                 const float vBottom = (static_cast<float>(yTop) * 0.25f + vOffset) * kVScale;
                 const float u0 = uOffset, u1 = uOffset + uSpan;

@@ -123,6 +123,8 @@ net::download("https://example.com/pack.zip", fs::in(Area::ResourcePacks, "pack.
 
 ## WAILA
 
+`mods/barrel_roll` is a port of the Do a Barrel Roll mod: free elytra flight with mouse and keys, banking, thrust, smoothing and a full settings page. It uses the `look` event (raw mouse and key input every frame) and `game::set_look` to steer the camera, and needs the `control` permission. The prebuilt module is `mods/prebuilt/barrel_roll.wasm` with `barrel_roll.json` and `barrel_roll.png`.
+
 `mods/waila` is a full plugin built on this API: a tooltip for the block or entity under your crosshair, styled after Jade (icon, name, mod name in italic blue, harvest tool with a check mark, breaking progress, crop growth, redstone, health hearts, pet owner, horse stats, container contents). Its source is the best example of the API, and it has an extension API of its own; see `mods/waila/README.md`. The prebuilt module is `mods/prebuilt/waila.wasm` with `waila.json` and `waila.png`; drop the three into `<data dir>/mods/`.
 
 ## Any language
@@ -273,6 +275,7 @@ mods/
     meta.hpp          compile-time reflection (enum names, aggregates, flags, fixed_string)
     detail/           field-binding helpers used by meta.hpp
     game.hpp act.hpp ui.hpp io.hpp types.hpp runtime.hpp
+  barrel_roll/        Do a Barrel Roll port: barrel_roll.cpp, barrel_roll.json
   waila/              the WAILA plugin: waila.cpp, waila.json, waila/ (api, layout, vanilla providers), tests/
   examples/c/         a plugin in plain C, no SDK
   tools/              perlin_settings.py (manifest -> typed handles), check_api.py (every operation is hosted and wrapped)
@@ -405,6 +408,7 @@ Generated from the SDK headers by `mods/tools/gen_api_reference.py`; run it afte
 | `PlayerMotion` | `0x0F10` | control |
 | `PlayerTeleport` | `0x0F11` | control |
 | `PlayerModelPose` | `0x0F20` | control |
+| `PlayerSetLook` | `0x0F21` | control |
 | `WorldLines` | `0x0F30` | always allowed |
 | `WorldBoxes` | `0x0F31` | always allowed |
 | `ClientBlockSet` | `0x0F40` | control |
@@ -435,11 +439,11 @@ Generated from the SDK headers by `mods/tools/gen_api_reference.py`; run it afte
 | `Result<RayHit> raycast(const Vec3& origin, const Vec3& direction, RaycastOptions options = {})` |  |
 | `Result<AimState> aim()` |  |
 | `Result<std::vector<abi::FoundBlock>> find_blocks(const BlockPos& center, const FindOptions& options)` |  |
-| `Result<BlockProps> block_props(std::string_view name)` | What the game knows about a kind of block: hardness, mining tool, display name, block properties. |
-| `Result<BlockEntityInfo> block_entity(const BlockPos& pos)` | The block entity at a position (sign text, banner patterns, ...), with the full tag as JSON in `nbt`. |
-| `std::string display_name(NameKind kind, std::string_view id, int aux = 0)` | The player-facing name of an item, block or entity, translated and resource-pack aware: "Stone", "Cow". |
-| `Result<BreakState> break_state()` | The block being mined by the local player, and how far along it is. |
-| `Result<std::vector<std::string>> block_names()` | Every block name the game knows, for completion lists. |
+| `Result<BlockProps> block_props(std::string_view name)` |  |
+| `Result<BlockEntityInfo> block_entity(const BlockPos& pos)` |  |
+| `std::string display_name(NameKind kind, std::string_view id, int aux = 0)` |  |
+| `Result<BreakState> break_state()` |  |
+| `Result<std::vector<std::string>> block_names()` |  |
 | `Result<std::vector<Entity>> entities(const EntityQuery& query = {})` |  |
 | `Result<Entity> entity(uint64_t runtimeId)` |  |
 | `Result<std::vector<PlayerEntry>> players()` |  |
@@ -449,7 +453,7 @@ Generated from the SDK headers by `mods/tools/gen_api_reference.py`; run it afte
 | `Result<std::vector<abi::ChatLine>> chat_history(uint32_t count = 20)` |  |
 | `Result<abi::TitleStateData> title_state()` |  |
 | `Result<std::vector<abi::PackEntry>> resource_packs()` |  |
-| `Result<std::vector<abi::ModEntry>> mods()` | Every installed mod, this one included (`self`). |
+| `Result<std::vector<abi::ModEntry>> mods()` |  |
 | `Result<std::string> option_text(std::string_view key)` |  |
 | `Result<std::string> options_json()` |  |
 | `Target target()` |  |
@@ -472,14 +476,15 @@ Generated from the SDK headers by `mods/tools/gen_api_reference.py`; run it afte
 | `Result<void> add_velocity(double x, double y, double z)` |  |
 | `Result<void> motion(const abi::MotionRequest& request)` |  |
 | `Result<void> teleport(double x, double y, double z, bool keep_velocity = false)` |  |
+| `Result<void> set_look(double x, double y, double z)` |  |
 | `Result<void> model_pose(const ModelPose& pose)` |  |
-| `Result<void> lines(const std::vector<WorldLine>& list, int ticks = 2)` | Each call replaces this mod's previous set. Send an empty vector to clear. |
+| `Result<void> lines(const std::vector<WorldLine>& list, int ticks = 2)` |  |
 | `Result<void> boxes(const std::vector<WorldBox>& list, int ticks = 2)` |  |
 | `Result<uint32_t> find_block(std::string_view name, std::vector<std::pair<std::string, std::string>> states = {})` |  |
 | `Result<void> set_blocks(const std::vector<abi::ClientBlockEdit>& edits)` |  |
 | `Result<void> drop_packets(const std::vector<uint32_t>& ids, int ticks = 20, bool outgoing = false)` |  |
 | `Result<std::vector<abi::PacketCount>> packet_counters()` |  |
-| `Result<void> inject_packet(uint32_t id, std::span<const uint8_t> body)` | Handles a packet as if the server had sent it (needs packets and control). |
+| `Result<void> inject_packet(uint32_t id, std::span<const uint8_t> body)` |  |
 
 #### `perlin/act.hpp`
 
@@ -512,13 +517,13 @@ Generated from the SDK headers by `mods/tools/gen_api_reference.py`; run it afte
 | `Result<void> set_option(std::string_view key, std::string_view value)` |  |
 | `Result<void> set_perspective(abi::Perspective mode)` |  |
 | `Result<void> reload_resources()` |  |
-| `Result<void> open_screen(Screen screen)` | Opens Pause, Options, Mods or Wardrobe. |
-| `Result<void> open_settings(std::string_view mod = {})` | Opens a mod's settings page; with no argument, this mod's own. |
+| `Result<void> open_screen(Screen screen)` |  |
+| `Result<void> open_settings(std::string_view mod = {})` |  |
 | `Result<void> screenshot()` |  |
 | `Result<void> cycle_perspective()` |  |
 | `Result<void> toggle_hud()` |  |
 | `Result<void> copy_to_clipboard(std::string_view text)` |  |
-| `Result<void> open_url(std::string_view url)` | Opens an https link in the browser. Needs the "network" permission in the manifest. |
+| `Result<void> open_url(std::string_view url)` |  |
 
 #### `perlin/io.hpp`
 
@@ -533,12 +538,12 @@ Generated from the SDK headers by `mods/tools/gen_api_reference.py`; run it afte
 | `Result<void> make_directory(std::string_view path)` |  |
 | `Result<std::vector<std::string>> list(std::string_view path = "")` |  |
 | `Location in(Area area, std::string_view path)` |  |
-| `Result<void> copy(const Location& from, const Location& to)` | Copies a file. Allowed from the mod's folder and the screenshots folder into any area; an existing game file is never overwritten. |
-| `Result<void> move(const Location& from, const Location& to)` | Moves a file out of the mod's folder. |
+| `Result<void> copy(const Location& from, const Location& to)` |  |
+| `Result<void> move(const Location& from, const Location& to)` |  |
 | `Result<uint32_t> send(const Request& request, Callback callback)` |  |
 | `Result<uint32_t> get(std::string url, Callback callback)` |  |
 | `Result<uint32_t> post(std::string url, std::string body, std::string content_type, Callback callback)` |  |
-| `Result<uint32_t> download(std::string_view url, const fs::Location& to, Callback callback)` | Downloads an https file straight to disk (needs "network" and "files"). The callback gets the HTTP status or the error; the body is not kept. |
+| `Result<uint32_t> download(std::string_view url, const fs::Location& to, Callback callback)` |  |
 | `Result<std::string> packet_name(uint32_t id)` |  |
 | `Result<void> send_packet(uint32_t id, std::span<const uint8_t> body)` |  |
 
@@ -554,7 +559,7 @@ Generated from the SDK headers by `mods/tools/gen_api_reference.py`; run it afte
 
 | Signature | Notes |
 | --- | --- |
-| `Result<std::string> setting_text(std::string_view id)` | A setting's value as the game stores it, straight from the game (not cached): "true", "12.5", "KilometersPerHour". |
+| `Result<std::string> setting_text(std::string_view id)` |  |
 
 #### `perlin/types.hpp`
 
@@ -566,8 +571,8 @@ Generated from the SDK headers by `mods/tools/gen_api_reference.py`; run it afte
 
 | Signature | Notes |
 | --- | --- |
-| `std::string key_id(Key key)` | The game's key id for a Key, computed from the enumerator: letters and digits by value, the rest by name. |
-| `Result<void> set_mod_icon(std::string_view relative_png)` | The mod's own icon in the Mods screen, replacing the one from the manifest. `relative_png` lives in the mod's data folder. |
+| `std::string key_id(Key key)` |  |
+| `Result<void> set_mod_icon(std::string_view relative_png)` |  |
 | `std::vector<std::string> Context::split(const std::string& text)` |  |
 | `void Context::run_timers()` |  |
 | `void Context::draw_layers(const abi::EventFrame& frame)` |  |
@@ -606,7 +611,7 @@ Generated from the SDK headers by `mods/tools/gen_api_reference.py`; run it afte
 | `int32_t count = 0, aux = 0, damage = 0` |  |
 | `bool enchanted = false` |  |
 | `std::string customName` |  |
-| `std::vector<std::pair<int32_t, int32_t>> enchants` | (enchantment id, level) |
+| `std::vector<std::pair<int32_t, int32_t>> enchants` |  |
 | `std::vector<std::string> lore` |  |
 
 #### `PlayerState`
@@ -672,8 +677,8 @@ Generated from the SDK headers by `mods/tools/gen_api_reference.py`; run it afte
 | `float maxHealth = -1` |  |
 | `bool dying = false` |  |
 | `std::vector<Attribute> attributes` |  |
-| `std::vector<std::pair<std::string, float>> properties` | entity properties (numbers, bools, enums as index) |
-| `std::vector<std::pair<std::string, std::string>> propertyText` | entity properties that are text |
+| `std::vector<std::pair<std::string, float>> properties` |  |
+| `std::vector<std::pair<std::string, std::string>> propertyText` |  |
 
 #### `PlayerEntry`
 
@@ -714,12 +719,12 @@ Generated from the SDK headers by `mods/tools/gen_api_reference.py`; run it afte
 | Field | Notes |
 | --- | --- |
 | `bool known = false` |  |
-| `float hardness = 0` | -1 is unbreakable |
+| `float hardness = 0` |  |
 | `Tool tool = Tool::None` |  |
-| `int32_t harvestLevel = 0` | 0 any tool, 1 any pickaxe, 2 stone, 3 iron, 4 diamond |
+| `int32_t harvestLevel = 0` |  |
 | `bool needsSupportBelow = false, breaksWholeStack = false` |  |
 | `std::string displayName` |  |
-| `std::vector<std::string> properties` | block property names from the block definition |
+| `std::vector<std::string> properties` |  |
 
 #### `BlockEntityInfo`
 
@@ -734,7 +739,7 @@ Generated from the SDK headers by `mods/tools/gen_api_reference.py`; run it afte
 | `bool frontGlow = false, backGlow = false` |  |
 | `int32_t base = -1, bannerType = 0` |  |
 | `std::vector<std::pair<std::string, int32_t>> patterns` |  |
-| `std::string nbt` | the complete tag as JSON |
+| `std::string nbt` |  |
 
 #### `BreakState`
 
@@ -742,7 +747,7 @@ Generated from the SDK headers by `mods/tools/gen_api_reference.py`; run it afte
 | --- | --- |
 | `bool active = false` |  |
 | `int32_t x = 0, y = 0, z = 0` |  |
-| `float progress = 0` | 0..1 |
+| `float progress = 0` |  |
 
 #### `RayHit`
 
@@ -796,21 +801,21 @@ Generated from the SDK headers by `mods/tools/gen_api_reference.py`; run it afte
 
 | Field | Notes |
 | --- | --- |
-| `float roll = 0` | degrees around the view direction |
-| `float fovAdd = 0` | added to the field of view |
-| `float fovSet = 0` | when > 0, replaces the field of view |
-| `float offsetX = 0, offsetY = 0, offsetZ = 0` | view-space offset (x right, y up, z back) |
-| `float yawAdd = 0, pitchAdd = 0` | turns the picture only, not where the player aims |
+| `float roll = 0` |  |
+| `float fovAdd = 0` |  |
+| `float fovSet = 0` |  |
+| `float offsetX = 0, offsetY = 0, offsetZ = 0` |  |
+| `float yawAdd = 0, pitchAdd = 0` |  |
 | `int32_t ticks = 2` |  |
 
 #### `CameraInfo`
 
 | Field | Notes |
 | --- | --- |
-| `double x = 0, y = 0, z = 0` | eye |
+| `double x = 0, y = 0, z = 0` |  |
 | `float yaw = 0, pitch = 0, fov = 70, aspect = 1.78f, nearPlane = 0.1f, farPlane = 600` |  |
 | `int32_t perspective = 0` |  |
-| `std::array<float, 16> viewProjection{}` | column-major |
+| `std::array<float, 16> viewProjection{}` |  |
 
 #### `WorldPoint`
 
@@ -822,15 +827,15 @@ Generated from the SDK headers by `mods/tools/gen_api_reference.py`; run it afte
 
 | Field | Notes |
 | --- | --- |
-| `float x = 0, y = 0` | GUI pixels |
-| `float depth = 0` | distance along the view direction |
-| `bool visible = false` | in front of the camera and on screen |
+| `float x = 0, y = 0` |  |
+| `float depth = 0` |  |
+| `bool visible = false` |  |
 
 #### `MotionRequest`
 
 | Field | Notes |
 | --- | --- |
-| `bool add = false` | false replaces the velocity on the chosen axes, true adds to it |
+| `bool add = false` |  |
 | `double x = 0, y = 0, z = 0` |  |
 | `bool axisX = true, axisY = true, axisZ = true` |  |
 
@@ -848,19 +853,25 @@ Generated from the SDK headers by `mods/tools/gen_api_reference.py`; run it afte
 | `float roll = 0, pitch = 0, yaw = 0` |  |
 | `int32_t ticks = 2` |  |
 
+#### `LookSet`
+
+| Field | Notes |
+| --- | --- |
+| `double x = 0, y = 0, z = -1` |  |
+
 #### `WorldLine`
 
 | Field | Notes |
 | --- | --- |
 | `double x1 = 0, y1 = 0, z1 = 0, x2 = 0, y2 = 0, z2 = 0` |  |
-| `uint32_t color = 0xFFFFFFFF` | 0xAABBGGRR |
+| `uint32_t color = 0xFFFFFFFF` |  |
 | `float width = 1.0f` |  |
 
 #### `WorldLines`
 
 | Field | Notes |
 | --- | --- |
-| `int32_t ticks = 2` | the lines are drawn for this many ticks, then forgotten unless resent |
+| `int32_t ticks = 2` |  |
 | `std::vector<WorldLine> lines` |  |
 
 #### `WorldBox`
@@ -883,7 +894,7 @@ Generated from the SDK headers by `mods/tools/gen_api_reference.py`; run it afte
 | Field | Notes |
 | --- | --- |
 | `int32_t x = 0, y = 0, z = 0` |  |
-| `uint32_t runtimeId = 0` | from ClientBlockGet or Block |
+| `uint32_t runtimeId = 0` |  |
 
 #### `ClientBlockEdits`
 
@@ -911,7 +922,7 @@ Generated from the SDK headers by `mods/tools/gen_api_reference.py`; run it afte
 | --- | --- |
 | `int32_t ticks = 20` |  |
 | `std::vector<uint32_t> ids` |  |
-| `bool outgoing = false` | true: stop packets this client would send instead of ones it receives |
+| `bool outgoing = false` |  |
 
 #### `PacketCount`
 
@@ -938,15 +949,15 @@ Generated from the SDK headers by `mods/tools/gen_api_reference.py`; run it afte
 
 | Field | Notes |
 | --- | --- |
-| `std::string id` | stable key, also the key in <mod>.settings.json |
+| `std::string id` |  |
 | `SettingKind kind = SettingKind::Toggle` |  |
 | `std::string label, description` |  |
-| `std::string icon` | "item:<id>", "texture:<path>", "file:<path in the mod's data folder>" or empty |
-| `std::string value, fallback` | current and default value, as text |
+| `std::string icon` |  |
+| `std::string value, fallback` |  |
 | `double min = 0, max = 1, step = 0` |  |
 | `std::vector<std::string> choices, choiceLabels` |  |
 | `std::string unit` |  |
-| `bool restart = false` | the mod is reloaded after the settings page closes |
+| `bool restart = false` |  |
 
 #### `SettingEntry`
 
@@ -959,7 +970,7 @@ Generated from the SDK headers by `mods/tools/gen_api_reference.py`; run it afte
 | Field | Notes |
 | --- | --- |
 | `Area area = Area::Mod` |  |
-| `std::string path` | relative, no "..", forward slashes |
+| `std::string path` |  |
 
 #### `ModEntry`
 
@@ -1093,6 +1104,16 @@ Generated from the SDK headers by `mods/tools/gen_api_reference.py`; run it afte
 | Field | Notes |
 | --- | --- |
 | `std::string title, subtitle, actionBar` |  |
+
+#### `EventLook`
+
+| Field | Notes |
+| --- | --- |
+| `float dx = 0, dy = 0, dt = 0` |  |
+| `double dirX = 0, dirY = 0, dirZ = -1` |  |
+| `double vx = 0, vy = 0, vz = 0` |  |
+| `uint32_t keys = 0` |  |
+| `bool gliding = false, underwater = false, thirdPerson = false, onGround = false` |  |
 
 #### `EventSettingChanged`
 

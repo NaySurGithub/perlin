@@ -69,6 +69,7 @@ namespace perlin {
         PERLIN_EVENT_TAG(Packet);
         PERLIN_EVENT_TAG(Title);
         PERLIN_EVENT_TAG(SettingChanged);
+        PERLIN_EVENT_TAG(Look);
 #undef PERLIN_EVENT_TAG
     }
 

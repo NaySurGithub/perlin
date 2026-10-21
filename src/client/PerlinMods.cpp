@@ -251,7 +251,6 @@ namespace perlin {
             boolean("damageTint", options.damageTint);
             boolean("thirdPersonCrosshair", options.thirdPersonCrosshair);
             boolean("thirdPersonNametag", options.thirdPersonNametag);
-            boolean("elytraFreeFlight", options.elytraFreeFlight);
             integer("menuBlur", options.menuBlur, 0, 10);
             boolean("betterGrass", options.betterGrass);
             boolean("showHud", options.showHud);

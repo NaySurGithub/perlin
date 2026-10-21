@@ -53,6 +53,7 @@ namespace perlin::mods {
             case abi::Event::Packet: return "packet";
             case abi::Event::Title: return "title";
             case abi::Event::SettingChanged: return "setting_changed";
+            case abi::Event::Look: return "look";
             default: return nullptr;
             }
         }

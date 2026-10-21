@@ -107,6 +107,19 @@ namespace perlin {
             return Status::Ok;
         }, control);
 
+        mm.Register(Op::PlayerSetLook, [this](CallContext&, abi::Reader& r, abi::Writer&) {
+            const abi::LookSet l = r.read<abi::LookSet>();
+            if (!r.Ok() || !std::isfinite(l.x) || !std::isfinite(l.y) || !std::isfinite(l.z))
+                return Status::BadArguments;
+            const glm::dvec3 d(l.x, l.y, l.z);
+            if (glm::dot(d, d) < 1e-12)
+                return Status::BadArguments;
+            std::lock_guard lock(modAdv.mutex);
+            modAdv.lookDir = glm::normalize(d);
+            modAdv.lookTaken = true;
+            return Status::Ok;
+        }, control);
+
         mm.Register(Op::PlayerModelPose, [this](CallContext&, abi::Reader& r, abi::Writer&) {
             const abi::ModelPose p = r.read<abi::ModelPose>();
             if (!r.Ok())
