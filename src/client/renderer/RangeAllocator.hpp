@@ -61,6 +61,7 @@ namespace perlin {
             return t;
         }
         size_t FreeBlocks() const { return blocks.size(); }
+        bool Unused() const { return cap != 0 && blocks.size() == 1 && blocks.begin()->first == 0 && blocks.begin()->second == cap; }
 
     private:
         uint32_t cap = 0;

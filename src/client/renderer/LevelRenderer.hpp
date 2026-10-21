@@ -61,6 +61,7 @@ namespace perlin {
     private:
         struct ChunkInfo {
             uint64_t version = 0;
+            uint64_t borderVersion = 0;
             bool streaming = false;
             uint64_t firstSeen = 0;
             uint64_t readyAt = 0;
@@ -101,6 +102,8 @@ namespace perlin {
         void ConfigureLighting(const std::string& packDir);
         void LoadSkyTextures();
 
+        bool lodWasEnabled = false;
+        uint32_t urgentTick = 0;
         RenderContext& context;
         const Options& options;
         BlockLibrary blocks;

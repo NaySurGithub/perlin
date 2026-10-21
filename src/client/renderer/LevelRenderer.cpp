@@ -270,7 +270,7 @@ namespace perlin {
         for (int dz = -1; dz <= 1; dz++)
             for (int dx = -1; dx <= 1; dx++) {
                 const auto n = info.find(ChunkPos{pos.x + dx, pos.z + dz});
-                key = (key ^ (n == info.end() ? 0 : n->second.version + 1)) * 1099511628211ull;
+                key = (key ^ (n == info.end() ? 0 : (dx == 0 && dz == 0 ? n->second.version : n->second.borderVersion) + 1)) * 1099511628211ull;
             }
         const auto built = meshKey.find(pos);
         if (built != meshKey.end() && built->second == key)
@@ -293,7 +293,7 @@ namespace perlin {
                 continue;
             }
             if (d.exists) {
-                info[d.pos] = {d.version, d.streaming, d.firstSeen, d.readyAt};
+                info[d.pos] = {d.version, d.borderVersion, d.streaming, d.firstSeen, d.readyAt};
                 if (LodEnabled() && !d.streaming && capSet.insert(d.pos).second)
                     capQueue.push_back(d.pos);
             } else {
@@ -339,6 +339,8 @@ namespace perlin {
         size_t freeSlots = async ? (maxInFlight > inFlight.size() ? maxInFlight - inFlight.size() : 0) : 64;
         bool urgentOnly = false;
         if (!freeSlots && async) {
+            if ((++urgentTick & 3) != 0)
+                return;
             freeSlots = 3;
             urgentOnly = true;
         }
@@ -569,6 +571,26 @@ namespace perlin {
             context.ClearChunkMeshes();
         }
         ApplyDirty(*level);
+        {
+            const bool lodNow = LodEnabled();
+            if (lodNow != lodWasEnabled) {
+                lodWasEnabled = lodNow;
+                if (lodNow) {
+                    for (const auto& entry : info)
+                        if (!entry.second.streaming && capSet.insert(entry.first).second)
+                            capQueue.push_back(entry.first);
+                    lodScanForced = true;
+                } else {
+                    for (const auto& tile : lodTiles)
+                        context.RemoveLodTile(static_cast<int>(tile.first >> 32), static_cast<int>(static_cast<uint32_t>(tile.first)));
+                    lodTiles.clear();
+                    lodDirty.clear();
+                    lod.Clear();
+                    capQueue.clear();
+                    capSet.clear();
+                }
+            }
+        }
         Schedule(*level, camX, camZ, frustum);
         ProcessLod(*level, camX, camZ);
     }

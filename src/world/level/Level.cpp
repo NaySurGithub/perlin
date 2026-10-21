@@ -213,9 +213,13 @@ namespace perlin {
         const auto it = chunks.find({x >> 4, z >> 4});
         if (it == chunks.end())
             return;
+        if (it->second.GetLiquid(x & 15, y, z & 15) == id)
+            return;
         changeCounter++;
         it->second.SetLiquid(x & 15, y, z & 15, id);
         it->second.version++;
+        if ((x & 15) == 0 || (x & 15) == 15 || (z & 15) == 0 || (z & 15) == 15)
+            it->second.borderVersion++;
         Touch(it->first, it->second);
     }
 
@@ -243,9 +247,13 @@ namespace perlin {
         const auto it = chunks.find({x >> 4, z >> 4});
         if (it == chunks.end())
             return;
+        if (it->second.Get(x & 15, y, z & 15) == id)
+            return;
         changeCounter++;
         it->second.Set(x & 15, y, z & 15, id);
         it->second.version++;
+        if ((x & 15) == 0 || (x & 15) == 15 || (z & 15) == 0 || (z & 15) == 15)
+            it->second.borderVersion++;
         Touch(it->first, it->second);
     }
 
@@ -293,6 +301,7 @@ namespace perlin {
                 it->second.queued = false;
                 d.exists = true;
                 d.version = it->second.version;
+                d.borderVersion = it->second.borderVersion;
                 d.streaming = it->second.streaming;
                 d.firstSeen = it->second.firstSeen;
                 d.readyAt = it->second.readyAt;
@@ -312,6 +321,7 @@ namespace perlin {
             it->second.lodOnly = false;
             lodOnlyCount--;
             it->second.version++;
+            it->second.borderVersion++;
             Touch(it->first, it->second);
             changeCounter++;
         }
@@ -381,6 +391,7 @@ namespace perlin {
         Chunk& chunk = found->second;
         chunk.SetSection((baseY - Chunk::MIN_Y) >> 4, cells, liquidCells);
         chunk.version++;
+        chunk.borderVersion++;
         Touch(found->first, chunk);
     }
 
@@ -397,6 +408,7 @@ namespace perlin {
         Chunk& chunk = found->second;
         chunk.SetBiomeSection((baseY - Chunk::MIN_Y) >> 4, cells);
         chunk.version++;
+        chunk.borderVersion++;
         Touch(found->first, chunk);
     }
 }

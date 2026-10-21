@@ -1864,6 +1864,9 @@ namespace perlin {
 
     bool RenderContext_bgfx::AllocMesh(uint32_t v, const std::array<uint32_t, kRenderLayerCount>& need, GpuChunk& out) {
         auto tryPage = [&](Page& pg, int index) {
+            if (!bgfx::isValid(pg.vb))
+                return false;
+            pg.emptyFrames = 0;
             uint32_t vo = 0;
             if (!pg.vAlloc.Alloc(v, vo))
                 return false;
@@ -1892,6 +1895,32 @@ namespace perlin {
         if (!CreatePage(std::max(kPageVerts, v), caps))
             return false;
         return tryPage(pages.back(), (int)pages.size() - 1);
+    }
+
+    void RenderContext_bgfx::ReleaseEmptyPages() {
+        for (Page& p : pages) {
+            if (!bgfx::isValid(p.vb))
+                continue;
+            bool unused = p.vAlloc.Unused();
+            for (int l = 0; l < kRenderLayerCount && unused; l++)
+                unused = p.iAlloc[l].Unused() || p.iAlloc[l].Capacity() == 0;
+            if (!unused) {
+                p.emptyFrames = 0;
+                continue;
+            }
+            if (++p.emptyFrames < 600)
+                continue;
+            bgfx::destroy(p.vb);
+            p.vb = BGFX_INVALID_HANDLE;
+            for (auto& h : p.ib) {
+                if (bgfx::isValid(h))
+                    bgfx::destroy(h);
+                h = BGFX_INVALID_HANDLE;
+            }
+            p.vAlloc.Reset(0);
+            for (auto& a : p.iAlloc)
+                a.Reset(0);
+        }
     }
 
     void RenderContext_bgfx::FreeChunk(GpuChunk& g) {
@@ -2759,6 +2788,7 @@ namespace perlin {
                             gpuChunks.size(), lodChunks.size(), pages.size());
         }
         drawCalls = 0;
+        ReleaseEmptyPages();
         if (gpuChunks.empty() && lodChunks.empty()) {
             DrawClouds();
             DrawScreenTint();

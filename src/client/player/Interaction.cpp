@@ -62,7 +62,7 @@ namespace perlin {
                 tDelta[a] = std::fabs(1.0 / dir[a]);
             }
         }
-        std::vector<physics::Box> selectionScratch;
+        static thread_local std::vector<physics::Box> selectionScratch;
         double traveled = 0;
         for (int i = 0; i < 64 && traveled <= reach; i++) {
             std::vector<physics::Box>& boxes = selectionScratch;
@@ -106,6 +106,12 @@ namespace perlin {
         for (const entity::Entity& e : entities) {
             if (e.isSelf)
                 continue;
+            {
+                const double far = (entityReach >= 0.0 ? entityReach : reach) + 6.0;
+                const glm::dvec3 d = e.pos - eye;
+                if (d.x * d.x + d.y * d.y + d.z * d.z > far * far)
+                    continue;
+            }
             const glm::vec2 wh = bounds(e);
             const double hw = wh.x * 0.5 * (e.scale > 0 ? e.scale : 1.0f);
             const double pad = 0.1;

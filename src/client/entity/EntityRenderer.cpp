@@ -181,6 +181,7 @@ namespace perlin::entity {
         std::vector<EntityRenderer::Layer> cachedLayers;
         float cachedScale = 1.0f;
         int cacheAge = 1 << 20;
+        double cacheTime = -1e9;
         const Entity* entity = nullptr;
         std::string tag;
         glm::mat4 armR{1.0f}, armL{1.0f};
@@ -1706,8 +1707,12 @@ namespace perlin::entity {
                     break;
                 start = nl + 1;
             }
-            std::vector<UiVertex> bgV, textV;
-            std::vector<uint32_t> bgI, textI;
+            static thread_local std::vector<UiVertex> bgV, textV;
+            static thread_local std::vector<uint32_t> bgI, textI;
+            bgV.clear();
+            textV.clear();
+            bgI.clear();
+            textI.clear();
             const auto corner = [&](float x, float y) { return right * (x * kScale) + up * (-y * kScale); };
             const auto quad = [&](std::vector<UiVertex>& vv, std::vector<uint32_t>& ii, float x0, float y0, float x1, float y1, float u0,
                                   float v0, float u1, float v1, uint32_t color) {
@@ -1968,23 +1973,16 @@ namespace perlin::entity {
                 continue;
             }
             const double dist2 = glm::dot(delta, delta);
-            const int reuse = e.isPlayer || e.dying || e.Has(flag::Riding) ? 0 : dist2 > 80.0 * 80.0 ? 4 : dist2 > 48.0 * 48.0 ? 2 : dist2 > 24.0 * 24.0 ? 1 : 0;
-            if (reuse > 0 && v.cacheAge < reuse && !v.cachedLayers.empty()) {
-                v.cacheAge++;
+            const bool pinned = e.dying || e.Has(flag::Riding);
+            const double reuseFor = pinned ? 0.0 : dist2 > 80.0 * 80.0 ? 0.066 : dist2 > 48.0 * 48.0 ? 0.033 : dist2 > 24.0 * 24.0 ? 0.016 : dist2 > 16.0 * 16.0 ? 0.008 : 0.0035;
+            if (reuseFor > 0.0 && in.time - v.cacheTime < reuseFor && !v.cachedLayers.empty()) {
                 Draw(e, v, v.cachedLayers, v.cachedScale, in);
                 drawn++;
                 continue;
             }
             std::vector<Layer> layers;
             float scale = 1.0f;
-            const auto prof0 = std::chrono::steady_clock::now();
             const bool built = Build(e, v, in, layers, scale);
-            gEntityProf[0] += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - prof0).count();
-            if (built && reuse > 0) {
-                v.cachedLayers = layers;
-                v.cachedScale = scale;
-                v.cacheAge = 0;
-            }
             if (!built) {
                 unrenderable++;
                 if (!warned["build:" + e.type]) {
@@ -1993,9 +1991,12 @@ namespace perlin::entity {
                 }
                 continue;
             }
-            const auto prof1 = std::chrono::steady_clock::now();
             Draw(e, v, layers, scale, in);
-            gEntityProf[1] += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - prof1).count();
+            if (reuseFor > 0.0) {
+                v.cachedLayers = std::move(layers);
+                v.cachedScale = scale;
+                v.cacheTime = in.time;
+            }
             drawn++;
         }
         shadowOnlyPass = false;

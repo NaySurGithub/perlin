@@ -142,10 +142,17 @@ namespace perlin {
             const int highest = std::min(camY + 40, 318);
             const int lowest = camY - 14;
             int top = lowest;
-            for (int y = highest; y >= lowest; y--) {
-                if (Blocks(level, level.GetBlock(x, y, z)) || level.GetLiquid(x, y, z) != 0) {
-                    top = y + 1;
-                    break;
+            {
+                std::lock_guard lock(level.mutex);
+                const auto found = level.chunks.find({x >> 4, z >> 4});
+                if (found != level.chunks.end()) {
+                    const Chunk& chunk = found->second;
+                    for (int y = highest; y >= lowest; y--) {
+                        if (Blocks(level, chunk.Get(x & 15, y, z & 15)) || chunk.GetLiquid(x & 15, y, z & 15) != 0) {
+                            top = y + 1;
+                            break;
+                        }
+                    }
                 }
             }
             c.top = top;
@@ -163,8 +170,12 @@ namespace perlin {
             c.stamp = in.seconds;
         };
 
-        std::vector<UiVertex> rainV, snowV;
-        std::vector<uint32_t> rainI, snowI;
+        static thread_local std::vector<UiVertex> rainV, snowV;
+        static thread_local std::vector<uint32_t> rainI, snowI;
+        rainV.clear();
+        snowV.clear();
+        rainI.clear();
+        snowI.clear();
         const double ticks = in.seconds * 20.0;
         const int64_t gameTime = static_cast<int64_t>(std::floor(ticks));
         const float partial = static_cast<float>(ticks - static_cast<double>(gameTime));

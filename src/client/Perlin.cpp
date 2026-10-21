@@ -143,9 +143,12 @@ namespace perlin {
         struct FrameProfile {
             static constexpr int kCount = 10;
             double ms[kCount] = {};
+            double worst[kCount] = {};
+            double last[kCount] = {};
+            std::vector<double> frameTimes;
             int frames = 0;
             bool enabled = PERLIN_ENV("PERLIN_PROFILE") != nullptr;
-            const char* names[kCount] = {"logic", "level update", "level render", "entities", "hand", "hud", "end frame", "frame", "", ""};
+            const char* names[kCount] = {"logic", "level update", "level render", "entities", "hand", "hud", "end frame", "frame", "particles", "weather"};
         } gProfile;
         struct ProfScope {
             int id;
@@ -155,8 +158,11 @@ namespace perlin {
                     start = std::chrono::steady_clock::now();
             }
             ~ProfScope() {
-                if (gProfile.enabled)
-                    gProfile.ms[id] += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
+                if (gProfile.enabled) {
+                    const double d = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
+                    gProfile.ms[id] += d;
+                    gProfile.last[id] += d;
+                }
             }
         };
     }
@@ -1103,7 +1109,16 @@ namespace perlin {
             }
             RayTargets(*level, eye, camera.Direction(), 20.0, d);
         }
-        ui::BuildDebugLines(d, s.debugLeft, s.debugRight);
+        static std::vector<std::string> cachedLeft, cachedRight;
+        static auto cachedAt = Clock::time_point{};
+        if (cachedLeft.empty() || now - cachedAt > std::chrono::milliseconds(100)) {
+            cachedAt = now;
+            cachedLeft.clear();
+            cachedRight.clear();
+            ui::BuildDebugLines(d, cachedLeft, cachedRight);
+        }
+        s.debugLeft = cachedLeft;
+        s.debugRight = cachedRight;
     }
 
     void Perlin::UpdateAudio(BedrockSession* live, double now, float dt) {
@@ -7718,6 +7733,7 @@ namespace perlin {
                             }
                         }
                     particleClock += std::min(dt, 0.25f);
+                    ProfScope particleScope(8);
                     for (int steps = 0; particleClock >= 0.05 && steps < 5; steps++, particleClock -= 0.05)
                         particles.Tick(pw, glm::dvec3(camera.x, camera.y, camera.z));
                     if (particleClock > 0.2)
@@ -7769,7 +7785,7 @@ namespace perlin {
                     wx.seconds = std::chrono::duration<double>(frameStart - startedAt).count();
                     wx.light = std::clamp(env.skyLightFactor, 0.0f, 1.0f);
                     wx.enabled = live != nullptr && input.dimension == Dimension::Overworld;
-                    weather.Draw(wx);
+                    { ProfScope weatherScope(9); weather.Draw(wx); }
                     if (wx.enabled && rain > 0.1f) {
                         static double nextRainSound = 0.0;
                         if (wx.seconds >= nextRainSound) {
@@ -7999,14 +8015,33 @@ namespace perlin {
                 }
             }
             if (gProfile.enabled) {
-                gProfile.ms[7] += std::chrono::duration<double, std::milli>(Clock::now() - frameStart).count();
-                if (++gProfile.frames >= 120) {
-                    std::cout << "[profile] ms/frame:";
-                    for (int i = 0; i < 8; i++)
-                        std::cout << ' ' << gProfile.names[i] << '=' << gProfile.ms[i] / gProfile.frames;
-                    std::cout << std::endl;
+                const double total = std::chrono::duration<double, std::milli>(Clock::now() - frameStart).count();
+                gProfile.ms[7] += total;
+                gProfile.last[7] = total;
+                gProfile.last[0] = std::max(gProfile.last[0], 0.0);
+                for (int i = 0; i < FrameProfile::kCount; i++) {
+                    gProfile.worst[i] = std::max(gProfile.worst[i], gProfile.last[i]);
+                    gProfile.last[i] = 0;
+                }
+                gProfile.frameTimes.push_back(total);
+                if (++gProfile.frames >= 240) {
+                    std::sort(gProfile.frameTimes.begin(), gProfile.frameTimes.end());
+                    const size_t n = gProfile.frameTimes.size();
+                    const double p99 = gProfile.frameTimes[std::min(n - 1, static_cast<size_t>(n * 0.99))];
+                    std::cout << "[profile] avg ms:";
+                    for (int i = 0; i < 10; i++)
+                        if (*gProfile.names[i])
+                            std::cout << ' ' << gProfile.names[i] << '=' << gProfile.ms[i] / gProfile.frames;
+                    std::cout << " | worst ms:";
+                    for (int i = 0; i < 10; i++)
+                        if (*gProfile.names[i])
+                            std::cout << ' ' << gProfile.names[i] << '=' << gProfile.worst[i];
+                    std::cout << " | p99 frame=" << p99 << " (" << (p99 > 0 ? 1000.0 / p99 : 0.0) << " fps 1% low)" << std::endl;
                     for (double& m : gProfile.ms)
                         m = 0;
+                    for (double& m : gProfile.worst)
+                        m = 0;
+                    gProfile.frameTimes.clear();
                     gProfile.frames = 0;
                 }
             }

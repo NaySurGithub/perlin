@@ -750,10 +750,14 @@ namespace perlin {
                 Send(proto::ResourcePackChunkRequestPacket{.packId = retry.packId, .chunkIndex = retry.chunkIndex});
         }
         std::vector<uint8_t> msg;
+        const auto receiveStart = std::chrono::steady_clock::now();
+        int handled = 0;
         while (net->TryReceive(msg)) {
             HandleBatch(msg);
             if (state == State::Failed)
                 return;
+            if ((++handled & 3) == 0 && std::chrono::steady_clock::now() - receiveStart > std::chrono::microseconds(handled > 400 ? 9000 : 4000))
+                break;
         }
     }
 
@@ -1979,8 +1983,9 @@ namespace perlin {
 
     void BedrockSession::UpdateColumnLod() {
         const int cx = viewCenterChunk[0], cz = viewCenterChunk[1];
-        if (cx == lodScanCentre[0] && cz == lodScanCentre[1])
+        if (cx == lodScanCentre[0] && cz == lodScanCentre[1] && nearRadius == lodScanRadius)
             return;
+        lodScanRadius = nearRadius;
         lodScanCentre[0] = cx;
         lodScanCentre[1] = cz;
         std::vector<ChunkPos> candidates, demote;

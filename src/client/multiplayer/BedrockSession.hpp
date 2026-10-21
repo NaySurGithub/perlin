@@ -749,6 +749,7 @@ void RequestRespawn();
         std::unordered_map<ChunkPos, ColumnInfo, ChunkPosHash> columns;
         int nearRadius = 32;
         int lodScanCentre[2] = {INT32_MIN, INT32_MIN};
+        int lodScanRadius = -1;
         std::map<std::tuple<int, int, int, int>, std::chrono::steady_clock::time_point> inflight;
         std::map<std::tuple<int, int, int, int>, int> retries;
         void CompleteRequest(const std::tuple<int, int, int, int>& key, bool retry);

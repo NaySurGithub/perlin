@@ -76,6 +76,7 @@ namespace perlin {
             std::array<bgfx::DynamicIndexBufferHandle, kRenderLayerCount> ib;
             RangeAllocator vAlloc;
             std::array<RangeAllocator, kRenderLayerCount> iAlloc;
+            int emptyFrames = 0;
         };
         struct GpuSection {
             float minY, maxY;
@@ -112,6 +113,7 @@ namespace perlin {
         void Resize(int w, int h);
         uint32_t ResetFlags() const;
         uint64_t PassState(RenderLayer layer) const;
+        void ReleaseEmptyPages();
         void DrawLayer(RenderLayer layer, ShaderProgram program, const Frustum& frustum,
                        const std::vector<VisibleChunk>& chunks, bgfx::TextureHandle atlas);
         void DrawSky();

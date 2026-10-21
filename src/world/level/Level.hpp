@@ -49,6 +49,7 @@ namespace perlin {
         void SetBiomeSection(int section, const uint8_t* cells);
 
         uint64_t version = 0;
+        uint64_t borderVersion = 0;
         bool streaming = false;
         uint64_t readyAt = 0;
         uint64_t firstSeen = 0;
@@ -88,6 +89,7 @@ namespace perlin {
         ChunkPos pos;
         bool exists = false;
         uint64_t version = 0;
+        uint64_t borderVersion = 0;
         bool streaming = false;
         uint64_t firstSeen = 0;
         uint64_t readyAt = 0;
