@@ -6,6 +6,7 @@
 #include "client/ui/RmlEmit.hpp"
 #include "client/ui/UiLayout.hpp"
 
+#include <future>
 #include <memory>
 #include <string>
 
@@ -70,6 +71,8 @@ namespace perlin::ui {
         float guiW = 0, guiH = 0;
         int lastFbW = 0, lastFbH = 0;
         double sinceCheck = 0;
+        std::future<bool> changeProbe;
+        bool probeLaunched = false;
         size_t rebuilds = 0;
         bool reloadRequested = false;
         bool templatesStale = true, emitterDefault = false;

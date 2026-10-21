@@ -2165,11 +2165,7 @@ namespace perlin {
 
         const CloudFrame now = ComputeCloudFrame(frame.cameraPosition[0], frame.cameraPosition[1],
                                                  frame.cameraPosition[2], clouds.height, clouds.gameTicks, cloudTexture);
-        const bool rebuild = !cloudBuilt || now.cellX != cloudBuiltFrame.cellX || now.cellZ != cloudBuiltFrame.cellZ ||
-                             now.position != cloudBuiltFrame.position || clouds.fancy != cloudBuiltFancy ||
-                             clouds.rangeChunks != cloudBuiltRange;
-        if (rebuild) {
-            const CloudMesh mesh = BuildCloudMesh(cloudTexture, now, clouds.fancy, clouds.rangeChunks);
+        const auto upload = [&](const CloudMesh& mesh, const CloudFrame& builtFor, bool fancy, int range) {
             const uint32_t vertexCount = static_cast<uint32_t>(mesh.vertices.size());
             const uint32_t indexCount = static_cast<uint32_t>(mesh.indices.size());
             if (vertexCount > cloudVertexCapacity) {
@@ -2189,15 +2185,48 @@ namespace perlin {
                 bgfx::update(cloudIndexBuffer, 0, bgfx::copy(mesh.indices.data(), indexCount * sizeof(uint32_t)));
             }
             cloudIndexCount = vertexCount && indexCount ? indexCount : 0;
-            cloudBuiltFrame = now;
-            cloudBuiltFancy = clouds.fancy;
-            cloudBuiltRange = clouds.rangeChunks;
+            cloudBuiltFrame = builtFor;
+            cloudBuiltFancy = fancy;
+            cloudBuiltRange = range;
             cloudBuilt = true;
+        };
+        if (cloudJobRunning && cloudJob.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
+            const CloudMesh mesh = cloudJob.get();
+            cloudJobRunning = false;
+            upload(mesh, cloudJobFrame, clouds.fancy, clouds.rangeChunks);
+        }
+        const bool stale = !cloudBuilt || now.position != cloudBuiltFrame.position || clouds.fancy != cloudBuiltFancy ||
+                           clouds.rangeChunks != cloudBuiltRange;
+        const bool moved = now.cellX != cloudBuiltFrame.cellX || now.cellZ != cloudBuiltFrame.cellZ;
+        if (stale) {
+            if (cloudJobRunning) {
+                cloudJob.wait();
+                cloudJobRunning = false;
+            }
+            upload(BuildCloudMesh(cloudTexture, now, clouds.fancy, clouds.rangeChunks), now, clouds.fancy, clouds.rangeChunks);
+        } else if (moved && !cloudJobRunning) {
+            cloudJobFrame = now;
+            cloudJob = std::async(std::launch::async, [tex = cloudTexture, now, fancy = clouds.fancy, range = clouds.rangeChunks] {
+                return BuildCloudMesh(tex, now, fancy, range);
+            });
+            cloudJobRunning = true;
         }
         if (!cloudIndexCount || !bgfx::isValid(cloudVertexBuffer) || !bgfx::isValid(cloudIndexBuffer))
             return;
 
-        const float offset[3] = {-now.xInCell, now.relativeBottomY, -now.zInCell};
+        const auto wrapDelta = [](int d, int w) {
+            if (w <= 0)
+                return d;
+            d %= w;
+            if (d > w / 2)
+                d -= w;
+            else if (d < -w / 2)
+                d += w;
+            return d;
+        };
+        const float cellDx = static_cast<float>(wrapDelta(now.cellX - cloudBuiltFrame.cellX, cloudTexture.width)) * kCloudCellSize;
+        const float cellDz = static_cast<float>(wrapDelta(now.cellZ - cloudBuiltFrame.cellZ, cloudTexture.height)) * kCloudCellSize;
+        const float offset[3] = {-(now.xInCell + cellDx), now.relativeBottomY, -(now.zInCell + cellDz)};
         shaders.SetCloud(offset, clouds.color);
         shaders.SetMatrix(skyMvp);
         bgfx::setVertexBuffer(0, cloudVertexBuffer);

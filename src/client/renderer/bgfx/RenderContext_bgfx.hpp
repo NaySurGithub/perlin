@@ -1,4 +1,5 @@
 #pragma once
+#include <future>
 #include "client/renderer/RangeAllocator.hpp"
 #include "client/renderer/RenderContext.hpp"
 #include "client/renderer/Tessellator.hpp"
@@ -309,6 +310,9 @@ namespace perlin {
         bool cloudBuiltFancy = false;
         int cloudBuiltRange = 0;
         bool cloudBuilt = false;
+        std::future<CloudMesh> cloudJob;
+        bool cloudJobRunning = false;
+        CloudFrame cloudJobFrame;
         float skyMvp[16] = {};
         FrameParams frame{};
         bgfx::TextureHandle lightmapTex = BGFX_INVALID_HANDLE;

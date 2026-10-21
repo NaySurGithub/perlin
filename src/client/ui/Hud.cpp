@@ -96,6 +96,10 @@ namespace perlin::ui {
     }
 
     bool Hud::Rebuild() {
+        if (probeLaunched) {
+            changeProbe.wait();
+            probeLaunched = false;
+        }
         {
             std::vector<std::string> roots;
             const std::vector<std::string> server = ServerPacks::Instance().Directories();
@@ -174,14 +178,29 @@ namespace perlin::ui {
 
         const double now = Now();
         bool rebuilt = false;
-        if (reloadRequested || now - sinceCheck > 2.0) {
+        if (reloadRequested || now - sinceCheck > 3.0) {
             sinceCheck = now;
             std::string freshRcss = ReadUserRcss();
             if (freshRcss != rcssCache) {
                 rcssCache = std::move(freshRcss);
                 lastSignature = 0;
             }
-            if (reloadRequested || library.Changed()) {
+            bool libraryChanged = false;
+            if (reloadRequested) {
+                if (probeLaunched) {
+                    changeProbe.wait();
+                    probeLaunched = false;
+                }
+            } else if (probeLaunched) {
+                if (changeProbe.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
+                    libraryChanged = changeProbe.get();
+                    probeLaunched = false;
+                }
+            } else {
+                changeProbe = std::async(std::launch::async, [this] { return library.Changed(); });
+                probeLaunched = true;
+            }
+            if (reloadRequested || libraryChanged) {
                 reloadRequested = false;
                 UiAssets::Instance().ClearItemCache();
                 UiAssets::Instance().LoadFont(dataDir);
