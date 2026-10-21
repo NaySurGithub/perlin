@@ -172,5 +172,6 @@ namespace perlin {
         virtual void RemoveLodTile(int tx, int tz) = 0;
         virtual void ClearChunkMeshes() = 0;
         virtual void DrawChunkMeshes(const Frustum& frustum, float camX, float camZ) = 0;
+        virtual void SetChunkCullRadius(int) {}
     };
 }

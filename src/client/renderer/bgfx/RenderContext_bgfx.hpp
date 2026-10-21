@@ -60,6 +60,7 @@ namespace perlin {
         void RemoveLodTile(int tx, int tz) override;
         void ClearChunkMeshes() override;
         void DrawChunkMeshes(const Frustum& frustum, float camX, float camZ) override;
+        void SetChunkCullRadius(int chunks) override { chunkCullRadius = chunks; }
 
         void SaveScreenshotData(const std::string& path, uint32_t w, uint32_t h, uint32_t pitch,
                                 const uint8_t* bgra, bool yflip);
@@ -102,6 +103,8 @@ namespace perlin {
         void UpdateCaveVisibility(float camX, float camY, float camZ);
         uint64_t meshGeneration = 1;
         double caveLastRun = 0.0;
+        uint64_t drawnIndices = 0;
+        int chunkCullRadius = 0;
         uint64_t caveGeneration = 0;
         int caveCam[3] = {0, 0, 0};
         bool caveCulling = true;

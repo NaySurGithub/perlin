@@ -249,8 +249,8 @@ namespace perlin {
         init.reset = ResetFlags();
         init.debug = false;
         init.profile = false;
-        init.limits.maxTransientVbSize = 48u << 20;
-        init.limits.maxTransientIbSize = 24u << 20;
+        init.limits.maxTransientVbSize = 32u << 20;
+        init.limits.maxTransientIbSize = 16u << 20;
         init.callback = callback.get();
         if (!bgfx::init(init)) {
             std::cout << "[bgfx] init failed" << std::endl;
@@ -2759,20 +2759,9 @@ namespace perlin {
         }
         if (runs.empty())
             return;
-        if (!ordered) {
-            std::sort(runs.begin(), runs.end(), [](const Run& a, const Run& b) {
-                return a.page != b.page ? a.page < b.page : a.start < b.start;
-            });
-            size_t out = 0;
-            for (const Run& r : runs) {
-                if (out && runs[out - 1].page == r.page && runs[out - 1].start + runs[out - 1].count == r.start)
-                    runs[out - 1].count += r.count;
-                else
-                    runs[out++] = r;
-            }
-            runs.resize(out);
-        }
         drawCalls += static_cast<uint32_t>(runs.size());
+        for (const Run& r : runs)
+            drawnIndices += r.count;
 
         const uint64_t state = PassState(layer);
         constexpr uint8_t kKeep = BGFX_DISCARD_INDEX_BUFFER | BGFX_DISCARD_VERTEX_STREAMS;
@@ -2821,13 +2810,14 @@ namespace perlin {
 
     void RenderContext_bgfx::DrawChunkMeshes(const Frustum& frustum, float camX, float camZ) {
         DrawSky();
-        if (PERLIN_ENV("PERLIN_STATS")) {
+        if (PERLIN_ENV("PERLIN_STATS") || PERLIN_ENV("PERLIN_PROFILE")) {
             static uint32_t frames = 0;
             if (++frames % 240 == 0)
-                std::printf("[draw] %u merged submits last frame, %zu chunks, %zu lod tiles, %zu pages\n", drawCalls,
-                            gpuChunks.size(), lodChunks.size(), pages.size());
+                std::printf("[draw] %u submits, %.0fk triangles last frame, %zu chunks, %zu lod tiles, %zu pages\n", drawCalls,
+                            static_cast<double>(drawnIndices) / 3000.0, gpuChunks.size(), lodChunks.size(), pages.size());
         }
         drawCalls = 0;
+        drawnIndices = 0;
         ReleaseEmptyPages();
         if (gpuChunks.empty() && lodChunks.empty()) {
             DrawClouds();
@@ -2839,9 +2829,12 @@ namespace perlin {
         if (caveCulling)
             UpdateCaveVisibility(frame.cameraPosition[0], frame.cameraPosition[1], frame.cameraPosition[2]);
         visible.clear();
+        const int cullCx = static_cast<int>(std::floor(camX / 16.0f)), cullCz = static_cast<int>(std::floor(camZ / 16.0f));
         for (const auto& entry : gpuChunks) {
             const GpuChunk& g = entry.second;
             if (g.page < 0 || g.sections.empty())
+                continue;
+            if (chunkCullRadius > 0 && (std::abs(g.cx - cullCx) > chunkCullRadius || std::abs(g.cz - cullCz) > chunkCullRadius))
                 continue;
             const float x0 = g.cx * 16.0f, z0 = g.cz * 16.0f;
             const auto result = frustum.Test(x0, g.minY, z0, x0 + 16.0f, g.maxY, z0 + 16.0f);
@@ -2863,6 +2856,8 @@ namespace perlin {
             visible.push_back({dx * dx + dz * dz, &g, result == Frustum::Result::Inside});
         }
 
+        std::sort(visible.begin(), visible.end(),
+                  [](const VisibleChunk& x, const VisibleChunk& y) { return x.distance < y.distance; });
         const bgfx::TextureHandle atlas = bgfx::isValid(atlasTex) ? atlasTex : whiteTex;
         RenderShadows(frame.cameraPosition[0], frame.cameraPosition[1], frame.cameraPosition[2]);
         DrawLayer(RenderLayer::Solid, ShaderProgram::TerrainSolid, frustum, visible, atlas);

@@ -349,9 +349,12 @@ namespace perlin {
         pending.clear();
         pending.reserve(wantKey.size());
         static const int debugNear = PERLIN_ENV("PERLIN_LOD_NEAR") ? std::atoi(PERLIN_ENV("PERLIN_LOD_NEAR")) : -1;
+        const int meshRadius = std::max(3, std::min(options.renderDistance, static_cast<int>(LodStore::kRealChunks))) + 3;
         const int camChunkX = static_cast<int>(std::floor(camX / 16.0f)), camChunkZ = static_cast<int>(std::floor(camZ / 16.0f));
         for (const auto& [pos, key] : wantKey) {
             if (debugNear >= 0 && std::max(std::abs(pos.x - camChunkX), std::abs(pos.z - camChunkZ)) > debugNear)
+                continue;
+            if (std::max(std::abs(pos.x - camChunkX), std::abs(pos.z - camChunkZ)) > meshRadius)
                 continue;
             if (inFlight.count(pos) || !Ready(pos, now))
                 continue;
@@ -607,6 +610,7 @@ namespace perlin {
     }
 
     void LevelRenderer::Render(const Frustum& frustum, float camX, float camZ) {
+        context.SetChunkCullRadius(std::max(3, std::min(options.renderDistance, static_cast<int>(LodStore::kRealChunks))) + 2);
         context.DrawChunkMeshes(frustum, camX, camZ);
     }
 
