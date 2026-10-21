@@ -1,22 +1,15 @@
 $input v_texcoord0
 
-// Temporal upscaler: reconstructs a full-size frame from the jittered, smaller world image and the previous output.
-// The previous output is reprojected with the camera motion (depth + the two view-projection matrices); it is clamped to the
-// colours around the pixel in the new frame so anything that moved on its own (mobs, particles, water) cannot leave trails.
 #include <bgfx_shader.sh>
 
 SAMPLER2D(s_cur, 0);
 SAMPLER2D(s_depth, 1);
 SAMPLER2D(s_hist, 2);
-// x: weight of the new frame, y: history is valid (1/0), z: y sign of this backend's texture space (+1 origin bottom left, -1 top left),
-// w: 1 when clip depth is -1..1 (OpenGL)
 uniform vec4 u_taa;
-// xy: size of the small frame in pixels, zw: size of the output
 uniform vec4 u_taaSize;
-// xy: this frame's jitter, as an offset in texture coordinates
 uniform vec4 u_taaJit;
-uniform mat4 u_taaInvVp;   // clip -> camera-relative world, this frame (no jitter)
-uniform mat4 u_taaPrevVp;  // camera-relative world -> clip, previous frame (no jitter)
+uniform mat4 u_taaInvVp;
+uniform mat4 u_taaPrevVp;
 
 vec3 fetchCur(vec2 texel)
 {
@@ -34,7 +27,6 @@ void main()
 {
     vec2 uv = v_texcoord0;
     vec2 low = u_taaSize.xy;
-    // Where the small frame's samples that belong to this output pixel are (the render was shifted by the jitter).
     vec2 centre = (uv + u_taaJit.xy) * low - vec2_splat(0.5);
     vec2 base = floor(centre);
 
@@ -80,7 +72,6 @@ void main()
     vec3 lo = mean - 1.3 * sigma - vec3_splat(0.004);
     vec3 hi = mean + 1.3 * sigma + vec3_splat(0.004);
     vec3 clamped = clamp(hist, lo, hi);
-    // The further the history had to be pulled in, the less it is trusted.
     float rejected = clamp(length(hist - clamped) * 6.0, 0.0, 0.7);
     float alpha = clamp(u_taa.x + rejected, 0.0, 1.0);
     gl_FragColor = vec4(mix(clamped, resolved, alpha), 1.0);

@@ -1,11 +1,4 @@
 #!/bin/sh
-# Builds a C++ plugin.
-#
-#   mods/build.sh [--wasm32] [source.cpp] [output dir]
-#
-# Plugins are 64-bit WebAssembly (memory64) by default, built with Emscripten as a standalone
-# WASI module (activate an emsdk install, or point EMSDK at one). --wasm32 builds a classic 32-bit
-# plugin with wasi-sdk instead (WASI_SDK_PATH). Perlin runs either kind.
 set -e
 cd "$(dirname "$0")"
 target=wasm64
@@ -20,8 +13,6 @@ out="${2:-prebuilt}"
 name="$(basename "$src" .cpp)"
 srcdir="$(dirname "$src")" # headers next to the source are found with #include <dir/header.hpp>
 mkdir -p "$out"
-# The mod's manifest (name.json next to the source) declares its settings and permissions. Its settings become a header
-# of typed handles, `#include <mod_settings.hpp>`, and the manifest is copied next to the built module.
 manifest="$(dirname "$src")/$name.json"
 gen="$out/gen/$name"
 mkdir -p "$gen"
@@ -45,8 +36,6 @@ else
             exit 1
         fi
     fi
-    # STANDALONE_WASM + PURE_WASI: a plain WASI reactor (exports _initialize, imports only WASI and
-    # perlin.call), no JavaScript.
     "$emxx" -std=c++23 -O2 -fno-exceptions -fno-rtti -Isdk -I"$srcdir" -I"$gen" -Wall -Wextra "$src" -o "$out/$name.wasm" \
         -sMEMORY64=1 -sSTANDALONE_WASM=1 -sPURE_WASI=1 -sALLOW_MEMORY_GROWTH=1 -sINITIAL_MEMORY=1MB -sMAXIMUM_MEMORY=1GB -sSTACK_SIZE=256KB \
         -sERROR_ON_UNDEFINED_SYMBOLS=0 --no-entry \

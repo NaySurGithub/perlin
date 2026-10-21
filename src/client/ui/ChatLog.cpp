@@ -126,7 +126,7 @@ namespace perlin::ui {
                 text.replace(it->begin, it->end - it->begin, "\xC2\xA7" "a[" + it->x + ", " + it->y + ", " + it->z + "]\xC2\xA7" "r");
         }
         const std::vector<std::string> urls = FindUrls(text);
-        size_t urlAt = 0, urlPos = 0; // which URL a wrapped line is inside, and how much of it earlier lines used
+        size_t urlAt = 0, urlPos = 0;
         for (const std::string& piece : Wrap(text, kWidth)) {
             if (scroll > 0)
                 scroll++;
@@ -135,7 +135,7 @@ namespace perlin::ui {
             while (urlAt < urls.size() && at < piece.size()) {
                 const std::string& u = urls[urlAt];
                 while (at + 1 < piece.size() && static_cast<unsigned char>(piece[at]) == 0xC2 && static_cast<unsigned char>(piece[at + 1]) == 0xA7 && at + 3 <= piece.size())
-                    at += 3; // skip a carried formatting code
+                    at += 3;
                 size_t b = std::string::npos, e = 0;
                 if (urlPos == 0) {
                     const size_t whole = piece.find(u, at);
@@ -144,7 +144,6 @@ namespace perlin::ui {
                         e = whole + u.size();
                         urlPos = u.size();
                     } else {
-                        // The URL starts at the end of this line: its longest prefix that the line ends with.
                         for (size_t k = std::min(u.size() - 1, piece.size()); k >= 4; k--)
                             if (piece.compare(piece.size() - k, k, u, 0, k) == 0) {
                                 b = piece.size() - k;
@@ -162,7 +161,7 @@ namespace perlin::ui {
                         e = at + n;
                         urlPos += n;
                     } else {
-                        urlPos = 0; // the continuation never showed up; give up on this URL
+                        urlPos = 0;
                     }
                 }
                 if (b == std::string::npos)
@@ -173,7 +172,7 @@ namespace perlin::ui {
                     urlAt++;
                     urlPos = 0;
                 } else {
-                    break; // the rest of the URL is on the next line
+                    break;
                 }
             }
             lines.push_back(std::move(line));
@@ -286,7 +285,6 @@ namespace perlin::ui {
                 e++;
             while (e > i && std::strchr(".,;:!?)]}'*", text[e - 1]))
                 e--;
-            // A link needs something after the scheme or "www.".
             const size_t head = text.compare(i, 8, "https://") == 0 ? 8 : text.compare(i, 7, "http://") == 0 ? 7 : 4;
             if (e > i + head && out.size() < 8)
                 out.push_back(text.substr(i, e - i));

@@ -1,13 +1,9 @@
 $input v_texcoord0
 
-// Spatial upscalers for the render-scale option: Catmull-Rom bicubic, an FSR 1.0 style edge-adaptive upscale ("EASU") and its
-// contrast-adaptive sharpen ("RCAS"). The world is drawn smaller than the window and one of these rebuilds the full size image.
 #include <bgfx_shader.sh>
 
 SAMPLER2D(s_cur, 0);
-// x: mode (0 bicubic, 1 edge-adaptive upscale, 2 sharpen, 3 copy), y: sharpness 0..1
 uniform vec4 u_up;
-// xy: size of the image being read in pixels, zw: size of the image being written
 uniform vec4 u_upSize;
 
 vec3 fetchPx(vec2 px)
@@ -53,7 +49,6 @@ vec3 bicubic(vec2 uv)
     return max(col, vec3_splat(0.0));
 }
 
-// One tap of the EASU kernel: returns (weighted colour, weight).
 vec4 easuTap(vec2 off, vec2 dir, vec2 len, float lob, float clp, vec3 c)
 {
     vec2 v;
@@ -181,6 +176,6 @@ void main()
     else if (u_up.x < 2.5)
         color = sharpen(v_texcoord0);
     else
-        color = texture2DLod(s_cur, v_texcoord0, 0.0).rgb; // plain copy
+        color = texture2DLod(s_cur, v_texcoord0, 0.0).rgb;
     gl_FragColor = vec4(color, 1.0);
 }

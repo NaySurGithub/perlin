@@ -57,6 +57,7 @@
 #include "client/player/DamageEffect.hpp"
 #include "client/PreviewWorld.hpp"
 #include "client/renderer/chunk/LodStore.hpp"
+#include "client/MemoryTrim.hpp"
 #include "client/resources/BedrockSamples.hpp"
 #include "world/level/lighting/ChunkLighting.hpp"
 #include "client/ui/DebugScreen.hpp"
@@ -306,7 +307,6 @@ namespace perlin {
     }
 
     void Perlin::StartAssetDownloads() {
-        // Mark both busy right away so the download screen doesn't flash the title first.
         if (!BedrockSamples::Available(options.bedrockSamplesDir))
             assets::Samples().stage = assets::Stage::Checking;
         if (!MojangFonts::Available(paths::DataDir()))
@@ -347,8 +347,6 @@ namespace perlin {
         while (!serverText.empty() && serverText.back() == '/')
             serverText.pop_back();
 #ifdef __EMSCRIPTEN__
-        // An https page can't call plain-http signaling (mixed content), so every host except the
-        // local machine is reached over https there.
         if (!secureSignaling) {
             std::string bare = serverText.substr(0, serverText.find_first_of(":/"));
             const bool local = bare == "localhost" || bare == "127.0.0.1" || bare == "[::1]";
@@ -360,7 +358,7 @@ namespace perlin {
         if (!args.stun.empty())
             NetherNet::SetIceServers(args.stun);
         if (friendLease) {
-            host = friendLease->worldName.empty() ? "friend" : friendLease->worldName; // shown only; the lease is dialled
+            host = friendLease->worldName.empty() ? "friend" : friendLease->worldName;
             port = 0;
         } else if (!ParseServer(serverText, host, port)) {
             std::cout << "[perlin] invalid server address '" << options.server << "'" << std::endl;
@@ -374,9 +372,6 @@ namespace perlin {
         if (session)
             retiredSessions.push_back(std::move(session));
         session = std::make_unique<BedrockSession>();
-        // Free sessions left behind by Cancel/Disconnect once nothing is still connecting on them.
-        // This runs after the new session exists, so its level can't reuse an old one's address
-        // (the level renderer notices a new level by pointer).
         if (connectsInFlight.load() == 0)
             std::erase_if(retiredSessions, [](const std::unique_ptr<BedrockSession>& s) { return !s->Transferring(); });
         session->SetPacketHandler([this](uint32_t id, const std::vector<uint8_t>& body) {
@@ -421,7 +416,7 @@ namespace perlin {
             session->SetAccount(account);
         }
         connectsInFlight++;
-        std::string nameAccountId; // an active Microsoft account still without a gamertag
+        std::string nameAccountId;
         if (const AccountEntry* active = accounts.Active(); account && active && active->microsoft && active->name.empty())
             nameAccountId = active->id;
         workers->Submit([this, host, port, gen, s = session.get(), acct = account, nameAccountId] {
@@ -449,8 +444,6 @@ namespace perlin {
                     return;
                 }
                 SetStatusHint({});
-                // The account switcher shows the gamertag: learn it for an account added before the
-                // switcher existed (applied on the main thread).
                 if (!nameAccountId.empty()) {
                     std::string gamertag, why;
                     if (acct->FetchGamertag(gamertag, why)) {
@@ -461,7 +454,6 @@ namespace perlin {
             }
             const bool connected = s->Connect(host, port);
             if (!current()) {
-                // Cancelled while connecting: hang up quietly.
                 if (connected)
                     s->Disconnect();
                 return;
@@ -521,7 +513,6 @@ namespace perlin {
             return;
         std::cout << "[packs] unloading the server's resource packs" << std::endl;
         ServerPacks::Instance().Clear();
-        // Everything that may have read them: block textures, entity and item textures, UI, sounds, text.
         if (levelRenderer)
             levelRenderer->ReloadResources();
         entityRenderer.ClearCaches();
@@ -845,10 +836,8 @@ namespace perlin {
             }
             std::cout << "[form] opened form " << sf.id << " '" << formModel.title << "'" << std::endl;
             formUi.Warm(ServerPacks::Instance().Directories());
-            // Open with the server pack's JSON UI at once: wait for a warm-up in progress instead of showing
-            // the built-in layout first.
             formUi.WaitReady(2500);
-            formUi.Warm(ServerPacks::Instance().Directories()); // rebuilds if the packs changed meanwhile
+            formUi.Warm(ServerPacks::Instance().Directories());
             formUi.WaitReady(2500);
             formEngine = formUi.Ready();
             formShown = true;
@@ -1110,7 +1099,6 @@ namespace perlin {
     void Perlin::UpdateAudio(BedrockSession* live, double now, float dt) {
         static bool opened = false, hooked = false;
         const std::string& root = ui::UiAssets::Instance().VanillaRoot();
-        // Open the output right away: the menus click before there is any connection.
         if (!opened) {
             opened = true;
             if (!audioEngine.Open())
@@ -1639,7 +1627,6 @@ namespace perlin {
         const auto now = Clock::now();
         const bool canOpen = (live || preview) && !deathShown && !formShown && !invShown && !chat.IsOpen();
         if (modOpenView >= 0 && canOpen) {
-            // A mod asked for a screen.
             if (!pauseShown) {
                 pauseShown = true;
                 pauseOpenedAt = now;
@@ -1671,7 +1658,7 @@ namespace perlin {
             pauseOpenedAt = now;
             pauseSignature.clear();
             optionsSignature.clear();
-            pauseLeftDown = true; // the click that opened it must not hit an option
+            pauseLeftDown = true;
             inputManager.TakeTyped();
             input.SetTextMode(true);
         } else if (!pauseShown && canOpen && (inputManager.Pressed(Action::Pause) || (preview && !pausePreviewOpened))) {
@@ -1728,7 +1715,7 @@ namespace perlin {
             }
         }
         if (titleOptions && pauseShown && pauseView == 0)
-            resume = true; // leaving the options screen goes back to the title, not the pause menu
+            resume = true;
         if (resume) {
             if (titleOptions) {
                 titleOptions = false;
@@ -2271,7 +2258,6 @@ namespace perlin {
                 return s;
             };
             const auto openFolder = [&](const std::string& dir) {
-                // Where there is no file manager to open (Android), the Add button picks the file instead.
                 if (platform->PickFile("pack"))
                     return;
                 std::error_code e;
@@ -2663,7 +2649,6 @@ namespace perlin {
                 detail.settingsLabel = tr("perlin.mods.settings", "Settings");
                 std::string body = info.description.empty() ? tr("perlin.mods.noDescription", "A WebAssembly mod.") : info.description;
                 if (info.requested) {
-                    // What the mod asks to be allowed to do, in plain words, before anything is enabled.
                     std::string asks;
                     const auto add = [&](abi::Permission p, const char* text) {
                         if (info.requested & static_cast<uint32_t>(p))
@@ -2748,7 +2733,6 @@ namespace perlin {
                     mm.ReloadMod(modSelected);
                     optionsSignature.clear();
                 } else if (detail.valid && detail.hasSettings && inside(l.settingsX, l.detailBtnY - 1.0f, l.settingsW, 20.0f)) {
-                    // The mod's own settings page, shown with the options screen's controls.
                     modSettingsFor = modSelected;
                     pauseView = 1;
                     optionsPage = 11;
@@ -2980,14 +2964,13 @@ namespace perlin {
                 title = tr("options.videoTitle", "Video Settings");
                 toggle(tr("options.graphics.fancy", "Fancy Graphics"), options.fancyGraphics);
                 if (!options.enableLods && options.renderDistance > LodStore::kRealChunks) {
-                    options.renderDistance = LodStore::kRealChunks; // past the real chunks only LODs can draw
+                    options.renderDistance = LodStore::kRealChunks;
                     if (live) {
                         live->SetChunkRadius(options.renderDistance);
                         live->SetNearRadius(1 << 20);
                         live->RequestChunkRadiusNow();
                     }
                 }
-                // The first half of the slider is the ordinary range (2-32 chunks); with LODs on the second half runs out to 256.
                 const int maxDistance = options.enableLods ? 256 : LodStore::kRealChunks;
                 const auto distanceToSlider = [maxDistance](int d) {
                     if (maxDistance <= LodStore::kRealChunks)
@@ -3011,11 +2994,10 @@ namespace perlin {
                                    live->SetChunkRadius(options.renderDistance);
                                    live->SetMaxViewDistance(std::max(32, options.renderDistance));
                                    live->SetNearRadius(options.enableLods && options.renderDistance > LodStore::kRealChunks ? LodStore::kRealChunks : 1 << 20);
-                                   live->RequestChunkRadiusNow(); // the server only streams what was last asked for
+                                   live->RequestChunkRadiusNow();
                                }
                            }
                        });
-                toggle("Fast Math", options.fastMath);
                 toggle("Enable LODs", options.enableLods);
                 slider(tr("options.framerateLimit", "Max Framerate"),
                        options.maxFps == 0 ? tr("options.framerateLimit.max", "Unlimited") : std::to_string(options.maxFps) + " fps",
@@ -3048,30 +3030,10 @@ namespace perlin {
                 slider(tr("options.damageTilt", "Damage Tilt"), percent(static_cast<float>(options.damageTilt) / 100.0f), static_cast<float>(options.damageTilt) / 100.0f,
                        [this](float f) { options.damageTilt = static_cast<int>(std::lround(std::clamp(f, 0.0f, 1.0f) * 100.0f)); });
                 toggle(tr("perlin.options.damageTint", "Damage Tint"), options.damageTint);
-                toggle(tr("options.rgss", "Supersampling"), options.rgss);
-                choice("Frame Generation", options.frameGen, {{"off", "Off"}, {"2x", "2x"}, {"3x", "3x"}, {"4x", "4x"}});
-                choice("Upscaler", options.upscaler, {{"off", "Off"}, {"bilinear", "Bilinear"}, {"bicubic", "Bicubic"}, {"fsr1", "FSR 1.0"}, {"temporal", "Temporal"}});
-                if (options.upscaler != "off") {
-                    choice("Upscale Quality", options.upscaleQuality,
-                           {{"ultra_quality", "Ultra Quality"}, {"quality", "Quality"}, {"balanced", "Balanced"}, {"performance", "Performance"}, {"ultra_performance", "Ultra Perf."}, {"custom", "Custom"}});
-                    if (options.upscaleQuality == "custom")
-                        slider("Render Scale", std::to_string(options.upscaleCustom) + "%", static_cast<float>(options.upscaleCustom - 25) / 75.0f,
-                               [this](float f) { options.upscaleCustom = 25 + static_cast<int>(std::lround(std::clamp(f, 0.0f, 1.0f) * 75.0f)); });
-                    slider("Target FPS", options.upscaleTargetFps <= 0 ? tr("options.off", "OFF") : std::to_string(options.upscaleTargetFps),
-                           static_cast<float>(options.upscaleTargetFps) / 360.0f,
-                           [this](float f) {
-                               const int v = static_cast<int>(std::lround(std::clamp(f, 0.0f, 1.0f) * 72.0f)) * 5; // 5 FPS steps
-                               options.upscaleTargetFps = v < 20 ? 0 : v;
-                           });
-                    slider("Upscale Sharpness", options.upscaleSharpness <= 0 ? tr("options.off", "OFF") : std::to_string(options.upscaleSharpness) + "%",
-                           static_cast<float>(options.upscaleSharpness) / 100.0f,
-                           [this](float f) { options.upscaleSharpness = static_cast<int>(std::lround(std::clamp(f, 0.0f, 1.0f) * 100.0f)); });
-                }
                 slider("Cloud Range", std::to_string(options.cloudRange) + " " + tr("options.chunks", "chunks"), static_cast<float>(options.cloudRange - 2) / 126.0f,
                        [this](float f) { options.cloudRange = 2 + static_cast<int>(std::lround(std::clamp(f, 0.0f, 1.0f) * 126.0f)); });
                 toggle("Better Grass", options.betterGrass);
                 {
-                    // The graphics API; picking another one restarts the game (see below).
                     std::vector<std::pair<std::string, std::string>> apis = {{"auto", "Auto"}};
 #if defined(_WIN32)
                     apis.insert(apis.end(), {{"d3d11", "Direct3D 11"}, {"vulkan", "Vulkan"}, {"opengl", "OpenGL"}});
@@ -3080,8 +3042,6 @@ namespace perlin {
 #else
                     apis.insert(apis.end(), {{"vulkan", "Vulkan"}, {"opengl", "OpenGL"}});
 #endif
-                    // A slider through the available APIs. It applies when the mouse is let go (see the restart check
-                    // in the frame update): dragging only moves the value.
                     size_t at = 0;
                     for (size_t i = 0; i < apis.size(); i++)
                         if (apis[i].first == options.renderer)
@@ -3129,6 +3089,47 @@ namespace perlin {
                 toggle("Zoom Reset On Press", options.zoom.resetOnPress);
                 toggle("Cinematic Camera", options.zoom.cinematic);
                 toggle("Scale Sensitivity", options.zoom.scaleSensitivity);
+                {
+                    OptRow h{"Advanced", "", -1.0f, [](float, bool) {}};
+                    h.header = true;
+                    model.push_back(h);
+                }
+                {
+                    static bool lastSupersampling = false;
+                    static std::string lastUpscaler = "off";
+                    if (options.rgss && options.upscaler != "off") {
+                        if (options.rgss && !lastSupersampling)
+                            options.upscaler = "off";
+                        else
+                            options.rgss = false;
+                    }
+                    lastSupersampling = options.rgss;
+                    lastUpscaler = options.upscaler;
+                }
+                if (options.upscaler == "off")
+                    toggle(tr("options.rgss", "Supersampling"), options.rgss);
+                choice("Upscaler", options.upscaler, {{"off", "Off"}, {"bilinear", "Bilinear"}, {"bicubic", "Bicubic"}, {"fsr1", "FSR 1.0"}, {"temporal", "Temporal"}});
+                if (options.upscaler != "off") {
+                    slider("Upscale Quality", std::to_string(options.upscaleCustom) + "%", static_cast<float>(options.upscaleCustom - 25) / 75.0f,
+                           [this](float f) { options.upscaleCustom = 25 + static_cast<int>(std::lround(std::clamp(f, 0.0f, 1.0f) * 75.0f)); });
+                    slider("Target FPS", options.upscaleTargetFps <= 0 ? tr("options.off", "OFF") : std::to_string(options.upscaleTargetFps),
+                           static_cast<float>(options.upscaleTargetFps) / 360.0f,
+                           [this](float f) {
+                               const int v = static_cast<int>(std::lround(std::clamp(f, 0.0f, 1.0f) * 72.0f)) * 5;
+                               options.upscaleTargetFps = v < 20 ? 0 : v;
+                           });
+                    slider("Upscale Sharpness", options.upscaleSharpness <= 0 ? tr("options.off", "OFF") : std::to_string(options.upscaleSharpness) + "%",
+                           static_cast<float>(options.upscaleSharpness) / 100.0f,
+                           [this](float f) { options.upscaleSharpness = static_cast<int>(std::lround(std::clamp(f, 0.0f, 1.0f) * 100.0f)); });
+                }
+                {
+                    const int gen = options.frameGen == "4x" ? 4 : options.frameGen == "3x" ? 3 : options.frameGen == "2x" ? 2 : 1;
+                    slider("Frame Generation", gen == 1 ? tr("options.off", "OFF") : std::to_string(gen) + "x", static_cast<float>(gen - 1) / 3.0f,
+                           [this](float f) {
+                               const int g = 1 + static_cast<int>(std::lround(std::clamp(f, 0.0f, 1.0f) * 3.0f));
+                               options.frameGen = g == 4 ? "4x" : g == 3 ? "3x" : g == 2 ? "2x" : "off";
+                           });
+                }
                 {
                     OptRow h{"Developer", "", -1.0f, [](float, bool) {}};
                     h.header = true;
@@ -3297,7 +3298,6 @@ namespace perlin {
                     model.push_back(reset);
                 }
             } else if (optionsPage == 11) {
-                // A mod's own settings, declared by the mod and changed here while the game runs.
                 auto& mm = mods::ModManager::Instance();
                 std::string modTitle = modSettingsFor;
                 for (const mods::ModInfo& mi : mm.List())
@@ -3433,7 +3433,6 @@ namespace perlin {
                     return 0.0;
                 };
                 if (!presets.empty()) {
-                    // The preset whose values all match the current ones, or "Custom".
                     int current = -1;
                     for (size_t p = 0; p < presets.size() && current < 0; p++) {
                         bool match = true;
@@ -3792,7 +3791,6 @@ namespace perlin {
         }
 
         if (titleOptions) {
-            // Options was opened from the title screen: Done/Escape lands here; go back to the title.
             titleOptions = false;
             titleSignature.clear();
             pauseView = 0;
@@ -3948,8 +3946,6 @@ namespace perlin {
     }
 
     namespace {
-        // The UI head image ("mchead:<key>") for a skin: its 8x8 face with the hat layer over it,
-        // as the player list draws heads. An empty path is the default skin.
         std::string SkinHeadKey(const std::string& skinPath) {
             const std::string key = "skinhead:" + std::to_string(std::hash<std::string>{}(skinPath));
             ui::UiAssets& assets = ui::UiAssets::Instance();
@@ -3971,7 +3967,7 @@ namespace perlin {
             if (rgba.empty()) {
                 Texture steve;
                 if (!assets.Image("textures/entity/steve.png", steve) || steve.width < 64)
-                    return {}; // assets not there yet: try again next time
+                    return {};
                 rgba = std::move(steve.pixels);
                 w = steve.width;
                 h = steve.height;
@@ -4007,9 +4003,6 @@ namespace perlin {
         if (!workers)
             return;
         gamertagFetchAt = std::chrono::steady_clock::now();
-        // Microsoft accounts added before the switcher kept their gamertag have no name yet: learn
-        // it in the background from the saved sign-in (never prompting), so the title screen can
-        // say who is logged in.
         for (const AccountEntry& e : accounts.Entries()) {
             if (!e.microsoft || !e.name.empty())
                 continue;
@@ -4035,8 +4028,6 @@ namespace perlin {
         if (!a->microsoft)
             options.playerName = a->name;
         onlineThisRun = options.onlineLogin && !args.offline;
-        // Each account keeps the skin it was last played with: switching to one puts its skin
-        // back on; an account seen for the first time takes the current skin.
         if (a->skinKnown && (a->skin != options.skin || a->cape != options.cape)) {
             options.skin = a->skin;
             options.cape = a->cape;
@@ -4047,7 +4038,7 @@ namespace perlin {
                 options.slimArms = loaded.slimArms;
             else
                 std::cout << "[accounts] skin: " << err << std::endl;
-            wardInit = false; // the wardrobe picks the new selection up next time it opens
+            wardInit = false;
         } else if (!a->skinKnown) {
             accounts.SetSkin(a->id, options.skin, options.cape);
         }
@@ -4085,7 +4076,7 @@ namespace perlin {
             const bool named = ok && acct->FetchGamertag(gamertag, error);
             std::lock_guard lock(signInMutex);
             if (signInAccount != acct)
-                return; // cancelled
+                return;
             if (ok) {
                 signInGamertag = named ? gamertag : std::string();
                 signInState = 2;
@@ -4110,12 +4101,11 @@ namespace perlin {
     }
 
     namespace {
-        // Removes Minecraft format codes (section sign + one character) from a MOTD.
         std::string StripFormatting(const std::string& text) {
             std::string out;
             for (size_t i = 0; i < text.size(); i++) {
                 if (static_cast<unsigned char>(text[i]) == 0xC2 && i + 1 < text.size() && static_cast<unsigned char>(text[i + 1]) == 0xA7) {
-                    i += 2; // the code character
+                    i += 2;
                     continue;
                 }
                 out += text[i];
@@ -4130,7 +4120,7 @@ namespace perlin {
                 std::lock_guard lock(pingMutex);
                 ui::ServerEntry& r = pingResults[address];
                 if (r.status == ui::ServerEntry::Status::Pinging)
-                    continue; // already on its way
+                    continue;
                 r.status = ui::ServerEntry::Status::Pinging;
             }
             workers->Submit([this, address] {
@@ -4145,7 +4135,6 @@ namespace perlin {
                 r.pingMs = static_cast<int>(std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now() - start).count());
                 r.status = ok ? ui::ServerEntry::Status::Online : ui::ServerEntry::Status::Offline;
                 if (ok) {
-                    // MCPE;MOTD;protocol;version;players;max;guid;world;gamemode;...
                     std::vector<std::string> f;
                     size_t from = 0;
                     for (size_t at; (at = ad.find(';', from)) != std::string::npos; from = at + 1)
@@ -4178,21 +4167,19 @@ namespace perlin {
 
     void Perlin::SetJoinMessage(const std::string& text) {
         if (leaseJoining) {
-            SetStatusHint(text); // the loading screen shows the progress
+            SetStatusHint(text);
             return;
         }
         std::lock_guard lock(tabMutex);
         tabJoinMsg = text;
     }
 
-    // Friend, LAN and Realm joins take a while before there is anything to connect to: go straight to the loading screen.
     void Perlin::BeginLeaseJoin(const std::string& text) {
         leaseJoining = true;
         SetStatusHint(text);
         titleActive = false;
     }
 
-    // Back to the title screen with the reason (worker threads call this).
     void Perlin::FailLeaseJoin(const std::string& text) {
         const bool loading = leaseJoining.exchange(false);
         SetStatusHint({});
@@ -4222,7 +4209,6 @@ namespace perlin {
                 std::string error;
                 RakNet::Discover(found, error, 2000);
                 std::vector<ui::ServerEntry> rows;
-                // Minecraft's own LAN discovery: encrypted UDP on port 7551. Every game that answers is joined over WebRTC.
                 std::set<std::string> discoveredIps;
                 {
                     std::string lanError;
@@ -4269,7 +4255,6 @@ namespace perlin {
                     e.kind = ui::ServerEntry::Kind::Lan;
                     e.address = f.host + ":" + std::to_string(f.port);
                     e.name = parts.size() > 1 && !parts[1].empty() ? parts[1] : "LAN Game";
-                    // MOTD lines carry formatting codes; keep the text.
                     std::string plain;
                     for (size_t i = 0; i < e.name.size(); i++) {
                         if (static_cast<unsigned char>(e.name[i]) == 0xC2 && i + 2 < e.name.size() && static_cast<unsigned char>(e.name[i + 1]) == 0xA7) {
@@ -4284,8 +4269,6 @@ namespace perlin {
                     e.note = e.address + (parts.size() > 3 ? "  -  " + parts[3] : "");
                     rows.push_back(std::move(e));
                 }
-                // NetherNet servers (a dedicated server's signalling port) don't answer RakNet pings: ask this machine and
-                // the local /24 networks directly.
                 {
                     std::vector<std::string> hosts{"127.0.0.1"};
 #if !defined(_WIN32) && !defined(__EMSCRIPTEN__)
@@ -4384,8 +4367,6 @@ namespace perlin {
             } else if (ok) {
                 std::vector<friends::Friend> list;
                 ok = friends::List(acct, list, error);
-                // Gamerpics, a few at a time (cached once fetched). A hosted world has no icon of its own that Xbox
-                // publishes, so the gamerpic is the row's picture in every case.
                 {
                     std::atomic<size_t> next{0};
                     const auto fetch = [&] {
@@ -4470,7 +4451,6 @@ namespace perlin {
             realms::Address address;
             if (acct.SignInSaved(error) && realms::Join(acct, id, address, error)) {
                 if (address.protocol != "DEFAULT") {
-                    // The Realm is reached through NetherNet: signalling (WebSocket or JSON-RPC) to the address Realms returned.
                     SetJoinMessage("Connecting to the Realm...");
                     std::shared_ptr<friendworld::Lease> lease;
                     if (friendworld::JoinRealm(acct, address.host, address.protocol, kBedrockVersion, address.host, lease, error)) {
@@ -4523,7 +4503,6 @@ namespace perlin {
     }
 
     namespace {
-        // The LAN socket outlives a single join (it keeps discovering), so a lease must not close it.
         struct SharedSignaling : friendworld::Signaling {
             std::shared_ptr<friendworld::Signaling> inner;
             explicit SharedSignaling(std::shared_ptr<friendworld::Signaling> s) : inner(std::move(s)) {}
@@ -4535,7 +4514,6 @@ namespace perlin {
         };
     }
 
-    // A game found by Minecraft's LAN discovery: signals go to it over the discovery socket, then WebRTC carries the game.
     void Perlin::JoinLanGame(const ui::ServerEntry& entry) {
         if (!(accounts.Active() && accounts.Active()->microsoft)) {
             SetJoinMessage("Sign in with a Microsoft account to join a LAN game");
@@ -4582,20 +4560,17 @@ namespace perlin {
         friendLease.reset();
         if (!lease)
             return;
-        // The last reference may be dropped here, and leaving the Xbox session takes a network round trip.
         std::thread([lease = std::move(lease)]() mutable { lease.reset(); }).detach();
     }
 
     void Perlin::LeaveToServerList(ui::Hud& hud) {
         std::cout << "[perlin] left " << options.server << ", back to the server list" << std::endl;
-        connectGeneration++; // any connect still running for this session backs out
+        connectGeneration++;
         if (account)
             account->Cancel();
         SetStatusHint({});
         sessionReady = false;
         if (session) {
-            // Hang up now unless a background connect/transfer is still using the session; then
-            // it hangs up itself (stale generation) and is freed on the next Connect().
             if (connectsInFlight.load() == 0 && !session->Transferring()) {
                 session->Disconnect();
                 session->SetFriendLease(nullptr);
@@ -4617,7 +4592,6 @@ namespace perlin {
         deathSignature.clear();
         if (chat.IsOpen())
             chat.Close();
-        // Leaving (also while still joining): the server's packs stop applying right away.
         UnloadServerPacks();
         titleActive = true;
         titleReturnToServers = true;
@@ -4628,7 +4602,7 @@ namespace perlin {
         if (!panoramaReady) {
             if (now < panoramaRetryAt)
                 return;
-            panoramaRetryAt = now + std::chrono::seconds(2); // assets may still be downloading
+            panoramaRetryAt = now + std::chrono::seconds(2);
             int loaded = 0;
             for (int i = 0; i < 6; i++) {
                 if (panoramaTextures[i])
@@ -4664,7 +4638,7 @@ namespace perlin {
             draw.mesh = mesh;
             draw.texture = panoramaTextures[i];
             draw.premultiplied = true;
-            renderer->UiSubmit(UiLayer::Gui, draw); // submitted before the title RML, so it sits underneath
+            renderer->UiSubmit(UiLayer::Gui, draw);
             renderer->UiDestroyMesh(mesh);
         }
     }
@@ -4678,13 +4652,13 @@ namespace perlin {
             failed = failed || j->stage.load() == assets::Stage::Failed;
         }
         if (failed && PERLIN_ENV("PERLIN_PREVIEW_TITLE"))
-            assetSkip = true; // title previews run offline
+            assetSkip = true;
         if (assetSkip || (!busy && !failed && !preview)) {
             if (assetShown) {
                 assetShown = false;
                 assetSignature.clear();
                 hud.Overlay().ClearOverlay();
-                titleShown = false; // the title rebuilds its overlay
+                titleShown = false;
             }
             return false;
         }
@@ -4701,7 +4675,6 @@ namespace perlin {
             }
             input.SetTextMode(true);
         }
-        // Download speed, smoothed over about a second.
         const double dt = std::chrono::duration<double>(now - assetSampleAt).count();
         if (dt >= 0.25) {
             for (int i = 0; i < 2; i++) {
@@ -4817,7 +4790,6 @@ namespace perlin {
     bool Perlin::UpdateTitleScreen(ui::Hud& hud, int fbW, int fbH) {
         const auto now = Clock::now();
         if (titleActive && titleOptions) {
-            // Options screen (drawn by UpdatePauseScreen) over the moving panorama.
             if (titleShown) {
                 hud.Overlay().ClearOverlay();
                 titleShown = false;
@@ -4852,7 +4824,7 @@ namespace perlin {
             if (titleReturnToServers) {
                 titleReturnToServers = false;
                 title.page = ui::TitlePage::Servers;
-                title.tab = ui::ServerTab::Saved; // back to the list the player just left
+                title.tab = ui::ServerTab::Saved;
                 for (size_t i = 0; i < title.servers.size(); i++)
                     if (title.servers[i].address == options.server)
                         title.selected = static_cast<int>(i);
@@ -4876,7 +4848,7 @@ namespace perlin {
                 } else if (page == "accounts") {
                     title.page = ui::TitlePage::Accounts;
                 } else if (page == "mods" || page == "wardrobe") {
-                    titleOpenView = page == "mods" ? 4 : 5; // as the title's Mods / Wardrobe buttons do
+                    titleOpenView = page == "mods" ? 4 : 5;
                     titleOptions = true;
                 }
             }
@@ -4910,7 +4882,7 @@ namespace perlin {
             title.tab = ui::ServerTab::Saved;
             {
                 std::lock_guard lock(pingMutex);
-                pingResults.erase(entry.address); // ping it again now, filling in its info
+                pingResults.erase(entry.address);
             }
             PingServers({entry.address});
         };
@@ -5026,8 +4998,6 @@ namespace perlin {
             title.accountScroll = std::clamp(title.accountScroll, 0, maxScroll);
         }
 
-        // A connect that was still running when it was abandoned may mount its server's packs
-        // after we left; once nothing is connecting, the title screen never keeps them.
         if (connectsInFlight.load() == 0)
             UnloadServerPacks();
 
@@ -5035,7 +5005,6 @@ namespace perlin {
             title.page == ui::TitlePage::AccountSignIn)
             DrawTitlePanorama(fbW, fbH);
 
-        // Account switcher state: a finished sign-in, gamertags learned while connecting.
         {
             std::lock_guard lock(signInMutex);
             for (const auto& [id, gamertag] : pendingRenames)
@@ -5055,7 +5024,6 @@ namespace perlin {
         }
         title.accounts.clear();
         for (const AccountEntry& e : accounts.Entries()) {
-            // Each account shows the head of the skin it was last played with.
             const std::string head = SkinHeadKey(e.skinKnown ? e.skin : (e.id == accounts.ActiveId() ? options.skin : std::string()));
             title.accounts.push_back({e.id, e.name, e.microsoft, e.id == accounts.ActiveId(), head});
         }
@@ -5065,13 +5033,10 @@ namespace perlin {
         else
             title.accountUser = options.playerName;
         title.accountLabel = "Logged in as " + title.accountUser;
-        // Opening the accounts screen with a gamertag still unknown asks Xbox again (at most
-        // every 30 seconds).
         if (title.page == ui::TitlePage::Accounts && titleLastPage != ui::TitlePage::Accounts &&
             Clock::now() - gamertagFetchAt > std::chrono::seconds(30) && !PERLIN_ENV("PERLIN_PREVIEW"))
             FetchMissingGamertags();
 
-        // Server list: ping everything when the list opens, and show what came back.
         if (title.page == ui::TitlePage::Servers && titleLastPage != ui::TitlePage::Servers && titleLastPage != ui::TitlePage::Edit &&
             titleLastPage != ui::TitlePage::Direct && titleLastPage != ui::TitlePage::AddRealm) {
             std::vector<std::string> addresses;
@@ -5092,7 +5057,6 @@ namespace perlin {
                     tabDirty = false;
                 }
                 {
-                    // Friends: Hosting (joinable), Online, Offline sections, each with a header that opens and closes it.
                     std::vector<ui::ServerEntry> sections[3];
                     for (const ui::ServerEntry& f : tabFriends)
                         sections[f.hosting ? 0 : (f.offline ? 2 : 1)].push_back(f);
@@ -5149,13 +5113,12 @@ namespace perlin {
         }
         title.nativePanorama = panoramaReady;
         if (!logoBedrock && now >= logoRetryAt) {
-            logoRetryAt = now + std::chrono::seconds(2); // assets may still be downloading
+            logoRetryAt = now + std::chrono::seconds(2);
             for (const char* path : {"textures/ui/title"}) {
                 Texture t;
                 if (ui::UiAssets::Instance().Image(path, t) && t.width > 0 && t.height > 0) {
                     logoBedrock = true;
                     title.logoSrc = path;
-                    // Fit inside 256x64 GUI pixels, keeping the image's shape.
                     title.logoW = 256;
                     title.logoH = std::max(1, static_cast<int>(256.0 * t.height / t.width + 0.5));
                     if (title.logoH > 64) {
@@ -5326,7 +5289,7 @@ namespace perlin {
             hud.Overlay().ClearOverlay();
             loadingShown = loadingTextMode = loadingLeftDown = false;
             loadingSignature.clear();
-            titleActive = true; // the reason waits on the title screen
+            titleActive = true;
             return false;
         }
         if (leaseJoining) {
@@ -5454,13 +5417,12 @@ namespace perlin {
         t.cancel = tr("gui.cancel", "Cancel");
         if (t.progress >= 0.0f && t.detail.empty())
             t.detail = std::to_string(static_cast<int>(std::clamp(t.progress, 0.0f, 1.0f) * 100.0f)) + "%";
-        // Free the mouse so the Cancel button can be clicked.
         if (!input.TextMode())
             input.SetTextMode(true);
         loadingTextMode = true;
         if (!loadingShown) {
             loadingOpenedAt = now;
-            loadingLeftDown = true; // ignore the click that started the connection
+            loadingLeftDown = true;
             loadingShown = true;
             pauseShown = invShown = deathShown = false;
             pauseSignature.clear();
@@ -5648,7 +5610,6 @@ namespace perlin {
         if (down && !chatLeftDown) {
             const std::string link = hud.Overlay().HoverLink();
             if (link.rfind("link:url:", 0) == 0) {
-                // https only, and the player sees the address before anything opens.
                 const std::string url = link.substr(9);
                 if (url.rfind("https://", 0) == 0 && platform)
                     platform->OpenUrl(url);
@@ -6112,25 +6073,6 @@ namespace perlin {
         }
     }
 
-    namespace {
-    // Fast Math: flush-to-zero / denormals-are-zero on the calling thread (x86 MXCSR, ARM64 FPCR).
-    void ApplyFastMath(bool on) {
-        thread_local int applied = -1;
-        if (applied == (on ? 1 : 0))
-            return;
-        applied = on ? 1 : 0;
-#if defined(__SSE__) || defined(_M_X64)
-        unsigned csr = _mm_getcsr();
-        csr = on ? (csr | 0x8040u) : (csr & ~0x8040u);
-        _mm_setcsr(csr);
-#elif defined(__aarch64__)
-        unsigned long fpcr;
-        asm volatile("mrs %0, fpcr" : "=r"(fpcr));
-        fpcr = on ? (fpcr | (1ul << 24)) : (fpcr & ~(1ul << 24));
-        asm volatile("msr fpcr, %0" ::"r"(fpcr));
-#endif
-    }
-    } // namespace
 
     void Perlin::RenderThreadMain() {
         if (!renderer->Initialize(*platform, options)) {
@@ -6285,7 +6227,7 @@ namespace perlin {
             if (sessionReady && session) {
                 const uint32_t hurts = session->HurtCount();
                 const auto source = session->LatestHurtSource();
-                if (hurtSession != session.get()) { // new connection: its counters start over
+                if (hurtSession != session.get()) {
                     hurtSession = session.get();
                     lastHurtCount = hurts;
                     lastHurtSerial = source.serial;
@@ -6349,26 +6291,24 @@ namespace perlin {
             if (const char* g = PERLIN_ENV("PERLIN_GLASS"))
                 options.glass = g;
             {
-                // A different graphics API can only start with the window, so changing it saves and restarts.
-                if (options.renderer != runningRenderer && optionsDrag < 0) { // not while the slider is still held
+                if (options.renderer != runningRenderer && optionsDrag < 0) {
                     runningRenderer = options.renderer;
                     options.Save();
                     if (perlin::RelaunchSelf(true))
                         std::_Exit(0);
                 }
             }
-            ApplyFastMath(options.fastMath);
-#if defined(__GLIBC__)
             {
-                // Hand freed heap pages back to the OS now and then (off-thread: it takes the allocator's locks).
                 static auto lastTrim = std::chrono::steady_clock::now();
                 const auto nowTrim = std::chrono::steady_clock::now();
-                if (nowTrim - lastTrim > std::chrono::seconds(30)) {
-                    lastTrim = nowTrim;
-                    std::thread([] { malloc_trim(0); }).detach();
+                if (nowTrim - lastTrim > std::chrono::seconds(10)) {
+                    const bool background = ProcessInBackground();
+                    if (background || nowTrim - lastTrim > std::chrono::seconds(45)) {
+                        lastTrim = nowTrim;
+                        std::thread([background] { TrimMemory(background); }).detach();
+                    }
                 }
             }
-#endif
             levelRenderer->SetBetterGrass(options.betterGrass ? 1 : 0);
             levelRenderer->SetGlassMode(options.glass == "connected" ? 1 : options.glass == "connectedClear" ? 2 : options.glass == "clear" ? 3 : 0);
             levelRenderer->ReloadAssetsIfNeeded();
@@ -6815,8 +6755,6 @@ namespace perlin {
                 if (cell.fluid == 1) {
                     const float top = col.Query(bx, by + 1, bz).fluid == 1 ? 1.0f : cell.fluidLevel;
                     underwater = e.y < static_cast<float>(by) + top;
-                    // Where the water surface is above the eye (for the shader pack's caustics and
-                    // the depth fade of sunlight); deep water is followed up to 64 blocks.
                     int k = 0;
                     while (k < 64 && col.Query(bx, by + k + 1, bz).fluid == 1)
                         k++;
@@ -7080,8 +7018,6 @@ namespace perlin {
                 camera.viewEffect = session->Camera().ShakeMatrix() * camera.viewEffect;
             const glm::mat4 handViewEffect = hurtMatrix * (options.hand.bobHand ? bobMatrix : glm::mat4(1.0f));
             {
-                // The far plane follows the render distance as it is changed; a long one gets a slightly larger near plane so the
-                // depth buffer still separates distant surfaces (the far terrain flickered otherwise).
                 camera.farPlane = std::max(static_cast<float>(options.renderDistance * 16) * 1.6f,
                                            static_cast<float>(GraphicsSettings::From(options).cloudRange * 16));
                 camera.nearPlane = std::clamp(0.05f + (camera.farPlane - 1500.0f) * 0.00004f, 0.05f, 0.25f);
@@ -7131,7 +7067,6 @@ namespace perlin {
                 if (std::chrono::steady_clock::now() - fogCheck > std::chrono::seconds(2)) {
                     fogCheck = std::chrono::steady_clock::now();
                     fogDefs.Configure(ServerPacks::Instance().Directories());
-                    // The server's resource packs may carry HUD textures and UI JSON: refresh the HUD when they change.
                     static std::string hudPackKey;
                     std::string key;
                     for (const std::string& d : ServerPacks::Instance().Directories())
@@ -7184,7 +7119,7 @@ namespace perlin {
                 dynlight::Select(dyn, glm::dvec3(camera.x, camera.y, camera.z), 8);
             }
             FrameParams params{};
-            params.motionBlur = options.motionBlur;
+            params.motionBlur = options.frameGen != "off" ? 0.0f : options.motionBlur;
             params.bloom = options.bloom;
             params.shadowQuality = options.shadowQuality;
             params.shadowDistance = options.shadowDistance;
@@ -7229,19 +7164,14 @@ namespace perlin {
                 camera.Matrices(viewMatrix, projectionMatrix);
                 std::copy_n(glm::value_ptr(viewMatrix), 16, params.view);
                 std::copy_n(glm::value_ptr(projectionMatrix), 16, params.projection);
-                // A jump in the camera (respawn, teleport, dimension change) restarts temporal history and frame generation.
                 const glm::vec3 now(camera.x, camera.y, camera.z);
                 static glm::vec3 lastCamera = now;
                 params.teleported = glm::distance(now, lastCamera) > 6.0f;
                 lastCamera = now;
             }
             if (options.upscaler != "off") {
-                const std::string& q = options.upscaleQuality;
-                float scale = q == "ultra_quality" ? 0.77f : q == "balanced" ? 0.59f : q == "performance" ? 0.50f : q == "ultra_performance" ? 0.33f
-                              : q == "custom" ? static_cast<float>(options.upscaleCustom) / 100.0f : 0.67f;
+                float scale = static_cast<float>(options.upscaleCustom) / 100.0f;
                 if (options.upscaleTargetFps > 0) {
-                    // Dynamic resolution: steer the scale so the frame rate holds the target. Steps of 5% and a pause between
-                    // changes, because every new size means new render targets.
                     static float dynamic = 1.0f;
                     static double frameMs = 16.0;
                     static auto lastChange = std::chrono::steady_clock::now();
@@ -7317,7 +7247,6 @@ namespace perlin {
                     waterTile = static_cast<float>(levelRenderer->Blocks().TileContaining("water_still"));
                     flowTile = static_cast<float>(levelRenderer->Blocks().TileContaining("water_flow"));
                     lavaTile = static_cast<float>(levelRenderer->Blocks().TileContaining("lava_still"));
-                    // Foliage kinds for waving leaves and plants in shader packs.
                     static std::vector<uint8_t> lastFoliage;
                     std::vector<uint8_t> foliage = levelRenderer->Blocks().FoliageFlags();
                     if (foliage != lastFoliage) {
@@ -7436,7 +7365,6 @@ namespace perlin {
                     self.isPlayer = self.isSelf = true;
                     self.name = live ? live->PlayerName() : std::string("Perlin");
                     self.pos = {camera.x, camera.y - (live ? static_cast<double>(player.EyeOffset()) : entity::kPlayerEye), camera.z};
-                    // The body yaw is worked out by the entity renderer, the same way for every player.
                     self.yaw = self.headYaw = camera.yaw - 90.0f;
                     self.pitch = -camera.pitch;
                     self.moveSerial = 1;
@@ -7491,7 +7419,6 @@ namespace perlin {
                 }
                 ein.firstPerson = firstPerson;
                 {
-                    // With shader pack shadows, entities cast real shadows instead of the round blobs.
                     const bool packShadows = renderer->PackShadowsActive() && options.shadowEntities;
                     ein.blobShadows = options.shadows && !packShadows;
                     ein.selfShadow = packShadows;
@@ -7508,8 +7435,6 @@ namespace perlin {
                 }
                 ein.capePhysics = options.capePhysics == "shoulder" ? 2 : options.capePhysics == "off" ? 0 : 1;
                 if (live) {
-                    // LivingEntity.getCurrentSwingDuration: 6 ticks, minus (1 + amplifier) with haste or conduit power,
-                    // plus 2 * (1 + amplifier) with mining fatigue.
                     int fast = -1, slow = -1;
                     for (const auto& fx : live->GetEffects()) {
                         if (fx.id == 3 || fx.id == 26)
@@ -7741,6 +7666,26 @@ namespace perlin {
                 }
                 { ProfScope p(3); entityRenderer.Render(entities, ein); }
                 {
+                    WeatherRenderer::In wx;
+                    wx.renderer = renderer.get();
+                    wx.level = live ? &live->NetLevel() : previewLevel.get();
+                    wx.tints = &levelRenderer->Tints();
+                    wx.camera = glm::dvec3(camera.x, camera.y, camera.z);
+                    wx.rain = rain;
+                    wx.thunder = thunder;
+                    wx.seconds = std::chrono::duration<double>(frameStart - startedAt).count();
+                    wx.light = std::clamp(env.skyLightFactor, 0.0f, 1.0f);
+                    wx.enabled = live != nullptr && input.dimension == Dimension::Overworld;
+                    weather.Draw(wx);
+                    if (wx.enabled && rain > 0.1f) {
+                        static double nextRainSound = 0.0;
+                        if (wx.seconds >= nextRainSound) {
+                            nextRainSound = wx.seconds + 3.2;
+                            sounds.PlayNamed("ambient.weather.rain", wx.camera, std::min(1.0f, rain) * 0.4f, 1.0f, false);
+                        }
+                    }
+                }
+                {
                     static std::vector<SpecialBlock> specialBlocks;
                     static std::vector<entity::BlockEntityDraw> blockEntityDraws;
                     specialBlocks.clear();
@@ -7839,7 +7784,6 @@ namespace perlin {
                     ProfScope hudScope(5);
                     hud->Update(hudState, fbW, fbH, options.guiScale);
                     if (touchEditing) {
-                        // The touch layout editor owns the screen: no menu is drawn behind it.
                         if (!touchEditHidden) {
                             touchEditHidden = true;
                             hud->Overlay().ClearOverlay();
@@ -7871,8 +7815,6 @@ namespace perlin {
                                 keyboard = true;
                             this->input.SetKeyboard(keyboard);
                         }
-                        // Like Minecraft, only a press on a button (or list row, tab, page arrow) clicks; panels,
-                        // slots and empty space stay silent.
                         const bool pressed = this->input.IsMouseDown(0);
                         const bool onButton = hud->Overlay().OverlayHoverIsButton();
                         if (pressed && !uiClickWasDown && onButton && !chat.IsOpen())
@@ -7945,16 +7887,13 @@ namespace perlin {
                 TakeScreenshot();
             { ProfScope p(6); renderer->EndFrame(); }
             if (options.frameGen != "off") {
-                // Frame generation: frames between the real ones, made from the last real world image (world only; the HUD
-                // stays where it is). With vsync the swap chain paces them; without, they are spaced over the time one real
-                // frame takes.
                 const int total = options.frameGen == "4x" ? 4 : options.frameGen == "3x" ? 3 : 2;
                 static double workMs = 16.0;
                 const auto realEnd = Clock::now();
                 workMs += (std::clamp(std::chrono::duration<double, std::milli>(realEnd - frameStart).count(), 1.0, 100.0) - workMs) * 0.1;
                 for (int i = 1; i < total; i++) {
                     if (!options.vsync) {
-                        const auto due = realEnd + std::chrono::microseconds(static_cast<long long>(workMs * 1000.0 * i / total));
+                        const auto due = realEnd + std::chrono::microseconds(static_cast<long long>(workMs * 1000.0 * 0.35 * i));
                         const auto coarse = due - std::chrono::microseconds(1500);
                         if (Clock::now() < coarse)
                             std::this_thread::sleep_until(coarse);
@@ -7963,7 +7902,7 @@ namespace perlin {
                     }
                     if (!renderer->PresentGenerated(i, total))
                         break;
-                    frames++; // generated frames count towards the FPS shown
+                    frames++;
                 }
             }
             if (gProfile.enabled) {
@@ -7998,6 +7937,19 @@ namespace perlin {
             if (appliedVsync != options.vsync) {
                 appliedVsync = options.vsync;
                 renderer->SetVsync(appliedVsync);
+            }
+            {
+                static bool background = false;
+                static int backgroundCheck = 0;
+                if (++backgroundCheck >= 30) {
+                    backgroundCheck = 0;
+                    background = ProcessInBackground();
+                }
+                if (background) {
+                    const auto target = frameStart + std::chrono::milliseconds(50);
+                    if (Clock::now() < target)
+                        std::this_thread::sleep_until(target);
+                }
             }
             if (options.maxFps > 0) {
                 const auto target = frameStart + std::chrono::microseconds(1000000 / options.maxFps);

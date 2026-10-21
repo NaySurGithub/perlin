@@ -33,7 +33,6 @@ namespace perlin {
         const std::string& MultiplayerToken() const { return mpToken; }
         void SetMultiplayerToken(std::string token) { mpToken = std::move(token); }
 
-        // identityProvider: the issuer of the multiplayer token (real Minecraft hosts check it; a bare server doesn't).
         std::string AssertOffer(const std::string& sdp, const std::string& identityProvider = {}) const;
 
         bool Sign(const std::string& signingInput, std::vector<uint8_t>& rawSig) const;

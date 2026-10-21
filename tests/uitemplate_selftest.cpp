@@ -1,5 +1,3 @@
-// LoadUiTemplate: built-in template changes must reach the on-disk copy without deleting the ui
-// folder, while live edits to the copy still apply until the built-in changes again.
 #include "client/ui/UiTemplate.hpp"
 
 #include <cstdio>
@@ -38,31 +36,25 @@ int main() {
     const fs::path file = dir / "ui" / "x.rml";
     uint64_t v = 0;
 
-    // First run writes the built-in copy and returns it.
     CHECK(LoadUiTemplate(dir.string(), "x.rml", "<p>v1</p>", v) == "<p>v1</p>");
     CHECK(fs::exists(file));
     CHECK(v != 0);
 
-    // Unchanged built-in: same content back.
     CHECK(LoadUiTemplate(dir.string(), "x.rml", "<p>v1</p>", v) == "<p>v1</p>");
 
-    // Live edit on disk (header kept) is used while the built-in is unchanged.
     std::string onDisk = Slurp(file);
     onDisk.replace(onDisk.find("v1"), 2, "EDIT");
     Spit(file, onDisk);
     CHECK(LoadUiTemplate(dir.string(), "x.rml", "<p>v1</p>", v) == "<p>EDIT</p>");
 
-    // New build changes the built-in: refreshed automatically, edited copy backed up.
     CHECK(LoadUiTemplate(dir.string(), "x.rml", "<p>v2</p>", v) == "<p>v2</p>");
     CHECK(fs::exists(dir / "ui" / "x.rml.old"));
     CHECK(Slurp(dir / "ui" / "x.rml.old").find("EDIT") != std::string::npos);
 
-    // Unedited copy + another change: refreshed, no backup needed.
     fs::remove(dir / "ui" / "x.rml.old");
     CHECK(LoadUiTemplate(dir.string(), "x.rml", "<p>v3</p>", v) == "<p>v3</p>");
     CHECK(!fs::exists(dir / "ui" / "x.rml.old"));
 
-    // Legacy file from an older build (no header): replaced by the current built-in.
     Spit(file, "<p>legacy</p>");
     CHECK(LoadUiTemplate(dir.string(), "x.rml", "<p>v3</p>", v) == "<p>v3</p>");
     CHECK(fs::exists(dir / "ui" / "x.rml.old"));

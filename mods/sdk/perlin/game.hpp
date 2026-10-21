@@ -24,7 +24,6 @@ namespace perlin::game {
         return {-std::sin(yaw) * std::cos(pitch), -std::sin(pitch), std::cos(yaw) * std::cos(pitch)};
     }
 
-    // Where the camera points, in the same yaw and pitch `act::look` takes.
     struct Look {
         float yaw = 0, pitch = 0;
     };
@@ -90,21 +89,18 @@ namespace perlin::game {
         return detail::call_list<abi::FoundBlock>(Op::FindBlocks, w);
     }
 
-    // What the game knows about a kind of block: hardness, mining tool, display name, block properties.
     inline Result<BlockProps> block_props(std::string_view name) {
         abi::Writer w;
         w.write(name);
         return detail::call_as<BlockProps>(Op::BlockProps, w);
     }
 
-    // The block entity at a position (sign text, banner patterns, ...), with the full tag as JSON in `nbt`.
     inline Result<BlockEntityInfo> block_entity(const BlockPos& pos) {
         abi::Writer w;
         w.write(pos.x, pos.y, pos.z);
         return detail::call_as<BlockEntityInfo>(Op::BlockEntityData, w);
     }
 
-    // The player-facing name of an item, block or entity, translated and resource-pack aware: "Stone", "Cow".
     inline std::string display_name(NameKind kind, std::string_view id, int aux = 0) {
         abi::Writer w;
         w.write(kind, id, static_cast<int32_t>(aux));
@@ -112,10 +108,8 @@ namespace perlin::game {
         return bytes ? std::string(bytes->begin(), bytes->end()) : std::string(id);
     }
 
-    // The block being mined by the local player, and how far along it is.
     inline Result<BreakState> break_state() { return detail::call_as<BreakState>(Op::BreakProgress); }
 
-    // Every block name the game knows, for completion lists.
     inline Result<std::vector<std::string>> block_names() { return detail::call_list<std::string>(Op::BlockNames); }
 
     struct EntityQuery {
@@ -155,13 +149,8 @@ namespace perlin::game {
 
     inline Result<std::vector<abi::PackEntry>> resource_packs() { return detail::call_list<abi::PackEntry>(Op::ResourcePacks); }
 
-    // Every installed mod, this one included (`self`).
     inline Result<std::vector<abi::ModEntry>> mods() { return detail::call_list<abi::ModEntry>(Op::ModList); }
 
-    // ---------------------------------------------------------------------------------------------
-    // Options. The enumerator names are the option keys, so `option<Option::fov>()` needs no string, and the
-    // value type follows from the option.
-    // ---------------------------------------------------------------------------------------------
     enum class Option : uint8_t {
         maxFps, vsync, renderDistance, fov, gamma, mouseSensitivity, invertMouse, fancyGraphics, cloudRange, guiScale, shadows,
         fovEffects, motionBlur, damageTilt, damageTint, thirdPersonCrosshair, thirdPersonNametag, menuBlur, betterGrass, showHud,
@@ -214,7 +203,6 @@ namespace perlin::game {
         return std::string(bytes->begin(), bytes->end());
     }
 
-    // Reads option `O` as its natural type.
     template <Option O>
     Result<option_t<O>> option() {
         auto text = option_text(meta::enum_name(O));
@@ -234,9 +222,6 @@ namespace perlin::game {
         }
     }
 
-    // ---------------------------------------------------------------------------------------------
-    // What the crosshair is on, with everything the game knows about it already looked up.
-    // ---------------------------------------------------------------------------------------------
     struct BlockTarget {
         BlockPos pos;
         Face face = Face::Up;
@@ -244,7 +229,6 @@ namespace perlin::game {
         BlockInfo block;
         BlockProps props;
         std::string display_name;
-        // The block entity, fetched on first use because most blocks have none.
         const BlockEntityInfo& entity() const {
             if (!fetched) {
                 if (auto e = block_entity(pos))
@@ -265,7 +249,6 @@ namespace perlin::game {
         std::string display_name;
     };
 
-    // Nothing, a block or an entity.
     using Target = std::variant<std::monostate, BlockTarget, EntityTarget>;
 
     inline Target target() {
@@ -308,9 +291,6 @@ namespace perlin::game {
 
     inline Result<std::vector<std::string>> server_commands() { return detail::call_list<std::string>(Op::ServerCommands); }
 
-    // ---------------------------------------------------------------------------------------------
-    // Input. `Control` names the game's own bindings; the wire id is the table entry at the same index.
-    // ---------------------------------------------------------------------------------------------
     enum class Control : uint8_t {
         Forward, Back, Left, Right, Jump, Sneak, Sprint, Look, Attack, Use, TogglePerspective, Screenshot, Zoom, ToggleHud, Chat,
         Command, DebugScreen, PickItem, Drop, Inventory, Pause, PlayerList,

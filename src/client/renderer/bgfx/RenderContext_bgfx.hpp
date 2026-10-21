@@ -121,14 +121,9 @@ namespace perlin {
         void UploadLightmap(const uint8_t* pixels);
         static int64_t ChunkKey(int cx, int cz) { return (static_cast<int64_t>(cx) << 32) | (uint32_t)cz; }
 
-        // Sun shadow map. The terrain part is cached in two maps: the world samples the front one
-        // while the back one is rebuilt a slice of chunks per frame (a rebuild never costs a whole
-        // map in a single frame), then they swap. Mobs and players move every frame, so when they
-        // cast shadows the front map is copied into a third map each frame and they are drawn on top.
         struct ShadowMap {
             bgfx::FrameBufferHandle fb = BGFX_INVALID_HANDLE;
             bgfx::TextureHandle color = BGFX_INVALID_HANDLE;
-            // Coloured light through stained glass etc.: half size, rgb = tint, a = nearest glass depth.
             bgfx::FrameBufferHandle tintFb = BGFX_INVALID_HANDLE;
             bgfx::TextureHandle tint = BGFX_INVALID_HANDLE;
             float sample[16] = {};
@@ -137,8 +132,8 @@ namespace perlin {
         };
         struct ShadowState {
             ShadowMap maps[2];
-            int front = -1;                                       // map with a finished build, -1 = none yet
-            bgfx::TextureHandle buildDepth = BGFX_INVALID_HANDLE; // shared by both terrain maps
+            int front = -1;
+            bgfx::TextureHandle buildDepth = BGFX_INVALID_HANDLE;
             bgfx::FrameBufferHandle entityFb = BGFX_INVALID_HANDLE;
             bgfx::TextureHandle entityColor = BGFX_INVALID_HANDLE;
             bgfx::TextureHandle entityDepth = BGFX_INVALID_HANDLE;
@@ -146,38 +141,35 @@ namespace perlin {
             int size = 0;
             float distance = 80.0f;
             bool enabled = false;
-            bool active = false;       // the world samples a shadow map this frame
-            float sample[16] = {};     // what the world samples this frame
+            bool active = false;
+            float sample[16] = {};
             float raster[16] = {};
             float info[4] = {};
             bgfx::TextureHandle sampled = BGFX_INVALID_HANDLE;
             bgfx::TextureHandle sampledTint = BGFX_INVALID_HANDLE;
             bool tintEnabled = false;
-            int64_t key[6] = {};       // key of the newest build (finished or in progress)
+            int64_t key[6] = {};
             bool haveKey = false;
             int framesSince = 0;
-            bool entities = false;     // entity meshes are drawn into the entity map this frame
-            float sampleE[16] = {};    // the entity map: exact light direction, redrawn every frame
+            bool entities = false;
+            float sampleE[16] = {};
             float rasterE[16] = {};
             float infoE[4] = {};
-            // A finished rebuild fades in over the map in use instead of replacing it in one step.
             bool fading = false;
-            float fadeT = 0.0f;        // 0..1 progress
-            float fadeWeight = 0.0f;   // eased weight of the next map this frame (0 = not fading)
+            float fadeT = 0.0f;
+            float fadeWeight = 0.0f;
             double lastTime = 0.0;
             float sampleB[16] = {};
             float infoB[4] = {};
             bgfx::TextureHandle sampledB = BGFX_INVALID_HANDLE;
             bgfx::TextureHandle sampledTintB = BGFX_INVALID_HANDLE;
-            // Build in progress (into maps[1 - front]).
             bool building = false;
             int buildSlice = 0, buildSlices = 1;
-            std::vector<std::pair<int64_t, uint8_t>> buildList; // chunk key, pass, nearest first
+            std::vector<std::pair<int64_t, uint8_t>> buildList;
             size_t buildCursor = 0;
             glm::vec3 buildRight{}, buildUp{}, buildFwd{};
             float buildCx = 0, buildCy = 0, buildCz = 0;
         } shadow;
-        // Shadow settings the map was built with; a change (or a shader reload) rebuilds it.
         int shadowQualityBuilt = -1, shadowDistanceBuilt = -1;
         bool shadowConfigDirty = true;
         void InitShadows(int quality, int distance);
@@ -198,7 +190,6 @@ namespace perlin {
         bgfx::VertexLayout textureLayout;
         bgfx::VertexBufferHandle topSkyBuffer = BGFX_INVALID_HANDLE;
         bgfx::VertexBufferHandle bottomSkyBuffer = BGFX_INVALID_HANDLE;
-        // A cube around the camera: a sky covering every direction (shader packs with "skyBox").
         bgfx::VertexBufferHandle skyBoxBuffer = BGFX_INVALID_HANDLE;
         bgfx::IndexBufferHandle skyBoxIndices = BGFX_INVALID_HANDLE;
         bgfx::VertexBufferHandle screenBuffer = BGFX_INVALID_HANDLE;
@@ -210,26 +201,24 @@ namespace perlin {
             bgfx::TextureHandle histColor[2] = {BGFX_INVALID_HANDLE, BGFX_INVALID_HANDLE};
             bgfx::FrameBufferHandle histFb[2] = {BGFX_INVALID_HANDLE, BGFX_INVALID_HANDLE};
             bgfx::UniformHandle sampCur = BGFX_INVALID_HANDLE, sampHist = BGFX_INVALID_HANDLE, params = BGFX_INVALID_HANDLE;
-            bgfx::UniformHandle fx = BGFX_INVALID_HANDLE; // u_postFx: x underwater wobble strength, y time
+            bgfx::UniformHandle fx = BGFX_INVALID_HANDLE;
             int read = 0;
             bool valid = false;
             bool targets = false;
-            bool scaled = false;  // the offscreen targets are smaller than the window (render scale)
-            int w = 0, h = 0;     // their size when scaled
+            bool scaled = false;
+            int w = 0, h = 0;
             float lastTime = 0.0f;
         } blur;
-        // What this frame needs offscreen, decided at the start of BeginFrame.
         struct Plan {
-            int w = 0, h = 0;          // size the world is drawn at
-            bool scaled = false;       // smaller than the window
-            bool temporal = false;     // temporal upscaler (jittered projection, history)
-            bool frameGen = false;     // route the whole frame through a texture so generated frames can reuse it
-            bool wantDepth = false;    // the world depth must be readable
-            float jitter[2] = {0, 0};  // projection jitter in clip space (x, y)
-            float jitterUv[2] = {0, 0}; // the same in texture coordinates of this backend
+            int w = 0, h = 0;
+            bool scaled = false;
+            bool temporal = false;
+            bool frameGen = false;
+            bool wantDepth = false;
+            float jitter[2] = {0, 0};
+            float jitterUv[2] = {0, 0};
         } plan;
         void PlanFrame(const FrameParams& params);
-        // Render scale: reconstruction of the full-size image from the smaller world image.
         struct Upscale {
             bgfx::TextureHandle tex[3] = {BGFX_INVALID_HANDLE, BGFX_INVALID_HANDLE, BGFX_INVALID_HANDLE};
             bgfx::FrameBufferHandle fb[3] = {BGFX_INVALID_HANDLE, BGFX_INVALID_HANDLE, BGFX_INVALID_HANDLE};
@@ -239,7 +228,6 @@ namespace perlin {
             bgfx::UniformHandle sampDepth = BGFX_INVALID_HANDLE, sampHist = BGFX_INVALID_HANDLE;
             int w = 0, h = 0;
             bool failed = false;
-            // Temporal state: tex[history] holds the last output.
             int history = 0;
             bool historyValid = false;
             uint32_t frameIndex = 0;
@@ -248,41 +236,36 @@ namespace perlin {
         bool EnsureUpscale();
         void DestroyUpscale();
         bgfx::TextureHandle RunUpscale(bgfx::TextureHandle source, int sourceW, int sourceH, const FrameParams& params);
-        // Camera history for reprojection (temporal upscaler, frame generation). Matrices are kept in double and the eye is
-        // subtracted before use, so far from the origin they stay precise.
         struct CameraHistory {
-            glm::dmat4 view{1.0}, proj{1.0}, prevView{1.0}, prevProj{1.0};
+            glm::dmat4 view{1.0}, proj{1.0}, prevView{1.0}, prevProj{1.0}, prev2View{1.0};
             glm::dvec3 eye{0.0}, prevEye{0.0};
-            bool haveCur = false, havePrev = false;
+            bool haveCur = false, havePrev = false, havePrev2 = false;
             bool teleported = false;
             int sizeW = 0, sizeH = 0;
-            double time = 0.0, prevTime = 0.0; // seconds when each pose was captured
+            double time = 0.0, prevTime = 0.0;
         } cam;
-        // Frame generation.
         struct FrameGen {
             bgfx::TextureHandle finalColor = BGFX_INVALID_HANDLE, finalDepth = BGFX_INVALID_HANDLE, worldCopy = BGFX_INVALID_HANDLE;
             bgfx::FrameBufferHandle finalFb = BGFX_INVALID_HANDLE;
             bgfx::UniformHandle gen = BGFX_INVALID_HANDLE, invVp = BGFX_INVALID_HANDLE, curVp = BGFX_INVALID_HANDLE;
             bgfx::UniformHandle sampWorld = BGFX_INVALID_HANDLE, sampDepth = BGFX_INVALID_HANDLE, sampFinal = BGFX_INVALID_HANDLE;
             bool ready = false, failed = false;
-            bool valid = false; // a real frame has been drawn through the pipeline
+            bool valid = false;
             int w = 0, h = 0;
-            bool haveDepth = false; // the depth of the real frame can be sampled
+            bool haveDepth = false;
         } fg;
         bool EnsureFrameGen();
         void DestroyFrameGen();
         void SubmitFrameGenCopies(float origin);
-        // Shader packs that set "sceneCopy" get the opaque scene (colour + depth) copied after
-        // entities and before the translucent pass, for screen-space reflections/refraction.
         struct SceneCopy {
             bgfx::TextureHandle color = BGFX_INVALID_HANDLE, depth = BGFX_INVALID_HANDLE;
+            int w = 0, h = 0;
             bool valid = false;
             bool failed = false;
         } scene;
         bool depthReadable = false;
         bool EnsureSceneCopy();
         void DestroySceneCopy();
-        // Bloom: a 4-level downsample/upsample chain over the offscreen world.
         struct Bloom {
             bgfx::TextureHandle level[4] = {BGFX_INVALID_HANDLE, BGFX_INVALID_HANDLE, BGFX_INVALID_HANDLE, BGFX_INVALID_HANDLE};
             bgfx::FrameBufferHandle fb[4] = {BGFX_INVALID_HANDLE, BGFX_INVALID_HANDLE, BGFX_INVALID_HANDLE, BGFX_INVALID_HANDLE};
@@ -294,7 +277,7 @@ namespace perlin {
         void DestroyBloom();
         void RunBloom(float strength);
         bgfx::TextureHandle cloudMapTexture = BGFX_INVALID_HANDLE;
-        bgfx::TextureHandle tileFlagsTexture = BGFX_INVALID_HANDLE; // 256 x 64, r = foliage kind
+        bgfx::TextureHandle tileFlagsTexture = BGFX_INVALID_HANDLE;
         bool EnsureMotionBlurTargets();
         void DestroyMotionBlur();
         void SetupMotionBlur(const FrameParams& params);
@@ -351,9 +334,6 @@ namespace perlin {
         std::unordered_map<int64_t, GpuChunk> gpuChunks;
         std::unordered_map<int64_t, GpuChunk> lodChunks;
 
-        // UI meshes are handed out as ids = (generation << kUiMeshSlotBits) | (slot + 1). A slot's
-        // generation changes every time it is freed, so a stale id (destroyed twice, kept past its
-        // frame, or freed by the renderer) never reaches the mesh that reuses the slot.
         static constexpr uint32_t kUiMeshSlotBits = 20;
         static constexpr uint32_t kUiMeshSlotMask = (1u << kUiMeshSlotBits) - 1u;
         struct UiMeshGpu {
@@ -371,8 +351,8 @@ namespace perlin {
         void ReleaseUiMeshSlot(uint32_t slot);
         void ReleaseFrameMeshes();
         std::vector<uint32_t> freeUiMeshes;
-        std::vector<uint32_t> frameUiMeshes;   // made by UiCreateFrameMesh this frame; freed after bgfx::frame()
-        uint32_t staticUiMeshes = 0;           // live meshes holding bgfx vertex/index buffers
+        std::vector<uint32_t> frameUiMeshes;
+        uint32_t staticUiMeshes = 0;
         uint32_t staticUiMeshWarnAt = 2048;
         struct UiTextureGpu {
             bgfx::TextureHandle handle = BGFX_INVALID_HANDLE;

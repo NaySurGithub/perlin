@@ -75,7 +75,7 @@ namespace perlin {
         const std::string root = options.bedrockSamplesDir + "/repo/resource_pack/textures/environment/";
         Texture sun, moon, clouds;
         auto load = [&](const char* file, Texture& out) {
-            for (const std::string& dir : ServerPacks::Instance().Directories()) // the server's packs come first
+            for (const std::string& dir : ServerPacks::Instance().Directories())
                 if (LoadTexture(dir + "/textures/environment/" + file, out) && out.width > 0)
                     return true;
             if (TexturePack::Instance().Load(std::string("textures/environment/") + file, out))
@@ -142,8 +142,6 @@ namespace perlin {
         atlasUploaded = false;
         uploadedTiles = 0;
         lastAssetAttempt = {};
-        // The crosshair (gui/icons.png) and the sun, moon and clouds come from the packs too:
-        // load them again so switching packs on or off shows at once.
         crosshairLoaded = false;
         skyTexturesLoaded = false;
     }

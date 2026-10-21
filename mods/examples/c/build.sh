@@ -1,5 +1,4 @@
 #!/bin/sh
-# Builds the C example. 64-bit WebAssembly by default (Emscripten's emcc); --wasm32 uses wasi-sdk.
 set -e
 cd "$(dirname "$0")"
 if [ "$1" = "--wasm32" ]; then

@@ -18,7 +18,6 @@ namespace perlin::ui {
 
         void AddMessage(const std::string& text, uint64_t tick);
         void Clear() { lines.clear(); scroll = 0; }
-        // The most recent lines, oldest first (formatting codes included).
         std::vector<std::string> RecentLines(size_t count) const {
             std::vector<std::string> out;
             const size_t from = lines.size() > count ? lines.size() - count : 0;
@@ -33,7 +32,6 @@ namespace perlin::ui {
             std::string command, x, y, z;
         };
         static std::vector<Coordinate> FindCoordinates(const std::string& line);
-        // http(s):// and www. links in a message (the text between formatting codes, without trailing punctuation).
         static std::vector<std::string> FindUrls(const std::string& text);
 
         void Open(const std::string& prefill, uint64_t nowMs);
@@ -53,7 +51,7 @@ namespace perlin::ui {
 
     private:
         struct UrlSpan {
-            size_t begin = 0, end = 0; // byte range inside the line's text
+            size_t begin = 0, end = 0;
             std::string url;
         };
         struct Line {

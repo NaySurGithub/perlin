@@ -1,10 +1,3 @@
-// Loads plugins through ModManager and the WebAssembly engine, 32-bit and 64-bit.
-//
-//   mod_selftest <plugin.wasm>...
-//
-// Every plugin must load and answer events. Plugins named "loop_*" spin forever on their third
-// tick and must be stopped as unresponsive. A truncated copy must fail cleanly, and changing a
-// file must hot-reload it.
 #include "client/mods/ModManager.hpp"
 
 #include <chrono>
@@ -120,7 +113,6 @@ int main(int argc, char** argv) {
         CHECK(info.state == (spins ? "unresponsive" : "running"));
     }
 
-    // Hot reload: the same module with an extra custom section.
     const std::string reloaded = names.front();
     if (reloaded.rfind("loop_", 0) != 0) {
         std::this_thread::sleep_for(std::chrono::milliseconds(1100));

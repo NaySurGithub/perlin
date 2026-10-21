@@ -15,7 +15,6 @@ namespace perlin {
         bool OpenStack(const std::string& packsDir, const std::vector<std::string>& names, std::string& error);
         void Close();
         bool Active() const;
-        // Changes whenever the pack stack is reopened, so caches built from it know to rebuild.
         uint64_t Generation() const { return generation; }
         bool Load(const std::string& rel, Texture& out) const;
         bool Has(const std::string& rel) const;

@@ -7,35 +7,31 @@ namespace perlin::ui {
     struct ServerEntry {
         std::string name;
         std::string address;
-        // Live status from a ping (filled in as soon as the server is listed or added).
         enum class Status : uint8_t { Unknown, Pinging, Online, Offline } status = Status::Unknown;
-        std::string motd;    // first MOTD line (format codes stripped)
-        std::string version; // game version the server reports
+        std::string motd;
+        std::string version;
         int players = 0, maxPlayers = 0;
         int pingMs = 0;
-        // LAN games, Realms and friends are listed with the same rows but carry their own text instead of a ping.
         enum class Kind : uint8_t { Server, Lan, Realm, Friend, Header } kind = Kind::Server;
-        std::string right; // top-right text of a non-Server row ("Open", "Online", ...)
-        std::string note;  // third line of a non-Server row
-        bool hosting = false; // a friend with a joinable world open
-        std::string icon;     // "mchead:" key of the row's picture (a gamerpic); empty for the default
-        bool offline = false; // dim a Realm that is closed or a friend who is offline
+        std::string right;
+        std::string note;
+        bool hosting = false;
+        std::string icon;
+        bool offline = false;
         long long realmId = 0;
         std::string xuid;
     };
 
     enum class ServerTab : uint8_t { Saved, Lan, Realms, Friends };
 
-    // One row of the account switcher.
     struct AccountRow {
         std::string id;
         std::string name;
         bool microsoft = false;
         bool active = false;
-        std::string headKey; // "mchead:" image of the account's last skin (empty: none yet)
+        std::string headKey;
     };
 
-    // Friends can only be joined while they host a world.
     inline bool Joinable(const ServerEntry& e) {
         return e.kind == ServerEntry::Kind::Header ? false : (e.kind == ServerEntry::Kind::Friend ? e.hosting : true);
     }
@@ -44,13 +40,12 @@ namespace perlin::ui {
 
     struct TitleModel {
         TitlePage page = TitlePage::Main;
-        std::vector<ServerEntry> servers; // the saved list (the Servers tab)
+        std::vector<ServerEntry> servers;
         ServerTab tab = ServerTab::Lan;
-        std::vector<ServerEntry> lan, realms, friends; // friends: Header rows (Online/Offline) between the friends
-        bool friendsOpen[3] = {true, true, false}; // Hosting, Online, Offline sections of the Friends tab
-        std::string tabMessage;  // "Scanning...", an error, or empty (shown when the tab has no rows)
-        std::string joinMessage; // a line above the buttons: what happened to the last Join
-        // Header rows carry their section in realmId: 0 Hosting, 1 Online, 2 Offline.
+        std::vector<ServerEntry> lan, realms, friends;
+        bool friendsOpen[3] = {true, true, false};
+        std::string tabMessage;
+        std::string joinMessage;
         std::vector<ServerEntry>& Shown() {
             switch (tab) {
                 case ServerTab::Lan: return lan;
@@ -70,21 +65,16 @@ namespace perlin::ui {
         int spinner = 0;
         std::string version;
         std::string copyright;
-        // The panorama is drawn natively underneath (TitlePanorama); the RML only draws a
-        // fallback strip when the panorama textures aren't available yet.
         bool nativePanorama = false;
-        // Logo image and its size in GUI pixels. Perlin points this at Bedrock's textures/ui/title
-        // once the assets are there; empty uses the built-in sprite.
         std::string logoSrc;
         int logoW = 256, logoH = 64;
 
-        // Account switcher: "Logged in as ..." on the title screen, and the accounts popup.
-        std::string accountLabel;    // "Logged in as <name>" (accounts popup)
-        std::string accountUser;     // just the name (title screen button)
-        std::string accountHead;     // head image key of the active account's skin
+        std::string accountLabel;
+        std::string accountUser;
+        std::string accountHead;
         std::vector<AccountRow> accounts;
-        int accountScroll = 0;       // first account row shown
-        std::string accountName;     // offline name being typed
+        int accountScroll = 0;
+        std::string accountName;
         std::string signInUrl, signInCode, signInStatus;
     };
 
@@ -122,7 +112,6 @@ namespace perlin::ui {
     int TitleListTop();
     int TitleListBottom(int guiH);
     int TitleVisibleRows(int guiH);
-    // How many account rows fit in the accounts popup.
     int TitleAccountRows(int guiH);
 
     std::string BuildTitleRml(const TitleModel& model, int guiW, int guiH);

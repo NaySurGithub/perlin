@@ -121,7 +121,6 @@ int main(int argc, char** argv) {
             input.jump = jump != 0;
             input.sprint = sprint != 0;
             input.sneak = sneak != 0;
-            // bedsim traces record raw key axes; run them through the input stage like the client.
             const MoveVector mv = ProcessMoveInput(static_cast<float>(fwd), static_cast<float>(-strafe), input.sneak,
                                                    state.inWater);
             input.forward = mv.forward;

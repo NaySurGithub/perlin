@@ -48,9 +48,6 @@ namespace perlin {
 
         glm::mat4 SkyViewProjection() const {
             const glm::vec3 dir = ViewDirection();
-            // The sky is infinitely far away: view bobbing, hurt and shake effects may turn it, but their
-            // small offsets must not move it (on a unit-sized sky box, a 0.05 block bob would shift the
-            // whole sky, and the clouds drawn on it, by 5%).
             const glm::mat4 view = glm::mat4(glm::mat3(viewEffect)) * glm::mat4(glm::mat3(glm::lookAt(glm::vec3(0.0f), dir, Up())));
             return glm::perspective(glm::radians(fov), aspect, nearPlane, farPlane) * view;
         }

@@ -1,8 +1,3 @@
-// WAILA: What Am I Looking At. A tooltip for the block or entity under the crosshair, in the style of Jade.
-//
-// This file only wires things together: it asks the game what the crosshair is on, runs the providers (vanilla.hpp) to fill
-// a Tooltip, lays it out (layout.hpp) and paints it every frame. To add your own information, write a provider (api.hpp)
-// and register it in `install_addons` below.
 #include <perlin/perlin.hpp>
 
 #include <mod_settings.hpp>
@@ -13,13 +8,10 @@
 
 using namespace perlin;
 
-// Addons go here: each is a function that takes the registry and registers providers.
-//     #include "my_addon.hpp"
-//     my_addon::install(registry);
 static void install_addons(waila::Registry& registry) { (void)registry; }
 
 namespace {
-    constexpr int64_t kRefreshMs = 50;   // how often the tooltip's content is rebuilt (one game tick)
+    constexpr int64_t kRefreshMs = 50;
     constexpr double kFadeSeconds = 0.12;
     constexpr float kMargin = 4.0f;
 
@@ -35,11 +27,10 @@ namespace {
         waila::Registry registry;
         bool ready = false;
 
-        // What the tooltip is showing.
         bool present = false;
         std::string signature;
         waila::Laid laid;
-        std::optional<BlockPos> block; // set while the target is a block, to follow its breaking progress
+        std::optional<BlockPos> block;
 
         int64_t last_refresh = -1000, last_frame = 0;
         float alpha = 0.0f;
@@ -54,7 +45,6 @@ namespace {
 
         void clear() { present = false; }
 
-        // Asks the game what the crosshair is on and rebuilds the tooltip.
         void refresh(int64_t now) {
             const auto player = game::player();
             if (!settings::display_tooltip || !player || !player->connected || player->spectator) {

@@ -1,7 +1,3 @@
-// Freestanding test plugin for mod_selftest (no libc), built for wasm32 and wasm64:
-//   clang --target=wasm64 -O2 -nostdlib -Wl,--no-entry -o hello64.wasm test_plugin.c
-//   clang --target=wasm64 -O2 -nostdlib -Wl,--no-entry -DSPIN -o loop_64.wasm test_plugin.c
-// (wasm32 likewise). With SPIN it loops forever on its third tick.
 typedef unsigned int u32;
 typedef unsigned long long u64;
 typedef __SIZE_TYPE__ usize;

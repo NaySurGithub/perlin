@@ -1,27 +1,35 @@
 $input v_texcoord0
 
-// Frame generation for the world: a frame between two real ones is made by moving the last real world image to where the camera
-// is expected to be (depth reprojection). Everything that is not world (the HUD, the hand, menus) is whatever differs between
-// the real frame with and without them, and stays where it is.
 #include <bgfx_shader.sh>
 
-SAMPLER2D(s_world, 0);   // the real frame's world, without HUD
-SAMPLER2D(s_depth, 1);   // its depth
-SAMPLER2D(s_final, 2);   // the real frame as shown, with HUD
-// z: y sign of texture space, w: 1 when clip depth is -1..1
+SAMPLER2D(s_world, 0);
+SAMPLER2D(s_depth, 1);
+SAMPLER2D(s_final, 2);
 uniform vec4 u_gen;
-uniform mat4 u_genInvVp;  // predicted camera: clip -> camera-relative world
-uniform mat4 u_genCurVp;  // the real frame's camera: camera-relative world -> clip
+uniform mat4 u_genInvVp;
+uniform mat4 u_genCurVp;
 
 vec2 uvOf(vec3 ndc)
 {
     return vec2(ndc.x * 0.5 + 0.5, 0.5 + u_gen.z * ndc.y * 0.5);
 }
 
+float rawDepth(vec2 uv)
+{
+    return texture2DLod(s_depth, clamp(uv, vec2_splat(0.0), vec2_splat(1.0)), 0.0).x;
+}
+
 float depthAt(vec2 uv)
 {
-    float d = texture2DLod(s_depth, clamp(uv, vec2_splat(0.0), vec2_splat(1.0)), 0.0).x;
+    float d = rawDepth(uv);
     return u_gen.w > 0.5 ? d * 2.0 - 1.0 : d;
+}
+
+float linearDepth(float d)
+{
+    float n = u_gen.x;
+    float f = u_gen.y;
+    return n * f / (f - d * (f - n));
 }
 
 void main()
@@ -35,15 +43,20 @@ void main()
         gl_FragColor = vec4(shown, 1.0);
         return;
     }
-    // Backward reprojection: guess the depth under this pixel from the real frame, find where that point was, look again.
     vec2 ndcXY = vec2(uv.x * 2.0 - 1.0, (uv.y * 2.0 - 1.0) * u_gen.z);
     vec2 src = uv;
-    for (int i = 0; i < 3; i++)
+    float expected = 1.0;
+    for (int i = 0; i < 4; i++)
     {
         vec4 w = mul(u_genInvVp, vec4(ndcXY, depthAt(src), 1.0));
         w /= w.w;
         vec4 c = mul(u_genCurVp, w);
-        src = uvOf(vec3(c.xy / c.w, 0.0));
+        expected = c.w;
+        src = uvOf(vec3(c.xy / max(abs(c.w), 1.0e-5) * sign(c.w), 0.0));
     }
-    gl_FragColor = vec4(texture2DLod(s_world, clamp(src, vec2_splat(0.0), vec2_splat(1.0)), 0.0).rgb, 1.0);
+    bool inside = src.x > 0.002 && src.x < 0.998 && src.y > 0.002 && src.y < 0.998;
+    float actual = linearDepth(rawDepth(src));
+    bool consistent = inside && expected > 0.0 && abs(actual - expected) < 0.05 * expected + 0.12;
+    vec2 pick = consistent ? src : uv;
+    gl_FragColor = vec4(texture2DLod(s_world, pick, 0.0).rgb, 1.0);
 }

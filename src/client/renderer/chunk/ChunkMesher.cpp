@@ -99,7 +99,6 @@ namespace perlin {
                         break;
                     }
             }
-            // A double slab carries the same vertical_half state as a single one but fills the whole block.
             if (pal.HasState(id, "minecraft:vertical_half") && pal.Name(id).find("double") == std::string::npos) {
                 g.slab = true;
                 g.slabTop = pal.StateString(id, "minecraft:vertical_half", "bottom") == "top";
@@ -511,7 +510,7 @@ namespace perlin {
 
     int BlockLightOpacity(BlockLibrary& library, uint16_t id) {
         if (SpecialKind(id) == 3)
-            return 0; // skulls and heads let light through
+            return 0;
         {
             FaceOcclusion f;
             if (BlockFaceOcclusion(id, f)) {
@@ -644,7 +643,7 @@ namespace perlin {
             if (!library)
                 return true;
             if (SpecialKind(id) == 1 || SpecialKind(id) == 3)
-                return false; // beds and skulls: drawn as block entities
+                return false;
             if (const ModelEntry* me = ModelFor(library, id); me && !me->cube)
                 return false;
             const BlockAppearance& a = *LookupApp(library, id);
@@ -904,11 +903,11 @@ namespace perlin {
                         continue;
                     if (pass == 1 && textured) {
                         if (SpecialKind(id) == 4)
-                            continue; // bubble columns: just their water (drawn in the liquid pass)
+                            continue;
                         if (const int special = SpecialKind(id); special && special != 4) {
                             tess.AddSpecial(baseX + x, y, baseZ + z, id);
                             if (special == 1 || special == 3)
-                                continue; // drawn by the block entity renderer
+                                continue;
                         }
                     }
                     if (pass == 1 && textured && IsDoorId(id)) {
@@ -1124,7 +1123,6 @@ namespace perlin {
                     };
                     auto biomeTintFor = [&](const std::string& tex, int tile,
                                             bool isTop) -> std::array<float, 4> {
-                        // Redstone dust: coloured by its signal strength (Java RedStoneWireBlock).
                         if (TexHas(tex, "redstone_dust")) {
                             const float f = static_cast<float>(BlockPalette::Instance().StateInt(id, "redstone_signal", 0)) / 15.0f;
                             return {f * 0.6f + (f > 0.0f ? 0.4f : 0.3f), std::clamp(f * f * 0.7f - 0.5f, 0.0f, 1.0f),
@@ -1217,8 +1215,6 @@ namespace perlin {
                                 return;
                             const BlockLibrary::TileAlpha ta = library->AlphaOf(tile);
                             const bool glassTile = library->IsGlassBase(tile);
-                            // (Also for quads that carry their own tile: stained glass is built from block geometry
-                            // that way, so it never connected while plain glass did.)
                             if (const int glassMode = library->GlassMode(); glassMode && library->IsGlassBase(tile)) {
                                 int ia = -1, ib = -1, ic = -1;
                                 for (int k = 0; k < 4; k++) {
@@ -1266,10 +1262,6 @@ namespace perlin {
                             for (int i = 0; i < 4; i++)
                                 if (std::fabs(q.pos[i][nAxis] - planeAt) > 1e-4f)
                                     flush = false;
-                            // Glass faces flush with the block boundary that the model gave no cull
-                            // direction: skip them against the same glass (or any glass when glass
-                            // connects). Clear glass hid this (its middle is fully transparent), but
-                            // stained glass showed every inner face as a coloured cross.
                             if (flush && q.cull < 0 && (glassTile || ta.translucent)) {
                                 const uint16_t nid = cache.Get(x + nrm[0], y + nrm[1], z + nrm[2]);
                                 if (nid != 0 && (nid == id || (library->GlassMode() && glassTile && library->IsGlassBase(library->Look(nid).side))))

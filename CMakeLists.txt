@@ -4,10 +4,6 @@ if(APPLE)
     set(CMAKE_OSX_DEPLOYMENT_TARGET "12.0" CACHE STRING "" FORCE)
 endif()
 
-# Windows builds use clang-cl (MSVC-compatible Clang) with lld-link instead of cl.exe. This only
-# applies when nothing chose a compiler explicitly (-DCMAKE_CXX_COMPILER, CC/CXX, a preset, or a
-# Visual Studio toolset); pass -DPERLIN_USE_CLANG_CL=OFF to build with cl.exe. With the Visual
-# Studio generator use the windows-vs-clangcl preset (or -T ClangCL) instead.
 option(PERLIN_USE_CLANG_CL "Build with clang-cl on Windows" ON)
 if(CMAKE_HOST_WIN32 AND PERLIN_USE_CLANG_CL AND NOT CMAKE_GENERATOR MATCHES "Visual Studio"
    AND NOT CMAKE_C_COMPILER AND NOT CMAKE_CXX_COMPILER AND NOT DEFINED ENV{CC} AND NOT DEFINED ENV{CXX})
@@ -128,8 +124,6 @@ CPMAddPackage("gh:stephenberry/glaze@7.1.1")
 CPMAddPackage("gh:cameron314/concurrentqueue@1.0.4")
 CPMAddPackage("gh:g-truc/glm#1.0.1")
 CPMAddPackage(NAME stb GITHUB_REPOSITORY nothings/stb GIT_TAG master DOWNLOAD_ONLY YES)
-# Plugins run on WasmEdge (32-bit and 64-bit/memory64 WebAssembly). WasmEdge doesn't build for the
-# web, so the browser build keeps wasm3 behind the same interface (src/client/mods/WasmRuntime*.cpp).
 if(EMSCRIPTEN)
 CPMAddPackage(NAME wasm3 GITHUB_REPOSITORY wasm3/wasm3 GIT_TAG 28ecb9af6d2040e474a70f7cb7f43666740141fb DOWNLOAD_ONLY YES)
 set(WASM3_CORE_SOURCES m3_bind.c m3_code.c m3_compile.c m3_core.c m3_env.c m3_exec.c m3_function.c m3_info.c m3_module.c m3_parse.c m3_validate.c)
@@ -138,15 +132,12 @@ add_library(wasm3_core STATIC ${WASM3_CORE_SOURCES})
 target_include_directories(wasm3_core PUBLIC "${wasm3_SOURCE_DIR}/source")
 target_compile_definitions(wasm3_core PRIVATE d_m3HasTracer=0)
 if(NOT MSVC)
-    # wasm3's interpreter loop is written as guaranteed tail calls (clang musttail), which a
-    # WebAssembly target only accepts with the tail-call feature on (Chrome 112, Firefox 121, Safari 18.2).
     target_compile_options(wasm3_core PRIVATE -w -mtail-call)
 endif()
 set_target_properties(wasm3_core PROPERTIES POSITION_INDEPENDENT_CODE ON C_STANDARD 11)
 set(PERLIN_WASM_ENGINE wasm3_core)
 else()
 CPMAddPackage(NAME wasmedge GITHUB_REPOSITORY WasmEdge/WasmEdge GIT_TAG 0.18.0 DOWNLOAD_ONLY YES)
-# Interpreter only (no LLVM), no tools, plug-ins or shared library: just the engine's static parts.
 set(WASMEDGE_BUILD_SHARED_LIB OFF CACHE BOOL "" FORCE)
 set(WASMEDGE_BUILD_STATIC_LIB OFF CACHE BOOL "" FORCE)
 set(WASMEDGE_BUILD_TOOLS OFF CACHE BOOL "" FORCE)
@@ -154,27 +145,17 @@ set(WASMEDGE_BUILD_PLUGINS OFF CACHE BOOL "" FORCE)
 set(WASMEDGE_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(WASMEDGE_BUILD_EXAMPLE OFF CACHE BOOL "" FORCE)
 set(WASMEDGE_USE_LLVM OFF CACHE BOOL "" FORCE)
-# Link-time optimisation inlines the interpreter's instruction handlers into its dispatch loop
-# (they live in separate files); without it the interpreter runs several times slower.
 if(ANDROID)
     set(WASMEDGE_FORCE_DISABLE_LTO ON CACHE BOOL "" FORCE)
 else()
     set(WASMEDGE_FORCE_DISABLE_LTO OFF CACHE BOOL "" FORCE)
 endif()
 set(WASMEDGE_PLUGIN_WASI_LOGGING OFF CACHE BOOL "" FORCE)
-# With Ninja, WasmEdge's Helper.cmake puts its targets in a "link" job pool (to cap parallel LTO
-# links) but only declares the pool in its own directory scope, where Ninja never sees it
-# ("unknown pool name 'link'"). Declare it globally.
 get_property(perlin_job_pools GLOBAL PROPERTY JOB_POOLS)
 if(NOT perlin_job_pools MATCHES "(^|;)link=")
     set_property(GLOBAL APPEND PROPERTY JOB_POOLS link=2)
 endif()
 add_subdirectory("${wasmedge_SOURCE_DIR}" "${CMAKE_BINARY_DIR}/_deps/wasmedge-build" EXCLUDE_FROM_ALL)
-# WasmEdge builds its own code with -Werror (/WX on MSVC); a newer compiler's new warning must not
-# break Perlin's build, so turn warnings off for its targets. Its top-level CMakeLists.txt also
-# forces the DLL C runtime (/MD) in its scope, which can't be linked with Perlin's static runtime
-# (/MT: lld-link "mismatch detected for 'RuntimeLibrary'"), so its targets (and the fmt/spdlog it
-# fetches) get Perlin's runtime back.
 function(perlin_quiet_targets dir)
     get_property(targets DIRECTORY "${dir}" PROPERTY BUILDSYSTEM_TARGETS)
     foreach(t IN LISTS targets)
@@ -196,8 +177,6 @@ function(perlin_quiet_targets dir)
     endforeach()
 endfunction()
 perlin_quiet_targets("${wasmedge_SOURCE_DIR}")
-# The C API (normally only built into libwasmedge) plus the executor interrupt Perlin uses to stop
-# a plugin that runs too long.
 add_library(perlin_wasmedge STATIC
     "${wasmedge_SOURCE_DIR}/lib/api/wasmedge.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/client/mods/WasmEdgeStop.cpp")
@@ -206,7 +185,6 @@ target_include_directories(perlin_wasmedge PUBLIC
     "${CMAKE_BINARY_DIR}/_deps/wasmedge-build/include/api"
     "${wasmedge_SOURCE_DIR}/include/api")
 target_link_libraries(perlin_wasmedge PUBLIC wasmedgeVM wasmedgeDriver)
-# Built like WasmEdge's own libraries (C++17; /utf-8 /bigobj on MSVC), quietly.
 set_target_properties(perlin_wasmedge PROPERTIES CXX_STANDARD 17 CXX_EXTENSIONS OFF POSITION_INDEPENDENT_CODE ON)
 if(MSVC)
     target_compile_options(perlin_wasmedge PRIVATE /utf-8 /bigobj /W0)
@@ -291,18 +269,10 @@ CPMAddPackage(
     GIT_SUBMODULES "bgfx" "bimg" "bx"
     GIT_SHALLOW YES
 )
-# bgfx's default 4096 static vertex/index buffer handles are shared by every UI mesh (each RmlUi
-# geometry holds one of each); give heavy screens and long sessions headroom. Only bgfx's own
-# sources read these (src/config.h).
 if(TARGET bgfx)
     target_compile_definitions(bgfx PRIVATE BGFX_CONFIG_MAX_VERTEX_BUFFERS=16384 BGFX_CONFIG_MAX_INDEX_BUFFERS=16384)
 endif()
 
-# bgfx's EGL context keeps the Android window it was created with and rebuilds its surface from it
-# on every reset. When the app comes back from the background Android hands out a new window, so
-# the old pointer is dead and the screen stays black. bgfx has no way to be given the new one, so
-# its source is patched (once, text only) to read it from perlin_bgfx_android_window, which the
-# app sets before resetting.
 if(ANDROID AND TARGET bgfx)
     set(PERLIN_BGFX_EGL "${bgfx_SOURCE_DIR}/bgfx/src/glcontext_egl.cpp")
     file(READ "${PERLIN_BGFX_EGL}" perlin_egl_src)
@@ -321,10 +291,6 @@ if(ANDROID AND TARGET bgfx)
     endif()
 endif()
 
-# bgfx creates the browser's WebGL context with an alpha channel (and composites it against the page
-# unpremultiplied), so wherever a fragment wrote alpha < 1 the page showed through: terrain drawn with
-# non-opaque alpha looked invisible, and the page has to blend the whole canvas every frame. The game never
-# needs a transparent canvas, so the context is created opaque and asked for the high-performance GPU.
 if(EMSCRIPTEN AND TARGET bgfx)
     set(PERLIN_BGFX_HTML5 "${bgfx_SOURCE_DIR}/bgfx/src/glcontext_html5.cpp")
     file(READ "${PERLIN_BGFX_HTML5}" perlin_html5_src)
@@ -341,10 +307,6 @@ if(EMSCRIPTEN AND TARGET bgfx)
     endif()
 endif()
 
-# shaderc runs Microsoft's FXC (D3DCompile) in-process for the Direct3D shaders. FXC recurses
-# deeply on bigger shaders (the Vibrant Visuals water shader) and overflowed the 1 MB default
-# Windows stack (exit code 0xC00000FD). Give shaderc a 64 MB stack reserve; it is only address
-# space, committed as it is actually used.
 if(WIN32 AND TARGET shaderc)
     if(MSVC)
         target_link_options(shaderc PRIVATE "/STACK:67108864")
@@ -435,8 +397,6 @@ perlin_compile_shaders(VERTEX varying_entity_shadow.def.sc vs_entity_shadow)
 perlin_compile_shaders(FRAGMENT varying_entity_shadow.def.sc fs_entity_shadow)
 perlin_compile_shaders(VERTEX vv/vv_varying_terrain.def.sc vv/vv_vs_terrain)
 if("s_5_0" IN_LIST PERLIN_SHADER_PROFILES)
-    # The Vibrant Visuals water shader crashes FXC (stack overflow inside D3DCompile), so its
-    # Direct3D version goes through a fallback script (below) that can never fail the build.
     perlin_compile_shaders(FRAGMENT vv/vv_varying_terrain.def.sc vv/vv_fs_terrain_solid vv/vv_fs_terrain_cutout)
     set(_perlin_profiles_all ${PERLIN_SHADER_PROFILES})
     set(PERLIN_SHADER_PROFILES ${PERLIN_SHADER_PROFILES})
@@ -446,16 +406,10 @@ if("s_5_0" IN_LIST PERLIN_SHADER_PROFILES)
     set(_perlin_water_src "${PERLIN_SHADER_DIR}/vv/vv_fs_terrain_translucent.sc")
     set(_perlin_water_out "${PERLIN_SHADER_OUT}/dxbc/vv_fs_terrain_translucent.sc.bin.h")
     string(REPLACE ";" "|" _perlin_water_inc "${PERLIN_SHADER_INCLUDES}")
-    # Each variant is <optimisation>:<defines>. "O3" = -O 3, "noopt" = no -O (FXC skips its
-    # optimiser). Full shader first, then features compiled out. If every variant fails, a 1-byte
-    # placeholder is written and the game uses the built-in water on Direct3D 11 only.
     set(_perlin_water_variants
         "O3:full|noopt:full|O3:VV_DX_NO_SSR|O3:VV_DX_NO_CLOUDS|O3:VV_DX_NO_SSR,VV_DX_NO_CLOUDS|O3:VV_DX_NO_SSR,VV_DX_NO_CLOUDS,VV_DX_NO_LIT,VV_DX_NO_SKY|noopt:VV_DX_NO_SSR,VV_DX_NO_CLOUDS,VV_DX_NO_LIT,VV_DX_NO_SKY")
     set(_perlin_water_script "${CMAKE_CURRENT_BINARY_DIR}/PerlinDxbcFallback.cmake")
     file(WRITE "${_perlin_water_script}" [==[
-# Written by CMakeLists.txt. Compiles one shader for Direct3D 11 (s_5_0), trying simpler
-# variants if FXC (d3dcompiler_47) crashes, and writing a placeholder if they all fail, so the
-# build always goes through. The log shows which variants failed.
 string(REPLACE "|" ";" include_list "${INCLUDES}")
 set(include_args)
 foreach(dir IN LISTS include_list)
@@ -554,8 +508,6 @@ if(PERLIN_WEB_SHADERS_ONLY)
 endif()
 
 set(PERLIN_PROTOCOL_OUT "${CMAKE_CURRENT_BINARY_DIR}/generated/protocol")
-# The Bedrock protocol version the generated codecs are for; they live in perlin::proto<version>, and perlin::proto
-# is an alias of the current one.
 set(PERLIN_PROTOCOL_VERSION 2193)
 set(PERLIN_PROTOCOL_CODEC_COUNT 6)
 set(PERLIN_PROTOCOL_SOURCES)
@@ -655,13 +607,8 @@ set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${PERLIN_RESOURCE
 
 file(GLOB_RECURSE PERLIN_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp")
 list(FILTER PERLIN_SOURCES EXCLUDE REGEX "/src/network/Nbt\\.cpp")
-# The mods (WAILA, the SDK tests) are built on their own, as WebAssembly or as test programs, from the top-level mods/
-# folder. A stray copy under src/mods must never be compiled into the game.
 list(FILTER PERLIN_SOURCES EXCLUDE REGEX "/src/mods/")
-# The same goes for copies of the repository's other top-level folders that ended up inside src/ (src/src, src/tests):
-# test programs have their own main() and are built as separate targets from the top-level tests/ folder.
 list(FILTER PERLIN_SOURCES EXCLUDE REGEX "/src/(src|tests)/")
-# WasmEdgeStop.cpp is part of perlin_wasmedge; each build uses one of the two plugin engines.
 list(FILTER PERLIN_SOURCES EXCLUDE REGEX "/src/client/mods/WasmEdgeStop\\.cpp$")
 if(EMSCRIPTEN)
     list(FILTER PERLIN_SOURCES EXCLUDE REGEX "/src/client/mods/WasmRuntime\\.cpp$")
@@ -785,7 +732,6 @@ endif()
 if(MSVC)
     target_compile_options(Perlin PRIVATE /W4 /permissive- /EHsc /Zc:__cplusplus)
     if(PERLIN_CLANG_CL_BUILD)
-        # clang-cl's /W4 also turns on Clang warnings that are pure MSVC-compatibility noise here.
         target_compile_options(Perlin PRIVATE -Wno-unused-parameter -Wno-microsoft-cast -Wno-microsoft-enum-value
                                -Wno-language-extension-token -Wno-c++98-compat -Wno-pragma-pack)
     endif()
@@ -803,8 +749,6 @@ else()
     target_compile_options(Perlin PRIVATE -Wall -Wextra -Wno-unused-parameter)
 endif()
 
-# Code generation for Release builds: nothing here changes results. errno from libm and floating-point traps are never
-# read, so sqrt/floor/etc. can inline and vectorise; unused functions and data are dropped at link time.
 if(MSVC AND NOT PERLIN_CLANG_CL_BUILD)
     target_compile_options(Perlin PRIVATE "$<$<CONFIG:Release>:/Gy;/Gw;/Zc:inline;/Oi>")
 elseif(PERLIN_CLANG_CL_BUILD)
@@ -816,9 +760,6 @@ else()
     endif()
 endif()
 
-# Optional: relaxed floating point (like OptiFine's "fast math"). Lets the compiler contract a*b+c into one fused
-# multiply-add, reorder reciprocals and ignore the sign of zero. Faster maths in the renderer, but the last digit of
-# some results changes, so client-side movement prediction can differ from the server's by a hair: off by default.
 option(PERLIN_FAST_MATH "Relax floating-point rules (faster maths, results differ in the last digits)" OFF)
 if(PERLIN_FAST_MATH)
     if(MSVC AND NOT PERLIN_CLANG_CL_BUILD)
@@ -838,7 +779,6 @@ endif()
 if(PERLIN_IPO)
     set_property(TARGET Perlin PROPERTY INTERPROCEDURAL_OPTIMIZATION_RELEASE ON)
     if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
-        # Also right for clang-cl, which takes -f options and does LTO via lld-link.
         set_source_files_properties(src/client/entity/EntityRenderer.cpp PROPERTIES COMPILE_OPTIONS "-fno-lto")
     elseif(MSVC)
         set_source_files_properties(src/client/entity/EntityRenderer.cpp PROPERTIES COMPILE_OPTIONS "/GL-")
@@ -937,7 +877,6 @@ if(PERLIN_BUILD_TESTS AND NOT EMSCRIPTEN AND NOT ANDROID)
     target_compile_features(uitemplate_selftest PRIVATE cxx_std_23)
     add_test(NAME uitemplate_selftest COMMAND uitemplate_selftest)
 
-    # Diffs a vanilla-client movement trace (perlin-movetrace LeviLamina mod) against physics::Step.
     add_executable(trace_diff
         tests/trace_diff.cpp
         src/client/player/PlayerPhysics.cpp)
@@ -1016,7 +955,6 @@ if(PERLIN_BUILD_TESTS AND NOT EMSCRIPTEN AND NOT ANDROID)
     target_compile_features(light_selftest PRIVATE cxx_std_23)
     add_test(NAME light_selftest COMMAND light_selftest)
 
-    # Plugins on the WebAssembly engine: 32-bit and 64-bit modules, a hung plugin, hot reload.
     add_executable(mod_selftest tests/mod_selftest.cpp src/client/mods/ModManager.cpp src/client/mods/WasmRuntime.cpp src/client/ui/Json.cpp)
     target_include_directories(mod_selftest PRIVATE src mods/sdk)
     target_link_libraries(mod_selftest PRIVATE perlin_wasmedge Threads::Threads)
@@ -1027,7 +965,6 @@ if(PERLIN_BUILD_TESTS AND NOT EMSCRIPTEN AND NOT ANDROID)
         "${PERLIN_TEST_PLUGINS}/loop_64.wasm" "${PERLIN_TEST_PLUGINS}/loop_32.wasm"
         "${CMAKE_CURRENT_SOURCE_DIR}/mods/prebuilt/waila.wasm")
 
-    # The plugin SDK: the API is complete (every operation has a host and a wrapper), and the SDK and WAILA's own tests.
     find_package(Python3 QUIET COMPONENTS Interpreter)
     if(Python3_FOUND)
         add_test(NAME mod_api_check COMMAND ${Python3_EXECUTABLE} "${CMAKE_CURRENT_SOURCE_DIR}/mods/tools/check_api.py")
@@ -1058,9 +995,6 @@ if(PERLIN_BUILD_TESTS AND NOT EMSCRIPTEN AND NOT ANDROID)
                 target_compile_features(${wire_test} PRIVATE cxx_std_23)
                 add_test(NAME ${wire_test} COMMAND ${wire_test})
             endforeach()
-            # std::format of a floating point value needs std::to_chars(double), which libc++ only provides from macOS
-            # 13.3 on. These test programs run on the build machine, not on players' Macs, so they use the system
-            # library as it is instead of the game's macOS 12 deployment target.
             if(APPLE)
                 foreach(native_test waila_test sdk_test abi_test meta_test)
                     target_compile_definitions(${native_test} PRIVATE _LIBCPP_DISABLE_AVAILABILITY)

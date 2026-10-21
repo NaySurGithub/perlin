@@ -177,7 +177,6 @@ namespace perlin::ui {
         const bool hasExt = base.size() > 4 && base[base.size() - 4] == '.';
         const char* exts[] = {".png", ".tga"};
         auto& pack = TexturePack::Instance();
-        // The server's packs come before the player's texture packs.
         for (const std::string& dir : ServerPacks::Instance().Directories()) {
             if (hasExt && LoadTexture(dir + "/" + base, out))
                 return true;
@@ -543,7 +542,7 @@ namespace perlin::ui {
                     if (!it->is_regular_file(ec))
                         continue;
                     const std::string name = it->path().filename().string();
-                    constexpr std::string_view kSet = ".texture_set.json"; // declares texture "x" like "x.png"
+                    constexpr std::string_view kSet = ".texture_set.json";
                     std::string stem;
                     size_t extSize = 0;
                     if (name.size() > kSet.size() && name.compare(name.size() - kSet.size(), kSet.size(), kSet) == 0) {

@@ -82,8 +82,6 @@ namespace perlin::claims {
         std::string Token;
     };
 
-    // One frame sequence of an animated skin. Image is base64 RGBA, Type is 1 (face), 2 (32x32 body) or
-    // 3 (128x128 body), AnimationExpression 0 (linear) or 1 (blinking).
     struct SkinAnimation {
         double Frames = 0;
         std::string Image;
@@ -102,7 +100,7 @@ namespace perlin::claims {
     };
 
     struct PersonaPieceTintColor {
-        std::vector<std::string> Colors; // four ARGB hex strings
+        std::vector<std::string> Colors;
         std::string PieceType;
     };
 
@@ -154,12 +152,9 @@ namespace perlin::claims {
         bool ThirdPartyNameOnly = false;
         bool TrustedSkin = false;
         int UIProfile = 0;
-        // Sent by every Bedrock client: the party the player is in (empty when none), whether they lead it, and
-        // the hash of the equipped persona skin (empty for a classic skin).
         std::string PartyId;
         bool IsPartyLeader = false;
         std::string ProfileHash;
-        // Issued by the host of a friend's world to each joining player (empty elsewhere).
         std::string Nonce;
     };
 

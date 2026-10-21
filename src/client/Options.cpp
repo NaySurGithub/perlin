@@ -62,7 +62,6 @@ namespace perlin {
             bool hotReload = true;
             bool betterGrass = false;
             bool enableLods = false;
-            bool fastMath = false;
             bool skins3d = true;
             std::string upscaler = "off";
             std::string upscaleQuality = "quality";
@@ -99,9 +98,6 @@ namespace perlin {
     }
 
     namespace {
-        // A browser tab renders on one thread next to the meshing workers, so it starts from a cheaper
-        // look: shorter view distance, no shader-pack shadows or bloom, no menu blur. Everything can be
-        // turned back up in the options.
         void TuneForWeb(Options& o) {
             o.renderDistance = 6;
             o.shadows = false;
@@ -182,7 +178,6 @@ namespace perlin {
                       o.hotReload,
                       o.betterGrass,
                       o.enableLods,
-                      o.fastMath,
                       o.skins3d,
                       o.upscaler,
                       o.upscaleQuality,
@@ -240,7 +235,6 @@ namespace perlin {
         o.hotReload = stored.hotReload;
         o.betterGrass = stored.betterGrass;
         o.enableLods = stored.enableLods;
-        o.fastMath = stored.fastMath;
         o.skins3d = stored.skins3d;
         o.upscaler = stored.upscaler;
         o.upscaleQuality = stored.upscaleQuality;
@@ -249,7 +243,7 @@ namespace perlin {
         o.upscaleTargetFps = std::clamp(stored.upscaleTargetFps, 0, 360);
         o.frameGen = stored.frameGen;
         if (!o.enableLods)
-            o.renderDistance = std::min(o.renderDistance, 32); // past the real chunks only LODs can draw
+            o.renderDistance = std::min(o.renderDistance, 32);
         o.skinParts = stored.skinParts;
         o.skinSlim = stored.skinSlim;
         o.shaderSettings = stored.shaderSettings;
@@ -374,7 +368,6 @@ namespace perlin {
                       hotReload,
                       betterGrass,
                       enableLods,
-                      fastMath,
                       skins3d,
                       upscaler,
                       upscaleQuality,

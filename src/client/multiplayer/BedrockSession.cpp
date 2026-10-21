@@ -337,10 +337,7 @@ namespace perlin {
             skin.MaxViewDistance = maxViewDistance;
             skin.DeviceId = device.id;
             skin.GameVersion = gameVersion;
-            // Clients since 1.21.100 send no PlayFabId in the login claims (Cinnabar sends it empty and its dialer leaves
-            // it so).
             skin.SelfSignedId = DeriveSelfSignedId(clientRandomId, device.id);
-            // The classic skin ids Cinnabar sends: the stock pack id plus the model name.
             skin.SkinId = std::string("c18e65aa-7b21-4637-9b63-8ad63622ef01.") + (loadedSkin.slimArms ? "CustomSlim" : "Custom");
             skin.SkinColor = "#b37b62";
             skin.ServerAddress = serverAddress;
@@ -354,8 +351,6 @@ namespace perlin {
             }
             const char* geometry = loadedSkin.slimArms ? "geometry.humanoid.customSlim" : "geometry.humanoid.custom";
             skin.ArmSize = loadedSkin.slimArms ? "slim" : "wide";
-            // Cinnabar's client leaves these empty and its dialer fills in the stock geometry and "0.0.0", so that is what
-            // the server sees.
             skin.SkinGeometryData = kDefaultSkinGeometryB64;
             skin.SkinGeometryDataEngineVersion = B64Standard("0.0.0");
             skin.SkinResourcePatch = B64Standard(std::string("{\"geometry\":{\"default\":\"") + geometry + "\"}}");
@@ -366,18 +361,13 @@ namespace perlin {
                 skin.CapeId = loadedSkin.capeId;
                 skin.CapeOnClassicSkin = true;
             }
-            // The Xbox certificate chain is issued for the Android title, so the device description must say
-            // Android in both modes (a Switch DeviceOS next to an Android device id and a "Windows" model, as
-            // offline logins used to send, matches no real device). The model, id and format come from the
-            // persisted device profile so they stay stable between sessions.
             skin.DeviceOS = 1;
             skin.DeviceModel = device.model;
-            skin.PlatformType = 1; // mobile: the dialer supplies it for Android claims
+            skin.PlatformType = 1;
             skin.CurrentInputMode = 1;
-            skin.DefaultInputMode = 2; // an Android device's default is touch; CurrentInputMode stays mouse
-            // Hardware tier as Bedrock reports it: 0 <1.5 GB, 1 <2 GB, 2 <4 GB, 3 <8 GB, 4 more.
+            skin.DefaultInputMode = 2;
             {
-                const uint64_t gib = sysinfo::TotalMemory() >> 20; // MiB
+                const uint64_t gib = sysinfo::TotalMemory() >> 20;
                 skin.MemoryTier = gib < 1536 ? 0 : gib < 2048 ? 1 : gib < 4096 ? 2 : gib < 8192 ? 3 : 4;
             }
             const claims::Header skinHeader{.x5u = cpk};
@@ -927,8 +917,6 @@ namespace perlin {
                 std::lock_guard<std::mutex> lk(reqMutex);
                 columns = seenColumns.size();
             }
-            // The 3x3 neighbourhood around the spawn is in, or a short grace for servers that hold chunks back until
-            // the client reports in.
             ready = columns >= 9 || now - spawnAt > std::chrono::seconds(3);
         } else if (now - startGameAt > std::chrono::seconds(8)) {
             std::cout << "[bedrock] no PlayerSpawn after 8s, initialising anyway" << std::endl;
@@ -936,7 +924,6 @@ namespace perlin {
         }
         if (!ready)
             return;
-        // Always in this order, once: LoadingScreen(End), then SetLocalPlayerAsInitialized.
         SendLoadingScreen(false);
         SendSetLocalPlayerAsInitialized();
     }
@@ -948,7 +935,7 @@ namespace perlin {
     bool BedrockSession::SendRequestChunkRadius() {
         proto::RequestChunkRadiusPacket p;
         p.chunkRadius = chunkRadius;
-        p.maxRadius = std::max(chunkRadius, maxViewDistance); // the same ceiling the Login's MaxViewDistance reports
+        p.maxRadius = std::max(chunkRadius, maxViewDistance);
         std::cout << "[bedrock] RequestChunkRadius " << chunkRadius << std::endl;
         return Send(p);
     }
@@ -1342,9 +1329,6 @@ namespace perlin {
         return Send(p);
     }
 
-    // The reply to a server latency probe. The probe carries milliseconds; vanilla answers with the same moment in
-    // nanoseconds (the value times one million, wrapping) and keeps the from-server flag set. A server that
-    // matches replies against the probes it sent (CubeCraft's proxy, anti-cheats) times the player out otherwise.
     bool BedrockSession::SendTickSync(uint64_t timestamp) {
         proto::NetworkStackLatencyPacket p;
         p.timestamp = timestamp * 1000000ULL;
@@ -2070,8 +2054,9 @@ namespace perlin {
             {
                 std::lock_guard<std::mutex> lk(reqMutex);
                 const bool farOk = netLevel.lodOnlyCount.load() < 1500 && inflight.size() < 3000;
-                std::queue<std::tuple<int, int, int, int>>& queue =
-                    !reqQueue.empty() ? reqQueue : reqQueueFar;
+                reqQueue.SetCenter(viewCenterChunk[0], viewCenterChunk[1]);
+                reqQueueFar.SetCenter(viewCenterChunk[0], viewCenterChunk[1]);
+                NearestQueue& queue = !reqQueue.empty() ? reqQueue : reqQueueFar;
                 if (queue.empty() || (&queue == &reqQueueFar && !farOk))
                     break;
                 auto key = queue.front();

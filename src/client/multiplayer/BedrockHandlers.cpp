@@ -188,19 +188,13 @@ namespace perlin {
                                      std::string(kBedrockVersion) + ")";
                     state = State::Failed;
                 } else if (!cacheStatusSent) {
-                    // The vanilla client answers LoginSuccess with ClientCacheStatus before anything else: the packs
-                    // and the world are sent after the server has seen what the client supports.
                     SendClientCacheStatus();
                     cacheStatusSent = true;
                 }
             } else if (p.status == PlayStatusPacketStatus::LoginSuccess && !cacheStatusSent) {
-                // Some servers send ResourcePacksInfo ahead of LoginSuccess; the answer is the same either way.
                 SendClientCacheStatus();
                 cacheStatusSent = true;
             } else if (p.status == PlayStatusPacketStatus::PlayerSpawn) {
-                // Receiving PlayerSpawn alone does not finish loading. The client sends RequestChunkRadius and
-                // ServerboundLoadingScreen(Start) after StartGame, then LoadingScreen(End) + SetLocalPlayerAsInitialized
-                // only once its own terrain is ready (BedrockSession::Update -> FinishLoadingIfReady).
                 if (!spawnSeen) {
                     spawnSeen = true;
                     spawnAt = std::chrono::steady_clock::now();

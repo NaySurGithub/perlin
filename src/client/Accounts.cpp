@@ -51,7 +51,6 @@ namespace perlin {
                 activeId = entries.front().id;
             return;
         }
-        // First run with the switcher: keep what was already set up.
         std::error_code ec;
         if (fs::exists(dataDir + "/auth.json", ec)) {
             entries.push_back({"ms-1", true, std::string(), "auth.json"});
@@ -154,7 +153,6 @@ namespace perlin {
     const AccountEntry& AccountList::AddMicrosoft(const std::string& gamertag, const std::string& authFile) {
         for (AccountEntry& e : entries)
             if (e.microsoft && !gamertag.empty() && e.name == gamertag) {
-                // Signed in to the same account again: keep one entry, using the newest sign-in.
                 std::error_code ec;
                 if (e.authFile != authFile)
                     fs::remove(dataDir + "/" + e.authFile, ec);

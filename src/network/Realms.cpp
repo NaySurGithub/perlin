@@ -14,7 +14,6 @@
 namespace perlin::realms {
     namespace {
         constexpr const char* kRelyingParty = "https://pocket.realms.minecraft.net/";
-        // The endpoint gophertunnel falls back to when service discovery does not name another.
         constexpr const char* kHost = "bedrock.frontendlegacy.realms.minecraft-services.net";
 
         std::string Q(const std::string& s) { return "\"" + s + "\""; }
@@ -32,9 +31,6 @@ namespace perlin::realms {
                                  headers, 20);
         }
 
-        // Realms refuses the join until the player has opted in to the realm's Stories timeline
-        // (gophertunnel: Client.OptInToStoryTimeline). Read the settings and write them back with
-        // playerOptIn = OPT_IN.
         bool OptInToTimeline(int64_t id, const std::string& authorization) {
             const std::string path = "/worlds/" + std::to_string(id) + "/stories/settings";
             const http::Response g = Call("GET", path, {}, authorization);
@@ -96,7 +92,6 @@ namespace perlin::realms {
     }
 
     bool AcceptInvite(xbox::Account& account, const std::string& codeOrLink, Realm& out, std::string& error) {
-        // Keep the last path segment of a link and drop any query, then require plain code characters.
         std::string code = codeOrLink.substr(0, codeOrLink.find_first_of("?#"));
         while (!code.empty() && (code.back() == '/' || code.back() == ' '))
             code.pop_back();
@@ -137,7 +132,6 @@ namespace perlin::realms {
         while (true) {
             http::Response r = Call("POST", "/worlds/" + std::to_string(id) + "/join", body, authorization);
             if ((r.status == 503 || r.status == 277) && std::chrono::steady_clock::now() < giveUp) {
-                // The Realm is starting: wait as long as the service asks (5 s when it does not say).
                 int wait = 5;
                 const auto it = r.headers.find("Retry-After");
                 if (it != r.headers.end())
@@ -149,11 +143,10 @@ namespace perlin::realms {
             if (r.status == 403 && !optedIn && (r.body.find("Opt-In") != std::string::npos || r.body.find("opt-in") != std::string::npos)) {
                 optedIn = true;
                 if (OptInToTimeline(id, authorization))
-                    continue; // joined the timeline; ask to join again
+                    continue;
             }
             if (r.status >= 400) {
                 std::cout << "[realms] join POST answered " << r.status << ": " << r.body.substr(0, 400) << std::endl;
-                // The older front ends joined with a plain GET; try that before giving up on a 403/404/405.
                 if (r.status == 403 || r.status == 404 || r.status == 405) {
                     const http::Response g = Call("GET", "/worlds/" + std::to_string(id) + "/join", {}, authorization);
                     std::cout << "[realms] join GET answered " << g.status << ": " << g.body.substr(0, 400) << std::endl;

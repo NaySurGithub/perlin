@@ -6,7 +6,6 @@ SAMPLER2D(s_sky, 2);
 
 void main()
 {
-    // In the overworld the sky shader draws the square sun and moon itself, under the clouds.
     if (u_skyParams.z > 0.5)
         discard;
     vec4 color = texture2D(s_sky, v_texcoord0);

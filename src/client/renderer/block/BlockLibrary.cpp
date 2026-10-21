@@ -159,11 +159,6 @@ namespace perlin {
         std::sort(bases.begin(), bases.end());
         bases.erase(std::unique(bases.begin(), bases.end()), bases.end());
         const int current = glassMode.load();
-        // Every base needs 33 tiles for all three modes. Vanilla already uses ~1300 of the (at most 2048) atlas
-        // layers, and 18 glass bases would take another 594, so the last bases (the late stained colours and
-        // tinted glass) used to run out of room and silently never connected. When the full set does not fit
-        // with headroom for server-pack blocks, build only the active mode (16 tiles per base, 1 for "clear")
-        // and rebuild through a resource reload when the mode changes (NeedsGlassRebuild).
         constexpr int kHeadroom = 256;
         glassLean = T > 64 || nextTile + static_cast<int>(bases.size()) * 33 + kHeadroom > MaxTiles();
         glassBuiltMode = current;
@@ -190,7 +185,6 @@ namespace perlin {
                         const bool frame = l || r || tp || bt;
                         uint8_t* px = out + ((size_t)y * T + x) * 4;
                         if (!frame) {
-                            // Connected Clear and Clear empty the pane, stained and tinted glass included.
                             if (mode >= 2)
                                 px[3] = 0;
                             continue;
@@ -201,9 +195,6 @@ namespace perlin {
                         if (exposed)
                             continue;
                         if (keepInterior && mode < 2) {
-                            // Stained/tinted glass has a coloured interior (alpha ~100), so erasing
-                            // the frame on a connected edge leaves a clear stripe through the colour.
-                            // Continue the interior instead: copy the nearest interior texel.
                             const int ix = std::clamp(x, fw, T - fw - 1), iy = std::clamp(y, fw, T - fw - 1);
                             const uint8_t* in = src.data() + ((size_t)iy * T + ix) * 4;
                             std::copy(in, in + 4, px);
@@ -330,7 +321,6 @@ namespace perlin {
         int tile = 0;
         bool ok = false;
         TexturePack& pack = TexturePack::Instance();
-        // The server's resource packs sit on top of the player's own texture packs, as in the game.
         for (const std::string& dir : ServerPacks::Instance().Directories()) {
             for (auto& t : tries)
                 if (LoadTexture(dir + "/" + t, tex) && tex.width > 0 && tex.height > 0) {
@@ -600,7 +590,6 @@ namespace perlin {
                 return false;
             }
         }
-        // Servers that send plain sequential block ids (Venity, Lifeboat) index into the retail block table.
         if (!BlockPalette::Instance().SequenceLoaded()) {
             std::string table;
             if (resources::Read("block_states.json", table))
@@ -669,7 +658,6 @@ namespace perlin {
                 return t;
             }
             const json::View entry = texData[texName];
-            // overlay_color textures carry their tint mask in alpha (see the grass overlay below).
             const auto noteOverlay = [&](const json::View e, int tile) {
                 if (tile && e.isObject() && e["overlay_color"].isString())
                     overlayMaskTiles.insert(tile);
@@ -849,9 +837,6 @@ namespace perlin {
                     }
                     *vp = std::move(u);
                 }
-                // terrain_texture lists are indexed by the block's (legacy) data value - dirt then
-                // coarse dirt, mycelium then its snowy side, a crop's growth stages - not random
-                // variations, so the first entry is the texture. (Vanilla has no random variants.)
                 (void)varTop;
                 (void)varSide;
                 (void)varBottom;
@@ -937,9 +922,6 @@ namespace perlin {
                     bool hasHalf = BlockPalette::Instance().BlockHasProperty(name, "minecraft:vertical_half");
                     if (hasCarried && !hasIsotropic && !hasAO && !perFace) {
                         const json::View ct = vit["carried_textures"];
-                        // A carried (item) texture different from the block's means the block's
-                        // own is grey and coloured by the biome (leaves, vines); the same texture
-                        // (wood, logs) means no tint at all.
                         if (ct.isString()) {
                             app.carriedTex = ct.str();
                             app.useCarriedColor = app.carriedTex != topName;
@@ -980,16 +962,9 @@ namespace perlin {
                         app.shape == BlockAppearance::Shape::Wall)
                         app.cutout = true;
                     app.overlayFrac = 0;
-                    // Bedrock's overlay_color textures (grass_side): the alpha channel is the tint
-                    // mask, opaque where the biome colour applies and clear where the colours are
-                    // final (the dirt). Split into an opaque base and a masked overlay that the
-                    // mesher tints like the top. Driven only by the texture's own alpha, so any
-                    // texture pack's grass (and its dirt edge) shows as drawn.
                     if (app.side && overlayMaskTiles.count(app.side) && nextTile + 2 <= MaxTiles()) {
                         const int src = app.side;
                         const size_t px = (size_t)kTilePx * kTilePx;
-                        // A pack texture with no clear pixels at all has its grass coloured in
-                        // already (common in ported packs): shown as drawn, untinted.
                         bool anyMask = false, anyClear = false;
                         for (size_t i = 0; i < px; i++) {
                             const bool opaque = atlas[((size_t)src * px + i) * 4 + 3] >= 128;
@@ -1205,8 +1180,6 @@ namespace perlin {
                     pathByKey[key] = tex->string;
             }
         }
-        // Keys the server pack does not define (a custom block reusing a vanilla texture by its short name)
-        // resolve through the vanilla terrain_texture.json instead of guessing "textures/blocks/<key>".
         std::unordered_map<std::string, std::string> vanillaPathByKey;
         {
             std::ifstream in(vanillaRpRoot + "/textures/terrain_texture.json", std::ios::binary);
@@ -1227,9 +1200,6 @@ namespace perlin {
         }
         bool any = false;
         const std::vector<std::string> serverDirs = ServerPacks::Instance().Directories();
-        // A resource pack's blocks.json names the terrain_texture keys of blocks that carry no
-        // minecraft:material_instances of their own (a server that adds coloured stairs and slabs
-        // lists their textures only here). Later packs in the stack override earlier ones.
         std::unordered_map<std::string, std::map<std::string, std::string>> legacyFaces;
         for (const std::string& dir : serverDirs) {
             std::ifstream in(dir + "/blocks.json", std::ios::binary);
@@ -1272,7 +1242,6 @@ namespace perlin {
                 if (!it->is_regular_file(ec))
                     continue;
                 std::string name = it->path().filename().string();
-                // "x.texture_set.json" declares texture "x" just as "x.png" does.
                 constexpr std::string_view kSet = ".texture_set.json";
                 std::string stem;
                 size_t extSize = 0;
@@ -1333,9 +1302,6 @@ namespace perlin {
             int side = resolve({"side", "north", "south", "east", "west", "*"}, pSide);
             int bottom = resolve({"down", "*"}, pBottom);
             if (top < 0 && side < 0 && bottom < 0) {
-                // No texture was declared anywhere. A stair, slab or wall of a block that exists in the game
-                // (black_wool_stairs, light_gray_concrete_slab) looks like that block, so borrow its look
-                // instead of a made-up tile.
                 const BlockAppearance* base = nullptr;
                 {
                     std::string shortName = AfterColon(def.name);
@@ -1376,7 +1342,6 @@ namespace perlin {
                 top = side;
             if (bottom < 0)
                 bottom = side;
-            // Distinct per-face materials: only east/west/south/north that name their own texture.
             {
                 static constexpr const char* kFaces[4] = {"east", "west", "south", "north"};
                 for (int i = 0; i < 4; i++) {

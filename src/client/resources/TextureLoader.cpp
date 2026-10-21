@@ -61,7 +61,6 @@ namespace perlin {
         std::transform(ext.begin(), ext.end(), ext.begin(), [](unsigned char c) { return std::tolower(c); });
         if (ext != ".png" && ext != ".tga")
             return false;
-        // Not an image file: the texture may be declared by a texture set next to it.
         std::ifstream in(path.substr(0, dot) + ".texture_set.json", std::ios::binary);
         if (!in)
             return false;

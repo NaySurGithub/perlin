@@ -18,11 +18,8 @@ namespace perlin {
 namespace perlin::entity {
     struct BlockEntityDraw {
         enum class Kind { Bed, Sign, Skull };
-        // Skulls: 0 skeleton, 1 wither skeleton, 2 zombie, 3 player, 4 creeper, 5 dragon, 6 piglin;
-        // 7-10 copper golem statues (unaffected, exposed, weathered, oxidized); 11 conduit;
-        // 12 standing banner, 13 wall banner (base colour in `color`, layers in `patterns`).
         int skull = 0;
-        std::vector<std::pair<std::string, int>> patterns; // banner layers: texture, dye (white = 0)
+        std::vector<std::pair<std::string, int>> patterns;
         bool onWall = false;
         Kind kind = Kind::Bed;
         glm::dvec3 origin{0.0};
@@ -62,17 +59,17 @@ namespace perlin::entity {
             std::vector<std::array<int, 4>> cracks;
             std::function<double(double, double, double)> groundY;
             bool chunkBorders = false;
-            bool hitboxes = false; // F3+B
+            bool hitboxes = false;
             bool ownNametag = false;
             SkinParts ownParts;
-            glm::vec3 ownPose{0.0f}; // mod-set extra rotation of the local player's model: x pitch, y spin around the body axis, z roll
+            glm::vec3 ownPose{0.0f};
             struct ModLine {
                 glm::dvec3 a, b;
                 uint32_t colour = 0xFFFFFFFFu;
                 float width = 1.0f;
             };
-            const std::vector<ModLine>* modLines = nullptr; // world-space lines drawn on behalf of mods
-            bool skins3d = false; // extruded outer skin layers on nearby players
+            const std::vector<ModLine>* modLines = nullptr;
+            bool skins3d = false;
             const std::vector<particle::Quad>* particles = nullptr;
             const particle::DataParticles* dataParticles = nullptr;
             particle::DataWorld dataWorld;
@@ -82,10 +79,10 @@ namespace perlin::entity {
             float lineWidthPx = 2.5f;
             glm::dvec3 outlineLo{0.0}, outlineHi{0.0};
             std::vector<std::pair<glm::dvec3, glm::dvec3>> outlineShape;
-            bool blobShadows = true; // vanilla round shadows under entities
-            float ownSwingTicks = 6.0f; // Java's current swing duration for the local player (haste, conduit, fatigue)
-            bool selfShadow = false; // in first person, still draw yourself into the shader pack's shadow map
-            int capePhysics = 1;     // 0 off, 1 physics without shoulder pads, 2 with them
+            bool blobShadows = true;
+            float ownSwingTicks = 6.0f;
+            bool selfShadow = false;
+            int capePhysics = 1;
         };
         void Render(const std::vector<Entity>& entities, const FrameIn& in);
         void RenderBlockEntities(const std::vector<BlockEntityDraw>& draws, const FrameIn& in);
@@ -114,14 +111,14 @@ namespace perlin::entity {
             bool translucent = false;
             float tint[4] = {1, 1, 1, 1};
             MaterialInfo material;
-            uint32_t maskRgb = 0xFFFFFF; // entity colour for colour-mask materials (0xRRGGBB)
+            uint32_t maskRgb = 0xFFFFFF;
         };
         bool Build(const Entity& e, View& v, const FrameIn& in, std::vector<Layer>& layers, float& scale);
         void RunAnimations(const Entity& e, View& v, const ClientEntityDef& def, attachable::Pose& pose, const FrameIn& in,
                            const attachable::Geometry* bindGeometry);
         void Draw(const Entity& e, const View& v, const std::vector<Layer>& layers, float scale, const FrameIn& in);
         const FpState* fp = nullptr;
-        bool shadowOnlyPass = false; // current entity only casts a shadow (yourself in first person)
+        bool shadowOnlyPass = false;
         const glm::mat4* fpModel = nullptr;
         const glm::mat4* dollModel = nullptr;
         const int* dollClip = nullptr;
@@ -153,8 +150,8 @@ namespace perlin::entity {
         std::unordered_map<std::string, uint32_t> textures;
         std::unordered_map<uint64_t, uint32_t> skinTextures, capeTextures, capeModelTextures;
         std::unordered_map<uint64_t, std::unique_ptr<attachable::GeometryLibrary>> skinGeometry;
-        std::unordered_map<uint64_t, std::unique_ptr<attachable::Geometry>> voxelGeometry; // per skin serial (3D Skins)
-        attachable::GeometryLibrary capeGeometries; // the 16-part physics cape, loaded on first use
+        std::unordered_map<uint64_t, std::unique_ptr<attachable::Geometry>> voxelGeometry;
+        attachable::GeometryLibrary capeGeometries;
         std::vector<uint32_t> pendingMeshes;
         size_t drawn = 0, considered = 0, unrenderable = 0, culled = 0;
         struct Line {

@@ -301,7 +301,6 @@ namespace perlin {
             return s;
         }
 
-        // "turn:host:port?transport=udp" and friends.
         bool MakeIceServer(const friendworld::IceServerInfo& info, const std::string& url, rtc::IceServer& out) {
             const size_t colon = url.find(':');
             if (colon == std::string::npos)
@@ -417,7 +416,6 @@ namespace perlin {
                 OnUnreliableMessage(reinterpret_cast<const uint8_t*>(b->data()), b->size());
         });
 
-        // Signals from the host for this connection.
         std::random_device rd;
         std::mt19937_64 rng((static_cast<uint64_t>(rd()) << 32) | rd());
         uint64_t connectionId = rng();
@@ -426,7 +424,7 @@ namespace perlin {
         struct Inbox {
             std::mutex m;
             std::condition_variable cv;
-            std::deque<std::pair<std::string, std::string>> items; // type, data
+            std::deque<std::pair<std::string, std::string>> items;
         };
         auto inbox = std::make_shared<Inbox>();
         const std::string hostId = LowerAscii(lease.hostNetworkId);
@@ -498,7 +496,6 @@ namespace perlin {
             return false;
         }
 
-        // Hosts expect candidates trickled as CANDIDATEADD signals too (the SDP's own copies are not always used).
         {
             std::vector<std::string> mine;
             {
@@ -512,7 +509,6 @@ namespace perlin {
             }
         }
 
-        // The answer, then the host's candidates as they trickle in.
         bool haveAnswer = false;
         std::vector<std::string> pendingCandidates;
         const auto addCandidate = [&](const std::string& text) {
@@ -588,10 +584,6 @@ namespace perlin {
     void NetherNet::Disconnect() {
         connected = false;
         if (impl) {
-            // The callbacks below capture `this`. libdatachannel runs them on its own threads and
-            // replacing a callback waits for one that is running, so clearing them first means none can
-            // touch this object (its inbound queue) after it is gone. A late message used to crash
-            // the game when a transfer attempt was abandoned.
             try {
                 if (impl->reliable) {
                     impl->reliable->onMessage(nullptr);

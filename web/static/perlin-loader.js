@@ -138,8 +138,6 @@
       path.split('/').map(encodeURIComponent).join('/');
   }
 
-  // jsDelivr serves the same Mojang repository at the same commit from a CDN (HTTP/2, no per-IP throttling),
-  // which is far quicker than raw.githubusercontent.com for thousands of small files; GitHub is the fallback.
   function cdnUrl(manifest, path) {
     return CDN_BASE + manifest.repository + '@' + manifest.ref + '/' + path.split('/').map(encodeURIComponent).join('/');
   }
@@ -240,9 +238,6 @@
     return response.json();
   }
 
-  // Mojang's client jar is where the game's fonts and menu/inventory art come from. The browser
-  // downloads it (nothing is bundled) and the engine unpacks it; the unpacked files are kept in
-  // IndexedDB with the rest of the data, so this happens once.
   async function ensureClientAssets() {
     if (hasFile(DATA_DIR + '/assets/.ready2') && hasFile(DATA_DIR + '/fonts/unifont.hex')) return;
     setStatus('Looking up the current Minecraft version...');
@@ -271,8 +266,6 @@
     writeFile(DATA_DIR + '/fonts/client.jar', bytes);
   }
 
-  // Sounds are large; they come in after the game is already running and are used from the next
-  // launch on (they are cached like everything else).
   async function fetchSoundsInBackground(db) {
     try {
       var manifest = await (await fetch('assets-manifest.json', { cache: 'no-cache' })).json();
@@ -320,11 +313,9 @@
       setStatus('Restoring saved data...');
       await restoreState(db);
       var withSounds = await soundsCached(db);
-      // Mojang's client jar and the sample files download side by side.
       await Promise.all([
         ensureSamples(db, withSounds),
         ensureClientAssets().catch(function (e) {
-          // The game still starts; menus fall back to what is available without Mojang's art.
           console.warn('client assets unavailable: ' + e);
         })
       ]);
@@ -341,7 +332,6 @@
       window.addEventListener('pagehide', saveState);
       document.addEventListener('visibilitychange', function () { if (document.hidden) saveState(); });
       document.getElementById('canvas').focus();
-      // The title screen and the server list are the game's own; web builds can only join NetherNet.
       Module.callMain(['--nethernet']);
     } catch (e) {
       setProgress(-1);
@@ -366,7 +356,6 @@
     }
   };
 
-  // Start as soon as the page is isolated and the engine is up: no launcher form.
   function begin() {
     if (window.__perlinNoIsolation) {
       setStatus(window.__perlinNoIsolation, true);

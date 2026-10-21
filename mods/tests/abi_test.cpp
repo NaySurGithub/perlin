@@ -1,6 +1,3 @@
-// Verifies the reflection-driven wire encoding: every wire struct, filled with distinct values, survives a write/read/write
-// round trip byte for byte, a truncated read fails cleanly, and a hostile length prefix allocates nothing.
-//   g++ -std=c++23 -Isdk tests/abi_test.cpp
 #include <perlin/abi.hpp>
 #include <cstdio>
 #include <cstdlib>
@@ -40,12 +37,10 @@ int main() {
     T(EventTick) T(EventFrame) T(EventChat) T(EventKey) T(EventCommand) T(EventConnection) T(EventDamage) T(EventText)
     T(EventSlot) T(EventEntity) T(EventSound) T(EventHttp) T(EventPacket) T(EventTitle)
     T(EventDimension) T(Attribute) T(BlockProps) T(BlockEntityInfo) T(BreakState) T(FileLocation)
-    // truncated input must fail cleanly
     abi::Writer w; abi::Inventory inv; fill(inv); w.write(inv);
     abi::Reader cut(w.Data(), w.Size() / 2);
     (void)cut.read<abi::Inventory>();
     if (cut.Ok()) { std::puts("FAIL truncated read reported ok"); rc = 1; }
-    // hostile length prefix must not allocate
     uint8_t evil[8] = {0xFF, 0xFF, 0xFF, 0x7F, 1, 2, 3, 4};
     abi::Reader hr(evil, 8);
     auto v = hr.read<std::vector<std::string>>();

@@ -1,5 +1,3 @@
-// Unit tests for WAILA's API and built-in providers, against a fake host that serves the manifest's default settings.
-//   g++ -std=c++23 -Isdk -Iwaila -I<gen> -Iwaila/tests -DMANIFEST='"waila/waila.json"' waila/tests/waila_test.cpp
 #include <perlin/perlin.hpp>
 
 #include <mod_settings.hpp>
@@ -112,26 +110,23 @@ namespace {
 }
 
 int main() {
-    // ---- glob ----
     CHECK(waila::glob("*", "minecraft:stone"));
     CHECK(waila::glob("minecraft:*_stairs", "minecraft:oak_stairs"));
     CHECK(!waila::glob("minecraft:*_stairs", "minecraft:oak_slab"));
     CHECK(waila::glob("*chest", "minecraft:ender_chest"));
-    CHECK(waila::glob("chest", "mymod:chest")); // no namespace: any namespace
+    CHECK(waila::glob("chest", "mymod:chest"));
     CHECK(!waila::glob("minecraft:chest", "mymod:chest"));
     CHECK(waila::glob("*sign*", "minecraft:standing_sign"));
 
-    // ---- JSON ----
     {
         const auto v = json::parse(R"({"a":[1,2,{"b":"xé\n"}],"n":-1.5e1,"t":true,"z":null})");
         CHECK(v && (*v)["a"].size() == 3);
         CHECK((*v)["a"][2]["b"].string() == "x\xc3\xa9\n");
         CHECK((*v)["n"].number() == -15.0 && (*v)["t"].boolean() && (*v)["z"].is_null());
-        CHECK((*v)["missing"]["deeper"].integer(7) == 7); // chains never fail
+        CHECK((*v)["missing"]["deeper"].integer(7) == 7);
         CHECK(!json::parse("{\"a\":"));
     }
 
-    // ---- registry: stage order, priority order, gates ----
     {
         waila::Registry r;
         std::string order;
@@ -140,16 +135,15 @@ int main() {
         r.block(waila::Stage::Body, waila::always, mark('b'), "*", 5);
         r.block(waila::Stage::Body, waila::always, mark('a'), "*", -5);
         r.block(waila::Stage::Head, waila::always, mark('h'));
-        r.block(waila::Stage::Body, waila::always, mark('x'), "minecraft:dirt"); // not for stone
-        r.block(waila::Stage::Body, settings::registry_name, mark('r')); // off by default
-        r.block(waila::Stage::Body, settings::mod_name, mark('m'), "*", 9); // on by default
+        r.block(waila::Stage::Body, waila::always, mark('x'), "minecraft:dirt");
+        r.block(waila::Stage::Body, settings::registry_name, mark('r'));
+        r.block(waila::Stage::Body, settings::mod_name, mark('m'), "*", 9);
         const auto target = block_target("minecraft:stone");
         waila::Tooltip tip;
         r.run(tip, waila::BlockContext(target, context()));
         CHECK(order == "habmt");
     }
 
-    // ---- built-in providers ----
     waila::Registry reg;
     waila::vanilla::install(reg);
     const auto run_block = [&](const game::BlockTarget& t, waila::Context c = context()) {
@@ -161,7 +155,7 @@ int main() {
     {
         auto tip = run_block(block_target("minecraft:wheat", {{"growth", "3"}}));
         CHECK(has_line(tip, "Growth: 42%"));
-        CHECK(has_line(tip, "Minecraft")); // the mod name
+        CHECK(has_line(tip, "Minecraft"));
         tip = run_block(block_target("minecraft:wheat", {{"growth", "7"}}));
         CHECK(has_line(tip, "Mature"));
     }
@@ -177,7 +171,6 @@ int main() {
     CHECK(waila::vanilla::tool_of("minecraft:iron_pickaxe") == Tool::Pickaxe && waila::vanilla::tool_of("minecraft:shears") == Tool::Shears);
     CHECK(waila::vanilla::tier_of("minecraft:wooden_pickaxe") == 1 && waila::vanilla::tier_of("minecraft:netherite_pickaxe") == 4);
 
-    // The harvest tool row: a check mark exactly when the held tool does the job.
     {
         const auto marks = [](const waila::Tooltip& tip) {
             std::vector<bool> out;
@@ -193,7 +186,7 @@ int main() {
         stone.props.harvestLevel = 1;
         CHECK(marks(run_block(stone, context("minecraft:wooden_pickaxe"))) == std::vector<bool>{true});
         CHECK(marks(run_block(stone, context("minecraft:wooden_axe"))) == std::vector<bool>{false});
-        CHECK(marks(run_block(stone, context())) == std::vector<bool>{false}); // bare hands
+        CHECK(marks(run_block(stone, context())) == std::vector<bool>{false});
 
         auto obsidian = block_target("minecraft:obsidian");
         obsidian.props = stone.props;
@@ -214,7 +207,6 @@ int main() {
         }
     }
 
-    // ---- entities ----
     {
         game::EntityTarget t;
         t.entity.type = "minecraft:cow";
@@ -231,7 +223,6 @@ int main() {
                 hearts |= std::holds_alternative<waila::Hearts>(e);
         CHECK(hearts);
 
-        // More health than "hearts before numbers": a number instead.
         overrides["health_max_hearts"] = "5";
         t.entity.health = 100;
         t.entity.maxHealth = 100;
@@ -240,7 +231,6 @@ int main() {
         CHECK(has_line(big, "100/100"));
     }
 
-    // ---- layout ----
     {
         waila::Tooltip tip;
         tip.set_title("Stone");

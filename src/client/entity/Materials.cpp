@@ -45,7 +45,7 @@ namespace perlin::entity {
             m.blend = MaterialInfo::Blend::AlphaTest;
         }
         if (name == "sheep" || Has(name, "color_mask")) {
-            m.blend = MaterialInfo::Blend::AlphaTest; // the baked mask texture has binary alpha
+            m.blend = MaterialInfo::Blend::AlphaTest;
             m.colorMask = true;
         }
         if (name == "arrow") {

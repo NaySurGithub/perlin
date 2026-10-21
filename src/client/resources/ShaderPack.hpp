@@ -9,13 +9,11 @@ namespace perlin {
         std::string id, label;
         double min = 0.0, max = 1.0, step = 0.1, def = 0.0;
         bool toggle = false;
-        int slot = -1;                    // index into u_packSettings (x/y/z/w of 8 vec4s)
-        std::vector<std::string> labels;  // names for each step of a stepped slider ("Off", "Low"...)
-        std::string group;                // section header on the settings page
+        int slot = -1;
+        std::vector<std::string> labels;
+        std::string group;
     };
 
-    // A named set of values for pack settings ("settings") and engine options ("engine":
-    // shadowQuality, shadowDistance, shadowEntities, bloom).
     struct ShaderPreset {
         std::string name;
         std::map<std::string, double> settings;

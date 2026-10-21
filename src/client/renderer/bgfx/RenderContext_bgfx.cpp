@@ -53,20 +53,19 @@ namespace perlin {
         constexpr bgfx::ViewId kViewLate = 8;
         constexpr bgfx::ViewId kViewDoll = 7;
         constexpr bgfx::ViewId kViewTop = 9;
-        constexpr bgfx::ViewId kViewCopy = 10; // opaque scene copy for packs (after entities, before translucent)
-        constexpr bgfx::ViewId kViewBloom = 11; // 11..17: bloom down/up passes
-        constexpr bgfx::ViewId kViewShadowBuild = 1;   // terrain shadow map slices
-        constexpr bgfx::ViewId kViewShadowEntity = 18; // front shadow map copy + mobs and players
-        constexpr bgfx::ViewId kViewShadowGlass = 19;  // coloured light through glass (tint map slices)
-        constexpr bgfx::ViewId kViewUp0 = 20;          // render scale: edge-adaptive / bicubic upscale
-        constexpr bgfx::ViewId kViewUp1 = 21;          // render scale: sharpen
-        constexpr bgfx::ViewId kViewCopy2 = 22;        // frame generation: the world as shown, before the HUD
-        constexpr bgfx::ViewId kViewPresent = 23;      // frame generation: the finished frame to the window
-        constexpr bgfx::ViewId kViewGen = 24;          // frame generation: a generated frame
+        constexpr bgfx::ViewId kViewCopy = 10;
+        constexpr bgfx::ViewId kViewBloom = 11;
+        constexpr bgfx::ViewId kViewShadowBuild = 1;
+        constexpr bgfx::ViewId kViewShadowEntity = 18;
+        constexpr bgfx::ViewId kViewShadowGlass = 19;
+        constexpr bgfx::ViewId kViewUp0 = 20;
+        constexpr bgfx::ViewId kViewUp1 = 21;
+        constexpr bgfx::ViewId kViewCopy2 = 22;
+        constexpr bgfx::ViewId kViewPresent = 23;
+        constexpr bgfx::ViewId kViewGen = 24;
         constexpr uint32_t kPageVerts = 1u << 20;
         constexpr uint32_t kPageIdx = (kPageVerts / 4) * 6;
 
-        // GL-style clip depth (-1..1) from the zero-to-one depth the projection is built with.
         glm::dmat4 ConvertDepthD(glm::dmat4 m, bool homogeneous) {
             if (homogeneous)
                 for (int c = 0; c < 4; c++)
@@ -84,7 +83,6 @@ namespace perlin {
             return r;
         }
 
-        // The projection shifted by a fraction of a pixel (clip space x, y), for the temporal upscaler.
         void ApplyJitter(float m[16], float ox, float oy) {
             for (int c = 0; c < 4; c++) {
                 m[c * 4 + 0] += ox * m[c * 4 + 3];
@@ -193,7 +191,6 @@ namespace perlin {
         callback = std::make_unique<Callback>(this);
 
         bgfx::Init init;
-        // The environment variable wins (debugging); otherwise the Renderer setting. "auto" lets the GPU chooser decide.
         std::string forced = Env("PERLIN_RENDERER");
         if (forced.empty())
             forced = options.renderer;
@@ -231,9 +228,6 @@ namespace perlin {
                     init.type = bgfx::RendererType::OpenGL;
             }
         }
-        // On Windows the fastest GPU is picked and Direct3D 11 is used.
-        // An explicit API still gets the fastest adapter (the chooser's vendor/device), so picking an API by hand
-        // never lands on the integrated GPU of a laptop.
         gpu::Choice gpuChoice;
         const bool autoType = init.type == bgfx::RendererType::Count || forced == "auto";
         gpuChoice = gpu::ChooseRenderer();
@@ -245,7 +239,7 @@ namespace perlin {
             std::cout << "[gpu] " << gpuChoice.adapterName << ": " << bgfx::getRendererName(init.type) << " ("
                       << (autoType ? gpuChoice.reason : std::string("chosen in settings")) << ")" << std::endl;
         }
-        init.fallback = true; // if the chosen API cannot start, bgfx tries the next best one
+        init.fallback = true;
         init.swapChain.nwh = native.window;
         init.swapChain.ndt = native.display;
         if (native.wayland)
@@ -253,7 +247,7 @@ namespace perlin {
         init.swapChain.width = (uint32_t)width;
         init.swapChain.height = (uint32_t)height;
         init.reset = ResetFlags();
-        init.debug = false;   // no validation layers or debug text
+        init.debug = false;
         init.profile = false;
         init.limits.maxTransientVbSize = 48u << 20;
         init.limits.maxTransientIbSize = 24u << 20;
@@ -334,7 +328,7 @@ namespace perlin {
         quadIndices = uploadIndices(QuadIndices(1));
 
         const bool shadersOk = shaders.Initialize();
-        shadowConfigDirty = true; // built on the first frame from FrameParams
+        shadowConfigDirty = true;
         if (!shadersOk) {
             std::cout << "[bgfx] shader program creation failed for "
                       << bgfx::getRendererName(bgfx::getRendererType()) << std::endl;
@@ -470,7 +464,6 @@ namespace perlin {
                                : bgfx::createTexture2D(bgfx::BackbufferRatio::Equal, false, 1, bgfx::TextureFormat::RGBA8, sample);
         };
         blur.worldColor = colorTarget();
-        // The scene copy blits this depth buffer, so it must be a real texture then.
         const uint64_t depthFlags = depthReadable ? BGFX_TEXTURE_RT : BGFX_TEXTURE_RT_WRITE_ONLY;
         blur.worldDepth = blur.scaled ? bgfx::createTexture2D(static_cast<uint16_t>(blur.w), static_cast<uint16_t>(blur.h), false, 1,
                                                               bgfx::TextureFormat::D24S8, depthFlags)
@@ -544,19 +537,20 @@ namespace perlin {
 
     void RenderContext_bgfx::PlanFrame(const FrameParams& params) {
         plan = Plan{};
-        const bool disabled = PERLIN_ENV("PERLIN_NO_UPSCALE") != nullptr;
+        static const bool disabled = PERLIN_ENV("PERLIN_NO_UPSCALE") != nullptr;
+        static const bool noFrameGen = PERLIN_ENV("PERLIN_NO_FRAMEGEN") != nullptr;
+        static const bool noSsr = PERLIN_ENV("PERLIN_NO_SSR") != nullptr;
         const float scale = disabled ? 1.0f : std::clamp(params.renderScale, 0.25f, 1.0f);
         plan.scaled = scale < 0.999f;
         plan.w = plan.scaled ? std::max(32, static_cast<int>(std::lround(static_cast<float>(width) * scale))) : width;
         plan.h = plan.scaled ? std::max(32, static_cast<int>(std::lround(static_cast<float>(height) * scale))) : height;
         plan.temporal = !disabled && params.upscaler == 3 && !upscale.failed && shaders.Has(ShaderProgram::Temporal);
         plan.frameGen = params.frameGen >= 2 && !fg.failed && shaders.Has(ShaderProgram::FrameGen) &&
-                        shaders.Has(ShaderProgram::Upscale) && !PERLIN_ENV("PERLIN_NO_FRAMEGEN");
+                        shaders.Has(ShaderProgram::Upscale) && !noFrameGen;
         ShaderPack& pack = ShaderPack::Instance();
-        const bool sceneWanted = pack.Active() && pack.Flag("sceneCopy", false) && !scene.failed && !PERLIN_ENV("PERLIN_NO_SSR");
+        const bool sceneWanted = pack.Active() && pack.Flag("sceneCopy", false) && !scene.failed && !noSsr;
         plan.wantDepth = sceneWanted || plan.temporal || plan.frameGen;
         if (plan.temporal) {
-            // 16 jitter positions of a Halton (2, 3) sequence, each within the pixel of the small image.
             const uint32_t index = (upscale.frameIndex++ % 16) + 1;
             const float jx = Halton(index, 2) - 0.5f, jy = Halton(index, 3) - 0.5f;
             const float ySign = bgfx::getCaps()->originBottomLeft ? 1.0f : -1.0f;
@@ -629,14 +623,13 @@ namespace perlin {
         upscale.historyValid = false;
     }
 
-    // Rebuilds a window-sized image from the smaller world image. Returns what the final pass should read.
     bgfx::TextureHandle RenderContext_bgfx::RunUpscale(bgfx::TextureHandle source, int sourceW, int sourceH, const FrameParams& params) {
         const bool scaled = sourceW < width || sourceH < height;
         const bool temporal = plan.temporal && bgfx::isValid(blur.worldDepth) && bgfx::isValid(blur.params);
         if (PERLIN_ENV("PERLIN_NO_UPSCALE") || (!temporal && (!scaled || params.upscaler == 0))) {
             if (!scaled && !temporal && bgfx::isValid(upscale.tex[0]))
                 DestroyUpscale();
-            return source; // the final pass samples it bilinearly
+            return source;
         }
         if (!EnsureUpscale())
             return source;
@@ -672,7 +665,6 @@ namespace perlin {
             return sharpen(upscale.tex[0], 1);
         }
 
-        // Temporal reconstruction: tex[history] is last frame's output, tex[1 - history] receives this frame's.
         const int write = 1 - upscale.history;
         const int read = upscale.history;
         const bool useHistory = upscale.historyValid && cam.havePrev && !cam.teleported;
@@ -709,7 +701,6 @@ namespace perlin {
         return sharpen(upscale.tex[write], 2);
     }
 
-    // ---- Frame generation (world only) ----------------------------------------------------------------------------------
 
     bool RenderContext_bgfx::EnsureFrameGen() {
         if (fg.failed)
@@ -763,8 +754,6 @@ namespace perlin {
         fg.valid = false;
     }
 
-    // Called after the world has been composed into the frame target: keeps a copy of it without the HUD, and puts the
-    // finished frame (with HUD) in the window.
     void RenderContext_bgfx::SubmitFrameGenCopies(float origin) {
         bgfx::TextureRegion dst, src;
         dst.init(fg.worldCopy);
@@ -786,14 +775,10 @@ namespace perlin {
         bgfx::submit(kViewPresent, shaders.Program(ShaderProgram::Upscale));
     }
 
-    // Shows a frame between two real ones: the camera is moved on by the share `index / total` of its last step and the last
-    // real world image is carried there by depth reprojection. The HUD is left where it is.
     bool RenderContext_bgfx::PresentGenerated(int index, int total) {
         if (!initialized || !fg.ready || !fg.valid || !cam.haveCur || !cam.havePrev || cam.teleported || total < 2 ||
             !bgfx::isValid(blur.worldDepth) || !shaders.Has(ShaderProgram::FrameGen))
             return false;
-        // How far the camera has got since the real frame, in units of the last real step: the motion between the last two
-        // real frames happened over `step` seconds and `elapsed` seconds have passed since.
         const double nowSec = std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
         const double step = cam.time - cam.prevTime;
         if (!(step > 0.0005 && step < 0.25))
@@ -815,12 +800,32 @@ namespace perlin {
         if (glm::dot(q0, q1) < 0.0)
             q0 = -q0;
         const double angle = 2.0 * std::acos(std::clamp(glm::dot(q0, q1), -1.0, 1.0));
-        // A big jump (a flick, a teleport, a camera cut): extrapolating it would smear the picture, so show nothing new.
-        if (!(angle < 0.7) || !(glm::length(c1 - c0) < 6.0))
+        if (!(angle < 0.5) || !(glm::length(c1 - c0) < 6.0))
             return false;
-        const glm::dquat qg = glm::normalize(glm::slerp(q0, q1, 1.0 + t));
+        double scale = 1.0;
+        if (cam.havePrev2) {
+            const glm::dmat4 prev2Rel = cam.prev2View * shift;
+            glm::dmat3 r2;
+            glm::dvec3 c2;
+            split(prev2Rel, r2, c2);
+            glm::dquat q2 = glm::quat_cast(r2);
+            if (glm::dot(q2, q0) < 0.0)
+                q2 = -q2;
+            const double earlier = 2.0 * std::acos(std::clamp(glm::dot(q2, q0), -1.0, 1.0));
+            const double lo = std::min(angle, earlier), hi = std::max(angle, earlier);
+            if (hi > 1.0e-4 && lo < hi * 0.6)
+                scale *= 0.4 + 0.6 * (lo / hi);
+        }
+        const double reach = angle * t * scale;
+        if (reach > 0.09)
+            scale *= 0.09 / reach;
+        const double move = glm::length(c1 - c0) * t * scale;
+        if (move > 1.2)
+            scale *= 1.2 / move;
+        const double tt = t * scale;
+        const glm::dquat qg = glm::normalize(glm::slerp(q0, q1, 1.0 + tt));
         const glm::dmat3 rg = glm::mat3_cast(qg);
-        const glm::dvec3 cg = c1 + (c1 - c0) * t;
+        const glm::dvec3 cg = c1 + (c1 - c0) * tt;
         glm::dmat4 viewGen(rg);
         viewGen[3] = glm::dvec4(-(rg * cg), 1.0);
         const glm::dmat4 genVp = ConvertDepthD(cam.proj * viewGen, homogeneousDepth);
@@ -834,7 +839,9 @@ namespace perlin {
         bgfx::setViewRect(kViewGen, 0, 0, static_cast<uint16_t>(width), static_cast<uint16_t>(height));
         const float post[4] = {0.0f, origin, 0.0f, 0.0f};
         bgfx::setUniform(blur.params, post);
-        const float gen[4] = {0.0f, 0.0f, origin > 0.5f ? 1.0f : -1.0f, homogeneousDepth ? 1.0f : 0.0f};
+        const double pa = cam.proj[2][2], pb = cam.proj[3][2];
+        const double nearZ = pb / pa, farZ = pb / (pa + 1.0);
+        const float gen[4] = {static_cast<float>(nearZ), static_cast<float>(farZ), origin > 0.5f ? 1.0f : -1.0f, homogeneousDepth ? 1.0f : 0.0f};
         bgfx::setUniform(fg.gen, gen);
         bgfx::setUniform(fg.invVp, invGen);
         bgfx::setUniform(fg.curVp, cur);
@@ -851,14 +858,26 @@ namespace perlin {
     }
 
     bool RenderContext_bgfx::EnsureSceneCopy() {
-        if (bgfx::isValid(scene.color) && bgfx::isValid(scene.depth))
-            return true;
+        const int wantW = blur.scaled ? blur.w : 0, wantH = blur.scaled ? blur.h : 0;
+        if (bgfx::isValid(scene.color) && bgfx::isValid(scene.depth)) {
+            if (scene.w == wantW && scene.h == wantH)
+                return true;
+            DestroySceneCopy();
+        }
         const uint64_t clamp = BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP;
-        scene.color = bgfx::createTexture2D(bgfx::BackbufferRatio::Equal, false, 1, bgfx::TextureFormat::RGBA8,
-                                            BGFX_TEXTURE_BLIT_DST | clamp);
-        scene.depth = bgfx::createTexture2D(bgfx::BackbufferRatio::Equal, false, 1, bgfx::TextureFormat::D24S8,
-                                            BGFX_TEXTURE_RT | BGFX_TEXTURE_BLIT_DST | clamp | BGFX_SAMPLER_MIN_POINT |
-                                                BGFX_SAMPLER_MAG_POINT);
+        const uint64_t depthFlags = BGFX_TEXTURE_RT | BGFX_TEXTURE_BLIT_DST | clamp | BGFX_SAMPLER_MIN_POINT | BGFX_SAMPLER_MAG_POINT;
+        if (wantW > 0) {
+            scene.color = bgfx::createTexture2D(static_cast<uint16_t>(wantW), static_cast<uint16_t>(wantH), false, 1,
+                                                bgfx::TextureFormat::RGBA8, BGFX_TEXTURE_BLIT_DST | clamp);
+            scene.depth = bgfx::createTexture2D(static_cast<uint16_t>(wantW), static_cast<uint16_t>(wantH), false, 1,
+                                                bgfx::TextureFormat::D24S8, depthFlags);
+        } else {
+            scene.color = bgfx::createTexture2D(bgfx::BackbufferRatio::Equal, false, 1, bgfx::TextureFormat::RGBA8,
+                                                BGFX_TEXTURE_BLIT_DST | clamp);
+            scene.depth = bgfx::createTexture2D(bgfx::BackbufferRatio::Equal, false, 1, bgfx::TextureFormat::D24S8, depthFlags);
+        }
+        scene.w = wantW;
+        scene.h = wantH;
         if (!bgfx::isValid(scene.color) || !bgfx::isValid(scene.depth)) {
             std::cout << "[shaders] could not create the scene copy; reflections fall back to the sky" << std::endl;
             DestroySceneCopy();
@@ -924,13 +943,11 @@ namespace perlin {
         bloom.ready = false;
     }
 
-    // Downsample the finished world (thresholded) through four levels, then add each level back up.
     void RenderContext_bgfx::RunBloom(float strength) {
         static const bgfx::BackbufferRatio::Enum kRatio[4] = {bgfx::BackbufferRatio::Half, bgfx::BackbufferRatio::Quarter,
                                                               bgfx::BackbufferRatio::Eighth, bgfx::BackbufferRatio::Sixteenth};
         const float origin = bgfx::getCaps()->originBottomLeft ? 1.0f : 0.0f;
         const float W = static_cast<float>(std::max(1, width)), H = static_cast<float>(std::max(1, height));
-        // Brighter threshold for subtle settings, lower for strong ones.
         const float threshold = 0.82f - 0.12f * std::clamp(strength, 0.0f, 1.0f);
         const auto pass = [&](int viewOffset, int target, bgfx::TextureHandle source, float sourceScale, float mode, bool additive) {
             const bgfx::ViewId view = static_cast<bgfx::ViewId>(kViewBloom + viewOffset);
@@ -940,7 +957,9 @@ namespace perlin {
             bgfx::setUniform(blur.params, post);
             const float p[4] = {mode, threshold, 0.18f, 0.0f};
             bgfx::setUniform(bloom.params, p);
-            const float t[4] = {sourceScale / W, sourceScale / H, 0.0f, 0.0f};
+            const bool fromWorld = source.idx == blur.worldColor.idx && blur.scaled;
+            const float t[4] = {fromWorld ? 1.0f / static_cast<float>(std::max(1, blur.w)) : sourceScale / W,
+                                fromWorld ? 1.0f / static_cast<float>(std::max(1, blur.h)) : sourceScale / H, 0.0f, 0.0f};
             bgfx::setUniform(bloom.texel, t);
             bgfx::setTexture(0, blur.sampCur, source, BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP);
             bgfx::setVertexBuffer(0, screenBuffer);
@@ -961,7 +980,6 @@ namespace perlin {
         static bool failed = false;
         const float menuPx = std::max(0.0f, params.menuBlur);
         const bool blurOn = (intensity > 0.001f || menuPx > 0.01f) && !failed && !PERLIN_ENV("PERLIN_NO_BLUR");
-        // A pack asking for the scene copy needs the world drawn offscreen too.
         ShaderPack& pack = ShaderPack::Instance();
         const bool sceneWanted = pack.Active() && pack.Flag("sceneCopy", false) && !scene.failed && !PERLIN_ENV("PERLIN_NO_SSR");
         if (plan.wantDepth != depthReadable) {
@@ -971,7 +989,6 @@ namespace perlin {
         }
         scene.valid = false;
         const bool bloomOn = params.bloom > 0.001f && !bloom.failed && !PERLIN_ENV("PERLIN_NO_BLOOM");
-        // Render scale: the world goes to targets smaller than the window (see PlanFrame).
         const int renderW = plan.w, renderH = plan.h;
         const bool scaled = plan.scaled;
         if (blur.targets && (blur.scaled != scaled || (scaled && (blur.w != renderW || blur.h != renderH)))) {
@@ -1060,13 +1077,10 @@ namespace perlin {
             bgfx::setUniform(blur.params, p);
             bgfx::setTexture(0, blur.sampCur, cur, BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP);
             bgfx::setTexture(1, blur.sampHist, hist, BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP);
-            // Under water with a shader pack: the world wobbles gently on the way to the screen,
-            // like looking into water from outside (the motion blur history stays undistorted).
             const float fx[4] = {view == kViewBlurOut && pack.Active() && params.cameraMedium == 1 ? 1.0f : 0.0f,
                                  std::fmod(params.timeSeconds, 3600.0f), 0.0f, 0.0f};
             bgfx::setUniform(blur.fx, fx);
             if (bloom.ready) {
-                // Only the last pass to the screen adds the glow.
                 const float b[4] = {bloomRun && view == kViewBlurOut ? params.bloom * 0.55f : 0.0f, 0.0f, 0.0f, 0.0f};
                 bgfx::setUniform(bloom.composite, b);
                 bgfx::setTexture(2, bloom.sampler, bloom.level[0], BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP);
@@ -1076,7 +1090,6 @@ namespace perlin {
             bgfx::submit(view, shaders.Program(ShaderProgram::Post));
         };
         if (!blurOn) {
-            // Offscreen only for the scene copy / bloom: straight copy to the screen.
             const bgfx::TextureHandle shown = RunUpscale(blur.worldColor, worldW, worldH, params);
             fullscreen(kViewBlurOut, screenFb, shown, shown, 0.0f, 1.0f);
             if (fgRun)
@@ -1097,8 +1110,6 @@ namespace perlin {
         int w = 0, h = 0;
         platform->GetFramebufferSize(w, h);
         if (platform->TakeSurfaceChanged() && w > 0 && h > 0 && initialized) {
-            // The window behind the swap chain was replaced. A reset at an unchanged size is ignored, so go one
-            // pixel off now; the next frame sees the mismatch and resets to the real size.
             width = w + 1;
             height = h;
             bgfx::SwapChain sc;
@@ -1114,6 +1125,8 @@ namespace perlin {
             const bool usable = std::isfinite(params.projection[0]) && params.projection[0] != 0.0f && std::isfinite(params.view[12]);
             cam.havePrev = cam.haveCur && usable && !params.teleported && cam.sizeW == width && cam.sizeH == height;
             if (usable) {
+                cam.prev2View = cam.prevView;
+                cam.havePrev2 = cam.havePrev;
                 cam.prevView = cam.view;
                 cam.prevProj = cam.proj;
                 cam.prevEye = cam.eye;
@@ -1188,7 +1201,6 @@ namespace perlin {
         }
         shaders.SetFrame(params, tileSize);
         {
-            // Vanilla cloud map placement (same drift as the vanilla cloud mesh).
             float cloudMap[4] = {0.0f, 3.96f, 1.0f / 3072.0f, 1.0f / 3072.0f};
             if (cloudTexture.width > 0 && cloudTexture.height > 0) {
                 const double widthBlocks = cloudTexture.width * 12.0;
@@ -1206,7 +1218,6 @@ namespace perlin {
         frame = params;
         ConvertDepth(params.skyViewProjection, skyMvp);
         if (plan.temporal) {
-            // Sub-pixel shift for the temporal upscaler. The inverse used by the shader packs was taken before this.
             ApplyJitter(mvp, plan.jitter[0], plan.jitter[1]);
             ApplyJitter(skyMvp, plan.jitter[0], plan.jitter[1]);
         }
@@ -1240,7 +1251,7 @@ namespace perlin {
         moonTexture = create(moon, clamp);
         if (bgfx::isValid(cloudMapTexture))
             bgfx::destroy(cloudMapTexture);
-        cloudMapTexture = create(clouds, BGFX_SAMPLER_MIN_POINT | BGFX_SAMPLER_MAG_POINT); // repeats
+        cloudMapTexture = create(clouds, BGFX_SAMPLER_MIN_POINT | BGFX_SAMPLER_MAG_POINT);
         cloudTexture.width = clouds.width;
         cloudTexture.height = clouds.height;
         cloudTexture.solid.assign(static_cast<size_t>(std::max(0, clouds.width)) * std::max(0, clouds.height), 0);
@@ -1311,7 +1322,6 @@ namespace perlin {
         bgfx::setVertexBuffer(0, &tvb);
         bgfx::setIndexBuffer(quadIndices);
         bgfx::setState(MaterialState("ui_crosshair", BGFX_STATE_WRITE_RGB) & ~BGFX_STATE_WRITE_A);
-        // The built-in sprite program: shader packs replace "celestial" for the sun and moon.
         bgfx::submit(kViewGui, shaders.Program(shaders.Has(ShaderProgram::SpriteUi) ? ShaderProgram::SpriteUi : ShaderProgram::Celestial));
     }
 
@@ -1363,7 +1373,7 @@ namespace perlin {
             slot = static_cast<uint32_t>(uiMeshes.size());
             uiMeshes.emplace_back();
         }
-        const uint32_t generation = uiMeshes[slot].generation; // advanced when the slot was freed
+        const uint32_t generation = uiMeshes[slot].generation;
         uiMeshes[slot] = mesh;
         uiMeshes[slot].generation = generation;
         uiMeshes[slot].used = true;
@@ -1397,8 +1407,6 @@ namespace perlin {
         mesh.vb = bgfx::createVertexBuffer(bgfx::copy(vertices, vertexCount * sizeof(UiVertex)), uiLayout);
         mesh.ib = bgfx::createIndexBuffer(bgfx::copy(indices, indexCount * sizeof(uint32_t)), BGFX_BUFFER_INDEX32);
         if (!bgfx::isValid(mesh.vb) || !bgfx::isValid(mesh.ib)) {
-            // Out of bgfx buffer handles: draw nothing rather than hand out a mesh that crashes
-            // bgfx when it is submitted.
             if (bgfx::isValid(mesh.vb))
                 bgfx::destroy(mesh.vb);
             if (bgfx::isValid(mesh.ib))
@@ -1417,7 +1425,6 @@ namespace perlin {
             return 0;
         }
         if (staticUiMeshes >= staticUiMeshWarnAt) {
-            // A count that keeps doubling means something keeps meshes it never frees.
             std::cout << "[render] " << staticUiMeshes << " UI meshes alive" << std::endl;
             staticUiMeshWarnAt *= 2;
         }
@@ -1426,18 +1433,11 @@ namespace perlin {
 
     uint32_t RenderContext_bgfx::UiCreateFrameMesh(const UiVertex* vertices, uint32_t vertexCount, const uint32_t* indices,
                                                    uint32_t indexCount) {
-        // Frame meshes live until the end of the frame: the renderer frees them itself after
-        // bgfx::frame(), whether or not their owner remembers to (a later UiDestroyMesh of the id
-        // is a no-op thanks to the generation).
         if (!initialized || vertexCount == 0 || indexCount == 0 || !vertices || !indices)
             return 0;
         uint32_t id = 0;
         if (bgfx::getAvailTransientVertexBuffer(vertexCount, uiLayout) < vertexCount ||
             bgfx::getAvailTransientIndexBuffer(indexCount, true) < indexCount) {
-            // Out of transient space this frame. Making a real GPU buffer pair per mesh here costs
-            // far more than the mesh is worth and, with hundreds of entities, used up every bgfx
-            // buffer handle within a frame or two (the UI then drew nothing and the game crawled).
-            // Dropping a mesh for one frame is invisible by comparison.
             static uint32_t dropped = 0;
             if (dropped++ % 600 == 0)
                 std::cout << "[render] transient buffers full; dropping frame meshes (" << dropped << " so far)" << std::endl;
@@ -1551,8 +1551,6 @@ namespace perlin {
         };
         const bool glint = draw.glintTexture != 0 && draw.glintTexture <= uiTextures.size() && uiTextures[draw.glintTexture - 1].used;
 
-        // Opaque world meshes (mobs, players, items) also go into the shader pack's shadow map,
-        // drawn over this frame's copy of the cached terrain map.
         if (layer == UiLayer::World && shadow.active && shadow.entities && !glint && draw.depth && draw.depthWrite &&
             draw.blend != 2 && shaders.Has(ShaderProgram::EntityShadow)) {
             bindMesh();
@@ -1646,7 +1644,6 @@ namespace perlin {
         if (gpuTime && timedFrames == 0)
             bgfx::setDebug(BGFX_DEBUG_PROFILER);
         bgfx::frame();
-        // This frame's transient UI geometry has been consumed.
         ReleaseFrameMeshes();
         if (gpuTime) {
             const bgfx::Stats* stats = bgfx::getStats();
@@ -2059,8 +2056,6 @@ namespace perlin {
         submitMatrix(view);
         shaders.SetModulator(sky.skyColor[0], sky.skyColor[1], sky.skyColor[2], 1.0f);
         shaders.BindClouds(cloudMapTexture);
-        // Vanilla's sky is a disc overhead that leaves a strip around the horizon in the clear
-        // colour; a pack that draws the whole sky itself gets a box covering every direction.
         ShaderPack& pack = ShaderPack::Instance();
         if (pack.Active() && pack.Flag("skyBox", false) && bgfx::isValid(skyBoxBuffer)) {
             bgfx::setVertexBuffer(0, skyBoxBuffer);
@@ -2333,7 +2328,6 @@ namespace perlin {
             DestroyShadows();
             return;
         }
-        // Coloured light through stained glass: an RGBA16F tint map per terrain map, half size.
         if (shaders.Has(ShaderProgram::ShadowGlass) && (caps->formats[bgfx::TextureFormat::RGBA16F] & BGFX_CAPS_FORMAT_TEXTURE_FRAMEBUFFER)) {
             const uint16_t h16 = static_cast<uint16_t>(std::max(1, size / 2));
             bool tintOk = true;
@@ -2419,10 +2413,7 @@ namespace perlin {
         if (L.y < 0.0f)
             L = -L;
         if (L.y < 0.03f)
-            return; // sunrise / sunset: no direct light (the cached map is kept for when it returns)
-        // The cached map is rebuilt when the light has moved a small step (about a fifth of a degree: a 10 block
-        // tall shadow moves a fraction of a shadow texel). The rebuild itself uses the exact direction, and
-        // the new map fades in over the old one, so nothing ever jumps.
+            return;
         const int64_t lightKey[2] = {static_cast<int64_t>(std::llround(L.x * 300.0f)), static_cast<int64_t>(std::llround(L.y * 300.0f))};
         const glm::vec3 Lq = glm::normalize(glm::vec3(static_cast<float>(lightKey[0]), static_cast<float>(lightKey[1]),
                                                       std::round(L.z * 300.0f)) / 300.0f);
@@ -2443,7 +2434,6 @@ namespace perlin {
             b.up = glm::cross(b.fwd, b.right);
             return b;
         };
-        // World -> shadow map texture space, and the matrix a build rasterises with.
         const auto fillMatrices = [&](const Basis& b, float cx, float cy, float cz, float* sample, float* raster, float* info) {
             float S[16] = {};
             auto col = [&](int c, int r) -> float& { return S[c * 4 + r]; };
@@ -2471,16 +2461,13 @@ namespace perlin {
             info[0] = 1.0f / static_cast<float>(shadow.size);
             info[1] = 2.0f * R;
             info[2] = 2.0f * D;
-            info[3] = shadow.tintEnabled ? 2.0f : 1.0f; // 2: a tint map is bound too
+            info[3] = shadow.tintEnabled ? 2.0f : 1.0f;
         };
 
-        // Frame time, for the fade.
         const double nowSeconds = frame.timeSeconds;
         const float dtFrame = shadow.lastTime > 0.0 ? static_cast<float>(std::clamp(nowSeconds - shadow.lastTime, 0.0, 0.1)) : 0.0f;
         shadow.lastTime = nowSeconds;
 
-        // Start a new build when the key (camera cell, light step, meshes) changed and none is
-        // running. A build in progress always finishes, so a stream of mesh updates never starves it.
         const Basis kb = basisOf(Lq);
         const int64_t key[6] = {static_cast<int64_t>(std::llround(std::floor(glm::dot(cam, kb.right) / step))),
                                 static_cast<int64_t>(std::llround(std::floor(glm::dot(cam, kb.up) / step))),
@@ -2493,7 +2480,7 @@ namespace perlin {
             shadow.haveKey = true;
             shadow.framesSince = 0;
             std::memcpy(shadow.key, key, sizeof(key));
-            const Basis eb = basisOf(L); // the exact light direction
+            const Basis eb = basisOf(L);
             const glm::vec3 right = eb.right, up = eb.up, fwd = eb.fwd;
             const float cx = std::floor(glm::dot(cam, right) / step) * step;
             const float cy = std::floor(glm::dot(cam, up) / step) * step;
@@ -2507,7 +2494,6 @@ namespace perlin {
             ShadowMap& m = shadow.maps[shadow.front == 0 ? 1 : 0];
             fillMatrices(eb, cx, cy, cz, m.sample, m.raster, m.info);
 
-            // Chunks in range, nearest first, for each pass.
             shadow.buildList.clear();
             std::vector<std::pair<float, std::pair<int64_t, uint8_t>>> found;
             const float reachXY = R, reachZ = D;
@@ -2522,8 +2508,6 @@ namespace perlin {
                     continue;
                 const glm::vec3 rel = centre - cam;
                 const float d2 = rel.x * rel.x + rel.z * rel.z;
-                // Passes 0-2: opaque layers into the depth map; 3-4: translucent layers (glass)
-                // into the tint map, after every opaque pass (the glass is tested against it).
                 for (uint8_t pass = 0; pass < (shadow.tintEnabled ? 5 : 3); pass++) {
                     static constexpr RenderLayer kLayers[5] = {RenderLayer::Solid, RenderLayer::Cutout, RenderLayer::CutoutCull,
                                                                RenderLayer::Translucent, RenderLayer::TranslucentCull};
@@ -2539,8 +2523,6 @@ namespace perlin {
                 shadow.buildList.push_back(f.second);
             shadow.buildCursor = 0;
             shadow.buildSlice = 0;
-            // The very first map is built in one go so shadows appear at once; after that a rebuild
-            // is spread over a few frames.
             shadow.buildSlices = shadow.front < 0 ? 1 : 4;
         }
 
@@ -2556,7 +2538,7 @@ namespace perlin {
                 bgfx::setViewFrameBuffer(kViewShadowGlass, m.tintFb);
                 bgfx::setViewRect(kViewShadowGlass, 0, 0, h16, h16);
                 if (shadow.buildSlice == 0)
-                    bgfx::setViewClear(kViewShadowGlass, BGFX_CLEAR_COLOR, 0xFFFFFFFFu, 1.0f, 0); // white, nearest glass "far"
+                    bgfx::setViewClear(kViewShadowGlass, BGFX_CLEAR_COLOR, 0xFFFFFFFFu, 1.0f, 0);
                 bgfx::touch(kViewShadowGlass);
             }
             const size_t remainingSlices = static_cast<size_t>(std::max(1, shadow.buildSlices - shadow.buildSlice));
@@ -2568,8 +2550,6 @@ namespace perlin {
             constexpr uint8_t kKeep = BGFX_DISCARD_INDEX_BUFFER | BGFX_DISCARD_VERTEX_STREAMS;
             static constexpr RenderLayer kLayers[5] = {RenderLayer::Solid, RenderLayer::Cutout, RenderLayer::CutoutCull,
                                                        RenderLayer::Translucent, RenderLayer::TranslucentCull};
-            // Glass: multiply the colours, keep the nearest depth in alpha; no depth buffer (the
-            // shader tests against the opaque map instead).
             const uint64_t glassState = BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A |
                                         BGFX_STATE_BLEND_FUNC_SEPARATE(BGFX_STATE_BLEND_DST_COLOR, BGFX_STATE_BLEND_ZERO,
                                                                        BGFX_STATE_BLEND_ONE, BGFX_STATE_BLEND_ONE) |
@@ -2595,7 +2575,7 @@ namespace perlin {
                     if (bgfx::isValid(tileFlagsTexture))
                         shaders.BindTileFlags(tileFlagsTexture);
                     if (glass)
-                        shaders.BindShadow(m.color); // the opaque depth this build wrote
+                        shaders.BindShadow(m.color);
                     primedPass = pass;
                 }
                 const Page& pg = pages[g.page];
@@ -2609,12 +2589,11 @@ namespace perlin {
             shadow.buildCursor += count;
             shadow.buildSlice++;
             if (shadow.buildSlice >= shadow.buildSlices || shadow.buildCursor >= shadow.buildList.size()) {
-                // Finished (the views run in order, so this frame already samples the new map).
                 shadow.building = false;
                 if (shadow.front < 0) {
-                    shadow.front = 0; // the first build goes into maps[0]
+                    shadow.front = 0;
                 } else {
-                    shadow.fading = true; // fades in over the front map, which swaps once it is complete
+                    shadow.fading = true;
                     shadow.fadeT = 0.0f;
                 }
                 shadow.buildList.clear();
@@ -2624,7 +2603,6 @@ namespace perlin {
         if (shadow.front < 0)
             return;
 
-        // A finished rebuild fades in over the front map, then becomes it.
         shadow.fadeWeight = 0.0f;
         if (shadow.fading) {
             static constexpr float kFadeSeconds = 0.45f;
@@ -2656,8 +2634,6 @@ namespace perlin {
         }
         shadow.active = true;
 
-        // Mobs and players: their own map, drawn from the exact light direction every frame (UiSubmit),
-        // so their shadows follow the sun and the camera continuously.
         if (frame.shadowEntities && shaders.Has(ShaderProgram::EntityShadow) && EnsureEntityShadowMap()) {
             const Basis eb = basisOf(L);
             const float ex = std::floor(glm::dot(cam, eb.right) / texel) * texel;
@@ -2744,7 +2720,6 @@ namespace perlin {
                 shaders.Apply(atlas, lightmapTex, samplerFlags, lightmapFlags);
                 if (shadow.active)
                     shaders.BindShadow(shadow.sampled);
-                // Always bind something to the tint sampler (white: no coloured light).
                 shaders.BindShadowTint(shadow.active && bgfx::isValid(shadow.sampledTint) ? shadow.sampledTint : whiteTex);
                 shaders.SetShadowNext(shadow.sampleB, shadow.infoB, shadow.active ? shadow.fadeWeight : 0.0f);
                 shaders.BindShadowNext(shadow.active && bgfx::isValid(shadow.sampledB) ? shadow.sampledB : whiteTex,
@@ -2753,7 +2728,7 @@ namespace perlin {
                 shaders.BindShadowEntities(shadow.active && shadow.entities ? shadow.entityColor : whiteTex);
                 shaders.BindClouds(cloudMapTexture);
                 if (!bgfx::isValid(tileFlagsTexture))
-                    UploadTileFlags({}); // all zero until the block library reports foliage tiles
+                    UploadTileFlags({});
                 shaders.BindTileFlags(tileFlagsTexture);
                 if (ordered && scene.valid)
                     shaders.BindScene(scene.color, scene.depth);
@@ -2870,7 +2845,7 @@ namespace perlin {
         if (!initialized)
             return false;
         bgfx::frame();
-        shadowConfigDirty = true; // the new pack may want (or not want) shadows
+        shadowConfigDirty = true;
         return shaders.Reload();
     }
 

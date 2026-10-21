@@ -57,7 +57,6 @@ namespace perlin {
     };
 
     struct Options {
-        // Web builds start from lighter settings once (the browser has far less headroom than a desktop).
         bool webTuned = false;
         int maxFps = 120;
         bool vsync = true;
@@ -90,11 +89,8 @@ namespace perlin {
         bool shadows = true;
         int heldLight = 0;
         int shadowDistance = 0;
-        // Shader pack sun shadows: 0 off, 1 low (1024), 2 medium (2048), 3 high (3072), 4 ultra (4096).
         int shadowQuality = 2;
-        // Mobs, players (and your own player in first person) cast shader pack shadows.
         bool shadowEntities = true;
-        // Bloom strength 0..1 (0 = off).
         float bloom = 0.5f;
         ZoomSettings zoom;
         HandSettings hand;
@@ -109,22 +105,18 @@ namespace perlin {
         std::string texturePack;
         std::vector<std::string> texturePacks;
         std::vector<std::string> disabledMods;
-        std::vector<std::string> approvedMods; // "name=bits": dangerous permissions the player allowed
+        std::vector<std::string> approvedMods;
         bool hotReload = true;
         bool betterGrass = false;
-        // Upscaling (render scale): the world is drawn smaller and rebuilt at window size; the HUD stays native.
-        std::string upscaler = "off";        // off, bilinear, bicubic, fsr1, temporal
-        std::string upscaleQuality = "quality"; // ultra_quality 77%, quality 67%, balanced 59%, performance 50%, ultra_performance 33%
-        int upscaleSharpness = 50;           // 0..100
-        int upscaleCustom = 70;              // render scale in percent when the quality is "custom"
-        int upscaleTargetFps = 0;            // > 0: the render scale follows the frame rate to hold this target
-        std::string frameGen = "off";        // off, 2x, 3x, 4x: extra world frames between real ones (camera reprojection)
-        bool skins3d = true; // 3D Skins: extruded hat/jacket/sleeve/pants layers
-        bool fastMath = false; // flush denormals to zero (FTZ/DAZ) on the render and main threads: cheaper float math, imperceptible difference
-        bool enableLods = false; // distant terrain as simplified tiles (voxy-style): lifts the render distance cap
-        // Graphics API: "auto" (picks the best for this GPU), "d3d11", "vulkan", "opengl", "metal". Changing it relaunches.
+        std::string upscaler = "off";
+        std::string upscaleQuality = "quality";
+        int upscaleSharpness = 50;
+        int upscaleCustom = 70;
+        int upscaleTargetFps = 0;
+        std::string frameGen = "off";
+        bool skins3d = true;
+        bool enableLods = false;
         std::string renderer = "auto";
-        // Badlion-style cape physics: "off", "noshoulder" (default) or "shoulder" (adds the shoulder pads).
         std::string capePhysics = "noshoulder";
         SkinParts skinParts;
         std::map<std::string, bool> skinSlim;
@@ -161,7 +153,7 @@ namespace perlin {
         static GraphicsSettings From(const Options& options) {
             GraphicsSettings g;
             g.cloudRange = options.cloudRange;
-            g.rgss = options.rgss;
+            g.rgss = options.rgss && options.upscaler == "off";
             if (!options.fancyGraphics) {
                 g.ambientOcclusion = false;
                 g.biomeBlendRadius = 1;

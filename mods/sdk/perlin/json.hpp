@@ -1,10 +1,4 @@
 #pragma once
-// A small JSON reader for the data the game hands to plugins as text: block entity tags (`BlockEntityInfo::nbt`),
-// option dumps, HTTP responses.
-//
-//     auto tag = json::parse(entity.nbt);
-//     const int note = (*tag)["note"].integer();           // missing keys read as null, so chains never fail
-//     for (const auto& item : (*tag)["Items"].array()) { ... }
 #include <charconv>
 #include <cmath>
 #include <cstdint>
@@ -38,12 +32,10 @@ namespace perlin::json {
         int64_t integer(int64_t fallback = 0) const { return type == Kind::Number ? static_cast<int64_t>(number_value) : static_cast<int64_t>(number(static_cast<double>(fallback))); }
         std::string_view string(std::string_view fallback = {}) const { return type == Kind::String ? std::string_view(text) : fallback; }
 
-        // Elements of an array, or the values of an object.
         const std::vector<Value>& array() const { return items; }
         size_t size() const { return items.size(); }
         const std::vector<std::string>& keys() const { return names; }
 
-        // Object member by name; null when absent or when this is not an object.
         const Value& operator[](std::string_view key) const {
             if (type == Kind::Object)
                 for (size_t i = 0; i < names.size(); i++)
@@ -51,7 +43,6 @@ namespace perlin::json {
                         return items[i];
             return null_value();
         }
-        // Array element by index; null when out of range.
         const Value& operator[](size_t index) const { return type == Kind::Array && index < items.size() ? items[index] : null_value(); }
         bool contains(std::string_view key) const {
             if (type == Kind::Object)
@@ -72,7 +63,7 @@ namespace perlin::json {
         double number_value = 0.0;
         std::string text;
         std::vector<Value> items;
-        std::vector<std::string> names; // object keys, parallel to `items`
+        std::vector<std::string> names;
     };
 
     class Parser {

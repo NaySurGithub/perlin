@@ -537,10 +537,6 @@ namespace perlin::ui {
             std::vector<FormButton> items;
         };
 
-        // Controls the layout engine can lay out and emit. A custom-form row built from anything else (the
-        // vanilla option_toggle, option_slider, dropdown and edit box use toggle/slider/edit_box/dropdown
-        // controls) is replaced by the button based version in kFormShim, which draws with the same button
-        // textures and so follows the active resource pack and the server pack.
         bool NodeSupported(const std::string& type) {
             return type == "panel" || type == "stack_panel" || type == "grid" || type == "image" || type == "label" ||
                    type == "button" || type == "scroll_view" || type == "custom" || type == "factory" ||
@@ -583,8 +579,6 @@ namespace perlin::ui {
                 ShimCustomRows(*node.gridTemplate, library, report);
         }
 
-        // Button based custom-form rows (see NodeSupported). The "button.perlin_form_*" ids are turned into form
-        // actions by the emitter.
         const char* kFormShim = R"JSON({
   "namespace": "perlin_form",
   "text_row": {
@@ -686,14 +680,12 @@ namespace perlin::ui {
         for (size_t i = packDirs.size(); i-- > 0;)
             roots.push_back(packDirs[i] + "/ui");
         const std::string data = paths::DataDir();
-        // The player's own texture packs can restyle forms too; the server's packs still win over them.
         if (const std::string packUi = ExtractPackUi(data, "pack_ui_form"); !packUi.empty())
             roots.push_back(packUi + "/ui");
         roots.push_back(data + "/ui");
         roots.push_back(data + "/ui_defaults");
         roots.push_back(UiAssets::Instance().VanillaRoot() + "/ui");
         {
-            // The shim lives in the lowest-priority writable root so a server pack can still define its own.
             std::error_code ec;
             std::filesystem::create_directories(data + "/ui_defaults", ec);
             std::ofstream shim(data + "/ui_defaults/perlin_form.json", std::ios::binary | std::ios::trunc);

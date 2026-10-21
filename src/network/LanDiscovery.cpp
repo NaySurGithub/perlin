@@ -80,7 +80,6 @@ namespace perlin::lan {
         constexpr uint16_t kPort = 7551;
         enum : uint16_t { kRequest = 0, kResponse = 1, kMessage = 2 };
 
-        // SHA-256 of the application id 0xdeadbeef as a little-endian u64.
         const uint8_t* Key() {
             static uint8_t key[32];
             static const bool once = [] {
@@ -133,7 +132,6 @@ namespace perlin::lan {
             return v;
         }
 
-        // HMAC-SHA256 of the payload, then the payload (length, header, body) encrypted with AES-256-ECB and PKCS#7.
         std::vector<uint8_t> Marshal(uint16_t id, uint64_t sender, const std::vector<uint8_t>& body) {
             std::vector<uint8_t> inner;
             PutU16(inner, id);
@@ -221,7 +219,6 @@ namespace perlin::lan {
             return -1;
         }
 
-        // The response body: u32 length, then the server data as hex text.
         bool ParseServerData(const std::vector<uint8_t>& body, Host& host) {
             if (body.size() < 4)
                 return false;
@@ -283,7 +280,7 @@ namespace perlin::lan {
             char ip[INET_ADDRSTRLEN] = {};
             inet_ntop(AF_INET, &from.sin_addr, ip, sizeof ip);
             if (pk.id == kRequest) {
-                return; // another client asking; nothing to answer
+                return;
             }
             if (pk.id == kResponse) {
                 Host host;
@@ -355,7 +352,6 @@ namespace perlin::lan {
         t.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
         im.targets.push_back(t);
 #ifndef _WIN32
-        // Each network's own broadcast address: 255.255.255.255 only leaves through one interface on some systems.
         if (ifaddrs* list = nullptr; getifaddrs(&list) == 0) {
             for (ifaddrs* a = list; a; a = a->ifa_next) {
                 if (!a->ifa_addr || a->ifa_addr->sa_family != AF_INET || !(a->ifa_flags & IFF_BROADCAST) || !(a->ifa_flags & IFF_UP) ||
@@ -448,7 +444,7 @@ namespace perlin::lan {
         impl->handler = std::move(handler);
     }
 
-    bool Session::Credentials(std::vector<friendworld::IceServerInfo>&, std::string&) { return true; } // no relays on a LAN
+    bool Session::Credentials(std::vector<friendworld::IceServerInfo>&, std::string&) { return true; }
 
     bool Session::Alive() const { return impl && impl->sock != kInvalid && !impl->stop; }
 

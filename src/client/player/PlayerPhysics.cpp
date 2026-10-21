@@ -111,7 +111,6 @@ namespace perlin::physics {
         }
 
         Vec3 Add(Vec3 a, Vec3 b) { return {a.x + b.x, a.y + b.y, a.z + b.z}; }
-        // AABB moves happen in float in Bedrock; doing them in double drifts by an ULP at large |coords|.
         Box TranslateBy(const Box& b, Vec3 d) {
             const auto f = [](double a, double delta) {
                 return static_cast<double>(static_cast<float>(a) + static_cast<float>(delta));
@@ -500,7 +499,7 @@ namespace perlin::physics {
         if (s.hasBox && BoxCentre(s.box.x0, s.box.x1) == F(s.x) && BoxCentre(s.box.z0, s.box.z1) == F(s.z) &&
             static_cast<float>(s.box.y0) == y) {
             Box b = s.box;
-            b.y1 = static_cast<double>(y + h); // sneaking changes only the height
+            b.y1 = static_cast<double>(y + h);
             return b;
         }
         return {static_cast<double>(x - half), static_cast<double>(y), static_cast<double>(z - half),
@@ -544,8 +543,6 @@ namespace perlin::physics {
                 ns /= length;
             }
         }
-        // The sneak slowdown is not applied here: in Bedrock it belongs to the input stage
-        // (ProcessMoveInput), so in.forward/in.strafe already include it.
         const double forward = static_cast<float>(nf) * 0.98f;
         const double strafe = static_cast<float>(ns) * 0.98f;
 
@@ -789,10 +786,6 @@ namespace perlin::physics {
                 v.z = F(static_cast<float>(v.z) * factor);
             }
         }
-        // Block speed factor (soul sand, honey: 0.4). Applied after collision, before friction, like
-        // Entity::move: the block at the feet if it has one, otherwise the block just below.
-        // BlockShape::speedFactor was populated by the collision layer but never applied, so soul
-        // sand didn't slow the player at all.
         if (!water && !lava && !in.flying) {
             const int fx = static_cast<int>(std::floor(s.x)), fz = static_cast<int>(std::floor(s.z));
             float factor = world.Query(fx, static_cast<int>(std::floor(s.y)), fz).speedFactor;

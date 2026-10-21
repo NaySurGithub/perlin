@@ -41,7 +41,7 @@ namespace perlin::attachable {
         glm::vec3 pivot{0.0f}, rotation{0.0f};
         std::vector<Cube> cubes;
         std::vector<TextureMesh> meshes;
-        std::vector<Quad> voxels; // pre-extruded skin-layer quads (3D Skins), in the bone's own space
+        std::vector<Quad> voxels;
         std::string binding;
         std::string parentName;
         float inflate = 0;
@@ -82,7 +82,6 @@ namespace perlin::attachable {
     void BuildMesh(const Geometry& geometry, const Pose& pose, const TextureLookup& textures, BuiltMesh& out,
                    const BoneFilter& visible = nullptr, const glm::mat4* rootParent = nullptr, bool mirrorTextures = false);
 
-    // A copy of `source` whose outer skin layers (hat, jacket, sleeves, pants) are replaced by one extruded voxel per opaque pixel.
     Geometry VoxelizeSkinLayers(const Geometry& source, const uint8_t* rgba, int width, int height);
 
     glm::mat4 EulerZYX(const glm::vec3& degrees);

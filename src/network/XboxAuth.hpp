@@ -14,13 +14,12 @@ namespace perlin::xbox {
         std::string playFabId;
     };
 
-    // What the Minecraft services hand a signed-in player for peer-to-peer play.
     struct ServiceInfo {
-        std::string authorization;   // "MCToken <jwt>": the service token (signalling and other services)
-        std::string playerMessagingId; // the "pmid" claim: this player's address for signalling messages
-        std::string issuer;          // identity provider of the multiplayer token (NetherNet identity domain)
-        std::string signalingUri;    // wss base of the plain WebSocket signalling service
-        std::string signalingAfdUri; // https base that names the nearest JSON-RPC signalling service
+        std::string authorization;
+        std::string playerMessagingId;
+        std::string issuer;
+        std::string signalingUri;
+        std::string signalingAfdUri;
     };
 
     using PromptFn = std::function<void(const std::string& url, const std::string& code)>;
@@ -36,19 +35,12 @@ namespace perlin::xbox {
         void Cancel();
 
         bool SignIn(const PromptFn& prompt, std::string& error);
-        // Signs in with the saved login only (never asks for a device code); false if there is none
-        // or it no longer works.
         bool SignInSaved(std::string& error);
 
-        // After SignIn: the account's gamertag (one Xbox Live token request).
         bool FetchGamertag(std::string& gamertag, std::string& error);
 
-        // An Xbox Live authorization header ("XBL3.0 x=<uhs>;<token>") for a relying party, for services such as
-        // Realms (https://pocket.realms.minecraft.net/) and the friends list (http://xboxlive.com). Needs a signed-in
-        // account. xuid is filled in when the token carries it.
         bool AuthorizationHeader(const std::string& relyingParty, std::string& header, std::string& xuid, std::string& error);
 
-        // Logs in to PlayFab with the Xbox account and starts a Minecraft services session.
         bool ServiceSession(const std::string& gameVersion, ServiceInfo& out, std::string& error);
 
         bool LoginMinecraft(const std::string& identityPublicKeyB64, const std::string& gameVersion,

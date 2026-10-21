@@ -1,5 +1,3 @@
-// The browser build's plugin engine: wasm3 (WasmEdge doesn't build for the web). Same interface
-// as the WasmEdge engine in WasmRuntime.cpp; runs 32-bit and 64-bit (memory64) plugins.
 #include "client/mods/WasmRuntime.hpp"
 
 #include <wasm3.h>
@@ -9,8 +7,6 @@
 
 namespace perlin::mods {
     namespace {
-        // Every import a plugin may use. Linked without a fixed signature: the trampoline reads
-        // the types the module declares, so 32-bit and 64-bit plugins both link.
         struct KnownImport {
             const char* module;
             const char* name;
@@ -66,8 +62,6 @@ namespace perlin::mods {
             {"wasi_snapshot_preview1", "sock_shutdown"},
         };
 
-        // Module bytes start with the magic, version, then sections; a 64-bit memory has limit
-        // flags 0x04-0x07.
         bool Uses64BitMemory(const uint8_t* p, size_t n) {
             const auto leb = [&](size_t& at, uint64_t& out) {
                 out = 0;
@@ -85,7 +79,7 @@ namespace perlin::mods {
                 uint64_t size = 0;
                 if (!leb(at, size) || size > n - at)
                     return false;
-                if (id == 5) { // memory section
+                if (id == 5) {
                     size_t q = at;
                     uint64_t count = 0;
                     if (leb(q, count) && count && q < n)
@@ -110,7 +104,7 @@ namespace perlin::mods {
         IM3Module module = nullptr;
         std::vector<std::unique_ptr<Link>> links;
         std::string hostError;
-        void* frameMemory = nullptr; // memory base while a host import runs
+        void* frameMemory = nullptr;
 
         ~Impl() {
             if (runtime)
@@ -122,7 +116,6 @@ namespace perlin::mods {
         static const void* Trampoline(IM3Runtime, IM3ImportContext ctx, uint64_t* sp, void* mem) {
             auto* link = static_cast<Link*>(ctx->userdata);
             Impl& impl = *link->owner;
-            // Return slots come first on the stack, then the arguments.
             const uint32_t nr = std::min<uint32_t>(m3_GetRetCount(ctx->function), 4);
             const uint32_t na = std::min<uint32_t>(m3_GetArgCount(ctx->function), 16);
             uint64_t* ret = sp;
@@ -183,7 +176,6 @@ namespace perlin::mods {
             auto link = std::make_unique<Impl::Link>();
             link->owner = &m;
             link->fn = std::move(fn);
-            // Imports the module doesn't have just fail to look up; that's fine.
             if (!m3_LinkRawFunctionEx(module, k.module, k.name, nullptr, &Impl::Trampoline, link.get()))
                 m.links.push_back(std::move(link));
         }
@@ -251,7 +243,6 @@ namespace perlin::mods {
         return base + ptr;
     }
 
-    // wasm3 can't stop a running call; a stuck plugin's thread is left behind instead.
     void WasmInstance::Interrupt() {}
 
     std::string WasmEngineName() { return "wasm3"; }

@@ -4,7 +4,6 @@ $input v_fog, v_dir
 
 void main()
 {
-    // Small square stars, gently twinkling, only once the sky is dark.
     vec3 dir = normalize(v_dir);
     vec2 cell = floor(vec2(atan2(dir.x, dir.z) * 90.0, dir.y * 180.0));
     float seed = hash12(cell);

@@ -44,8 +44,6 @@ namespace perlin::ui {
         ~FormUi();
         void Warm(const std::vector<std::string>& packDirs);
         bool Ready() const { return state.load() == 2; }
-        // Waits (up to timeoutMs) for a warm-up in progress, so a form that arrives at once still opens with the
-        // pack's own JSON UI instead of falling back to the built-in layout.
         bool WaitReady(int timeoutMs);
         bool Build(const FormModel& form, int guiW, int guiH, float scroll, std::string& rml, float& contentHeight, float& viewHeight);
         const std::string& Problem() const { return problem; }

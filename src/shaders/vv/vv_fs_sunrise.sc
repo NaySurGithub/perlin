@@ -4,7 +4,6 @@ $input v_color0
 
 void main()
 {
-    // Dawn and dusk colours are part of the sky shader.
     if (u_skyParams.z > 0.5)
         discard;
     if (v_color0.a == 0.0)

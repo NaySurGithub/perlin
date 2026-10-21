@@ -10,8 +10,6 @@ void main()
     float alpha = tex.a * v_color0.a;
     if (alpha < 0.5)
         discard;
-    // Green-dominant cutout texels are foliage: light shines through them.
-    // (Leaves and grass are grey in the atlas and tinted per biome, so test the tinted colour.)
     vec3 tinted = tex.rgb * v_tint;
     float foliage = max(step(tinted.r * 1.1, tinted.g) * step(tinted.b, tinted.g), step(0.5, v_foliage));
     vec4 color = vec4(vvLit(tex.rgb, v_tint, n, v_rel, v_light, foliage, 0.0, v_sunLight, v_skyLight), alpha);

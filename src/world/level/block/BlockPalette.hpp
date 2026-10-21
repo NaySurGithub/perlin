@@ -28,30 +28,23 @@ namespace perlin {
         bool LoadServerStates(const std::string& path);
         bool LoadServerStatesText(const std::string& text, const std::string& source);
         bool NamesLoaded() const { return namesLoaded; }
-        // First (lowest-hash) state of every named block, sorted by name; and the lowest-hash state of
-        // a block whose named state equals the given value (rendered as text: 1, true, "y").
         std::vector<std::pair<int32_t, std::string>> OneStatePerName() const;
         int32_t FindHash(const std::string& fullName, const std::string& key, const std::string& valueText) const;
         size_t StateCount() const { return nameByHash.size(); }
 
         uint16_t Intern(int32_t networkId);
-        // Sequential runtime ids (StartGame blockNetworkIdsAreHashes=false): the id is an index into the
-        // canonical block-state list (position in the game's internal table, which is not published; nothing is bundled for it).
         void SetSequential(bool on);
         bool Sequential() const { return sequential.load(std::memory_order_acquire); }
         void SetSequentialAir(int32_t runtimeId) { sequentialAir.store(runtimeId, std::memory_order_release); }
         int32_t SequentialAir() const { return sequentialAir.load(std::memory_order_acquire); }
         void AppendSequence(int32_t hash);
-        // Restores the retail sequence (drops any server-defined blocks inserted by InsertCustomRuns).
         void TruncateSequence();
         bool SequenceLoaded() const { return !baseSequence.empty(); }
-        // FNV-1 (not 1a) 64 of the block name: the retail palette is sorted by it.
         static uint64_t NameSortKey(const std::string& name);
         struct CustomRun {
             std::string name;
-            std::vector<int32_t> hashes; // the block's states in palette order
+            std::vector<int32_t> hashes;
         };
-        // Server-defined blocks sit in the sequential palette at their name's sort position, shifting every later id.
         void InsertCustomRuns(std::vector<CustomRun> runs);
         uint16_t InternRuntime(int32_t runtimeId);
         int32_t RuntimeId(uint16_t local) const;

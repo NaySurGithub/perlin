@@ -323,15 +323,12 @@ namespace perlin {
         On<CameraInstructionPacket>([this](const CameraInstructionPacket& p) {
             if (p.clear && *p.clear)
                 cameraEffects.Clear();
-            // Both parts of a fade are optional on the wire (time and colour are separate options).
             if (p.fade && p.fade->timeData) {
                 const auto& t = *p.fade->timeData;
                 const Vec3F c = p.fade->colorRgb ? *p.fade->colorRgb : Vec3F{};
                 cameraEffects.Fade(t.fadeInDuration, t.waitDuration, t.fadeOutDuration, {c.x, c.y, c.z});
             }
             if (p.fov) {
-                // The field-of-view instruction names its easing as a string ("in_out_quad"), unlike the
-                // single-byte type used by the preset instruction; index it in the shared easing order.
                 static const char* const kEases[] = {
                     "linear", "spring", "in_quad", "out_quad", "in_out_quad", "in_cubic", "out_cubic", "in_out_cubic",
                     "in_quart", "out_quart", "in_out_quart", "in_quint", "out_quint", "in_out_quint", "in_sine",

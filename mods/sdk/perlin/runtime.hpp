@@ -40,10 +40,6 @@ namespace perlin {
         template <class... Args> void error(std::format_string<Args...> fmt, Args&&... args) { write(3, std::format(fmt, std::forward<Args>(args)...)); }
     }
 
-    // ---------------------------------------------------------------------------------------------
-    // Events. `event::Tick` and `abi::Event::Tick` both work as the argument of `ctx.on`; the handler
-    // receives that event's payload type, taken from the ABI table, so it cannot be the wrong type.
-    // ---------------------------------------------------------------------------------------------
     template <abi::Event E>
     struct EventTag {
         using Payload = abi::payload_t<E>;
@@ -92,7 +88,6 @@ namespace perlin {
         MouseMiddle = 1000, MouseLeft, MouseRight,
     };
 
-    // The game's key id for a Key, computed from the enumerator: letters and digits by value, the rest by name.
     inline std::string key_id(Key key) {
         const int k = static_cast<int>(key);
         if (k >= 'A' && k <= 'Z') return std::string("key.keyboard.") + static_cast<char>(k - 'A' + 'a');
@@ -121,18 +116,12 @@ namespace perlin {
         }
     }
 
-    // The mod's own icon in the Mods screen, replacing the one from the manifest. `relative_png` lives in the
-    // mod's data folder.
     inline Result<void> set_mod_icon(std::string_view relative_png) {
         abi::Writer w;
         w.write(relative_png);
         return detail::call_void(Op::IconSet, w);
     }
 
-    // ---------------------------------------------------------------------------------------------
-    // Commands: `ctx.command<"tp">("teleport", [](int x, int y, int z) { ... })`. The parameter types are the
-    // argument grammar: text, numbers, bool, enumerations (by name) and std::optional<T> for the optional tail.
-    // ---------------------------------------------------------------------------------------------
     struct CommandCall {
         std::string name;
         std::string raw_args;
@@ -232,7 +221,6 @@ namespace perlin {
             }
         }
 
-        // `]` closes optional arguments; the describe() of an optional ends with '>' that becomes ']'.
         template <class T>
         std::string describe_closed() {
             std::string text = describe<T>();
@@ -257,16 +245,12 @@ namespace perlin {
         }
     }
 
-    // ---------------------------------------------------------------------------------------------
-    // The context a plugin's entry point receives.
-    // ---------------------------------------------------------------------------------------------
     enum class TimerId : uint32_t {};
 
     class Context {
     public:
         using Duration = std::chrono::duration<double>;
 
-        // ---- Events ----
         template <EventTagLike Tag, class Fn>
         void on(Fn&& fn) {
             add_handler(Tag::id, wrap<typename Tag::Payload>(std::forward<Fn>(fn)));
@@ -281,7 +265,6 @@ namespace perlin {
         template <class Fn> void on_frame(Fn&& fn) { on<event::Frame>(std::forward<Fn>(fn)); }
         template <class Fn> void on_unload(Fn&& fn) { unload_handlers.push_back(std::forward<Fn>(fn)); }
 
-        // ---- Timers (std::chrono durations; `20_ticks` works) ----
         template <class Rep, class Period, class Fn>
         TimerId after(std::chrono::duration<Rep, Period> delay, Fn&& fn) {
             return add_timer(std::chrono::duration_cast<Duration>(delay), Duration::zero(), std::forward<Fn>(fn));
@@ -296,8 +279,6 @@ namespace perlin {
                 if (t.id == timer) t.alive = false;
         }
 
-        // ---- Commands ----
-        // Typed: the handler's parameters are the arguments. Also accepts `(const CommandCall&)` for raw access.
         template <meta::fixed_string Name, class Fn>
         void command(std::string_view description, Fn&& fn) {
             using Fun = std::remove_cvref_t<Fn>;
@@ -326,7 +307,6 @@ namespace perlin {
             add_command(name, usage, description, std::forward<Fn>(fn));
         }
 
-        // ---- Key bindings (appear in Controls) ----
         template <meta::fixed_string Id, class Fn>
         void bind(std::string_view label, Key default_key, Fn&& fn) {
             bind(std::string(Id.view()), std::string(label), default_key, std::forward<Fn>(fn));
@@ -339,7 +319,6 @@ namespace perlin {
             keys[id] = wrap_key(std::forward<Fn>(fn));
         }
 
-        // ---- HUD layers ----
         template <meta::fixed_string Layer, class Fn>
         void hud(Fn&& fn, int z = 0) {
             hud(std::string(Layer.view()), std::forward<Fn>(fn), z);
@@ -352,8 +331,6 @@ namespace perlin {
         template <class... Args>
         void print(std::format_string<Args...> fmt, Args&&... args) { (void)act::message(fmt, std::forward<Args>(args)...); }
 
-        // ---- Settings (declared in the mod's JSON; see settings.hpp) ----
-        // Runs after a setting changed, with its new value: `ctx.on_change(settings::unit, [](Unit u) { ... })`.
         template <class T, class Fn>
         void on_change(const Setting<T>& setting, Fn&& fn) {
             change_handlers[std::string(setting.id())].push_back([f = std::forward<Fn>(fn)](const std::string& value) mutable {
@@ -363,12 +340,10 @@ namespace perlin {
                     f();
             });
         }
-        // Runs when a button on the settings page is pressed.
         template <class Fn>
         void on_press(const Button& button, Fn&& fn) {
             press_handlers[std::string(button.id())] = std::forward<Fn>(fn);
         }
-        // Runs after any setting of this mod changed.
         template <class Fn>
         void on_setting_changed(Fn&& fn) { setting_observers.push_back(std::forward<Fn>(fn)); }
 
@@ -384,7 +359,6 @@ namespace perlin {
         void run_unload();
 
         uint32_t subscriptions() const {
-            // Replies and setting changes are always wanted: the game sends them without being asked.
             uint32_t mask = bit(abi::Event::HttpResponse) | bit(abi::Event::SettingChanged);
             for (const auto& entry : handlers)
                 if (!entry.second.empty()) mask |= 1u << entry.first;
@@ -425,7 +399,6 @@ namespace perlin {
                 } else {
                     P payload = r.read<P>();
                     if constexpr (std::is_invocable_v<Fn&>) {
-                        // Handlers that do not need the payload may take nothing.
                         if constexpr (std::is_void_v<std::invoke_result_t<Fn&>>) {
                             f();
                             return Flow::pass;
@@ -448,7 +421,7 @@ namespace perlin {
                 return std::forward<Fn>(fn);
             else
                 return [f = std::forward<Fn>(fn)](bool down) mutable {
-                    if (down) f(); // a key that takes no argument fires on press
+                    if (down) f();
                 };
         }
 
@@ -462,7 +435,6 @@ namespace perlin {
         }
 
     public:
-        // Removes a command this mod registered.
         void remove_command(const std::string& name) {
             abi::Writer w;
             w.write(name);

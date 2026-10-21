@@ -20,8 +20,6 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         super().end_headers()
 
     def _relay(self):
-        # /__relay/<host>/<port>/<path>: forwards to a server on this machine or LAN so the browser can
-        # reach NetherNet signaling endpoints that send no CORS headers. Public hosts are refused.
         parts = self.path.split("/", 4)
         if len(parts) < 5 or not parts[3].isdigit():
             self.send_error(400)

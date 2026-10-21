@@ -4,7 +4,6 @@
 #include <string>
 
 namespace perlin {
-    // The pack built into Perlin.
     inline constexpr const char* kBundledPackName = "Vibrant Visuals";
     inline bool IsBundledName(const std::string& name) {
         std::string lower;

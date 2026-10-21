@@ -1,24 +1,4 @@
 #pragma once
-// The WAILA extension API.
-//
-// What WAILA shows is made of providers. A provider looks at the block or entity under the crosshair and adds rows to the
-// tooltip; everything WAILA itself shows is a provider written with exactly this API (see vanilla.hpp), so an addon can do
-// whatever the built-in ones do.
-//
-//     void install(waila::Registry& r) {
-//         // The settings toggle is optional; `always` means the provider has no switch.
-//         r.block(waila::Stage::Body, settings::my_feature, [](waila::Tooltip& tip, const waila::BlockContext& c) {
-//             if (c.block.block.state_int("age") == 3)
-//                 tip.line("Ready to harvest", Rgba::green);
-//         }, "minecraft:nether_wart");
-//
-//         r.entity(waila::Stage::Body, waila::always, [](waila::Tooltip& tip, const waila::EntityContext& c) {
-//             tip.row().text("Health ").hearts(c.entity.health, c.entity.maxHealth);
-//         }, "minecraft:*");   // glob on the entity type
-//     }
-//
-// Everything the game knows is in the context: the block (`c.block.block`, `.props`, `.entity()`), the entity (`c.entity`
-// with attributes and properties), the player, the inventory, and every `perlin::game::` call.
 #include <perlin/perlin.hpp>
 
 #include <algorithm>
@@ -34,48 +14,42 @@
 namespace waila {
     using namespace perlin;
 
-    // ---------------------------------------------------------------------------------------------
-    // Elements: what a row is made of.
-    // ---------------------------------------------------------------------------------------------
     struct Text {
-        std::string text; // `§` formatting codes work: "§9§oMinecraft"
+        std::string text;
         Rgba color = Rgba::white;
     };
-    struct ItemIcon { // an item stack icon
+    struct ItemIcon {
         std::string id;
         float size = 8.0f;
-        int count = 0; // drawn in the corner when above 1
+        int count = 0;
     };
-    struct Texture { // a resource-pack texture, e.g. "textures/ui/heart"
+    struct Texture {
         std::string path;
         float width = 9.0f, height = 9.0f;
     };
-    struct Bar { // a progress bar with a label inside
+    struct Bar {
         float fraction = 0.0f;
         Rgba fill = Rgba::green;
         float width = 80.0f, height = 9.0f;
         std::string label;
     };
-    struct Hearts { // health in half-hearts of 2 points
+    struct Hearts {
         float health = 0.0f, max = 20.0f;
         int per_line = 10;
     };
-    struct Armor { // armor points, 2 per icon
+    struct Armor {
         float points = 0.0f;
     };
-    struct Mark { // a check mark or a cross
+    struct Mark {
         bool ok = true;
         float size = 5.0f;
-        float drop = 0.0f; // pixels below the row's center
+        float drop = 0.0f;
     };
     struct Gap {
         float width = 4.0f;
     };
     using Element = std::variant<Text, ItemIcon, Texture, Bar, Hearts, Armor, Mark, Gap>;
 
-    // ---------------------------------------------------------------------------------------------
-    // A row: elements laid out left to right, with an optional group pinned to the right edge.
-    // ---------------------------------------------------------------------------------------------
     class Row {
     public:
         Row& add(Element element) {
@@ -96,7 +70,6 @@ namespace waila {
         Row& armor(float points) { return add(Armor{points}); }
         Row& mark(bool ok, float size = 5.0f, float drop = 0.0f) { return add(Mark{ok, size, drop}); }
         Row& gap(float width = 4.0f) { return add(Gap{width}); }
-        // Everything added after this sits at the right edge of the tooltip.
         Row& right_aligned() {
             pin_right = true;
             return *this;
@@ -109,12 +82,10 @@ namespace waila {
         bool pin_right = false;
     };
 
-    // Providers write into one of three stages, top to bottom: the head (name), the body, the tail (where it comes from).
     enum class Stage : uint8_t { Head, Body, Tail };
 
     class Tooltip {
     public:
-        // A new row in the stage being filled.
         Row& row() { return rows[static_cast<size_t>(stage)].emplace_back(); }
         Row& row(Stage s) { return rows[static_cast<size_t>(s)].emplace_back(); }
         Tooltip& line(std::string value, Rgba color = Rgba::white) {
@@ -127,7 +98,6 @@ namespace waila {
             return *this;
         }
 
-        // The first row of the head: the name. Add things to it to put them next to the name; `.right_aligned()` pins them.
         Row& title() {
             auto& head = rows[static_cast<size_t>(Stage::Head)];
             if (head.empty())
@@ -143,7 +113,6 @@ namespace waila {
             return *this;
         }
 
-        // The large picture at the left of the tooltip. The last provider to set it wins.
         Tooltip& set_icon(ItemIcon item) {
             item.size = 16.0f;
             icon = std::move(item);
@@ -154,19 +123,17 @@ namespace waila {
             return *this;
         }
 
-        // Hides the tooltip entirely (a provider decided there is nothing worth showing).
         Tooltip& hide() {
             hidden = true;
             return *this;
         }
 
-        // Drawn as a bar along the bottom edge while the target is being mined (0..1). Set by the renderer every frame.
         float breaking = 0.0f;
 
         std::array<std::vector<Row>, 3> rows;
         std::optional<ItemIcon> icon;
         bool hidden = false;
-        Stage stage = Stage::Body; // the stage providers are currently filling
+        Stage stage = Stage::Body;
 
         bool empty() const {
             for (const auto& list : rows)
@@ -177,13 +144,10 @@ namespace waila {
         }
     };
 
-    // ---------------------------------------------------------------------------------------------
-    // What a provider is told.
-    // ---------------------------------------------------------------------------------------------
     struct Context {
         PlayerState player;
         Inventory inventory;
-        bool details = false; // the details key (Shift) is held
+        bool details = false;
         int64_t now_ms = 0;
 
         const perlin::Item& held() const {
@@ -204,7 +168,6 @@ namespace waila {
         const game::EntityTarget& target;
         const Entity& entity;
 
-        // An attribute the server reported, or `fallback`.
         float attribute(std::string_view name, float fallback = 0.0f) const {
             for (const Attribute& a : entity.attributes)
                 if (a.name == name)
@@ -219,10 +182,6 @@ namespace waila {
         }
     };
 
-    // ---------------------------------------------------------------------------------------------
-    // The registry.
-    // ---------------------------------------------------------------------------------------------
-    // A provider can be tied to a toggle in the mod's settings; it runs only while the toggle is on.
     class Gate {
     public:
         constexpr Gate() = default;
@@ -234,8 +193,6 @@ namespace waila {
     };
     inline constexpr Gate always{};
 
-    // `*` matches any run of characters: "minecraft:*_stairs", "*:chest". A pattern without a namespace matches the
-    // short name of any namespace.
     inline bool glob(std::string_view pattern, std::string_view text) {
         if (pattern.empty() || pattern == "*")
             return true;
@@ -275,7 +232,6 @@ namespace waila {
         using BlockFn = std::function<void(Tooltip&, const BlockContext&)>;
         using EntityFn = std::function<void(Tooltip&, const EntityContext&)>;
 
-        // Runs for blocks whose identifier matches `pattern`. Within a stage, lower priorities run first.
         Registry& block(Stage stage, Gate gate, BlockFn fn, std::string_view pattern = "*", int priority = 0) {
             blocks.push_back({stage, priority, gate, std::string(pattern), std::move(fn)});
             return *this;
@@ -297,7 +253,6 @@ namespace waila {
                 for (const Provider<Ctx>& p : list)
                     if (p.stage == stage && glob(p.pattern, id))
                         ordered.push_back(&p);
-                // Stable by registration order within one priority.
                 std::stable_sort(ordered.begin(), ordered.end(), [](const auto* a, const auto* b) { return a->priority < b->priority; });
                 for (const Provider<Ctx>* p : ordered)
                     if (p->gate.open())

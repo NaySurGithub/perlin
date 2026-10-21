@@ -1,6 +1,3 @@
-// Loads a built plugin in Node's WebAssembly engine with a host that answers every call "unavailable", then runs the
-// Load and Frame events. Checks the module's imports/exports and that it survives a game that has nothing to offer.
-//   node tests/smoke_wasm.mjs prebuilt/waila.wasm
 import fs from 'node:fs';
 import { WASI } from 'node:wasi';
 
@@ -17,7 +14,7 @@ if (foreign.length) { console.error(`unexpected imports: ${foreign.join(', ')}`)
 let calls = 0;
 const instance = await WebAssembly.instantiate(module, {
   wasi_snapshot_preview1: wasi.wasiImport,
-  perlin: { call: () => { calls++; return -4; } }, // Status::Unavailable
+  perlin: { call: () => { calls++; return -4; } },
 });
 wasi.initialize(instance);
 const e = instance.exports;
@@ -28,9 +25,9 @@ const ev = (id, bytes = new Uint8Array(0)) => {
   if (bytes.length) e.perlin_free(ptr);
   return rc;
 };
-ev(1); // Load
+ev(1);
 const mask = e.perlin_subscriptions();
 const frame = new DataView(new ArrayBuffer(16));
 frame.setFloat32(0, 0.016, true); frame.setFloat32(4, 60, true); frame.setInt32(8, 320, true); frame.setInt32(12, 180, true);
-for (let i = 0; i < 30; i++) ev(4, new Uint8Array(frame.buffer)); // Frame
+for (let i = 0; i < 30; i++) ev(4, new Uint8Array(frame.buffer));
 console.log(`${file}: ok, ${imports.length} imports, subscriptions 0x${mask.toString(16)}, ${calls} host calls, ${fs.statSync(file).size} bytes`);

@@ -223,8 +223,6 @@ namespace perlin {
             }
             std::sort(st.begin(), st.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
             if (path == "block_states.json" && !sequenceFrozen) {
-                // A state the retail table holds a slot for but this build cannot describe: it keeps its position so later
-                // ids line up, and stays unnamed.
                 const bool reserved = name == "cinnabar:reserved";
                 const uint64_t key = reserved ? (baseKeys.empty() ? 0 : baseKeys.back()) : NameSortKey(name);
                 sequenceIndex.emplace(hash, static_cast<int32_t>(sequence.size()));
@@ -235,7 +233,6 @@ namespace perlin {
                     reservedHashes.insert(hash);
                     continue;
                 }
-                // Already described by the vanilla definitions: keep the position only, not a second copy of the state.
                 if (const auto known = nameByHash.find(hash); known != nameByHash.end() && known->second == name)
                     continue;
             }
@@ -266,9 +263,6 @@ namespace perlin {
 
     void BlockPalette::SetSequential(bool on) {
         sequential.store(on, std::memory_order_release);
-        // The registry order is the retail one, so air sits at a known index. Without it every air
-        // cell of a sequential-id server (Lifeboat's survival games) read as whatever block the
-        // table holds at the server's air id, and the whole world filled with it.
         int32_t air = -1;
         if (on) {
             std::lock_guard<std::mutex> lk(mutex);
@@ -398,12 +392,9 @@ namespace perlin {
                 }
             }
             if (found && reservedHashes.count(hash))
-                return 0; // a retail state this build has no description for
+                return 0;
             if (found)
                 return Intern(hash);
-            // Sequential ids are positions in the game's internal block table, which Mojang does not
-            // publish. Without that table an unknown id cannot be told apart from any other, so it
-            // reads as air rather than as a random block.
             static std::atomic<bool> warned{false};
             if (!warned.exchange(true))
                 std::cout << "[blocks] server uses sequential block ids but no sequence table is loaded; "

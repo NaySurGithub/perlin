@@ -251,11 +251,11 @@ namespace perlin {
         skyParamsValue[0] = params.cloud.height;
         skyParamsValue[1] = std::floor(params.sky.moonPhase);
         skyParamsValue[2] = params.sky.enabled ? 1.0f : 0.0f;
-        skyParamsValue[3] = static_cast<float>(params.cameraMedium); // 0 air, 1 water, 2 lava
+        skyParamsValue[3] = static_cast<float>(params.cameraMedium);
         heldLightValue[0] = params.heldLight;
         dynParamsValue[0] = static_cast<float>(params.dynMode);
         dynParamsValue[1] = static_cast<float>(params.dynMode ? std::clamp(params.dynCount, 0, 8) : 0);
-        dynParamsValue[2] = params.waterSurfaceAbove; // underwater: water surface height above the eye
+        dynParamsValue[2] = params.waterSurfaceAbove;
         std::copy_n(&params.dynLights[0][0], 32, &dynLightsValue[0][0]);
         std::copy_n(&params.packSettings[0], 32, &packSettingsValue[0][0]);
         tilesValue[0] = params.waterTile;

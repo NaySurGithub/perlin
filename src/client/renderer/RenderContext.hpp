@@ -78,7 +78,6 @@ namespace perlin {
         float glintMatrix[4] = {1, 0, 0, 1};
         float glintOffset[2] = {0, 0};
         float glintStrength = 0.9f;
-        // Only cast a shader-pack shadow, don't draw (your own player in first person).
         bool shadowOnly = false;
     };
 
@@ -98,20 +97,20 @@ namespace perlin {
         CloudDraw cloud;
         float timeSeconds;
         float motionBlur = 0.0f;
-        float bloom = 0.0f;              // 0..1
-        int shadowQuality = 2;           // 0 off .. 4 ultra (shader packs with shadows)
-        int shadowDistance = 0;          // blocks, 0 = the pack's default
-        bool shadowEntities = true;      // entities cast pack shadows
-        int cameraMedium = 0;            // what the camera eye is in: 0 air, 1 water, 2 lava
-        float waterSurfaceAbove = 0.0f;  // underwater: height of the water surface above the eye, in blocks
+        float bloom = 0.0f;
+        int shadowQuality = 2;
+        int shadowDistance = 0;
+        bool shadowEntities = true;
+        int cameraMedium = 0;
+        float waterSurfaceAbove = 0.0f;
         float menuBlur = 0.0f;
-        float renderScale = 1.0f;       // the world is drawn at this fraction of the window size, then rebuilt (upscaler)
-        int upscaler = 0;               // 0 bilinear, 1 bicubic, 2 FSR 1 style edge-adaptive, 3 temporal
-        float view[16];                 // the camera's view and projection (OpenGL clip convention), without any jitter
+        float renderScale = 1.0f;
+        int upscaler = 0;
+        float view[16];
         float projection[16];
-        int frameGen = 1;               // total frame multiplier: 1 off, 2..4 = generated frames between real ones
-        bool teleported = false;        // the camera jumped (respawn, dimension change): temporal history and generation restart
-        float upscaleSharpness = 0.0f;  // 0..1, contrast-adaptive sharpen after the upscale
+        int frameGen = 1;
+        bool teleported = false;
+        float upscaleSharpness = 0.0f;
         bool crosshair = false;
         int guiScale = 0;
         float screenTint[4];
@@ -135,7 +134,6 @@ namespace perlin {
         virtual bool Initialize(AppPlatform& platform, const Options& options) = 0;
         virtual void Shutdown() = 0;
         virtual bool ReloadShaders() { return false; }
-        // True while a shader pack's sun shadow map is in use.
         virtual bool PackShadowsActive() const { return false; }
         virtual void SetVsync(bool) {}
         virtual std::string RendererName() const { return {}; }
@@ -144,15 +142,13 @@ namespace perlin {
 
         virtual void BeginFrame(const FrameParams& params) = 0;
         virtual void EndFrame() = 0;
-        // Frame generation: after EndFrame, present generated frame `index` of `total` (1..total-1). False when none can be made.
-        virtual bool PresentGenerated(int /*index*/, int /*total*/) { return false; }
+        virtual bool PresentGenerated(int  , int  ) { return false; }
         virtual void RequestScreenshot(const std::string& path) = 0;
 
         virtual void UploadCrosshair(const Texture& icons) = 0;
         virtual void DrawHudCursor(float x, float y, float w, float h) = 0;
         virtual void UploadSkyTextures(const Texture& sun, const Texture& moon, const Texture& clouds) = 0;
         virtual void UploadAtlas(const uint8_t* rgba, int tilePx, int tiles) = 0;
-        // Per-tile foliage kinds for shader packs (see BlockLibrary::FoliageFlags).
         virtual void UploadTileFlags(const std::vector<uint8_t>&) {}
         virtual int MaxAtlasLayers(int) const { return 2048; }
         virtual void UpdateAtlasRegion(int tile, const uint8_t* rgba) = 0;
@@ -166,7 +162,6 @@ namespace perlin {
             return UiCreateMesh(vertices, vertexCount, indices, indexCount);
         }
         virtual void UiDestroyMesh(uint32_t mesh) = 0;
-        // Meshes currently holding their own GPU buffers (the UI backend watches this for leaks).
         virtual uint32_t UiLiveMeshes() const { return 0; }
         virtual void UiSubmit(UiLayer layer, const UiDraw& draw) = 0;
         virtual void FramebufferSize(int& width, int& height) const = 0;

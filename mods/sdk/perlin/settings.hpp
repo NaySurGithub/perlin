@@ -1,20 +1,4 @@
 #pragma once
-// Mod settings.
-//
-// Settings are declared in the mod's JSON (see mods/README.md); the game shows them on the mod's Settings page,
-// stores them, and keeps them up to date here. The build turns the JSON into a header of typed handles:
-//
-//     #include <mod_settings.hpp>              // generated from waila.json
-//
-//     if (settings::visible) { ... }                       // Toggle   -> bool
-//     const double limit = settings::warn_at;              // Number   -> double
-//     if (settings::unit == settings::Unit::Metric) { }    // Choice   -> an enum made from the JSON's choices
-//     settings::visible.set(false);
-//
-//     ctx.on_change(settings::unit, [](settings::Unit u) { ... });
-//     ctx.on_press(settings::reset, [] { ... });
-//
-// Without the generated header the same values are one call away: `perlin::setting<double>("warn_at")`.
 #include <charconv>
 #include <format>
 #include <concepts>
@@ -30,8 +14,6 @@
 
 namespace perlin {
     namespace detail {
-        // std::from_chars for floating point is missing from some standard libraries (wasi-sdk's libc++), so numbers
-        // go through strtod. Returns whether the whole text was a number.
         template <std::floating_point T>
         bool parse_floating(std::string_view text, T& out) {
             if (text.empty() || text.size() > 64)
@@ -47,7 +29,6 @@ namespace perlin {
     }
 
     namespace detail_settings {
-        // Every setting's current value as text, loaded from the game on first use and kept current by SettingChanged.
         class Store {
         public:
             const std::string* find(std::string_view id) {
@@ -112,7 +93,6 @@ namespace perlin {
         }
     }
 
-    // A setting's value as the game stores it, straight from the game (not cached): "true", "12.5", "KilometersPerHour".
     inline Result<std::string> setting_text(std::string_view id) {
         abi::Writer w;
         w.write(id);
@@ -122,14 +102,12 @@ namespace perlin {
         return std::string(bytes->begin(), bytes->end());
     }
 
-    // The current value of a setting declared in the manifest, by id.
     template <class T>
     T setting(std::string_view id) {
         const std::string* text = detail_settings::store().find(id);
         return text ? detail_settings::parse<T>(*text) : T{};
     }
 
-    // A typed handle to one setting. Reads always see the current value, including changes made on the settings page.
     template <class T>
     class Setting {
     public:
@@ -141,7 +119,6 @@ namespace perlin {
         T operator*() const { return get(); }
         constexpr std::string_view id() const { return name; }
 
-        // Changes the value from the mod; the game stores it and the settings page shows it.
         Result<void> set(const T& value) const {
             abi::Writer w;
             w.write(name, detail_settings::format(value));
@@ -168,7 +145,6 @@ namespace perlin {
     template <meta::Enumeration E>
     using Choice = Setting<E>;
 
-    // A button on the settings page. Handle presses with `ctx.on_press`.
     class Button {
     public:
         constexpr explicit Button(std::string_view button_id) : name(button_id) {}

@@ -1,6 +1,3 @@
-# Web-only dependencies: amalgamated bgfx/bx/bimg (the bgfx.cmake wrapper has
-# no Emscripten support) plus the mbedTLS sources used for the web crypto
-# backend (no OpenSSL on Emscripten).
 
 set(BGFX_WEB_SRC "${bgfx_SOURCE_DIR}")
 
@@ -20,11 +17,8 @@ target_include_directories(bgfxweb PRIVATE
 target_compile_options(bgfxweb PRIVATE -w -pthread)
 target_compile_definitions(bgfxweb PRIVATE BIMG_CONFIG_DECODE_ASTC=0)
 target_compile_definitions(bgfxweb PUBLIC "BX_CONFIG_DEBUG=$<IF:$<CONFIG:Debug>,1,0>")
-# pthreads for consumers (bx mutexes, std::thread in game code links fine either way).
 target_link_options(bgfxweb PUBLIC -pthread)
 
-# Selected mbedTLS 3.6 library sources: P-384 ECDSA/ECDH, AES-CTR, SHA-256/384,
-# MD5, CTR-DRBG. Version/feature tables (generated upstream) are not needed.
 set(PERLIN_MBEDTLS_SOURCES
     "${mbedtls_SOURCE_DIR}/library/aes.c"
     "${mbedtls_SOURCE_DIR}/library/bignum.c"

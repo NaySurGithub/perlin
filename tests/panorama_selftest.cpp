@@ -1,5 +1,3 @@
-// Title panorama: at any camera angle the six faces must cover the whole screen (no holes for the
-// background to show through), and the camera must move continuously with time.
 #include "client/ui/TitlePanorama.hpp"
 
 #include <cmath>
@@ -50,7 +48,6 @@ int main() {
             CHECK(holes == 0);
         }
 
-    // Smooth, frame-rate independent motion: a 1/240 s step moves the camera a tiny, constant amount.
     const PanoramaView a = PanoramaViewAt(10.0), b = PanoramaViewAt(10.0 + 1.0 / 240.0);
     CHECK(std::fabs(b.yawDegrees - a.yawDegrees - 1.5f / 240.0f) < 1e-3f);
     CHECK(std::fabs(PanoramaViewAt(240.0).yawDegrees) < 1e-3f || std::fabs(PanoramaViewAt(240.0).yawDegrees - 360.0f) < 1e-3f);

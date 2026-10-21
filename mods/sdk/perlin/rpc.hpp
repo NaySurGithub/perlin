@@ -11,8 +11,6 @@
 
 #include "perlin/abi.hpp"
 
-// std::expected needs library support (C++23 <expected>); older standard libraries get a small stand-in with the
-// same surface the SDK uses: has_value, operator bool, *, ->, value, error, value_or.
 #if defined(__cpp_lib_expected) && __cpp_lib_expected >= 202202L
 namespace perlin {
     using std::expected;
@@ -82,8 +80,6 @@ namespace perlin {
     struct Error {
         Status status = Status::Failed;
 
-        // One sentence for humans. The table is indexed by the enumerators themselves, so it cannot drift
-        // from `Status` (see the static_assert).
         constexpr std::string_view message() const {
             constexpr std::array<std::pair<Status, std::string_view>, 7> table{{
                 {Status::Ok, "ok"},
@@ -113,7 +109,6 @@ namespace perlin {
     using Result = expected<T, Error>;
 
     namespace detail {
-        // The single host import. Natively (unit tests, tooling) it is an ordinary symbol you can provide yourself.
         extern "C" {
 #if defined(__wasm__)
         __attribute__((import_module("perlin"), import_name("call")))
@@ -158,7 +153,6 @@ namespace perlin {
             return call_as<T>(op, abi::Writer{});
         }
 
-        // The reply is a u32-counted list of T.
         template <class T>
         Result<std::vector<T>> call_list(Op op, const abi::Writer& args) {
             auto bytes = call(op, args);
@@ -176,7 +170,6 @@ namespace perlin {
             return call_list<T>(op, abi::Writer{});
         }
 
-        // The reply is a single byte: a boolean.
         inline bool call_bool(Op op, const abi::Writer& args) {
             auto bytes = call(op, args);
             return bytes && !bytes->empty() && (*bytes)[0] != 0;

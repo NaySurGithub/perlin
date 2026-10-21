@@ -310,7 +310,6 @@ namespace perlin::ui {
                 const std::string& id = to->string;
                 if (id == "button.form_button_click")
                     return "fb:" + std::to_string(std::max(0, n.index));
-                // Custom form rows (see the shim in FormScreen.cpp) and the submit button.
                 if (id == "button.submit_custom_form")
                     return "submit";
                 if (id == "button.perlin_form_toggle")

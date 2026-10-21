@@ -6,8 +6,6 @@
 #include <set>
 #include <unordered_map>
 
-// Interrupts a running WasmEdge executor (WasmEdgeStop.cpp; the C API only offers this through
-// its thread-per-call async invoke).
 extern "C" void PerlinWasmEdgeStop(WasmEdge_ExecutorContext* executor) noexcept;
 
 namespace perlin::mods {
@@ -41,7 +39,6 @@ namespace perlin::mods {
             return WasmEdge_ValueGenI32(static_cast<int32_t>(static_cast<uint32_t>(v)));
         }
 
-        // Host imports and the exports Perlin calls only use integers.
         bool IntegerSignature(const WasmEdge_FunctionTypeContext* type, std::vector<WasmEdge_ValType>& params, std::vector<WasmEdge_ValType>& results) {
             params.resize(WasmEdge_FunctionTypeGetParametersLength(type));
             results.resize(WasmEdge_FunctionTypeGetReturnsLength(type));
@@ -83,10 +80,8 @@ namespace perlin::mods {
             std::vector<WasmEdge_ValType> params, results;
         };
         std::unordered_map<std::string, Export> exports;
-        std::mutex stopMutex; // keeps Interrupt() off a deleted executor
-        // The error that made a host import stop the running call.
+        std::mutex stopMutex;
         std::string hostError;
-        // The calling frame's memory while a host import runs.
         WasmEdge_MemoryInstanceContext* frameMemory = nullptr;
 
         ~Impl() {
@@ -149,9 +144,8 @@ namespace perlin::mods {
             return false;
         }
         m.config = WasmEdge_ConfigureCreate();
-        // Plugins don't need threads; memory64 and the rest of WebAssembly 3.0 are on by default.
         WasmEdge_ConfigureRemoveProposal(m.config, WasmEdge_Proposal_Threads);
-        WasmEdge_ConfigureSetMaxMemoryPage(m.config, 16384); // 1 GiB of linear memory at most
+        WasmEdge_ConfigureSetMaxMemoryPage(m.config, 16384);
         m.loader = WasmEdge_LoaderCreate(m.config);
         m.validator = WasmEdge_ValidatorCreate(m.config);
         m.executor = WasmEdge_ExecutorCreate(m.config, nullptr);
@@ -172,7 +166,6 @@ namespace perlin::mods {
             return false;
         }
 
-        // 32-bit or 64-bit: decided by the module's memory.
         bool sawMemory = false;
         {
             const uint32_t n = WasmEdge_ASTModuleListExportsLength(m.ast);
@@ -187,7 +180,6 @@ namespace perlin::mods {
                 }
         }
 
-        // Link every import with the type the module asks for.
         {
             const uint32_t n = WasmEdge_ASTModuleListImportsLength(m.ast);
             std::vector<const WasmEdge_ImportTypeContext*> list(n);
@@ -199,7 +191,7 @@ namespace perlin::mods {
                 const std::string name = ToString(WasmEdge_ImportTypeGetExternalName(imp));
                 const std::string label = modName + "." + name;
                 if (!linked.insert(label).second)
-                    continue; // the same import listed twice is linked once
+                    continue;
                 const WasmEdge_ExternalType kind = WasmEdge_ImportTypeGetExternalType(imp);
                 if (kind == WasmEdge_ExternalType_Memory) {
                     if (const WasmEdge_MemoryTypeContext* mt = WasmEdge_ImportTypeGetMemoryType(m.ast, imp))
@@ -279,7 +271,6 @@ namespace perlin::mods {
             WasmEdge_StringDelete(s);
         }
         if (!m.memory) {
-            // Not exported as "memory": take whichever memory it exports.
             const uint32_t n = WasmEdge_ModuleInstanceListMemoryLength(m.module);
             if (n) {
                 std::vector<WasmEdge_String> names(n);
@@ -309,7 +300,6 @@ namespace perlin::mods {
             error = "not loaded";
             return false;
         }
-        // Exports are looked up once; events call the same few functions every frame.
         auto it = m.exports.find(name);
         if (it == m.exports.end()) {
             Impl::Export e;
@@ -362,7 +352,7 @@ namespace perlin::mods {
         if (ptr > bytes || len > bytes - ptr)
             return nullptr;
         if (len == 0) {
-            static uint8_t empty = 0; // nothing is read or written through a zero-length range
+            static uint8_t empty = 0;
             return &empty;
         }
         return WasmEdge_MemoryInstanceGetPointer(mem, ptr, len);

@@ -1,15 +1,4 @@
 #pragma once
-// perlin::meta - compile-time reflection used throughout the SDK.
-//
-// Everything in this header is a constant expression. Two back ends provide it:
-//
-//   * std::meta (C++26 static reflection, P2996). Opt in with -DPERLIN_USE_STD_META on a compiler that
-//     defines __cpp_impl_reflection. Enumerator names come straight from the compiler.
-//   * A portable C++20/23 fallback (the default): enumerator names are read from the compiler's own
-//     function-signature string, and aggregates are decomposed with structured bindings. It works on
-//     clang, gcc and Emscripten without any extra flag.
-//
-// Both expose the same names, so plugin code never has to care which one is active.
 #include <algorithm>
 #include <array>
 #include <bit>
@@ -32,9 +21,6 @@
 namespace perlin::meta {
     inline constexpr bool uses_std_meta = PERLIN_HAS_STD_META != 0;
 
-    // ---------------------------------------------------------------------------------------------
-    // fixed_string: a string literal usable as a template argument, ctx.command<"name">(...).
-    // ---------------------------------------------------------------------------------------------
     template <size_t N>
     struct fixed_string {
         char chars[N + 1]{};
@@ -54,9 +40,6 @@ namespace perlin::meta {
     template <size_t N>
     fixed_string(const char (&)[N]) -> fixed_string<N - 1>;
 
-    // ---------------------------------------------------------------------------------------------
-    // Type and value names.
-    // ---------------------------------------------------------------------------------------------
     namespace detail {
         template <class T>
         constexpr std::string_view raw_type_name() {
@@ -76,7 +59,6 @@ namespace perlin::meta {
 #endif
         }
 
-        // The part of a signature after "V = " (clang and gcc both spell it that way), up to ';' or ']'.
         constexpr std::string_view value_of(std::string_view sig) {
             const size_t eq = sig.find("V = ");
             if (eq == std::string_view::npos)
@@ -126,17 +108,6 @@ namespace perlin::meta {
 #endif
     }
 
-    // ---------------------------------------------------------------------------------------------
-    // Enumerations.
-    //
-    //   enum_name(Event::Tick)            -> "Tick"
-    //   enum_cast<Event>("Tick")          -> std::optional<Event>
-    //   enum_values<Event>                -> std::array<Event, N>
-    //   enum_count<Event>                 -> N
-    //
-    // Enumerators are discovered by probing the range [min, max] (default -16..255). Enums with larger
-    // values specialise enum_range. Flag enums (one bit per enumerator) are probed by bit instead.
-    // ---------------------------------------------------------------------------------------------
     template <class E>
     struct enum_range {
         static constexpr int min = -16;
@@ -149,7 +120,6 @@ namespace perlin::meta {
     template <class E>
     concept Enumeration = std::is_enum_v<E>;
 
-    // Enumerations opted in to std::format by name (the SDK enables its own).
     template <class E>
     struct enable_format : std::false_type {};
 
@@ -257,7 +227,6 @@ namespace perlin::meta {
         return out;
     }();
 
-    // The name of a value, or an empty view when the value is not an enumerator.
     template <Enumeration E>
     constexpr std::string_view enum_name(E value) {
         for (const auto& e : enum_entries<E>)
@@ -274,7 +243,6 @@ namespace perlin::meta {
         return std::nullopt;
     }
 
-    // Case-insensitive variant (ASCII), for user-facing text such as command arguments.
     template <Enumeration E>
     constexpr std::optional<E> enum_cast_nocase(std::string_view name) {
         const auto lower = [](char c) { return c >= 'A' && c <= 'Z' ? static_cast<char>(c - 'A' + 'a') : c; };
@@ -304,14 +272,6 @@ namespace perlin::meta {
     template <Enumeration E>
     constexpr auto to_underlying(E value) { return static_cast<std::underlying_type_t<E>>(value); }
 
-    // ---------------------------------------------------------------------------------------------
-    // Flags<E>: a type-safe bit set over a flag enum.
-    //
-    //   enum class Perm : uint32_t { Network = 1u << 0, Control = 1u << 2 };
-    //   template <> struct perlin::meta::enable_flags<Perm> : std::true_type {};
-    //   Flags<Perm> p = Perm::Network | Perm::Control;
-    //   p.has(Perm::Control);  for (Perm one : p) ...
-    // ---------------------------------------------------------------------------------------------
     template <FlagEnum E>
     class Flags {
     public:
@@ -349,7 +309,6 @@ namespace perlin::meta {
         constexpr Flags& operator&=(Flags o) { bits_ = static_cast<Bits>(bits_ & o.bits_); return *this; }
         friend constexpr bool operator==(Flags, Flags) = default;
 
-        // Iterates the set flags in ascending bit order.
         class iterator {
         public:
             using value_type = E;
@@ -375,10 +334,6 @@ namespace perlin::meta {
     template <FlagEnum E>
     constexpr Flags<E> operator&(E a, E b) { return Flags<E>(a) & Flags<E>(b); }
 
-    // ---------------------------------------------------------------------------------------------
-    // IndexSet<E>: like Flags, but the enumerators are bit *positions* (0, 1, 2, ...) rather than masks.
-    // Used for protocol bit fields such as the entity flags.
-    // ---------------------------------------------------------------------------------------------
     template <Enumeration E, class Storage = uint64_t>
     class IndexSet {
     public:
@@ -421,18 +376,11 @@ namespace perlin::meta {
         Storage bits_ = 0;
     };
 
-    // ---------------------------------------------------------------------------------------------
-    // Aggregates.
-    //
-    //   struct P { int a; std::string b; };
-    //   field_count<P> == 2;   fields(p) -> std::tuple<int&, std::string&>;   for_each_field(p, fn)
-    // ---------------------------------------------------------------------------------------------
     template <class T>
     concept Aggregate = std::is_aggregate_v<std::remove_cvref_t<T>> && !std::is_array_v<std::remove_cvref_t<T>> &&
                         !std::is_union_v<std::remove_cvref_t<T>>;
 
     namespace detail {
-        // Converts to anything; used only in unevaluated contexts to count aggregate members.
         struct anything {
             template <class U>
             constexpr operator U() const;
@@ -446,8 +394,6 @@ namespace perlin::meta {
         template <class T, size_t N>
         constexpr bool accepts_n = constructible_with<T>(std::make_index_sequence<N>{});
 
-        // Initialisers are accepted for every count up to the member count and rejected beyond it, so the
-        // member count is found by bisection.
         template <class T, size_t Lo, size_t Hi>
         constexpr size_t count_members() {
             if constexpr (Lo == Hi) {
@@ -476,7 +422,6 @@ namespace perlin::meta {
         detail::count_members<std::remove_cvref_t<T>, 0, 64>();
 #endif
 
-    // A tuple of references to the members of `value`, in declaration order.
     template <Aggregate T>
     constexpr auto fields(T& value) {
 #if PERLIN_HAS_STD_META
@@ -495,7 +440,6 @@ namespace perlin::meta {
     }
 
 #if PERLIN_HAS_STD_META
-    // Member names are only available through real reflection.
     template <Aggregate T>
     inline constexpr auto field_names = [] {
         constexpr auto members = std::define_static_array(
@@ -507,9 +451,6 @@ namespace perlin::meta {
     }();
 #endif
 
-    // ---------------------------------------------------------------------------------------------
-    // Small helpers.
-    // ---------------------------------------------------------------------------------------------
     template <class... Ts>
     struct overloaded : Ts... {
         using Ts::operator()...;
@@ -522,7 +463,6 @@ namespace perlin::meta {
     template <template <class...> class Template, class... Args>
     inline constexpr bool is_specialization_of<Template<Args...>, Template> = true;
 
-    // The parameter types of a callable's single operator() (lambdas, function objects, function pointers).
     namespace detail {
         template <class F>
         struct signature;

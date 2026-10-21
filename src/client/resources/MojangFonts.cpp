@@ -143,8 +143,6 @@ namespace perlin {
             return true;
         }
 #ifdef __EMSCRIPTEN__
-        // The page downloads Mojang's client jar before the engine starts (the browser's fetch is the
-        // only network route there) and leaves it at fonts/client.jar; this unpacks it.
         {
             job.stage = assets::Stage::Checking;
             const fs::path jar = fs::path(dataDir) / "fonts" / "client.jar";

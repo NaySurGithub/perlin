@@ -19,12 +19,11 @@ namespace perlin {
         constexpr float kSprintZone = 0.92f;
         constexpr float kLookScale = 0.55f;
         constexpr float kTapSlop = 18.0f;
-        constexpr float kScrollStep = 36.0f; // finger travel (px) per wheel notch in menus
+        constexpr float kScrollStep = 36.0f;
         constexpr int kDiscTile = 64;
 
         enum StickKey { KeyForward, KeyBack, KeyLeft, KeyRight, KeySprint };
 
-        // Icons from the resource pack's textures/ui, in the order of S below.
         enum S {
             Frame, Knob,
             Jump, JumpP, WaterUp, WaterUpP, FlyUp, FlyUpP,
@@ -135,15 +134,12 @@ namespace perlin {
             l.label = label;
             l.system = system;
         };
-        // Right-hand cluster: jump big in the corner, sneak beside it, place above it, attack beside that.
         set(Jump, W - 0.14f * u, H - 0.17f * u, 0.095f * u, Action::Jump, Kind::Hold, "^", false);
         set(Sneak, W - 0.36f * u, H - 0.13f * u, 0.07f * u, Action::Sneak, Kind::SneakKey, "v", false);
         set(Use, W - 0.14f * u, H - 0.42f * u, 0.08f * u, Action::Use, Kind::Hold, "+", false);
         set(Attack, W - 0.36f * u, H - 0.36f * u, 0.085f * u, Action::Attack, Kind::Hold, "X", false);
-        // Sprint sits above the joystick.
         set(Sprint, 0.20f * u, H - 0.52f * u, 0.058f * u, Action::Sprint, Kind::SprintToggle, ">>", false);
 
-        // Six buttons across the top, three each side of the centre line.
         const float r = 0.043f * u, pitch = 0.112f * u;
         const Button top[6] = {Pause, Chat, Perspective, Debug, Players, HideHud};
         const Action topAction[6] = {Action::Pause, Action::Chat, Action::CyclePerspective, Action::DebugScreen, Action::PlayerList, Action::ToggleHud};
@@ -151,7 +147,6 @@ namespace perlin {
         for (int i = 0; i < 6; i++)
             set(top[i], W * 0.5f + (static_cast<float>(i) - 2.5f) * pitch, r + 0.02f * u, r, topAction[i], topAction[i] == Action::PlayerList ? Kind::Hold : Kind::Tap, topLabel[i], true);
 
-        // Hotbar: 182x22 gui pixels centred at the bottom, with the "..." button to its right.
         const float scale = state.hudScale > 0 ? static_cast<float>(state.hudScale) : std::max(1.0f, std::floor(u / 240.0f));
         hotbarW = 182.0f * scale;
         hotbarH = 22.0f * scale;
@@ -160,14 +155,12 @@ namespace perlin {
         const float ir = std::max(0.035f * u, 10.0f * scale);
         set(Inventory, hotbarX + hotbarW + ir * 1.3f, H - hotbarH * 0.5f - 2.0f * scale, ir, Action::Inventory, Kind::Tap, "...", true);
 
-        // The joystick stays where it is.
         const TouchPlace sp = Place("stick");
         stickR = kStickRadius * u * global * std::max(0.4f, sp.scale);
         stickCX = sp.x >= 0.0f ? sp.x * W : 0.20f * u;
         stickCY = sp.y >= 0.0f ? sp.y * H : H - 0.20f * u;
     }
 
-    // Editor tool buttons, bottom middle: smaller, bigger, reset, done.
     namespace {
         struct ToolBox { float x, y, w, h; const char* label; };
     }
@@ -273,10 +266,7 @@ namespace perlin {
             input.OnMouseUp(b.code);
     }
 
-    // A tap holds its key for a few frames: some actions (the debug screen, the player list) look at the key
-    // being held, not just pressed, and a same-frame press+release would be missed.
     void TouchControls::Tap(Input& input, Action action) {
-        // The debug screen is driven by F3 itself (it combines with other keys), so that button always sends F3.
         Binding b;
         if (action == Action::DebugScreen) {
             b = Binding::KeyboardKey(Key::F3);
@@ -305,8 +295,6 @@ namespace perlin {
         const Layout& l = layout[index];
         switch (l.kind) {
         case Kind::SneakKey: {
-            // On the ground sneak is a toggle; while swimming, flying or riding it is "go down" / "dismount",
-            // which you hold.
             const bool momentary = state.flying || state.inWater || state.riding;
             if (momentary) {
                 if (!sneakLatched)
@@ -513,8 +501,6 @@ namespace perlin {
         switch (f->role) {
         case Role::Pointer:
             if (!f->scrolling && f->moved && std::fabs(fromStartY) > std::fabs(fromStartX) * 1.2f) {
-                // A vertical drag in a menu scrolls (like a phone list). The press that started it is
-                // released with the pointer parked off screen so it can't click what is under the finger.
                 f->scrolling = true;
                 f->pointerParked = true;
                 f->restoreAt = Clock::now() + std::chrono::milliseconds(120);
@@ -549,7 +535,6 @@ namespace perlin {
             break;
         }
         case Role::Button:
-            // Dragging a finger that is holding attack or place keeps turning the camera, as in Bedrock.
             if (f->button == Attack || f->button == Use || f->button == Jump)
                 input.OnMouseDelta(dx * kLookScale * state.sensitivity, dy * kLookScale * state.sensitivity);
             break;
@@ -664,8 +649,6 @@ namespace perlin {
             fontVersion = font.Version();
         }
 
-        // Icons come from the downloaded resource pack, which may arrive after the first frame: retry a
-        // missing one every couple of seconds.
         if (sprites.empty())
             sprites.resize(SpriteCount);
         for (int i = 0; i < SpriteCount; i++) {
@@ -722,7 +705,6 @@ namespace perlin {
         auto have = [&](int sprite) { return sprites[sprite].id != 0; };
 
         const float base = std::clamp(state.opacity, 0.2f, 1.0f);
-        // Joystick: fixed in place, the knob follows the thumb.
         {
             const float radius = stickR;
             const float cx = stickCX, cy = stickCY;
@@ -761,7 +743,7 @@ namespace perlin {
             case Attack: sprite = active ? AttackP : Attack; break;
             case Use: sprite = active ? InteractP : Interact; break;
             case Sprint: sprite = active ? SprintP : Sprint; break;
-            case Perspective: sprite = PerspectiveIcon; break; // already a framed button in the pack
+            case Perspective: sprite = PerspectiveIcon; break;
             case Pause: glyph = PauseIcon; break;
             case Chat: glyph = ChatIcon; break;
             case Debug: glyph = DebugIcon; break;
@@ -776,7 +758,6 @@ namespace perlin {
                 if (active && i == Perspective)
                     Disc(discs, l.cx, l.cy, l.r, Pack(1, 1, 1, 0.25f), false);
             } else if (glyph >= 0 && have(Knob) && have(glyph)) {
-                // The pack's own button frame with its icon on top.
                 icon(Knob, l.cx, l.cy, l.r, l.r, alpha);
                 if (active)
                     icon(Knob, l.cx, l.cy, l.r, l.r, 0.35f);

@@ -185,8 +185,6 @@ namespace perlin::ui {
         bool LogMessage(Rml::Log::Type type, const Rml::String& message) override {
             if (type > Rml::Log::LT_WARNING)
                 return true;
-            // A warning that repeats every frame (RmlUi retries a failed mesh each time it draws)
-            // once filled the log with 2.7 million lines and made writing it the slowest part of a frame.
             static std::unordered_map<std::string, uint64_t> seen;
             const uint64_t n = ++seen[message];
             if (n <= 3 || n % 100000 == 0)
@@ -758,9 +756,6 @@ namespace perlin::ui {
             return;
         gScale = scale;
         gLayer = UiLayer::Gui;
-        // Safety valve: RmlUi caches the geometry it compiled and a leak of those (or a runaway
-        // rebuild) ends in bgfx running out of buffer handles. Past a generous limit, drop every
-        // compiled mesh; RmlUi recompiles what is still on screen on the next draw.
         static int frameCounter = 0;
         if (gRenderer && gRenderer->UiLiveMeshes() > 3500) {
             static int lastRelease = -1000;

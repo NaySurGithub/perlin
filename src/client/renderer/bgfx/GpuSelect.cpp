@@ -12,7 +12,7 @@
 namespace perlin::gpu {
 #if defined(_WIN32)
     namespace {
-        constexpr uint16_t kVendorMicrosoft = 0x1414; // Basic Render Driver / WARP
+        constexpr uint16_t kVendorMicrosoft = 0x1414;
 
         std::string Narrow(const wchar_t* w) {
             if (!w || !*w)
@@ -86,7 +86,7 @@ namespace perlin::gpu {
         }
         factory->Release();
         if (!haveBest)
-            return choice; // only software adapters: leave it to bgfx
+            return choice;
         choice.vendorId = best.vendor;
         choice.deviceId = best.device;
         choice.adapterName = best.name;

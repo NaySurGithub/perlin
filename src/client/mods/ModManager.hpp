@@ -26,10 +26,10 @@ namespace perlin::mods {
         std::vector<std::string> permissions;
         uint64_t size = 0;
         double lastEventMs = 0;
-        std::string arch; // "wasm64" or "wasm32" once loaded
+        std::string arch;
         bool hasSettings = false;
-        uint32_t requested = 0;  // dangerous permission bits the manifest asks for
-        bool needsApproval = false; // asks for permissions the user has not allowed yet
+        uint32_t requested = 0;
+        bool needsApproval = false;
     };
 
     struct PluginCommand {
@@ -63,8 +63,6 @@ namespace perlin::mods {
         void Start(const std::string& directory);
         void Stop();
         void SetDisabled(const std::vector<std::string>& names);
-        // "name=bits" entries: the dangerous permissions the user allowed for each mod. A mod asking for more than that
-        // stays off until it is approved in the Mods screen.
         void SetApproved(const std::vector<std::string>& entries);
         static uint32_t DangerousMask();
         std::vector<ModInfo> List() const;
@@ -90,20 +88,13 @@ namespace perlin::mods {
         uint64_t CommandVersion() const { return commandVersion.load(); }
         bool HasPlugins() const;
 
-        // Settings a mod declares (shown on its settings page). Values are persisted per mod.
         bool HasSettings(const std::string& plugin) const;
         std::vector<abi::SettingDef> Settings(const std::string& plugin) const;
-        // Applies a value chosen in the UI: validated, stored, saved, and sent to the mod as SettingChanged.
-        // Returns whether the stored value changed.
         bool ChangeSetting(const std::string& plugin, const std::string& id, const std::string& value);
         void ResetSettings(const std::string& plugin);
-        // The settings page was closed: saves, and reloads the mod if a changed setting needs that.
         void SettingsClosed(const std::string& plugin);
 
-        // Mod calls run on the mod's own thread; anything that touches the game's UI or state is posted here and runs
-        // on the main thread inside Pump().
         void PostMain(std::function<void()> task);
-        // Runs posted tasks and flushes settings. Call once per frame from the main thread.
         void Pump();
         bool HasPermission(const std::string& plugin, abi::Permission p) const;
         uint64_t Tick() const { return tickCounter.load(); }

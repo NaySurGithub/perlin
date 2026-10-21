@@ -1,15 +1,4 @@
 #pragma once
-// The wire contract between plugins and the game.
-//
-// Every structure below is a plain aggregate: the order of its members *is* the wire format. Reader and
-// Writer serialise any such type generically (arithmetic types, enums, strings, vectors, arrays, pairs,
-// optionals and nested aggregates), so there is no per-struct encode/decode code to keep in sync:
-//
-//     abi::Writer w;  w.write(player_state);
-//     abi::Reader r(bytes, size);  auto s = r.read<abi::PlayerState>();
-//
-// Integers and floats are little-endian at their natural width, strings and vectors carry a u32 length,
-// bool is one byte, fixed std::array has no length. Enums travel as their underlying type.
 #include <array>
 #include <cstdint>
 #include <cstring>
@@ -29,9 +18,6 @@ namespace perlin::abi {
     inline constexpr int32_t kNeedMoreBase = 16;
     inline constexpr uint32_t kEventCancel = 1;
 
-    // ---------------------------------------------------------------------------------------------
-    // Operations (host calls) and events.
-    // ---------------------------------------------------------------------------------------------
     enum class Op : uint32_t {
         Log = 0x0001,
         Meta = 0x0002,
@@ -120,14 +106,12 @@ namespace perlin::abi {
         PacketSend = 0x0B01,
         PacketName = 0x0B02,
 
-        // Settings are declared in the mod's manifest; these read and change their values.
         SettingGet = 0x0C01,
         SettingSet = 0x0C02,
         SettingList = 0x0C03,
         ModList = 0x0C10,
         IconSet = 0x0C11,
 
-        // The game's own actions (the same things its menus do).
         OpenScreen = 0x0D00,
         OpenModSettings = 0x0D01,
         TakeScreenshot = 0x0D02,
@@ -136,26 +120,23 @@ namespace perlin::abi {
         OpenUrl = 0x0D05,
         ToggleHud = 0x0D06,
 
-        // Files between the mod's folder and the game's pack and screenshot folders (needs the files permission).
         CopyFile = 0x0E00,
         MoveFile = 0x0E01,
-        DownloadFile = 0x0E02, // also needs the network permission
+        DownloadFile = 0x0E02,
 
-        // Low-level control (the "advanced" range). Everything here that changes the game needs the control permission,
-        // and every override carries a lifetime in ticks: it lapses on its own when the mod stops refreshing it.
-        CameraControl = 0x0F00, // roll, FOV, view offset, extra yaw/pitch (visual only)
-        CameraState = 0x0F01,   // eye position, angles, FOV, aspect, view-projection matrix
-        WorldToScreen = 0x0F02, // project a world point to GUI coordinates
-        PlayerMotion = 0x0F10,  // set / add the local player's velocity
-        PlayerTeleport = 0x0F11, // move the local player (client side; the server sees it as ordinary movement)
-        PlayerModelPose = 0x0F20, // roll / pitch / yaw offset of the local player's model
-        WorldLines = 0x0F30,    // world-space lines this mod wants drawn (replaces its previous set)
-        WorldBoxes = 0x0F31,    // world-space boxes (outlines), same lifetime rules
-        ClientBlockSet = 0x0F40, // change blocks in the client's own copy of the world
-        ClientBlockGet = 0x0F41, // look a block up by name and states to its runtime id
-        PacketDrop = 0x0F50,    // discard incoming packets by id for a while
-        PacketCounters = 0x0F51, // how many packets of each id have arrived
-        PacketInject = 0x0F52,  // handle a packet as if the server had sent it
+        CameraControl = 0x0F00,
+        CameraState = 0x0F01,
+        WorldToScreen = 0x0F02,
+        PlayerMotion = 0x0F10,
+        PlayerTeleport = 0x0F11,
+        PlayerModelPose = 0x0F20,
+        WorldLines = 0x0F30,
+        WorldBoxes = 0x0F31,
+        ClientBlockSet = 0x0F40,
+        ClientBlockGet = 0x0F41,
+        PacketDrop = 0x0F50,
+        PacketCounters = 0x0F51,
+        PacketInject = 0x0F52,
     };
 
     enum class Event : uint32_t {
@@ -200,7 +181,7 @@ namespace perlin::abi {
         Packets = 1u << 1,
         Control = 1u << 2,
         Storage = 1u << 3,
-        Files = 1u << 4, // copy/move/download files between the mod's folder and the game's pack and screenshot folders
+        Files = 1u << 4,
     };
 
     enum class Draw : uint8_t {
@@ -213,9 +194,6 @@ namespace perlin::abi {
         Border = 7,
     };
 
-    // ---------------------------------------------------------------------------------------------
-    // Game vocabulary. Values are the Bedrock protocol values.
-    // ---------------------------------------------------------------------------------------------
     enum class Screen : int32_t {
         None = 0,
         Pause = 1,
@@ -246,7 +224,6 @@ namespace perlin::abi {
 
     enum class PermissionLevel : int32_t { Unknown = -1, Visitor = 0, Member = 1, Operator = 2, Custom = 3 };
 
-    // Block faces in protocol order. North is -Z, South +Z, West -X, East +X.
     enum class Face : int32_t { Down = 0, Up = 1, North = 2, South = 3, West = 4, East = 5 };
 
     enum class AimKind : int32_t { None = 0, Block = 1, Entity = 2 };
@@ -321,23 +298,18 @@ namespace perlin::abi {
 
     enum class Perspective : int32_t { FirstPerson = 0, ThirdPersonBack = 1, ThirdPersonFront = 2 };
 
-    // How a setting is edited on the mod's settings page.
     enum class SettingKind : uint8_t {
-        Toggle = 0, // on/off
-        Integer,    // slider over [min, max] in whole steps
-        Number,     // slider over [min, max]
-        Choice,     // cycles through `choices`
-        Button,     // fires SettingChanged with the value "pressed"
-        Label,      // read-only line of text
-        Header,     // section heading
+        Toggle = 0,
+        Integer,
+        Number,
+        Choice,
+        Button,
+        Label,
+        Header,
     };
 
-    // Folders a file call can name. `Mod` is the mod's own data folder; the others belong to the game. Files may be
-    // copied or moved out of `Mod` (and copied out of `Screenshots`) into any area; nothing already in a game folder
-    // is overwritten.
     enum class Area : uint8_t { Mod, Screenshots, ResourcePacks, ShaderPacks };
 
-    // Actor flag bit positions (the protocol's ActorFlags). An entity's flags are an IndexSet<EntityFlag>.
     enum class EntityFlag : uint8_t {
         OnFire = 0, Sneaking = 1, Riding = 2, Sprinting = 3, UsingItem = 4, Invisible = 5, Tempted = 6, InLove = 7,
         Saddled = 8, Powered = 9, Ignited = 10, Baby = 11, Converting = 12, Critical = 13, CanShowName = 14,
@@ -367,8 +339,6 @@ struct perlin::meta::enum_range<perlin::abi::EffectId> {
 };
 
 namespace perlin::abi {
-    // Marks every enumeration declared in perlin::abi (found by argument-dependent lookup), so each one is printable by name
-    // without being listed anywhere.
     template <class E>
         requires std::is_enum_v<E>
     constexpr bool abi_enum_tag(E) {
@@ -377,7 +347,6 @@ namespace perlin::abi {
 }
 
 namespace perlin::meta {
-    // Enumerations that std::format prints by enumerator name: all of perlin::abi's.
     template <class E>
         requires std::is_enum_v<E>
     struct enable_format<E> : std::bool_constant<requires(E e) { abi_enum_tag(e); }> {};
@@ -386,9 +355,6 @@ namespace perlin::meta {
 namespace perlin::abi {
     using Permissions = meta::Flags<Permission>;
 
-    // ---------------------------------------------------------------------------------------------
-    // Generic serialisation.
-    // ---------------------------------------------------------------------------------------------
     namespace wire {
         template <class T>
         concept Raw = (std::is_arithmetic_v<T> && !std::is_same_v<T, bool>) || std::is_enum_v<T> || requires { T::wire_raw_tag; };
@@ -424,7 +390,6 @@ namespace perlin::abi {
         Writer() = default;
         explicit Writer(size_t reserve) { data.reserve(reserve); }
 
-        // Low-level primitives.
         template <class T>
         Writer& put(T value) {
             static_assert(std::is_trivially_copyable_v<T>);
@@ -451,7 +416,6 @@ namespace perlin::abi {
         }
         Writer& boolean(bool v) { return put<uint8_t>(v ? 1 : 0); }
 
-        // Generic: any number of values, each encoded by its type.
         template <class... Ts>
         Writer& write(const Ts&... values) {
             (write_one(values), ...);
@@ -498,7 +462,6 @@ namespace perlin::abi {
                 put<uint8_t>(static_cast<uint8_t>(v.index()));
                 std::visit([this](const auto& alternative) { write_one(alternative); }, v);
             } else if constexpr (std::is_same_v<T, std::monostate>) {
-                // no bytes
             } else if constexpr (meta::Aggregate<T>) {
                 meta::for_each_field(v, [&](const auto& member) { write_one(member); });
             } else {
@@ -548,7 +511,6 @@ namespace perlin::abi {
         }
         bool boolean() { return get<uint8_t>() != 0; }
 
-        // Generic: decode one value of type T.
         template <class T>
         T read() {
             T value{};
@@ -593,7 +555,7 @@ namespace perlin::abi {
                         std::memcpy(v.data(), cur, static_cast<size_t>(n) * sizeof(E));
                     cur += static_cast<size_t>(n) * sizeof(E);
                 } else {
-                    if (n > Remaining()) { // every element takes at least one byte
+                    if (n > Remaining()) {
                         fail();
                         return *this;
                     }
@@ -622,7 +584,6 @@ namespace perlin::abi {
                 else
                     read_alternative<0>(v, index);
             } else if constexpr (std::is_same_v<T, std::monostate>) {
-                // no bytes
             } else if constexpr (meta::Aggregate<T>) {
                 meta::for_each_field(v, [&](auto& member) { read_into(member); });
             } else {
@@ -665,15 +626,12 @@ namespace perlin::abi {
         bool failed = false;
     };
 
-    // ---------------------------------------------------------------------------------------------
-    // Data. Member order is wire order.
-    // ---------------------------------------------------------------------------------------------
     struct Item {
         std::string name;
         int32_t count = 0, aux = 0, damage = 0;
         bool enchanted = false;
         std::string customName;
-        std::vector<std::pair<int32_t, int32_t>> enchants; // (enchantment id, level)
+        std::vector<std::pair<int32_t, int32_t>> enchants;
         std::vector<std::string> lore;
 
         bool Empty() const { return name.empty() || count <= 0; }
@@ -710,7 +668,6 @@ namespace perlin::abi {
         bool open = false;
     };
 
-    // One entity attribute (`minecraft:health`, `minecraft:movement`, ...), as the server last reported it.
     struct Attribute {
         std::string name;
         float min = 0, value = 0, max = 0;
@@ -729,13 +686,12 @@ namespace perlin::abi {
         std::string mainHand, offHand;
         std::array<std::string, 4> armor;
         int64_t vehicleUid = 0, ownerUid = 0, targetUid = 0;
-        // Everything else the game tracks about the entity.
         int32_t variant = 0, markVariant = 0, color = 0;
         float maxHealth = -1;
         bool dying = false;
         std::vector<Attribute> attributes;
-        std::vector<std::pair<std::string, float>> properties;       // entity properties (numbers, bools, enums as index)
-        std::vector<std::pair<std::string, std::string>> propertyText; // entity properties that are text
+        std::vector<std::pair<std::string, float>> properties;
+        std::vector<std::pair<std::string, std::string>> propertyText;
     };
 
     struct PlayerEntry {
@@ -766,21 +722,18 @@ namespace perlin::abi {
         std::vector<std::pair<std::string, std::string>> states;
     };
 
-    // The tool a block is mined with.
     enum class Tool : uint8_t { None, Pickaxe, Axe, Shovel, Hoe, Shears, Sword };
 
-    // What the game knows about a kind of block, whether or not one is in the world.
     struct BlockProps {
         bool known = false;
-        float hardness = 0; // -1 is unbreakable
+        float hardness = 0;
         Tool tool = Tool::None;
-        int32_t harvestLevel = 0; // 0 any tool, 1 any pickaxe, 2 stone, 3 iron, 4 diamond
+        int32_t harvestLevel = 0;
         bool needsSupportBelow = false, breaksWholeStack = false;
         std::string displayName;
-        std::vector<std::string> properties; // block property names from the block definition
+        std::vector<std::string> properties;
     };
 
-    // The block entity (chest, sign, banner, ...) at a position.
     struct BlockEntityInfo {
         bool present = false;
         std::string id;
@@ -791,17 +744,15 @@ namespace perlin::abi {
         bool frontGlow = false, backGlow = false;
         int32_t base = -1, bannerType = 0;
         std::vector<std::pair<std::string, int32_t>> patterns;
-        std::string nbt; // the complete tag as JSON
+        std::string nbt;
     };
 
-    // What kind of thing a name refers to.
     enum class NameKind : uint8_t { Item, Block, Entity };
 
-    // The block the local player is currently mining.
     struct BreakState {
         bool active = false;
         int32_t x = 0, y = 0, z = 0;
-        float progress = 0; // 0..1
+        float progress = 0;
     };
 
     struct RayHit {
@@ -842,21 +793,20 @@ namespace perlin::abi {
         int32_t ticks = 1;
     };
 
-    // --- Advanced range ---------------------------------------------------------------------------
     struct CameraControlState {
-        float roll = 0;       // degrees around the view direction
-        float fovAdd = 0;     // added to the field of view
-        float fovSet = 0;     // when > 0, replaces the field of view
-        float offsetX = 0, offsetY = 0, offsetZ = 0; // view-space offset (x right, y up, z back)
-        float yawAdd = 0, pitchAdd = 0;              // turns the picture only, not where the player aims
+        float roll = 0;
+        float fovAdd = 0;
+        float fovSet = 0;
+        float offsetX = 0, offsetY = 0, offsetZ = 0;
+        float yawAdd = 0, pitchAdd = 0;
         int32_t ticks = 2;
     };
 
     struct CameraInfo {
-        double x = 0, y = 0, z = 0; // eye
+        double x = 0, y = 0, z = 0;
         float yaw = 0, pitch = 0, fov = 70, aspect = 1.78f, nearPlane = 0.1f, farPlane = 600;
         int32_t perspective = 0;
-        std::array<float, 16> viewProjection{}; // column-major
+        std::array<float, 16> viewProjection{};
     };
 
     struct WorldPoint {
@@ -864,13 +814,13 @@ namespace perlin::abi {
     };
 
     struct ScreenPoint {
-        float x = 0, y = 0;  // GUI pixels
-        float depth = 0;     // distance along the view direction
-        bool visible = false; // in front of the camera and on screen
+        float x = 0, y = 0;
+        float depth = 0;
+        bool visible = false;
     };
 
     struct MotionRequest {
-        bool add = false; // false replaces the velocity on the chosen axes, true adds to it
+        bool add = false;
         double x = 0, y = 0, z = 0;
         bool axisX = true, axisY = true, axisZ = true;
     };
@@ -881,20 +831,18 @@ namespace perlin::abi {
     };
 
     struct ModelPose {
-        // Degrees, about the middle of the body and applied after the glide lean: pitch leans forward, roll leans sideways,
-        // and yaw spins around the body's long axis, which in flight is the direction of travel (a barrel roll).
         float roll = 0, pitch = 0, yaw = 0;
         int32_t ticks = 2;
     };
 
     struct WorldLine {
         double x1 = 0, y1 = 0, z1 = 0, x2 = 0, y2 = 0, z2 = 0;
-        uint32_t color = 0xFFFFFFFF; // 0xAABBGGRR
+        uint32_t color = 0xFFFFFFFF;
         float width = 1.0f;
     };
 
     struct WorldLines {
-        int32_t ticks = 2; // the lines are drawn for this many ticks, then forgotten unless resent
+        int32_t ticks = 2;
         std::vector<WorldLine> lines;
     };
 
@@ -911,7 +859,7 @@ namespace perlin::abi {
 
     struct ClientBlockEdit {
         int32_t x = 0, y = 0, z = 0;
-        uint32_t runtimeId = 0; // from ClientBlockGet or Block
+        uint32_t runtimeId = 0;
     };
 
     struct ClientBlockEdits {
@@ -931,7 +879,7 @@ namespace perlin::abi {
     struct PacketDropRequest {
         int32_t ticks = 20;
         std::vector<uint32_t> ids;
-        bool outgoing = false; // true: stop packets this client would send instead of ones it receives
+        bool outgoing = false;
     };
 
     struct PacketCount {
@@ -958,34 +906,27 @@ namespace perlin::abi {
         std::string name;
     };
 
-    // ---------------------------------------------------------------------------------------------
-    // Mod settings.
-    // ---------------------------------------------------------------------------------------------
     struct SettingDef {
-        std::string id; // stable key, also the key in <mod>.settings.json
+        std::string id;
         SettingKind kind = SettingKind::Toggle;
         std::string label, description;
-        std::string icon; // "item:<id>", "texture:<path>", "file:<path in the mod's data folder>" or empty
-        std::string value, fallback; // current and default value, as text
+        std::string icon;
+        std::string value, fallback;
         double min = 0, max = 1, step = 0;
         std::vector<std::string> choices, choiceLabels;
         std::string unit;
-        bool restart = false; // the mod is reloaded after the settings page closes
+        bool restart = false;
     };
 
     struct SettingEntry {
         std::string id, value;
     };
 
-    // A file in one of the areas, as the file calls take it.
     struct FileLocation {
         Area area = Area::Mod;
-        std::string path; // relative, no "..", forward slashes
+        std::string path;
     };
 
-    // ---------------------------------------------------------------------------------------------
-    // Misc reads.
-    // ---------------------------------------------------------------------------------------------
     struct ModEntry {
         std::string name, displayName, description, version, author, state;
         bool enabled = true, self = false, hasSettings = false;
@@ -1006,9 +947,6 @@ namespace perlin::abi {
         float titleAlpha = 0, actionBarAlpha = 0;
     };
 
-    // ---------------------------------------------------------------------------------------------
-    // Event payloads.
-    // ---------------------------------------------------------------------------------------------
     struct EventNothing {};
     struct EventTick {
         float dt = 0.05f;
@@ -1077,31 +1015,29 @@ namespace perlin::abi {
         std::string id, value;
         SettingKind kind = SettingKind::Toggle;
     };
-    // The payload type of every event, in enum order. The static_assert keeps this table honest: adding an
-    // Event without a payload here fails to compile.
-    using EventPayloads = std::tuple<EventNothing,    // Load
-                                     EventNothing,    // Unload
-                                     EventTick,       // Tick
-                                     EventFrame,      // Frame
-                                     EventChat,       // ChatReceived
-                                     EventText,       // ChatSending
-                                     EventConnection, // Connected
-                                     EventConnection, // Disconnected
-                                     EventKey,        // Key
-                                     EventCommand,    // Command
-                                     EventDamage,     // Damage
-                                     EventText,       // Death
-                                     EventNothing,    // Respawned
-                                     EventDimension,  // DimensionChanged
-                                     EventScreen,     // ScreenChanged
-                                     EventSlot,       // SlotChanged
-                                     EventEntity,     // EntityAdded
-                                     EventEntity,     // EntityRemoved
-                                     EventSound,      // Sound
-                                     EventHttp,       // HttpResponse
-                                     EventPacket,     // Packet
-                                     EventTitle,      // Title
-                                     EventSettingChanged>; // SettingChanged
+    using EventPayloads = std::tuple<EventNothing,
+                                     EventNothing,
+                                     EventTick,
+                                     EventFrame,
+                                     EventChat,
+                                     EventText,
+                                     EventConnection,
+                                     EventConnection,
+                                     EventKey,
+                                     EventCommand,
+                                     EventDamage,
+                                     EventText,
+                                     EventNothing,
+                                     EventDimension,
+                                     EventScreen,
+                                     EventSlot,
+                                     EventEntity,
+                                     EventEntity,
+                                     EventSound,
+                                     EventHttp,
+                                     EventPacket,
+                                     EventTitle,
+                                     EventSettingChanged>;
     static_assert(std::tuple_size_v<EventPayloads> == meta::enum_count<Event>, "every Event needs a payload type");
 
     template <Event E>

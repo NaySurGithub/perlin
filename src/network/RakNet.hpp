@@ -17,14 +17,11 @@ namespace perlin {
         RakNet(const RakNet&) = delete;
         RakNet& operator=(const RakNet&) = delete;
 
-        // A server found on the local network by a broadcast ping.
         struct LanServer {
             std::string host;
             uint16_t port = 0;
-            std::string advertisement; // the raw "MCPE;name;protocol;version;players;max;..." string
+            std::string advertisement;
         };
-        // Sends the broadcast ping Bedrock uses for LAN games (and one to this machine) and collects answers for
-        // timeoutMs. Returns false only when no socket could be opened.
         static bool Discover(std::vector<LanServer>& found, std::string& error, int timeoutMs = 1500);
 
         static bool Ping(const std::string& host, uint16_t port, std::string& advertisement, std::string& error,

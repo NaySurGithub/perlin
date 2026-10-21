@@ -1,22 +1,16 @@
 #pragma once
-// What WAILA shows out of the box. Each provider is registered exactly the way an addon registers its own: a stage, an
-// optional settings toggle, a function, a pattern for what it applies to.
 #include <waila/api.hpp>
 
-#include <mod_settings.hpp> // the toggles and choices declared in waila.json
+#include <mod_settings.hpp>
 
 #include <cmath>
 
 namespace waila::vanilla {
-    // -----------------------------------------------------------------------------------------------
-    // Names.
-    // -----------------------------------------------------------------------------------------------
     inline std::string namespace_of(std::string_view id) {
         const size_t colon = id.find(':');
         return colon == std::string_view::npos ? "minecraft" : std::string(id.substr(0, colon));
     }
 
-    // "minecraft" -> "Minecraft", "my_server" -> "My Server".
     inline std::string mod_title(std::string_view ns) {
         std::string out;
         bool start = true;
@@ -32,7 +26,6 @@ namespace waila::vanilla {
         return out;
     }
 
-    // The item that stands for a block in the world: what pick-block would give you.
     inline std::string item_for_block(std::string_view name) {
         static constexpr std::pair<std::string_view, std::string_view> kMap[] = {
             {"minecraft:wheat", "minecraft:wheat_seeds"}, {"minecraft:carrots", "minecraft:carrot"},
@@ -59,9 +52,6 @@ namespace waila::vanilla {
         return std::string(name);
     }
 
-    // -----------------------------------------------------------------------------------------------
-    // Tools.
-    // -----------------------------------------------------------------------------------------------
     inline constexpr std::string_view kTiers[] = {"wooden", "stone", "iron", "diamond", "netherite"};
 
     inline std::string_view tool_name(Tool t) {
@@ -75,7 +65,6 @@ namespace waila::vanilla {
         }
     }
 
-    // What kind of tool an item is.
     inline Tool tool_of(std::string_view item) {
         const std::string_view s = short_name(item);
         const auto ends = [&](std::string_view tail) { return s.size() >= tail.size() && s.substr(s.size() - tail.size()) == tail; };
@@ -88,7 +77,6 @@ namespace waila::vanilla {
         return Tool::None;
     }
 
-    // Harvest level a tool item provides, in the block table's terms: 1 wood or gold, 2 stone, 3 iron, 4 diamond or better.
     inline int tier_of(std::string_view item) {
         const std::string_view s = short_name(item);
         if (s.starts_with("wooden") || s.starts_with("golden")) return 1;
@@ -98,9 +86,6 @@ namespace waila::vanilla {
         return 0;
     }
 
-    // -----------------------------------------------------------------------------------------------
-    // Block entity data.
-    // -----------------------------------------------------------------------------------------------
     inline std::optional<json::Value> tag_of(const game::BlockTarget& block) {
         const BlockEntityInfo& be = block.entity();
         if (!be.present || be.nbt.empty())
@@ -114,12 +99,9 @@ namespace waila::vanilla {
         return std::format("{}{}", kNames[n % 12], 3 + n / 12);
     }
 
-    // -----------------------------------------------------------------------------------------------
-    // Tables for the providers that only read a block state.
-    // -----------------------------------------------------------------------------------------------
     struct StateReadout {
         std::string_view pattern, state, label;
-        int max; // the highest value of the state
+        int max;
         enum class Show : uint8_t { Fraction, Percent, Level, Flag, DelayTicks, Mode } show;
     };
 
@@ -185,9 +167,6 @@ namespace waila::vanilla {
         }
     }
 
-    // -----------------------------------------------------------------------------------------------
-    // Entity flags worth naming.
-    // -----------------------------------------------------------------------------------------------
     struct FlagLabel {
         EntityFlag flag;
         std::string_view label;
@@ -200,11 +179,7 @@ namespace waila::vanilla {
         {EntityFlag::Dancing, "Dancing"},   {EntityFlag::Pregnant, "Pregnant"}, {EntityFlag::Elder, "Elder"},
     };
 
-    // -----------------------------------------------------------------------------------------------
-    // Install.
-    // -----------------------------------------------------------------------------------------------
     inline void install(Registry& r) {
-        // ---- Blocks: head ------------------------------------------------------------------------
         r.block(Stage::Head, always, [](Tooltip& tip, const BlockContext& c) {
             tip.set_title(c.block.display_name);
             tip.set_icon(ItemIcon{item_for_block(c.block.block.name)});
@@ -214,7 +189,6 @@ namespace waila::vanilla {
             tip.row().text(c.block.block.name, Rgba::gray);
         }, "*", 50);
 
-        // The tool that mines the block, with a check mark when the item in hand does.
         r.block(Stage::Head, settings::harvest_tool, [](Tooltip& tip, const BlockContext& c) {
             const BlockProps& p = c.block.props;
             if (!p.known || (c.creative() && !settings::harvest_creative))
@@ -247,12 +221,10 @@ namespace waila::vanilla {
                 for (int tier = first; tier < 5; tier++)
                     icons.push_back(std::format("minecraft:{}_{}", kTiers[static_cast<size_t>(tier)], tool_name(p.tool)));
             }
-            // Cycle through every tool that would do, one per second, like Jade.
             const std::string& icon = icons[static_cast<size_t>(c.now_ms / 1000) % icons.size()];
             row->right_aligned().item(icon, 10.0f).gap(-4.0f).mark(ok, 5.0f, 2.5f);
         }, "*", 10);
 
-        // ---- Blocks: body ------------------------------------------------------------------------
         r.block(Stage::Body, settings::crop_progress, [](Tooltip& tip, const BlockContext& c) {
             for (const StateReadout& e : kCrops)
                 if (glob(e.pattern, c.block.block.name))
@@ -311,7 +283,6 @@ namespace waila::vanilla {
                 tip.line("Waxed", Rgba::gold);
         }, "*");
 
-        // Whatever the server has told the game about a container's contents.
         r.block(Stage::Body, settings::item_storage, [](Tooltip& tip, const BlockContext& c) {
             const auto tag = tag_of(c.block);
             if (!tag || !(*tag)["Items"].is_array())
@@ -342,7 +313,6 @@ namespace waila::vanilla {
                 tip.line(Rgba::gray, "and {} more", hidden);
         });
 
-        // ---- Blocks and entities: the common extras ----------------------------------------------
         r.block(Stage::Body, settings::coordinates, [](Tooltip& tip, const BlockContext& c) {
             tip.line(Rgba::gray, "Location: {}, {}, {}", c.block.pos.x, c.block.pos.y, c.block.pos.z);
         }, "*", 90);
@@ -365,12 +335,10 @@ namespace waila::vanilla {
                 tip.line(Rgba::dark_gray, "{}", be.nbt.size() > 160 ? be.nbt.substr(0, 157) + "..." : be.nbt);
         }, "*", 100);
 
-        // ---- Blocks: tail ------------------------------------------------------------------------
         r.block(Stage::Tail, settings::mod_name, [](Tooltip& tip, const BlockContext& c) {
             tip.row().text("§9§o" + mod_title(namespace_of(c.block.block.name)));
         });
 
-        // ---- Entities ----------------------------------------------------------------------------
         r.entity(Stage::Head, always, [](Tooltip& tip, const EntityContext& c) {
             const Entity& e = c.entity;
             if (e.isItem) {
@@ -478,7 +446,6 @@ namespace waila::vanilla {
             tip.line(Rgba::gray, "Distance: {:.1f} blocks", c.target.distance);
         }, "*", 91);
 
-        // Everything the game reports about the entity.
         r.entity(Stage::Body, settings::debug_data, [](Tooltip& tip, const EntityContext& c) {
             tip.line(Rgba::dark_gray, "id {} / {}", c.entity.runtimeId, c.entity.uniqueId);
             for (const Attribute& a : c.entity.attributes)

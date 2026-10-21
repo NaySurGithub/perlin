@@ -36,6 +36,15 @@ namespace perlin {
         std::array<float, 3> DryFoliage(const std::string& biomeName) const;
         std::array<float, 3> Water(const std::string& biomeName) const;
 
+        bool Climate(const std::string& biomeName, float& temperature, float& downfall) const {
+            const auto it = climate.find(biomeName);
+            if (it == climate.end())
+                return false;
+            temperature = it->second[0];
+            downfall = it->second[1];
+            return true;
+        }
+
         std::string NameForId(int id) const;
         int IdForName(const std::string& name) const;
 

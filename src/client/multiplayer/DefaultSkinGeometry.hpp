@@ -1,9 +1,6 @@
 #pragma once
 
 namespace perlin {
-    // base64 of the stock classic-skin geometry (format 1.12.0) that Cinnabar's login claims end up carrying: the
-    // dialer fills SkinGeometryData with this when the client leaves it empty. SkinGeometryDataEngineVersion is
-    // base64("0.0.0") for the same reason.
     inline constexpr const char* kDefaultSkinGeometryB64 =
     "ewogICJmb3JtYXRfdmVyc2lvbiIgOiAiMS4xMi4wIiwKICAibWluZWNyYWZ0Omdlb21ldHJ5IiA6IFsKICAgIHsKICAgICAgImJvbmVzIiA6IFsKICAgICAg"
     "ICB7CiAgICAgICAgICAibmFtZSIgOiAiYm9keSIsCiAgICAgICAgICAicGFyZW50IiA6ICJ3YWlzdCIsCiAgICAgICAgICAicGl2b3QiIDogWyAwLjAsIDI0"

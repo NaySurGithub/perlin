@@ -2,7 +2,6 @@ $input v_color0, v_dist, v_dir
 
 #include "vv_common.sh"
 
-// Only used if "vanillaClouds" is turned on; the pack normally draws clouds in the sky shader.
 void main()
 {
     vec3 body, rim;

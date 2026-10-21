@@ -224,8 +224,6 @@ namespace {
 
 int main(int argc, char** argv) {
 #if defined(__GLIBC__)
-    // Chunk meshing runs on many threads; glibc would give each its own arena and keep freed memory. Two arenas, big blocks
-    // mapped straight from the OS (so freeing them returns the pages) and eager trimming keep the resident size down.
     mallopt(M_ARENA_MAX, 2);
     mallopt(M_MMAP_THRESHOLD, 256 * 1024);
     mallopt(M_TRIM_THRESHOLD, 512 * 1024);

@@ -42,8 +42,6 @@ namespace perlin::ui {
             return true;
         }
 
-        // Splits "<!--perlin-ui-src:HASH-->\n<body>". Returns false for files without the header
-        // (written by older builds, or created by hand).
         bool SplitHeader(const std::string& content, uint64_t& hash, std::string& body) {
             const size_t prefix = std::char_traits<char>::length(kHeaderPrefix);
             if (content.compare(0, prefix, kHeaderPrefix) != 0)
@@ -57,11 +55,6 @@ namespace perlin::ui {
         }
     }
 
-    // The built-in template is copied to <data>/ui/<file> so it can be edited live (changes are
-    // picked up via the file's mtime). The copy carries a hash of the built-in text it came from,
-    // so when the built-in template changes in a new build the copy is refreshed automatically;
-    // no need to delete the ui folder. If the on-disk copy had been hand-edited, it is kept as
-    // <file>.old before being replaced.
     std::string LoadUiTemplate(const std::string& dataDir, const std::string& fileName, const std::string& defaultText,
                                uint64_t& version) {
         const fs::path file = fs::path(dataDir) / "ui" / fileName;
@@ -74,7 +67,7 @@ namespace perlin::ui {
             uint64_t fileHash = 0;
             if (SplitHeader(content, fileHash, body)) {
                 if (fileHash == builtIn) {
-                    rewrite = false; // up to date (possibly with live edits)
+                    rewrite = false;
                 } else if (Fnv1a(body) != fileHash) {
                     fs::copy_file(file, fs::path(file).concat(".old"), fs::copy_options::overwrite_existing, ec);
                     std::cout << "[ui] " << fileName << " changed in this build; your edited copy was saved as "

@@ -36,11 +36,9 @@ namespace perlin {
         void OnPadDown(int code);
         void OnPadUp(int code);
         bool IsPadDown(int code) const { return code >= 0 && code < 64 && pad[code]; }
-        // Right stick, already dead-zoned, -1..1 (y is down-positive).
         void SetPadLook(float x, float y) { padLookX = x; padLookY = y; }
         float PadLookX() const { return padLookX; }
         float PadLookY() const { return padLookY; }
-        // The key-bind screen is waiting for a controller button: deliver them even while a menu is open.
         void SetPadCapture(bool on) { padCapture = on; }
         bool PadCapture() const { return padCapture; }
         void SetPadDeadzone(float v) { padDeadzone = v; }
@@ -56,8 +54,6 @@ namespace perlin {
         void OnChar(int codepoint);
         void SetTextMode(bool on) { textMode = on; }
         bool TextMode() const { return textMode; }
-        // A text field has focus (chat, a server address, a search box). TextMode only means "a menu is open";
-        // on a touch device the on-screen keyboard follows this, not that.
         void SetKeyboard(bool on) { keyboard = on; }
         bool Keyboard() const { return keyboard; }
         void ReleaseAll();

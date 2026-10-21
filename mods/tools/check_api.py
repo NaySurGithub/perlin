@@ -10,7 +10,7 @@ import re
 import sys
 from pathlib import Path
 
-root = Path(__file__).resolve().parent.parent  # mods/
+root = Path(__file__).resolve().parent.parent
 repo = root.parent
 abi = (root / "sdk/perlin/abi.hpp").read_text(encoding="utf-8")
 
@@ -28,7 +28,7 @@ host_text += (repo / "src/client/mods/ModManager.cpp").read_text(encoding="utf-8
 sdk_text = "".join(p.read_text(encoding="utf-8") for p in sorted((root / "sdk/perlin").glob("*.hpp")) if p.name != "abi.hpp")
 
 problems = []
-internal = {"Log", "Meta", "Clock"}  # handled by the runtime itself, wrapped under other names
+internal = {"Log", "Meta", "Clock"}
 for op in ops:
     if not re.search(r"Op::%s\b" % op, host_text):
         problems.append(f"Op::{op} is declared but no host registers it")

@@ -69,7 +69,6 @@ mcimg { display: block; position: absolute; }
                    "\"></mcimg>";
         }
 
-        // A menu button with the player's head at its left (the "Logged in as" button).
         std::string HeadBtn(const std::string& id, int x, int y, int w, const std::string& label, const std::string& head) {
             std::string d = "<div id=\"" + id + "\" class=\"btn\" style=\"left:" + N(x) + "px;top:" + N(y) + "px;width:" + N(w) + "px;\">";
             d += "<mcimg src=\"mcres:ui_menu_btn.png\" nine=\"3 3 3 3\" style=\"left:0px;top:0px;width:" + N(w) + "px;height:20px;\"></mcimg>";
@@ -80,7 +79,6 @@ mcimg { display: block; position: absolute; }
             return d;
         }
 
-        // A square 20x20 menu button showing an image instead of a label (like Java's language button).
         std::string IconBtn(const std::string& id, int x, int y, const std::string& icon) {
             std::string d = "<div id=\"" + id + "\" class=\"btn\" style=\"left:" + N(x) + "px;top:" + N(y) + "px;width:20px;\">";
             d += "<mcimg src=\"mcres:ui_menu_btn.png\" nine=\"3 3 3 3\" style=\"left:0px;top:0px;width:20px;height:20px;\"></mcimg>";
@@ -104,7 +102,6 @@ mcimg { display: block; position: absolute; }
             return d;
         }
 
-        // Width of a line of Minecraft font text in GUI pixels (glyph advances of the default font).
         int TextWidth(const std::string& text) {
             int n = 0;
             for (unsigned char c : text) {
@@ -126,7 +123,6 @@ mcimg { display: block; position: absolute; }
             return n;
         }
 
-        // The dark, framed panel the account popup uses (styled after Java's friends menu).
         std::string Panel(int x, int y, int w, int h) {
             std::string d;
             d += "<div style=\"left:" + N(x - 2) + "px;top:" + N(y - 2) + "px;width:" + N(w + 4) + "px;height:" + N(h + 4) + "px;background-color:#000000;z-index:11;\"></div>\n";
@@ -136,7 +132,6 @@ mcimg { display: block; position: absolute; }
             return d;
         }
 
-        // Darkens whatever is behind a popup (and keeps clicks off it).
         std::string Shade(int w, int h) {
             return "<div style=\"left:0px;top:0px;width:" + N(w) + "px;height:" + N(h) + "px;background-color:#000000a0;z-index:10;\"></div>\n";
         }
@@ -171,15 +166,12 @@ mcimg { display: block; position: absolute; }
             const int rows = std::max(1, std::min(count, TitleAccountRows(h)));
             const int scroll = std::clamp(m.accountScroll, 0, std::max(0, count - rows));
             const int ph = 46 + rows * rowH + 56;
-            // Room above for the header tab.
             const int px = w / 2 - pw / 2, py = std::max(20, h / 2 - ph / 2 + 8);
             d += Panel(px, py, pw, ph);
-            // Header tab, as on the friends menu.
             d += "<div style=\"left:" + N(px + pw / 2 - 40) + "px;top:" + N(py - 16) + "px;width:80px;height:16px;background-color:#e0e0e0;z-index:11;\"></div>\n";
             d += "<div style=\"left:" + N(px + pw / 2 - 39) + "px;top:" + N(py - 15) + "px;width:78px;height:16px;background-color:#2b2b2b;z-index:12;\"></div>\n";
             d += "<div class=\"txt ctr\" style=\"left:" + N(px + pw / 2 - 40) + "px;top:" + N(py - 11) + "px;width:80px;height:9px;z-index:13;\">Accounts</div>\n";
             d += "<div style=\"left:" + N(px + pw / 2 - 22) + "px;top:" + N(py - 1) + "px;width:44px;height:1px;background-color:#ffffff;z-index:13;\"></div>\n";
-            // Header: who is logged in, with room to breathe under the tab.
             const int labelX = m.accountHead.empty() ? 10 : 30;
             if (!m.accountHead.empty())
                 d += Head(m.accountHead, px + 10, py + 11, 14, "z-index:13;") + "\n";
@@ -190,7 +182,6 @@ mcimg { display: block; position: absolute; }
             if (m.accounts.empty())
                 d += "<div class=\"txt ctr gray\" style=\"left:" + N(px) + "px;top:" + N(y + 6) + "px;width:" + N(pw) + "px;height:9px;z-index:13;\">No accounts yet</div>\n";
             if (count > rows) {
-                // Scrollbar along the right edge of the list.
                 const int trackH = rows * rowH - 2;
                 const int thumbH = std::max(8, trackH * rows / count);
                 const int thumbY = (trackH - thumbH) * scroll / std::max(1, count - rows);
@@ -204,8 +195,6 @@ mcimg { display: block; position: absolute; }
                 d += "<div class=\"hl\" style=\"left:0px;top:0px;width:" + N(pw - 36) + "px;height:" + N(rowH - 2) + "px;background-color:#ffffff20;\"></div>";
                 if (a.active)
                     d += "<div style=\"left:0px;top:0px;width:2px;height:" + N(rowH - 2) + "px;background-color:#55ff55;\"></div>";
-                // Avatar: the head of the skin last used with the account (a lettered square until
-                // the skin is known).
                 if (!a.headKey.empty()) {
                     d += Head(a.headKey, 5, 3, 16);
                 } else {
@@ -213,7 +202,6 @@ mcimg { display: block; position: absolute; }
                     d += "<div style=\"left:5px;top:3px;width:16px;height:16px;background-color:" + std::string(a.microsoft ? "#3c8527" : "#5a5a5a") + ";\"></div>";
                     d += "<div class=\"txt ctr\" style=\"left:5px;top:7px;width:16px;height:9px;\">" + EscapeRml(initial) + "</div>";
                 }
-                // The exact username, then what kind of account it is.
                 d += "<div class=\"txt\" style=\"left:26px;top:2px;width:" + N(pw - 70) + "px;height:9px;overflow:hidden;\">" +
                      EscapeRml(a.name.empty() ? (a.microsoft ? "(gamertag not known yet)" : "?") : a.name) + "</div>";
                 const std::string kind = std::string(a.microsoft ? "Microsoft account" : "Offline account") + (a.active ? " - in use" : "");
@@ -238,7 +226,7 @@ mcimg { display: block; position: absolute; }
             d += "<div class=\"txt ctr\" style=\"left:" + N(px) + "px;top:" + N(py + 10) + "px;width:" + N(pw) + "px;height:9px;z-index:13;\">Add Offline Account</div>\n";
             d += "<div class=\"txt dim\" style=\"left:" + N(px + 12) + "px;top:" + N(py + 28) + "px;width:" + N(pw - 24) + "px;height:9px;z-index:13;\">Username</div>\n";
             std::string field = Field(kAccountNameField, px + 12, py + 40, pw - 24, m.accountName, true, m.caret);
-            d += "<div style=\"left:0px;top:0px;z-index:14;\">" + field + "</div>"; // above the shade
+            d += "<div style=\"left:0px;top:0px;z-index:14;\">" + field + "</div>";
             d += SmallBtn(kAccountNameDone, px + 8, py + ph - 28, (pw - 20) / 2, "Add");
             d += SmallBtn(kAccountCancel, px + 12 + (pw - 20) / 2, py + ph - 28, (pw - 20) / 2, "Cancel");
             return d;
@@ -280,24 +268,20 @@ mcimg { display: block; position: absolute; }
             }
             const int cx = w / 2;
             if (!m.logoSrc.empty()) {
-                // Centred in the 256x64 slot the Java logo uses, so the buttons below don't move.
                 const int lw = std::clamp(m.logoW, 1, 256), lh = std::clamp(m.logoH, 1, 64);
                 d += "<mcimg src=\"" + EscapeRml(m.logoSrc) + "\" style=\"left:" + N(cx - lw / 2) + "px;top:" + N(30 + (64 - lh) / 2) + "px;width:" + N(lw) +
                      "px;height:" + N(lh) + "px;z-index:3;\"></mcimg>\n";
             } else {
                 d += "<mcimg src=\"mcres:ui_menu_logo.png\" style=\"left:" + N(cx - 128) + "px;top:30px;width:256px;height:64px;z-index:3;\"></mcimg>\n";
             }
-            // Java's layout with a third full-width row (where Realms sits): Mods, with the small
-            // Wardrobe button beside it.
             const int j = h / 4 + 48;
             d += Btn("", cx - 100, j, 200, "Singleplayer", true);
             d += Btn(kTitleMulti, cx - 100, j + 24, 200, "Multiplayer");
             d += Btn(kTitleMods, cx - 100, j + 48, 200, "Mods");
-            d += IconBtn(kTitleWardrobe, cx + 104, j + 48, "textures/ui/glyph_skin_pack.png"); // the pause screen's hanger
+            d += IconBtn(kTitleWardrobe, cx + 104, j + 48, "textures/ui/glyph_skin_pack.png");
             d += Btn(kTitleOptions, cx - 100, j + 84, 98, "Options...");
             d += Btn(kTitleQuit, cx + 2, j + 84, 98, "Quit Game");
             if (!m.accountUser.empty()) {
-                // Head and username, snug (above the logo, so a long name may take the width it needs).
                 const int textX = m.accountHead.empty() ? 6 : 20;
                 const int bw = std::clamp(textX + TextWidth(m.accountUser) + 7, 40, std::max(40, w - 8));
                 d += HeadBtn(kTitleAccounts, 4, 4, bw, m.accountUser, m.accountHead);
@@ -317,7 +301,6 @@ mcimg { display: block; position: absolute; }
             d += "<div style=\"left:0px;top:" + N(listTop - 1) + "px;width:" + N(w) + "px;height:1px;background-color:#000000;z-index:3;\"></div>\n";
             d += "<div style=\"left:0px;top:" + N(listBottom) + "px;width:" + N(w) + "px;height:1px;background-color:#000000;z-index:3;\"></div>\n";
             {
-                // Shown left to right: LAN, Friends, Realms, Servers (the ids are the ServerTab values).
                 static const struct {
                     ServerTab tab;
                     const char* label;
@@ -352,7 +335,6 @@ mcimg { display: block; position: absolute; }
                 if (Joinable(s))
                 d += "<div id=\"" + std::string(kServerJoinPrefix) + N(i) + "\" class=\"go\" style=\"left:0px;top:0px;width:32px;height:32px;\"><mcimg src=\"mcres:ui_menu_join_hi.png\" style=\"left:0px;top:0px;width:32px;height:32px;\"></mcimg></div>\n";
                 d += Text(35, 1, kRowW - 110, s.name.empty() ? "Minecraft Server" : s.name);
-                // Live status (from the ping): players and latency top right, MOTD below the name.
                 std::string right, rightCls = "gray";
                 using St = ServerEntry::Status;
                 if (s.kind != ServerEntry::Kind::Server) {
@@ -484,7 +466,6 @@ mcimg { display: block; position: absolute; }
     }
 
     int TitleAccountRows(int guiH) {
-        // Popup = 102 px of header and buttons plus the rows, with 20 px above for the tab.
         return std::max(1, (guiH - 20 - 6 - 102) / 24);
     }
 }

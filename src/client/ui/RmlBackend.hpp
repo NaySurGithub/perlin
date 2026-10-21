@@ -38,7 +38,6 @@ namespace perlin::ui {
         bool HasOverlay() const { return overlay != nullptr; }
         void MouseMove(float guiX, float guiY);
         std::string OverlayHover() const;
-        // True when the pointer is over a button-like element (buttons, list rows, tabs, page arrows) of the overlay, not over a panel, slot or empty space.
         bool OverlayHoverIsButton() const;
         std::string HoverLink() const;
         void Update();

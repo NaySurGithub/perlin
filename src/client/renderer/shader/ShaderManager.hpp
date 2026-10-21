@@ -22,14 +22,13 @@ namespace perlin {
         Post,
         Shadow,
         ShadowCutout,
-        ShadowGlass,  // stained glass etc. into the pack's coloured-light (tint) shadow map
-        // Always the built-in shaders, whatever pack is active:
-        SpriteUi,     // HUD sprites such as the crosshair
-        EntityShadow, // entity meshes into the pack's shadow map
+        ShadowGlass,
+        SpriteUi,
+        EntityShadow,
         Bloom,
-        Upscale, // render-scale reconstruction (bicubic / edge-adaptive / sharpen)
-        Temporal, // temporal upscaler
-        FrameGen, // generated frames (world reprojection)
+        Upscale,
+        Temporal,
+        FrameGen,
         Count
     };
 
@@ -53,24 +52,17 @@ namespace perlin {
         bool Has(ShaderProgram program) const { return bgfx::isValid(programs[static_cast<size_t>(program)]); }
         void SetShadow(const float sample[16], const float info[4], bool enabled) const;
         void BindShadow(bgfx::TextureHandle texture) const;
-        void BindShadowTint(bgfx::TextureHandle texture) const; // coloured light through glass (stage 7)
-        // The terrain map fading in over the one above (stages 8 and 9), weight 0 = not fading.
+        void BindShadowTint(bgfx::TextureHandle texture) const;
         void SetShadowNext(const float sample[16], const float info[4], float weight) const;
         void BindShadowNext(bgfx::TextureHandle shadow, bgfx::TextureHandle tint) const;
-        // Mobs and players (stage 10).
         void SetShadowEntities(const float sample[16], const float info[4], bool enabled) const;
         void BindShadowEntities(bgfx::TextureHandle texture) const;
         void Apply(bgfx::TextureHandle atlas, bgfx::TextureHandle lightmap, uint32_t atlasFlags,
                    uint32_t lightmapFlags) const;
-        // Pack extras. Clouds: the vanilla cloud map (stage 3) and how world xz maps onto it.
-        // Scene: copies of the opaque scene colour/depth for the translucent pass (stages 4, 5),
-        // u_sceneInfo = (valid, depth is -1..1, origin bottom-left, unused), u_invMvp = inverse
-        // of the world view-projection.
         void SetCloudMap(const float value[4]) { std::copy_n(value, 4, cloudMapValue); }
         void BindClouds(bgfx::TextureHandle texture) const;
         void SetScene(const float info[4], const float inverseMvp[16]);
         void BindScene(bgfx::TextureHandle color, bgfx::TextureHandle depth) const;
-        // Per-atlas-tile flags for packs (stage 6): r = foliage kind (see the waving code).
         void BindTileFlags(bgfx::TextureHandle texture) const;
 
     private:

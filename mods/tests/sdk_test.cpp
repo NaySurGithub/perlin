@@ -1,5 +1,3 @@
-// Exercises the SDK's high-level layer against a fake host: typed commands, manifest settings, game actions, files, events.
-// Build: tools/perlin_settings.py tests/data/settings_test.json gen/mod_settings.hpp, then compile with -Isdk -Igen.
 #include <perlin/perlin.hpp>
 
 #include <mod_settings.hpp>
@@ -27,8 +25,7 @@ namespace {
     std::vector<Call> calls;
     std::string localMessages;
     std::vector<std::string> unregistered;
-    Status denyAll = Status::Ok; // answer every file/network call with this status
-    // What the game would answer for SettingList: the manifest's defaults, one saved change.
+    Status denyAll = Status::Ok;
     std::map<std::string, std::string> hostSettings{{"visible", "true"}, {"unit", "KilometersPerHour"}, {"corner", "TopRight"}, {"warn_at", "8"}, {"smoothing", "4"}};
 
     enum class Mode { Fast, Slow };
@@ -149,7 +146,6 @@ PERLIN_PLUGIN(ctx) {
 int main() {
     perlin_event(static_cast<uint32_t>(abi::Event::Load), nullptr, 0);
 
-    // Settings come from the manifest: the handles read the game's values, typed.
     CHECK(settings::visible.get());
     CHECK(settings::unit == settings::Unit::KilometersPerHour);
     CHECK(settings::corner == settings::Corner::TopRight);
@@ -160,18 +156,15 @@ int main() {
     CHECK(subs & (1u << static_cast<uint32_t>(abi::Event::Command)));
     CHECK(subs & (1u << static_cast<uint32_t>(abi::Event::SettingChanged)));
 
-    // A change on the settings page updates the handle and runs on_change with the typed value.
     send_event(abi::Event::SettingChanged, abi::EventSettingChanged{"unit", "BlocksPerSecond", abi::SettingKind::Choice});
     CHECK(settings::unit == settings::Unit::BlocksPerSecond && seenUnit == settings::Unit::BlocksPerSecond);
     send_event(abi::Event::SettingChanged, abi::EventSettingChanged{"warn_at", "12.5", abi::SettingKind::Number});
     CHECK(settings::warn_at.get() == 12.5);
     send_event(abi::Event::SettingChanged, abi::EventSettingChanged{"reset_peak", "pressed", abi::SettingKind::Button});
     CHECK(pressed == 1);
-    // Setting from the mod goes to the game and the handle.
     CHECK(settings::visible.set(false).has_value());
     CHECK(!settings::visible.get() && hostSettings["visible"] == "false");
 
-    // Typed command arguments.
     send_event(abi::Event::Command, abi::EventCommand{"tp", "10 -64 300"});
     CHECK(teleported[0] == 10 && teleported[1] == -64 && teleported[2] == 300);
     send_event(abi::Event::Command, abi::EventCommand{"tp", "10 x 3"});
@@ -182,7 +175,6 @@ int main() {
     send_event(abi::Event::Command, abi::EventCommand{"mode", "warp"});
     CHECK(localMessages.find("Usage: /mode [Fast|Slow]") != std::string::npos);
 
-    // Game actions are plain typed calls.
     calls.clear();
     CHECK(act::open_screen(Screen::Mods).has_value());
     CHECK(act::open_settings().has_value());
@@ -194,7 +186,6 @@ int main() {
         CHECK(r.read<abi::Screen>() == Screen::Mods);
     }
 
-    // Files: typed locations, permission failures come back as a Denied error instead of a string.
     calls.clear();
     CHECK(fs::copy(fs::in(Area::Mod, "pack.zip"), fs::in(Area::ResourcePacks, "pack.zip")).has_value());
     {
@@ -209,7 +200,6 @@ int main() {
     CHECK(!act::open_url("https://example.com").has_value());
     denyAll = Status::Ok;
 
-    // Downloads complete through the HttpResponse event.
     bool dl = false;
     auto id = net::download("https://example.com/p.zip", fs::in(Area::Mod, "p.zip"), [&](const net::Response& r) { dl = r.status == 200; });
     CHECK(id.has_value());
@@ -219,13 +209,11 @@ int main() {
     send_event(abi::Event::HttpResponse, http);
     CHECK(dl);
 
-    // Typed options and controls.
     static_assert(std::is_same_v<game::option_t<game::Option::fov>, double>);
     static_assert(std::is_same_v<game::option_t<game::Option::vsync>, bool>);
     static_assert(std::is_same_v<game::option_t<game::Option::maxFps>, int>);
     static_assert(game::control_id(game::Control::Jump) == "key.jump");
 
-    // What the crosshair is on, resolved in one call.
     {
         const game::Target t = game::target();
         const auto* b = std::get_if<game::BlockTarget>(&t);
@@ -254,7 +242,6 @@ int main() {
     ctx_for_test->remove_command<"tp">();
     CHECK(unregistered.size() == 1 && unregistered[0] == "tp");
 
-    // Entity data is plain data: attributes and properties travel with it.
     {
         abi::Entity e;
         e.attributes.push_back({"minecraft:health", 0, 5, 20});
@@ -266,7 +253,7 @@ int main() {
         const auto back = r.read<abi::Entity>();
         CHECK(r.Ok() && back.attributes.size() == 1 && back.attributes[0].max == 20 && back.properties[0].second == 2.0f && back.propertyText[0].second == "calm");
     }
-    CHECK(std::format("{}", abi::Tool::Pickaxe) == "Pickaxe" && std::format("{}", abi::NameKind::Entity) == "Entity"); // every perlin::abi enumeration formats by name
+    CHECK(std::format("{}", abi::Tool::Pickaxe) == "Pickaxe" && std::format("{}", abi::NameKind::Entity) == "Entity");
 
     std::printf(failures ? "sdk_test: %d failure(s)\n" : "sdk_test: ok\n", failures);
     return failures ? 1 : 0;

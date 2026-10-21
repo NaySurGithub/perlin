@@ -1,22 +1,3 @@
-// trace_diff: replay a movement trace recorded from the vanilla Bedrock client (by the
-// perlin-movetrace LeviLamina mod, or the older bedsim generator) through Perlin's
-// physics::Step and report exactly where Perlin diverges.
-//
-//   trace_diff <trace.txt> [options]
-//     --resync          reset Perlin's position/velocity to vanilla's before every tick, so each
-//                       tick's error is measured on its own instead of compounding
-//     --sprint-from X   'actor' (vanilla's actual sprinting state, default when recorded) or
-//                       'input' (the MoveInputComponent sprint flag, which can be set before vanilla
-//                       actually starts sprinting)
-//     --sneak-from X    same choice for sneaking (default 'actor')
-//     --use-speed       use the recorded movement-speed attribute instead of Perlin's 0.1 default
-//     --exact           don't allow one float ULP of slack on positions (see below)
-//     --eps E           tolerance for position/velocity (default 1e-5)
-//     --only SUBSTR     only scenarios whose name contains SUBSTR
-//     --csv FILE        per-tick dump (inputs, vanilla, perlin, deltas) for plotting
-//     --verbose         print every failing field, not just the first per scenario
-//
-// Exit status: 0 if every checked tick matched, 1 if anything diverged, 2 on bad input.
 
 #include "client/player/PlayerPhysics.hpp"
 
@@ -120,7 +101,7 @@ int Usage() {
     return 2;
 }
 
-} // namespace
+}
 
 int main(int argc, char** argv) {
     Options opt;
@@ -203,7 +184,6 @@ int main(int argc, char** argv) {
             Box bb;
             if (in >> yaw) {
                 state.yaw = yaw;
-                // perlin-movetrace >= 0.2 also records vanilla's AABB: start from that exact box.
                 if (in >> pitch >> bb.x0 >> bb.y0 >> bb.z0 >> bb.x1 >> bb.y1 >> bb.z1) {
                     state.box = bb;
                     state.hasBox = true;
@@ -248,7 +228,6 @@ int main(int argc, char** argv) {
             attr.levitation = lv;
             attr.slowFalling = sf != 0;
         } else if (tag == "K") {
-            // block names: informational
         } else if (tag == "I") {
             if (skipping)
                 continue;
@@ -258,27 +237,21 @@ int main(int argc, char** argv) {
             in >> fwd >> strafe >> yaw >> jump >> jumpPressed >> sprint >> sneak;
             if (in >> pitch >> actorSprint >> actorSneak)
                 if (in >> forced)
-                    in >> flying >> gliding >> swimming >> headInWater >> creative; // movetrace >= 0.3
+                    in >> flying >> gliding >> swimming >> headInWater >> creative;
             lastInput = line;
             input = Input{};
             input.jump = jump != 0;
             input.sprint = (opt.sprintFromActor && actorSprint >= 0) ? actorSprint != 0 : sprint != 0;
             input.sneak = (opt.sneakFromActor && actorSneak >= 0) ? actorSneak != 0 : sneak != 0;
-            // Bedrock: +strafe = left; Perlin: +strafe = right.
             if (actorSprint >= 0) {
-                // Vanilla-client trace: the vector is MoveInputComponent::mMove, already through the
-                // input stage (diagonal normalization, sneak slowdown), which is what Step expects.
                 input.forward = static_cast<float>(fwd);
                 input.strafe = static_cast<float>(-strafe);
             } else {
-                // bedsim trace: raw key axes.
                 const MoveVector mv =
                     ProcessMoveInput(static_cast<float>(fwd), static_cast<float>(-strafe), sneak != 0, state.inWater);
                 input.forward = mv.forward;
                 input.strafe = mv.strafe;
             }
-            // Movement modes, mapped the way LocalPlayer::Tick builds them. Bedrock pitch is
-            // positive looking down (= Perlin's javaPitch); LocalPlayer's camera pitch is the negation.
             input.flying = flying != 0;
             input.creativeFlight = creative != 0;
             input.flyUp = input.flying && input.jump;
@@ -326,9 +299,6 @@ int main(int argc, char** argv) {
             for (int f = 0; f < kNumFields; f++) {
                 const double err = std::fabs(got[f] - want[f]);
                 double tol = f < 6 ? opt.eps : 0.5;
-                // Positions are floats in the game, and at |x| >= 128 one float step exceeds 1e-5.
-                // Allow a single-ULP representation difference (compared in float space, since the
-                // trace prints 9 significant digits) unless --exact.
                 bool oneUlp = false;
                 if (f < 3 && !opt.exact) {
                     const float g = static_cast<float>(got[f]), w = static_cast<float>(want[f]);
@@ -374,7 +344,6 @@ int main(int argc, char** argv) {
     if (csv)
         std::fclose(csv);
 
-    // ---- report ---------------------------------------------------------------------------
     int totalTicks = 0, totalFailed = 0, badScenarios = 0;
     std::map<std::string, int> firstFieldCount;
     for (const auto& r : reports) {

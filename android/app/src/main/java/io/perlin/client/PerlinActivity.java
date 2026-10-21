@@ -20,9 +20,6 @@ public class PerlinActivity extends SDLActivity {
         installKeyboardResize();
     }
 
-    // The game is full screen, where Android will not shrink the window for the on-screen keyboard. Do it by
-    // hand: while the keyboard is up the game view is only as tall as the visible area, so the screen condenses
-    // above the keyboard (like chat does) and nothing can end up hidden behind it.
     private void installKeyboardResize() {
         final View decor = getWindow().getDecorView();
         final ViewGroup content = (ViewGroup) findViewById(android.R.id.content);
@@ -67,8 +64,6 @@ public class PerlinActivity extends SDLActivity {
         return new String[] {"SDL3", "main"};
     }
 
-    // No launcher form: the game opens on its own start screen, where servers, accounts and the
-    // Minecraft EULA are handled.
     @Override
     protected String[] getArguments() {
         return new String[0];

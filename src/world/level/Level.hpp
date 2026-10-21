@@ -56,12 +56,10 @@ namespace perlin {
         bool lodOnly = false;
 
     private:
-        // A section that is all one block (solid stone, open air with a liquid layer...) or all one biome stores just that
-        // value: most of a loaded world is uniform, so this is most of the memory a chunk would otherwise hold.
         struct Section {
-            std::unique_ptr<std::array<uint16_t, 4096>> blocks; // null: every cell is `uniform`
+            std::unique_ptr<std::array<uint16_t, 4096>> blocks;
             std::unique_ptr<std::array<uint16_t, 4096>> liquid;
-            std::unique_ptr<std::array<uint8_t, 4096>> biomes;  // null: every cell is `uniformBiome`
+            std::unique_ptr<std::array<uint8_t, 4096>> biomes;
             uint16_t uniform = 0;
             uint8_t uniformBiome = DEFAULT_BIOME;
             uint16_t Block(int cell) const { return blocks ? (*blocks)[static_cast<size_t>(cell)] : uniform; }

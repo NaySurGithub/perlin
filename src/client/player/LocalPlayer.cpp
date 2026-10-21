@@ -185,7 +185,6 @@ namespace perlin {
         const bool sprintKey = sprintToggle ? sprintLatch : sprintHeldKey;
 
         const bool wasSprinting = sprinting;
-        // Sprinting needs food: at 3 shanks (6 points) or fewer it cannot start and stops at once.
         const BedrockSession::Vitals vitals = session.GetVitals();
         tooHungryToSprint = vitals.known && vitals.hunger <= 6.0f;
         if (forward <= 0.0f || sneakKey || itemSlow || state.horizontalCollision || tooHungryToSprint)
@@ -211,8 +210,6 @@ namespace perlin {
         in.swimming = swimming && !gliding;
         in.headInWater = headUnderwater;
         in.lookY = std::sin(glm::radians(camera.pitch));
-        // Same stage split as Bedrock: the input handler normalizes diagonals and applies the sneak
-        // slowdown, physics consumes the result, and the same vector goes to the server.
         const physics::MoveVector move = physics::ProcessMoveInput(forward, strafe, sneaking, state.inWater);
         in.forward = move.forward;
         in.strafe = move.strafe;

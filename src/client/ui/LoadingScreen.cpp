@@ -45,7 +45,6 @@ mcimg { display: block; position: absolute; }
     }
 
     std::string BuildLoadingScreenRml(const std::string& templateText, const LoadingScreenText& t, int guiW, int guiH, double) {
-        // Only the status line (it changes as the connection progresses), its detail, and Cancel.
         const int msgY = guiH / 2 - 24;
         const int detailY = msgY + 14;
         const int btnY = std::min(guiH - 24, detailY + 36);

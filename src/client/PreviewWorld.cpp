@@ -20,7 +20,6 @@ namespace perlin {
     namespace {
         class Ids {
         public:
-            // stateFragment is the old `"key":["kind",value]` form; it is reduced to key and value text.
             uint16_t Get(const std::string& name, const std::string& stateFragment = "") {
                 const std::string key = name + "|" + stateFragment;
                 if (const auto it = cache.find(key); it != cache.end())
@@ -89,7 +88,6 @@ namespace perlin {
                         partner = item.substr(bar + 1);
                         item = item.substr(0, bar);
                     }
-                    // name[key=value;key=value] picks a particular state.
                     if (const size_t br = item.find('['); br != std::string::npos) {
                         overrides = item.substr(br + 1, item.find(']', br) == std::string::npos ? std::string::npos : item.find(']', br) - br - 1);
                         item = item.substr(0, br);

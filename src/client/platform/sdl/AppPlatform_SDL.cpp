@@ -149,7 +149,7 @@ void AppPlatform_SDL::OpenUrl(const std::string& url) {
 }
 
 #ifdef SDL_PLATFORM_ANDROID
-extern "C" void* perlin_bgfx_android_window; // set in bgfx's EGL code by the patch in CMakeLists.txt
+extern "C" void* perlin_bgfx_android_window;
 #endif
 
 bool AppPlatform_SDL::PickFile(const std::string& kind) {
@@ -176,8 +176,6 @@ bool AppPlatform_SDL::PickFile(const std::string& kind) {
                     if (!files)
                         return;
                     for (const char* const* f = files; *f; f++) {
-                        // Android hands back content:// addresses; SDL can read those, so the bytes are copied
-                        // into the data folder and handed on as an ordinary file.
                         size_t size = 0;
                         void* bytes = SDL_LoadFile(*f, &size);
                         if (!bytes)
@@ -191,7 +189,6 @@ bool AppPlatform_SDL::PickFile(const std::string& kind) {
                         const std::string dir = perlin::paths::DataDir() + "/imports";
                         std::error_code ec;
                         std::filesystem::create_directories(dir, ec);
-                        // "cape" in the name is how a dropped png is told from a skin.
                         const std::string name = (req->kind == "cape" ? "cape_" : req->kind == "skin" ? "skin_" : "import_") +
                                                  std::to_string(SDL_GetTicks()) + ext;
                         const std::string path = dir + "/" + name;
@@ -255,8 +252,6 @@ void AppPlatform_SDL::SetTouchMode(bool on) {
         touch.Cancel(game->GetInput());
     touchMode = on;
     if (on) {
-        // Touch has no mouse to capture: the game always counts as "captured" (looking with a finger) and
-        // menus are told apart by TextMode alone.
         if (cursorCaptured) {
             SDL_SetWindowRelativeMouseMode(window, false);
             cursorCaptured = false;
@@ -287,8 +282,6 @@ bool AppPlatform_SDL::Initialize() {
     SDL_SetHint(SDL_HINT_ORIENTATIONS, "LandscapeLeft LandscapeRight");
     SDL_SetHint(SDL_HINT_ANDROID_TRAP_BACK_BUTTON, "1");
 #endif
-    // Fingers are handled as fingers (touch controls) on every platform; the first touch switches the touch
-    // layout on, a real mouse switches it off again.
     SDL_SetHint(SDL_HINT_TOUCH_MOUSE_EVENTS, "0");
     SDL_SetHint(SDL_HINT_MOUSE_TOUCH_EVENTS, "0");
     if (const char* t = std::getenv("PERLIN_TOUCH"))
@@ -304,8 +297,6 @@ bool AppPlatform_SDL::Initialize() {
     SDL_SetNumberProperty(props, SDL_PROP_WINDOW_CREATE_HEIGHT_NUMBER, 720);
     SDL_SetBooleanProperty(props, SDL_PROP_WINDOW_CREATE_RESIZABLE_BOOLEAN, true);
 #ifndef __EMSCRIPTEN__
-    // In a browser the canvas is left at CSS-pixel size: on a 2x or 3x display a native-resolution canvas
-    // costs four to nine times the fragment work, which is what pins most laptops near 30 fps.
     SDL_SetBooleanProperty(props, SDL_PROP_WINDOW_CREATE_HIGH_PIXEL_DENSITY_BOOLEAN, true);
 #endif
 #ifdef SDL_PLATFORM_ANDROID
@@ -413,7 +404,6 @@ void AppPlatform_SDL::HandleEvent(const SDL_Event& e) {
         SetCursorCaptured(false);
         break;
     case SDL_EVENT_SCREEN_KEYBOARD_HIDDEN:
-        // Dismissed with the system back gesture: the next tap on the field brings it back.
         keyboardShown = false;
         break;
     case SDL_EVENT_GAMEPAD_ADDED:
@@ -444,7 +434,6 @@ void AppPlatform_SDL::HandleEvent(const SDL_Event& e) {
         if (code < 0 || code >= 15)
             break;
         if (input->TextMode() && !input->PadCapture()) {
-            // Menus: A clicks where the pointer is, B / Start back out.
             if (code == perlin::Pad::A) {
                 if (pressed)
                     input->OnMouseDown(0);
@@ -509,7 +498,6 @@ void AppPlatform_SDL::HandleEvent(const SDL_Event& e) {
         if (e.motion.which == SDL_TOUCH_MOUSEID)
             break;
         if (!touchMode && touch.Editing() && input) {
-            // Layout editor on a desktop: the mouse drags buttons like a finger would.
             if (editMouseDown) {
                 const float d = SDL_GetWindowPixelDensity(window);
                 touch.FingerMove(*input, 9999, e.motion.x * d, e.motion.y * d, e.motion.xrel * d, e.motion.yrel * d);
@@ -572,7 +560,6 @@ void AppPlatform_SDL::HandleEvent(const SDL_Event& e) {
             const int64_t id = static_cast<int64_t>(e.tfinger.fingerID);
             const float x = e.tfinger.x * w, y = e.tfinger.y * h;
             if (e.type == SDL_EVENT_FINGER_DOWN) {
-                // A tap while a text field has focus (re)opens the keyboard.
                 if (input->Keyboard())
                     keyboardPending = 4;
                 touch.FingerDown(*input, id, x, y);
@@ -623,7 +610,6 @@ void AppPlatform_SDL::PumpGamepad() {
     };
 
     if (in.TextMode() && !in.PadCapture()) {
-        // Menus: the left stick drives the real mouse cursor, the right stick scrolls.
         for (int c = 0; c < 64; c++)
             if (padState[c]) {
                 padState[c] = false;
@@ -646,7 +632,6 @@ void AppPlatform_SDL::PumpGamepad() {
     }
 
     in.SetPadLook(shape(rx), shape(ry));
-    // Sticks and triggers become buttons so any of them can be bound to any action.
     struct Virtual { int code; bool on; };
     const float hi = 0.5f;
     const Virtual virtuals[] = {
@@ -674,8 +659,6 @@ void AppPlatform_SDL::PumpFrame() {
 
 #ifdef SDL_PLATFORM_ANDROID
     {
-        // Coming back from the background Android gives the app a new window; the graphics context has to be
-        // pointed at it or the screen stays black. SDL swaps the window property to null while there is none.
         void* nw = SDL_GetPointerProperty(SDL_GetWindowProperties(window), SDL_PROP_WINDOW_ANDROID_WINDOW_POINTER, nullptr);
         if (!nw) {
             surfaceLost = true;
@@ -722,9 +705,6 @@ void AppPlatform_SDL::PumpFrame() {
             }
         }
         if (touchMode) {
-            // The on-screen keyboard never opens by itself when a screen appears: a tap while a text field
-            // has focus asks for it (a few frames later, so tapping a button that closes the screen doesn't
-            // flash it), and it goes away when no field is focused any more.
             const bool keyboard = in.Keyboard();
             if (!keyboard) {
                 keyboardPending = 0;

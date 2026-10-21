@@ -38,7 +38,6 @@ namespace perlin::friendworld {
 namespace perlin::friendworld {
 
     namespace {
-        // The service configuration id of Minecraft's session directory entries.
         constexpr const char* kScid = "4fc10100-5f7a-4470-899b-280835760c07";
         constexpr int kTransportNetherNet = 2;
         constexpr int kConnectionWebSocket = 3;
@@ -103,8 +102,6 @@ namespace perlin::friendworld {
             return out + "\"";
         }
 
-        // Network ids are 64-bit numbers that the host may publish as JSON numbers; a double would lose digits, so
-        // quote them before parsing.
         std::string QuoteBigIds(const std::string& body) {
             static const char* const kKeys[] = {"\"NetherNetId\"", "\"RakNetGUID\""};
             std::string out = body;
@@ -128,7 +125,6 @@ namespace perlin::friendworld {
             return out;
         }
 
-        // A WebSocket and the thread reading it.
         class Link {
         public:
             ~Link() { Close(); }
@@ -243,7 +239,6 @@ namespace perlin::friendworld {
                     w->cv.notify_all();
                 }
             }
-            // Waits for Complete; false (with the error) on failure or timeout.
             static bool Wait(const std::shared_ptr<Waiter>& w, int ms, std::string& error, bool timeoutIsError) {
                 std::unique_lock lock(w->m);
                 if (!w->cv.wait_for(lock, std::chrono::milliseconds(ms), [&] { return w->done; }))
@@ -272,7 +267,6 @@ namespace perlin::friendworld {
             return true;
         }
 
-        // Signalling over a WebSocket that carries plain JSON messages (connection type 3).
         class WebSocketSignaling : public Signaling {
         public:
             ~WebSocketSignaling() override { Close(); }
@@ -424,7 +418,6 @@ namespace perlin::friendworld {
             std::atomic<bool> closing{false};
         };
 
-        // Signalling over the Player Messaging service, JSON-RPC 2.0 on a WebSocket (connection type 7).
         class JsonRpcSignaling : public Signaling {
         public:
             ~JsonRpcSignaling() override { Close(); }
@@ -517,7 +510,6 @@ namespace perlin::friendworld {
                 std::string text;
             };
 
-            // Sends a request and waits for its response; `reply` gets the response text, or the error.
             bool Call(const std::string& method, const std::string& params, int timeoutMs, std::string& reply) {
                 const int id = ++nextId;
                 auto pending = std::make_shared<Pending>();
@@ -572,7 +564,6 @@ namespace perlin::friendworld {
                     return;
                 const json::View root = doc->root();
                 if (!root["method"].isString()) {
-                    // A response to one of our calls.
                     if (!root["id"].isNumber())
                         return;
                     std::shared_ptr<Pending> pending;
@@ -631,14 +622,12 @@ namespace perlin::friendworld {
                     }
                     if (h)
                         h(from, inner->root()["params"]["message"].str());
-                    // Tell the sender it arrived.
                     const std::string ack = "{\"params\":{\"messageId\":" + Q(id) + "},\"jsonrpc\":\"2.0\",\"method\":\"Signaling_DeliveryNotification_V1_0\"}";
                     const int callId = ++nextId;
                     link.Send("{\"jsonrpc\":\"2.0\",\"id\":" + std::to_string(callId) +
                               ",\"method\":\"Signaling_SendClientMessage_v1_0\",\"params\":{\"toPlayerId\":" + Q(from) +
                               ",\"messageId\":" + Q(NewUuid()) + ",\"message\":" + Q(ack) + "}}");
                 } else if (inner->root()["Code"].isNumber() && !id.empty()) {
-                    // A delivery error for a message we sent.
                     waiters.Complete(id, inner->root()["Message"].str("the message could not be delivered"));
                 }
             }
@@ -657,8 +646,6 @@ namespace perlin::friendworld {
             std::atomic<bool> closing{false};
         };
 
-        // Xbox Live's real-time activity service: one socket that tells the session directory which connection this
-        // player is on, and nudges it when a session changes.
         class Rta {
         public:
             ~Rta() { Close(); }
@@ -740,7 +727,6 @@ namespace perlin::friendworld {
             std::string hostNetworkId;
         };
 
-        // The first supported signalling connection a host advertises (JSON-RPC preferred).
         bool PickConnection(const json::View custom, Connection& out) {
             bool found = false;
             for (const json::View c : custom["SupportedConnections"].items()) {
@@ -763,7 +749,6 @@ namespace perlin::friendworld {
             return found;
         }
 
-        // The session's address with the host and scheme dropped.
         std::string SessionPath(std::string location) {
             const size_t scheme = location.find("://");
             if (scheme != std::string::npos) {
@@ -773,7 +758,6 @@ namespace perlin::friendworld {
             return location;
         }
 
-        // Keeps the Xbox session joined until released.
         struct SessionState {
             std::string authorization;
             std::string path;
@@ -793,7 +777,6 @@ namespace perlin::friendworld {
 
 
     namespace {
-        // Opens the signalling channel of the given connection type (JSON-RPC or plain WebSocket) into the lease.
         bool OpenSignaling(const xbox::ServiceInfo& service, int type, Lease& lease, std::string& error) {
             if (type == kConnectionJsonRpc) {
                 if (service.signalingAfdUri.empty()) {
@@ -865,7 +848,6 @@ namespace perlin::friendworld {
             return false;
         }
 
-        // 1. The world the friend is hosting.
         say("Looking for the world...");
         const std::string query = "{\"type\":\"activity\",\"scid\":\"" + std::string(kScid) + "\",\"owners\":{\"xuids\":[" + Q(friendXuid) + "]}}";
         const http::Response found = Mpsd("POST", "/handles/query?include=relatedInfo,customProperties", query, authorization);
@@ -906,7 +888,6 @@ namespace perlin::friendworld {
         }
         std::cout << "[friends] world '" << worldName << "' hosted by " << hostName << ", connection type " << connection.type << std::endl;
 
-        // 2. Xbox's real-time socket, then the session itself.
         say("Connecting to Xbox Live...");
         auto state = std::make_shared<SessionState>();
         state->authorization = authorization;
@@ -948,7 +929,6 @@ namespace perlin::friendworld {
             return false;
         };
 
-        // 3. The host answers by publishing a nonce for this player.
         say("Waiting for the host to let you in...");
         std::string nonce;
         const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(45);
@@ -972,7 +952,6 @@ namespace perlin::friendworld {
             }
             if (std::chrono::steady_clock::now() > deadline)
                 return fail("the host did not let you in (is the world still open?)");
-            // Poll, and sooner when Xbox says the session changed.
             for (int i = 0; i < 20 && state->rta.changes.load() == seenChanges; i++)
                 std::this_thread::sleep_for(std::chrono::milliseconds(100));
             seenChanges = state->rta.changes.load();
@@ -984,7 +963,6 @@ namespace perlin::friendworld {
         }
         std::cout << "[friends] received a nonce from the host" << std::endl;
 
-        // 4. Signalling.
         say("Opening a connection to the host...");
         auto lease = std::make_shared<Lease>();
         {

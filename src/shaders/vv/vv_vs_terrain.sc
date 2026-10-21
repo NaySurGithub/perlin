@@ -28,7 +28,6 @@ void main()
     v_texcoord0 = a_texcoord0;
     v_layer = layer;
 
-    // Per-frame lighting and the haze colour, once per vertex instead of once per pixel.
     v_sunLight = vvMainLight();
     v_skyLight = vvSkyAmbient();
     v_haze = vvHaze(relative);

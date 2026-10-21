@@ -19,8 +19,6 @@ namespace perlin {
         int side = 0;
         int bottom = 0;
         std::vector<int> varTop, varSide, varBottom;
-        // Per-face tiles for a cube whose sides differ (a custom block with distinct north/east/south/west
-        // materials): +X (east), -X (west), +Z (south), -Z (north). 0 means "use side".
         int sideTile[4] = {0, 0, 0, 0};
         float overlayFrac = 0;
         int overlayTile = 0;
@@ -62,8 +60,6 @@ namespace perlin {
         const BlockModels& Models() const { return models; }
         int GlassMode() const { return glassMode.load(std::memory_order_relaxed); }
         void SetGlassMode(int mode) { glassMode.store(mode, std::memory_order_relaxed); }
-        // True when the glass variants were built for another mode only (see BuildGlassVariants); the atlas
-        // must be rebuilt (a resource reload) before the new mode can connect glass.
         bool NeedsGlassRebuild(int mode) const { return mode != 0 && glassBuilt && glassLean && glassBuiltMode != mode; }
         int BetterGrass() const { return betterGrass.load(std::memory_order_relaxed); }
         void SetBetterGrass(int mode) { betterGrass.store(mode, std::memory_order_relaxed); }
@@ -87,9 +83,6 @@ namespace perlin {
         float SaturationOf(int tile) const;
         std::string TilePathOf(int tile) const;
         int TileContaining(const std::string& part) const;
-        // Foliage kind per atlas tile, for waving foliage in shader packs: 0 none, 1 leaves and
-        // vines (the whole block sways), 2 plant (the top sways, the base stays put), 3 lower half
-        // of a two-block plant, 4 upper half.
         std::vector<uint8_t> FoliageFlags() const;
         void PollAnimation(uint64_t step, const std::function<void(int tile, const uint8_t* rgba)>& emit);
 
@@ -115,7 +108,7 @@ namespace perlin {
         std::vector<uint8_t> atlas;
         std::unordered_map<std::string, int> tileByPng;
         std::unordered_map<int, TileAlpha> alphaByTile;
-        std::unordered_set<int> overlayMaskTiles; // tiles whose alpha is a tint mask (overlay_color)
+        std::unordered_set<int> overlayMaskTiles;
         std::unordered_map<int, std::string> pathByTile;
         struct AnimSrc {
             std::vector<uint8_t> pixels;

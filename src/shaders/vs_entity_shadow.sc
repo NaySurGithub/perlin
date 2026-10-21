@@ -1,11 +1,10 @@
 $input a_position, a_color0, a_texcoord0
 $output v_texcoord0, v_depth
 
-// Mobs, players and other entity meshes drawn into a shader pack's sun shadow map.
 #include <bgfx_shader.sh>
 
-uniform mat4 u_mvp;       // world -> shadow map clip space
-uniform mat4 u_shadowMtx; // world -> shadow map texture space (z = stored depth)
+uniform mat4 u_mvp;
+uniform mat4 u_shadowMtx;
 
 void main()
 {

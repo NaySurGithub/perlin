@@ -151,7 +151,6 @@ namespace perlin {
                 size_t size = 0;
                 void* data = mz_zip_reader_extract_to_heap(&zip, i, &size, 0);
                 if (!data) {
-                    // Unsupported compression (miniz reads stored and deflate only) or a damaged entry: its content is missing.
                     if (failed++ < 3)
                         std::cout << "[packs] cannot extract " << name << " from " << zipPath << std::endl;
                     continue;

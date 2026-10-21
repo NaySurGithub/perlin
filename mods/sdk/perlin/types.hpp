@@ -16,9 +16,6 @@
 #include "perlin/meta.hpp"
 
 namespace perlin {
-    // ---------------------------------------------------------------------------------------------
-    // Vocabulary types shared with the wire format.
-    // ---------------------------------------------------------------------------------------------
     using abi::AimKind;
     using abi::ChatType;
     using abi::Difficulty;
@@ -38,7 +35,6 @@ namespace perlin {
     using meta::enum_cast;
     using meta::enum_name;
 
-    // The game ticks 20 times a second. `5_ticks`, `ctx.after(20_ticks, ...)`.
     using Ticks = std::chrono::duration<int64_t, std::ratio<1, 20>>;
     inline namespace literals {
         constexpr Ticks operator""_ticks(unsigned long long n) { return Ticks(static_cast<int64_t>(n)); }
@@ -86,21 +82,18 @@ namespace perlin {
         constexpr BlockPos down(int n = 1) const { return {x, y - n, z}; }
         constexpr Vec3 center() const { return {x + 0.5, y + 0.5, z + 0.5}; }
 
-        // The neighbouring position on a face: pos.offset(Face::North).
         constexpr BlockPos offset(Face face, int n = 1) const;
-        // All six neighbours in Face order.
         constexpr std::array<BlockPos, 6> neighbors() const;
     };
 
-    // The unit step of a face, as a compile-time table indexed by the enumerators.
     constexpr BlockPos direction(Face face) {
         constexpr std::array<BlockPos, 6> table{{
-            {0, -1, 0}, // Down
-            {0, 1, 0},  // Up
-            {0, 0, -1}, // North
-            {0, 0, 1},  // South
-            {-1, 0, 0}, // West
-            {1, 0, 0},  // East
+            {0, -1, 0},
+            {0, 1, 0},
+            {0, 0, -1},
+            {0, 0, 1},
+            {-1, 0, 0},
+            {1, 0, 0},
         }};
         static_assert(table.size() == meta::enum_count<Face>);
         return table[static_cast<size_t>(face)];
@@ -120,23 +113,12 @@ namespace perlin {
         return {offset(Face::Down), offset(Face::Up), offset(Face::North), offset(Face::South), offset(Face::West), offset(Face::East)};
     }
 
-    // ---------------------------------------------------------------------------------------------
-    // Identifier: "namespace:path", validated.
-    //
-    // A string literal is checked at compile time, so a typo is a build error rather than a block that
-    // is never found. A literal without a namespace means "minecraft:":
-    //
-    //     Identifier stone = "stone";                 // minecraft:stone
-    //     if (block.is("minecraft:grass_block")) ...
-    //     auto parsed = Identifier::parse(user_text); // runtime: std::optional
-    // ---------------------------------------------------------------------------------------------
     class Identifier {
     public:
         static constexpr size_t kMaxLength = 95;
 
         constexpr Identifier() = default;
 
-        // Compile-time construction from a literal. Invalid text does not compile.
         template <size_t N>
         consteval Identifier(const char (&literal)[N]) {
             if (!assign(std::string_view(literal, N - 1)))
@@ -156,7 +138,6 @@ namespace perlin {
         constexpr std::string_view path() const { return view().substr(colon_ + 1); }
         std::string str() const { return std::string(view()); }
 
-        // Whether host-provided text names this identifier ("stone" and "minecraft:stone" both match).
         constexpr bool matches(std::string_view raw) const {
             const auto other = parse(raw);
             return other && *other == *this;
@@ -166,7 +147,6 @@ namespace perlin {
         friend constexpr auto operator<=>(const Identifier& a, const Identifier& b) { return a.view() <=> b.view(); }
 
     private:
-        // Not defined anywhere: calling it in a constant expression is what makes a bad literal an error.
         static void invalid_identifier_literal();
 
         constexpr bool assign(std::string_view in) {
@@ -202,9 +182,6 @@ namespace perlin {
         uint8_t colon_ = 0;
     };
 
-    // ---------------------------------------------------------------------------------------------
-    // Colours.
-    // ---------------------------------------------------------------------------------------------
     struct Rgba {
         uint8_t r = 255, g = 255, b = 255, a = 255;
 
@@ -219,7 +196,6 @@ namespace perlin {
         }
         constexpr bool operator==(const Rgba&) const = default;
 
-        // Linear blend: Rgba::red.mix(Rgba::blue, 0.5).
         constexpr Rgba mix(const Rgba& to, double t) const {
             const auto lerp = [t](uint8_t from, uint8_t target) { return static_cast<uint8_t>(from + (static_cast<double>(target) - from) * t + 0.5); };
             return {lerp(r, to.r), lerp(g, to.g), lerp(b, to.b), lerp(a, to.a)};
@@ -240,13 +216,9 @@ namespace perlin {
     inline constexpr Rgba Rgba::transparent{0, 0, 0, 0};
 
     inline namespace literals {
-        // 0xFFAA00_rgb
         constexpr Rgba operator""_rgb(unsigned long long hex) { return Rgba::hex(static_cast<uint32_t>(hex)); }
     }
 
-    // ---------------------------------------------------------------------------------------------
-    // Wire types, re-exported under friendlier names.
-    // ---------------------------------------------------------------------------------------------
     using Item = abi::Item;
     using Entity = abi::Entity;
     using PlayerState = abi::PlayerState;
@@ -258,7 +230,6 @@ namespace perlin {
     using Effect = abi::Effect;
     using PlayerEntry = abi::PlayerEntry;
 
-    // The block at a position, with typed accessors.
     struct BlockInfo : abi::BlockInfo {
         BlockInfo() = default;
         BlockInfo(abi::BlockInfo raw) : abi::BlockInfo(std::move(raw)) {}
@@ -272,7 +243,6 @@ namespace perlin {
                     return std::string_view(v);
             return std::nullopt;
         }
-        // A block state as a number or flag: `age`, `redstone_signal`, `open_bit`. Missing states give `fallback`.
         int state_int(std::string_view key, int fallback = 0) const {
             const auto v = state(key);
             if (!v)
@@ -347,7 +317,6 @@ struct std::formatter<perlin::BlockPos> : std::formatter<int> {
     }
 };
 
-// The SDK's own enumerations format as their enumerator name: std::format("{}", Face::Up) == "Up".
 template <perlin::meta::FormattableEnum E>
 struct std::formatter<E> : std::formatter<std::string_view> {
     template <class FormatContext>

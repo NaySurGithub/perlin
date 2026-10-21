@@ -19,7 +19,7 @@ namespace fs = std::filesystem;
 namespace perlin::download {
     namespace {
         struct Url {
-            std::string origin; // scheme://host[:port]
+            std::string origin;
             std::string path;
         };
 
@@ -53,7 +53,6 @@ namespace perlin::download {
                 perlin::http::UseSystemCa(*cli);
             cli->set_default_headers({{"User-Agent", "Perlin"}});
 #ifdef PERLIN_FASTDL_TEST
-            // Test builds only: go through the sandbox's HTTPS proxy.
             if (const char* proxy = std::getenv("PERLIN_TEST_PROXY_HOST"))
                 cli->set_proxy(proxy, std::atoi(std::getenv("PERLIN_TEST_PROXY_PORT")));
             if (const char* ca = std::getenv("PERLIN_TEST_CA"))
@@ -107,8 +106,6 @@ namespace perlin::download {
         fs::create_directories(target.parent_path(), ec);
         const fs::path part = target.string() + ".part";
 
-        // Probe with a one-byte range, following redirects by hand so every chunk can go straight
-        // to the final (CDN) URL.
         std::string current = url;
         uint64_t total = 0;
         bool ranges = false;
@@ -137,7 +134,6 @@ namespace perlin::download {
                 break;
             }
             if (res->status == 200) {
-                // The server ignored the range and sent the whole file.
                 prog.total = res->body.size();
                 prog.done = res->body.size();
                 if (!WriteAll(part, res->body)) {
@@ -154,7 +150,6 @@ namespace perlin::download {
             return false;
         prog.total = total;
 
-        // Pre-size the file, then fill it chunk by chunk from several connections.
         {
             std::ofstream create(part, std::ios::binary | std::ios::trunc);
             if (!create)

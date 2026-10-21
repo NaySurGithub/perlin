@@ -15,21 +15,12 @@ namespace perlin::http {
                      const std::string& contentType = {},
                      const std::map<std::string, std::string>& headers = {}, int timeoutSecs = 15);
 
-    // Where the system keeps its trusted CA certificates (file and/or directory), for HTTPS.
-    // Release builds link OpenSSL statically, so its compiled-in default (Ubuntu's /usr/lib/ssl)
-    // is wrong on most other distributions (Arch, Fedora, openSUSE...): every HTTPS request then
-    // fails certificate verification. Checks SSL_CERT_FILE / SSL_CERT_DIR, then the usual paths.
-    // Returns false where the TLS library finds the system store itself (Windows, macOS).
     bool SystemCaPaths(std::string& file, std::string& dir);
 
 #if defined(__ANDROID__)
-    // Every certificate from the system trust store (the conscrypt module's, else /system's) as one
-    // PEM text. Android keeps them one per file under old-style hash names, and loading them through
-    // OpenSSL's directory lookup is unreliable, so they are read here and handed over in memory.
     const std::string& AndroidCaBundle();
 #endif
 
-    // Points an httplib client (Client or SSLClient) at the system CA certificates.
     template <class HttpClient>
     void UseSystemCa(HttpClient& cli) {
 #if defined(__ANDROID__)
@@ -44,7 +35,6 @@ namespace perlin::http {
             cli.set_ca_cert_path(file, dir);
     }
 
-    // One line describing why an httplib request failed (error kind plus the TLS error codes).
     template <class HttpResult>
     std::string Describe(const HttpResult& res);
 

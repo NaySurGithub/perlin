@@ -63,20 +63,15 @@ namespace perlin::fs {
         return detail::call_list<std::string>(Op::StorageList, w);
     }
 
-    // ---- Files outside the mod's folder (the "files" permission in the manifest) ----
-    // A place in one of the game's folders: `fs::in(Area::ResourcePacks, "pack.zip")`.
     using Location = abi::FileLocation;
     inline Location in(Area area, std::string_view path) { return {area, std::string(path)}; }
 
-    // Copies a file. Allowed from the mod's folder and the screenshots folder into any area; an existing game file is
-    // never overwritten.
     inline Result<void> copy(const Location& from, const Location& to) {
         abi::Writer w;
         w.write(from, to);
         return detail::call_void(Op::CopyFile, w);
     }
 
-    // Moves a file out of the mod's folder.
     inline Result<void> move(const Location& from, const Location& to) {
         abi::Writer w;
         w.write(from, to);
@@ -222,8 +217,6 @@ namespace perlin::net {
         return send(r, std::move(callback));
     }
 
-    // Downloads an https file straight to disk (needs "network" and "files"). The callback gets the HTTP status or the
-    // error; the body is not kept.
     inline Result<uint32_t> download(std::string_view url, const fs::Location& to, Callback callback) {
         const uint32_t id = detail_net::counter()++;
         abi::Writer w;

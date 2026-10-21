@@ -57,9 +57,6 @@ namespace perlin::physics {
     };
 
     struct Input {
-        // The processed move vector, i.e. Bedrock's MoveInputComponent::mMove: diagonals already
-        // normalized and the sneak slowdown already applied. Build it from raw keys with
-        // ProcessMoveInput(); Step uses it unchanged, like vanilla's physics does.
         float forward = 0;
         float strafe = 0;
         bool jump = false;
@@ -90,11 +87,6 @@ namespace perlin::physics {
         int jumpDelay = 0;
         float stuckX = 0, stuckY = 0, stuckZ = 0;
 
-        // Bedrock keeps the player's AABB as persistent float state, moves it each tick, and
-        // derives the position from it. Rebuilding the box from the position every tick loses
-        // bits once |x| or |z| >= 128 (1-2 ULP drift vs vanilla), so Step keeps the moved box here
-        // and BoundingBox() reuses it while it still matches the position. Setting x/y/z directly
-        // (teleport, server correction) makes it stale and it is rebuilt automatically.
         Box box;
         bool hasBox = false;
 
@@ -107,10 +99,6 @@ namespace perlin::physics {
         float forward = 0, strafe = 0;
     };
 
-    // Bedrock's input-handler stage, which runs before physics: a move vector longer than 1
-    // (keyboard diagonals) is normalized, then sneaking on land scales it by 0.3. Matches
-    // MoveInputComponent::mMove as recorded from the vanilla client (W+sneak -> 0.3,
-    // W+A+sneak -> 0.212132037).
     MoveVector ProcessMoveInput(float forward, float strafe, bool sneaking, bool inWater);
 
     void Step(State& state, const Input& input, const Attributes& attributes, const World& world);

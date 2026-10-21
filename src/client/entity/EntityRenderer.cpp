@@ -25,9 +25,6 @@
 
 namespace perlin::entity {
     namespace {
-        // Java's HumanoidModel crouch (isCrouching): body leans 0.5 rad and drops 3.2, head drops 4.2, arms drop 3.2
-        // and lean 0.4 rad, legs move back 4 and the whole model sinks 2 pixels. Java parts hang off the root, the
-        // Bedrock rig hangs head and arms off the body, so their local transforms are solved to land where Java puts them.
         void ApplyJavaCrouch(attachable::Pose& pose, const attachable::Geometry* g) {
             static const float zs = PERLIN_ENV("PERLIN_ZSIGN") ? static_cast<float>(std::atof(PERLIN_ENV("PERLIN_ZSIGN"))) : -1.0f;
             const auto find = [&](const char* name) -> const attachable::Bone* {
@@ -188,7 +185,6 @@ namespace perlin::entity {
         std::string tag;
         glm::mat4 armR{1.0f}, armL{1.0f};
         bool hasArmR = false, hasArmL = false;
-        // Players' body yaw, worked out on the client like Java's LivingEntity (20 Hz ticks).
         bool bodyInit = false;
         float body = 0, bodyPrev = 0;
         double bodyTickAcc = 0;
@@ -304,8 +300,6 @@ namespace perlin::entity {
     }
 
     namespace {
-        // Wool colours by dye index (Bedrock order: white, orange, magenta, light blue, yellow, lime,
-        // pink, gray, light gray, cyan, purple, blue, brown, green, red, black).
         uint32_t DyeColorRgb(int dye) {
             static constexpr uint32_t kDye[16] = {0xF9FFFE, 0xF9801D, 0xC74EBD, 0x3AB3DA, 0xFED83D, 0x80C71F,
                                                   0xF38BAA, 0x474F52, 0x9D9D97, 0x169C9C, 0x8932B8, 0x3C44AA,
@@ -313,8 +307,6 @@ namespace perlin::entity {
             return (dye >= 0 && dye < 16) ? kDye[dye] : kDye[0];
         }
 
-        // Bakes a Bedrock colour-mask texture: alpha >= 128 texels are tinted by `rgb`, any other
-        // non-zero alpha is untinted skin; both become opaque. Alpha 0 stays transparent.
         void BakeColorMask(Texture& t, uint32_t rgb) {
             const uint32_t r = (rgb >> 16) & 0xFF, g = (rgb >> 8) & 0xFF, b = rgb & 0xFF;
             for (size_t i = 0; i + 3 < t.pixels.size(); i += 4) {
@@ -378,11 +370,6 @@ namespace perlin::entity {
         return 0;
     }
 
-    // Bedrock's body rotation for players, as the reference footage shows it: the head is the leader and the body
-    // follows it with a smooth catch-up (an exponential approach, every frame, no dead zone), so during a quick turn
-    // the body trails by a few tens of degrees and the moment the head stops the body settles under it. The head can
-    // never be held away from the body: the gap is capped, tighter while walking, when the body is already facing the
-    // way the player is heading.
     void EntityRenderer::TickPlayerBody(View& v, float dt, float prevYaw) {
         const float look = v.headYaw;
         if (!v.bodyInit) {
@@ -393,7 +380,7 @@ namespace perlin::entity {
         const double xd = v.pos.x - v.bodyTickPos.x, zd = v.pos.z - v.bodyTickPos.z;
         v.bodyTickPos = v.pos;
         const float speed = static_cast<float>(std::sqrt(xd * xd + zd * zd)) / std::max(dt, 0.001f);
-        v.bodyTickAcc += (speed - static_cast<float>(v.bodyTickAcc)) * std::min(1.0f, dt * 12.0f); // smoothed blocks/s
+        v.bodyTickAcc += (speed - static_cast<float>(v.bodyTickAcc)) * std::min(1.0f, dt * 12.0f);
         const bool moving = v.bodyTickAcc > 0.35 || v.attackTime > 0.0f;
         const float tau = moving ? 0.06f : 0.11f;
         const float cap = moving ? 20.0f : 40.0f;
@@ -505,8 +492,6 @@ namespace perlin::entity {
         const float horizontal = static_cast<float>(std::sqrt(step.x * step.x + step.z * step.z));
         v.groundSpeed = horizontal / dt;
         v.verticalSpeed = static_cast<float>(step.y) / dt;
-        // Walk animation and cape physics run on Java's 20 Hz tick (WalkAnimationState, ClientAvatarState) and
-        // are interpolated between ticks, so they stay smooth and independent of the frame rate.
         {
             if (!v.limbInit) {
                 v.limbInit = true;
@@ -533,20 +518,17 @@ namespace perlin::entity {
                 v.limbPosPrev = v.limbPos;
                 v.limbSpd += (std::min(dist * 4.0f, 1.0f) - v.limbSpd) * 0.4f;
                 v.limbPos += v.limbSpd;
-                // Player.aiStep bob and Entity walkDist.
                 const bool onGround = std::fabs(moved.y) < 0.02;
                 v.bobPrev = v.bob;
                 v.bob += ((onGround ? std::min(0.1f, dist) : 0.0f) - v.bob) * 0.4f;
                 v.walkDistPrev = v.walkDist;
                 v.walkDist += dist * 0.6f;
-                // ClientAvatarState.moveCloak
                 v.cloakPrev = v.cloak;
                 const glm::dvec3 off = v.tickPos - v.cloak;
                 if (std::fabs(off.x) > 10.0 || std::fabs(off.y) > 10.0 || std::fabs(off.z) > 10.0)
                     v.cloak = v.cloakPrev = v.tickPos;
                 else
                     v.cloak += off * 0.25;
-                // WaveyCapes: one simulation step per client tick, fed with the same cloak lag Java uses.
                 if (e.isPlayer) {
                     CapeTick ct;
                     ct.cloakX = static_cast<float>(v.cloak.x - v.tickPos.x);
@@ -574,7 +556,6 @@ namespace perlin::entity {
             v.limbSwing = v.limbPosPrev + (v.limbPos - v.limbPosPrev) * p;
             v.capeFlap = std::clamp(v.groundSpeed / 7.0f, 0.0f, 1.0f) * 0.25f;
 
-            // CapeLayer / AvatarRenderer.extractCapeState
             const double pd = static_cast<double>(p);
             const glm::dvec3 cl = v.cloakPrev + (v.cloak - v.cloakPrev) * pd;
             const glm::dvec3 ps = v.tickPosPrev + (v.tickPos - v.tickPosPrev) * pd;
@@ -600,8 +581,6 @@ namespace perlin::entity {
         v.wasUsing = e.Has(flag::UsingItem);
         if (e.swingSerial != v.swingSerial) {
             v.swingSerial = e.swingSerial;
-            // Java's LivingEntity.swing(): a new swing only starts when none is running or the running one is at least
-            // half done. Restarting a swing in the middle is what made the arm jerk back and never finish.
             if (v.attackTime <= 0.0f || v.attackTime >= 0.5f)
                 v.attackTime = 0.0001f;
         }
@@ -609,7 +588,6 @@ namespace perlin::entity {
             v.attackTime = static_cast<float>(std::atof(forced));
         else if (v.attackTime > 0)
             {
-            // Java's swing lasts 6 ticks, shorter with haste or conduit power, longer with mining fatigue.
             const float seconds = std::max(1.0f, e.isSelf ? in.ownSwingTicks : 6.0f) / 20.0f;
             v.attackTime = v.attackTime + dt / seconds >= 1.0f ? 0.0f : v.attackTime + dt / seconds;
         }
@@ -639,7 +617,6 @@ namespace perlin::entity {
     void EntityRenderer::RunAnimations(const Entity& e, View& v, const ClientEntityDef& def, Pose& pose, const FrameIn& in,
                                        const attachable::Geometry* bindGeometry) {
         (void)in;
-        // Bone defaults that Molang `this` includes (see attachable::Apply).
         const attachable::BindLookup restRotation = attachable::RestRotationLookup(bindGeometry);
         const attachable::BindLookup defaultTranslation = attachable::DefaultTranslationLookup(bindGeometry);
         molang::Scope& scope = v.scope;
@@ -908,8 +885,6 @@ namespace perlin::entity {
         }
         if (e.isPlayer) {
             auto& r = pose["cape"].rotation;
-            // The plain cape keeps Java's angle, and in a drop or a jump it rises as high as the simulated cape does: a rigid
-            // board at the simulation's average angle, so it flares up behind the player instead of staying at Java's 38 degrees.
             float simulated = 0.0f;
             for (const float a : v.cape.pitch)
                 simulated += a;
@@ -919,8 +894,7 @@ namespace perlin::entity {
             r.y = v.capeZ;
         }
         if (e.isPlayer && in.capePhysics > 0) {
-            // The physics cape: every part turns by its angle relative to the part above it.
-            pose["cape"].rotation = glm::vec3(0.0f); // the simulation carries the whole movement, including the side swing
+            pose["cape"].rotation = glm::vec3(0.0f);
             float previousPitch = 0.0f, previousRoll = 0.0f;
             for (int i = 0; i < CapeChain::kSegments; i++) {
                 auto& part = pose["part" + std::to_string(i + 1)].rotation;
@@ -928,7 +902,6 @@ namespace perlin::entity {
                 previousPitch = v.cape.pitch[i];
                 previousRoll = v.cape.roll[i];
             }
-            // The shoulder pads follow the head when it is turned against the body while moving.
             const float turned = std::sin(WrapDegrees(v.yaw - v.headYaw) * 0.017453292f);
             pose["shoulders"].rotation = glm::vec3(0.0f, std::clamp(v.limbAmount, 0.0f, 1.0f) * turned * turned * turned * 60.0f, 0.0f);
         }
@@ -1049,7 +1022,6 @@ namespace perlin::entity {
             if (e.isPlayer && e.skin && (texKey == "default" || texKey == "cape")) {
                 if (texKey == "cape" && e.skin->capeWidth <= 0)
                     return;
-                // The physics geometry has the cape's own face layout; the vanilla one needs its halves swapped.
                 layer.texture = texKey == "cape" ? (physicsCape ? "#cape" : "#capemodel") : "#skin";
             } else {
                 const auto tp = def->textures.find(texKey);
@@ -1288,7 +1260,6 @@ namespace perlin::entity {
             model = glm::rotate(model, -amount * (90.0f + v.pitch) * kDeg, glm::vec3(1, 0, 0));
         }
         if (e.isSelf && (in.ownPose.x != 0.0f || in.ownPose.y != 0.0f || in.ownPose.z != 0.0f)) {
-            // Mod pose: about the middle of the body, after the glide lean, so a spin around y is a barrel roll in flight.
             model = glm::translate(model, glm::vec3(0.0f, 0.9f, 0.0f));
             model = glm::rotate(model, in.ownPose.y * kDeg, glm::vec3(0, 1, 0));
             model = glm::rotate(model, in.ownPose.x * kDeg, glm::vec3(1, 0, 0));
@@ -1332,7 +1303,6 @@ namespace perlin::entity {
             else if (layer.texture == "#capemodel")
                 texture = TextureFor(e, "capemodel");
             else {
-                // Colour-mask layers get a texture baked for this colour (cached per colour).
                 char maskKey[16] = "";
                 if (layer.material.colorMask)
                     std::snprintf(maskKey, sizeof(maskKey), "#mask%06x", layer.maskRgb & 0xFFFFFFu);
@@ -1435,7 +1405,6 @@ namespace perlin::entity {
                 item.maxDamage = ui::MaxDurability(name);
                 itemRenderer->DrawHeldItem(item, model * arm, left, light);
             };
-            // Yourself in first person: the hand renderer already shows these, so only cast shadows.
             itemRenderer->SetWorldShadowOnly(shadowOnlyPass);
             if (v.hasArmR && !v.attachedItem[0])
                 held(e.mainHand, v.armR, false);
@@ -2040,7 +2009,6 @@ namespace perlin::entity {
         for (auto it = views.begin(); it != views.end();)
             it = in.time - it->second->lastSeen > 5.0 ? views.erase(it) : std::next(it);
         if (in.hitboxes) {
-            // F3+B: each entity's hitbox in white, a red line at the eyes and a blue line along where it looks.
             const uint32_t white = 0xFFFFFFFFu, red = 0xFF0000FFu, blue = 0xFFFF0000u;
             for (const Entity& e : entities) {
                 if (e.isSelf && in.firstPerson)
@@ -2475,11 +2443,9 @@ namespace perlin::entity {
     }
 
     namespace {
-        // Skull and head blocks: Java's SkullModel / DragonHeadModel / PiglinHeadModel boxes, in
-        // Java model space (pixels, y down, the face towards -z). Parts chain to a parent.
         struct SkullPart {
             int parent;
-            glm::vec3 offset, rotation; // rotation in radians (applied Z, Y, X like ModelPart)
+            glm::vec3 offset, rotation;
             float scale;
         };
         struct SkullBox {
@@ -2492,7 +2458,7 @@ namespace perlin::entity {
             float texW, texH;
             std::vector<SkullPart> parts;
             std::vector<SkullBox> boxes;
-            int flagPart = -1; // banners: the swaying flag (tinted, carries the pattern layers)
+            int flagPart = -1;
         };
 
         const SkullModelDef& SkullModelFor(int kind) {
@@ -2509,7 +2475,6 @@ namespace perlin::entity {
                 m[2] = plain("textures/entity/zombie/zombie", 64, 32, true);
                 m[3] = plain("textures/entity/steve", 64, 64, true);
                 m[4] = plain("textures/entity/creeper/creeper", 64, 32, false);
-                // Ender dragon head: 0.75 scale, open jaw (DragonHeadModel at rest).
                 m[5] = SkullModelDef{"textures/entity/dragon/dragon", 256, 256,
                                      {{-1, glm::vec3(0.0f, -7.986666f, 0.0f), glm::vec3(0.0f), 0.75f},
                                       {0, glm::vec3(0.0f, 4.0f, -8.0f), glm::vec3(0.2f, 0.0f, 0.0f), 1.0f}},
@@ -2520,7 +2485,6 @@ namespace perlin::entity {
                                       {0, 3, -12, -4, 2, 4, 6, 0, 0, 0, false},
                                       {0, 3, -3, -22, 2, 2, 4, 112, 0, 0, false},
                                       {1, -6, 0, -16, 12, 4, 16, 176, 65, 0, false}}};
-                // Piglin head with its ears (PiglinHeadModel at rest).
                 m[6] = SkullModelDef{"textures/entity/piglin/piglin", 64, 64,
                                      {{-1, glm::vec3(0.0f), glm::vec3(0.0f), 1.0f},
                                       {0, glm::vec3(4.5f, -6.0f, 0.0f), glm::vec3(0.0f, 0.0f, -0.7f), 1.0f},
@@ -2531,7 +2495,6 @@ namespace perlin::entity {
                                       {0, -3, -2, -5, 1, 2, 1, 2, 0, 0, false},
                                       {1, 0, 0, -2, 1, 5, 4, 51, 6, 0, false},
                                       {2, -1, 0, -2, 1, 5, 4, 39, 6, 0, false}}};
-                // Copper golem statues (standing pose, CopperGolemModel), one per oxidation level.
                 static const char* const kCopper[] = {"textures/entity/copper_golem/copper_golem", "textures/entity/copper_golem/copper_golem_exposed",
                                                       "textures/entity/copper_golem/copper_golem_weathered",
                                                       "textures/entity/copper_golem/copper_golem_oxidized"};
@@ -2552,12 +2515,9 @@ namespace perlin::entity {
                                                {4, 0, -1, -2, 3, 10, 4, 50, 16, 0, false},
                                                {5, -4, 0, -2, 4, 5, 4, 0, 27, 0, false},
                                                {5, 0, 0, -2, 4, 5, 4, 16, 27, 0, false}}});
-                // Conduit (inactive): the 6x6x6 shell in the middle of the block.
                 m.push_back(SkullModelDef{"textures/blocks/conduit_base", 32, 16,
                                           {{-1, glm::vec3(0.0f, -8.0f, 0.0f), glm::vec3(0.0f), 1.0f}},
                                           {{0, -3, -3, -3, 6, 6, 6, 0, 0, 0, false}}});
-                // Banners (BannerModel + BannerFlagModel), drawn at 2/3 scale. Standing: pole, bar and
-                // a 20x40 flag hanging from the top of the pole; wall: bar and flag against the wall.
                 m.push_back(SkullModelDef{"textures/entity/banner/banner_base", 64, 64,
                                           {{-1, glm::vec3(0.0f), glm::vec3(0.0f), 2.0f / 3.0f},
                                            {0, glm::vec3(0.0f, -44.0f, 0.0f), glm::vec3(0.0f), 1.0f}},
@@ -2613,7 +2573,6 @@ namespace perlin::entity {
             draw.mesh = mesh;
             draw.texture = texture;
             draw.premultiplied = false;
-            // A negative cutoff marks an overlay layer (banner patterns): blended, no depth write.
             const bool overlay = cutoff < 0.0f;
             draw.alphaCutoff = overlay ? 0.004f : cutoff;
             draw.blend = overlay ? 1 : 0;
@@ -2627,7 +2586,7 @@ namespace perlin::entity {
         struct SkullBatch {
             std::vector<UiVertex> v;
             std::vector<uint32_t> i;
-            bool overlay = false; // banner pattern layers: alpha-blended over the flag
+            bool overlay = false;
         };
         std::map<std::string, SkullBatch> skulls;
         std::pair<std::vector<UiVertex>, std::vector<uint32_t>> text;
@@ -2692,11 +2651,6 @@ namespace perlin::entity {
             if (d.kind == BlockEntityDraw::Kind::Skull) {
                 const SkullModelDef& def = SkullModelFor(d.skull);
                 const bool banner = def.flagPart >= 0;
-                // Placement (SkullBlockRenderer): on the floor centred, on a wall pushed a quarter
-                // block towards the wall and raised a quarter. Model space -> blocks: y and x flip
-                // (Java's scale(-1, -1, 1)), and the face turns to the skull's facing (+z at yaw 0).
-                // Banners use the same frame (BannerRenderer's rotate(-angle) * scale(2/3, -2/3, -2/3)
-                // is this with the 2/3 in the model's root).
                 glm::mat4 place = glm::translate(glm::mat4(1.0f), base + glm::vec3(0.5f, d.onWall ? 0.25f : 0.0f, 0.5f));
                 place = glm::rotate(place, -(d.yaw + 180.0f) * kDeg, glm::vec3(0, 1, 0));
                 if (d.onWall)
@@ -2704,7 +2658,6 @@ namespace perlin::entity {
                 place = glm::scale(place, glm::vec3(-1.0f / 16.0f, -1.0f / 16.0f, 1.0f / 16.0f));
                 float flagXRot = 0.0f;
                 if (banner) {
-                    // BannerFlagModel.setupAnim: a slow sway, phase-shifted per block position.
                     const double t = in.worldTicks + static_cast<double>(d.origin.x * 7.0 + d.origin.y * 9.0 + d.origin.z * 13.0);
                     const float phase = static_cast<float>(t - std::floor(t / 100.0) * 100.0) / 100.0f;
                     flagXRot = (-0.0125f + 0.01f * std::cos(6.2831853f * phase)) * 3.14159265f;
@@ -2729,13 +2682,12 @@ namespace perlin::entity {
                         for (uint32_t k : {0u, 1u, 2u, 0u, 2u, 3u})
                             batch.i.push_back(i0 + k);
                     };
-                    // Java's box UV layout; "right" is the model's -x side (the character's right).
-                    face(P(x0, y0, z0), P(x1, y0, z0), P(x1, y1, z0), P(x0, y1, z0), u + dd, v + dd, w, h, 0.8f);          // front
-                    face(P(x0, y0, z1), P(x0, y0, z0), P(x0, y1, z0), P(x0, y1, z1), u, v + dd, dd, h, 0.6f);              // right
-                    face(P(x1, y0, z0), P(x1, y0, z1), P(x1, y1, z1), P(x1, y1, z0), u + dd + w, v + dd, dd, h, 0.6f);     // left
-                    face(P(x1, y0, z1), P(x0, y0, z1), P(x0, y1, z1), P(x1, y1, z1), u + 2 * dd + w, v + dd, w, h, 0.8f); // back
-                    face(P(x0, y0, z1), P(x1, y0, z1), P(x1, y0, z0), P(x0, y0, z0), u + dd, v, w, dd, 1.0f);              // top
-                    face(P(x0, y1, z0), P(x1, y1, z0), P(x1, y1, z1), P(x0, y1, z1), u + dd + w, v, w, dd, 0.5f);          // bottom
+                    face(P(x0, y0, z0), P(x1, y0, z0), P(x1, y1, z0), P(x0, y1, z0), u + dd, v + dd, w, h, 0.8f);
+                    face(P(x0, y0, z1), P(x0, y0, z0), P(x0, y1, z0), P(x0, y1, z1), u, v + dd, dd, h, 0.6f);
+                    face(P(x1, y0, z0), P(x1, y0, z1), P(x1, y1, z1), P(x1, y1, z0), u + dd + w, v + dd, dd, h, 0.6f);
+                    face(P(x1, y0, z1), P(x0, y0, z1), P(x0, y1, z1), P(x1, y1, z1), u + 2 * dd + w, v + dd, w, h, 0.8f);
+                    face(P(x0, y0, z1), P(x1, y0, z1), P(x1, y0, z0), P(x0, y0, z0), u + dd, v, w, dd, 1.0f);
+                    face(P(x0, y1, z0), P(x1, y1, z0), P(x1, y1, z1), P(x0, y1, z1), u + dd + w, v, w, dd, 0.5f);
                 };
                 const auto dyeTint = [](int dye) {
                     const uint32_t rgb = DyeColorRgb(dye);
@@ -2745,7 +2697,6 @@ namespace perlin::entity {
                 for (const SkullBox& b : def.boxes)
                     emitBox(batch, b, 0.0f, banner && b.part == def.flagPart ? dyeTint(d.color) : glm::vec3(1.0f));
                 if (banner) {
-                    // Pattern layers over the flag, each a hair further out so they stack in order.
                     int layer = 0;
                     for (const auto& [texture, dye] : d.patterns) {
                         layer++;

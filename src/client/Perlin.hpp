@@ -10,6 +10,7 @@
 #include "client/Camera.hpp"
 #include "client/Options.hpp"
 #include "client/entity/EntityRenderer.hpp"
+#include "client/renderer/WeatherRenderer.hpp"
 #include "client/hand/HandRenderer.hpp"
 #include "client/input/Input.hpp"
 #include "client/input/InputManager.hpp"
@@ -44,7 +45,6 @@
 class AppPlatform;
 
 namespace perlin {
-    // The block the local player is mining and how far along it is (0..1). Read from any thread; values may be a frame old.
     struct LocalBreakState { bool active = false; int x = 0, y = 0, z = 0; float progress = 0.0f; };
     LocalBreakState GetLocalBreakState();
 
@@ -128,7 +128,6 @@ namespace perlin {
         bool UpdateLoadingScreen(ui::Hud& hud, int fbW, int fbH);
         bool UpdateTitleScreen(ui::Hud& hud, int fbW, int fbH);
         void JoinServer(const std::string& address);
-        // First-start asset download screen (shown instead of the title while assets download).
         bool UpdateAssetScreen(ui::Hud& hud, int fbW, int fbH);
         bool assetShown = false, assetSkip = false, assetLeftDown = false;
         std::string assetSignature;
@@ -136,12 +135,10 @@ namespace perlin {
         uint64_t assetLastBytes[2] = {0, 0};
         double assetSpeed[2] = {0.0, 0.0};
         void StartAssetDownloads();
-        // Drop the current connection (or connection attempt) and show the server list.
         void LeaveToServerList(ui::Hud& hud);
         bool titleReturnToServers = false;
         bool loadingLeftDown = false, loadingTextMode = false;
         std::chrono::steady_clock::time_point loadingOpenedAt{};
-        // Title logo: Bedrock's textures/ui/title, looked up once assets exist.
         std::chrono::steady_clock::time_point logoRetryAt{};
         bool logoBedrock = false;
         bool loadingShown = false, loadingDone = false;
@@ -153,10 +150,8 @@ namespace perlin {
         ui::TitleModel title;
         std::string titleSignature;
         std::chrono::steady_clock::time_point titleOpenedAt{}, titleClickAt{};
-        // Options opened from the title screen (reuses the pause menu's options screen).
         bool titleOptions = false;
-        int titleOpenView = 1; // what the title screen opens: 1 options, 4 mods, 5 wardrobe
-        // Native cube panorama behind the title screen.
+        int titleOpenView = 1;
         void DrawTitlePanorama(int fbW, int fbH);
         uint32_t panoramaTextures[6] = {};
         bool panoramaReady = false;
@@ -164,7 +159,6 @@ namespace perlin {
         int titleClickRow = -1;
         ui::TitlePage titleLastPage = ui::TitlePage::Main;
 
-        // Account switcher (title screen): the saved accounts and a Microsoft sign-in in progress.
         AccountList accounts;
         void ApplyActiveAccount();
         std::string ActiveAuthPath() const;
@@ -173,18 +167,15 @@ namespace perlin {
         std::mutex signInMutex;
         std::shared_ptr<xbox::Account> signInAccount;
         std::string signInAuthFile, signInUrl, signInCode, signInStatus, signInGamertag;
-        std::vector<std::pair<std::string, std::string>> pendingRenames; // account id, gamertag (under signInMutex)
+        std::vector<std::pair<std::string, std::string>> pendingRenames;
         void FetchMissingGamertags();
-        std::chrono::steady_clock::time_point gamertagFetchAt{}; // last background gamertag lookup
-        std::atomic<int> signInState{0}; // 0 idle, 1 working, 2 signed in, 3 failed
+        std::chrono::steady_clock::time_point gamertagFetchAt{};
+        std::atomic<int> signInState{0};
 
-        // Server list status pings (filled in by worker threads, keyed by address).
         void PingServers(const std::vector<std::string>& addresses);
         std::mutex pingMutex;
         std::map<std::string, ui::ServerEntry> pingResults;
 
-        // The LAN, Realms and Friends tabs of the server list: worker threads fill these (under tabMutex) and the
-        // title screen copies them into its model.
         void RefreshTab(ui::ServerTab tab);
         void JoinRealm(long long id);
         void JoinFriend(const ui::ServerEntry& entry);
@@ -192,12 +183,11 @@ namespace perlin {
         void FailLeaseJoin(const std::string& text);
         std::atomic<bool> leaseJoining{false}, leaseJoinFailed{false};
         void JoinLanGame(const ui::ServerEntry& entry);
-        std::shared_ptr<lan::Session> lanSession; // Minecraft LAN discovery socket; also the signalling channel to the games it found
+        std::shared_ptr<lan::Session> lanSession;
         std::mutex lanSessionMutex;
-        // Drops the joined friend world (leaves its Xbox session) without stalling the main thread.
         void ReleaseFriendLease();
-        std::shared_ptr<friendworld::Lease> friendLease;      // the friend world being connected to / played
-        std::shared_ptr<friendworld::Lease> friendLeaseReady; // joined by the worker, taken by the main loop
+        std::shared_ptr<friendworld::Lease> friendLease;
+        std::shared_ptr<friendworld::Lease> friendLeaseReady;
         std::atomic<bool> friendJoinBusy{false};
         void AddRealm(const std::string& code);
         std::atomic<bool> realmAddBusy{false}, realmAddedFlag{false};
@@ -215,8 +205,8 @@ namespace perlin {
         bool pauseShown = false, pauseLeftDown = false, pausePreviewOpened = false;
         bool pausePlayers = false;
         int pauseView = 0, optionsDrag = -1, optionsPage = 0, optionsSub = 0, bindCapture = -1;
-        int controlsTab = 0;  // Controls page: 0 keyboard, 1 controller, 2 touch
-        int bindDevice = 0;   // which device the key-bind screens edit: 0 keyboard, 1 controller
+        int controlsTab = 0;
+        int bindDevice = 0;
         bool touchEditing = false;
         bool touchEditHidden = false;
         const Binding& BindingOf(Action a) const { return bindDevice == 1 ? options.GetPadKey(a) : options.GetKey(a); }
@@ -255,7 +245,6 @@ namespace perlin {
         std::chrono::steady_clock::time_point packFoundAt{};
         int packRowsHover = -1;
         void ApplyTexturePacks();
-        // Drops the last server's resource packs (if any) and reloads what they replaced.
         void UnloadServerPacks();
         void CommitTexturePacks();
         std::vector<std::string> packPending;
@@ -280,9 +269,7 @@ namespace perlin {
         void UpdateTitle(int fps);
         void SetupMods();
         void SetupModActions();
-    // Enables or disables a mod; enabling one that asks for dangerous permissions approves exactly what it asked for.
     void ToggleMod(const std::string& name);
-        // Set by mod actions; UpdatePauseScreen opens the requested screen: view 1 options, 3 world, 4 mods, 5 wardrobe.
         int modOpenView = -1, modOpenPage = 0;
         std::string modSettingsFor;
     std::vector<std::string> modRowTips;
@@ -304,7 +291,6 @@ namespace perlin {
         float modDt = 0.0f;
         int modGuiW = 0, modGuiH = 0;
         std::mutex modMutex;
-        // Low-level mod overrides (Op::CameraControl and friends). All of them lapse by themselves.
         struct ModAdvanced {
             std::mutex mutex;
             abi::CameraControlState camera;
@@ -315,14 +301,13 @@ namespace perlin {
                 std::chrono::steady_clock::time_point until{};
                 std::vector<entity::EntityRenderer::FrameIn::ModLine> lines;
             };
-            std::map<std::string, DrawSet> lines; // by plugin
+            std::map<std::string, DrawSet> lines;
             std::map<std::string, std::pair<std::chrono::steady_clock::time_point, std::vector<uint32_t>>> drops;
-            std::map<std::string, std::pair<std::chrono::steady_clock::time_point, std::vector<uint32_t>>> outDrops; // outgoing
+            std::map<std::string, std::pair<std::chrono::steady_clock::time_point, std::vector<uint32_t>>> outDrops;
             std::array<float, 16> viewProjection{};
-            std::vector<entity::EntityRenderer::FrameIn::ModLine> frameLines; // merged copy handed to the entity renderer
+            std::vector<entity::EntityRenderer::FrameIn::ModLine> frameLines;
         } modAdv;
         void SetupModAdvanced();
-        // Called once per frame before the camera matrix is built: expires overrides, applies the camera ones.
         void ApplyModCamera(float& fov, glm::mat4& viewEffect);
         std::vector<std::pair<std::string, abi::EventHttp>> modHttp;
         std::atomic<int> modHttpActive{0};
@@ -359,7 +344,7 @@ namespace perlin {
         LaunchArgs args;
         AppPlatform* platform = nullptr;
         Options options;
-        std::string runningRenderer; // the graphics API this run started with; a different setting restarts the game
+        std::string runningRenderer;
         Input input;
         InputManager inputManager{input, options};
 
@@ -369,6 +354,7 @@ namespace perlin {
         ui::HudState hudState;
         HandRenderer handRenderer;
         entity::EntityRenderer entityRenderer;
+        WeatherRenderer weather;
         particle::ParticleSystem particles;
         particle::DataParticles dataParticles;
         FogDefs fogDefs;
@@ -410,7 +396,7 @@ namespace perlin {
         float hudPartial = 0.0f;
         bool headUnderwater = false;
         bool headInLava = false;
-        float waterSurfaceAbove = 0.0f; // underwater: water surface height above the eye
+        float waterSurfaceAbove = 0.0f;
         int previewSlot = 0;
         void TickHud();
         std::unique_ptr<ThreadPool> workers;
@@ -434,9 +420,6 @@ namespace perlin {
         void SetStatusHint(const std::string& text);
         bool onlineThisRun = false;
         std::atomic<bool> sessionReady{false};
-        // Each Connect() bumps the generation; a background connect that finishes after the user
-        // cancelled sees a stale generation and backs out. Sessions left behind stay alive until
-        // no connect is running on them.
         std::atomic<uint64_t> connectGeneration{0};
         std::atomic<int> connectsInFlight{0};
         std::vector<std::unique_ptr<BedrockSession>> retiredSessions;

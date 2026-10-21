@@ -63,7 +63,6 @@ namespace perlin {
             const float sens = options.mouseSensitivity;
             look.yaw = dx * sens;
             look.pitch = dy * sens * (options.invertMouse ? 1.0f : -1.0f);
-            // Right stick: degrees per second, curved so small pushes stay precise.
             const auto now = std::chrono::steady_clock::now();
             const float dt = lastPoll.time_since_epoch().count() == 0 ? 0.0f : std::min(0.1f, std::chrono::duration<float>(now - lastPoll).count());
             lastPoll = now;

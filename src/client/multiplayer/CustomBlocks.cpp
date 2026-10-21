@@ -201,10 +201,6 @@ namespace perlin {
             ui::Json nbt;
             if (entry.name.empty() || !NetworkNbtToJson(entry.state.bytes, nbt) || !nbt.IsObject())
                 continue;
-            // The block's palette run: placement-trait states first (vanilla's fixed order), then the connection
-            // booleans, then the declared properties in list order; the first axis varies fastest. Hashed palettes
-            // hash the sorted state names, so only the content matters there, but a sequential palette needs the
-            // exact count and order or every later id shifts.
             std::vector<Prop> axes;
             {
                 static const std::pair<const char*, std::vector<const char*>> kTraitStates[] = {

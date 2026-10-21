@@ -864,7 +864,6 @@ namespace perlin::xbox {
             return true;
         }
 
-        // The service token ("MCToken ...") of a Minecraft services session.
         bool ServiceAuthorization(const ServiceEnv& env, const std::string& ticket, const std::string& gameVersion,
                                   std::string& authorization, std::string& error) {
             if (cache.minecraftDeviceId.empty()) {
@@ -899,7 +898,6 @@ namespace perlin::xbox {
             gamertag = xsts.gtg;
             xuid = xsts.xid;
             if (gamertag.empty()) {
-                // The multiplayer token carries only the user hash; Xbox Live's own has the gamertag.
                 Tok live;
                 std::string why;
                 if (Xsts("http://xboxlive.com", live, why)) {
@@ -976,8 +974,6 @@ namespace perlin::xbox {
         Impl& s = *impl;
         if (!s.EnsureUserAndTitle(error))
             return false;
-        // Only an XSTS token for Xbox Live itself carries the gamertag in its display claims; the
-        // Minecraft multiplayer one has just the user hash.
         Tok xsts;
         if (!s.Xsts("http://xboxlive.com", xsts, error))
             return false;
@@ -1011,7 +1007,6 @@ namespace perlin::xbox {
             return false;
         if (!s.ServiceAuthorization(env, ticket, gameVersion, out.authorization, error))
             return false;
-        // The player-messaging id is the "pmid" claim of the token's payload.
         const std::string jwt = out.authorization.rfind("MCToken ", 0) == 0 ? out.authorization.substr(8) : out.authorization;
         const size_t a = jwt.find('.');
         const size_t b = a == std::string::npos ? a : jwt.find('.', a + 1);

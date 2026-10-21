@@ -321,7 +321,7 @@ namespace perlin::ui {
                 for (const HudState::ChatLine::Click& c : l.clicks) {
                     const bool url = c.command.rfind("url:", 0) == 0;
                     if (url)
-                        w.Rect(4 + c.x, top + 9.0f, c.w, 1, 3, 0.33f, 0.55f, 1.0f, l.alpha); // links are underlined, even in the fading chat
+                        w.Rect(4 + c.x, top + 9.0f, c.w, 1, 3, 0.33f, 0.55f, 1.0f, l.alpha);
                     if (url ? s.chatOpen : true)
                         w.Link(4 + c.x, top, c.w, 9, 4, c.command);
                 }

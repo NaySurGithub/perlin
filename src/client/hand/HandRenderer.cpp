@@ -903,7 +903,7 @@ namespace perlin {
             RenderShield(in, s, item, rightArm, m);
             return;
         }
-        
+
         if (item.name == "minecraft:trident" && s.attachables && DrawGeometryItem(item, m, !rightArm, true, in.light))
             return;
         if (s.attachables && RenderAttachable(in, s, item, rightArm, m))

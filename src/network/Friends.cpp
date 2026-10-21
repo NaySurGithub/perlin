@@ -8,7 +8,7 @@
 
 namespace perlin::friends {
     namespace {
-        constexpr const char* kMinecraftTitle = "1739947436"; // Minecraft (Android), the title Perlin signs in as
+        constexpr const char* kMinecraftTitle = "1739947436";
 
         std::string TextOf(const json::View& v) {
             if (v.isString())
@@ -65,7 +65,6 @@ namespace perlin::friends {
             }
             out.push_back(std::move(f));
         }
-        // Worlds friends have open: the session directory's activity handles of everyone in the friend list.
         {
             const std::string query = "{\"type\":\"activity\",\"scid\":\"4fc10100-5f7a-4470-899b-280835760c07\",\"owners\":{\"people\":{\"moniker\":\"people\",\"monikerXuid\":\"" +
                                       xuid + "\"}}}";
@@ -78,7 +77,7 @@ namespace perlin::friends {
                         continue;
                     const std::string owner = TextOf(handle["ownerXuid"]);
                     const json::View custom = handle["customProperties"];
-                    if (custom["TransportLayer"].integer() != 2) // NetherNet worlds only
+                    if (custom["TransportLayer"].integer() != 2)
                         continue;
                     for (Friend& f : out)
                         if (f.xuid == owner) {

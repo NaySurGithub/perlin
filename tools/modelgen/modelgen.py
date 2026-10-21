@@ -244,8 +244,6 @@ class Gen:
             self.entries.append(key)
         return self.entry_ids[key]
 
-    # Item frames: Bedrock blocks, Java entities with block models (item_frame, glow_item_frame and
-    # their _map versions, whose front faces north). facing_direction is the way the frame faces.
     FRAME_ROT = {0: (90, 0), 1: (270, 0), 2: (0, 0), 3: (0, 180), 4: (0, 270), 5: (0, 90)}
 
     def frame_entry(self, rec, n):

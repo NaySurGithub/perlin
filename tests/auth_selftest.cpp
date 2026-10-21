@@ -352,8 +352,6 @@ namespace {
                     res.set_content("{\"XErr\":2148916233}", "application/json");
                     return;
                 }
-                // As the real service does: only Xbox Live's own token names the user (gtg, xid);
-                // relying parties such as Minecraft multiplayer get just the user hash.
                 const std::string rp = doc->root()["RelyingParty"].str();
                 const bool xboxLive = rp == "http://xboxlive.com";
                 res.set_content(Token(rp == "rp://playfabapi.com/" ? "xsts-playfab" : xboxLive ? "xsts-xbl" : "xsts-multiplayer",
@@ -475,13 +473,11 @@ static void TestFlow() {
         CHECK(creds.multiplayerToken == "oidc.multiplayer.token");
         CHECK(creds.gamertag == "MockGamer");
         CHECK(mock.deviceAuths == 1);
-        // The account switcher's gamertag lookup.
         std::string gamertag;
         CHECK(again.FetchGamertag(gamertag, err) && gamertag == "MockGamer");
     }
 
     {
-        // A background lookup signs in from the saved login only, never prompting.
         xbox::Account saved(cache);
         std::string gamertag;
         CHECK(saved.SignInSaved(err));

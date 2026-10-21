@@ -97,7 +97,6 @@ namespace perlin::ui {
 
     bool Hud::Rebuild() {
         {
-            // Priority: server pack, then the player's texture packs, then user overrides, Java defaults, vanilla.
             std::vector<std::string> roots;
             const std::vector<std::string> server = ServerPacks::Instance().Directories();
             for (size_t i = server.size(); i-- > 0;)

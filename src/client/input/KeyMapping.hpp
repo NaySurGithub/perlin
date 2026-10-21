@@ -59,8 +59,6 @@ namespace perlin {
 
     using KeyBindings = std::array<Binding, kActionCount>;
 
-    // Controller inputs. 0-14 are SDL's gamepad button numbers; the triggers and the stick directions are
-    // reported as buttons too so every one of them can be bound to any action.
     namespace Pad {
         constexpr int A = 0, B = 1, X = 2, Y = 3, Back = 4, Guide = 5, Start = 6, LeftStick = 7, RightStick = 8,
                       LeftShoulder = 9, RightShoulder = 10, DpadUp = 11, DpadDown = 12, DpadLeft = 13, DpadRight = 14,

@@ -1,12 +1,3 @@
-# Compiles one shader for Direct3D 11 (s_5_0), trying simpler variants if FXC crashes.
-#
-# FXC (d3dcompiler_47, Microsoft's closed-source D3D11 compiler) overflows its stack on the full
-# Vibrant Visuals water shader. This script tries the full shader first, then variants with
-# features compiled out, uses the first one that compiles and prints which variants failed, so
-# the build always works and the log shows what FXC chokes on.
-#
-# cmake -DSHADERC=... -DSRC=... -DOUT=... -DVARYING=... -DNAME=... -DINCLUDES="a|b|c"
-#       -DVARIANTS="full|DEF_A|DEF_A,DEF_B" -P PerlinDxbcFallback.cmake
 foreach(v SHADERC SRC OUT VARYING NAME INCLUDES VARIANTS)
     if(NOT DEFINED ${v})
         message(FATAL_ERROR "PerlinDxbcFallback: ${v} not set")

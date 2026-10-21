@@ -157,7 +157,6 @@ namespace perlin::act {
         return detail::call_void(Op::OptionSet, w);
     }
 
-    // Typed: `act::set_option<Option::fov>(90.0)` checks the value type at compile time.
     template <game::Option O>
     Result<void> set_option(game::option_t<O> value) {
         using T = game::option_t<O>;
@@ -177,16 +176,13 @@ namespace perlin::act {
 
     inline Result<void> reload_resources() { return detail::call_void(Op::ReloadResources); }
 
-    // ---- The game's own actions: the same things its menus do ----
 
-    // Opens Pause, Options, Mods or Wardrobe.
     inline Result<void> open_screen(Screen screen) {
         abi::Writer w;
         w.write(screen);
         return detail::call_void(Op::OpenScreen, w);
     }
 
-    // Opens a mod's settings page; with no argument, this mod's own.
     inline Result<void> open_settings(std::string_view mod = {}) {
         abi::Writer w;
         w.str(mod);
@@ -205,7 +201,6 @@ namespace perlin::act {
         return detail::call_void(Op::CopyToClipboard, w);
     }
 
-    // Opens an https link in the browser. Needs the "network" permission in the manifest.
     inline Result<void> open_url(std::string_view url) {
         abi::Writer w;
         w.str(url);

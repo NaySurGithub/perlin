@@ -19,7 +19,6 @@ namespace perlin {
         bool ValidId(const std::string& id) {
             if (id.size() != 32)
                 return false;
-            // The shape gophertunnel generates: a version-4 UUID without dashes.
             if (id[12] != '4' || !(id[16] == '8' || id[16] == '9' || id[16] == 'a' || id[16] == 'b'))
                 return false;
             for (char c : id)

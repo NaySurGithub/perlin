@@ -233,7 +233,6 @@ namespace perlin {
                     ev.headers.emplace_back(std::move(key), h.second);
                 }
                 if (!savePath.empty() && ev.status >= 200 && ev.status < 300) {
-                    // Downloads go straight to disk; the mod only gets the status.
                     std::error_code ec;
                     std::filesystem::create_directories(std::filesystem::path(savePath).parent_path(), ec);
                     std::ofstream out(savePath, std::ios::binary | std::ios::trunc);

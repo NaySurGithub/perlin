@@ -38,7 +38,6 @@ def unpack(c):
     return ((c >> 24) & 255, (c >> 16) & 255, (c >> 8) & 255, c & 255)
 
 img = Image.new('RGBA', (W * scale, H * scale), (0, 0, 0, 255))
-# a stone-ish backdrop so translucency reads like in game
 import random
 random.seed(3)
 bd = ImageDraw.Draw(img)
@@ -110,13 +109,12 @@ def draw_item(x, y, size, name):
     if kind == 'item':
         big = t.resize((int(size * scale), int(size * scale)), Image.NEAREST)
         layer.alpha_composite(big, (int(x * scale), int(y * scale)))
-    else:  # isometric cube from the one texture
+    else:
         s = int(size * scale)
         top = t.resize((s // 2, s // 2), Image.NEAREST)
         side = t.resize((s // 2, s // 2), Image.NEAREST)
         cube = Image.new('RGBA', (s, s), (0, 0, 0, 0))
         topq = top.transform((s, s // 2), Image.AFFINE, (0.5, 1.0, -s / 4 * 0 , -0.5, 1.0, s / 4), Image.NEAREST) if False else None
-        # top face: rotate 45 and squash
         tt = t.resize((s // 2, s // 2), Image.NEAREST).rotate(45, expand=True, resample=Image.NEAREST).resize((s, s // 2), Image.NEAREST)
         cube.alpha_composite(tt, (0, 0))
         def shade(im, f):
@@ -168,7 +166,6 @@ for line in open(src, encoding='utf-8'):
     elif k == 'image':
         draw_image(*map(float, parts[1:5]), parts[5])
 
-# crop around the drawn content, with a margin
 xs = []
 for line in open(src, encoding='utf-8'):
     p = line.split(' ')

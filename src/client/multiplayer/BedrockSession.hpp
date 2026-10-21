@@ -64,14 +64,12 @@ namespace perlin {
         const std::string& PlayerName() const { return playerName; }
         void SetPlayerName(const std::string& name) { playerName = name.empty() ? std::string("Perlin") : name; }
         void SetTransport(const std::string& mode) { transportMode = mode; }
-        // Connects to a joined friend's world through its signalling channel instead of to an address.
         void SetFriendLease(std::shared_ptr<friendworld::Lease> lease) { friendLease = std::move(lease); }
         void SetSkin(LoadedSkin loaded) { skin = std::move(loaded); }
         const LoadedSkin& Skin() const { return skin; }
         entity::EntityTracker& Entities() { return entities; }
         void SetAccount(std::shared_ptr<xbox::Account> a) { account = std::move(a); }
         void SetChunkRadius(int r) { chunkRadius = r; }
-        // Asks the server for the current chunk radius again (after the render distance changed mid-game).
         void RequestChunkRadiusNow() { SendRequestChunkRadius(); }
         void SetNearRadius(int r) { nearRadius = r; }
         void SetMaxViewDistance(int r) { maxViewDistance = r; }
@@ -310,7 +308,6 @@ void RequestRespawn();
         }
 
         void SetPacketHandler(PacketHandler h) { onPacket = std::move(h); }
-        // Incoming packets with these ids are discarded after the packet handler has seen them (mods; see Op::PacketDrop).
         void SetDroppedPackets(std::vector<uint32_t> ids) {
             std::lock_guard<std::mutex> lk(dropMutex);
             dropped.assign(ids.begin(), ids.end());
@@ -324,13 +321,11 @@ void RequestRespawn();
             return out;
         }
         bool SendRaw(uint32_t id, const std::vector<uint8_t>& body) { return Transmit(id, body, true); }
-        // Outgoing packets with these ids are silently not sent (mods).
         void SetDroppedOutgoing(std::vector<uint32_t> ids) {
             std::lock_guard<std::mutex> lk(dropMutex);
             droppedOut.assign(ids.begin(), ids.end());
             dropOutActive.store(!droppedOut.empty(), std::memory_order_release);
         }
-        // Handles a packet as if the server had sent it (mods).
         void InjectIncoming(uint32_t id, const std::vector<uint8_t>& body) { OnGamePacket(id, body); }
 
         State GetState() const { return state; }
@@ -695,8 +690,47 @@ void RequestRespawn();
         std::mutex crackMutex;
         std::vector<CrackState> crackStates;
         std::set<std::tuple<int, int, int, int>> requestedSlots;
-        std::queue<std::tuple<int, int, int, int>> reqQueue;
-        std::queue<std::tuple<int, int, int, int>> reqQueueFar;
+        class NearestQueue {
+        public:
+            using Key = std::tuple<int, int, int, int>;
+            NearestQueue() : set(Less{this}) {}
+            NearestQueue(const NearestQueue&) = delete;
+            NearestQueue& operator=(const NearestQueue&) = delete;
+            NearestQueue& operator=(NearestQueue&&) { set.clear(); return *this; }
+            void SetCenter(int x, int z) {
+                if (x == cx && z == cz)
+                    return;
+                std::vector<Key> all(set.begin(), set.end());
+                set.clear();
+                cx = x;
+                cz = z;
+                set.insert(all.begin(), all.end());
+            }
+            void push(const Key& k) { set.insert(k); }
+            bool empty() const { return set.empty(); }
+            size_t size() const { return set.size(); }
+            Key front() const { return *set.begin(); }
+            void pop() { set.erase(set.begin()); }
+        private:
+            struct Less {
+                const NearestQueue* q;
+                bool operator()(const Key& a, const Key& b) const {
+                    const auto d = [this](const Key& k) {
+                        const long long dx = std::get<1>(k) - q->cx, dz = std::get<3>(k) - q->cz;
+                        return dx * dx + dz * dz;
+                    };
+                    const long long da = d(a), db = d(b);
+                    if (da != db)
+                        return da < db;
+                    return std::tie(std::get<0>(a), std::get<1>(a), std::get<3>(a), std::get<2>(a)) <
+                           std::tie(std::get<0>(b), std::get<1>(b), std::get<3>(b), std::get<2>(b));
+                }
+            };
+            int cx = 0, cz = 0;
+            std::set<Key, Less> set;
+        };
+        NearestQueue reqQueue;
+        NearestQueue reqQueueFar;
         struct ColumnInfo {
             int dim = 0, firstSubY = 0, slots = 0;
             std::vector<uint8_t> biomes;

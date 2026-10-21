@@ -11,17 +11,13 @@ namespace perlin::ui {
         V3 Mix(const V3& a, const V3& b, float t) { return {a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t, a.z + (b.z - a.z) * t}; }
         float Dot(const V3& a, const V3& b) { return a.x * b.x + a.y * b.y + a.z * b.z; }
 
-        // Corners of each face at texture (u,v) = (0,0), (1,0), (1,1), (0,1). Camera looks along
-        // -z at yaw 0. The layout was measured from the vanilla images: sides 0-3 join left to
-        // right going clockwise (0 front/-z, 1 +x, 2 back/+z, 3 -x); the sky (4) meets side 0 with
-        // its bottom edge and the ground (5) meets side 0 with its top edge.
         constexpr V3 kFace[6][4] = {
-            {{-1, 1, -1}, {1, 1, -1}, {1, -1, -1}, {-1, -1, -1}}, // 0 front
-            {{1, 1, -1}, {1, 1, 1}, {1, -1, 1}, {1, -1, -1}},     // 1 right
-            {{1, 1, 1}, {-1, 1, 1}, {-1, -1, 1}, {1, -1, 1}},     // 2 back
-            {{-1, 1, 1}, {-1, 1, -1}, {-1, -1, -1}, {-1, -1, 1}}, // 3 left
-            {{-1, 1, 1}, {1, 1, 1}, {1, 1, -1}, {-1, 1, -1}},     // 4 sky
-            {{-1, -1, -1}, {1, -1, -1}, {1, -1, 1}, {-1, -1, 1}}, // 5 ground
+            {{-1, 1, -1}, {1, 1, -1}, {1, -1, -1}, {-1, -1, -1}},
+            {{1, 1, -1}, {1, 1, 1}, {1, -1, 1}, {1, -1, -1}},
+            {{1, 1, 1}, {-1, 1, 1}, {-1, -1, 1}, {1, -1, 1}},
+            {{-1, 1, 1}, {-1, 1, -1}, {-1, -1, -1}, {-1, -1, 1}},
+            {{-1, 1, 1}, {1, 1, 1}, {1, 1, -1}, {-1, 1, -1}},
+            {{-1, -1, -1}, {1, -1, -1}, {1, -1, 1}, {-1, -1, 1}},
         };
     }
 
@@ -48,7 +44,6 @@ namespace perlin::ui {
             out.vertices.clear();
             out.indices.clear();
             const V3* c = kFace[f];
-            // (n+1)^2 grid of projected points; depth <= near marks a point behind the camera.
             std::vector<PanoramaVertex> pts(static_cast<size_t>((n + 1) * (n + 1)));
             std::vector<char> ok(pts.size());
             for (int j = 0; j <= n; j++) {
@@ -71,7 +66,6 @@ namespace perlin::ui {
                     const size_t a = static_cast<size_t>(j * (n + 1) + i), b = a + 1, d = a + static_cast<size_t>(n + 1), e = d + 1;
                     if (!ok[a] || !ok[b] || !ok[d] || !ok[e])
                         continue;
-                    // Skip cells entirely off screen.
                     const float minX = std::fmin(std::fmin(pts[a].x, pts[b].x), std::fmin(pts[d].x, pts[e].x));
                     const float maxX = std::fmax(std::fmax(pts[a].x, pts[b].x), std::fmax(pts[d].x, pts[e].x));
                     const float minY = std::fmin(std::fmin(pts[a].y, pts[b].y), std::fmin(pts[d].y, pts[e].y));

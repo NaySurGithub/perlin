@@ -37,7 +37,6 @@ int main() {
     }
     CHECK(Binding::Parse("").device == Binding::Device::None);
 
-    // Controller bindings round-trip through their saved names, and the defaults cover movement and combat.
     for (int code : {Pad::A, Pad::Y, Pad::Start, Pad::LeftStick, Pad::LeftTrigger, Pad::RightTrigger, Pad::LeftStickUp, Pad::RightStickRight}) {
         const Binding b = Binding::PadButton(code);
         CHECK(Binding::Parse(b.Serialize()) == b);

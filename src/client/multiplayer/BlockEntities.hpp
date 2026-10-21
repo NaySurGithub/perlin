@@ -20,11 +20,10 @@ namespace perlin {
         int color = -1;
         SignFace front, back;
         bool waxed = false;
-        float rotation = 0.0f; // skulls on the floor: degrees
-        // Banners: Bedrock dye indices (0 black .. 15 white), Type 1 = ominous.
+        float rotation = 0.0f;
         int base = -1, bannerType = 0;
-        std::vector<std::pair<std::string, int>> patterns; // pattern code, colour
-        std::string nbt;                                   // the whole tag as JSON (capped), for plugins
+        std::vector<std::pair<std::string, int>> patterns;
+        std::string nbt;
     };
 
     class BlockEntityStore {

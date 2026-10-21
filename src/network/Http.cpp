@@ -76,14 +76,14 @@ namespace perlin::http {
             if (IsDir(std::getenv("SSL_CERT_DIR")))
                 caDir = std::getenv("SSL_CERT_DIR");
             static const char* const kFiles[] = {
-                "/etc/ssl/certs/ca-certificates.crt",                // Debian, Ubuntu, Arch, Gentoo, NixOS, Void
-                "/etc/pki/tls/certs/ca-bundle.crt",                  // Fedora, RHEL, CentOS
-                "/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem", // Fedora, RHEL (extracted)
-                "/etc/ca-certificates/extracted/tls-ca-bundle.pem",  // Arch (extracted)
-                "/etc/ssl/ca-bundle.pem",                            // openSUSE, SLES
-                "/var/lib/ca-certificates/ca-bundle.pem",            // openSUSE
-                "/etc/ssl/cert.pem",                                 // Alpine, Arch, BSDs
-                "/usr/local/share/certs/ca-root-nss.crt",            // FreeBSD
+                "/etc/ssl/certs/ca-certificates.crt",
+                "/etc/pki/tls/certs/ca-bundle.crt",
+                "/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem",
+                "/etc/ca-certificates/extracted/tls-ca-bundle.pem",
+                "/etc/ssl/ca-bundle.pem",
+                "/var/lib/ca-certificates/ca-bundle.pem",
+                "/etc/ssl/cert.pem",
+                "/usr/local/share/certs/ca-root-nss.crt",
                 "/etc/certs/ca-certificates.crt",
             };
             static const char* const kDirs[] = {"/etc/ssl/certs", "/etc/pki/tls/certs", "/system/etc/security/cacerts"};

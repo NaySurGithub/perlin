@@ -1,8 +1,3 @@
-// Runs WAILA against a fake game and writes what it would draw, so the result can be rendered and checked without the game.
-//
-//   preview <scenario> <out.txt>        scenarios: stone, wheat, cow, chest, horse, bedrock, noteblock
-//
-// The fake host answers the calls WAILA makes; the draw commands it submits are written one per line for render_preview.py.
 #include <waila.cpp>
 
 #include <cstdio>
@@ -25,7 +20,7 @@ namespace {
         bool code = false;
         for (size_t i = 0; i < text.size(); i++) {
             const unsigned char c = static_cast<unsigned char>(text[i]);
-            if (c == 0xC2 && i + 1 < text.size() && static_cast<unsigned char>(text[i + 1]) == 0xA7) { // the section sign starts a code
+            if (c == 0xC2 && i + 1 < text.size() && static_cast<unsigned char>(text[i + 1]) == 0xA7) {
                 i += 2;
                 code = true;
                 continue;
@@ -71,7 +66,6 @@ extern "C" int32_t perlin_host_call(uint32_t op, const void* in, uint32_t inLen,
     abi::Writer w;
     switch (o) {
     case Op::SettingList: {
-        // The manifest's defaults, the way the game would list them.
         auto manifest = json::parse(loaded_manifest_defaults());
         std::vector<abi::SettingEntry> list;
         if (manifest)
@@ -214,18 +208,16 @@ extern "C" int32_t perlin_host_call(uint32_t op, const void* in, uint32_t inLen,
 int main(int argc, char** argv) {
     if (argc > 1) scenario = argv[1];
     if (argc > 2) out_path = argv[2];
-    for (int i = 3; i + 1 < argc; i += 2) setting_values[argv[i]] = argv[i + 1]; // extra: id value pairs
+    for (int i = 3; i + 1 < argc; i += 2) setting_values[argv[i]] = argv[i + 1];
 
     perlin_event(static_cast<uint32_t>(abi::Event::Load), nullptr, 0);
     abi::Writer w;
     w.write(abi::EventFrame{0.016f, 60.0f, 320, 180});
-    // Several frames: the first rebuilds the tooltip, the later ones let the fade-in finish.
     for (int i = 0; i < 12; i++) {
         clock_ms += 40;
         perlin_event(static_cast<uint32_t>(abi::Event::Frame), w.Data(), static_cast<uint32_t>(w.Size()));
     }
 
-    // Decode the submitted draw commands into one line per primitive.
     std::ofstream out(out_path);
     abi::Reader r(submitted.data(), submitted.size());
     while (r.Remaining() > 0 && r.Ok()) {

@@ -186,7 +186,6 @@ namespace {
         return failed.load() == 0;
     }
 
-    // Paths inside the samples we keep: the listed directories plus files directly in resource_pack/.
     bool Wanted(const std::string& rel) {
         if (rel.empty() || rel.back() == '/')
             return false;
@@ -198,7 +197,6 @@ namespace {
         return false;
     }
 
-    // Extracts the wanted files of a samples zip into repo, on a few threads.
     bool ExtractSamplesZip(const fs::path& zipPath, const fs::path& repo) {
         perlin::assets::Job& job = perlin::assets::Samples();
         mz_zip_archive zip{};
@@ -272,13 +270,11 @@ namespace {
         return !failed;
     }
 
-    // Fast path: the latest Mojang/bedrock-samples release zip, downloaded in parallel chunks.
     bool DownloadReleaseZip(const std::string& targetDir) {
         perlin::assets::Job& job = perlin::assets::Samples();
         job.stage = perlin::assets::Stage::Checking;
         const std::string latest = perlin::download::Resolve(std::string("https://github.com/") + kRepository + "/releases/latest");
         const size_t tagAt = latest.rfind("/tag/");
-        // A known-good release if the "latest" redirect can't be read.
         const std::string tag = tagAt != std::string::npos ? latest.substr(tagAt + 5) : std::string("v1.26.30.5");
         if (tagAt == std::string::npos)
             std::cout << "[samples] could not read the latest release; using " << tag << std::endl;
@@ -333,8 +329,6 @@ namespace perlin {
         std::error_code zec;
         if (fs::exists(zipDone, zec) || DownloadReleaseZip(targetDir)) {
             std::ofstream(zipDone.string()).close();
-            // The release archive leaves out a few folders the client wants (behavior_pack/blocks);
-            // fetch just those, file by file.
             std::vector<std::string> extra;
             for (const std::string& dir : Directories())
                 if (!fs::exists(fs::path(targetDir) / "repo" / dir, zec) && !CollectDirectory(dir, extra))
@@ -347,7 +341,6 @@ namespace perlin {
             return FetchAll(std::string("/") + kRepository + "/" + kBranch + "/", extra, fs::path(targetDir) / "repo", "extra");
         }
 #ifdef __ANDROID__
-        // Where the archive can't be had, the build's own file list (one request per file) is the slow way round.
         if (DownloadFromManifest(targetDir))
             return true;
 #endif

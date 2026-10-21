@@ -26,7 +26,6 @@ vec4 sampleBlock(vec2 uv, float layer)
     float lod = atlasLod(du, dv, pixelSize);
     vec4 nearest = sampleNearest(uv, layer, pixelSize, du, dv, texelScreenSize, lod);
     vec4 result = nearest;
-    // Single return (FXC warns about early returns when optimisation is off).
     if (u_textureInfo.y >= 0.5)
     {
 

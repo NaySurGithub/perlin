@@ -90,7 +90,6 @@ jobs:
         run: |
           & "$env:VCPKG_INSTALLATION_ROOT\vcpkg.exe" install openssl:x64-windows-static --x-install-root="$env:GITHUB_WORKSPACE/openssl-install"
 
-      # Windows SDK + MSVC libraries for clang-cl (the compiler itself is LLVM, preinstalled on the runner).
       - name: Set up MSVC environment
         if: runner.os == 'Windows'
         uses: ilammy/msvc-dev-cmd@v1
@@ -147,8 +146,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # The ESSL output only depends on the shader sources and the pinned bgfx (its shaderc), so a
-      # hit skips building shaderc and compiling altogether.
       - name: Work out the shader cache key
         id: bgfx
         run: echo "tag=$(grep -m1 -A3 'NAME bgfx' CMakeLists.txt | grep -o 'GIT_TAG [^ ]*' | cut -d' ' -f2)" >> "$GITHUB_OUTPUT"
@@ -391,7 +388,6 @@ jobs:
             esac
           done
 
-      # Every push to main refreshes one rolling "nightly" release, so a finished build is always a download away.
       - name: Move the nightly tag
         if: github.ref == 'refs/heads/main'
         run: |

@@ -1,14 +1,10 @@
 #pragma once
-// Lays a Tooltip out into drawing primitives and paints them. Layout is done when the content changes; painting happens
-// every frame, so measuring text (a host call) never happens in the frame loop.
 #include <waila/api.hpp>
 
 #include <algorithm>
 #include <cmath>
 
 namespace waila {
-    // The frame styles of Jade's themes, read from its tooltip sprites: a 1px outline, a 1px frame that fades from top to
-    // bottom, and the fill, with the four corner pixels left out.
     struct Theme {
         Rgba outline, frame_top, frame_bottom, fill;
 
@@ -17,29 +13,28 @@ namespace waila {
         static Theme create() { return {Rgba(0x00, 0x00, 0x00), Rgba(0x40, 0x3c, 0x37), Rgba(0x30, 0x2d, 0x2a), Rgba(0x00, 0x00, 0x00)}; }
     };
 
-    // One thing to draw, in tooltip-local coordinates.
     struct Prim {
         enum class Kind : uint8_t { Rect, Gradient, Text, Item, Image, Line, Count } kind = Kind::Rect;
         float x = 0, y = 0, w = 0, h = 0;
         Rgba a = Rgba::white, b = Rgba::white;
-        std::string text; // text, item id or texture path
-        float scale = 1.0f; // text scale, or line thickness
+        std::string text;
+        float scale = 1.0f;
     };
 
     struct Laid {
         float width = 0, height = 0;
         std::vector<Prim> prims;
-        float bar_x = 0, bar_width = 0; // where the breaking bar goes (along the bottom edge)
+        float bar_x = 0, bar_width = 0;
     };
 
     namespace metrics {
-        inline constexpr float kBorder = 2.0f;  // outline + frame
-        inline constexpr float kPadding = 3.0f; // between the frame and the content
-        inline constexpr float kIcon = 18.0f;   // the icon box (a 16px item with a pixel around it)
+        inline constexpr float kBorder = 2.0f;
+        inline constexpr float kPadding = 3.0f;
+        inline constexpr float kIcon = 18.0f;
         inline constexpr float kIconGap = 6.0f;
-        inline constexpr float kRow = 9.0f;     // one line of text
-        inline constexpr float kPin = 6.0f;     // least space between a row's left and right groups
-        inline constexpr float kHeart = 8.0f;   // distance between hearts
+        inline constexpr float kRow = 9.0f;
+        inline constexpr float kPin = 6.0f;
+        inline constexpr float kHeart = 8.0f;
     }
 
     namespace detail_layout {
@@ -111,10 +106,9 @@ namespace waila {
             out.prims.push_back(std::move(p));
         }
 
-        // Draws one element with its top-left corner at (x, y) inside a row `height` tall; returns its width.
         inline float place(Laid& out, const Element& element, float x, float y, float height) {
             const Size m = measure(element);
-            const float top = y + (height - m.h) * 0.5f; // centered on the row
+            const float top = y + (height - m.h) * 0.5f;
             std::visit(
                 [&](const auto& e) {
                     using T = std::decay_t<decltype(e)>;
@@ -184,11 +178,11 @@ namespace waila {
                     } else if constexpr (std::is_same_v<T, Mark>) {
                         const float s = e.size;
                         const float mx = x + 0.5f, my = y + (height - s) * 0.5f + e.drop;
-                        if (e.ok) { // ✔
+                        if (e.ok) {
                             const Rgba green(0x55, 0xff, 0x55);
                             push_line(out, mx, my + s * 0.55f, mx + s * 0.35f, my + s, green);
                             push_line(out, mx + s * 0.35f, my + s, mx + s, my, green);
-                        } else { // ✘
+                        } else {
                             const Rgba red(0xff, 0x55, 0x55);
                             push_line(out, mx, my, mx + s, my + s, red);
                             push_line(out, mx + s, my, mx, my + s, red);
@@ -200,7 +194,6 @@ namespace waila {
         }
     }
 
-    // A string that changes exactly when the tooltip's content does, so unchanged content is not laid out again.
     inline std::string signature(const Tooltip& tip) {
         std::string out;
         const auto add = [&out](const auto&... parts) { ((out += parts, out += '\x1f'), ...); };
@@ -228,7 +221,6 @@ namespace waila {
         return out;
     }
 
-    // Lays `tip` out. `theme` is the frame to draw.
     inline Laid layout(const Tooltip& tip, const Theme& theme, bool show_icon) {
         using namespace detail_layout;
         Laid out;
@@ -254,7 +246,6 @@ namespace waila {
         out.width = std::ceil(edge * 2.0f + lead + content_w);
         out.height = std::ceil(edge * 2.0f + inner_h);
 
-        // The frame: outline, frame, fill, corners left out.
         const float W = out.width, H = out.height;
         push_rect(out, 2, 2, W - 4, H - 4, theme.fill);
         push_rect(out, 1, 0, W - 2, 1, theme.outline);
@@ -301,7 +292,6 @@ namespace waila {
         return out;
     }
 
-    // Paints a laid-out tooltip with its top-left corner at (x, y), scaled and faded.
     inline void paint(ui::Canvas& g, const Laid& laid, float x, float y, float scale, float alpha, float opacity, float breaking) {
         const auto fade = [&](Rgba c, float extra = 1.0f) {
             c.a = static_cast<uint8_t>(std::clamp(static_cast<float>(c.a) * alpha * extra, 0.0f, 255.0f));
@@ -309,7 +299,6 @@ namespace waila {
         };
         size_t frame_prims = 0;
         for (const Prim& p : laid.prims) {
-            // The first prims are the frame and fill; they follow the background opacity.
             const float extra = frame_prims < 9 ? opacity : 1.0f;
             frame_prims++;
             switch (p.kind) {

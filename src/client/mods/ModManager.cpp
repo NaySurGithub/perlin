@@ -143,8 +143,6 @@ namespace perlin::mods {
     struct HostBridge {
         static ModManager* manager;
 
-        // perlin.call(op, in, in_len, out, out_cap) -> i32. Pointers and lengths may be i32 or
-        // i64 (32-bit or 64-bit plugins); the result is a byte count or a negative status.
         static bool Call(ModManager::Plugin& plugin, WasmInstance::HostContext& ctx, const uint64_t* a, uint32_t n, uint64_t* r) {
             if (plugin.revoked) {
                 ctx.error = kRevoked;
@@ -173,9 +171,6 @@ namespace perlin::mods {
     ModManager* HostBridge::manager = nullptr;
 
     namespace {
-        // The slice of WASI preview 1 a plugin's libc needs: stdout/stderr go to the log, clocks
-        // and randomness work, everything else (files, sockets) is unavailable. Pointers and
-        // sizes are i32 in 32-bit plugins and i64 in 64-bit ones.
         constexpr uint32_t kBadf = 8, kFault = 21, kNosys = 52, kNotcapable = 76, kSpipe = 70;
 
         using Wasi = WasmInstance::HostFn;
@@ -185,7 +180,7 @@ namespace perlin::mods {
             uint8_t* p = w.Memory(at, width);
             if (!p)
                 return false;
-            std::memcpy(p, &value, width); // little-endian
+            std::memcpy(p, &value, width);
             return true;
         }
 
@@ -257,7 +252,6 @@ namespace perlin::mods {
                         r[0] = kFault;
                         return true;
                     }
-                    // Copy the iovec list first: the buffers it points at are looked up separately.
                     std::vector<uint8_t> list(iovs, iovs + count * stride);
                     std::string text;
                     uint64_t total = 0;
@@ -289,7 +283,7 @@ namespace perlin::mods {
                         return true;
                     }
                     uint8_t stat[24] = {};
-                    stat[0] = 2; // character device
+                    stat[0] = 2;
                     const uint64_t rights = a[0] == 0 ? (1ull << 1) : (1ull << 6);
                     std::memcpy(stat + 8, &rights, 8);
                     std::memcpy(out, stat, 24);
@@ -307,7 +301,6 @@ namespace perlin::mods {
                 return Const(kBadf);
             if (name.rfind("path_", 0) == 0)
                 return Const(kNotcapable);
-            // poll_oneoff, proc_raise, sock_* and anything newer.
             return Const(kNosys);
         }
 
@@ -323,7 +316,6 @@ namespace perlin::mods {
                     };
                 if (module == "wasi_snapshot_preview1")
                     return WasiFunction(plugin, name);
-                // Emscripten's standalone output reports memory growth; nothing to do.
                 if (module == "env" && name == "emscripten_notify_memory_growth")
                     return Const(0);
                 return {};
@@ -354,7 +346,6 @@ namespace perlin::mods {
         lastScan = {};
     }
 
-    // Caller holds the mutex. A mod only ever runs with what was approved, so a mod that later asks for more cannot use it unseen.
     void ModManager::ApplyApproval(Plugin& mod) {
         const auto granted = approved.find(mod.name);
         const uint32_t allowed = granted == approved.end() ? 0u : granted->second;
@@ -553,7 +544,7 @@ namespace perlin::mods {
         if (it == ops.end())
             return static_cast<int32_t>(abi::Status::UnknownOp);
         if ((mod.permissions & it->second.second) != it->second.second)
-            return static_cast<int32_t>(abi::Status::Denied); // every permission the call needs
+            return static_cast<int32_t>(abi::Status::Denied);
         CallContext ctx{mod.name, mod.permissions, mod.storage, &mod};
         abi::Reader reader(in, inLen);
         abi::Writer writer;
@@ -571,7 +562,6 @@ namespace perlin::mods {
         {
             std::lock_guard gateLock(mod.gate);
             mod.revoked = true;
-            // Stop whatever it is running; its worker then finishes and can be joined.
             if (mod.instance)
                 mod.instance->Interrupt();
         }
@@ -628,7 +618,6 @@ namespace perlin::mods {
     }
 
     namespace {
-        // Copies the payload into the plugin (perlin_alloc), runs perlin_event and frees it.
         bool CallEventFn(ModManager::Plugin& mod, uint32_t id, const std::vector<uint8_t>& payload, uint32_t& flags, std::string& error) {
             WasmInstance& w = *mod.instance;
             uint64_t ptr = 0;
@@ -694,7 +683,6 @@ namespace perlin::mods {
             mod.arch = mod.instance->Is64() ? "wasm64" : "wasm32";
         }
         std::cout << "[mods] " << mod.name << ": " << mod.arch << " on " << WasmEngineName() << std::endl;
-        // WASI reactors (and Emscripten's standalone output) set up their runtime here.
         if (mod.instance->HasExport("_initialize") && !mod.instance->Call("_initialize", {}, nullptr, error)) {
             mod.jobError = "_initialize: " + error;
             return;
@@ -819,7 +807,6 @@ namespace perlin::mods {
         mod.loaded = false;
         if (mod.thread.joinable()) {
             if (mod.stuck) {
-                // Revoking interrupted it: normally the worker is idle again within moments.
                 std::unique_lock lock(mod.jobMutex);
                 if (mod.doneCv.wait_for(lock, std::chrono::milliseconds(500), [&] { return mod.done; })) {
                     mod.kind = Plugin::Kind::Quit;
@@ -903,7 +890,6 @@ namespace perlin::mods {
         if (permissions & static_cast<uint32_t>(abi::Permission::Files))
             meta.permissions.push_back("files");
         meta.permissions.push_back("storage");
-        // Icon: the manifest's "icon", then name.png next to the mod, then a pack-style icon in its data folder.
         {
             std::vector<fs::path> candidates;
             fs::path rel;
@@ -1090,9 +1076,6 @@ namespace perlin::mods {
         Scan();
     }
 
-    // ------------------------------------------------------------------------------------------
-    // Settings.
-    // ------------------------------------------------------------------------------------------
     namespace {
         std::string FormatNumber(double v) {
             char buf[48];
@@ -1108,7 +1091,6 @@ namespace perlin::mods {
             return end && *end == 0 && std::isfinite(out);
         }
 
-        // Turns text from a mod or the UI into the canonical text for this kind of setting.
         bool NormalizeSetting(const abi::SettingDef& def, const std::string& in, std::string& out) {
             switch (def.kind) {
             case abi::SettingKind::Toggle: {
@@ -1176,10 +1158,6 @@ namespace perlin::mods {
             return out;
         }
 
-        // "settings" in a mod's manifest. Each entry: {"id", "type": toggle|integer|number|choice|button|label|header,
-        // "label", "description", "icon", "default", "min", "max", "step", "choices", "unit", "restart"}.
-        // An icon is {"item": "minecraft:clock"}, {"texture": "textures/items/apple"} or {"file": "icons/x.png"}.
-        // A choice lists its enumerator names (the C++ enum's names) as strings or {"value", "label"} objects.
         void ParseManifestSettings(const ui::Json& list, std::vector<abi::SettingDef>& out) {
             int anonymous = 0;
             for (const ui::Json& item : list.array) {
@@ -1268,7 +1246,6 @@ namespace perlin::mods {
         }
     }
 
-    // The saved values win over the manifest's defaults.
     void ModManager::ApplySavedSettings(Plugin& mod) {
         std::lock_guard lock(mutex);
         for (abi::SettingDef& def : mod.settings) {

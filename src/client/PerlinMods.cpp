@@ -259,7 +259,7 @@ namespace perlin {
             choice("sprintMode", options.sprintMode, {"hold", "toggle"});
             choice("sneakMode", options.sneakMode, {"hold", "toggle"});
             choice("capePhysics", options.capePhysics, {"off", "noshoulder", "shoulder"});
-            t.push_back({"renderer", [this] { return options.renderer; }, nullptr}); // changing it restarts the game, so mods only read it
+            t.push_back({"renderer", [this] { return options.renderer; }, nullptr});
             t.push_back({"language", [this] { return options.language; }, [this](const std::string& v) {
                              if (v.empty() || v.size() > 16)
                                  return false;
@@ -952,7 +952,6 @@ namespace perlin {
             return Status::NotFound;
         });
 
-        // ---- Camera, chat, title, packs ----------------------------------------------------------
         mm.Register(Op::PerspectiveGet, [this](CallContext&, abi::Reader&, abi::Writer& w) {
             w.write(static_cast<abi::Perspective>(camera.mode));
             return Status::Ok;
@@ -1283,7 +1282,6 @@ namespace perlin {
                 requested = info.requested;
             }
         if (pending) {
-            // Enabling is the approval: it covers exactly the permissions the mod asks for now.
             auto& a = options.approvedMods;
             a.erase(std::remove_if(a.begin(), a.end(), [&](const std::string& e) { return e.rfind(name + "=", 0) == 0; }), a.end());
             a.push_back(name + "=" + std::to_string(requested));
@@ -1299,8 +1297,6 @@ namespace perlin {
         options.Save();
     }
 
-    // The game's own actions, callable by name from a mod (perlin/act.hpp). Each one is a typed host call with its
-    // permission declared in the mod's manifest; the work itself runs on the main thread.
     void Perlin::SetupModActions() {
         auto& mm = mods::ModManager::Instance();
         using abi::Op;
@@ -1330,7 +1326,7 @@ namespace perlin {
         });
 
         mm.Register(Op::OpenModSettings, [this](CallContext& ctx, abi::Reader& r, abi::Writer&) {
-            std::string target = r.str(); // empty: the calling mod
+            std::string target = r.str();
             if (!r.Ok())
                 return Status::BadArguments;
             if (target.empty())
@@ -1382,7 +1378,6 @@ namespace perlin {
             return Status::Ok;
         });
 
-        // ---- Files: between the mod's own folder and the game's pack and screenshot folders ----
         const auto resolve = [](const CallContext& ctx, const abi::FileLocation& at, std::filesystem::path& out) {
             const std::string& rel = at.path;
             if (rel.empty() || rel.size() > 300 || rel[0] == '/' || rel[0] == '\\' || rel.find("..") != std::string::npos ||
@@ -1406,11 +1401,10 @@ namespace perlin {
             if (!r.Ok() || !resolve(ctx, from, src) || !resolve(ctx, to, dst))
                 return Status::BadArguments;
             std::error_code ec;
-            // Mods may only take files out of their own folder or the screenshots folder, and never overwrite a game file.
             if (!std::filesystem::is_regular_file(src, ec))
                 return Status::NotFound;
             if (from.area != abi::Area::Mod && from.area != abi::Area::Screenshots)
-                return Status::Denied; // pack folders are only written to, never taken from
+                return Status::Denied;
             if (move && from.area != abi::Area::Mod)
                 return Status::Denied;
             if (to.area != abi::Area::Mod && std::filesystem::exists(dst, ec))

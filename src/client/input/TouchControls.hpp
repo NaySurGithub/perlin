@@ -14,10 +14,6 @@ namespace perlin {
     class Input;
     class RenderContext;
 
-    // Touch layout modelled on Minecraft Pocket/Bedrock: a thumb joystick on the left, jump / sneak / attack /
-    // place on the right (they change icon when swimming, flying or riding), a row of six system buttons at
-    // the top centre, a tappable hotbar with a "..." inventory button, and the rest of the screen turns the
-    // camera. Every button presses the action's current key binding, so rebinding keys still works.
     class TouchControls {
     public:
         enum Button {
@@ -45,7 +41,6 @@ namespace perlin {
         void Update(Input& input);
         void Draw(RenderContext& renderer, bool visible);
         bool Gameplay(const Input& input) const;
-        // Layout editor: true once after the player pressed Done, with the layout to keep.
         bool TakeEditResult(std::map<std::string, TouchPlace>& out);
         bool Editing() const { return editing; }
 
@@ -58,11 +53,10 @@ namespace perlin {
             int button = -1;
             float startX = 0, startY = 0, lastX = 0, lastY = 0;
             bool moved = false;
-            // A menu finger that turned into a vertical drag: it scrolls instead of pressing.
             bool scrolling = false;
             std::chrono::steady_clock::time_point restoreAt;
             bool pointerParked = false;
-            float grabX = 0, grabY = 0; // editor: finger offset from the dragged button's centre
+            float grabX = 0, grabY = 0;
         };
 
         enum class Kind { Hold, Tap, SneakKey, SprintToggle };
@@ -72,7 +66,7 @@ namespace perlin {
             Action action = Action::Count;
             Kind kind = Kind::Hold;
             const char* label = "";
-            bool system = false; // small square-ish top/inventory buttons drawn with a dark backing
+            bool system = false;
         };
 
         struct Sprite {
@@ -117,7 +111,7 @@ namespace perlin {
         bool wasGameplay = false;
         bool editing = false;
         bool editDone = false;
-        int editSelected = -1; // a Button, or ButtonCount for the joystick
+        int editSelected = -1;
         std::map<std::string, TouchPlace> editLayout;
         float stickCX = 0, stickCY = 0, stickR = 0;
         struct PendingRelease {

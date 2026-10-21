@@ -206,7 +206,6 @@ namespace perlin {
                     continue;
                 const auto it = l->index.find(Lower(rel));
                 if (it == l->index.end()) {
-                    // No image of that name: a texture set in the zip may declare the texture instead.
                     const size_t dot = rel.find_last_of('.');
                     if (dot == std::string::npos)
                         continue;

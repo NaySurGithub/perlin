@@ -388,7 +388,6 @@ namespace perlin::attachable {
                 const float w = c.size.x, h = c.size.y, d = c.size.z;
                 const float inflate = c.inflate > 0.0f ? c.inflate : bone.inflate;
                 const float thickness = std::max(0.5f, inflate * 2.0f);
-                // The un-inflated box: the extrusion grows outward from it.
                 const float x0 = c.origin.x, y0 = c.origin.y, z0 = c.origin.z, x1 = x0 + w, y1 = y0 + h, z1 = z0 + d;
                 struct FaceDef { glm::vec3 tl, tr, br, bl, n; };
                 const FaceDef faces[6] = {
@@ -402,14 +401,14 @@ namespace perlin::attachable {
                 const float u = c.uv.x, v = c.uv.y;
                 const glm::vec2 uvOrigin[6] = {{u, v + d}, {u + d + w, v + d}, {u + d, v + d}, {u + d + w + d, v + d}, {u + d, v}, {u + d + w, v}};
                 const glm::vec2 uvSize[6] = {{d, h}, {d, h}, {w, h}, {w, h}, {w, d}, {w, d}};
-                const bool mirrored = !c.mirror; // the player renderer draws with mirrored textures (see BuildMesh callers)
+                const bool mirrored = !c.mirror;
                 for (int i = 0; i < 6; i++) {
                     const int fi = mirrored && i < 2 ? 1 - i : i;
                     const FaceDef& f = faces[i];
                     const int sw = static_cast<int>(uvSize[fi].x), sh = static_cast<int>(uvSize[fi].y);
                     const glm::vec3 ex = (f.tr - f.tl) / static_cast<float>(sw), ey = (f.bl - f.tl) / static_cast<float>(sh);
                     const glm::vec3 up = f.n * thickness;
-                    const auto texel = [&](int pi, int pj) { // pixel of this face region, honouring the horizontal flip
+                    const auto texel = [&](int pi, int pj) {
                         const int px = static_cast<int>(uvOrigin[fi].x * sx) + (mirrored ? sw - 1 - pi : pi) * static_cast<int>(sx);
                         const int py = static_cast<int>(uvOrigin[fi].y * sy) + pj * static_cast<int>(sy);
                         return glm::ivec2(px, py);
@@ -431,7 +430,7 @@ namespace perlin::attachable {
                             const glm::vec3 b = a + ex, cc = a + ex + ey, dd = a + ey;
                             const auto push = [&](glm::vec3 p0, glm::vec3 p1, glm::vec3 p2, glm::vec3 p3, glm::vec3 n) {
                                 if (glm::dot(glm::cross(p1 - p0, p2 - p0), n) > 0.0f)
-                                    std::swap(p1, p3); // this renderer winds faces clockwise seen from outside
+                                    std::swap(p1, p3);
                                 Quad q;
                                 q.p[0] = p0; q.p[1] = p1; q.p[2] = p2; q.p[3] = p3;
                                 for (glm::vec2& uv : q.uv)

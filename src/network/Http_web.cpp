@@ -93,9 +93,6 @@ namespace perlin::http {
         Response direct = Fetch(url, method, body, contentType, extra, timeoutSecs);
         if (direct.status != 0 || tls)
             return direct;
-        // A status of 0 means the browser refused the reply, almost always because the server sends no
-        // CORS headers (a stock BDS does not). The page's own server (serve.py) relays such requests
-        // same-origin, so try that before giving up.
         Response relayed = Fetch("/__relay/" + host + "/" + std::to_string(port) + path, method, body, contentType,
                                  extra, timeoutSecs);
         if (relayed.status != 0 && relayed.status != 404 && relayed.status != 501)

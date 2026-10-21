@@ -2,19 +2,11 @@ $input v_color0, v_texcoord0, v_fog, v_layer, v_visibility, v_rel, v_light, v_ti
 
 #include "vv_terrain_common.sh"
 
-// VV_DX_NO_LIT / VV_DX_NO_SKY / VV_DX_NO_CLOUDS / VV_DX_NO_SSR: simpler fallbacks the Windows
-// build can use if FXC (the Direct3D 11 compiler) crashes on the full shader; see
-// PerlinDxbcFallback in CMakeLists.txt. Other backends always get the full shader.
 
-// Opaque scene behind the translucent pass (copied by the renderer when the pack sets sceneCopy).
 SAMPLER2D(s_sceneColor, 4);
 SAMPLER2D(s_sceneDepth, 5);
 
-// Water extinction per block (red goes first: turquoise shallows, deep blue depths), divided by
-// the Water Clarity setting.
 #define WATER_EXTINCTION (vec3(0.46, 0.075, 0.11) / max(S_WATER_CLARITY, 0.1))
-// The default (ocean) biome water colour; other biomes shift the water colour and extinction
-// relative to it (swamps murky green, warm oceans light teal...).
 #define WATER_DEFAULT_TINT vec3(0.247, 0.463, 0.894)
 
 vec2 ndcToUv(vec2 ndc)
@@ -32,7 +24,6 @@ float clipDepthToTexture(float z)
     return u_sceneInfo.y > 0.5 ? z * 0.5 + 0.5 : z;
 }
 
-// World position of the opaque scene at a screen uv.
 vec3 sceneWorld(vec2 uv, float depth)
 {
     float z = u_sceneInfo.y > 0.5 ? depth * 2.0 - 1.0 : depth;
@@ -56,10 +47,6 @@ float edgeFade(vec2 uv)
     return smoothstep(0.0, 0.07, min(e.x, e.y));
 }
 
-// Screen-space reflection: march the reflected ray through the opaque depth copy.
-// Returns rgb and a confidence in a (0 = missed).
-// Quality 1 / 2 / 3 = 12 / 20 / 30 steps, with longer, faster growing steps at low quality so
-// the reach stays about the same.
 vec4 traceReflection(vec3 origin, vec3 dir, float jitter, float quality)
 {
     vec3 cam = u_camera.xyz;
@@ -98,7 +85,6 @@ vec4 traceReflection(vec3 origin, vec3 dir, float jitter, float quality)
     vec4 result = vec4(0.0, 0.0, 0.0, 0.0);
     VV_BRANCH if (hitT > 0.0)
     {
-        // Refine between the last two samples.
         float lo = prevT;
         float hi = hitT;
         VV_LOOP for (int k = 0; k < 5; k++)
@@ -118,8 +104,6 @@ vec4 traceReflection(vec3 origin, vec3 dir, float jitter, float quality)
     }
     else
     {
-        // Missed everything on screen: if the reflected direction points at visible sky, use the
-        // rendered sky there (it already has the clouds, sun and moon).
         vec4 far = mul(u_mvp, vec4(origin + dir * 3000.0, 1.0));
         vec2 uv = ndcToUv(far.xy / max(far.w, 0.05));
         if (far.w > 0.05 && uv.x >= 0.0 && uv.y >= 0.0 && uv.x <= 1.0 && uv.y <= 1.0 && sceneDepthAt(uv) >= 0.99999)
@@ -128,7 +112,6 @@ vec4 traceReflection(vec3 origin, vec3 dir, float jitter, float quality)
     return result;
 }
 
-// Wave height: two travelling sines and one noise octave (cheap, smooth, no tiling).
 float waveHeight(vec2 p, float t)
 {
     float h = sin(dot(p, vec2(0.62, 0.78)) * 1.7 + t * 1.4) * 0.30;
@@ -147,8 +130,6 @@ void main()
     if (color.a < 0.1)
         discard;
 
-    // Water: still and flowing water tiles facing any way (pools, the sides of water and falling
-    // water all get the same water); when the tiles are unknown, upward blue-tinted faces.
     float up = smoothstep(0.85, 0.98, abs(n.y));
     float tileWater = max(isTile(v_layer, u_tiles.x), isTile(v_layer, u_tiles.z));
     float isWater = u_tiles.x >= 0.0 ? tileWater : up * step(v_tint.r * 1.25, v_tint.b);
@@ -156,7 +137,6 @@ void main()
     vec4 outColor;
     VV_BRANCH if (isWater < 0.5)
     {
-        // Glass, ice, slime...: lit like any block, blended normally.
 #ifndef VV_DX_NO_LIT
         vec3 lit = vvLit(tex.rgb, v_tint, n, v_rel, v_light, 0.0, 0.0, v_sunLight, v_skyLight);
 #else
@@ -170,8 +150,6 @@ void main()
         vec3 world = v_rel + u_camera.xyz;
         float dist = v_fog.x;
         float t = u_time.x;
-        // Surface frame: N faces the camera; T/B span the surface. Pools use the horizontal plane;
-        // falling water and water sides use the face plane, with the ripples flowing downward.
         bool top = abs(n.y) > 0.7;
         float envUnderwater = vvUnderwater();
         vec3 N = dot(n, viewDir) > 0.0 ? -n : n;
@@ -180,7 +158,6 @@ void main()
         bool fromAbove = top ? viewDir.y < 0.0 : envUnderwater < 0.5;
         vec2 pw = top ? world.xz : vec2(dot(world, T) * 1.6, world.y * 0.45 + t * 1.8);
 
-        // Gentle, smooth wave normal; calmer with distance (which also keeps far water from aliasing).
         float e = 0.08;
         float h0 = waveHeight(pw, t);
         float hx = waveHeight(pw + vec2(e, 0.0), t);
@@ -190,7 +167,6 @@ void main()
 
         float cosV = clamp(dot(-viewDir, wn), 0.0, 1.0);
         float fresnel = clamp(0.04 + 0.96 * vvPow(1.0 - cosV, 4.5), 0.0, 1.0);
-        // Reflections use a calmer normal so mirrored terrain stays readable, like Vibrant Visuals.
         vec3 calmN = normalize(mix(N, wn, 0.2));
         vec3 R = reflect(viewDir, calmN);
         if (top && fromAbove)
@@ -200,13 +176,10 @@ void main()
         float skyVisible = mix(0.15, 1.0, smoothstep(0.35, 0.9, skyl));
         bool scene = u_sceneInfo.x > 0.5;
 
-        // Reflection: screen-space first (skipped where the fresnel makes it invisible), then the
-        // analytic sky and clouds only where the trace did not fully cover the pixel.
         bool wantReflection = fromAbove && fresnel > 0.05;
         vec4 hit = vec4(0.0, 0.0, 0.0, 0.0);
 #ifndef VV_DX_NO_SSR
         float reflQuality = floor(S_REFLECTIONS + 0.5);
-        // Screen-space reflections only within 96 blocks: further out the water just mirrors the sky.
         VV_BRANCH if (wantReflection && top && scene && reflQuality > 0.5 && dist < 96.0)
         {
             float jitter = hash12(gl_FragCoord.xy + vec2(fract(t * 7.0) * 61.0, 0.0));
@@ -222,7 +195,6 @@ void main()
             reflection = vvTonemap(v_skyLight * 1.6) * skyVisible;
 #endif
 #ifndef VV_DX_NO_CLOUDS
-            // Clouds only show in reflections that point up from water under open sky.
             if (S_REFLECTED_CLOUDS > 0.5 && R.y > 0.01 && skyl > 0.3)
             {
                 vec4 cloud = vvClouds(world, R, 4000.0);
@@ -232,9 +204,6 @@ void main()
         }
         reflection = mix(reflection, hit.rgb, hit.a);
 
-        // Sun/moon glint: a soft core plus gently twinkling sparkles. The glint uses the smooth
-        // wave normal, a broad highlight and soft compression so it never turns into harsh,
-        // grainy pixels.
         vec3 L = lightDirection();
         vec3 Rg = reflect(viewDir, normalize(mix(N, wn, 0.7)));
         float rl = max(dot(Rg, L), 0.0);
@@ -249,11 +218,9 @@ void main()
         float g = (core + sparkle * 0.5) * glintVisible;
         vec3 glint = lightCol * (1.0 - exp(-g * 1.5)) * 1.15;
 
-        // What is under the surface.
         vec3 body;
         float alpha;
         vec3 lightLevel = v_skyLight * skyl * skyl + v_sunLight * 0.25 * skyl;
-        // Biome water colour (the vertex tint), relative to the default ocean colour.
         vec3 biomeTint = clamp(v_tint, vec3_splat(0.02), vec3_splat(1.0));
         vec3 biomeShift = clamp(biomeTint / WATER_DEFAULT_TINT, vec3_splat(0.3), vec3_splat(3.0));
         vec3 biomeExtinction = WATER_EXTINCTION * clamp(log(biomeTint) / log(WATER_DEFAULT_TINT), vec3_splat(0.3), vec3_splat(3.0));
@@ -270,7 +237,7 @@ void main()
             vec3 behindR = sceneWorld(uvR, dR);
             if (dR < 0.99999 && length(behindR - u_camera.xyz) < surfaceDist)
             {
-                uvR = uv; // something in front of the water: don't refract it in
+                uvR = uv;
                 dR = sceneDepthAt(uv);
                 behindR = sceneWorld(uv, dR);
             }
@@ -278,7 +245,7 @@ void main()
             if (!fromAbove)
                 thickness = min(thickness, 6.0) * 0.4;
             if (!top)
-                thickness = min(thickness, 1.5); // falling water is a thin sheet
+                thickness = min(thickness, 1.5);
             vec3 trans = exp(-biomeExtinction * thickness);
             vec3 below = sceneColorAt(uvR) * vec3(0.82, 1.0, 0.94);
             body = below * trans + scatterColor * (vec3_splat(1.0) - trans);
@@ -286,16 +253,12 @@ void main()
         }
         else
         {
-            // No scene copy: vanilla-style water colour, blended.
-            // (Simple light here: a second inlined vvLit makes the shader too big for FXC.)
             vec3 albedo = vvPow(clamp(tex.rgb * v_tint, 0.0, 1.0), vec3_splat(2.2));
             vec3 base = vvTonemap(albedo * (v_sunLight * 0.5 * skyl + v_skyLight * skyl * skyl + vec3_splat(0.02)));
             body = mix(saturateColor(base, 0.9), scatterColor, 0.45);
             alpha = clamp(mix(color.a, 1.0, fresnel * 0.7), 0.0, 1.0);
         }
 
-        // Looking up from underwater: total internal reflection outside Snell's window, which
-        // mirrors the underwater colour; inside the window the world above shows through.
         if (!fromAbove)
         {
             fresnel = cosV < 0.66 ? 1.0 : fresnel * 0.3;

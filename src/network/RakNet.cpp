@@ -168,8 +168,6 @@ namespace perlin {
             return static_cast<int>(recv(s, reinterpret_cast<char*>(buf), static_cast<int>(cap), 0));
         }
 
-        // The client GUID the way Cinnabar's transport makes it: fresh entropy with the two variant bits set to 10
-        // (0x8000... through 0xbfff...), so it never reads as a plain random or time-seeded value.
         int64_t ClientGuid(uint64_t entropy) {
             return static_cast<int64_t>((entropy & 0x3fffffffffffffffull) | 0x8000000000000000ull);
         }
@@ -615,7 +613,6 @@ namespace perlin {
         SetTimeout(s, 100);
         std::mt19937_64 rng(std::random_device{}());
         const auto ping = UnconnectedPing(ClientGuid(rng()));
-        // The game broadcasts on 19132; a world hosted on this machine answers on loopback.
         sockaddr_in targets[2]{};
         for (sockaddr_in& t : targets) {
             t.sin_family = AF_INET;

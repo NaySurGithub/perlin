@@ -1,5 +1,3 @@
-// The low-level part of the mod API (abi::Op 0x0F00-0x0FFF): camera, motion, model pose, world-space lines,
-// client-side blocks and packet filtering. Each override carries a lifetime and lapses on its own.
 #include "client/Perlin.hpp"
 
 #include "client/mods/ModManager.hpp"
@@ -194,7 +192,6 @@ namespace perlin {
                 return Status::BadArguments;
             if (!modLevel)
                 return Status::Unavailable;
-            // Level::SetBlock is used from the main thread elsewhere; the edits run there.
             auto edits = std::make_shared<std::vector<abi::ClientBlockEdit>>(in.edits);
             mods::ModManager::Instance().PostMain([this, edits] {
                 if (!modLevel)
@@ -255,7 +252,6 @@ namespace perlin {
             extra = glm::translate(extra, glm::vec3(-c.offsetX, -c.offsetY, -c.offsetZ));
             viewEffect = extra * viewEffect;
         }
-        // Expire what lapsed, then merge the live line sets for the entity renderer.
         modAdv.frameLines.clear();
         for (auto it = modAdv.lines.begin(); it != modAdv.lines.end();) {
             if (now >= it->second.until) {

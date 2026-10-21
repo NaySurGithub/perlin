@@ -36,7 +36,6 @@ namespace perlin::entity {
             }
         }
 
-        // Bedrock banner pattern codes -> texture names (textures/entity/banner/banner_<name>).
         const char* BannerPatternName(const std::string& code) {
             static const std::unordered_map<std::string, const char*> kNames = {
                 {"bl", "square_bottom_left"}, {"br", "square_bottom_right"}, {"tl", "square_top_left"}, {"tr", "square_top_right"},
@@ -53,7 +52,6 @@ namespace perlin::entity {
             return it == kNames.end() ? nullptr : it->second;
         }
 
-        // Base colour and layers of a banner block entity, as Java dye indices (white = 0).
         void BannerLayers(const BlockEntity* be, BlockEntityDraw& d) {
             int base = 15;
             std::vector<std::pair<std::string, int>> layers;
@@ -62,12 +60,10 @@ namespace perlin::entity {
                     base = be->base;
                 layers = be->patterns;
                 if (be->bannerType == 1 && layers.empty()) {
-                    // The ominous banner (Raid.getOminousBannerInstance).
                     base = 15;
                     layers = {{"mr", 6}, {"bs", 7}, {"cs", 8}, {"bo", 7}, {"ms", 0}, {"hh", 7}, {"mc", 7}, {"bo", 0}};
                 }
             } else if (const char* forced = std::getenv("PERLIN_PREVIEW_BANNER")) {
-                // Preview: "base;code:colour;code:colour..." in Bedrock colours.
                 std::string spec = forced;
                 size_t at = 0;
                 bool first = true;
@@ -137,8 +133,6 @@ namespace perlin::entity {
                 if (shortName == kSkulls[k])
                     skull = k;
             if (shortName == "standing_banner" || shortName == "wall_banner") {
-                // BannerRenderer: standing banners turn in 22.5 degree steps; wall banners hang on the
-                // wall behind them, facing away from it.
                 BlockEntityDraw d;
                 d.kind = BlockEntityDraw::Kind::Skull;
                 d.origin = {static_cast<double>(s.x), static_cast<double>(s.y), static_cast<double>(s.z)};
@@ -176,8 +170,6 @@ namespace perlin::entity {
                 continue;
             }
             if (skull >= 0) {
-                // facing_direction: 1 on the floor (turned by the block entity's Rotation), 2-5 on a
-                // wall, facing away from it.
                 BlockEntityDraw d;
                 d.kind = BlockEntityDraw::Kind::Skull;
                 d.skull = skull;
