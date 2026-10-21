@@ -1488,15 +1488,20 @@ namespace perlin {
             inputManager.TakeTyped();
             input.SetTextMode(true);
             if (live) {
-                live->OpenInventory();
-                invMountAsk = live->RidingUid() != 0 ? now : std::chrono::steady_clock::time_point{};
+                // Riding: the vanilla client asks to open the *mount's* inventory (target = the ridden entity).
+                if (live->RidingUid() != 0 && live->OpenMountInventory())
+                    invMountAsk = now;
+                else {
+                    live->OpenInventory();
+                    invMountAsk = std::chrono::steady_clock::time_point{};
+                }
             }
         }
         // Riding: if the plain open request didn't bring up the mount's container, ask the server about the mount itself.
         if (invShown && live && invMountAsk != std::chrono::steady_clock::time_point{} && now - invMountAsk > std::chrono::milliseconds(450)) {
             invMountAsk = std::chrono::steady_clock::time_point{};
             if (live->RidingUid() != 0 && !live->HorseOpen())
-                live->OpenMountInventory();
+                live->OpenInventory();  // the mount has no inventory: fall back to our own
         }
         if (!invShown)
             return;
@@ -6514,6 +6519,20 @@ namespace perlin {
                         const glm::dvec3 seat = entityRenderer.SeatPosition(seatVehicle);
                         player.SetRidePosition(true, seat.x, seat.y, seat.z);
                         seated = true;
+                    }
+                    {
+                        // Getting off a cushion leaves us inside its collision box, which read as "no room to stand" and
+                        // flickered into crawling. Lift onto its top when the ride ends.
+                        static bool wasSeated = false;
+                        static entity::Entity lastSeat;
+                        if (seated) {
+                            wasSeated = true;
+                            lastSeat = seatVehicle;
+                        } else if (wasSeated) {
+                            wasSeated = false;
+                            if (lastSeat.type == "minecraft:cushion")
+                                player.ModTeleport(lastSeat.pos.x, lastSeat.pos.y + 0.26, lastSeat.pos.z, false);
+                        }
                     }
                     if (!seated)
                         player.SetRidePosition(false, 0, 0, 0);

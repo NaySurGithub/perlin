@@ -1,4 +1,5 @@
 #pragma once
+#include <chrono>
 #include <functional>
 #include <glm/glm.hpp>
 
@@ -61,8 +62,11 @@ namespace perlin::entity {
         bool isItem = false;
         // Dropped items are simulated locally (blocks/tick) between the server's rare position updates.
         glm::dvec3 vel{0.0};
-        bool sleeping = false;
+        bool sleeping = false, sleepExt = false, sleepPlayer = false;
         bool simulated = false;
+        bool haveServerPos = false;
+        glm::dvec3 lastServerPos{0.0};
+        std::chrono::steady_clock::time_point lastServerAt{};
         std::string itemName;
         int itemCount = 0, itemAux = 0;
         uint32_t itemBlock = 0;
@@ -95,7 +99,7 @@ namespace perlin::entity {
         void Pickup(uint64_t rid, uint64_t collector);
         void SetViewer(uint64_t rid, glm::dvec3 feet);
         void SetMotion(uint64_t rid, glm::dvec3 velocity);
-        void SetSleeping(uint64_t rid, bool sleeping);
+        void SetSleeping(uint64_t rid, bool sleeping, bool playerFlag = false);
         void StepItems(const std::function<bool(int, int, int)>& solid);
         void Move(uint64_t rid, glm::dvec3 pos, float pitch, float yaw, float headYaw, bool onGround);
         void MoveDelta(uint64_t rid, const double* x, const double* y, const double* z, const float* pitch, const float* yaw,

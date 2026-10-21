@@ -38,7 +38,7 @@ namespace perlin::entity {
         ~EntityRenderer();
         void Initialize(RenderContext& renderer);
         std::pair<float, float> HitBox(const Entity& e) const;
-        glm::dvec3 SeatPosition(const Entity& vehicle) const;
+        glm::dvec3 SeatPosition(const Entity& vehicle, bool playerRider = true) const;
         bool CollisionBoxOf(const std::string& type, float& width, float& height) const { return assets.CollisionBox(type, width, height); }
         void SetItemRenderer(HandRenderer* items) { itemRenderer = items; }
         void ResolveSeats(std::vector<Entity>& entities) const;

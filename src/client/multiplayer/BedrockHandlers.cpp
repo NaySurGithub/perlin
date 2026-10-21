@@ -70,6 +70,7 @@ namespace perlin {
                     tracker.SetCrawling(rid, ((static_cast<uint64_t>(static_cast<int64_t>(n)) >> 50) & 1ull) != 0);
                     tracker.SetSleeping(rid, ((static_cast<uint64_t>(static_cast<int64_t>(n)) >> 11) & 1ull) != 0);
                     break;
+                case MetadataDictionaryEntryKey::PlayerFlags: tracker.SetSleeping(rid, (static_cast<int64_t>(n) & 2) != 0, true); break;
                 case MetadataDictionaryEntryKey::Scale: tracker.SetScale(rid, static_cast<float>(n)); break;
                 case MetadataDictionaryEntryKey::Variant: variant = static_cast<int>(n); break;
                 case MetadataDictionaryEntryKey::ExperienceValue: {
@@ -1044,6 +1045,8 @@ namespace perlin {
                         ownFlagWords[0] = static_cast<uint64_t>(static_cast<int64_t>(n));
                     else if (m.key == MetadataDictionaryEntryKey::FlagsExtended)
                         ownFlagWords[1] = static_cast<uint64_t>(static_cast<int64_t>(n));
+                    else if (m.key == MetadataDictionaryEntryKey::PlayerFlags)
+                        ownPlayerFlags = static_cast<int64_t>(n);
                     else if (m.key == MetadataDictionaryEntryKey::Scale)
                         ownScale = static_cast<float>(n);
                     else if (m.key == MetadataDictionaryEntryKey::BoundingboxWidth)

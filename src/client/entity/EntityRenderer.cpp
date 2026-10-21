@@ -218,14 +218,17 @@ namespace perlin::entity {
         renderer = &r;
     }
 
-    glm::dvec3 EntityRenderer::SeatPosition(const Entity& v) const {
+    glm::dvec3 EntityRenderer::SeatPosition(const Entity& v, bool playerRider) const {
         float sx = 0, sy = 0, sz = 0;
         if (!assets.Seat(v.type, sx, sy, sz))
             sy = -0.2f;
         const double yawRad = glm::radians(static_cast<double>(v.yaw));
         const glm::dvec3 forward(-std::sin(yawRad), 0.0, std::cos(yawRad)), side(std::cos(yawRad), 0.0, std::sin(yawRad));
         const bool rails = v.type.find("boat") != std::string::npos || v.type.find("minecart") != std::string::npos;
-        const double lift = rails ? 0.1 : 0.0;
+        double lift = rails ? 0.1 : 0.0;
+        // The seat is where the rider's hips go; a player's feet hang below it (cushions are low, so a smaller drop).
+        if (playerRider && !rails)
+            lift -= v.type == "minecraft:cushion" ? 0.35 : 0.6;
         return v.pos + side * static_cast<double>(sx) + forward * static_cast<double>(sz) + glm::dvec3(0.0, sy + lift, 0.0);
     }
 
@@ -241,7 +244,7 @@ namespace perlin::entity {
                 continue;
             const Entity& v = entities[it->second];
             const bool rails = v.type.find("boat") != std::string::npos || v.type.find("minecart") != std::string::npos;
-            e.pos = SeatPosition(v);
+            e.pos = SeatPosition(v, e.isPlayer);
             e.flags |= flag::Riding;
             e.onGround = true;
             if (rails)
@@ -871,8 +874,8 @@ namespace perlin::entity {
                           << " pos " << xf.position.x << "," << xf.position.y << "," << xf.position.z << std::endl;
         if (e.isPlayer && e.Has(flag::Riding) && v.swimAmount < 0.01f && v.lieAmount < 0.01f) {
             // Seated pose on a mount (same angles as Java's riding pose): legs forward and splayed, arms held out.
-            pose["rightleg"].rotation = {-81.0f, 18.0f, 4.5f};
-            pose["leftleg"].rotation = {-81.0f, -18.0f, -4.5f};
+            pose["rightleg"].rotation = {-81.0f, -18.0f, -4.5f};
+            pose["leftleg"].rotation = {-81.0f, 18.0f, 4.5f};
             pose["rightarm"].rotation.x += -36.0f;
             pose["leftarm"].rotation.x += -36.0f;
         }
@@ -1909,7 +1912,7 @@ namespace perlin::entity {
                     continue;
                 }
             }
-            if (in.blobShadows && !e.Has(flag::Invisible) && !(e.isSelf && in.firstPerson)) {
+            if (in.blobShadows && !e.Has(flag::Invisible) && e.type != "minecraft:cushion" && !(e.isSelf && in.firstPerson)) {
                 if (e.isItem) {
                     DrawShadow(v.pos, 0.15f, 0.75f, in);
                 } else if (!e.dying || v.deathTime < 0.9f) {
@@ -2624,40 +2627,57 @@ namespace perlin::entity {
             };
             const glm::vec3 base(static_cast<float>(d.origin.x), static_cast<float>(d.origin.y), static_cast<float>(d.origin.z));
             if (d.kind == BlockEntityDraw::Kind::Bed) {
+                // Java 26.x bed, built from the jar's block models: per piece a 16x6x16 mattress plus two 3x3x3 legs.
+                // Local frame: the head end points north (-z); the whole bed is then turned to the Bedrock direction.
                 auto& batch = beds[std::clamp(d.color, 0, 15)];
-                const auto map = [&](float x, float y, float z) {
-                    float ox, oz;
-                    rotate(x / 16.0f, y / 16.0f, ox, oz);
-                    return base + glm::vec3(ox, (9.0f - z) / 16.0f, oz);
+                struct BFace { int dir; float u0, v0, u1, v1; int tile; };  // dir: 0 down 1 up 2 north 3 south 4 west 5 east
+                struct BBox { float from[3], to[3]; std::vector<BFace> faces; };
+                // tiles: 0 foot_up 1 foot_south 2 foot_east 3 foot_west | 4 head_up 5 head_north 6 head_east 7 head_west | 8 down
+                static const BBox kFoot[] = {
+                    {{0, 3, 0}, {16, 9, 16}, {{0, 0, 0, 16, 16, 8}, {1, 0, 0, 16, 16, 0}, {3, 0, 7, 16, 13, 1}, {4, 0, 7, 16, 13, 3}, {5, 0, 7, 16, 13, 2}}},
+                    {{0, 0, 13}, {3, 3, 16}, {{0, 7, 13, 10, 16, 3}, {2, 10, 13, 13, 16, 3}, {3, 0, 13, 3, 16, 1}, {4, 13, 13, 16, 16, 3}, {5, 3, 13, 6, 16, 1}}},
+                    {{13, 0, 13}, {16, 3, 16}, {{0, 6, 13, 9, 16, 2}, {2, 3, 13, 6, 16, 2}, {3, 13, 13, 16, 16, 1}, {4, 10, 13, 13, 16, 1}, {5, 0, 13, 3, 16, 2}}},
                 };
-                for (const BedCube& c : kBedCubes) {
-                    const float x0 = c.o[0], y0 = c.o[1], z0 = c.o[2], sx = c.s[0], sy = c.s[1], sz = c.s[2];
-                    const float x1 = x0 + sx, y1 = y0 + sy, z1 = z0 + sz;
-                    const float u = c.uv[0], v = c.uv[1];
-                    struct Face {
-                        glm::vec3 p[4];
-                        float u0, v0, u1, v1;
-                        float shade;
-                    };
-                    const float tw = 64.0f, th = 64.0f;
-                    const auto face = [&](glm::vec3 tl, glm::vec3 tr, glm::vec3 br, glm::vec3 bl, float fu, float fv, float fw, float fh, float shade) {
-                        const uint32_t color = PackColor(light * shade);
-                        const uint32_t i0 = static_cast<uint32_t>(batch.first.size());
-                        const float uu0 = fu / tw, vv0 = fv / th, uu1 = (fu + fw) / tw, vv1 = (fv + fh) / th;
-                        batch.first.push_back({tl.x, tl.y, tl.z, color, uu0, vv0});
-                        batch.first.push_back({tr.x, tr.y, tr.z, color, uu1, vv0});
-                        batch.first.push_back({br.x, br.y, br.z, color, uu1, vv1});
-                        batch.first.push_back({bl.x, bl.y, bl.z, color, uu0, vv1});
-                        for (uint32_t k : {0u, 1u, 2u, 0u, 2u, 3u})
-                            batch.second.push_back(i0 + k);
-                    };
-                    face(map(x1, y1, z0), map(x0, y1, z0), map(x0, y0, z0), map(x1, y0, z0), u + sz, v + sz, sx, sy, 1.0f);
-                    face(map(x0, y1, z1), map(x1, y1, z1), map(x1, y0, z1), map(x0, y0, z1), u + 2 * sz + sx, v + sz, sx, sy, 0.5f);
-                    face(map(x0, y1, z0), map(x0, y1, z1), map(x0, y0, z1), map(x0, y0, z0), u, v + sz, sz, sy, 0.8f);
-                    face(map(x1, y1, z1), map(x1, y1, z0), map(x1, y0, z0), map(x1, y0, z1), u + sz + sx, v + sz, sz, sy, 0.8f);
-                    face(map(x0, y1, z0), map(x1, y1, z0), map(x1, y1, z1), map(x0, y1, z1), u + sz, v, sx, sz, 0.9f);
-                    face(map(x0, y0, z1), map(x1, y0, z1), map(x1, y0, z0), map(x0, y0, z0), u + sz + sx, v, sx, sz, 0.6f);
-                }
+                static const BBox kHead[] = {
+                    {{0, 3, 0}, {16, 9, 16}, {{0, 0, 0, 16, 16, 8}, {1, 0, 0, 16, 16, 4}, {2, 0, 7, 16, 13, 5}, {4, 0, 7, 16, 13, 7}, {5, 0, 7, 16, 13, 6}}},
+                    {{0, 0, 0}, {3, 3, 3}, {{0, 6, 13, 9, 16, 7}, {2, 13, 13, 16, 16, 5}, {3, 3, 13, 6, 16, 7}, {4, 0, 13, 3, 16, 7}, {5, 10, 13, 13, 16, 5}}},
+                    {{13, 0, 0}, {16, 3, 3}, {{0, 7, 13, 10, 16, 6}, {2, 0, 13, 3, 16, 5}, {3, 10, 13, 13, 16, 6}, {4, 3, 13, 6, 16, 5}, {5, 13, 13, 16, 16, 6}}},
+                };
+                const float kShade[6] = {0.5f, 1.0f, 0.8f, 0.8f, 0.6f, 0.6f};
+                const auto emitPiece = [&](const BBox* boxes, int count, float zOff) {
+                    for (int bi = 0; bi < count; bi++) {
+                        const BBox& bx = boxes[bi];
+                        const float x0 = bx.from[0], y0 = bx.from[1], z0 = bx.from[2], x1 = bx.to[0], y1 = bx.to[1], z1 = bx.to[2];
+                        const auto P = [&](float x, float y, float z) {
+                            float ox, oz;
+                            rotate(x / 16.0f, z / 16.0f + zOff, ox, oz);
+                            return base + glm::vec3(ox, y / 16.0f, oz);
+                        };
+                        for (const BFace& f : bx.faces) {
+                            glm::vec3 tl, tr, br, bl;
+                            switch (f.dir) {
+                            case 0: tl = P(x0, y0, z1); tr = P(x1, y0, z1); br = P(x1, y0, z0); bl = P(x0, y0, z0); break;
+                            case 1: tl = P(x0, y1, z0); tr = P(x1, y1, z0); br = P(x1, y1, z1); bl = P(x0, y1, z1); break;
+                            case 2: tl = P(x1, y1, z0); tr = P(x0, y1, z0); br = P(x0, y0, z0); bl = P(x1, y0, z0); break;
+                            case 3: tl = P(x0, y1, z1); tr = P(x1, y1, z1); br = P(x1, y0, z1); bl = P(x0, y0, z1); break;
+                            case 4: tl = P(x0, y1, z0); tr = P(x0, y1, z1); br = P(x0, y0, z1); bl = P(x0, y0, z0); break;
+                            default: tl = P(x1, y1, z1); tr = P(x1, y1, z0); br = P(x1, y0, z0); bl = P(x1, y0, z1); break;
+                            }
+                            const float tu = static_cast<float>((f.tile % 4) * 16), tv = static_cast<float>((f.tile / 4) * 16);
+                            const float uu0 = (tu + f.u0) / 64.0f, vv0 = (tv + f.v0) / 48.0f, uu1 = (tu + f.u1) / 64.0f, vv1 = (tv + f.v1) / 48.0f;
+                            const uint32_t color = PackColor(light * kShade[f.dir]);
+                            const uint32_t i0 = static_cast<uint32_t>(batch.first.size());
+                            batch.first.push_back({tl.x, tl.y, tl.z, color, uu0, vv0});
+                            batch.first.push_back({tr.x, tr.y, tr.z, color, uu1, vv0});
+                            batch.first.push_back({br.x, br.y, br.z, color, uu1, vv1});
+                            batch.first.push_back({bl.x, bl.y, bl.z, color, uu0, vv1});
+                            for (uint32_t k : {0u, 1u, 2u, 0u, 2u, 3u})
+                                batch.second.push_back(i0 + k);
+                        }
+                    }
+                };
+                emitPiece(kFoot, 3, 0.0f);
+                emitPiece(kHead, 3, -1.0f);
                 continue;
             }
             if (d.kind == BlockEntityDraw::Kind::Skull) {
@@ -2825,7 +2845,7 @@ namespace perlin::entity {
             if (batch.overlay)
                 submit(batch.v, batch.i, TextureByPath(texture), -1.0f);
         for (auto& [color, batch] : beds)
-            submit(batch.first, batch.second, TextureByPath(std::string("textures/entity/bed/") + kDyeNames[color]), 0.0f);
+            submit(batch.first, batch.second, TextureByPath(std::string("bed_") + kDyeNames[color] + ".png"), 0.0f);
         submit(text.first, text.second, fontTexture, 0.1f);
     }
 }

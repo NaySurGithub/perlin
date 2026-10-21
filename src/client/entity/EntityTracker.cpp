@@ -97,6 +97,27 @@ namespace perlin::entity {
         byUnique.erase(it);
     }
 
+    namespace {
+        // The server is authoritative: adopt its position and learn the item's velocity from successive updates, so
+        // the local simulation can fill the gaps when updates are sparse (and never runs when they come every tick).
+        void ItemServerUpdate(Entity& e, const glm::dvec3& target, bool onGround) {
+            const auto now = std::chrono::steady_clock::now();
+            if (e.haveServerPos) {
+                const double dt = std::chrono::duration<double>(now - e.lastServerAt).count();
+                if (dt > 0.001 && dt < 0.6)
+                    e.vel = (target - e.lastServerPos) / std::max(1.0, dt * 20.0);
+            }
+            if (onGround)
+                e.vel = glm::dvec3(0.0);
+            e.lastServerPos = target;
+            e.haveServerPos = true;
+            e.lastServerAt = now;
+            e.pos = target;
+            e.onGround = onGround;
+            e.moveSerial++;
+        }
+    }
+
     void EntityTracker::Move(uint64_t rid, glm::dvec3 pos, float pitch, float yaw, float headYaw, bool onGround) {
         std::lock_guard lock(mutex);
         const auto it = entities.find(rid);
@@ -104,14 +125,8 @@ namespace perlin::entity {
             return;
         Entity& e = it->second;
         if (e.isItem && e.simulated) {
-            // Keep our own smooth simulation unless the server disagrees noticeably.
-            if (glm::length(pos - e.pos) < 0.6) {
-                e.pos += (pos - e.pos) * 0.35;
-                if (onGround)
-                    e.vel = glm::dvec3(0.0);
-                return;
-            }
-            e.vel = glm::dvec3(0.0);
+            ItemServerUpdate(e, pos, onGround);
+            return;
         }
         const glm::dvec3 next = e.isPlayer ? glm::dvec3(pos.x, pos.y - kPlayerEye, pos.z) : pos;
         if (e.dying && e.isPlayer && glm::dot(next - e.pos, next - e.pos) > 2.25)
@@ -132,14 +147,8 @@ namespace perlin::entity {
             return;
         Entity& e = it->second;
         if (e.isItem && e.simulated) {
-            const glm::dvec3 target(x ? *x : e.pos.x, y ? *y : e.pos.y, z ? *z : e.pos.z);
-            if (glm::length(target - e.pos) < 0.6) {
-                e.pos += (target - e.pos) * 0.35;
-                if (onGround)
-                    e.vel = glm::dvec3(0.0);
-                return;
-            }
-            e.vel = glm::dvec3(0.0);
+            ItemServerUpdate(e, glm::dvec3(x ? *x : e.pos.x, y ? *y : e.pos.y, z ? *z : e.pos.z), onGround);
+            return;
         }
         if (x) e.pos.x = *x;
         if (y) e.pos.y = *y;
@@ -332,6 +341,8 @@ namespace perlin::entity {
         for (auto& [rid, e] : entities) {
             if (!e.isItem || !e.simulated)
                 continue;
+            if (e.haveServerPos && std::chrono::steady_clock::now() - e.lastServerAt < std::chrono::milliseconds(70))
+                continue;  // the server is updating this item every tick; don't fight it
             e.vel.y -= 0.04;
             glm::dvec3 p = e.pos;
             bool grounded = false;
@@ -367,10 +378,12 @@ namespace perlin::entity {
 }
 
 namespace perlin::entity {
-    void EntityTracker::SetSleeping(uint64_t rid, bool sleeping) {
+    void EntityTracker::SetSleeping(uint64_t rid, bool sleeping, bool playerFlag) {
         std::lock_guard lock(mutex);
         const auto it = entities.find(rid);
-        if (it != entities.end())
-            it->second.sleeping = sleeping;
+        if (it == entities.end())
+            return;
+        (playerFlag ? it->second.sleepPlayer : it->second.sleepExt) = sleeping;
+        it->second.sleeping = it->second.sleepExt || it->second.sleepPlayer;
     }
 }

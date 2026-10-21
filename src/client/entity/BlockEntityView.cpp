@@ -116,7 +116,7 @@ namespace perlin::entity {
                 BlockEntityDraw d;
                 d.kind = BlockEntityDraw::Kind::Bed;
                 d.origin = {static_cast<double>(fx), static_cast<double>(s.y), static_cast<double>(fz)};
-                d.yaw = BedYaw(direction);
+                d.yaw = BedYaw(direction + 2);  // the model's head end points north; turn it to this bed's head direction
                 int color = -1;
                 if (store.Get(s.x, s.y, s.z, be))
                     color = be.color;

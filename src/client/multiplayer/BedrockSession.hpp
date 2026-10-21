@@ -349,7 +349,7 @@ void RequestRespawn();
         bool IsFlying() const { return isFlying; }
         // Entity flag 32 (gliding) as last reported by the server for the local player.
         // Actor flag 75 (sleeping) lives in the extended flag word.
-        bool Sleeping() const { std::lock_guard lock(attrMutex); return ((ownFlagWords[1] >> 11) & 1ull) != 0; }
+        bool Sleeping() const { std::lock_guard lock(attrMutex); return ((ownFlagWords[1] >> 11) & 1ull) != 0 || (ownPlayerFlags & 2) != 0; }
         bool SendStopSleeping() { return SendPlayerAction(6, 0, 0, 0, 0); }
         bool ServerGliding() const {
             std::lock_guard<std::mutex> lk(attrMutex);
@@ -799,6 +799,7 @@ void RequestRespawn();
         mutable std::mutex attrMutex;
         std::map<std::string, float> ownAttributes;
         std::array<uint64_t, 2> ownFlagWords{};
+        int64_t ownPlayerFlags = 0;
         float ownScale = 1.0f, ownWidth = 0.6f, ownHeight = 1.8f;
         int predictionSyncCountdown = -1;
         bool flying = false;

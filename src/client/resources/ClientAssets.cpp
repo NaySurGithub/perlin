@@ -16,7 +16,7 @@ namespace fs = std::filesystem;
 
 namespace perlin::clientassets {
     namespace {
-        constexpr const char* kMarker = ".ready3";
+        constexpr const char* kMarker = ".ready4";
         const std::string kBase = "assets/minecraft/textures/";
 
         struct Image {
@@ -162,6 +162,28 @@ namespace perlin::clientassets {
             for (int i = 0; i < 5; i++)
                 Paste(icons, gui(std::string("sprites/container/slot/") + names[i] + ".png"), 16 * i, 0);
             emit("ui_slot_icons.png", icons);
+        }
+        {
+            // Java bed pieces, one 64x48 sheet per dye (4x3 tiles of 16px): foot up/south/east/west, head up/north/east/west, down.
+            static const char* const kJarDye[16] = {"white", "orange", "magenta", "light_blue", "yellow", "lime", "pink", "gray",
+                                                    "light_gray", "cyan", "purple", "blue", "brown", "green", "red", "black"};
+            static const char* const kOutDye[16] = {"white", "orange", "magenta", "light_blue", "yellow", "lime", "pink", "gray",
+                                                    "silver", "cyan", "purple", "blue", "brown", "green", "red", "black"};
+            const Image down = jar.Load(kBase + "block/bed_down.png");
+            const Image headNorth = jar.Load(kBase + "block/bed_head_north.png");
+            for (int c = 0; c < 16; c++) {
+                const std::string base = kBase + "block/" + kJarDye[c] + "_bed_";
+                Image sheet = Blank(64, 48);
+                const char* foot[4] = {"foot_up", "foot_south", "foot_east", "foot_west"};
+                for (int i = 0; i < 4; i++)
+                    Paste(sheet, jar.Load(base + foot[i] + ".png"), 16 * i, 0);
+                Paste(sheet, jar.Load(base + "head_up.png"), 0, 16);
+                Paste(sheet, headNorth, 16, 16);
+                Paste(sheet, jar.Load(base + "head_east.png"), 32, 16);
+                Paste(sheet, jar.Load(base + "head_west.png"), 48, 16);
+                Paste(sheet, down, 0, 32);
+                emit(std::string("bed_") + kOutDye[c] + ".png", sheet);
+            }
         }
         emit("ui_horse.png", Crop(gui("container/horse.png"), 0, 0, 176, 166));
         emit("ui_horse_slot.png", Crop(gui("container/horse.png"), 7, 83, 18, 18));
