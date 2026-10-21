@@ -27,6 +27,9 @@ namespace perlin {
         SpriteUi,     // HUD sprites such as the crosshair
         EntityShadow, // entity meshes into the pack's shadow map
         Bloom,
+        Upscale, // render-scale reconstruction (bicubic / edge-adaptive / sharpen)
+        Temporal, // temporal upscaler
+        FrameGen, // generated frames (world reprojection)
         Count
     };
 

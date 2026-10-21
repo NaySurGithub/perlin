@@ -105,6 +105,13 @@ namespace perlin {
         int cameraMedium = 0;            // what the camera eye is in: 0 air, 1 water, 2 lava
         float waterSurfaceAbove = 0.0f;  // underwater: height of the water surface above the eye, in blocks
         float menuBlur = 0.0f;
+        float renderScale = 1.0f;       // the world is drawn at this fraction of the window size, then rebuilt (upscaler)
+        int upscaler = 0;               // 0 bilinear, 1 bicubic, 2 FSR 1 style edge-adaptive, 3 temporal
+        float view[16];                 // the camera's view and projection (OpenGL clip convention), without any jitter
+        float projection[16];
+        int frameGen = 1;               // total frame multiplier: 1 off, 2..4 = generated frames between real ones
+        bool teleported = false;        // the camera jumped (respawn, dimension change): temporal history and generation restart
+        float upscaleSharpness = 0.0f;  // 0..1, contrast-adaptive sharpen after the upscale
         bool crosshair = false;
         int guiScale = 0;
         float screenTint[4];
@@ -137,6 +144,8 @@ namespace perlin {
 
         virtual void BeginFrame(const FrameParams& params) = 0;
         virtual void EndFrame() = 0;
+        // Frame generation: after EndFrame, present generated frame `index` of `total` (1..total-1). False when none can be made.
+        virtual bool PresentGenerated(int /*index*/, int /*total*/) { return false; }
         virtual void RequestScreenshot(const std::string& path) = 0;
 
         virtual void UploadCrosshair(const Texture& icons) = 0;

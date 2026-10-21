@@ -1,6 +1,7 @@
 #pragma once
 #include "network/FriendWorld.hpp"
 #include "network/LanDiscovery.hpp"
+#include <array>
 #include <mutex>
 #include "client/audio/SoundSystem.hpp"
 #include "client/audio/Subtitles.hpp"
@@ -303,6 +304,25 @@ namespace perlin {
         float modDt = 0.0f;
         int modGuiW = 0, modGuiH = 0;
         std::mutex modMutex;
+        // Low-level mod overrides (Op::CameraControl and friends). All of them lapse by themselves.
+        struct ModAdvanced {
+            std::mutex mutex;
+            abi::CameraControlState camera;
+            std::chrono::steady_clock::time_point cameraUntil{};
+            abi::ModelPose pose;
+            std::chrono::steady_clock::time_point poseUntil{};
+            struct DrawSet {
+                std::chrono::steady_clock::time_point until{};
+                std::vector<entity::EntityRenderer::FrameIn::ModLine> lines;
+            };
+            std::map<std::string, DrawSet> lines; // by plugin
+            std::map<std::string, std::pair<std::chrono::steady_clock::time_point, std::vector<uint32_t>>> drops;
+            std::array<float, 16> viewProjection{};
+            std::vector<entity::EntityRenderer::FrameIn::ModLine> frameLines; // merged copy handed to the entity renderer
+        } modAdv;
+        void SetupModAdvanced();
+        // Called once per frame before the camera matrix is built: expires overrides, applies the camera ones.
+        void ApplyModCamera(float& fov, glm::mat4& viewEffect);
         std::vector<std::pair<std::string, abi::EventHttp>> modHttp;
         std::atomic<int> modHttpActive{0};
         std::vector<abi::EventSound> modSounds;

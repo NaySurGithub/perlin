@@ -762,7 +762,7 @@ namespace perlin::ui {
         // rebuild) ends in bgfx running out of buffer handles. Past a generous limit, drop every
         // compiled mesh; RmlUi recompiles what is still on screen on the next draw.
         static int frameCounter = 0;
-        if (gRenderer && gRenderer->UiLiveMeshes() > 9000) {
+        if (gRenderer && gRenderer->UiLiveMeshes() > 3500) {
             static int lastRelease = -1000;
             if (++frameCounter - lastRelease > 120) {
                 lastRelease = frameCounter;

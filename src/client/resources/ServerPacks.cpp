@@ -139,6 +139,7 @@ namespace perlin {
                 return false;
             }
             const mz_uint count = mz_zip_reader_get_num_files(&zip);
+            size_t extracted = 0, failed = 0;
             for (mz_uint i = 0; i < count; i++) {
                 mz_zip_archive_file_stat st;
                 if (!mz_zip_reader_file_stat(&zip, i, &st) || mz_zip_reader_is_file_a_directory(&zip, i))
@@ -149,13 +150,26 @@ namespace perlin {
                     continue;
                 size_t size = 0;
                 void* data = mz_zip_reader_extract_to_heap(&zip, i, &size, 0);
-                if (!data)
+                if (!data) {
+                    // Unsupported compression (miniz reads stored and deflate only) or a damaged entry: its content is missing.
+                    if (failed++ < 3)
+                        std::cout << "[packs] cannot extract " << name << " from " << zipPath << std::endl;
                     continue;
+                }
+                extracted++;
                 WriteFileBytes(out / name, std::vector<uint8_t>(static_cast<uint8_t*>(data), static_cast<uint8_t*>(data) + size));
                 mz_free(data);
             }
             mz_zip_reader_end(&zip);
+            std::cout << "[packs] extracted " << extracted << " of " << count << " entries (" << failed << " failed)" << std::endl;
             const fs::path packRoot = FindPackRoot(out);
+            {
+                std::error_code ls;
+                std::string top;
+                for (const auto& e : fs::directory_iterator(packRoot, ls))
+                    top += (top.empty() ? "" : ", ") + e.path().filename().string() + (e.is_directory() ? "/" : "");
+                std::cout << "[packs] pack root holds: " << top << std::endl;
+            }
             if (!contentKey.empty())
                 DecryptPack(packRoot, contentKey);
             std::ofstream(ready) << packRoot.string();

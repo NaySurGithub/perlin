@@ -369,6 +369,45 @@ namespace perlin {
         }
     }
 
+    void LocalPlayer::ModMotion(bool add, double x, double y, double z, bool ax, bool ay, bool az) {
+        std::lock_guard lock(modMutex);
+        if (modQueue.size() < 256)
+            modQueue.push_back({false, add, false, ax, ay, az, x, y, z});
+    }
+
+    void LocalPlayer::ModTeleport(double x, double y, double z, bool keepVelocity) {
+        std::lock_guard lock(modMutex);
+        if (modQueue.size() < 256)
+            modQueue.push_back({true, false, keepVelocity, true, true, true, x, y, z});
+    }
+
+    void LocalPlayer::ApplyModCommands() {
+        std::vector<ModCommand> list;
+        {
+            std::lock_guard lock(modMutex);
+            list.swap(modQueue);
+        }
+        for (const ModCommand& c : list) {
+            if (c.teleport) {
+                state.x = c.x;
+                state.y = c.y;
+                state.z = c.z;
+                state.hasBox = false;
+                if (!c.keep)
+                    state.vx = state.vy = state.vz = 0.0;
+                previous = state;
+                history.clear();
+                continue;
+            }
+            if (c.ax)
+                state.vx = c.add ? state.vx + c.x : c.x;
+            if (c.ay)
+                state.vy = c.add ? state.vy + c.y : c.y;
+            if (c.az)
+                state.vz = c.add ? state.vz + c.z : c.z;
+        }
+    }
+
     void LocalPlayer::Update(BedrockSession& session, const InputManager& input, Camera& camera,
                              const BlockLibrary& blocks, float dt) {
         BedrockSession::PlayerPose pose = session.GetPose();
@@ -404,6 +443,7 @@ namespace perlin {
         } else {
             ApplyServerMotion(session, camera);
         }
+        ApplyModCommands();
 
         const auto now = std::chrono::steady_clock::now();
         const bool spectator = session.NoClip() || session.Spectator();

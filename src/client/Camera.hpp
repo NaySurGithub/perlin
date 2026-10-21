@@ -55,6 +55,13 @@ namespace perlin {
             return glm::perspective(glm::radians(fov), aspect, nearPlane, farPlane) * view;
         }
 
+        void Matrices(glm::mat4& view, glm::mat4& proj) const {
+            const glm::vec3 dir = ViewDirection();
+            const glm::vec3 eye = EyePosition();
+            view = viewEffect * glm::lookAt(eye, eye + dir, Up());
+            proj = glm::perspective(glm::radians(fov), aspect, nearPlane, farPlane);
+        }
+
         glm::mat4 ViewProjection() const {
             const glm::vec3 dir = ViewDirection();
             const glm::vec3 eye = EyePosition();

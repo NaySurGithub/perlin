@@ -361,6 +361,98 @@ namespace perlin::attachable {
         }
     }
 
+
+    Geometry VoxelizeSkinLayers(const Geometry& source, const uint8_t* rgba, int width, int height) {
+        Geometry out = source;
+        if (!rgba || width <= 0 || height <= 0)
+            return out;
+        static const char* const kLayers[] = {"hat", "jacket", "leftsleeve", "rightsleeve", "leftpants", "rightpants"};
+        const float sx = static_cast<float>(width) / source.textureWidth, sy = static_cast<float>(height) / source.textureHeight;
+        const auto alphaAt = [&](int x, int y) -> int {
+            if (x < 0 || y < 0 || x >= width || y >= height)
+                return 0;
+            return rgba[(static_cast<size_t>(y) * static_cast<size_t>(width) + static_cast<size_t>(x)) * 4 + 3];
+        };
+        for (Bone& bone : out.bones) {
+            bool layer = false;
+            for (const char* name : kLayers)
+                layer = layer || bone.name == name;
+            if (!layer || bone.cubes.empty())
+                continue;
+            std::vector<Cube> kept;
+            for (const Cube& c : bone.cubes) {
+                if (!c.boxUv || c.hasRotation || c.size.x < 1 || c.size.y < 1 || c.size.z < 1) {
+                    kept.push_back(c);
+                    continue;
+                }
+                const float w = c.size.x, h = c.size.y, d = c.size.z;
+                const float inflate = c.inflate > 0.0f ? c.inflate : bone.inflate;
+                const float thickness = std::max(0.5f, inflate * 2.0f);
+                // The un-inflated box: the extrusion grows outward from it.
+                const float x0 = c.origin.x, y0 = c.origin.y, z0 = c.origin.z, x1 = x0 + w, y1 = y0 + h, z1 = z0 + d;
+                struct FaceDef { glm::vec3 tl, tr, br, bl, n; };
+                const FaceDef faces[6] = {
+                    {{x1, y1, z1}, {x1, y1, z0}, {x1, y0, z0}, {x1, y0, z1}, {1, 0, 0}},
+                    {{x0, y1, z0}, {x0, y1, z1}, {x0, y0, z1}, {x0, y0, z0}, {-1, 0, 0}},
+                    {{x1, y1, z0}, {x0, y1, z0}, {x0, y0, z0}, {x1, y0, z0}, {0, 0, -1}},
+                    {{x0, y1, z1}, {x1, y1, z1}, {x1, y0, z1}, {x0, y0, z1}, {0, 0, 1}},
+                    {{x1, y1, z1}, {x0, y1, z1}, {x0, y1, z0}, {x1, y1, z0}, {0, 1, 0}},
+                    {{x1, y0, z0}, {x0, y0, z0}, {x0, y0, z1}, {x1, y0, z1}, {0, -1, 0}},
+                };
+                const float u = c.uv.x, v = c.uv.y;
+                const glm::vec2 uvOrigin[6] = {{u, v + d}, {u + d + w, v + d}, {u + d, v + d}, {u + d + w + d, v + d}, {u + d, v}, {u + d + w, v}};
+                const glm::vec2 uvSize[6] = {{d, h}, {d, h}, {w, h}, {w, h}, {w, d}, {w, d}};
+                const bool mirrored = !c.mirror; // the player renderer draws with mirrored textures (see BuildMesh callers)
+                for (int i = 0; i < 6; i++) {
+                    const int fi = mirrored && i < 2 ? 1 - i : i;
+                    const FaceDef& f = faces[i];
+                    const int sw = static_cast<int>(uvSize[fi].x), sh = static_cast<int>(uvSize[fi].y);
+                    const glm::vec3 ex = (f.tr - f.tl) / static_cast<float>(sw), ey = (f.bl - f.tl) / static_cast<float>(sh);
+                    const glm::vec3 up = f.n * thickness;
+                    const auto texel = [&](int pi, int pj) { // pixel of this face region, honouring the horizontal flip
+                        const int px = static_cast<int>(uvOrigin[fi].x * sx) + (mirrored ? sw - 1 - pi : pi) * static_cast<int>(sx);
+                        const int py = static_cast<int>(uvOrigin[fi].y * sy) + pj * static_cast<int>(sy);
+                        return glm::ivec2(px, py);
+                    };
+                    const auto opaque = [&](int pi, int pj) {
+                        if (pi < 0 || pj < 0 || pi >= sw || pj >= sh)
+                            return false;
+                        const glm::ivec2 t = texel(pi, pj);
+                        return alphaAt(t.x, t.y) > 0;
+                    };
+                    for (int pj = 0; pj < sh; pj++)
+                        for (int pi = 0; pi < sw; pi++) {
+                            if (!opaque(pi, pj))
+                                continue;
+                            const glm::ivec2 t = texel(pi, pj);
+                            const glm::vec2 centre((static_cast<float>(t.x) + 0.5f) / static_cast<float>(width),
+                                                   (static_cast<float>(t.y) + 0.5f) / static_cast<float>(height));
+                            const glm::vec3 a = f.tl + ex * static_cast<float>(pi) + ey * static_cast<float>(pj);
+                            const glm::vec3 b = a + ex, cc = a + ex + ey, dd = a + ey;
+                            const auto push = [&](glm::vec3 p0, glm::vec3 p1, glm::vec3 p2, glm::vec3 p3, glm::vec3 n) {
+                                if (glm::dot(glm::cross(p1 - p0, p2 - p0), n) > 0.0f)
+                                    std::swap(p1, p3); // this renderer winds faces clockwise seen from outside
+                                Quad q;
+                                q.p[0] = p0; q.p[1] = p1; q.p[2] = p2; q.p[3] = p3;
+                                for (glm::vec2& uv : q.uv)
+                                    uv = centre;
+                                q.n = n;
+                                bone.voxels.push_back(q);
+                            };
+                            push(a + up, b + up, cc + up, dd + up, f.n);
+                            const glm::vec3 nx = glm::normalize(ex), ny = glm::normalize(ey);
+                            if (!opaque(pi - 1, pj)) push(a, a + up, dd + up, dd, -nx);
+                            if (!opaque(pi + 1, pj)) push(b + up, b, cc, cc + up, nx);
+                            if (!opaque(pi, pj - 1)) push(a + up, a, b, b + up, -ny);
+                            if (!opaque(pi, pj + 1)) push(dd, dd + up, cc + up, cc, ny);
+                        }
+                }
+            }
+            bone.cubes = std::move(kept);
+        }
+        return out;
+    }
+
     void GeometryLibrary::Detach(const std::string& id, const std::vector<std::string>& bones) {
         const auto it = geometries.find(id);
         if (it == geometries.end())
@@ -388,6 +480,13 @@ namespace perlin::attachable {
                 continue;
             for (const Cube& c : b.cubes)
                 AddCube(c, g, world[i], out.body, mirrorTextures);
+            for (const Quad& vq : b.voxels) {
+                Quad q = vq;
+                for (glm::vec3& pt : q.p)
+                    pt = glm::vec3(world[i] * glm::vec4(pt, 1.0f));
+                q.n = glm::normalize(glm::mat3(world[i]) * q.n);
+                out.body.push_back(q);
+            }
             for (const TextureMesh& tm : b.meshes) {
                 const Texture* tex = textures ? textures(tm.texture) : nullptr;
                 if (!tex)

@@ -96,7 +96,7 @@ namespace perlin {
     void ProcessLod(Level& level, float camX, float camZ);
         void MarkLodTile(const ChunkPos& chunk);
         void ResetLod();
-        bool LodEnabled() const { return options.renderDistance > LodStore::kRealChunks; }
+        bool LodEnabled() const { return options.enableLods && options.renderDistance > LodStore::kRealChunks; }
         static int64_t TileKey(int tx, int tz) { return (static_cast<int64_t>(tx) << 32) | static_cast<uint32_t>(tz); }
         void ConfigureLighting(const std::string& packDir);
         void LoadSkyTextures();

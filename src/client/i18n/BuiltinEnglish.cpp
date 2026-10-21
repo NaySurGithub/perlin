@@ -54,6 +54,8 @@ namespace perlin::i18n {
     "perlin.debug.manual_crash=Manually triggered debug crash\n"
     "perlin.debug.chat_cleared=Cleared chat\n"
     "perlin.debug.chunk_borders_on=Chunk borders: shown\n"
+    "perlin.debug.hitboxes_on=Hitboxes: shown\n"
+    "perlin.debug.hitboxes_off=Hitboxes: hidden\n"
     "perlin.debug.chunk_borders_off=Chunk borders: hidden\n"
     "perlin.debug.advanced_tooltips_on=Advanced tooltips: shown\n"
     "perlin.debug.advanced_tooltips_off=Advanced tooltips: hidden\n"

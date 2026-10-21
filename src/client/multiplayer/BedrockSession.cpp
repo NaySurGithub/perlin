@@ -841,6 +841,11 @@ namespace perlin {
         }
         if (onPacket)
             onPacket(id, body);
+        if (dropActive.load(std::memory_order_acquire)) {
+            std::lock_guard<std::mutex> lk(dropMutex);
+            if (std::find(dropped.begin(), dropped.end(), id) != dropped.end())
+                return;
+        }
         {
             static int dumped = 0;
             if (dumped < 12) {

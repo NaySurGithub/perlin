@@ -112,6 +112,16 @@ namespace perlin {
         std::vector<std::string> approvedMods; // "name=bits": dangerous permissions the player allowed
         bool hotReload = true;
         bool betterGrass = false;
+        // Upscaling (render scale): the world is drawn smaller and rebuilt at window size; the HUD stays native.
+        std::string upscaler = "off";        // off, bilinear, bicubic, fsr1, temporal
+        std::string upscaleQuality = "quality"; // ultra_quality 77%, quality 67%, balanced 59%, performance 50%, ultra_performance 33%
+        int upscaleSharpness = 50;           // 0..100
+        int upscaleCustom = 70;              // render scale in percent when the quality is "custom"
+        int upscaleTargetFps = 0;            // > 0: the render scale follows the frame rate to hold this target
+        std::string frameGen = "off";        // off, 2x, 3x, 4x: extra world frames between real ones (camera reprojection)
+        bool skins3d = true; // 3D Skins: extruded hat/jacket/sleeve/pants layers
+        bool fastMath = false; // flush denormals to zero (FTZ/DAZ) on the render and main threads: cheaper float math, imperceptible difference
+        bool enableLods = false; // distant terrain as simplified tiles (voxy-style): lifts the render distance cap
         // Graphics API: "auto" (picks the best for this GPU), "d3d11", "vulkan", "opengl", "metal". Changing it relaunches.
         std::string renderer = "auto";
         // Badlion-style cape physics: "off", "noshoulder" (default) or "shoulder" (adds the shoulder pads).

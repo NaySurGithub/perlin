@@ -16,7 +16,7 @@ namespace perlin {
         if (!InBounds(x, y, z))
             return 0;
         const auto& s = sections[(y - MIN_Y) >> 4];
-        return s ? s->blocks[Local(x, y, z)] : 0;
+        return s ? s->Block(Local(x, y, z)) : 0;
     }
 
     void Chunk::Set(int x, int y, int z, uint16_t id) {
@@ -25,7 +25,7 @@ namespace perlin {
         const int index = (y - MIN_Y) >> 4;
         if (!sections[index] && id == 0)
             return;
-        Ensure(index).blocks[Local(x, y, z)] = id;
+        Ensure(index).SetBlock(Local(x, y, z), id);
     }
 
     uint16_t Chunk::GetLiquid(int x, int y, int z) const {
@@ -63,7 +63,7 @@ namespace perlin {
         if (!InBounds(x, y, z))
             return DEFAULT_BIOME;
         const auto& s = sections[(y - MIN_Y) >> 4];
-        return s ? s->biomes[Local(x, y, z)] : DEFAULT_BIOME;
+        return s ? s->Biome(Local(x, y, z)) : DEFAULT_BIOME;
     }
 
     bool Chunk::YRange(int& lo, int& hi) const {
@@ -72,10 +72,14 @@ namespace perlin {
             const auto& s = sections[i];
             if (!s)
                 continue;
+            if (!s->blocks && s->uniform == 0)
+                continue;
             for (int layer = 0; layer < 16; layer++) {
-                const uint16_t* row = s->blocks.data() + layer * 256;
-                if (std::all_of(row, row + 256, [](uint16_t v) { return v == 0; }))
-                    continue;
+                if (s->blocks) {
+                    const uint16_t* row = s->blocks->data() + layer * 256;
+                    if (std::all_of(row, row + 256, [](uint16_t v) { return v == 0; }))
+                        continue;
+                }
                 const int y = MIN_Y + i * 16 + layer;
                 if (!any)
                     lo = y;
@@ -94,8 +98,8 @@ namespace perlin {
                 continue;
             const int local = Local(x, y, z);
             const size_t out = static_cast<size_t>(y - yLo) * stride;
-            blocks[out] = s->blocks[local];
-            biomes[out] = s->biomes[local];
+            blocks[out] = s->Block(local);
+            biomes[out] = s->Biome(local);
         }
     }
 
@@ -106,10 +110,18 @@ namespace perlin {
         if (!s)
             return;
         const int local = Local(x0, y, z);
-        if (blocks)
-            std::memcpy(blocks, s->blocks.data() + local, static_cast<size_t>(n) * sizeof(uint16_t));
-        if (biomes)
-            std::memcpy(biomes, s->biomes.data() + local, static_cast<size_t>(n));
+        if (blocks) {
+            if (s->blocks)
+                std::memcpy(blocks, s->blocks->data() + local, static_cast<size_t>(n) * sizeof(uint16_t));
+            else
+                std::fill_n(blocks, n, s->uniform);
+        }
+        if (biomes) {
+            if (s->biomes)
+                std::memcpy(biomes, s->biomes->data() + local, static_cast<size_t>(n));
+            else
+                std::memset(biomes, s->uniformBiome, static_cast<size_t>(n));
+        }
         if (liquid && s->liquid)
             std::memcpy(liquid, s->liquid->data() + local, static_cast<size_t>(n) * sizeof(uint16_t));
     }
@@ -118,16 +130,24 @@ namespace perlin {
         for (int y = yLo; y <= yHi; y++) {
             const auto& s = sections[(y - MIN_Y) >> 4];
             if (s)
-                blocks[static_cast<size_t>(y - yLo) * stride] = s->blocks[Local(x, y, z)];
+                blocks[static_cast<size_t>(y - yLo) * stride] = s->Block(Local(x, y, z));
         }
     }
 
     void Chunk::SetSection(int section, const uint16_t* cells, const uint16_t* liquidCells) {
         Section& s = Ensure(section);
-        for (int x = 0; x < 16; x++)
-            for (int z = 0; z < 16; z++)
-                for (int y = 0; y < 16; y++)
-                    s.blocks[(y * 16 + z) * 16 + x] = cells[x * 256 + z * 16 + y];
+        const uint16_t first = cells[0];
+        if (std::all_of(cells, cells + 4096, [first](uint16_t v) { return v == first; })) {
+            s.blocks.reset();
+            s.uniform = first;
+        } else {
+            if (!s.blocks)
+                s.blocks = std::make_unique<std::array<uint16_t, 4096>>();
+            for (int x = 0; x < 16; x++)
+                for (int z = 0; z < 16; z++)
+                    for (int y = 0; y < 16; y++)
+                        (*s.blocks)[static_cast<size_t>((y * 16 + z) * 16 + x)] = cells[x * 256 + z * 16 + y];
+        }
         bool any = false;
         if (liquidCells)
             for (int i = 0; i < 4096 && !any; i++)
@@ -146,10 +166,18 @@ namespace perlin {
 
     void Chunk::SetBiomeSection(int section, const uint8_t* cells) {
         Section& s = Ensure(section);
+        const uint8_t first = cells[0];
+        if (std::all_of(cells, cells + 4096, [first](uint8_t v) { return v == first; })) {
+            s.biomes.reset();
+            s.uniformBiome = first;
+            return;
+        }
+        if (!s.biomes)
+            s.biomes = std::make_unique<std::array<uint8_t, 4096>>();
         for (int x = 0; x < 16; x++)
             for (int z = 0; z < 16; z++)
                 for (int y = 0; y < 16; y++)
-                    s.biomes[(y * 16 + z) * 16 + x] = cells[x * 256 + z * 16 + y];
+                    (*s.biomes)[static_cast<size_t>((y * 16 + z) * 16 + x)] = cells[x * 256 + z * 16 + y];
     }
 
     void Level::Clear() {

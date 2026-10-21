@@ -222,6 +222,23 @@ namespace perlin {
                 st.emplace_back(key, std::move(sv));
             }
             std::sort(st.begin(), st.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
+            if (path == "block_states.json" && !sequenceFrozen) {
+                // A state the retail table holds a slot for but this build cannot describe: it keeps its position so later
+                // ids line up, and stays unnamed.
+                const bool reserved = name == "cinnabar:reserved";
+                const uint64_t key = reserved ? (baseKeys.empty() ? 0 : baseKeys.back()) : NameSortKey(name);
+                sequenceIndex.emplace(hash, static_cast<int32_t>(sequence.size()));
+                sequence.push_back(hash);
+                baseSequence.push_back(hash);
+                baseKeys.push_back(key);
+                if (reserved) {
+                    reservedHashes.insert(hash);
+                    continue;
+                }
+                // Already described by the vanilla definitions: keep the position only, not a second copy of the state.
+                if (const auto known = nameByHash.find(hash); known != nameByHash.end() && known->second == name)
+                    continue;
+            }
             auto it = nameByHash.find(hash);
             if (it == nameByHash.end())
                 added++;
@@ -229,10 +246,6 @@ namespace perlin {
                 replaced++;
             nameByHash[hash] = name;
             statesByHash[hash] = std::move(st);
-            if (path == "block_states.json" && !sequenceFrozen) {
-                sequenceIndex.emplace(hash, static_cast<int32_t>(sequence.size()));
-                sequence.push_back(hash);
-            }
             auto& props = propsByName[name];
             for (const auto& [k, v] : statesByHash[hash]) {
                 (void)v;
@@ -240,8 +253,11 @@ namespace perlin {
                     props.push_back(k);
             }
         }
-        if (path == "block_states.json")
-        { sequenceFrozen = true; vanillaSequence = sequence.size(); }
+        if (path == "block_states.json") {
+            sequenceFrozen = true;
+            vanillaSequence = sequence.size();
+            sequenceKeys = baseKeys;
+        }
         namesLoaded = namesLoaded || !nameByHash.empty();
         std::cout << "[blocks] server registry: " << added << " ids added, " << replaced << " renamed from " << path
                   << std::endl;
@@ -263,12 +279,63 @@ namespace perlin {
         sequentialAir.store(air, std::memory_order_release);
     }
 
+    uint64_t BlockPalette::NameSortKey(const std::string& name) {
+        uint64_t h = 0xcbf29ce484222325ull;
+        for (unsigned char c : name)
+            h = (h * 0x100000001b3ull) ^ c;
+        return h;
+    }
+
     void BlockPalette::TruncateSequence() {
         std::lock_guard<std::mutex> lk(mutex);
-        while (sequence.size() > vanillaSequence) {
-            sequenceIndex.erase(sequence.back());
-            sequence.pop_back();
+        if (baseSequence.empty())
+            return;
+        sequence = baseSequence;
+        sequenceKeys = baseKeys;
+        sequenceIndex.clear();
+        for (size_t i = 0; i < sequence.size(); i++)
+            sequenceIndex.emplace(sequence[i], static_cast<int32_t>(i));
+    }
+
+    void BlockPalette::InsertCustomRuns(std::vector<CustomRun> runs) {
+        std::lock_guard<std::mutex> lk(mutex);
+        if (baseSequence.empty() || runs.empty())
+            return;
+        struct Keyed {
+            uint64_t key;
+            const CustomRun* run;
+        };
+        std::vector<Keyed> order;
+        for (const CustomRun& r : runs)
+            order.push_back({NameSortKey(r.name), &r});
+        std::stable_sort(order.begin(), order.end(), [](const Keyed& a, const Keyed& b) {
+            return a.key != b.key ? a.key < b.key : a.run->name < b.run->name;
+        });
+        std::vector<int32_t> merged;
+        std::vector<uint64_t> mergedKeys;
+        merged.reserve(baseSequence.size() + 256);
+        size_t next = 0;
+        for (size_t i = 0; i < baseSequence.size(); i++) {
+            while (next < order.size() && order[next].key < baseKeys[i]) {
+                for (int32_t h : order[next].run->hashes) {
+                    merged.push_back(h);
+                    mergedKeys.push_back(order[next].key);
+                }
+                next++;
+            }
+            merged.push_back(baseSequence[i]);
+            mergedKeys.push_back(baseKeys[i]);
         }
+        for (; next < order.size(); next++)
+            for (int32_t h : order[next].run->hashes) {
+                merged.push_back(h);
+                mergedKeys.push_back(order[next].key);
+            }
+        sequence = std::move(merged);
+        sequenceKeys = std::move(mergedKeys);
+        sequenceIndex.clear();
+        for (size_t i = 0; i < sequence.size(); i++)
+            sequenceIndex.emplace(sequence[i], static_cast<int32_t>(i));
     }
 
     void BlockPalette::AppendSequence(int32_t hash) {
@@ -330,6 +397,8 @@ namespace perlin {
                     found = true;
                 }
             }
+            if (found && reservedHashes.count(hash))
+                return 0; // a retail state this build has no description for
             if (found)
                 return Intern(hash);
             // Sequential ids are positions in the game's internal block table, which Mojang does not

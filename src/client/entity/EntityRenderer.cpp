@@ -295,6 +295,7 @@ namespace perlin::entity {
         pendingMeshes.clear();
         views.clear();
         skinGeometry.clear();
+        voxelGeometry.clear();
     }
 
     void EntityRenderer::Shutdown() {
@@ -1005,6 +1006,14 @@ namespace perlin::entity {
                 }
                 return;
             }
+            if (in.skins3d && e.isPlayer && e.skin && texKey == "default" && !e.skin->skinRgba.empty() && geometry &&
+                glm::distance(e.pos, in.playerPos) < 16.0) {
+                auto& voxel = voxelGeometry[e.skin->serial];
+                if (!voxel)
+                    voxel = std::make_unique<attachable::Geometry>(
+                        attachable::VoxelizeSkinLayers(*geometry, e.skin->skinRgba.data(), e.skin->skinWidth, e.skin->skinHeight));
+                geometry = voxel.get();
+            }
             bool physicsCape = false;
             if (controllerId == "controller.render.player.cape" && e.isPlayer && in.capePhysics > 0) {
                 if (capeGeometries.Size() == 0) {
@@ -1277,6 +1286,14 @@ namespace perlin::entity {
             const float t = std::min(v.glideTime * 20.0f, 10.0f);
             const float amount = std::clamp(t * t / 100.0f, 0.0f, 1.0f);
             model = glm::rotate(model, -amount * (90.0f + v.pitch) * kDeg, glm::vec3(1, 0, 0));
+        }
+        if (e.isSelf && (in.ownPose.x != 0.0f || in.ownPose.y != 0.0f || in.ownPose.z != 0.0f)) {
+            // Mod pose: about the middle of the body, after the glide lean, so a spin around y is a barrel roll in flight.
+            model = glm::translate(model, glm::vec3(0.0f, 0.9f, 0.0f));
+            model = glm::rotate(model, in.ownPose.y * kDeg, glm::vec3(0, 1, 0));
+            model = glm::rotate(model, in.ownPose.x * kDeg, glm::vec3(1, 0, 0));
+            model = glm::rotate(model, in.ownPose.z * kDeg, glm::vec3(0, 0, 1));
+            model = glm::translate(model, glm::vec3(0.0f, -0.9f, 0.0f));
         }
         if (e.type == "minecraft:arrow")
             model = glm::rotate(model, 180.0f * kDeg, glm::vec3(0, 1, 0));
@@ -2022,6 +2039,29 @@ namespace perlin::entity {
         DrawNametags(in);
         for (auto it = views.begin(); it != views.end();)
             it = in.time - it->second->lastSeen > 5.0 ? views.erase(it) : std::next(it);
+        if (in.hitboxes) {
+            // F3+B: each entity's hitbox in white, a red line at the eyes and a blue line along where it looks.
+            const uint32_t white = 0xFFFFFFFFu, red = 0xFF0000FFu, blue = 0xFFFF0000u;
+            for (const Entity& e : entities) {
+                if (e.isSelf && in.firstPerson)
+                    continue;
+                const auto v = views.find(e.runtimeId);
+                const glm::dvec3 pos = v != views.end() ? v->second->pos : e.pos;
+                const double yawDeg = v != views.end() ? v->second->yaw : e.yaw;
+                const auto [w, h] = HitBox(e);
+                const double half = w * 0.5;
+                AddBox({pos.x - half, pos.y, pos.z - half}, {pos.x + half, pos.y + h, pos.z + half}, white, 1.0f);
+                if (e.isPlayer) {
+                    const double eye = pos.y + (e.Has(flag::Sneaking) ? 1.27 : 1.62);
+                    AddBox({pos.x - half, eye - 0.01, pos.z - half}, {pos.x + half, eye + 0.01, pos.z + half}, red, 1.0f);
+                    const double yr = yawDeg * kDeg;
+                    lines.push_back({{pos.x, eye, pos.z}, {pos.x - std::sin(yr) * 2.0, eye, pos.z + std::cos(yr) * 2.0}, blue, 1.5f});
+                }
+            }
+        }
+        if (in.modLines)
+            for (const FrameIn::ModLine& l : *in.modLines)
+                lines.push_back({l.a, l.b, l.colour, l.width});
         if (in.chunkBorders) {
             const int pcx = static_cast<int>(std::floor(in.playerPos.x)) >> 4, pcz = static_cast<int>(std::floor(in.playerPos.z)) >> 4;
             const int sectionY = static_cast<int>(std::floor(in.playerPos.y)) >> 4;

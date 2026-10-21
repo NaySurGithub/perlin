@@ -308,6 +308,19 @@ void RequestRespawn();
         }
 
         void SetPacketHandler(PacketHandler h) { onPacket = std::move(h); }
+        // Incoming packets with these ids are discarded after the packet handler has seen them (mods; see Op::PacketDrop).
+        void SetDroppedPackets(std::vector<uint32_t> ids) {
+            std::lock_guard<std::mutex> lk(dropMutex);
+            dropped.assign(ids.begin(), ids.end());
+            dropActive.store(!dropped.empty(), std::memory_order_release);
+        }
+        std::vector<std::pair<uint32_t, uint32_t>> PacketCounts() {
+            std::lock_guard<std::mutex> lk(idCountMutex);
+            std::vector<std::pair<uint32_t, uint32_t>> out;
+            for (const auto& [id, n] : idCounts)
+                out.emplace_back(id, static_cast<uint32_t>(n));
+            return out;
+        }
         bool SendRaw(uint32_t id, const std::vector<uint8_t>& body) { return Transmit(id, body, true); }
 
         State GetState() const { return state; }
@@ -634,6 +647,9 @@ void RequestRespawn();
         std::atomic<State> state{State::Disconnected};
         std::string lastError;
         PacketHandler onPacket;
+        std::mutex dropMutex;
+        std::vector<uint32_t> dropped;
+        std::atomic<bool> dropActive{false};
 
         Level netLevel;
         std::atomic<bool> blockNamesLearned{false};

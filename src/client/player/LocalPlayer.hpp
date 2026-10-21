@@ -8,6 +8,8 @@
 
 #include <chrono>
 #include <deque>
+#include <vector>
+#include <mutex>
 
 namespace perlin {
     class LocalPlayer {
@@ -35,10 +37,21 @@ namespace perlin {
         void SetItemSlow(bool slow) { itemSlow = slow; }
         void SetRidePosition(bool riding, double x, double y, double z) { rideLock = riding; rideX = x; rideY = y; rideZ = z; }
 
+        // Calls from mods (any thread): applied at the start of the next Update.
+        void ModMotion(bool add, double x, double y, double z, bool ax, bool ay, bool az);
+        void ModTeleport(double x, double y, double z, bool keepVelocity);
+
         // Smoothed eye height above the feet (drops while sneaking); the body model hangs from this.
         float EyeOffset() const { return eyeOffset; }
 
     private:
+        struct ModCommand {
+            bool teleport = false, add = false, keep = false, ax = true, ay = true, az = true;
+            double x = 0, y = 0, z = 0;
+        };
+        std::mutex modMutex;
+        std::vector<ModCommand> modQueue;
+        void ApplyModCommands();
         void ApplyServerMotion(BedrockSession& session, Camera& camera);
         void Tick(BedrockSession& session, const InputManager& input, const Camera& camera,
                   const physics::World& world);

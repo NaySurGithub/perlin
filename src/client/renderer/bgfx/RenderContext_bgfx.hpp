@@ -6,6 +6,7 @@
 
 #include <bgfx/bgfx.h>
 #include <glm/glm.hpp>
+#include <glm/gtc/quaternion.hpp>
 
 #include <array>
 #include <atomic>
@@ -30,6 +31,7 @@ namespace perlin {
         void Shutdown() override;
         void BeginFrame(const FrameParams& params) override;
         void EndFrame() override;
+        bool PresentGenerated(int index, int total) override;
         void RequestScreenshot(const std::string& path) override;
         void UploadSkyTextures(const Texture& sun, const Texture& moon, const Texture& clouds) override;
         void UploadCrosshair(const Texture& icons) override;
@@ -212,8 +214,62 @@ namespace perlin {
             int read = 0;
             bool valid = false;
             bool targets = false;
+            bool scaled = false;  // the offscreen targets are smaller than the window (render scale)
+            int w = 0, h = 0;     // their size when scaled
             float lastTime = 0.0f;
         } blur;
+        // What this frame needs offscreen, decided at the start of BeginFrame.
+        struct Plan {
+            int w = 0, h = 0;          // size the world is drawn at
+            bool scaled = false;       // smaller than the window
+            bool temporal = false;     // temporal upscaler (jittered projection, history)
+            bool frameGen = false;     // route the whole frame through a texture so generated frames can reuse it
+            bool wantDepth = false;    // the world depth must be readable
+            float jitter[2] = {0, 0};  // projection jitter in clip space (x, y)
+            float jitterUv[2] = {0, 0}; // the same in texture coordinates of this backend
+        } plan;
+        void PlanFrame(const FrameParams& params);
+        // Render scale: reconstruction of the full-size image from the smaller world image.
+        struct Upscale {
+            bgfx::TextureHandle tex[3] = {BGFX_INVALID_HANDLE, BGFX_INVALID_HANDLE, BGFX_INVALID_HANDLE};
+            bgfx::FrameBufferHandle fb[3] = {BGFX_INVALID_HANDLE, BGFX_INVALID_HANDLE, BGFX_INVALID_HANDLE};
+            bgfx::UniformHandle mode = BGFX_INVALID_HANDLE, size = BGFX_INVALID_HANDLE;
+            bgfx::UniformHandle taa = BGFX_INVALID_HANDLE, taaSize = BGFX_INVALID_HANDLE, taaJit = BGFX_INVALID_HANDLE,
+                                taaInvVp = BGFX_INVALID_HANDLE, taaPrevVp = BGFX_INVALID_HANDLE;
+            bgfx::UniformHandle sampDepth = BGFX_INVALID_HANDLE, sampHist = BGFX_INVALID_HANDLE;
+            int w = 0, h = 0;
+            bool failed = false;
+            // Temporal state: tex[history] holds the last output.
+            int history = 0;
+            bool historyValid = false;
+            uint32_t frameIndex = 0;
+        } upscale;
+        bool EnsureUpscale();
+        void DestroyUpscale();
+        bgfx::TextureHandle RunUpscale(bgfx::TextureHandle source, int sourceW, int sourceH, const FrameParams& params);
+        // Camera history for reprojection (temporal upscaler, frame generation). Matrices are kept in double and the eye is
+        // subtracted before use, so far from the origin they stay precise.
+        struct CameraHistory {
+            glm::dmat4 view{1.0}, proj{1.0}, prevView{1.0}, prevProj{1.0};
+            glm::dvec3 eye{0.0}, prevEye{0.0};
+            bool haveCur = false, havePrev = false;
+            bool teleported = false;
+            int sizeW = 0, sizeH = 0;
+        } cam;
+        // Frame generation.
+        struct FrameGen {
+            bgfx::TextureHandle finalColor = BGFX_INVALID_HANDLE, finalDepth = BGFX_INVALID_HANDLE, worldCopy = BGFX_INVALID_HANDLE;
+            bgfx::FrameBufferHandle finalFb = BGFX_INVALID_HANDLE;
+            bgfx::UniformHandle gen = BGFX_INVALID_HANDLE, invVp = BGFX_INVALID_HANDLE, curVp = BGFX_INVALID_HANDLE;
+            bgfx::UniformHandle sampWorld = BGFX_INVALID_HANDLE, sampDepth = BGFX_INVALID_HANDLE, sampFinal = BGFX_INVALID_HANDLE;
+            bool ready = false, failed = false;
+            bool valid = false; // a real frame has been drawn through the pipeline
+            int w = 0, h = 0;
+            bool haveDepth = false; // the depth of the real frame can be sampled
+        } fg;
+        bool EnsureFrameGen();
+        void DestroyFrameGen();
+        void SubmitFrameGenCopies(float origin);
         // Shader packs that set "sceneCopy" get the opaque scene (colour + depth) copied after
         // entities and before the translucent pass, for screen-space reflections/refraction.
         struct SceneCopy {

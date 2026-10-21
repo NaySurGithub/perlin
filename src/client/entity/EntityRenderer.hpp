@@ -62,8 +62,17 @@ namespace perlin::entity {
             std::vector<std::array<int, 4>> cracks;
             std::function<double(double, double, double)> groundY;
             bool chunkBorders = false;
+            bool hitboxes = false; // F3+B
             bool ownNametag = false;
             SkinParts ownParts;
+            glm::vec3 ownPose{0.0f}; // mod-set extra rotation of the local player's model: x pitch, y spin around the body axis, z roll
+            struct ModLine {
+                glm::dvec3 a, b;
+                uint32_t colour = 0xFFFFFFFFu;
+                float width = 1.0f;
+            };
+            const std::vector<ModLine>* modLines = nullptr; // world-space lines drawn on behalf of mods
+            bool skins3d = false; // extruded outer skin layers on nearby players
             const std::vector<particle::Quad>* particles = nullptr;
             const particle::DataParticles* dataParticles = nullptr;
             particle::DataWorld dataWorld;
@@ -144,6 +153,7 @@ namespace perlin::entity {
         std::unordered_map<std::string, uint32_t> textures;
         std::unordered_map<uint64_t, uint32_t> skinTextures, capeTextures, capeModelTextures;
         std::unordered_map<uint64_t, std::unique_ptr<attachable::GeometryLibrary>> skinGeometry;
+        std::unordered_map<uint64_t, std::unique_ptr<attachable::Geometry>> voxelGeometry; // per skin serial (3D Skins)
         attachable::GeometryLibrary capeGeometries; // the 16-part physics cape, loaded on first use
         std::vector<uint32_t> pendingMeshes;
         size_t drawn = 0, considered = 0, unrenderable = 0, culled = 0;

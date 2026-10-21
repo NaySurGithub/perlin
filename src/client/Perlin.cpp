@@ -1,3 +1,9 @@
+#if defined(__SSE__) || defined(_M_X64)
+#include <xmmintrin.h>
+#endif
+#if defined(__GLIBC__)
+#include <malloc.h>
+#endif
 #include "client/CameraEffects.hpp"
 #include "client/entity/BlockEntityView.hpp"
 #include "client/ui/ItemTooltip.hpp"
@@ -163,6 +169,7 @@ namespace perlin {
         struct LocalCrack { bool active = false; int x = 0, y = 0, z = 0, stage = 0; float progress = 0.0f; };
         LocalCrack gLocalCrack;
         bool showChunkBorders = false;
+        bool showHitboxes = false;
         bool softPaused = false;
         int switcherIndex = -1;
     }
@@ -384,7 +391,7 @@ namespace perlin {
         session->SetFriendLease(friendLease);
         session->SetChunkRadius(options.renderDistance);
         session->SetMaxViewDistance(std::max(32, options.renderDistance));
-        session->SetNearRadius(options.renderDistance > LodStore::kRealChunks ? LodStore::kRealChunks : 1 << 20);
+        session->SetNearRadius(options.enableLods && options.renderDistance > LodStore::kRealChunks ? LodStore::kRealChunks : 1 << 20);
 
         SkinConfig skinConfig = MakeSkinConfig(args.skin.empty() ? options.skin : args.skin, args.cape.empty() ? options.cape : args.cape);
         if (args.slimArms) {
@@ -2972,18 +2979,42 @@ namespace perlin {
             } else if (optionsPage == 1) {
                 title = tr("options.videoTitle", "Video Settings");
                 toggle(tr("options.graphics.fancy", "Fancy Graphics"), options.fancyGraphics);
+                if (!options.enableLods && options.renderDistance > LodStore::kRealChunks) {
+                    options.renderDistance = LodStore::kRealChunks; // past the real chunks only LODs can draw
+                    if (live) {
+                        live->SetChunkRadius(options.renderDistance);
+                        live->SetNearRadius(1 << 20);
+                    }
+                }
+                // The first half of the slider is the ordinary range (2-32 chunks); with LODs on the second half runs out to 256.
+                const int maxDistance = options.enableLods ? 256 : LodStore::kRealChunks;
+                const auto distanceToSlider = [maxDistance](int d) {
+                    if (maxDistance <= LodStore::kRealChunks)
+                        return static_cast<float>(d - 2) / static_cast<float>(maxDistance - 2);
+                    return d <= LodStore::kRealChunks ? 0.5f * static_cast<float>(d - 2) / static_cast<float>(LodStore::kRealChunks - 2)
+                                                      : 0.5f + 0.5f * static_cast<float>(d - LodStore::kRealChunks) / static_cast<float>(maxDistance - LodStore::kRealChunks);
+                };
                 slider(tr("options.renderDistance", "Render Distance"), std::to_string(options.renderDistance) + " " + tr("options.chunks", "chunks"),
-                       static_cast<float>(options.renderDistance - 2) / 30.0f, [this, live](float f) {
-                           const int distance = 2 + static_cast<int>(std::lround(std::clamp(f, 0.0f, 1.0f) * 30.0f));
+                       distanceToSlider(options.renderDistance), [this, live, maxDistance](float f) {
+                           f = std::clamp(f, 0.0f, 1.0f);
+                           int distance;
+                           if (maxDistance <= LodStore::kRealChunks)
+                               distance = 2 + static_cast<int>(std::lround(f * static_cast<float>(maxDistance - 2)));
+                           else if (f <= 0.5f)
+                               distance = 2 + static_cast<int>(std::lround(f * 2.0f * static_cast<float>(LodStore::kRealChunks - 2)));
+                           else
+                               distance = LodStore::kRealChunks + static_cast<int>(std::lround((f - 0.5f) * 2.0f * static_cast<float>(maxDistance - LodStore::kRealChunks)));
                            if (distance != options.renderDistance) {
                                options.renderDistance = distance;
                                if (live) {
                                    live->SetChunkRadius(options.renderDistance);
                                    live->SetMaxViewDistance(std::max(32, options.renderDistance));
-                                   live->SetNearRadius(options.renderDistance > LodStore::kRealChunks ? LodStore::kRealChunks : 1 << 20);
+                                   live->SetNearRadius(options.enableLods && options.renderDistance > LodStore::kRealChunks ? LodStore::kRealChunks : 1 << 20);
                                }
                            }
                        });
+                toggle("Fast Math", options.fastMath);
+                toggle("Enable LODs", options.enableLods);
                 slider(tr("options.framerateLimit", "Max Framerate"),
                        options.maxFps == 0 ? tr("options.framerateLimit.max", "Unlimited") : std::to_string(options.maxFps) + " fps",
                        options.maxFps == 0 ? 1.0f : static_cast<float>(options.maxFps - 10) / 250.0f, [this](float f) {
@@ -3016,6 +3047,24 @@ namespace perlin {
                        [this](float f) { options.damageTilt = static_cast<int>(std::lround(std::clamp(f, 0.0f, 1.0f) * 100.0f)); });
                 toggle(tr("perlin.options.damageTint", "Damage Tint"), options.damageTint);
                 toggle(tr("options.rgss", "Supersampling"), options.rgss);
+                choice("Frame Generation", options.frameGen, {{"off", "Off"}, {"2x", "2x"}, {"3x", "3x"}, {"4x", "4x"}});
+                choice("Upscaler", options.upscaler, {{"off", "Off"}, {"bilinear", "Bilinear"}, {"bicubic", "Bicubic"}, {"fsr1", "FSR 1.0"}, {"temporal", "Temporal"}});
+                if (options.upscaler != "off") {
+                    choice("Upscale Quality", options.upscaleQuality,
+                           {{"ultra_quality", "Ultra Quality"}, {"quality", "Quality"}, {"balanced", "Balanced"}, {"performance", "Performance"}, {"ultra_performance", "Ultra Perf."}, {"custom", "Custom"}});
+                    if (options.upscaleQuality == "custom")
+                        slider("Render Scale", std::to_string(options.upscaleCustom) + "%", static_cast<float>(options.upscaleCustom - 25) / 75.0f,
+                               [this](float f) { options.upscaleCustom = 25 + static_cast<int>(std::lround(std::clamp(f, 0.0f, 1.0f) * 75.0f)); });
+                    slider("Target FPS", options.upscaleTargetFps <= 0 ? tr("options.off", "OFF") : std::to_string(options.upscaleTargetFps),
+                           static_cast<float>(options.upscaleTargetFps) / 360.0f,
+                           [this](float f) {
+                               const int v = static_cast<int>(std::lround(std::clamp(f, 0.0f, 1.0f) * 72.0f)) * 5; // 5 FPS steps
+                               options.upscaleTargetFps = v < 20 ? 0 : v;
+                           });
+                    slider("Upscale Sharpness", options.upscaleSharpness <= 0 ? tr("options.off", "OFF") : std::to_string(options.upscaleSharpness) + "%",
+                           static_cast<float>(options.upscaleSharpness) / 100.0f,
+                           [this](float f) { options.upscaleSharpness = static_cast<int>(std::lround(std::clamp(f, 0.0f, 1.0f) * 100.0f)); });
+                }
                 slider("Cloud Range", std::to_string(options.cloudRange) + " " + tr("options.chunks", "chunks"), static_cast<float>(options.cloudRange - 2) / 126.0f,
                        [this](float f) { options.cloudRange = 2 + static_cast<int>(std::lround(std::clamp(f, 0.0f, 1.0f) * 126.0f)); });
                 toggle("Better Grass", options.betterGrass);
@@ -3472,6 +3521,7 @@ namespace perlin {
                 toggle(tr("options.modelPart.left_pants_leg", "Left Pants Leg"), options.skinParts.leftPants);
                 toggle(tr("options.modelPart.right_pants_leg", "Right Pants Leg"), options.skinParts.rightPants);
                 toggle(tr("options.modelPart.hat", "Hat"), options.skinParts.hat);
+                toggle("3D Skins", options.skins3d);
                 model.push_back({tr("perlin.wardrobe", "Wardrobe..."), "", -1.0f, [this, &hud](float, bool click) {
                                      if (click) {
                                          options.Save();
@@ -6060,6 +6110,26 @@ namespace perlin {
         }
     }
 
+    namespace {
+    // Fast Math: flush-to-zero / denormals-are-zero on the calling thread (x86 MXCSR, ARM64 FPCR).
+    void ApplyFastMath(bool on) {
+        thread_local int applied = -1;
+        if (applied == (on ? 1 : 0))
+            return;
+        applied = on ? 1 : 0;
+#if defined(__SSE__) || defined(_M_X64)
+        unsigned csr = _mm_getcsr();
+        csr = on ? (csr | 0x8040u) : (csr & ~0x8040u);
+        _mm_setcsr(csr);
+#elif defined(__aarch64__)
+        unsigned long fpcr;
+        asm volatile("mrs %0, fpcr" : "=r"(fpcr));
+        fpcr = on ? (fpcr | (1ul << 24)) : (fpcr & ~(1ul << 24));
+        asm volatile("msr fpcr, %0" ::"r"(fpcr));
+#endif
+    }
+    } // namespace
+
     void Perlin::RenderThreadMain() {
         if (!renderer->Initialize(*platform, options)) {
             std::cout << "[render] renderer initialisation failed" << std::endl;
@@ -6285,6 +6355,18 @@ namespace perlin {
                         std::_Exit(0);
                 }
             }
+            ApplyFastMath(options.fastMath);
+#if defined(__GLIBC__)
+            {
+                // Hand freed heap pages back to the OS now and then (off-thread: it takes the allocator's locks).
+                static auto lastTrim = std::chrono::steady_clock::now();
+                const auto nowTrim = std::chrono::steady_clock::now();
+                if (nowTrim - lastTrim > std::chrono::seconds(30)) {
+                    lastTrim = nowTrim;
+                    std::thread([] { malloc_trim(0); }).detach();
+                }
+            }
+#endif
             levelRenderer->SetBetterGrass(options.betterGrass ? 1 : 0);
             levelRenderer->SetGlassMode(options.glass == "connected" ? 1 : options.glass == "connectedClear" ? 2 : options.glass == "clear" ? 3 : 0);
             levelRenderer->ReloadAssetsIfNeeded();
@@ -6815,6 +6897,10 @@ namespace perlin {
                     else if (cHeld && std::chrono::steady_clock::now() - cHeldSince > std::chrono::seconds(10))
                         throw std::runtime_error(i18n::Tr("perlin.debug.manual_crash"));
                 }
+                if (edge('B')) {
+                    showHitboxes = !showHitboxes;
+                    say(i18n::Tr(showHitboxes ? "perlin.debug.hitboxes_on" : "perlin.debug.hitboxes_off"));
+                }
                 if (edge('D')) {
                     chat.Clear();
                     say(i18n::Tr("perlin.debug.chat_cleared"));
@@ -6991,7 +7077,12 @@ namespace perlin {
             if (sessionReady && session)
                 camera.viewEffect = session->Camera().ShakeMatrix() * camera.viewEffect;
             const glm::mat4 handViewEffect = hurtMatrix * (options.hand.bobHand ? bobMatrix : glm::mat4(1.0f));
+            ApplyModCamera(camera.fov, camera.viewEffect);
             const glm::mat4 viewProjection = camera.ViewProjection();
+            {
+                std::lock_guard lock(modAdv.mutex);
+                std::memcpy(modAdv.viewProjection.data(), &viewProjection[0][0], sizeof(float) * 16);
+            }
             const Frustum frustum = Frustum::FromViewProjection(viewProjection);
             const glm::vec3 eye = camera.EyePosition();
             const GraphicsSettings graphics = GraphicsSettings::From(options);
@@ -7124,6 +7215,46 @@ namespace perlin {
             params.skyFogEnd = fog.skyEnd;
             params.cloudFogEnd = fog.cloudEnd;
             params.rgss = graphics.rgss;
+            {
+                glm::mat4 viewMatrix, projectionMatrix;
+                camera.Matrices(viewMatrix, projectionMatrix);
+                std::copy_n(glm::value_ptr(viewMatrix), 16, params.view);
+                std::copy_n(glm::value_ptr(projectionMatrix), 16, params.projection);
+                // A jump in the camera (respawn, teleport, dimension change) restarts temporal history and frame generation.
+                const glm::vec3 now(camera.x, camera.y, camera.z);
+                static glm::vec3 lastCamera = now;
+                params.teleported = glm::distance(now, lastCamera) > 6.0f;
+                lastCamera = now;
+            }
+            if (options.upscaler != "off") {
+                const std::string& q = options.upscaleQuality;
+                float scale = q == "ultra_quality" ? 0.77f : q == "balanced" ? 0.59f : q == "performance" ? 0.50f : q == "ultra_performance" ? 0.33f
+                              : q == "custom" ? static_cast<float>(options.upscaleCustom) / 100.0f : 0.67f;
+                if (options.upscaleTargetFps > 0) {
+                    // Dynamic resolution: steer the scale so the frame rate holds the target. Steps of 5% and a pause between
+                    // changes, because every new size means new render targets.
+                    static float dynamic = 1.0f;
+                    static double frameMs = 16.0;
+                    static auto lastChange = std::chrono::steady_clock::now();
+                    frameMs += (static_cast<double>(dt) * 1000.0 - frameMs) * 0.05;
+                    const double targetMs = 1000.0 / static_cast<double>(options.upscaleTargetFps);
+                    const auto nowDyn = std::chrono::steady_clock::now();
+                    if (nowDyn - lastChange > std::chrono::milliseconds(1200)) {
+                        if (frameMs > targetMs * 1.06 && dynamic > 0.34f) {
+                            dynamic = std::max(0.33f, dynamic - 0.05f);
+                            lastChange = nowDyn;
+                        } else if (frameMs < targetMs * 0.85 && dynamic < 0.99f) {
+                            dynamic = std::min(1.0f, dynamic + 0.05f);
+                            lastChange = nowDyn;
+                        }
+                    }
+                    scale = dynamic;
+                }
+                params.renderScale = scale;
+                params.upscaler = options.upscaler == "temporal" ? 3 : options.upscaler == "fsr1" ? 2 : options.upscaler == "bicubic" ? 1 : 0;
+                params.upscaleSharpness = static_cast<float>(options.upscaleSharpness) / 100.0f;
+            }
+            params.frameGen = options.frameGen == "4x" ? 4 : options.frameGen == "3x" ? 3 : options.frameGen == "2x" ? 2 : 1;
             {
                 const glm::mat4 handProjection = HandRenderer::Projection(70.0f, camera.aspect, camera.farPlane);
                 std::copy_n(glm::value_ptr(handProjection), 16, params.handProjection);
@@ -7357,6 +7488,14 @@ namespace perlin {
                 }
                 ein.ownNametag = options.thirdPersonNametag;
                 ein.ownParts = options.skinParts;
+                ein.skins3d = options.skins3d;
+                {
+                    std::lock_guard lock(modAdv.mutex);
+                    if (std::chrono::steady_clock::now() < modAdv.poseUntil)
+                        ein.ownPose = glm::vec3(modAdv.pose.pitch, modAdv.pose.yaw, modAdv.pose.roll);
+                    if (!modAdv.frameLines.empty())
+                        ein.modLines = &modAdv.frameLines;
+                }
                 ein.capePhysics = options.capePhysics == "shoulder" ? 2 : options.capePhysics == "off" ? 0 : 1;
                 if (live) {
                     // LivingEntity.getCurrentSwingDuration: 6 ticks, minus (1 + amplifier) with haste or conduit power,
@@ -7384,6 +7523,7 @@ namespace perlin {
                     ein.pixelScale = fh > 0 ? 2.0f * std::tan(glm::radians(camera.fov) * 0.5f) / static_cast<float>(fh) : 0.0f;
                     ein.lineWidthPx = std::max(2.5f, static_cast<float>(fw) / 1920.0f * 2.5f);
                     ein.chunkBorders = showChunkBorders;
+                    ein.hitboxes = showHitboxes;
                     ein.playerPos = glm::dvec3(camera.x, camera.y - 1.62, camera.z);
                 }
                 if (gAim.kind == AimHit::Kind::Block && options.showHud) {
@@ -7794,6 +7934,27 @@ namespace perlin {
             if (inputManager.Pressed(Action::Screenshot))
                 TakeScreenshot();
             { ProfScope p(6); renderer->EndFrame(); }
+            if (options.frameGen != "off") {
+                // Frame generation: frames between the real ones, made from the last real world image (world only; the HUD
+                // stays where it is). With vsync the swap chain paces them; without, they are spaced over the time one real
+                // frame takes.
+                const int total = options.frameGen == "4x" ? 4 : options.frameGen == "3x" ? 3 : 2;
+                static double workMs = 16.0;
+                const auto realEnd = Clock::now();
+                workMs += (std::clamp(std::chrono::duration<double, std::milli>(realEnd - frameStart).count(), 1.0, 100.0) - workMs) * 0.1;
+                for (int i = 1; i < total; i++) {
+                    if (!options.vsync) {
+                        const auto due = realEnd + std::chrono::microseconds(static_cast<long long>(workMs * 1000.0 * i / total));
+                        const auto coarse = due - std::chrono::microseconds(1500);
+                        if (Clock::now() < coarse)
+                            std::this_thread::sleep_until(coarse);
+                        while (Clock::now() < due)
+                            std::this_thread::yield();
+                    }
+                    if (!renderer->PresentGenerated(i, total))
+                        break;
+                }
+            }
             if (gProfile.enabled) {
                 gProfile.ms[7] += std::chrono::duration<double, std::milli>(Clock::now() - frameStart).count();
                 if (++gProfile.frames >= 120) {

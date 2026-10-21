@@ -111,7 +111,7 @@ namespace perlin {
                 // A wave that runs down the cape in step with the stride, so it keeps flowing while the player moves: nothing
                 // at the shoulders, growing towards the hem.
                 const float along = static_cast<float>(i) / static_cast<float>(kSegments - 1);
-                p += waviness * 7.0f * along * std::sin(stridePhase - 0.45f * static_cast<float>(i));
+                p += waviness * 10.5f * along * std::sin(stridePhase - 0.45f * static_cast<float>(i));
                 tp[i] = 6.0f + p;
                 tr[i] = std::clamp(r, -45.0f, 45.0f);
                 // A strip that points straight up flips between +180 and -180: keep the chain continuous.

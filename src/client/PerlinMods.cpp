@@ -1000,6 +1000,7 @@ namespace perlin {
         });
 
         SetupModActions();
+        SetupModAdvanced();
 
         mm.Register(Op::MousePosition, [this](CallContext&, abi::Reader&, abi::Writer& w) {
             const float scale = static_cast<float>(modHud ? std::max(1, modHud->Scale()) : 1);

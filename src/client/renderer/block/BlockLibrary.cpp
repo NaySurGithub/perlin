@@ -600,6 +600,14 @@ namespace perlin {
                 return false;
             }
         }
+        // Servers that send plain sequential block ids (Venity, Lifeboat) index into the retail block table.
+        if (!BlockPalette::Instance().SequenceLoaded()) {
+            std::string table;
+            if (resources::Read("block_states.json", table))
+                BlockPalette::Instance().LoadServerStatesText(table, "block_states.json");
+            else
+                std::cout << "[blocks] block_states.json is not bundled: sequential-id servers will read as air" << std::endl;
+        }
         const std::vector<std::string> allNames = BlockPalette::Instance().AllNames();
         int noTexture = 0;
 

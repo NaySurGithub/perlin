@@ -4,6 +4,7 @@
 #include <mutex>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 namespace perlin {
@@ -41,7 +42,17 @@ namespace perlin {
         void SetSequentialAir(int32_t runtimeId) { sequentialAir.store(runtimeId, std::memory_order_release); }
         int32_t SequentialAir() const { return sequentialAir.load(std::memory_order_acquire); }
         void AppendSequence(int32_t hash);
+        // Restores the retail sequence (drops any server-defined blocks inserted by InsertCustomRuns).
         void TruncateSequence();
+        bool SequenceLoaded() const { return !baseSequence.empty(); }
+        // FNV-1 (not 1a) 64 of the block name: the retail palette is sorted by it.
+        static uint64_t NameSortKey(const std::string& name);
+        struct CustomRun {
+            std::string name;
+            std::vector<int32_t> hashes; // the block's states in palette order
+        };
+        // Server-defined blocks sit in the sequential palette at their name's sort position, shifting every later id.
+        void InsertCustomRuns(std::vector<CustomRun> runs);
         uint16_t InternRuntime(int32_t runtimeId);
         int32_t RuntimeId(uint16_t local) const;
         bool LearnName(int32_t networkId, const std::string& name);
@@ -79,6 +90,9 @@ namespace perlin {
         std::unordered_map<int32_t, int32_t> sequenceIndex;
         bool sequenceFrozen = false;
         size_t vanillaSequence = 0;
+        std::vector<int32_t> baseSequence;
+        std::unordered_set<int32_t> reservedHashes;
+        std::vector<uint64_t> baseKeys, sequenceKeys;
         std::vector<int32_t> netByLocal;
         std::atomic<size_t> count{1};
     };

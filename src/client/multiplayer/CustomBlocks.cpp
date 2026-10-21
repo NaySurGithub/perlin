@@ -194,13 +194,84 @@ namespace perlin {
         auto& palette = BlockPalette::Instance();
         size_t states = 0;
         palette.TruncateSequence();
+        std::vector<BlockPalette::CustomRun> runs;
         ServerBlocks::Instance().Reset();
         LightRegistry::Instance().ClearCustom();
         for (const proto::BlockPropertiesEntry& entry : blocks) {
             ui::Json nbt;
             if (entry.name.empty() || !NetworkNbtToJson(entry.state.bytes, nbt) || !nbt.IsObject())
                 continue;
-            std::map<std::string, Prop> sorted;
+            // The block's palette run: placement-trait states first (vanilla's fixed order), then the connection
+            // booleans, then the declared properties in list order; the first axis varies fastest. Hashed palettes
+            // hash the sorted state names, so only the content matters there, but a sequential palette needs the
+            // exact count and order or every later id shifts.
+            std::vector<Prop> axes;
+            {
+                static const std::pair<const char*, std::vector<const char*>> kTraitStates[] = {
+                    {"block_face", {"down", "up", "north", "south", "west", "east"}},
+                    {"vertical_half", {"bottom", "top"}},
+                    {"cardinal_direction", {"south", "west", "north", "east"}},
+                    {"facing_direction", {"down", "up", "north", "south", "west", "east"}},
+                };
+                static const char* kConnections[] = {"connection_north", "connection_east", "connection_south", "connection_west"};
+                const auto key = [](const std::string& n) { return n.rfind("minecraft:", 0) == 0 ? n.substr(10) : n; };
+                std::vector<std::string> enabled;
+                const auto collect = [&](const std::string& traitName, const ui::Json& trait) {
+                    const ui::Json* flags = trait.IsObject() ? trait.Find("enabled_states") : nullptr;
+                    if (!flags)
+                        return;
+                    std::string own = traitName;
+                    if (own.empty())
+                        if (const ui::Json* n = trait.Find("name"); n && n->IsString())
+                            own = n->string;
+                    if (flags->IsNumber()) {
+                        if (key(own) == "connection" && (static_cast<int64_t>(flags->NumberOr(0)) & 1))
+                            enabled.push_back("cardinal_connections");
+                    } else if (flags->IsArray()) {
+                        for (const ui::Json& v : flags->array)
+                            if (v.IsString())
+                                enabled.push_back(key(v.string));
+                    } else if (flags->IsObject()) {
+                        for (const auto& [k, v] : flags->object)
+                            if ((v.IsNumber() && v.NumberOr(0) != 0) || (v.IsBool() && v.boolean))
+                                enabled.push_back(key(k));
+                    }
+                };
+                if (const ui::Json* traits = nbt.Find("traits")) {
+                    if (traits->IsArray())
+                        for (const ui::Json& t : traits->array)
+                            collect(std::string(), t);
+                    else if (traits->IsObject())
+                        for (const auto& [k, t] : traits->object)
+                            collect(k, t);
+                }
+                const auto has = [&](const std::string& n) { return std::find(enabled.begin(), enabled.end(), n) != enabled.end(); };
+                for (const auto& [name, values] : kTraitStates)
+                    if (has(name)) {
+                        Prop prop;
+                        prop.name = std::string("minecraft:") + name;
+                        for (const char* v : values) {
+                            State st;
+                            st.kind = State::String;
+                            st.s = v;
+                            prop.values.push_back(st);
+                        }
+                        axes.push_back(std::move(prop));
+                    }
+                const bool cardinal = has("cardinal_connections");
+                for (const char* dir : kConnections)
+                    if (cardinal || has(dir)) {
+                        Prop prop;
+                        prop.name = std::string("minecraft:") + dir;
+                        for (int b = 0; b < 2; b++) {
+                            State st;
+                            st.kind = State::Bool;
+                            st.i = b;
+                            prop.values.push_back(st);
+                        }
+                        axes.push_back(std::move(prop));
+                    }
+            }
             if (const ui::Json* props = nbt.Find("properties"); props && props->IsArray())
                 for (const ui::Json& p : props->array) {
                     const ui::Json* name = p.Find("name");
@@ -211,30 +282,31 @@ namespace perlin {
                     prop.name = name->string;
                     for (const ui::Json& v : values->array)
                         prop.values.push_back(ToState(v));
-                    sorted[prop.name] = std::move(prop);
+                    axes.push_back(std::move(prop));
                 }
-            std::vector<const Prop*> list;
-            for (const auto& [k, p] : sorted)
-                list.push_back(&p);
-            std::vector<size_t> idx(list.size(), 0);
+            std::vector<size_t> idx(axes.size(), 0);
             size_t emitted = 0;
+            BlockPalette::CustomRun run;
+            run.name = entry.name;
             for (;;) {
                 std::vector<std::pair<std::string, State>> st;
-                st.reserve(list.size());
-                for (size_t i = 0; i < list.size(); i++)
-                    st.emplace_back(list[i]->name, list[i]->values[idx[i]]);
+                st.reserve(axes.size());
+                for (size_t i = 0; i < axes.size(); i++)
+                    st.emplace_back(axes[i].name, axes[i].values[idx[i]]);
+                std::sort(st.begin(), st.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
                 const int32_t stateHash = BlockPalette::HashState(entry.name, st);
                 palette.LearnState(stateHash, entry.name, st);
-                palette.AppendSequence(stateHash);
+                run.hashes.push_back(stateHash);
                 states++;
-                if (++emitted >= 16384)
+                if (++emitted >= 65536)
                     break;
                 size_t d = 0;
-                while (d < idx.size() && ++idx[d] == list[d]->values.size())
+                while (d < idx.size() && ++idx[d] == axes[d].values.size())
                     idx[d++] = 0;
                 if (d == idx.size())
                     break;
             }
+            runs.push_back(std::move(run));
 
             CustomBlockDef def;
             def.name = entry.name;
@@ -285,6 +357,7 @@ namespace perlin {
                 LightRegistry::Instance().SetCustom(entry.name, emission, dampening);
             ServerBlocks::Instance().Add(std::move(def));
         }
+        palette.InsertCustomRuns(std::move(runs));
         return states;
     }
 }

@@ -39,6 +39,9 @@ namespace perlin {
             BGFX_EMBEDDED_SHADER(vs_entity_shadow),
             BGFX_EMBEDDED_SHADER(fs_entity_shadow),
             BGFX_EMBEDDED_SHADER(fs_bloom),
+            BGFX_EMBEDDED_SHADER(fs_upscale),
+            BGFX_EMBEDDED_SHADER(fs_taa),
+            BGFX_EMBEDDED_SHADER(fs_framegen),
             BGFX_EMBEDDED_SHADER_END(),
         };
 
@@ -65,6 +68,9 @@ namespace perlin {
             {"vs_celestial", "fs_celestial"},
             {"vs_entity_shadow", "fs_entity_shadow"},
             {"vs_post", "fs_bloom"},
+            {"vs_post", "fs_upscale"},
+            {"vs_post", "fs_taa"},
+            {"vs_post", "fs_framegen"},
         };
         static_assert(std::size(kSources) == static_cast<size_t>(ShaderProgram::Count));
         constexpr size_t kPackOnlyFrom = static_cast<size_t>(ShaderProgram::Shadow);

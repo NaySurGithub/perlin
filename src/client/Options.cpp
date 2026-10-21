@@ -61,6 +61,15 @@ namespace perlin {
             std::vector<std::string> approvedMods;
             bool hotReload = true;
             bool betterGrass = false;
+            bool enableLods = false;
+            bool fastMath = false;
+            bool skins3d = true;
+            std::string upscaler = "off";
+            std::string upscaleQuality = "quality";
+            int upscaleSharpness = 50;
+            int upscaleCustom = 70;
+            int upscaleTargetFps = 0;
+            std::string frameGen = "off";
             SkinParts skinParts;
             std::map<std::string, bool> skinSlim;
             std::map<std::string, double> shaderSettings;
@@ -172,6 +181,15 @@ namespace perlin {
                       o.approvedMods,
                       o.hotReload,
                       o.betterGrass,
+                      o.enableLods,
+                      o.fastMath,
+                      o.skins3d,
+                      o.upscaler,
+                      o.upscaleQuality,
+                      o.upscaleSharpness,
+                      o.upscaleCustom,
+                      o.upscaleTargetFps,
+                      o.frameGen,
                       o.skinParts,
                       o.skinSlim,
                       o.shaderSettings,
@@ -188,7 +206,7 @@ namespace perlin {
         o.maxFps = stored.maxFps;
         o.vsync = stored.vsync;
         o.eulaAccepted = stored.eulaAccepted;
-        o.renderDistance = std::clamp(stored.renderDistance, 2, 128);
+        o.renderDistance = std::clamp(stored.renderDistance, 2, 256);
         o.fov = std::clamp(stored.fov, 30.0f, 110.0f);
         o.gamma = std::clamp(stored.gamma, 0.0f, 1.0f);
         o.shaderPack = stored.shaderPack;
@@ -221,6 +239,17 @@ namespace perlin {
         o.approvedMods = stored.approvedMods;
         o.hotReload = stored.hotReload;
         o.betterGrass = stored.betterGrass;
+        o.enableLods = stored.enableLods;
+        o.fastMath = stored.fastMath;
+        o.skins3d = stored.skins3d;
+        o.upscaler = stored.upscaler;
+        o.upscaleQuality = stored.upscaleQuality;
+        o.upscaleSharpness = std::clamp(stored.upscaleSharpness, 0, 100);
+        o.upscaleCustom = std::clamp(stored.upscaleCustom, 25, 100);
+        o.upscaleTargetFps = std::clamp(stored.upscaleTargetFps, 0, 360);
+        o.frameGen = stored.frameGen;
+        if (!o.enableLods)
+            o.renderDistance = std::min(o.renderDistance, 32); // past the real chunks only LODs can draw
         o.skinParts = stored.skinParts;
         o.skinSlim = stored.skinSlim;
         o.shaderSettings = stored.shaderSettings;
@@ -344,6 +373,15 @@ namespace perlin {
                       approvedMods,
                       hotReload,
                       betterGrass,
+                      enableLods,
+                      fastMath,
+                      skins3d,
+                      upscaler,
+                      upscaleQuality,
+                      upscaleSharpness,
+                      upscaleCustom,
+                      upscaleTargetFps,
+                      frameGen,
                       skinParts,
                       skinSlim,
                       shaderSettings,

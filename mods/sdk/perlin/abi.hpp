@@ -140,6 +140,21 @@ namespace perlin::abi {
         CopyFile = 0x0E00,
         MoveFile = 0x0E01,
         DownloadFile = 0x0E02, // also needs the network permission
+
+        // Low-level control (the "advanced" range). Everything here that changes the game needs the control permission,
+        // and every override carries a lifetime in ticks: it lapses on its own when the mod stops refreshing it.
+        CameraControl = 0x0F00, // roll, FOV, view offset, extra yaw/pitch (visual only)
+        CameraState = 0x0F01,   // eye position, angles, FOV, aspect, view-projection matrix
+        WorldToScreen = 0x0F02, // project a world point to GUI coordinates
+        PlayerMotion = 0x0F10,  // set / add the local player's velocity
+        PlayerTeleport = 0x0F11, // move the local player (client side; the server sees it as ordinary movement)
+        PlayerModelPose = 0x0F20, // roll / pitch / yaw offset of the local player's model
+        WorldLines = 0x0F30,    // world-space lines this mod wants drawn (replaces its previous set)
+        WorldBoxes = 0x0F31,    // world-space boxes (outlines), same lifetime rules
+        ClientBlockSet = 0x0F40, // change blocks in the client's own copy of the world
+        ClientBlockGet = 0x0F41, // look a block up by name and states to its runtime id
+        PacketDrop = 0x0F50,    // discard incoming packets by id for a while
+        PacketCounters = 0x0F51, // how many packets of each id have arrived
     };
 
     enum class Event : uint32_t {
@@ -824,6 +839,101 @@ namespace perlin::abi {
         float forward = 0, strafe = 0;
         bool jump = false, sneak = false, sprint = false, attack = false, use = false;
         int32_t ticks = 1;
+    };
+
+    // --- Advanced range ---------------------------------------------------------------------------
+    struct CameraControlState {
+        float roll = 0;       // degrees around the view direction
+        float fovAdd = 0;     // added to the field of view
+        float fovSet = 0;     // when > 0, replaces the field of view
+        float offsetX = 0, offsetY = 0, offsetZ = 0; // view-space offset (x right, y up, z back)
+        float yawAdd = 0, pitchAdd = 0;              // turns the picture only, not where the player aims
+        int32_t ticks = 2;
+    };
+
+    struct CameraInfo {
+        double x = 0, y = 0, z = 0; // eye
+        float yaw = 0, pitch = 0, fov = 70, aspect = 1.78f, nearPlane = 0.1f, farPlane = 600;
+        int32_t perspective = 0;
+        std::array<float, 16> viewProjection{}; // column-major
+    };
+
+    struct WorldPoint {
+        double x = 0, y = 0, z = 0;
+    };
+
+    struct ScreenPoint {
+        float x = 0, y = 0;  // GUI pixels
+        float depth = 0;     // distance along the view direction
+        bool visible = false; // in front of the camera and on screen
+    };
+
+    struct MotionRequest {
+        bool add = false; // false replaces the velocity on the chosen axes, true adds to it
+        double x = 0, y = 0, z = 0;
+        bool axisX = true, axisY = true, axisZ = true;
+    };
+
+    struct TeleportRequest {
+        double x = 0, y = 0, z = 0;
+        bool keepVelocity = false;
+    };
+
+    struct ModelPose {
+        // Degrees, about the middle of the body and applied after the glide lean: pitch leans forward, roll leans sideways,
+        // and yaw spins around the body's long axis, which in flight is the direction of travel (a barrel roll).
+        float roll = 0, pitch = 0, yaw = 0;
+        int32_t ticks = 2;
+    };
+
+    struct WorldLine {
+        double x1 = 0, y1 = 0, z1 = 0, x2 = 0, y2 = 0, z2 = 0;
+        uint32_t color = 0xFFFFFFFF; // 0xAABBGGRR
+        float width = 1.0f;
+    };
+
+    struct WorldLines {
+        int32_t ticks = 2; // the lines are drawn for this many ticks, then forgotten unless resent
+        std::vector<WorldLine> lines;
+    };
+
+    struct WorldBox {
+        double x0 = 0, y0 = 0, z0 = 0, x1 = 1, y1 = 1, z1 = 1;
+        uint32_t color = 0xFFFFFFFF;
+        float width = 1.0f;
+    };
+
+    struct WorldBoxes {
+        int32_t ticks = 2;
+        std::vector<WorldBox> boxes;
+    };
+
+    struct ClientBlockEdit {
+        int32_t x = 0, y = 0, z = 0;
+        uint32_t runtimeId = 0; // from ClientBlockGet or Block
+    };
+
+    struct ClientBlockEdits {
+        std::vector<ClientBlockEdit> edits;
+    };
+
+    struct BlockQuery {
+        std::string name;
+        std::vector<std::pair<std::string, std::string>> states;
+    };
+
+    struct BlockQueryResult {
+        bool found = false;
+        uint32_t runtimeId = 0;
+    };
+
+    struct PacketDropRequest {
+        int32_t ticks = 20;
+        std::vector<uint32_t> ids;
+    };
+
+    struct PacketCount {
+        uint32_t id = 0, count = 0;
     };
 
     struct Region {

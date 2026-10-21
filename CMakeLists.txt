@@ -390,7 +390,7 @@ set(PERLIN_SHADER_OUTPUTS)
 set(PERLIN_SHADER_NAMES
     vs_terrain fs_terrain_solid fs_terrain_cutout fs_terrain_translucent vs_sky fs_sky vs_star fs_star
     vs_sunrise fs_sunrise vs_celestial fs_celestial vs_cloud fs_cloud vs_screen fs_screen vs_ui fs_ui vs_post fs_post
-    vs_entity_shadow fs_entity_shadow fs_bloom
+    vs_entity_shadow fs_entity_shadow fs_bloom fs_upscale fs_taa fs_framegen
     vv_vs_terrain vv_fs_terrain_solid vv_fs_terrain_cutout vv_fs_terrain_translucent vv_vs_sky vv_fs_sky vv_vs_star vv_fs_star
     vv_vs_sunrise vv_fs_sunrise vv_vs_celestial vv_fs_celestial vv_vs_cloud vv_fs_cloud vv_vs_shadow vv_fs_shadow vv_fs_shadow_cutout vv_fs_shadow_glass)
 
@@ -430,7 +430,7 @@ perlin_compile_shaders(FRAGMENT varying_screen.def.sc fs_screen)
 perlin_compile_shaders(VERTEX varying_ui.def.sc vs_ui)
 perlin_compile_shaders(FRAGMENT varying_ui.def.sc fs_ui)
 perlin_compile_shaders(VERTEX varying_post.def.sc vs_post)
-perlin_compile_shaders(FRAGMENT varying_post.def.sc fs_post fs_bloom)
+perlin_compile_shaders(FRAGMENT varying_post.def.sc fs_post fs_bloom fs_upscale fs_taa fs_framegen)
 perlin_compile_shaders(VERTEX varying_entity_shadow.def.sc vs_entity_shadow)
 perlin_compile_shaders(FRAGMENT varying_entity_shadow.def.sc fs_entity_shadow)
 perlin_compile_shaders(VERTEX vv/vv_varying_terrain.def.sc vv/vv_vs_terrain)
@@ -801,6 +801,32 @@ if(MSVC)
     set_source_files_properties(${PERLIN_HOT_SOURCES} PROPERTIES COMPILE_OPTIONS "/O2;/Ob2")
 else()
     target_compile_options(Perlin PRIVATE -Wall -Wextra -Wno-unused-parameter)
+endif()
+
+# Code generation for Release builds: nothing here changes results. errno from libm and floating-point traps are never
+# read, so sqrt/floor/etc. can inline and vectorise; unused functions and data are dropped at link time.
+if(MSVC AND NOT PERLIN_CLANG_CL_BUILD)
+    target_compile_options(Perlin PRIVATE "$<$<CONFIG:Release>:/Gy;/Gw;/Zc:inline;/Oi>")
+elseif(PERLIN_CLANG_CL_BUILD)
+    target_compile_options(Perlin PRIVATE "$<$<CONFIG:Release>:/Gy;/Gw;/Zc:inline;-fno-math-errno;-fno-trapping-math>")
+else()
+    target_compile_options(Perlin PRIVATE "$<$<CONFIG:Release>:-fno-math-errno;-fno-trapping-math;-ffunction-sections;-fdata-sections>")
+    if(NOT APPLE AND NOT EMSCRIPTEN)
+        target_link_options(Perlin PRIVATE "$<$<CONFIG:Release>:-Wl,--gc-sections;-Wl,--as-needed>")
+    endif()
+endif()
+
+# Optional: relaxed floating point (like OptiFine's "fast math"). Lets the compiler contract a*b+c into one fused
+# multiply-add, reorder reciprocals and ignore the sign of zero. Faster maths in the renderer, but the last digit of
+# some results changes, so client-side movement prediction can differ from the server's by a hair: off by default.
+option(PERLIN_FAST_MATH "Relax floating-point rules (faster maths, results differ in the last digits)" OFF)
+if(PERLIN_FAST_MATH)
+    if(MSVC AND NOT PERLIN_CLANG_CL_BUILD)
+        target_compile_options(Perlin PRIVATE /fp:fast)
+    else()
+        target_compile_options(Perlin PRIVATE -fno-signed-zeros -freciprocal-math -ffp-contract=fast)
+    endif()
+    message(STATUS "Perlin: fast math is ON")
 endif()
 
 include(CheckIPOSupported)

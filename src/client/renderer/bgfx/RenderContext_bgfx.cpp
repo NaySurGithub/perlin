@@ -57,8 +57,39 @@ namespace perlin {
         constexpr bgfx::ViewId kViewShadowBuild = 1;   // terrain shadow map slices
         constexpr bgfx::ViewId kViewShadowEntity = 18; // front shadow map copy + mobs and players
         constexpr bgfx::ViewId kViewShadowGlass = 19;  // coloured light through glass (tint map slices)
+        constexpr bgfx::ViewId kViewUp0 = 20;          // render scale: edge-adaptive / bicubic upscale
+        constexpr bgfx::ViewId kViewUp1 = 21;          // render scale: sharpen
+        constexpr bgfx::ViewId kViewCopy2 = 22;        // frame generation: the world as shown, before the HUD
+        constexpr bgfx::ViewId kViewPresent = 23;      // frame generation: the finished frame to the window
+        constexpr bgfx::ViewId kViewGen = 24;          // frame generation: a generated frame
         constexpr uint32_t kPageVerts = 1u << 20;
         constexpr uint32_t kPageIdx = (kPageVerts / 4) * 6;
+
+        // GL-style clip depth (-1..1) from the zero-to-one depth the projection is built with.
+        glm::dmat4 ConvertDepthD(glm::dmat4 m, bool homogeneous) {
+            if (homogeneous)
+                for (int c = 0; c < 4; c++)
+                    m[c][2] = 2.0 * m[c][2] - m[c][3];
+            return m;
+        }
+
+        float Halton(uint32_t index, uint32_t base) {
+            float f = 1.0f, r = 0.0f;
+            while (index > 0) {
+                f /= static_cast<float>(base);
+                r += f * static_cast<float>(index % base);
+                index /= base;
+            }
+            return r;
+        }
+
+        // The projection shifted by a fraction of a pixel (clip space x, y), for the temporal upscaler.
+        void ApplyJitter(float m[16], float ox, float oy) {
+            for (int c = 0; c < 4; c++) {
+                m[c * 4 + 0] += ox * m[c * 4 + 3];
+                m[c * 4 + 1] += oy * m[c * 4 + 3];
+            }
+        }
 
         std::string Env(const char* name) {
             const char* v = std::getenv(name);
@@ -331,10 +362,13 @@ namespace perlin {
         bgfx::setViewMode(kViewEntity, bgfx::ViewMode::Sequential);
         bgfx::setViewMode(kViewLate, bgfx::ViewMode::Sequential);
         {
-            const bgfx::ViewId order[20] = {kViewShadowBuild, kViewShadowGlass, kViewShadowEntity, 0, kViewEntity, kViewCopy, kViewLate,
+            const bgfx::ViewId order[25] = {kViewShadowBuild, kViewShadowGlass, kViewShadowEntity, 0, kViewEntity, kViewCopy, kViewLate,
                                             kViewBloom, kViewBloom + 1, kViewBloom + 2, kViewBloom + 3, kViewBloom + 4, kViewBloom + 5, kViewBloom + 6,
-                                            kViewBlur, kViewBlurOut, kViewHand, kViewGui, kViewDoll, kViewTop};
-            bgfx::setViewOrder(0, 20, order);
+                                            kViewBlur, kViewUp0, kViewUp1, kViewBlurOut, kViewCopy2, kViewHand, kViewGui, kViewDoll, kViewTop,
+                                            kViewPresent, kViewGen};
+            bgfx::setViewOrder(0, 25, order);
+            for (const bgfx::ViewId v : {kViewUp0, kViewUp1, kViewCopy2, kViewPresent, kViewGen})
+                bgfx::setViewMode(v, bgfx::ViewMode::Sequential);
             bgfx::setViewMode(kViewShadowGlass, bgfx::ViewMode::Sequential);
             bgfx::setViewMode(kViewShadowEntity, bgfx::ViewMode::Sequential);
             for (int i = 0; i < 7; i++)
@@ -429,12 +463,19 @@ namespace perlin {
         if (blur.targets)
             return true;
         const uint64_t sample = BGFX_TEXTURE_RT | BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP;
-        blur.worldColor = bgfx::createTexture2D(bgfx::BackbufferRatio::Equal, false, 1, bgfx::TextureFormat::RGBA8, sample);
+        const auto colorTarget = [&]() {
+            return blur.scaled ? bgfx::createTexture2D(static_cast<uint16_t>(blur.w), static_cast<uint16_t>(blur.h), false, 1,
+                                                       bgfx::TextureFormat::RGBA8, sample)
+                               : bgfx::createTexture2D(bgfx::BackbufferRatio::Equal, false, 1, bgfx::TextureFormat::RGBA8, sample);
+        };
+        blur.worldColor = colorTarget();
         // The scene copy blits this depth buffer, so it must be a real texture then.
-        blur.worldDepth = bgfx::createTexture2D(bgfx::BackbufferRatio::Equal, false, 1, bgfx::TextureFormat::D24S8,
-                                                depthReadable ? BGFX_TEXTURE_RT : BGFX_TEXTURE_RT_WRITE_ONLY);
+        const uint64_t depthFlags = depthReadable ? BGFX_TEXTURE_RT : BGFX_TEXTURE_RT_WRITE_ONLY;
+        blur.worldDepth = blur.scaled ? bgfx::createTexture2D(static_cast<uint16_t>(blur.w), static_cast<uint16_t>(blur.h), false, 1,
+                                                              bgfx::TextureFormat::D24S8, depthFlags)
+                                      : bgfx::createTexture2D(bgfx::BackbufferRatio::Equal, false, 1, bgfx::TextureFormat::D24S8, depthFlags);
         for (int i = 0; i < 2; i++)
-            blur.histColor[i] = bgfx::createTexture2D(bgfx::BackbufferRatio::Equal, false, 1, bgfx::TextureFormat::RGBA8, sample);
+            blur.histColor[i] = colorTarget();
         bool ok = bgfx::isValid(blur.worldColor) && bgfx::isValid(blur.worldDepth) && bgfx::isValid(blur.histColor[0]) &&
                   bgfx::isValid(blur.histColor[1]);
         if (ok) {
@@ -479,7 +520,321 @@ namespace perlin {
         kill(blur.params);
         kill(blur.fx);
         blur.targets = false;
+        blur.scaled = false;
         blur.valid = false;
+    }
+
+
+    namespace {
+        glm::dmat4 DoubleMatrix(const float* m) {
+            glm::dmat4 r(1.0);
+            for (int c = 0; c < 4; c++)
+                for (int row = 0; row < 4; row++)
+                    r[c][row] = static_cast<double>(m[c * 4 + row]);
+            return r;
+        }
+
+        void StoreMatrix(const glm::dmat4& m, float* out) {
+            for (int c = 0; c < 4; c++)
+                for (int row = 0; row < 4; row++)
+                    out[c * 4 + row] = static_cast<float>(m[c][row]);
+        }
+    }
+
+    void RenderContext_bgfx::PlanFrame(const FrameParams& params) {
+        plan = Plan{};
+        const bool disabled = PERLIN_ENV("PERLIN_NO_UPSCALE") != nullptr;
+        const float scale = disabled ? 1.0f : std::clamp(params.renderScale, 0.25f, 1.0f);
+        plan.scaled = scale < 0.999f;
+        plan.w = plan.scaled ? std::max(32, static_cast<int>(std::lround(static_cast<float>(width) * scale))) : width;
+        plan.h = plan.scaled ? std::max(32, static_cast<int>(std::lround(static_cast<float>(height) * scale))) : height;
+        plan.temporal = !disabled && params.upscaler == 3 && !upscale.failed && shaders.Has(ShaderProgram::Temporal);
+        plan.frameGen = params.frameGen >= 2 && !fg.failed && shaders.Has(ShaderProgram::FrameGen) &&
+                        shaders.Has(ShaderProgram::Upscale) && !PERLIN_ENV("PERLIN_NO_FRAMEGEN");
+        ShaderPack& pack = ShaderPack::Instance();
+        const bool sceneWanted = pack.Active() && pack.Flag("sceneCopy", false) && !scene.failed && !PERLIN_ENV("PERLIN_NO_SSR");
+        plan.wantDepth = sceneWanted || plan.temporal || plan.frameGen;
+        if (plan.temporal) {
+            // 16 jitter positions of a Halton (2, 3) sequence, each within the pixel of the small image.
+            const uint32_t index = (upscale.frameIndex++ % 16) + 1;
+            const float jx = Halton(index, 2) - 0.5f, jy = Halton(index, 3) - 0.5f;
+            const float ySign = bgfx::getCaps()->originBottomLeft ? 1.0f : -1.0f;
+            plan.jitter[0] = 2.0f * jx / static_cast<float>(plan.w);
+            plan.jitter[1] = 2.0f * jy / static_cast<float>(plan.h);
+            plan.jitterUv[0] = jx / static_cast<float>(plan.w);
+            plan.jitterUv[1] = ySign * jy / static_cast<float>(plan.h);
+        }
+    }
+
+    bool RenderContext_bgfx::EnsureUpscale() {
+        if (upscale.failed)
+            return false;
+        if (bgfx::isValid(upscale.tex[0]) && upscale.w == width && upscale.h == height)
+            return true;
+        DestroyUpscale();
+        if (!shaders.Has(ShaderProgram::Upscale) && !shaders.Has(ShaderProgram::Temporal)) {
+            upscale.failed = true;
+            return false;
+        }
+        const uint64_t flags = BGFX_TEXTURE_RT | BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP;
+        bool ok = true;
+        for (int i = 0; i < 3; i++) {
+            upscale.tex[i] = bgfx::createTexture2D(static_cast<uint16_t>(width), static_cast<uint16_t>(height), false, 1,
+                                                   bgfx::TextureFormat::RGBA8, flags);
+            if (bgfx::isValid(upscale.tex[i]))
+                upscale.fb[i] = bgfx::createFrameBuffer(1, &upscale.tex[i], false);
+            ok = ok && bgfx::isValid(upscale.tex[i]) && bgfx::isValid(upscale.fb[i]);
+        }
+        if (!ok) {
+            std::cout << "[render] could not create the upscaler targets; using plain bilinear" << std::endl;
+            DestroyUpscale();
+            upscale.failed = true;
+            return false;
+        }
+        upscale.w = width;
+        upscale.h = height;
+        upscale.historyValid = false;
+        if (!bgfx::isValid(upscale.mode)) {
+            upscale.mode = bgfx::createUniform("u_up", bgfx::UniformType::Vec4);
+            upscale.size = bgfx::createUniform("u_upSize", bgfx::UniformType::Vec4);
+            upscale.taa = bgfx::createUniform("u_taa", bgfx::UniformType::Vec4);
+            upscale.taaSize = bgfx::createUniform("u_taaSize", bgfx::UniformType::Vec4);
+            upscale.taaJit = bgfx::createUniform("u_taaJit", bgfx::UniformType::Vec4);
+            upscale.taaInvVp = bgfx::createUniform("u_taaInvVp", bgfx::UniformType::Mat4);
+            upscale.taaPrevVp = bgfx::createUniform("u_taaPrevVp", bgfx::UniformType::Mat4);
+            upscale.sampDepth = bgfx::createUniform("s_depth", bgfx::UniformType::Sampler);
+        }
+        return true;
+    }
+
+    void RenderContext_bgfx::DestroyUpscale() {
+        for (int i = 0; i < 3; i++) {
+            if (bgfx::isValid(upscale.fb[i]))
+                bgfx::destroy(upscale.fb[i]);
+            if (bgfx::isValid(upscale.tex[i]))
+                bgfx::destroy(upscale.tex[i]);
+            upscale.fb[i] = BGFX_INVALID_HANDLE;
+            upscale.tex[i] = BGFX_INVALID_HANDLE;
+        }
+        upscale.w = upscale.h = 0;
+        upscale.historyValid = false;
+    }
+
+    // Rebuilds a window-sized image from the smaller world image. Returns what the final pass should read.
+    bgfx::TextureHandle RenderContext_bgfx::RunUpscale(bgfx::TextureHandle source, int sourceW, int sourceH, const FrameParams& params) {
+        const bool scaled = sourceW < width || sourceH < height;
+        const bool temporal = plan.temporal && bgfx::isValid(blur.worldDepth);
+        if (PERLIN_ENV("PERLIN_NO_UPSCALE") || (!temporal && (!scaled || params.upscaler == 0))) {
+            if (!scaled && !temporal && bgfx::isValid(upscale.tex[0]))
+                DestroyUpscale();
+            return source; // the final pass samples it bilinearly
+        }
+        if (!EnsureUpscale())
+            return source;
+        const bool haveSpatial = shaders.Has(ShaderProgram::Upscale);
+        if (!temporal && !haveSpatial)
+            return source;
+        const float origin = bgfx::getCaps()->originBottomLeft ? 1.0f : 0.0f;
+        const float sharp = std::clamp(params.upscaleSharpness, 0.0f, 1.0f);
+        const auto pass = [&](bgfx::ViewId view, int target, bgfx::TextureHandle from, float mode, int fromW, int fromH) {
+            bgfx::setViewFrameBuffer(view, upscale.fb[target]);
+            bgfx::setViewRect(view, 0, 0, static_cast<uint16_t>(width), static_cast<uint16_t>(height));
+            const float post[4] = {0.0f, origin, 0.0f, 0.0f};
+            bgfx::setUniform(blur.params, post);
+            const float m[4] = {mode, sharp, 0.0f, 0.0f};
+            bgfx::setUniform(upscale.mode, m);
+            const float sz[4] = {static_cast<float>(fromW), static_cast<float>(fromH), static_cast<float>(width), static_cast<float>(height)};
+            bgfx::setUniform(upscale.size, sz);
+            bgfx::setTexture(0, blur.sampCur, from, BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP);
+            bgfx::setVertexBuffer(0, screenBuffer);
+            bgfx::setState(BGFX_STATE_WRITE_RGB);
+            bgfx::submit(view, shaders.Program(ShaderProgram::Upscale));
+        };
+        const auto sharpen = [&](bgfx::TextureHandle from, int target) -> bgfx::TextureHandle {
+            if (sharp <= 0.001f || !haveSpatial)
+                return from;
+            pass(kViewUp1, target, from, 2.0f, width, height);
+            return upscale.tex[target];
+        };
+
+        if (!temporal) {
+            upscale.historyValid = false;
+            pass(kViewUp0, 0, source, params.upscaler == 1 ? 0.0f : 1.0f, sourceW, sourceH);
+            return sharpen(upscale.tex[0], 1);
+        }
+
+        // Temporal reconstruction: tex[history] is last frame's output, tex[1 - history] receives this frame's.
+        const int write = 1 - upscale.history;
+        const int read = upscale.history;
+        const bool useHistory = upscale.historyValid && cam.havePrev && !cam.teleported;
+        const double ratio = static_cast<double>(sourceW) / static_cast<double>(std::max(1, width));
+        const float alpha = static_cast<float>(0.08 + (1.0 - std::min(1.0, ratio)) * 0.2);
+        const float ySign = origin > 0.5f ? 1.0f : -1.0f;
+        const glm::dmat4 shift = glm::translate(glm::dmat4(1.0), cam.eye);
+        const glm::dmat4 curVp = ConvertDepthD(cam.proj * cam.view * shift, homogeneousDepth);
+        const glm::dmat4 prevVp = ConvertDepthD(cam.prevProj * cam.prevView * shift, homogeneousDepth);
+        float invVp[16], prevVpF[16];
+        StoreMatrix(glm::inverse(curVp), invVp);
+        StoreMatrix(prevVp, prevVpF);
+        bgfx::setViewFrameBuffer(kViewUp0, upscale.fb[write]);
+        bgfx::setViewRect(kViewUp0, 0, 0, static_cast<uint16_t>(width), static_cast<uint16_t>(height));
+        const float post[4] = {0.0f, origin, 0.0f, 0.0f};
+        bgfx::setUniform(blur.params, post);
+        const float taa[4] = {alpha, useHistory ? 1.0f : 0.0f, ySign, homogeneousDepth ? 1.0f : 0.0f};
+        bgfx::setUniform(upscale.taa, taa);
+        const float taaSize[4] = {static_cast<float>(sourceW), static_cast<float>(sourceH), static_cast<float>(width), static_cast<float>(height)};
+        bgfx::setUniform(upscale.taaSize, taaSize);
+        const float jit[4] = {plan.jitterUv[0], plan.jitterUv[1], 0.0f, 0.0f};
+        bgfx::setUniform(upscale.taaJit, jit);
+        bgfx::setUniform(upscale.taaInvVp, invVp);
+        bgfx::setUniform(upscale.taaPrevVp, prevVpF);
+        const uint64_t point = BGFX_SAMPLER_POINT | BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP;
+        bgfx::setTexture(0, blur.sampCur, source, point);
+        bgfx::setTexture(1, upscale.sampDepth, blur.worldDepth, point);
+        bgfx::setTexture(2, blur.sampHist, upscale.tex[read], BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP);
+        bgfx::setVertexBuffer(0, screenBuffer);
+        bgfx::setState(BGFX_STATE_WRITE_RGB);
+        bgfx::submit(kViewUp0, shaders.Program(ShaderProgram::Temporal));
+        upscale.history = write;
+        upscale.historyValid = true;
+        return sharpen(upscale.tex[write], 2);
+    }
+
+    // ---- Frame generation (world only) ----------------------------------------------------------------------------------
+
+    bool RenderContext_bgfx::EnsureFrameGen() {
+        if (fg.failed)
+            return false;
+        if (fg.ready)
+            return true;
+        const uint64_t clamp = BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP;
+        fg.finalColor = bgfx::createTexture2D(bgfx::BackbufferRatio::Equal, false, 1, bgfx::TextureFormat::RGBA8, BGFX_TEXTURE_RT | clamp);
+        fg.finalDepth = bgfx::createTexture2D(bgfx::BackbufferRatio::Equal, false, 1, bgfx::TextureFormat::D24S8, BGFX_TEXTURE_RT_WRITE_ONLY);
+        fg.worldCopy = bgfx::createTexture2D(bgfx::BackbufferRatio::Equal, false, 1, bgfx::TextureFormat::RGBA8, BGFX_TEXTURE_BLIT_DST | clamp);
+        bool ok = bgfx::isValid(fg.finalColor) && bgfx::isValid(fg.finalDepth) && bgfx::isValid(fg.worldCopy);
+        if (ok) {
+            const bgfx::TextureHandle att[2] = {fg.finalColor, fg.finalDepth};
+            fg.finalFb = bgfx::createFrameBuffer(2, att, false);
+            ok = bgfx::isValid(fg.finalFb);
+        }
+        if (!ok) {
+            std::cout << "[render] could not create the frame generation targets; frame generation disabled" << std::endl;
+            DestroyFrameGen();
+            fg.failed = true;
+            return false;
+        }
+        if (!bgfx::isValid(upscale.mode)) {
+            upscale.mode = bgfx::createUniform("u_up", bgfx::UniformType::Vec4);
+            upscale.size = bgfx::createUniform("u_upSize", bgfx::UniformType::Vec4);
+        }
+        fg.gen = bgfx::createUniform("u_gen", bgfx::UniformType::Vec4);
+        fg.invVp = bgfx::createUniform("u_genInvVp", bgfx::UniformType::Mat4);
+        fg.curVp = bgfx::createUniform("u_genCurVp", bgfx::UniformType::Mat4);
+        fg.sampWorld = bgfx::createUniform("s_world", bgfx::UniformType::Sampler);
+        fg.sampDepth = bgfx::createUniform("s_depth", bgfx::UniformType::Sampler);
+        fg.sampFinal = bgfx::createUniform("s_final", bgfx::UniformType::Sampler);
+        fg.ready = true;
+        return true;
+    }
+
+    void RenderContext_bgfx::DestroyFrameGen() {
+        const auto kill = [](auto& h) {
+            if (bgfx::isValid(h))
+                bgfx::destroy(h);
+            h = BGFX_INVALID_HANDLE;
+        };
+        kill(fg.finalFb);
+        kill(fg.finalColor);
+        kill(fg.finalDepth);
+        kill(fg.worldCopy);
+        kill(fg.gen);
+        kill(fg.invVp);
+        kill(fg.curVp);
+        kill(fg.sampWorld);
+        kill(fg.sampDepth);
+        kill(fg.sampFinal);
+        fg.ready = false;
+        fg.valid = false;
+    }
+
+    // Called after the world has been composed into the frame target: keeps a copy of it without the HUD, and puts the
+    // finished frame (with HUD) in the window.
+    void RenderContext_bgfx::SubmitFrameGenCopies(float origin) {
+        bgfx::TextureRegion dst, src;
+        dst.init(fg.worldCopy);
+        src.init(fg.finalColor);
+        bgfx::blit(kViewCopy2, dst, src);
+        bgfx::touch(kViewCopy2);
+
+        bgfx::setViewFrameBuffer(kViewPresent, BGFX_INVALID_HANDLE);
+        bgfx::setViewRect(kViewPresent, 0, 0, static_cast<uint16_t>(width), static_cast<uint16_t>(height));
+        const float post[4] = {0.0f, origin, 0.0f, 0.0f};
+        bgfx::setUniform(blur.params, post);
+        const float m[4] = {3.0f, 0.0f, 0.0f, 0.0f};
+        bgfx::setUniform(upscale.mode, m);
+        const float sz[4] = {static_cast<float>(width), static_cast<float>(height), static_cast<float>(width), static_cast<float>(height)};
+        bgfx::setUniform(upscale.size, sz);
+        bgfx::setTexture(0, blur.sampCur, fg.finalColor, BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP | BGFX_SAMPLER_POINT);
+        bgfx::setVertexBuffer(0, screenBuffer);
+        bgfx::setState(BGFX_STATE_WRITE_RGB);
+        bgfx::submit(kViewPresent, shaders.Program(ShaderProgram::Upscale));
+    }
+
+    // Shows a frame between two real ones: the camera is moved on by the share `index / total` of its last step and the last
+    // real world image is carried there by depth reprojection. The HUD is left where it is.
+    bool RenderContext_bgfx::PresentGenerated(int index, int total) {
+        if (!initialized || !fg.ready || !fg.valid || !cam.haveCur || !cam.havePrev || cam.teleported || total < 2 ||
+            !bgfx::isValid(blur.worldDepth) || !shaders.Has(ShaderProgram::FrameGen))
+            return false;
+        const double t = static_cast<double>(index) / static_cast<double>(total);
+        const glm::dmat4 shift = glm::translate(glm::dmat4(1.0), cam.eye);
+        const glm::dmat4 curRel = cam.view * shift;
+        const glm::dmat4 prevRel = cam.prevView * shift;
+        const auto split = [](const glm::dmat4& m, glm::dmat3& r, glm::dvec3& c) {
+            r = glm::dmat3(m);
+            c = -(glm::transpose(r) * glm::dvec3(m[3]));
+        };
+        glm::dmat3 r0, r1;
+        glm::dvec3 c0, c1;
+        split(prevRel, r0, c0);
+        split(curRel, r1, c1);
+        glm::dquat q0 = glm::quat_cast(r0), q1 = glm::quat_cast(r1);
+        if (glm::dot(q0, q1) < 0.0)
+            q0 = -q0;
+        const double angle = 2.0 * std::acos(std::clamp(glm::dot(q0, q1), -1.0, 1.0));
+        // A big jump (a flick, a teleport, a camera cut): extrapolating it would smear the picture, so show nothing new.
+        if (!(angle < 0.7) || !(glm::length(c1 - c0) < 6.0))
+            return false;
+        const glm::dquat qg = glm::normalize(glm::slerp(q0, q1, 1.0 + t));
+        const glm::dmat3 rg = glm::mat3_cast(qg);
+        const glm::dvec3 cg = c1 + (c1 - c0) * t;
+        glm::dmat4 viewGen(rg);
+        viewGen[3] = glm::dvec4(-(rg * cg), 1.0);
+        const glm::dmat4 genVp = ConvertDepthD(cam.proj * viewGen, homogeneousDepth);
+        const glm::dmat4 curVp = ConvertDepthD(cam.proj * curRel, homogeneousDepth);
+        float invGen[16], cur[16];
+        StoreMatrix(glm::inverse(genVp), invGen);
+        StoreMatrix(curVp, cur);
+
+        const float origin = bgfx::getCaps()->originBottomLeft ? 1.0f : 0.0f;
+        bgfx::setViewFrameBuffer(kViewGen, BGFX_INVALID_HANDLE);
+        bgfx::setViewRect(kViewGen, 0, 0, static_cast<uint16_t>(width), static_cast<uint16_t>(height));
+        const float post[4] = {0.0f, origin, 0.0f, 0.0f};
+        bgfx::setUniform(blur.params, post);
+        const float gen[4] = {0.0f, 0.0f, origin > 0.5f ? 1.0f : -1.0f, homogeneousDepth ? 1.0f : 0.0f};
+        bgfx::setUniform(fg.gen, gen);
+        bgfx::setUniform(fg.invVp, invGen);
+        bgfx::setUniform(fg.curVp, cur);
+        const uint64_t clamp = BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP;
+        bgfx::setTexture(0, fg.sampWorld, fg.worldCopy, clamp);
+        bgfx::setTexture(1, fg.sampDepth, blur.worldDepth, clamp | BGFX_SAMPLER_POINT);
+        bgfx::setTexture(2, fg.sampFinal, fg.finalColor, clamp | BGFX_SAMPLER_POINT);
+        bgfx::setVertexBuffer(0, screenBuffer);
+        bgfx::setState(BGFX_STATE_WRITE_RGB);
+        bgfx::submit(kViewGen, shaders.Program(ShaderProgram::FrameGen));
+        bgfx::frame();
+        ReleaseFrameMeshes();
+        return true;
     }
 
     bool RenderContext_bgfx::EnsureSceneCopy() {
@@ -596,14 +951,26 @@ namespace perlin {
         // A pack asking for the scene copy needs the world drawn offscreen too.
         ShaderPack& pack = ShaderPack::Instance();
         const bool sceneWanted = pack.Active() && pack.Flag("sceneCopy", false) && !scene.failed && !PERLIN_ENV("PERLIN_NO_SSR");
-        if (sceneWanted != depthReadable) {
+        if (plan.wantDepth != depthReadable) {
             if (blur.targets)
                 DestroyMotionBlur();
-            depthReadable = sceneWanted;
+            depthReadable = plan.wantDepth;
         }
         scene.valid = false;
         const bool bloomOn = params.bloom > 0.001f && !bloom.failed && !PERLIN_ENV("PERLIN_NO_BLOOM");
-        const bool on = blurOn || sceneWanted || bloomOn;
+        // Render scale: the world goes to targets smaller than the window (see PlanFrame).
+        const int renderW = plan.w, renderH = plan.h;
+        const bool scaled = plan.scaled;
+        if (blur.targets && (blur.scaled != scaled || (scaled && (blur.w != renderW || blur.h != renderH)))) {
+            DestroyMotionBlur();
+            upscale.historyValid = false;
+        }
+        if (!blur.targets) {
+            blur.scaled = scaled;
+            blur.w = renderW;
+            blur.h = renderH;
+        }
+        const bool on = blurOn || sceneWanted || bloomOn || scaled || plan.temporal || plan.frameGen;
         if (!on || !EnsureMotionBlurTargets()) {
             if (on && !blur.targets) {
                 if (blurOn)
@@ -616,6 +983,11 @@ namespace perlin {
             bgfx::setViewFrameBuffer(0, BGFX_INVALID_HANDLE);
             bgfx::setViewFrameBuffer(kViewEntity, BGFX_INVALID_HANDLE);
             bgfx::setViewFrameBuffer(kViewLate, BGFX_INVALID_HANDLE);
+            for (const bgfx::ViewId v : {kViewBlurOut, kViewHand, kViewGui, kViewDoll, kViewTop})
+                bgfx::setViewFrameBuffer(v, BGFX_INVALID_HANDLE);
+            if (fg.ready)
+                DestroyFrameGen();
+            fg.valid = false;
             blur.valid = false;
             if (blur.targets && !on)
                 DestroyMotionBlur();
@@ -644,6 +1016,19 @@ namespace perlin {
         bgfx::setViewFrameBuffer(0, blur.worldFb);
         bgfx::setViewFrameBuffer(kViewEntity, blur.worldFb);
         bgfx::setViewFrameBuffer(kViewLate, blur.worldFb);
+        for (const bgfx::ViewId view : {bgfx::ViewId(0), kViewEntity, kViewLate})
+            bgfx::setViewRect(view, 0, 0, static_cast<uint16_t>(blur.scaled ? blur.w : width), static_cast<uint16_t>(blur.scaled ? blur.h : height));
+        const int worldW = blur.scaled ? blur.w : width, worldH = blur.scaled ? blur.h : height;
+        const bool fgRun = plan.frameGen && EnsureFrameGen();
+        if (!fgRun && fg.ready)
+            DestroyFrameGen();
+        bgfx::FrameBufferHandle screenFb = BGFX_INVALID_HANDLE;
+        if (fgRun)
+            screenFb = fg.finalFb;
+        for (const bgfx::ViewId v : {kViewBlurOut, kViewHand, kViewGui, kViewDoll, kViewTop})
+            bgfx::setViewFrameBuffer(v, screenFb);
+        fg.valid = fgRun;
+        bgfx::setViewClear(kViewBlurOut, fgRun ? BGFX_CLEAR_DEPTH : BGFX_CLEAR_NONE, 0, 1.0f, 0);
 
         const float now = params.timeSeconds;
         const float dt = std::clamp(now - blur.lastTime, 1.0f / 480.0f, 0.1f);
@@ -655,9 +1040,9 @@ namespace perlin {
         const float origin = bgfx::getCaps()->originBottomLeft ? 1.0f : 0.0f;
 
         const auto fullscreen = [&](bgfx::ViewId view, bgfx::FrameBufferHandle fb, bgfx::TextureHandle cur,
-                                    bgfx::TextureHandle hist, float w, float dir) {
+                                    bgfx::TextureHandle hist, float w, float dir, bool nativeSize = true) {
             bgfx::setViewFrameBuffer(view, fb);
-            bgfx::setViewRect(view, 0, 0, static_cast<uint16_t>(width), static_cast<uint16_t>(height));
+            bgfx::setViewRect(view, 0, 0, static_cast<uint16_t>(nativeSize ? width : worldW), static_cast<uint16_t>(nativeSize ? height : worldH));
             const float p[4] = {w, origin, menuPx, dir};
             bgfx::setUniform(blur.params, p);
             bgfx::setTexture(0, blur.sampCur, cur, BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP);
@@ -679,12 +1064,18 @@ namespace perlin {
         };
         if (!blurOn) {
             // Offscreen only for the scene copy / bloom: straight copy to the screen.
-            fullscreen(kViewBlurOut, BGFX_INVALID_HANDLE, blur.worldColor, blur.worldColor, 0.0f, 1.0f);
+            const bgfx::TextureHandle shown = RunUpscale(blur.worldColor, worldW, worldH, params);
+            fullscreen(kViewBlurOut, screenFb, shown, shown, 0.0f, 1.0f);
+            if (fgRun)
+                SubmitFrameGenCopies(origin);
             blur.valid = false;
             return;
         }
-        fullscreen(kViewBlur, blur.histFb[write], blur.worldColor, blur.histColor[blur.read], weight, 0.0f);
-        fullscreen(kViewBlurOut, BGFX_INVALID_HANDLE, blur.histColor[write], blur.histColor[write], 0.0f, 1.0f);
+        fullscreen(kViewBlur, blur.histFb[write], blur.worldColor, blur.histColor[blur.read], weight, 0.0f, false);
+        const bgfx::TextureHandle shown = RunUpscale(blur.histColor[write], worldW, worldH, params);
+        fullscreen(kViewBlurOut, screenFb, shown, shown, 0.0f, 1.0f);
+        if (fgRun)
+            SubmitFrameGenCopies(origin);
         blur.read = write;
         blur.valid = true;
     }
@@ -705,6 +1096,24 @@ namespace perlin {
             Resize(w, h);
         }
 
+        PlanFrame(params);
+        {
+            const bool usable = std::isfinite(params.projection[0]) && params.projection[0] != 0.0f && std::isfinite(params.view[12]);
+            cam.havePrev = cam.haveCur && usable && !params.teleported && cam.sizeW == width && cam.sizeH == height;
+            if (usable) {
+                cam.prevView = cam.view;
+                cam.prevProj = cam.proj;
+                cam.prevEye = cam.eye;
+                cam.view = DoubleMatrix(params.view);
+                cam.proj = DoubleMatrix(params.projection);
+                cam.eye = glm::dvec3(params.cameraPosition[0], params.cameraPosition[1], params.cameraPosition[2]);
+            }
+            cam.haveCur = usable;
+            cam.teleported = params.teleported;
+            cam.sizeW = width;
+            cam.sizeH = height;
+        }
+
         auto quantize = [](float c) -> uint32_t {
             return static_cast<uint32_t>(std::clamp(c, 0.0f, 1.0f) * 255.0f + 0.5f);
         };
@@ -720,6 +1129,8 @@ namespace perlin {
             static const float identity[16] = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
             float worldProj[16];
             ConvertDepth(params.viewProjection, worldProj);
+            if (plan.temporal)
+                ApplyJitter(worldProj, plan.jitter[0], plan.jitter[1]);
             bgfx::setViewRect(kViewEntity, 0, 0, static_cast<uint16_t>(width), static_cast<uint16_t>(height));
             bgfx::setViewTransform(kViewEntity, identity, worldProj);
             bgfx::touch(kViewEntity);
@@ -777,6 +1188,11 @@ namespace perlin {
         UploadLightmap(params.lightmap);
         frame = params;
         ConvertDepth(params.skyViewProjection, skyMvp);
+        if (plan.temporal) {
+            // Sub-pixel shift for the temporal upscaler. The inverse used by the shader packs was taken before this.
+            ApplyJitter(mvp, plan.jitter[0], plan.jitter[1]);
+            ApplyJitter(skyMvp, plan.jitter[0], plan.jitter[1]);
+        }
     }
 
     void RenderContext_bgfx::ConvertDepth(const float in[16], float out[16]) const {
@@ -2448,6 +2864,8 @@ namespace perlin {
         lodChunks.clear();
         DestroyPages();
         DestroyMotionBlur();
+        DestroyUpscale();
+        DestroyFrameGen();
         DestroySceneCopy();
         DestroyBloom();
         if (bgfx::isValid(cloudMapTexture))
