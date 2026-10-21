@@ -836,9 +836,7 @@ namespace perlin {
             }
             std::cout << "[form] opened form " << sf.id << " '" << formModel.title << "'" << std::endl;
             formUi.Warm(ServerPacks::Instance().Directories());
-            formUi.WaitReady(2500);
-            formUi.Warm(ServerPacks::Instance().Directories());
-            formUi.WaitReady(2500);
+            formUi.WaitReady(150);
             formEngine = formUi.Ready();
             formShown = true;
             formScroll = 0.0f;
@@ -867,7 +865,7 @@ namespace perlin {
         const int guiW = static_cast<int>(std::ceil(static_cast<float>(fbW) / static_cast<float>(scale)));
         const int guiH = static_cast<int>(std::ceil(static_cast<float>(fbH) / static_cast<float>(scale)));
         formScroll = std::clamp(formScroll, 0.0f, std::max(0.0f, formContentH - formViewH));
-        const std::string signature = std::to_string(formModel.id) + "|" + std::to_string(formModel.focus) + "|" + ui::FormCustomResponse(formModel) + "|" +
+        const std::string signature = std::to_string(formModel.id) + "|" + std::to_string(formModel.focus) + "|" + ui::FormCustomResponse(formModel) + "|" + std::to_string(ui::FormImageVersion()) + "|" +
                                       std::to_string(guiW) + "x" + std::to_string(guiH) + "|" + std::to_string(static_cast<int>(formScroll)) + "|" +
                                       (formEngine ? "e" : "b");
         if (signature != formSignature || !hud.Overlay().HasOverlay()) {
@@ -897,6 +895,18 @@ namespace perlin {
         hud.Overlay().MouseMove(input.MouseX() / static_cast<float>(scale), input.MouseY() / static_cast<float>(scale));
         hud.UpdateOverlay(fbW, fbH, options.guiScale);
         const bool down = input.IsMouseDown(0);
+        {
+            static int dragSlider = -1;
+            if (!down) {
+                dragSlider = -1;
+            } else {
+                const int hoverSlider = ui::FormSliderAt(hud.Overlay().OverlayHover());
+                if (dragSlider < 0 && hoverSlider >= 0 && !formLeftDown)
+                    dragSlider = hoverSlider;
+                if (dragSlider >= 0)
+                    ui::FormDrag(formModel, dragSlider, input.MouseX() / static_cast<float>(scale));
+            }
+        }
         if (!down && formLeftDown && now - formOpenedAt > std::chrono::milliseconds(200)) {
             const std::string hover = hud.Overlay().OverlayHover();
             if (hover == ui::kFormCloseId) {
@@ -2999,6 +3009,14 @@ namespace perlin {
                            }
                        });
                 toggle("Enable LODs", options.enableLods);
+                if (live) {
+                    const int wantNear = options.enableLods && options.renderDistance > LodStore::kRealChunks ? LodStore::kRealChunks : 1 << 20;
+                    if (live->NearRadius() != wantNear) {
+                        live->SetNearRadius(wantNear);
+                        live->SetMaxViewDistance(std::max(32, options.renderDistance));
+                        live->RequestChunkRadiusNow();
+                    }
+                }
                 slider(tr("options.framerateLimit", "Max Framerate"),
                        options.maxFps == 0 ? tr("options.framerateLimit.max", "Unlimited") : std::to_string(options.maxFps) + " fps",
                        options.maxFps == 0 ? 1.0f : static_cast<float>(options.maxFps - 10) / 250.0f, [this](float f) {
@@ -3812,6 +3830,8 @@ namespace perlin {
         t.bugs = tr("menu.reportBugs", "Report Bugs");
         t.lan = tr("menu.shareToLan", "Open to LAN");
         t.players = tr("gui.playerList", "Player List");
+        t.serverSettings = tr("perlin.serverSettings", "Server Settings");
+        t.hasServerSettings = live != nullptr;
         t.showPanel = pausePlayers && live;
         if (t.showPanel) {
             t.panelTitle = t.players;
@@ -3830,7 +3850,7 @@ namespace perlin {
         std::string panelSig;
         for (const auto& r : t.panel)
             panelSig += r.name + ":" + std::to_string(r.perm) + ",";
-        const std::string signature = std::to_string(guiW) + "x" + std::to_string(guiH) + (t.showPanel ? "P" : "p") + panelSig + t.title + t.back + t.options + t.quit + t.advancements + t.stats + t.feedback + t.bugs + t.lan + t.players + t.world + t.mods;
+        const std::string signature = std::to_string(guiW) + "x" + std::to_string(guiH) + (t.showPanel ? "P" : "p") + panelSig + (t.hasServerSettings ? "S" : "s") + t.title + t.back + t.options + t.quit + t.advancements + t.stats + t.feedback + t.bugs + t.lan + t.players + t.world + t.mods;
         if (signature != pauseSignature || !hud.Overlay().HasOverlay()) {
             pauseSignature = signature;
             std::string error;
@@ -3860,6 +3880,11 @@ namespace perlin {
                 pauseView = 5;
                 optionsSignature.clear();
                 hud.Overlay().ClearOverlay();
+            } else if (hover == ui::kPauseServerSettingsId && live) {
+                live->SendServerSettingsRequest();
+                hud.Overlay().ClearOverlay();
+                pauseShown = false;
+                input.SetTextMode(false);
             } else if (hover == ui::kPauseModsId) {
                 pauseView = 4;
                 optionsSignature.clear();
@@ -6225,7 +6250,7 @@ namespace perlin {
                               (inputManager.IsDown(Action::Left) ? 4u : 0u) | (inputManager.IsDown(Action::Right) ? 8u : 0u) |
                               (inputManager.IsDown(Action::Jump) ? 16u : 0u) | (inputManager.IsDown(Action::Sneak) ? 32u : 0u) |
                               (inputManager.IsDown(Action::Sprint) ? 64u : 0u);
-                    ev.gliding = player.Gliding();
+                    ev.gliding = player.Gliding() && !ps.onGround && !ps.inWater;
                     ev.underwater = headUnderwater;
                     ev.thirdPerson = camera.mode != PerspectiveMode::FirstPerson;
                     ev.onGround = ps.onGround;
@@ -6233,9 +6258,17 @@ namespace perlin {
                         std::lock_guard lock(modAdv.mutex);
                         modAdv.lookTaken = false;
                     }
+                    static float glideLostFor = 0.0f;
+                    glideLostFor = ev.gliding ? 0.0f : glideLostFor + dt;
                     abi::Writer lw;
                     lw.write(ev);
                     lookMods.Dispatch(abi::Event::Look, lw, 20.0);
+                    if (glideLostFor > 0.35f) {
+                        std::lock_guard lock(modAdv.mutex);
+                        modAdv.cameraUntil = {};
+                        modAdv.poseUntil = {};
+                        modAdv.lookTaken = false;
+                    }
                     std::lock_guard lock(modAdv.mutex);
                     if (modAdv.lookTaken) {
                         lookTaken = true;
@@ -6299,7 +6332,14 @@ namespace perlin {
                 camera.aspect = static_cast<float>(width) / static_cast<float>(height);
 
             BedrockSession* live = sessionReady && session && !session->Transferring() ? session.get() : nullptr;
-            const std::vector<entity::Entity> frameEntities = live ? live->Entities().Snapshot() : previewEntities.Snapshot();
+            static std::vector<entity::Entity> frameEntities;
+            if (live) {
+                const physics::State& viewerState = player.State();
+                live->Entities().SetViewer(live->GetRuntimeId(), {viewerState.x, viewerState.y, viewerState.z});
+                live->Entities().Snapshot(frameEntities);
+            } else {
+                previewEntities.Snapshot(frameEntities);
+            }
             PumpMods(live, live ? &live->NetLevel() : previewLevel.get(), hud.get(), dt);
             if (live) {
                 live->Update();
@@ -6678,8 +6718,18 @@ namespace perlin {
                                     live->SendSwingArm(use == blockuse::Use::Place ? "build" : "interact");
                                 live->SendUseItemOnBlock(gAim.bx, gAim.by, gAim.bz, gAim.face, click, eyeF, static_cast<int>(use), dest);
                             }
-                            if (use == blockuse::Use::Place && holdsBlock)
+                            if (use == blockuse::Use::Place && holdsBlock) {
                                 sounds.PlayBlockEvent(held.name, "place", glm::dvec3(dest[0] + 0.5, dest[1] + 0.5, dest[2] + 0.5));
+                                if (live && !player.Flying()) {
+                                    const physics::State& pst = player.State();
+                                    const bool overlaps = pst.x + 0.35 > dest[0] && pst.x - 0.35 < dest[0] + 1 && pst.z + 0.35 > dest[2] && pst.z - 0.35 < dest[2] + 1 &&
+                                                          pst.y + 1.85 > dest[1] && pst.y < dest[1] + 1;
+                                    if (!overlaps)
+                                        live->PredictPlace(dest[0], dest[1], dest[2], static_cast<int32_t>(held.blockRuntimeId));
+                                } else if (live) {
+                                    live->PredictPlace(dest[0], dest[1], dest[2], static_cast<int32_t>(held.blockRuntimeId));
+                                }
+                            }
                         }
                         if (usePressed && live && holdsItem && use == blockuse::Use::Nothing && !interactedEntity) {
                             live->SendUseItemInAir(eyeF);

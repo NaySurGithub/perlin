@@ -72,6 +72,7 @@ namespace perlin {
         void SetChunkRadius(int r) { chunkRadius = r; }
         void RequestChunkRadiusNow() { SendRequestChunkRadius(); }
         void SetNearRadius(int r) { nearRadius = r; }
+        int NearRadius() const { return nearRadius; }
         void SetMaxViewDistance(int r) { maxViewDistance = r; }
 
         bool Connect(const std::string& host, uint16_t port);
@@ -459,6 +460,7 @@ void RequestRespawn();
         bool SelectHotbarSlot(int slot);
         bool SendSwingArm(const char* source = "build");
 
+        bool PredictPlace(int x, int y, int z, int32_t heldRuntimeId);
         bool SendUseItemOnBlock(int bx, int by, int bz, int face, const float click[3], const float eye[3], int use, const int dest[3]);
         bool SendUseItemInAir(const float eye[3]);
         bool SendReleaseItem(const float eye[3]);
@@ -533,6 +535,7 @@ void RequestRespawn();
         BlockEntityStore blockEntities;
         void RegisterServerUiHandlers();
         void RegisterWorldExtraHandlers();
+        void RegisterProtocolExtras();
         void RegisterIgnoredHandlers();
         struct PropertyDef {
             std::string name;
@@ -666,6 +669,14 @@ void RequestRespawn();
         mutable std::mutex placeMutex;
         PendingPlace pendingPlace;
         void ConfirmPlace(int x, int y, int z, int32_t runtimeId);
+        struct PredictedPlace {
+            int x = 0, y = 0, z = 0;
+            uint16_t id = 0, previous = 0;
+            std::chrono::steady_clock::time_point at{};
+        };
+        std::mutex predictMutex;
+        std::vector<PredictedPlace> predictedPlaces;
+        void ExpirePredictions();
         void NoteUnknownBlock(int32_t networkId);
         std::atomic<bool> gotSpawn{false};
         std::atomic<int> chunksReceived{0};

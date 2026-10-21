@@ -158,6 +158,7 @@ namespace perlin {
         InstallPersistentChunkResolver();
         RegisterServerUiHandlers();
         RegisterWorldExtraHandlers();
+        RegisterProtocolExtras();
         RegisterIgnoredHandlers();
         dispatcher.OnFailure([](uint32_t id, const char* name, size_t size) {
             std::cout << "[net] failed to decode " << name << " (id " << id << ", " << size << " bytes)"
@@ -582,8 +583,10 @@ namespace perlin {
                         const uint16_t flags = static_cast<uint16_t>(a.enumType);
                         const size_t index = static_cast<uint16_t>(a.valueType);
                         if (flags == static_cast<uint16_t>(AvailableCommandsPacketCommandDataEntryOverloadsEntryParametersEntryEnumType::SoftEnum)) {
-                            if (index < p.dynamicEnums.size())
+                            if (index < p.dynamicEnums.size()) {
                                 cp.values = p.dynamicEnums[index].values;
+                                cp.softEnum = p.dynamicEnums[index].name;
+                            }
                         } else if (flags & 0x20) {
                             if (index < p.enums.size())
                                 for (const uint32_t v : p.enums[index].values)
@@ -965,7 +968,19 @@ namespace perlin {
 
         On<TakeItemEntityPacket>([this](const TakeItemEntityPacket& p) {
             droppedRaw.erase(p.runtimeEntityId);
-            entities.RemoveRuntime(p.runtimeEntityId);
+            entity::Entity taken;
+            if (entities.Find(p.runtimeEntityId, taken) && taken.isItem && runtimeId != 0 && p.target == runtimeId) {
+                SoundRequest r;
+                r.kind = SoundRequest::Kind::Named;
+                r.name = "random.pop";
+                r.x = static_cast<float>(taken.pos.x);
+                r.y = static_cast<float>(taken.pos.y);
+                r.z = static_cast<float>(taken.pos.z);
+                r.volume = 0.2f;
+                r.pitch = 1.4f + (static_cast<float>(taken.runtimeId % 7) * 0.05f);
+                PushSound(std::move(r));
+            }
+            entities.Pickup(p.runtimeEntityId, p.target);
         });
 
         On<RemoveEntityPacket>([this](const RemoveEntityPacket& p) { entities.Remove(p.entityIdSelf); });

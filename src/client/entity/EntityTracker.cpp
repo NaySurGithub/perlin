@@ -1,3 +1,4 @@
+#include <chrono>
 #include "client/entity/EntityTracker.hpp"
 
 namespace perlin::entity {
@@ -208,12 +209,76 @@ namespace perlin::entity {
             it->second.isSelf = true;
     }
 
-    std::vector<Entity> EntityTracker::Snapshot() const {
+    namespace {
+        double NowMs() {
+            return std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now().time_since_epoch()).count();
+        }
+        constexpr double kPickupMs = 160.0;
+    }
+
+    void EntityTracker::SetViewer(uint64_t rid, glm::dvec3 feet) {
         std::lock_guard lock(mutex);
-        std::vector<Entity> out;
-        out.reserve(entities.size());
+        viewerRuntime = rid;
+        viewerFeet = feet;
+    }
+
+    void EntityTracker::Pickup(uint64_t rid, uint64_t collector) {
+        std::lock_guard lock(mutex);
+        const auto it = entities.find(rid);
+        if (it == entities.end())
+            return;
+        if (!it->second.isItem || pickups.count(rid)) {
+            if (!it->second.isItem) {
+                byUnique.erase(it->second.uniqueId);
+                entities.erase(it);
+            }
+            return;
+        }
+        pickups[rid] = {collector, NowMs(), it->second.pos};
+    }
+
+    void EntityTracker::StepPickupsLocked(std::vector<uint64_t>* finished) const {
+        if (pickups.empty())
+            return;
+        const double now = NowMs();
+        for (auto it = pickups.begin(); it != pickups.end();) {
+            const auto item = entities.find(it->first);
+            if (item == entities.end()) {
+                it = pickups.erase(it);
+                continue;
+            }
+            const double t = (now - it->second.startMs) / kPickupMs;
+            if (t >= 1.0) {
+                byUnique.erase(item->second.uniqueId);
+                entities.erase(item);
+                it = pickups.erase(it);
+                continue;
+            }
+            glm::dvec3 target = it->second.from;
+            const auto collector = entities.find(it->second.collector);
+            if (viewerRuntime != 0 && it->second.collector == viewerRuntime)
+                target = viewerFeet + glm::dvec3(0.0, 0.5, 0.0);
+            else if (collector != entities.end())
+                target = collector->second.pos + glm::dvec3(0.0, 0.5, 0.0);
+            const double e = t * t;
+            item->second.pos = it->second.from + (target - it->second.from) * e;
+            ++it;
+        }
+        (void)finished;
+    }
+
+    void EntityTracker::Snapshot(std::vector<Entity>& out) const {
+        std::lock_guard lock(mutex);
+        StepPickupsLocked(nullptr);
+        out.resize(entities.size());
+        size_t i = 0;
         for (const auto& [rid, e] : entities)
-            out.push_back(e);
+            out[i++] = e;
+    }
+
+    std::vector<Entity> EntityTracker::Snapshot() const {
+        std::vector<Entity> out;
+        Snapshot(out);
         return out;
     }
 

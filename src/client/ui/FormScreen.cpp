@@ -11,6 +11,7 @@
 #include "util/Paths.hpp"
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <cstdio>
 #include <chrono>
@@ -19,6 +20,11 @@
 #include <fstream>
 #include <iostream>
 #include <thread>
+#include <atomic>
+#include <map>
+#include <mutex>
+#include <set>
+#include "network/Http.hpp"
 
 namespace perlin::ui {
     namespace {
@@ -95,6 +101,28 @@ namespace perlin::ui {
             ".field.focus .in { background-color: #101030; }\n"
             ".field .txt { font-family: minecraft-shadow; left: 4px; top: 5px; font-size: 8px; line-height: 9px; white-space: nowrap; overflow: hidden; color: #e0e0e0; }\n";
 
+        std::mutex gImageMutex;
+        std::map<std::string, std::string> gImages;
+        std::set<std::string> gImagePending;
+        std::atomic<uint32_t> gImageVersion{0};
+
+        std::string ImageSource(const FormButton& b) {
+            if (b.imageData.empty())
+                return {};
+            if (b.imageType == "path") {
+                std::string path = b.imageData;
+                if (path.size() > 4 && path.compare(path.size() - 4, 4, ".png") == 0)
+                    path.resize(path.size() - 4);
+                return path;
+            }
+            if (b.imageType == "url") {
+                std::string bytes;
+                if (FormImageBytes(b.imageData, bytes))
+                    return "mcurl:" + b.imageData;
+            }
+            return {};
+        }
+
         std::string Button(const std::string& id, const std::string& label, float x, float y, float w, float h) {
             const std::string W = F(w), H = F(h);
             std::string s = "<div id=\"" + EscapeRml(id) + "\" class=\"btn\" style=\"left:" + F(x) + "px;top:" + F(y) + "px;width:" + W + "px;height:" + H + "px;\">";
@@ -105,6 +133,79 @@ namespace perlin::ui {
             s += "<div class=\"lbl\" style=\"top:" + F((h - 9) / 2) + "px;width:" + W + "px;height:9px;\">" + Rich(label) + "</div></div>\n";
             return s;
         }
+    }
+
+    bool FormImageBytes(const std::string& url, std::string& out) {
+        {
+            std::lock_guard lock(gImageMutex);
+            const auto it = gImages.find(url);
+            if (it != gImages.end()) {
+                if (it->second.empty())
+                    return false;
+                out = it->second;
+                return true;
+            }
+            if (!gImagePending.insert(url).second)
+                return false;
+        }
+        if (url.rfind("http", 0) != 0) {
+            std::lock_guard lock(gImageMutex);
+            gImages[url] = {};
+            return false;
+        }
+        std::thread([url]() {
+            std::string body;
+            try {
+                const http::Response r = http::GetUrl(url, {}, 20);
+                if (r.status >= 200 && r.status < 300 && r.body.size() < (8u << 20))
+                    body = r.body;
+            } catch (...) {
+            }
+            {
+                std::lock_guard lock(gImageMutex);
+                gImages[url] = std::move(body);
+            }
+            gImageVersion++;
+        }).detach();
+        return false;
+    }
+
+    uint32_t FormImageVersion() {
+        return gImageVersion.load();
+    }
+
+    int FormSliderAt(const std::string& hoverId) {
+        if (hoverId.size() < 4 || hoverId[0] != 'k' || hoverId[1] != ':')
+            return -1;
+        return std::atoi(hoverId.c_str() + 2);
+    }
+
+    bool FormDrag(FormModel& form, int index, float guiX) {
+        if (index < 0 || static_cast<size_t>(index) >= form.elements.size())
+            return false;
+        FormElement& e = form.elements[static_cast<size_t>(index)];
+        if (e.trackW <= 1.0f)
+            return false;
+        const double f = std::clamp(static_cast<double>((guiX - e.trackX) / e.trackW), 0.0, 1.0);
+        if (e.kind == FormElement::Kind::Slider) {
+            const double span = e.max - e.min;
+            double v = e.min + f * span;
+            v = e.min + std::round((v - e.min) / e.step) * e.step;
+            v = std::clamp(v, e.min, e.max);
+            if (v == e.number)
+                return false;
+            e.number = v;
+            return true;
+        }
+        if (e.kind == FormElement::Kind::StepSlider) {
+            const int last = static_cast<int>(e.options.size()) - 1;
+            const int i = std::clamp(static_cast<int>(std::lround(f * last)), 0, std::max(0, last));
+            if (i == e.index)
+                return false;
+            e.index = i;
+            return true;
+        }
+        return false;
     }
 
     bool ParseForm(uint32_t id, const std::string& json, FormModel& out) {
@@ -211,8 +312,17 @@ namespace perlin::ui {
             text(form.content, false);
         if (form.type == FormModel::Type::Simple) {
             for (size_t i = 0; i < form.buttons.size(); i++) {
-                body += Button("b:" + std::to_string(i), form.buttons[i].text, 10, y, inner, 20);
-                y += 24.0f;
+                const std::string src = ImageSource(form.buttons[i]);
+                const float h = src.empty() ? 20.0f : 32.0f;
+                std::string b = Button("b:" + std::to_string(i), form.buttons[i].text, 10, y, inner, h);
+                if (!src.empty()) {
+                    const std::string img = "<mcimg src=\"" + EscapeRml(src) + "\" style=\"left:4px;top:4px;width:24px;height:24px;z-index:8;\"/>";
+                    const size_t closeAt = b.rfind("</div>");
+                    if (closeAt != std::string::npos)
+                        b.insert(closeAt, img);
+                }
+                body += b;
+                y += h + 4.0f;
             }
         } else if (form.type == FormModel::Type::Modal) {
             const float half = (inner - 4) / 2;
@@ -254,17 +364,29 @@ namespace perlin::ui {
                         y += 24.0f;
                         break;
                     case FormElement::Kind::Slider:
-                        body += Button("s:" + n + ":-", "<", 10, y, 20, 20);
-                        body += Button("s:" + n + ":+", ">", 10 + inner - 20, y, 20, 20);
-                        body += "<div class=\"t c\" style=\"left:34px;top:" + F(y + 5) + "px;width:" + F(inner - 68) + "px;height:9px;\">" + Rich(e.text + ": " + Num(e.number)) + "</div>\n";
+                    case FormElement::Kind::StepSlider: {
+                        const bool plain = e.kind == FormElement::Kind::Slider;
+                        double frac = 0.0;
+                        if (plain)
+                            frac = e.max > e.min ? (e.number - e.min) / (e.max - e.min) : 0.0;
+                        else
+                            frac = e.options.size() > 1 ? static_cast<double>(e.index) / static_cast<double>(e.options.size() - 1) : 0.0;
+                        frac = std::clamp(frac, 0.0, 1.0);
+                        e.trackX = panelX + 10.0f + 4.0f;
+                        e.trackW = inner - 8.0f;
+                        std::string track = Button("k:" + n, e.text + ": " + (plain ? Num(e.number) : e.options[static_cast<size_t>(e.index)]), 10, y, inner, 20);
+                        const float knobX = 10.0f + 1.0f + static_cast<float>(frac) * (inner - 10.0f);
+                        const std::string knob = "<div style=\"left:" + F(knobX - 10.0f) + "px;top:0px;width:8px;height:20px;background-color:#000000;z-index:7;\">"
+                                                 "<div style=\"left:1px;top:1px;width:6px;height:18px;background-color:#c6c6c6;\"></div>"
+                                                 "<div style=\"left:1px;top:1px;width:5px;height:17px;background-color:#ffffff;\"></div>"
+                                                 "<div style=\"left:2px;top:2px;width:4px;height:16px;background-color:#8b8b8b;\"></div></div>";
+                        const size_t closeAt = track.rfind("</div>");
+                        if (closeAt != std::string::npos)
+                            track.insert(closeAt, knob);
+                        body += track;
                         y += 24.0f;
                         break;
-                    case FormElement::Kind::StepSlider:
-                        body += Button("s:" + n + ":-", "<", 10, y, 20, 20);
-                        body += Button("s:" + n + ":+", ">", 10 + inner - 20, y, 20, 20);
-                        body += "<div class=\"t c\" style=\"left:34px;top:" + F(y + 5) + "px;width:" + F(inner - 68) + "px;height:9px;\">" + Rich(e.text + ": " + e.options[static_cast<size_t>(e.index)]) + "</div>\n";
-                        y += 24.0f;
-                        break;
+                    }
                 }
             }
             body += Button("submit", form.submit.empty() ? "Submit" : form.submit, 10, y, inner, 20);
@@ -732,6 +854,43 @@ namespace perlin::ui {
         rml = emitter.Emit(*root, static_cast<float>(guiW), static_cast<float>(guiH), std::string(), false);
         contentHeight = emitter.ContentHeight();
         viewHeight = emitter.ViewportHeight();
+        {
+            std::vector<std::string> samples;
+            if (form.type == FormModel::Type::Modal) {
+                samples.push_back(form.button1);
+                samples.push_back(form.button2);
+                samples.push_back(form.content);
+            } else if (form.type == FormModel::Type::Custom) {
+                for (const FormElement& e : form.elements)
+                    samples.push_back(e.text);
+            } else {
+                for (const FormButton& b : form.buttons)
+                    samples.push_back(b.text);
+                samples.push_back(form.content);
+            }
+            std::string word;
+            for (const std::string& raw : samples) {
+                const std::string plain = StripFormatCodes(raw);
+                std::string current;
+                for (const char c : plain) {
+                    if (std::isalnum(static_cast<unsigned char>(c))) {
+                        current += c;
+                    } else {
+                        if (current.size() >= 3 && word.empty())
+                            word = current;
+                        current.clear();
+                    }
+                }
+                if (current.size() >= 3 && word.empty())
+                    word = current;
+                if (!word.empty())
+                    break;
+            }
+            if (!word.empty() && rml.find(word) == std::string::npos) {
+                problem = "the ui files drew none of the form's text";
+                return false;
+            }
+        }
         const size_t buttons = form.type == FormModel::Type::Modal ? 2 : form.type == FormModel::Type::Custom ? 0 : form.buttons.size();
         if (buttons > 0 && rml.find("id=\"fb:0\"") == std::string::npos) {
             problem = "form buttons were not produced by the ui files";

@@ -87,6 +87,8 @@ namespace perlin::entity {
                      bool enchanted);
         void Remove(int64_t uid);
         void RemoveRuntime(uint64_t rid);
+        void Pickup(uint64_t rid, uint64_t collector);
+        void SetViewer(uint64_t rid, glm::dvec3 feet);
         void Move(uint64_t rid, glm::dvec3 pos, float pitch, float yaw, float headYaw, bool onGround);
         void MoveDelta(uint64_t rid, const double* x, const double* y, const double* z, const float* pitch, const float* yaw,
                        const float* headYaw, bool onGround);
@@ -112,15 +114,25 @@ namespace perlin::entity {
         void SetSelf(uint64_t rid, const std::string& uuid);
 
         std::vector<Entity> Snapshot() const;
+        void Snapshot(std::vector<Entity>& out) const;
         size_t Count() const;
         bool Find(uint64_t rid, Entity& out) const;
         bool FindUnique(int64_t uid, Entity& out) const;
 
     private:
         void AttachSkinLocked(Entity& e);
+        struct PickupState {
+            uint64_t collector = 0;
+            double startMs = 0;
+            glm::dvec3 from{0.0};
+        };
+        void StepPickupsLocked(std::vector<uint64_t>* finished) const;
         mutable std::mutex mutex;
-        std::unordered_map<uint64_t, Entity> entities;
-        std::unordered_map<int64_t, uint64_t> byUnique;
+        mutable std::unordered_map<uint64_t, Entity> entities;
+        mutable std::unordered_map<int64_t, uint64_t> byUnique;
+        mutable std::unordered_map<uint64_t, PickupState> pickups;
+        uint64_t viewerRuntime = 0;
+        glm::dvec3 viewerFeet{0.0};
         std::unordered_map<std::string, std::shared_ptr<const SkinData>> skins;
         std::string selfUuid;
         uint64_t selfRuntime = 0;

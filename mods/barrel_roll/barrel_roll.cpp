@@ -149,15 +149,19 @@ namespace {
         flight.prev_jump = jump;
 
         if (!want) {
-            if (flight.rolling) {
-                flight.rolling = false;
+            flight.rolling = false;
+            if (!ev.gliding) {
+                flight.armed = false;
+                flight.toggled_off = false;
             }
-            if (std::abs(flight.roll_deg) > 0.01) {
-                flight.roll_deg *= std::exp(-dt * 9.0);
+            if (std::abs(flight.roll_deg) > 0.4) {
+                flight.roll_deg *= std::exp(-dt * (ev.gliding ? 9.0 : 16.0));
                 apply_view(flight.roll_deg, ev.gliding);
-            } else {
+            } else if (flight.roll_deg != 0.0) {
                 flight.roll_deg = 0;
+                apply_view(0.0, false);
             }
+            flight.mx = flight.my = 0;
             return;
         }
 

@@ -34,9 +34,9 @@ namespace perlin {
         : context(context), options(options) {
         blocks.SetFancy(options.fancyGraphics);
         const unsigned cores = HardwareThreads();
-        const unsigned threads = std::clamp(cores > 2 ? cores - 1 : 2u, 2u, 32u);
-        meshPool = std::make_unique<ThreadPool>(threads);
-        maxInFlight = threads * 6;
+        const unsigned threads = std::clamp(cores > 3 ? cores - 2 : 2u, 2u, 16u);
+        meshPool = std::make_unique<ThreadPool>(threads, true);
+        maxInFlight = threads * 2;
     }
 
     LevelRenderer::~LevelRenderer() {
@@ -220,7 +220,7 @@ namespace perlin {
         const auto uploadStart = std::chrono::steady_clock::now();
         size_t consumed = 0;
         for (MeshResult& r : finished) {
-            if (consumed > 0 && std::chrono::steady_clock::now() - uploadStart > std::chrono::milliseconds(6))
+            if (consumed > 0 && std::chrono::steady_clock::now() - uploadStart > std::chrono::microseconds(1500))
                 break;
             consumed++;
             inFlight.erase(r.pos);
@@ -336,9 +336,12 @@ namespace perlin {
         if (wantKey.empty())
             return;
         const bool async = atlasUploaded && blocks.Complete() && biomeTints.Ready();
-        const size_t freeSlots = async ? (maxInFlight > inFlight.size() ? maxInFlight - inFlight.size() : 0) : 64;
-        if (!freeSlots)
-            return;
+        size_t freeSlots = async ? (maxInFlight > inFlight.size() ? maxInFlight - inFlight.size() : 0) : 64;
+        bool urgentOnly = false;
+        if (!freeSlots && async) {
+            freeSlots = 3;
+            urgentOnly = true;
+        }
 
         const uint64_t now = Level::NowMs();
         pending.clear();
@@ -353,6 +356,8 @@ namespace perlin {
             const float dx = pos.x * 16.0f + 8.0f - camX;
             const float dz = pos.z * 16.0f + 8.0f - camZ;
             float distance = dx * dx + dz * dz;
+            if (urgentOnly && distance > 1600.0f)
+                continue;
             const float x0 = pos.x * 16.0f, z0 = pos.z * 16.0f;
             if (!frustum.Visible(x0, static_cast<float>(Chunk::MIN_Y), z0, x0 + 16.0f,
                                  static_cast<float>(Chunk::MIN_Y + Chunk::HEIGHT), z0 + 16.0f))

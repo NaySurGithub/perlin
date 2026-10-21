@@ -8,6 +8,7 @@ namespace perlin::ui {
         std::vector<std::string> values;
         bool target = false;
         bool optional = false;
+        std::string softEnum;
     };
     struct CommandInfo {
         std::string name, description;

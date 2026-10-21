@@ -58,6 +58,7 @@ namespace perlin {
         void OnReliableMessage(const uint8_t* data, size_t size);
         void OnUnreliableMessage(const uint8_t* data, size_t size);
 
+        std::shared_ptr<int> life = std::make_shared<int>(0);
         std::atomic<bool> connected{false};
         std::string lastError;
         NetherNetServerInfo serverInfo;

@@ -4,6 +4,7 @@
 #include <chrono>
 #include <algorithm>
 #include "client/ui/RmlBackend.hpp"
+#include "client/ui/FormScreen.hpp"
 
 #include "client/renderer/RenderContext.hpp"
 #include "client/ui/McFont.hpp"
@@ -30,6 +31,7 @@ namespace perlin::ui {
     namespace {
         RenderContext* gRenderer = nullptr;
         int gScale = 1;
+        bool gMeshStarved = false;
         UiLayer gLayer = UiLayer::Gui;
         bool gGlintPass = false;
         uint32_t gGlintTexture = 0;
@@ -54,6 +56,8 @@ namespace perlin::ui {
 
     class BgfxRenderInterface final : public Rml::RenderInterface {
     public:
+        static constexpr Rml::CompiledGeometryHandle kEmptyGeometry = ~static_cast<Rml::CompiledGeometryHandle>(0);
+
         Rml::CompiledGeometryHandle CompileGeometry(Rml::Span<const Rml::Vertex> vertices, Rml::Span<const int> indices) override {
             std::vector<UiVertex> v(vertices.size());
             for (size_t i = 0; i < vertices.size(); i++) {
@@ -65,10 +69,14 @@ namespace perlin::ui {
                 idx[i] = static_cast<uint32_t>(indices[i]);
             const uint32_t mesh = gRenderer->UiCreateMesh(v.data(), static_cast<uint32_t>(v.size()), idx.data(),
                                                           static_cast<uint32_t>(idx.size()));
-            return static_cast<Rml::CompiledGeometryHandle>(mesh);
+            if (!mesh && !v.empty() && !idx.empty())
+                gMeshStarved = true;
+            return mesh ? static_cast<Rml::CompiledGeometryHandle>(mesh) : kEmptyGeometry;
         }
 
         void RenderGeometry(Rml::CompiledGeometryHandle geometry, Rml::Vector2f translation, Rml::TextureHandle texture) override {
+            if (geometry == kEmptyGeometry)
+                return;
             UiDraw draw;
             draw.mesh = static_cast<uint32_t>(geometry);
             draw.texture = static_cast<uint32_t>(texture);
@@ -97,6 +105,8 @@ namespace perlin::ui {
         }
 
         void ReleaseGeometry(Rml::CompiledGeometryHandle geometry) override {
+            if (geometry == kEmptyGeometry)
+                return;
             gRenderer->UiDestroyMesh(static_cast<uint32_t>(geometry));
         }
 
@@ -113,6 +123,11 @@ namespace perlin::ui {
             } else if (source.rfind("mcres:", 0) == 0) {
                 std::string bytes;
                 if (!resources::Read(source.substr(6), bytes) ||
+                    !LoadTextureMemory(reinterpret_cast<const unsigned char*>(bytes.data()), bytes.size(), t))
+                    return 0;
+            } else if (source.rfind("mcurl:", 0) == 0) {
+                std::string bytes;
+                if (!FormImageBytes(source.substr(6), bytes) ||
                     !LoadTextureMemory(reinterpret_cast<const unsigned char*>(bytes.data()), bytes.size(), t))
                     return 0;
             } else if (source.rfind("mchead:", 0) == 0) {
@@ -757,9 +772,10 @@ namespace perlin::ui {
         gScale = scale;
         gLayer = UiLayer::Gui;
         static int frameCounter = 0;
-        if (gRenderer && gRenderer->UiLiveMeshes() > 3500) {
+        if (gRenderer && (gRenderer->UiLiveMeshes() > 3500 || gMeshStarved)) {
             static int lastRelease = -1000;
-            if (++frameCounter - lastRelease > 120) {
+            if (++frameCounter - lastRelease > (gMeshStarved ? 20 : 120)) {
+                gMeshStarved = false;
                 lastRelease = frameCounter;
                 std::cout << "[render] " << gRenderer->UiLiveMeshes() << " UI meshes alive; releasing RmlUi's compiled geometry" << std::endl;
                 Rml::ReleaseCompiledGeometry();

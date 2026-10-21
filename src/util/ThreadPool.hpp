@@ -9,7 +9,30 @@
 #include <thread>
 #include <vector>
 
+#if defined(_WIN32)
+extern "C" {
+__declspec(dllimport) void* __stdcall GetCurrentThread(void);
+__declspec(dllimport) int __stdcall SetThreadPriority(void*, int);
+}
+#elif defined(__linux__) || defined(__ANDROID__)
+#include <sys/resource.h>
+#include <sys/syscall.h>
+#include <unistd.h>
+#elif defined(__APPLE__)
+#include <pthread/qos.h>
+#endif
+
 namespace perlin {
+    inline void LowerThreadPriority() {
+#if defined(_WIN32)
+        SetThreadPriority(GetCurrentThread(), -1);
+#elif defined(__linux__) || defined(__ANDROID__)
+        setpriority(PRIO_PROCESS, static_cast<id_t>(syscall(SYS_gettid)), 5);
+#elif defined(__APPLE__)
+        pthread_set_qos_class_self_np(QOS_CLASS_UTILITY, 0);
+#endif
+    }
+
     inline unsigned HardwareThreads() {
 #ifdef __EMSCRIPTEN__
         return std::clamp(std::thread::hardware_concurrency(), 1u, 4u);
@@ -20,7 +43,7 @@ namespace perlin {
 
     class ThreadPool {
     public:
-        explicit ThreadPool(size_t count) {
+        explicit ThreadPool(size_t count, bool background = false) : background(background) {
             for (size_t i = 0; i < count; ++i)
                 workers.emplace_back([this] { Run(); });
         }
@@ -85,6 +108,8 @@ namespace perlin {
 
     private:
         void Run() {
+            if (background)
+                LowerThreadPriority();
             for (;;) {
                 std::function<void()> job;
                 {
@@ -104,5 +129,6 @@ namespace perlin {
         std::mutex mutex;
         std::condition_variable cv;
         bool stopping = false;
+        bool background = false;
     };
 }

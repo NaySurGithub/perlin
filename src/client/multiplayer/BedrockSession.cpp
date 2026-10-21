@@ -68,7 +68,7 @@ namespace perlin {
     void BedrockSession::StartChunkWorker() {
         chunkStop = false;
         if (!decodePool)
-            decodePool = std::make_unique<ThreadPool>(std::max(1u, HardwareThreads() - 1));
+            decodePool = std::make_unique<ThreadPool>(std::max(1u, HardwareThreads() / 2), true);
         chunkThread = std::thread([this] { ChunkWorkerMain(); });
     }
 
@@ -670,6 +670,7 @@ namespace perlin {
             BeginTransfer();
             return;
         }
+        ExpirePredictions();
         if (state == State::InGame) {
             UpdateColumnLod();
             if (clientGen)

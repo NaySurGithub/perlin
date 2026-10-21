@@ -4,7 +4,8 @@
 
 namespace perlin::ui {
     struct PauseScreenText {
-        std::string title, back, options, quit, advancements, stats, feedback, bugs, lan, players, world, mods;
+        std::string title, back, options, quit, advancements, stats, feedback, bugs, lan, players, world, mods, serverSettings;
+        bool hasServerSettings = false;
         bool optionsEnabled = false;
         bool showPanel = false;
         std::string panelTitle, roleOperator, roleMember, roleVisitor;
@@ -22,6 +23,7 @@ namespace perlin::ui {
     inline constexpr const char* kPauseWorldId = "world";
     inline constexpr const char* kPauseWardrobeId = "wardrobe";
     inline constexpr const char* kPauseModsId = "mods";
+    inline constexpr const char* kPauseServerSettingsId = "srvsettings";
     inline constexpr const char* kPauseBugsId = "bugs";
     inline constexpr const char* kOptionsDoneId = "done";
 

@@ -220,8 +220,10 @@ namespace perlin::ui {
 
         const std::string& rcss = rcssCache;
         const uint64_t signature = stateChanged || resized || rebuilt ? HudSignature(state) : lastSignature;
-        if (!rebuilt && !resized && signature == lastSignature && rcss == lastRcss && fontVersion == McFont::Instance().Version())
+        if (!rebuilt && !resized && signature == lastSignature && rcss == lastRcss && fontVersion == McFont::Instance().Version()) {
+            backend.Update();
             return scale;
+        }
         lastSignature = signature;
         lastRcss = rcss;
         fontVersion = McFont::Instance().Version();

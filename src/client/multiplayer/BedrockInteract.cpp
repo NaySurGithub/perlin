@@ -187,6 +187,25 @@ namespace perlin {
             a.count = static_cast<uint8_t>(count <= 0 ? std::min<int>(raw.count, 255) : std::min<int>(count, raw.count));
             r.requestId = nextStackRequestId;
             nextStackRequestId -= 2;
+            {
+                InvSnapshot snapshot;
+                snapshot.view = inventory;
+                std::copy(std::begin(inventoryRaw), std::end(inventoryRaw), std::begin(snapshot.raw));
+                std::copy(std::begin(extraRaw), std::end(extraRaw), std::begin(snapshot.extra));
+                invSnapshots[r.requestId] = std::move(snapshot);
+                if (invSnapshots.size() > 16)
+                    invSnapshots.erase(std::prev(invSnapshots.end()));
+                ItemStackInfo& shown = slot < 9 ? inventory.hotbar[slot] : inventory.main[slot - 9];
+                ItemV4& rawSlot = inventoryRaw[slot];
+                const int left = static_cast<int>(rawSlot.count) - static_cast<int>(a.count);
+                if (left <= 0) {
+                    shown = ItemStackInfo{};
+                    rawSlot = ItemV4{};
+                } else {
+                    shown.count = left;
+                    rawSlot.count = static_cast<decltype(rawSlot.count)>(left);
+                }
+            }
             pendingDrops[r.requestId] = {slot, a.count, attempt};
             if (pendingDrops.size() > 64)
                 pendingDrops.erase(std::prev(pendingDrops.end()));
@@ -213,7 +232,79 @@ namespace perlin {
 }
 
 namespace perlin {
+    bool BedrockSession::PredictPlace(int x, int y, int z, int32_t heldRuntimeId) {
+        if (heldRuntimeId == 0)
+            return false;
+        BlockPalette& pal = BlockPalette::Instance();
+        const uint16_t local = pal.InternRuntime(heldRuntimeId);
+        const std::string name = pal.Name(local);
+        if (local == 0 || name.empty() || name == "minecraft:air")
+            return false;
+        static const char* const kSkipNames[] = {"slab", "door", "bed", "chest", "sign", "banner", "skull", "head", "piston", "observer", "hopper",
+                                                 "dropper", "dispenser", "water", "lava", "fire", "portal", "frame", "lectern", "cauldron",
+                                                 "campfire", "candle", "lantern", "stairs", "trapdoor", "button", "lever", "rail", "torch",
+                                                 "ladder", "vine", "anvil", "grindstone", "barrel", "furnace", "smoker", "blast_furnace",
+                                                 "shulker", "command_block", "structure", "jigsaw", "end_rod", "lightning_rod", "bell",
+                                                 "glazed_terracotta", "log", "wood", "stem", "hyphae", "pillar", "sapling", "flower", "tallgrass",
+                                                 "double_plant", "leaves", "cake", "comparator", "repeater", "tripwire", "pressure_plate", "sea_pickle",
+                                                 "turtle_egg", "snow_layer", "pointed_dripstone", "amethyst_cluster", "bud", "coral", "kelp", "seagrass"};
+        for (const char* skip : kSkipNames)
+            if (name.find(skip) != std::string::npos)
+                return false;
+        static const char* const kSkipStates[] = {"facing_direction", "direction", "cardinal_direction", "vertical_half", "upside_down_bit",
+                                                  "top_slot_bit", "pillar_axis", "attached_bit", "hanging", "open_bit", "powered_bit"};
+        for (const auto& [key, value] : pal.States(local)) {
+            (void)value;
+            for (const char* skip : kSkipStates)
+                if (key.find(skip) != std::string::npos)
+                    return false;
+        }
+        bool loaded = false;
+        const uint16_t previous = netLevel.GetBlock(x, y, z, loaded);
+        if (!loaded)
+            return false;
+        netLevel.SetBlock(x, y, z, local);
+        std::lock_guard lock(predictMutex);
+        if (predictedPlaces.size() > 64)
+            predictedPlaces.erase(predictedPlaces.begin());
+        predictedPlaces.push_back({x, y, z, local, previous, std::chrono::steady_clock::now()});
+        return true;
+    }
+
+    void BedrockSession::ExpirePredictions() {
+        std::vector<PredictedPlace> expired;
+        {
+            std::lock_guard lock(predictMutex);
+            if (predictedPlaces.empty())
+                return;
+            const auto now = std::chrono::steady_clock::now();
+            for (auto it = predictedPlaces.begin(); it != predictedPlaces.end();) {
+                if (now - it->at > std::chrono::milliseconds(1500)) {
+                    expired.push_back(*it);
+                    it = predictedPlaces.erase(it);
+                } else {
+                    ++it;
+                }
+            }
+        }
+        for (const PredictedPlace& p : expired) {
+            bool loaded = false;
+            if (netLevel.GetBlock(p.x, p.y, p.z, loaded) == p.id && loaded) {
+                netLevel.SetBlock(p.x, p.y, p.z, p.previous);
+                std::cout << "[place] the server never confirmed the block at (" << p.x << "," << p.y << "," << p.z << "); reverted" << std::endl;
+            }
+        }
+    }
+
     void BedrockSession::ConfirmPlace(int x, int y, int z, int32_t runtimeId) {
+        {
+            std::lock_guard lock(predictMutex);
+            for (auto it = predictedPlaces.begin(); it != predictedPlaces.end(); ++it)
+                if (it->x == x && it->y == y && it->z == z) {
+                    predictedPlaces.erase(it);
+                    break;
+                }
+        }
         int32_t held = 0;
         {
             std::lock_guard lock(placeMutex);

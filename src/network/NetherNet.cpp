@@ -68,6 +68,10 @@ namespace perlin {
     NetherNet::NetherNet() = default;
     NetherNet::~NetherNet() {
         Disconnect();
+        std::weak_ptr<int> alive = life;
+        life.reset();
+        for (int i = 0; i < 2000 && !alive.expired(); i++)
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
 
     bool NetherNet::Probe(const std::string& host, uint16_t port, NetherNetServerInfo& info,
@@ -132,13 +136,17 @@ namespace perlin {
             return false;
         }
 
-        impl->pc->onGatheringStateChange([this](rtc::PeerConnection::GatheringState state) {
-            if (state == rtc::PeerConnection::GatheringState::Complete)
-                impl->gatheringDone = true;
+        impl->pc->onGatheringStateChange([raw = impl.get(), w = std::weak_ptr<int>(life)](rtc::PeerConnection::GatheringState state) {
+            const auto keep = w.lock();
+            if (keep && state == rtc::PeerConnection::GatheringState::Complete)
+                raw->gatheringDone = true;
         });
-        impl->pc->onStateChange([this](rtc::PeerConnection::State state) {
+        impl->pc->onStateChange([raw = impl.get(), w = std::weak_ptr<int>(life)](rtc::PeerConnection::State state) {
+            const auto keep = w.lock();
+            if (!keep)
+                return;
             if (state == rtc::PeerConnection::State::Failed || state == rtc::PeerConnection::State::Closed)
-                impl->failed = true;
+                raw->failed = true;
         });
 
         try {
@@ -154,13 +162,25 @@ namespace perlin {
             return false;
         }
 
-        impl->reliable->onOpen([this]() { impl->reliableOpen = true; });
-        impl->reliable->onClosed([this]() { impl->failed = true; });
-        impl->reliable->onMessage([this](rtc::message_variant msg) {
+        impl->reliable->onOpen([raw = impl.get(), w = std::weak_ptr<int>(life)]() {
+            if (const auto keep = w.lock())
+                raw->reliableOpen = true;
+        });
+        impl->reliable->onClosed([raw = impl.get(), w = std::weak_ptr<int>(life)]() {
+            if (const auto keep = w.lock())
+                raw->failed = true;
+        });
+        impl->reliable->onMessage([this, w = std::weak_ptr<int>(life)](rtc::message_variant msg) {
+            const auto keep = w.lock();
+            if (!keep)
+                return;
             if (auto* b = std::get_if<rtc::binary>(&msg))
                 OnReliableMessage(reinterpret_cast<const uint8_t*>(b->data()), b->size());
         });
-        impl->unreliable->onMessage([this](rtc::message_variant msg) {
+        impl->unreliable->onMessage([this, w = std::weak_ptr<int>(life)](rtc::message_variant msg) {
+            const auto keep = w.lock();
+            if (!keep)
+                return;
             if (auto* b = std::get_if<rtc::binary>(&msg))
                 OnUnreliableMessage(reinterpret_cast<const uint8_t*>(b->data()), b->size());
         });
@@ -373,9 +393,10 @@ namespace perlin {
             Disconnect();
             return false;
         }
-        impl->pc->onGatheringStateChange([this](rtc::PeerConnection::GatheringState state) {
-            if (state == rtc::PeerConnection::GatheringState::Complete)
-                impl->gatheringDone = true;
+        impl->pc->onGatheringStateChange([raw = impl.get(), w = std::weak_ptr<int>(life)](rtc::PeerConnection::GatheringState state) {
+            const auto keep = w.lock();
+            if (keep && state == rtc::PeerConnection::GatheringState::Complete)
+                raw->gatheringDone = true;
         });
         auto localCandidates = std::make_shared<std::vector<std::string>>();
         auto localMutex = std::make_shared<std::mutex>();
@@ -389,10 +410,13 @@ namespace perlin {
         impl->pc->onIceStateChange([](rtc::PeerConnection::IceState state) {
             std::cout << "[nethernet] ICE state " << static_cast<int>(state) << " (0 new, 1 checking, 2 connected, 3 completed, 4 failed, 5 disconnected, 6 closed)" << std::endl;
         });
-        impl->pc->onStateChange([this](rtc::PeerConnection::State state) {
+        impl->pc->onStateChange([raw = impl.get(), w = std::weak_ptr<int>(life)](rtc::PeerConnection::State state) {
+            const auto keep = w.lock();
+            if (!keep)
+                return;
             std::cout << "[nethernet] peer state " << static_cast<int>(state) << " (0 new, 1 connecting, 2 connected, 3 disconnected, 4 failed, 5 closed)" << std::endl;
             if (state == rtc::PeerConnection::State::Failed || state == rtc::PeerConnection::State::Closed)
-                impl->failed = true;
+                raw->failed = true;
         });
         try {
             impl->reliable = impl->pc->createDataChannel("ReliableDataChannel");
@@ -405,13 +429,25 @@ namespace perlin {
             Disconnect();
             return false;
         }
-        impl->reliable->onOpen([this]() { impl->reliableOpen = true; });
-        impl->reliable->onClosed([this]() { impl->failed = true; });
-        impl->reliable->onMessage([this](rtc::message_variant msg) {
+        impl->reliable->onOpen([raw = impl.get(), w = std::weak_ptr<int>(life)]() {
+            if (const auto keep = w.lock())
+                raw->reliableOpen = true;
+        });
+        impl->reliable->onClosed([raw = impl.get(), w = std::weak_ptr<int>(life)]() {
+            if (const auto keep = w.lock())
+                raw->failed = true;
+        });
+        impl->reliable->onMessage([this, w = std::weak_ptr<int>(life)](rtc::message_variant msg) {
+            const auto keep = w.lock();
+            if (!keep)
+                return;
             if (auto* b = std::get_if<rtc::binary>(&msg))
                 OnReliableMessage(reinterpret_cast<const uint8_t*>(b->data()), b->size());
         });
-        impl->unreliable->onMessage([this](rtc::message_variant msg) {
+        impl->unreliable->onMessage([this, w = std::weak_ptr<int>(life)](rtc::message_variant msg) {
+            const auto keep = w.lock();
+            if (!keep)
+                return;
             if (auto* b = std::get_if<rtc::binary>(&msg))
                 OnUnreliableMessage(reinterpret_cast<const uint8_t*>(b->data()), b->size());
         });

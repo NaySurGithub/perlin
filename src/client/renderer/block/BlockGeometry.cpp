@@ -1,3 +1,6 @@
+#include <unordered_set>
+#include <mutex>
+#include <iostream>
 #include "client/renderer/block/BlockGeometry.hpp"
 
 #include "util/Json.hpp"
@@ -592,6 +595,35 @@ namespace perlin {
                     ModelEntry entry;
                     entry.direct = true;
                     entry.quads = Bake(git->second, eff);
+                    constexpr size_t kMaxQuadsPerBlock = 160;
+                    if (entry.quads.size() > kMaxQuadsPerBlock) {
+                        static std::mutex reportMutex;
+                        static std::unordered_set<std::string> reported;
+                        {
+                            std::lock_guard<std::mutex> reportLock(reportMutex);
+                            if (reported.insert(name).second)
+                                std::cout << "[perf] block " << name << " has " << entry.quads.size()
+                                          << " quads; keeping the " << kMaxQuadsPerBlock << " largest" << std::endl;
+                        }
+                        const auto area = [](const ModelQuad& q) {
+                            const float ax = q.pos[1][0] - q.pos[0][0], ay = q.pos[1][1] - q.pos[0][1], az = q.pos[1][2] - q.pos[0][2];
+                            const float bx = q.pos[3][0] - q.pos[0][0], by = q.pos[3][1] - q.pos[0][1], bz = q.pos[3][2] - q.pos[0][2];
+                            const float cx = ay * bz - az * by, cy = az * bx - ax * bz, cz = ax * by - ay * bx;
+                            return cx * cx + cy * cy + cz * cz;
+                        };
+                        std::vector<size_t> order(entry.quads.size());
+                        for (size_t i = 0; i < order.size(); i++)
+                            order[i] = i;
+                        std::nth_element(order.begin(), order.begin() + static_cast<std::ptrdiff_t>(kMaxQuadsPerBlock), order.end(),
+                                         [&](size_t l, size_t r) { return area(entry.quads[l]) > area(entry.quads[r]); });
+                        order.resize(kMaxQuadsPerBlock);
+                        std::sort(order.begin(), order.end());
+                        std::vector<ModelQuad> kept;
+                        kept.reserve(kMaxQuadsPerBlock);
+                        for (const size_t i : order)
+                            kept.push_back(entry.quads[i]);
+                        entry.quads = std::move(kept);
+                    }
                     if (!entry.quads.empty()) {
                         pending = std::move(entry);
                         havePending = true;

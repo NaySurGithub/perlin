@@ -24,6 +24,7 @@ namespace perlin::ui {
         double number = 0, min = 0, max = 1, step = 1;
         int index = 0;
         std::vector<std::string> options;
+        mutable float trackX = 0, trackW = 0;
     };
 
     struct FormModel {
@@ -59,6 +60,10 @@ namespace perlin::ui {
         std::string key;
     };
 
+    bool FormImageBytes(const std::string& url, std::string& out);
+    uint32_t FormImageVersion();
+    bool FormDrag(FormModel& form, int index, float guiX);
+    int FormSliderAt(const std::string& hoverId);
     bool ParseForm(uint32_t id, const std::string& json, FormModel& out);
     std::string BuildFormRml(const FormModel& form, int guiW, int guiH, float scroll, float& contentHeight, float& viewHeight);
     bool FormClick(FormModel& form, const std::string& id, std::string& response);

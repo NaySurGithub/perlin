@@ -404,13 +404,87 @@ namespace perlin {
         });
     }
 
+    namespace {
+        constexpr const char* kLegacySounds[] = {"ItemUseOn", "Hit", "Step", "Fly", "Jump", "Break", "Place", "HeavyStep", "Gallop", "Fall", "Ambient", "AmbientBaby", "AmbientInWater", "Breathe", "Death", "DeathInWater", "DeathToZombie", "Hurt", "HurtInWater", "Mad", "Boost", "Bow", "SquishBig", "SquishSmall", "FallBig", "FallSmall", "Splash", "Fizz", "Flap", "Swim", "Drink", "Eat", "Takeoff", "Shake", "Plop", "Land", "Saddle", "Armor", "ArmorStandPlace", "AddChest", "Throw", "Attack", "AttackNoDamage", "AttackStrong", "Warn", "Shear", "Milk", "Thunder", "Explode", "Fire", "Ignite", "Fuse", "Stare", "Spawn", "Shoot", "BreakBlock", "Launch", "Blast", "LargeBlast", "Twinkle", "Remedy", "Unfect", "LevelUp", "BowHit", "BulletHit", "ExtinguishFire", "ItemFizz", "ChestOpen", "ChestClosed", "ShulkerBoxOpen", "ShulkerBoxClosed", "EnderChestOpen", "EnderChestClosed", "PowerOn", "PowerOff", "Attach", "Detach", "Deny", "Tripod", "Pop", "DropSlot", "Note", "Thorns", "PistonIn", "PistonOut", "Portal", "Water", "LavaPop", "Lava", "Burp", "BucketFillWater", "BucketFillLava", "BucketEmptyWater", "BucketEmptyLava", "ArmorEquipChain", "ArmorEquipDiamond", "ArmorEquipGeneric", "ArmorEquipGold", "ArmorEquipIron", "ArmorEquipLeather", "ArmorEquipElytra", "Record13", "RecordCat", "RecordBlocks", "RecordChirp", "RecordFar", "RecordMall", "RecordMellohi", "RecordStal", "RecordStrad", "RecordWard", "Record11", "RecordWait", "StopRecord", "Flop", "GuardianCurse", "MobWarning", "MobWarningBaby", "Teleport", "ShulkerOpen", "ShulkerClose", "Haggle", "HaggleYes", "HaggleNo", "HaggleIdle", "ChorusGrow", "ChorusDeath", "Glass", "PotionBrewed", "CastSpell", "PrepareAttackSpell", "PrepareSummon", "PrepareWololo", "Fang", "Charge", "CameraTakePicture", "LeashKnotPlace", "LeashKnotBreak", "AmbientGrowl", "AmbientWhine", "AmbientPant", "AmbientPurr", "AmbientPurreow", "DeathMinVolume", "DeathMidVolume", "ImitateBlaze", "ImitateCaveSpider", "ImitateCreeper", "ImitateElderGuardian", "ImitateEnderDragon", "ImitateEnderman", "ImitateEndermite", "ImitateEvocationIllager", "ImitateGhast", "ImitateHusk", "ImitateIllusionIllager", "ImitateMagmaCube", "ImitatePolarBear", "ImitateShulker", "ImitateSilverfish", "ImitateSkeleton", "ImitateSlime", "ImitateSpider", "ImitateStray", "ImitateVex", "ImitateVindicationIllager", "ImitateWitch", "ImitateWither", "ImitateWitherSkeleton", "ImitateWolf", "ImitateZombie", "ImitateZombiePigman", "ImitateZombieVillager", "EnderEyePlaced", "EndPortalCreated", "AnvilUse", "BottleDragonBreath", "PortalTravel", "TridentHit", "TridentReturn", "TridentRiptide1", "TridentRiptide2", "TridentRiptide3", "TridentThrow", "TridentThunder", "TridentHitGround", "Default", "FletchingTableUse", "ElemConstructOpen", "IceBombHit", "BalloonPop", "LtReactionIceBomb", "LtReactionBleach", "LtReactionElephantToothpaste", "LtReactionElephantToothpaste2", "LtReactionGlowStick", "LtReactionGlowStick2", "LtReactionLuminol", "LtReactionSalt", "LtReactionFertilizer", "LtReactionFireball", "LtReactionMagnesiumSalt", "LtReactionMiscFire", "LtReactionFire", "LtReactionMiscExplosion", "LtReactionMiscMystical", "LtReactionMiscMystical2", "LtReactionProduct", "SparklerUse", "GlowStickUse", "SparklerActive", "ConvertToDrowned", "BucketFillFish", "BucketEmptyFish", "BubbleColumnUpwards", "BubbleColumnDownwards", "BubblePop", "BubbleUpInside", "BubbleDownInside", "HurtBaby", "DeathBaby", "StepBaby", "SpawnBaby", "Born", "TurtleEggBreak", "TurtleEggCrack", "TurtleEggHatched", "LayEgg", "TurtleEggAttacked", "BeaconActivate", "BeaconAmbient", "BeaconDeactivate", "BeaconPower", "ConduitActivate", "ConduitAmbient", "ConduitAttack", "ConduitDeactivate", "ConduitShort", "Swoop", "BambooSaplingPlace", "PreSneeze", "Sneeze", "AmbientTame", "Scared", "ScaffoldingClimb", "CrossbowLoadingStart", "CrossbowLoadingMiddle", "CrossbowLoadingEnd", "CrossbowShoot", "CrossbowQuickChargeStart", "CrossbowQuickChargeMiddle", "CrossbowQuickChargeEnd", "AmbientAggressive", "AmbientWorried", "CantBreed", "ShieldBlock", "LecternBookPlace", "GrindstoneUse", "Bell", "CampfireCrackle", "Roar", "Stun", "SweetBerryBushHurt", "SweetBerryBushPick", "CartographyTableUse", "StonecutterUse", "ComposterEmpty", "ComposterFill", "ComposterFillLayer", "ComposterReady", "BarrelOpen", "BarrelClose", "RaidHorn", "LoomUse", "AmbientInRaid", "UicartographyTableUse", "UistonecutterUse", "UiloomUse", "SmokerUse", "BlastFurnaceUse", "SmithingTableUse", "Screech", "Sleep", "FurnaceUse", "MooshroomConvert", "MilkSuspiciously", "Celebrate", "JumpPrevent", "AmbientPollinate", "BeehiveDrip", "BeehiveEnter", "BeehiveExit", "BeehiveWork", "BeehiveShear", "HoneybottleDrink", "AmbientCave", "Retreat", "ConvertToZombified", "Admire", "StepLava", "Tempt", "Panic", "Angry", "AmbientMoodWarpedForest", "AmbientMoodSoulsandValley", "AmbientMoodNetherWastes", "AmbientMoodBasaltDeltas", "AmbientMoodCrimsonForest", "RespawnAnchorCharge", "RespawnAnchorDeplete", "RespawnAnchorSetSpawn", "RespawnAnchorAmbient", "SoulEscapeQuiet", "SoulEscapeLoud", "RecordPigstep", "LinkCompassToLodestone", "UseSmithingTable", "EquipNetherite", "AmbientLoopWarpedForest", "AmbientLoopSoulsandValley", "AmbientLoopNetherWastes", "AmbientLoopBasaltDeltas", "AmbientLoopCrimsonForest", "AmbientAdditionWarpedForest", "AmbientAdditionSoulsandValley", "AmbientAdditionNetherWastes", "AmbientAdditionBasaltDeltas", "AmbientAdditionCrimsonForest", "SculkSensorPowerOn", "SculkSensorPowerOff", "BucketFillPowderSnow", "BucketEmptyPowderSnow", "PointedDripstoneCauldronDripWater", "PointedDripstoneCauldronDripLava", "PointedDripstoneDripWater", "PointedDripstoneDripLava", "CaveVinesPickBerries", "BigDripleafTiltDown", "BigDripleafTiltUp", "CopperWaxOn", "CopperWaxOff", "Scrape", "PlayerHurtDrown", "PlayerHurtOnFire", "PlayerHurtFreeze", "UseSpyglass", "StopUsingSpyglass", "AmethystBlockChime", "AmbientScreamer", "HurtScreamer", "DeathScreamer", "MilkScreamer", "JumpToBlock", "PreRam", "PreRamScreamer", "RamImpact", "RamImpactScreamer", "SquidInkSquirt", "GlowSquidInkSquirt", "ConvertToStray", "CakeAddCandle", "ExtinguishCandle", "AmbientCandle", "BlockClick", "BlockClickFail", "SculkCatalystBloom", "SculkShriekerShriek", "WardenNearbyClose", "WardenNearbyCloser", "WardenNearbyClosest", "WardenSlightlyAngry", "RecordOtherside", "Tongue", "CrackIronGolem", "RepairIronGolem", "Listening", "Heartbeat", "HornBreak", "_", "SculkSpread", "SculkCharge", "SculkSensorPlace", "SculkShriekerPlace", "GoatCall0", "GoatCall1", "GoatCall2", "GoatCall3", "GoatCall4", "GoatCall5", "GoatCall6", "GoatCall7", "GoatCall8", "GoatCall9", "GoatHarmony0", "GoatHarmony1", "GoatHarmony2", "GoatHarmony3", "GoatHarmony4", "GoatHarmony5", "GoatHarmony6", "GoatHarmony7", "GoatHarmony8", "GoatHarmony9", "GoatMelody0", "GoatMelody1", "GoatMelody2", "GoatMelody3", "GoatMelody4", "GoatMelody5", "GoatMelody6", "GoatMelody7", "GoatMelody8", "GoatMelody9", "GoatBass0", "GoatBass1", "GoatBass2", "GoatBass3", "GoatBass4", "GoatBass5", "GoatBass6", "GoatBass7", "GoatBass8", "GoatBass9", "_", "_", "_", "ImitateWarden", "ListeningAngry", "ItemGiven", "ItemTaken", "Disappeared", "Reappeared", "DrinkMilk", "FrogspawnHatched", "LaySpawn", "FrogspawnBreak", "SonicBoom", "SonicCharge", "SoundeventItemThrown", "Record5", "ConvertToFrog", "RecordPlaying", "EnchantingTableUse", "StepSand", "DashReady", "BundleDropContents", "BundleInsert", "BundleRemoveOne", "PressurePlateClickOff", "PressurePlateClickOn", "ButtonClickOff", "ButtonClickOn", "DoorOpen", "DoorClose", "TrapdoorOpen", "TrapdoorClose", "FenceGateOpen", "FenceGateClose", "Insert", "Pickup", "InsertEnchanted", "PickupEnchanted", "Brush", "BrushCompleted", "ShatterDecoratedPot", "BreakDecoratedPot", "SnifferEggCrack", "SnifferEggHatched", "WaxedSignInteractFail", "RecordRelic", "Bump", "PumpkinCarve", "ConvertHuskToZombie", "PigDeath", "HoglinZombified", "AmbientUnderwaterEnter", "AmbientUnderwaterExit", "BottleFill", "BottleEmpty", "CrafterCraft", "CrafterFail", "DecoratedPotInsert", "DecoratedPotInsertFail", "CrafterDisableSlot", "TrialSpawnerOpenShutter", "TrialSpawnerEjectItem", "TrialSpawnerDetectPlayer", "TrialSpawnerSpawnMob", "TrialSpawnerCloseShutter", "TrialSpawnerAmbient", "CopperBulbTurnOn", "CopperBulbTurnOff", "AmbientInAir", "BreezeWindChargeBurst", "ImitateBreeze", "ArmadilloBrush", "ArmadilloScuteDrop", "EquipWolf", "UnequipWolf", "Reflect", "VaultOpenShutter", "VaultCloseShutter", "VaultEjectItem", "VaultInsertItem", "VaultInsertItemFail", "VaultAmbient", "VaultActivate", "VaultDeactive", "HurtReduced", "WindChargeBurst", "ImitateBogged", "WolfArmourCrack", "WolfArmourBreak", "WolfArmourRepair", "MaceSmashAir", "MaceSmashGround", "TrialSpawnerChargeActivate", "TrialSpawnerAmbientOminous", "OminiousItemSpawnerSpawnItem", "OminousBottleEndUse", "MaceHeavySmashGround", "OminousItemSpawnerSpawnItemBegin", "_", "ApplyEffectBadOmen", "ApplyEffectRaidOmen", "ApplyEffectTrialOmen", "OminousItemSpawnerAboutToSpawnItem", "RecordCreator", "RecordCreatorMusicBox", "RecordPrecipice", "VaultRejectRewardedPlayer", "ImitateDrowned", "ImitateCreaking", "BundleInsertFailed", "SpongeAbsorb", "_", "BlockCreakingHeartTrail", "CreakingHeartSpawn", "Activate", "Deactivate", "Freeze", "Unfreeze", "Open", "OpenLong", "Close", "CloseLong", "ImitatePhantom", "ImitateZoglin", "ImitateGuardian", "ImitateRavager", "ImitatePillager", "PlaceInWater", "StateChange", "ImitateHappyGhast", "UniqueGeneric", "RecordTears", "TheEndLightFlash", "LeadLeash", "LeadUnleash", "LeadBreak", "Unsaddle", "EquipCopper", "RecordLavaChicken", "PlaceItem", "SingleItemSwap", "MultiItemSwap", "ItemEnchantLunge1", "ItemEnchantLunge2", "ItemEnchantLunge3", "AttackCritical", "ItemSpearAttackHit", "ItemSpearAttackMiss", "ItemWoodenSpearAttackHit", "ItemWoodenSpearAttackMiss", "ImitateParched", "ImitateCamelHusk", "ItemSpearUse", "ItemWoodenSpearUse", "SaddleInWater", "ItemStoneSpearAttackHit", "ItemIronSpearAttackHit", "ItemCopperSpearAttackHit", "ItemGoldenSpearAttackHit", "ItemDiamondSpearAttackHit", "ItemNetheriteSpearAttackHit", "ItemStoneSpearAttackMiss", "ItemIronSpearAttackMiss", "ItemCopperSpearAttackMiss", "ItemGoldenSpearAttackMiss", "ItemDiamondSpearAttackMiss", "ItemNetheriteSpearAttackMiss", "ItemStoneSpearUse", "ItemIronSpearUse", "ItemCopperSpearUse", "ItemGoldenSpearUse", "ItemDiamondSpearUse", "ItemNetheriteSpearUse", "PauseGrowth", "ResetGrowth", "PushedByPlayer", "Bounce", "SlimeLanding", "AbsorbBlock", "EjectBlock", "GeyserEruptionStart", "GeyserEruptionActive", "RecordBounce", "BucketFillLandAnimal", "BucketEmptyLandAnimal", "GeyserContinuousEruptionStart", "GeyserContinuousEruptionActive", "Mount", "Dismount", "StrawBedBreakLeave", "Undefined"};
+
+        std::string LegacySoundName(uint32_t id) {
+            return id < sizeof(kLegacySounds) / sizeof(kLegacySounds[0]) ? kLegacySounds[id] : std::string();
+        }
+    }
+
+    void BedrockSession::RegisterProtocolExtras() {
+        On<LevelSoundEventOldPacket>([this](const LevelSoundEventOldPacket& p) {
+            const std::string name = LegacySoundName(p.soundId);
+            if (name.empty())
+                return;
+            SoundRequest r;
+            r.kind = SoundRequest::Kind::Level;
+            r.name = name;
+            r.x = p.position.x;
+            r.y = p.position.y;
+            r.z = p.position.z;
+            r.extra = p.blockId;
+            r.baby = p.isBabyMob;
+            r.global = p.isGlobal;
+            PushSound(std::move(r));
+        });
+
+        On<LevelSoundEventV2Packet>([this](const LevelSoundEventV2Packet& p) {
+            const std::string name = LegacySoundName(p.soundId);
+            if (name.empty())
+                return;
+            SoundRequest r;
+            r.kind = SoundRequest::Kind::Level;
+            r.name = name;
+            r.x = p.position.x;
+            r.y = p.position.y;
+            r.z = p.position.z;
+            r.extra = p.blockId;
+            r.entityType = p.entityType;
+            r.baby = p.isBabyMob;
+            r.global = p.isGlobal;
+            PushSound(std::move(r));
+        });
+
+        On<UpdateSoftEnumPacket>([this](const UpdateSoftEnumPacket& p) {
+            std::lock_guard lock(commandMutex);
+            for (ui::CommandInfo& command : commands)
+                for (auto& overload : command.overloads)
+                    for (ui::CommandParam& param : overload) {
+                        if (param.softEnum != p.enumType)
+                            continue;
+                        if (p.actionType == UpdateSoftEnumPacketActionType::Update) {
+                            param.values = p.options;
+                        } else if (p.actionType == UpdateSoftEnumPacketActionType::Add) {
+                            for (const std::string& v : p.options)
+                                if (std::find(param.values.begin(), param.values.end(), v) == param.values.end())
+                                    param.values.push_back(v);
+                        } else {
+                            for (const std::string& v : p.options)
+                                param.values.erase(std::remove(param.values.begin(), param.values.end(), v), param.values.end());
+                        }
+                    }
+            commandVersion++;
+        });
+
+        On<MotionPredictionHintsPacket>([this](const MotionPredictionHintsPacket& p) {
+            if (runtimeId == 0 || p.entityRuntimeId != runtimeId)
+                return;
+            serverMotion.hasVelocity = true;
+            serverMotion.velocity[0] = p.velocity.x;
+            serverMotion.velocity[1] = p.velocity.y;
+            serverMotion.velocity[2] = p.velocity.z;
+            NoteKnockback(p.velocity.x, p.velocity.z);
+        });
+    }
+
     void BedrockSession::RegisterIgnoredHandlers() {
         auto accept = [this]<class... T>() { (On<T>([](const T&) {}), ...); };
         accept.template operator()<AnimateEntityPacket, BlockEventPacket,
-                EmotePacket, HurtArmorPacket, PlayerArmorDamagePacket, LevelEventGenericPacket, MotionPredictionHintsPacket,
+                EmotePacket, HurtArmorPacket, PlayerArmorDamagePacket, LevelEventGenericPacket,
                 MovementEffectPacket, PlayerLocationPacket, ServerPostMovePacket, SetLastHurtByPacket, ShowCreditsPacket,
                 SimulationTypePacket, SpawnExperienceOrbPacket, UpdateBlockPropertiesPacket, UpdateEquipmentPacket,
-                UpdateSoftEnumPacket, ClientboundControlsSchemePacket, ClientboundTextureShiftPacket,
+                ClientboundControlsSchemePacket, ClientboundTextureShiftPacket,
                 ClientboundUpdateSoundDataPacket, SetDefaultGameTypePacket, UpdateAdventureSettingsPacket,
                 SetMovementAuthorityPacket, ScriptMessagePacket, OnScreenTextureAnimationPacket, GraphicsOverrideParameterPacket,
                 PrimitiveShapesPacket, ServerScriptDebugDrawerPacket, ClientboundAttributeLayerSyncPacket,
