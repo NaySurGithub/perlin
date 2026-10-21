@@ -102,4 +102,8 @@ namespace perlin::http {
             return relayed;
         return direct;
     }
+
+    Response GetUrl(const std::string& url, const std::map<std::string, std::string>& headers, int timeoutSecs) {
+        return Fetch(url, "GET", {}, {}, headers, timeoutSecs);
+    }
 }

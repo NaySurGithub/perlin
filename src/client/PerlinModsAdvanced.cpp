@@ -208,14 +208,21 @@ namespace perlin {
 
         mm.Register(Op::PacketDrop, [this](CallContext& ctx, abi::Reader& r, abi::Writer&) {
             const abi::PacketDropRequest in = r.read<abi::PacketDropRequest>();
-            if (!r.Ok() || in.ids.size() > 256)
+            if (!r.Ok() || in.ids.size() > 4096)
                 return Status::BadArguments;
-            static const uint32_t protectedIds[] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 193}; // login, handshake, disconnect and the like
-            for (uint32_t id : in.ids)
-                if (std::find(std::begin(protectedIds), std::end(protectedIds), id) != std::end(protectedIds))
-                    return Status::Denied;
             std::lock_guard lock(modAdv.mutex);
-            modAdv.drops[ctx.plugin] = {After(in.ticks), in.ids};
+            (in.outgoing ? modAdv.outDrops : modAdv.drops)[ctx.plugin] = {After(in.ticks), in.ids};
+            return Status::Ok;
+        }, static_cast<uint32_t>(abi::Permission::Packets) | control);
+
+        mm.Register(Op::PacketInject, [this](CallContext&, abi::Reader& r, abi::Writer&) {
+            const uint32_t id = r.get<uint32_t>();
+            std::vector<uint8_t> body = r.bytes();
+            if (!r.Ok())
+                return Status::BadArguments;
+            if (!modLive)
+                return Status::Unavailable;
+            modLive->InjectIncoming(id, body);
             return Status::Ok;
         }, static_cast<uint32_t>(abi::Permission::Packets) | control);
 
@@ -267,7 +274,18 @@ namespace perlin {
             drops.insert(drops.end(), it->second.second.begin(), it->second.second.end());
             ++it;
         }
-        if (session)
+        std::vector<uint32_t> outDrops;
+        for (auto it = modAdv.outDrops.begin(); it != modAdv.outDrops.end();) {
+            if (now >= it->second.first) {
+                it = modAdv.outDrops.erase(it);
+                continue;
+            }
+            outDrops.insert(outDrops.end(), it->second.second.begin(), it->second.second.end());
+            ++it;
+        }
+        if (session) {
             session->SetDroppedPackets(std::move(drops));
+            session->SetDroppedOutgoing(std::move(outDrops));
+        }
     }
 }

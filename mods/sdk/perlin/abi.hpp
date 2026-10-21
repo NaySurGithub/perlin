@@ -155,6 +155,7 @@ namespace perlin::abi {
         ClientBlockGet = 0x0F41, // look a block up by name and states to its runtime id
         PacketDrop = 0x0F50,    // discard incoming packets by id for a while
         PacketCounters = 0x0F51, // how many packets of each id have arrived
+        PacketInject = 0x0F52,  // handle a packet as if the server had sent it
     };
 
     enum class Event : uint32_t {
@@ -930,6 +931,7 @@ namespace perlin::abi {
     struct PacketDropRequest {
         int32_t ticks = 20;
         std::vector<uint32_t> ids;
+        bool outgoing = false; // true: stop packets this client would send instead of ones it receives
     };
 
     struct PacketCount {

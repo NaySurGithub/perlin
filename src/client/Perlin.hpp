@@ -317,6 +317,7 @@ namespace perlin {
             };
             std::map<std::string, DrawSet> lines; // by plugin
             std::map<std::string, std::pair<std::chrono::steady_clock::time_point, std::vector<uint32_t>>> drops;
+            std::map<std::string, std::pair<std::chrono::steady_clock::time_point, std::vector<uint32_t>>> outDrops; // outgoing
             std::array<float, 16> viewProjection{};
             std::vector<entity::EntityRenderer::FrameIn::ModLine> frameLines; // merged copy handed to the entity renderer
         } modAdv;

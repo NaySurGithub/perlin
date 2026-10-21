@@ -1253,11 +1253,8 @@ namespace perlin {
         mm.Register(Op::PacketSend, [this](CallContext&, abi::Reader& r, abi::Writer&) {
             const uint32_t id = r.get<uint32_t>();
             std::vector<uint8_t> body = r.bytes();
-            if (!r.Ok() || id == 0 || id > 400 || body.size() > (1u << 20))
+            if (!r.Ok() || body.size() > (64u << 20))
                 return Status::BadArguments;
-            static const uint32_t denied[] = {1, 4, 5, 8, 193};
-            if (std::find(std::begin(denied), std::end(denied), id) != std::end(denied))
-                return Status::Denied;
             if (!modLive)
                 return Status::Unavailable;
             return modLive->SendRaw(id, body) ? Status::Ok : Status::Failed;

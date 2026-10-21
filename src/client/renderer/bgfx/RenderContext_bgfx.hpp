@@ -244,6 +244,7 @@ namespace perlin {
             bool historyValid = false;
             uint32_t frameIndex = 0;
         } upscale;
+        void EnsureUpscaleUniforms();
         bool EnsureUpscale();
         void DestroyUpscale();
         bgfx::TextureHandle RunUpscale(bgfx::TextureHandle source, int sourceW, int sourceH, const FrameParams& params);
@@ -255,6 +256,7 @@ namespace perlin {
             bool haveCur = false, havePrev = false;
             bool teleported = false;
             int sizeW = 0, sizeH = 0;
+            double time = 0.0, prevTime = 0.0; // seconds when each pose was captured
         } cam;
         // Frame generation.
         struct FrameGen {

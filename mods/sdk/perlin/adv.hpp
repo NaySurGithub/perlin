@@ -1,13 +1,15 @@
 #pragma once
-// The low-level range: camera, motion, model pose, world-space drawing, client-side blocks, packet filtering.
+// Camera, motion, model pose, world-space drawing, client-side blocks and packet filtering. These live in perlin::game next to
+// everything else: there is no separate "advanced" tier, only permissions.
 //
 // Every override here carries a lifetime in ticks and lapses by itself when the mod stops refreshing it, so a mod that
 // crashes or unloads never leaves the player rolled, frozen or blind. Anything that changes the game needs the control
 // permission; the read-only calls and world drawing do not.
 //
 //     // An elytra barrel roll: spin the picture and the model while gliding, and hold the velocity along the view.
-//     perlin::adv::camera({.roll = angle, .ticks = 2});
-//     perlin::adv::model_pose({.roll = angle, .ticks = 2});
+//     perlin::game::camera({.roll = angle, .ticks = 2});
+//     perlin::game::model_pose({.roll = angle, .ticks = 2});
+#include <span>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -16,7 +18,7 @@
 #include "perlin/rpc.hpp"
 #include "perlin/types.hpp"
 
-namespace perlin::adv {
+namespace perlin::game {
     using abi::CameraControlState;
     using abi::CameraInfo;
     using abi::ModelPose;
@@ -96,10 +98,17 @@ namespace perlin::adv {
     }
 
     // --- packets ------------------------------------------------------------------------------------
-    inline Result<void> drop_packets(const std::vector<uint32_t>& ids, int ticks = 20) {
+    inline Result<void> drop_packets(const std::vector<uint32_t>& ids, int ticks = 20, bool outgoing = false) {
         abi::Writer w;
-        w.write(abi::PacketDropRequest{ticks, ids});
+        w.write(abi::PacketDropRequest{ticks, ids, outgoing});
         return detail::call_void(Op::PacketDrop, w);
     }
     inline Result<std::vector<abi::PacketCount>> packet_counters() { return detail::call_list<abi::PacketCount>(Op::PacketCounters); }
+
+    // Handles a packet as if the server had sent it (needs packets and control).
+    inline Result<void> inject_packet(uint32_t id, std::span<const uint8_t> body) {
+        abi::Writer w;
+        w.put(id).bytes(body.data(), body.size());
+        return detail::call_void(Op::PacketInject, w);
+    }
 }

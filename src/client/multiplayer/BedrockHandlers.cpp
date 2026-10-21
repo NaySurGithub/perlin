@@ -469,6 +469,9 @@ namespace perlin {
             grantedRadius = p.chunkRadius;
             std::cout << "[chunk] server granted chunk radius " << p.chunkRadius << " (asked " << chunkRadius << ")"
                       << std::endl;
+            if (p.chunkRadius < chunkRadius)
+                std::cout << "[chunk] the server limits the view distance to " << p.chunkRadius
+                          << " chunks; LODs can only show terrain the server sends" << std::endl;
         });
 
         On<ItemRegistryPacket>([this](const ItemRegistryPacket& p) {

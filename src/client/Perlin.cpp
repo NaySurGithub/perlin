@@ -2984,6 +2984,7 @@ namespace perlin {
                     if (live) {
                         live->SetChunkRadius(options.renderDistance);
                         live->SetNearRadius(1 << 20);
+                        live->RequestChunkRadiusNow();
                     }
                 }
                 // The first half of the slider is the ordinary range (2-32 chunks); with LODs on the second half runs out to 256.
@@ -3010,6 +3011,7 @@ namespace perlin {
                                    live->SetChunkRadius(options.renderDistance);
                                    live->SetMaxViewDistance(std::max(32, options.renderDistance));
                                    live->SetNearRadius(options.enableLods && options.renderDistance > LodStore::kRealChunks ? LodStore::kRealChunks : 1 << 20);
+                                   live->RequestChunkRadiusNow(); // the server only streams what was last asked for
                                }
                            }
                        });
@@ -7077,6 +7079,13 @@ namespace perlin {
             if (sessionReady && session)
                 camera.viewEffect = session->Camera().ShakeMatrix() * camera.viewEffect;
             const glm::mat4 handViewEffect = hurtMatrix * (options.hand.bobHand ? bobMatrix : glm::mat4(1.0f));
+            {
+                // The far plane follows the render distance as it is changed; a long one gets a slightly larger near plane so the
+                // depth buffer still separates distant surfaces (the far terrain flickered otherwise).
+                camera.farPlane = std::max(static_cast<float>(options.renderDistance * 16) * 1.6f,
+                                           static_cast<float>(GraphicsSettings::From(options).cloudRange * 16));
+                camera.nearPlane = std::clamp(0.05f + (camera.farPlane - 1500.0f) * 0.00004f, 0.05f, 0.25f);
+            }
             ApplyModCamera(camera.fov, camera.viewEffect);
             const glm::mat4 viewProjection = camera.ViewProjection();
             {
@@ -7236,7 +7245,8 @@ namespace perlin {
                     static float dynamic = 1.0f;
                     static double frameMs = 16.0;
                     static auto lastChange = std::chrono::steady_clock::now();
-                    frameMs += (static_cast<double>(dt) * 1000.0 - frameMs) * 0.05;
+                    const double shownFrames = options.frameGen == "4x" ? 4.0 : options.frameGen == "3x" ? 3.0 : options.frameGen == "2x" ? 2.0 : 1.0;
+                    frameMs += (static_cast<double>(dt) * 1000.0 / shownFrames - frameMs) * 0.05;
                     const double targetMs = 1000.0 / static_cast<double>(options.upscaleTargetFps);
                     const auto nowDyn = std::chrono::steady_clock::now();
                     if (nowDyn - lastChange > std::chrono::milliseconds(1200)) {
@@ -7953,6 +7963,7 @@ namespace perlin {
                     }
                     if (!renderer->PresentGenerated(i, total))
                         break;
+                    frames++; // generated frames count towards the FPS shown
                 }
             }
             if (gProfile.enabled) {

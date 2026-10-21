@@ -603,6 +603,11 @@ namespace perlin {
     }
 
     bool BedrockSession::Transmit(uint32_t packetId, const std::vector<uint8_t>& body, bool reliable) {
+        if (dropOutActive.load(std::memory_order_acquire)) {
+            std::lock_guard<std::mutex> lk(dropMutex);
+            if (std::find(droppedOut.begin(), droppedOut.end(), packetId) != droppedOut.end())
+                return true;
+        }
         std::lock_guard<std::mutex> txLock(txMutex);
         if (!net || !net->IsConnected())
             return false;

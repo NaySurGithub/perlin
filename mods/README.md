@@ -280,21 +280,21 @@ mods/
   prebuilt/           built .wasm files and their manifests
 ```
 
-## Low-level range (`perlin/adv.hpp`)
+## Camera, motion, drawing and blocks (`perlin::game`)
 
 For mods that need to reach into the game itself. Everything that changes the game needs the `control` permission, and every override carries a lifetime in ticks: it lapses on its own when the mod stops refreshing it, so a crashed or unloaded mod never leaves the player rolled, frozen or blind.
 
 | Call | What it does |
 | --- | --- |
-| `adv::camera({.roll, .fovAdd, .fovSet, .offset*, .yawAdd, .pitchAdd, .ticks})` | Rolls the picture, changes the field of view, shifts the view, turns it without changing the aim. |
-| `adv::camera_info()` | Eye position, angles, FOV, aspect and the column-major view-projection matrix. |
-| `adv::to_screen(x, y, z)` | Projects a world point to GUI pixels (use it with `ui::Canvas` for ESP-style overlays, labels and markers). |
-| `adv::set_velocity` / `add_velocity` / `motion` | Sets or adds to the local player's velocity (per axis). Elytra boosts, dashes, grapples. |
-| `adv::teleport` | Moves the local player; the server sees ordinary movement. |
-| `adv::model_pose({.pitch, .yaw, .roll})` | Rotates the local player's model about its middle after the glide lean. `yaw` is a spin around the body's axis, which in flight is a barrel roll. |
-| `adv::lines` / `adv::boxes` | World-space lines and box outlines drawn through the world renderer. A schematic overlay (Litematica style) is one `boxes` call per frame. |
-| `adv::find_block` / `adv::set_blocks` | Looks up a block by name and states, and changes blocks in the client's own copy of the world (ghost blocks, previews). |
-| `adv::drop_packets` | Discards incoming packets by id for a while (needs `packets` too). |
-| `adv::packet_counters` | How many packets of each id have arrived. |
+| `game::camera({.roll, .fovAdd, .fovSet, .offset*, .yawAdd, .pitchAdd, .ticks})` | Rolls the picture, changes the field of view, shifts the view, turns it without changing the aim. |
+| `game::camera_info()` | Eye position, angles, FOV, aspect and the column-major view-projection matrix. |
+| `game::to_screen(x, y, z)` | Projects a world point to GUI pixels (use it with `ui::Canvas` for ESP-style overlays, labels and markers). |
+| `game::set_velocity` / `add_velocity` / `motion` | Sets or adds to the local player's velocity (per axis). Elytra boosts, dashes, grapples. |
+| `game::teleport` | Moves the local player; the server sees ordinary movement. |
+| `game::model_pose({.pitch, .yaw, .roll})` | Rotates the local player's model about its middle after the glide lean. `yaw` is a spin around the body's axis, which in flight is a barrel roll. |
+| `game::lines` / `game::boxes` | World-space lines and box outlines drawn through the world renderer. A schematic overlay (Litematica style) is one `boxes` call per frame. |
+| `game::find_block` / `game::set_blocks` | Looks up a block by name and states, and changes blocks in the client's own copy of the world (ghost blocks, previews). |
+| `game::drop_packets` | Discards incoming packets by id for a while (needs `packets` too). |
+| `game::packet_counters` | How many packets of each id have arrived. |
 
 `examples/barrel_roll` is a complete elytra barrel roll in thirty lines.

@@ -1,5 +1,5 @@
 // Elytra barrel roll: R while gliding spins the camera and the player's model one full turn around the flight direction.
-// It only uses the low-level range (perlin::adv): camera roll and model pose, each refreshed every frame so they lapse on
+// It only uses the low-level range (perlin::game): camera roll and model pose, each refreshed every frame so they lapse on
 // their own if the mod ever stops.
 #include <perlin/perlin.hpp>
 
@@ -26,7 +26,7 @@ PERLIN_PLUGIN(ctx) {
             rolling = false;
             return;
         }
-        (void)adv::camera({.roll = angle, .ticks = 2});
-        (void)adv::model_pose({.yaw = angle, .ticks = 2});
+        (void)game::camera({.roll = angle, .ticks = 2});
+        (void)game::model_pose({.yaw = angle, .ticks = 2});
     });
 }

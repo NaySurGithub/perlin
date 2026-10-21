@@ -71,6 +71,8 @@ namespace perlin {
         entity::EntityTracker& Entities() { return entities; }
         void SetAccount(std::shared_ptr<xbox::Account> a) { account = std::move(a); }
         void SetChunkRadius(int r) { chunkRadius = r; }
+        // Asks the server for the current chunk radius again (after the render distance changed mid-game).
+        void RequestChunkRadiusNow() { SendRequestChunkRadius(); }
         void SetNearRadius(int r) { nearRadius = r; }
         void SetMaxViewDistance(int r) { maxViewDistance = r; }
 
@@ -322,6 +324,14 @@ void RequestRespawn();
             return out;
         }
         bool SendRaw(uint32_t id, const std::vector<uint8_t>& body) { return Transmit(id, body, true); }
+        // Outgoing packets with these ids are silently not sent (mods).
+        void SetDroppedOutgoing(std::vector<uint32_t> ids) {
+            std::lock_guard<std::mutex> lk(dropMutex);
+            droppedOut.assign(ids.begin(), ids.end());
+            dropOutActive.store(!droppedOut.empty(), std::memory_order_release);
+        }
+        // Handles a packet as if the server had sent it (mods).
+        void InjectIncoming(uint32_t id, const std::vector<uint8_t>& body) { OnGamePacket(id, body); }
 
         State GetState() const { return state; }
         PackDownloader::Progress PackProgress() const { return packs.GetProgress(); }
@@ -650,6 +660,8 @@ void RequestRespawn();
         std::mutex dropMutex;
         std::vector<uint32_t> dropped;
         std::atomic<bool> dropActive{false};
+        std::vector<uint32_t> droppedOut;
+        std::atomic<bool> dropOutActive{false};
 
         Level netLevel;
         std::atomic<bool> blockNamesLearned{false};

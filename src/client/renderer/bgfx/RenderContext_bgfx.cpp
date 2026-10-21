@@ -1,3 +1,4 @@
+#include <chrono>
 #include "util/Relaunch.hpp"
 #include "util/SystemInfo.hpp"
 #include "util/Env.hpp"
@@ -566,11 +567,28 @@ namespace perlin {
         }
     }
 
+    void RenderContext_bgfx::EnsureUpscaleUniforms() {
+        const auto make = [](bgfx::UniformHandle& h, const char* name, bgfx::UniformType::Enum type) {
+            if (!bgfx::isValid(h))
+                h = bgfx::createUniform(name, type);
+        };
+        make(upscale.mode, "u_up", bgfx::UniformType::Vec4);
+        make(upscale.size, "u_upSize", bgfx::UniformType::Vec4);
+        make(upscale.taa, "u_taa", bgfx::UniformType::Vec4);
+        make(upscale.taaSize, "u_taaSize", bgfx::UniformType::Vec4);
+        make(upscale.taaJit, "u_taaJit", bgfx::UniformType::Vec4);
+        make(upscale.taaInvVp, "u_taaInvVp", bgfx::UniformType::Mat4);
+        make(upscale.taaPrevVp, "u_taaPrevVp", bgfx::UniformType::Mat4);
+        make(upscale.sampDepth, "s_depth", bgfx::UniformType::Sampler);
+    }
+
     bool RenderContext_bgfx::EnsureUpscale() {
         if (upscale.failed)
             return false;
-        if (bgfx::isValid(upscale.tex[0]) && upscale.w == width && upscale.h == height)
+        if (bgfx::isValid(upscale.tex[0]) && upscale.w == width && upscale.h == height) {
+            EnsureUpscaleUniforms();
             return true;
+        }
         DestroyUpscale();
         if (!shaders.Has(ShaderProgram::Upscale) && !shaders.Has(ShaderProgram::Temporal)) {
             upscale.failed = true;
@@ -594,16 +612,7 @@ namespace perlin {
         upscale.w = width;
         upscale.h = height;
         upscale.historyValid = false;
-        if (!bgfx::isValid(upscale.mode)) {
-            upscale.mode = bgfx::createUniform("u_up", bgfx::UniformType::Vec4);
-            upscale.size = bgfx::createUniform("u_upSize", bgfx::UniformType::Vec4);
-            upscale.taa = bgfx::createUniform("u_taa", bgfx::UniformType::Vec4);
-            upscale.taaSize = bgfx::createUniform("u_taaSize", bgfx::UniformType::Vec4);
-            upscale.taaJit = bgfx::createUniform("u_taaJit", bgfx::UniformType::Vec4);
-            upscale.taaInvVp = bgfx::createUniform("u_taaInvVp", bgfx::UniformType::Mat4);
-            upscale.taaPrevVp = bgfx::createUniform("u_taaPrevVp", bgfx::UniformType::Mat4);
-            upscale.sampDepth = bgfx::createUniform("s_depth", bgfx::UniformType::Sampler);
-        }
+        EnsureUpscaleUniforms();
         return true;
     }
 
@@ -623,7 +632,7 @@ namespace perlin {
     // Rebuilds a window-sized image from the smaller world image. Returns what the final pass should read.
     bgfx::TextureHandle RenderContext_bgfx::RunUpscale(bgfx::TextureHandle source, int sourceW, int sourceH, const FrameParams& params) {
         const bool scaled = sourceW < width || sourceH < height;
-        const bool temporal = plan.temporal && bgfx::isValid(blur.worldDepth);
+        const bool temporal = plan.temporal && bgfx::isValid(blur.worldDepth) && bgfx::isValid(blur.params);
         if (PERLIN_ENV("PERLIN_NO_UPSCALE") || (!temporal && (!scaled || params.upscaler == 0))) {
             if (!scaled && !temporal && bgfx::isValid(upscale.tex[0]))
                 DestroyUpscale();
@@ -723,10 +732,7 @@ namespace perlin {
             fg.failed = true;
             return false;
         }
-        if (!bgfx::isValid(upscale.mode)) {
-            upscale.mode = bgfx::createUniform("u_up", bgfx::UniformType::Vec4);
-            upscale.size = bgfx::createUniform("u_upSize", bgfx::UniformType::Vec4);
-        }
+        EnsureUpscaleUniforms();
         fg.gen = bgfx::createUniform("u_gen", bgfx::UniformType::Vec4);
         fg.invVp = bgfx::createUniform("u_genInvVp", bgfx::UniformType::Mat4);
         fg.curVp = bgfx::createUniform("u_genCurVp", bgfx::UniformType::Mat4);
@@ -786,7 +792,14 @@ namespace perlin {
         if (!initialized || !fg.ready || !fg.valid || !cam.haveCur || !cam.havePrev || cam.teleported || total < 2 ||
             !bgfx::isValid(blur.worldDepth) || !shaders.Has(ShaderProgram::FrameGen))
             return false;
-        const double t = static_cast<double>(index) / static_cast<double>(total);
+        // How far the camera has got since the real frame, in units of the last real step: the motion between the last two
+        // real frames happened over `step` seconds and `elapsed` seconds have passed since.
+        const double nowSec = std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
+        const double step = cam.time - cam.prevTime;
+        if (!(step > 0.0005 && step < 0.25))
+            return false;
+        const double t = std::clamp((nowSec - cam.time) / step, 0.0, 1.0) * 0.95;
+        (void)index;
         const glm::dmat4 shift = glm::translate(glm::dmat4(1.0), cam.eye);
         const glm::dmat4 curRel = cam.view * shift;
         const glm::dmat4 prevRel = cam.prevView * shift;
@@ -1107,6 +1120,10 @@ namespace perlin {
                 cam.view = DoubleMatrix(params.view);
                 cam.proj = DoubleMatrix(params.projection);
                 cam.eye = glm::dvec3(params.cameraPosition[0], params.cameraPosition[1], params.cameraPosition[2]);
+            }
+            if (usable) {
+                cam.prevTime = cam.time;
+                cam.time = std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
             }
             cam.haveCur = usable;
             cam.teleported = params.teleported;
