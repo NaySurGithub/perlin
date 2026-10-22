@@ -36,6 +36,8 @@
 #include "util/ThreadPool.hpp"
 
 #include <atomic>
+#include <deque>
+#include <condition_variable>
 #include <vector>
 #include <future>
 #include "client/resources/PackInfo.hpp"
@@ -485,15 +487,36 @@ namespace perlin {
             int renderW = 0, renderH = 0, outW = 0, outH = 0;
             double startMs = 0, endMs = 0, targetMs = 0, stepMs = 0;
             long long frame = 0, total = 0;
-            enum class Phase { Seeking, Settle, Capture, Waiting, Advance } phase = Phase::Seeking;
+            enum class Phase { Seeking, Settle, Capture, Waiting, Captured, Advance, Draining } phase = Phase::Seeking;
             int settleIters = 0, quietIters = 0, waitIters = 0;
             long long virtualUs = 0;
             std::chrono::steady_clock::time_point virtualBase{}, realStart{}, phaseStart{}, lastOverlay{};
+            // Frames are captured on the render thread, queued here and encoded on a writer thread so rendering never waits for the encoder.
+            struct CapturedFrame {
+                std::vector<uint8_t> data; // top-down BGRA, renderW x renderH
+            };
             std::mutex capMutex;
-            std::vector<uint8_t> capBuf;
-            uint32_t capW = 0, capH = 0, capPitch = 0;
-            bool capFlip = false;
-            std::atomic<bool> capReady{false};
+            std::condition_variable capCv;
+            std::deque<CapturedFrame> ready;
+            std::thread writer;
+            bool stopWriter = false;
+            bool sizeMismatch = false;
+            std::string writerError;
+            std::atomic<long long> written{0};
+            long long maxInFlight = 6;
+            std::string overlayRml;
+            std::chrono::steady_clock::time_point lastTitle{}, lastProgress{};
+            long long lastWritten = 0;
+            ~ExportJob() {
+                {
+                    std::lock_guard<std::mutex> lk(capMutex);
+                    stopWriter = true;
+                    ready.clear();
+                }
+                capCv.notify_all();
+                if (writer.joinable())
+                    writer.join();
+            }
             // state restored afterwards
             bool savedHideHud = true, savedPaused = false, savedMenu = false;
             double savedSpeed = 1, savedTimeMs = 0;
@@ -506,6 +529,7 @@ namespace perlin {
         void ExportPreFrame(std::chrono::steady_clock::time_point& frameStart, float& dt);
         void ExportPostRender();
         void ExportFinish(bool cancelled, const std::string& error);
+        void ExportWriterLoop();
         void ExportStartNext();
         void ExportOverlay(ui::Hud& hud, int fbW, int fbH);
         void FramebufferSizeEffective(int& w, int& h);

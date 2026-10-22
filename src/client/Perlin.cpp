@@ -8535,8 +8535,10 @@ namespace perlin {
             }
 
 #ifndef __EMSCRIPTEN__
-            if (appliedVsync != options.vsync) {
-                appliedVsync = options.vsync;
+            // exporting runs as fast as the GPU and encoder allow, so vsync is off for its duration
+            const bool wantVsync = options.vsync && !exportJob.active;
+            if (appliedVsync != wantVsync) {
+                appliedVsync = wantVsync;
                 renderer->SetVsync(appliedVsync);
             }
             {

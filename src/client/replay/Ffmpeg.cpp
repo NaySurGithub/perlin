@@ -216,7 +216,7 @@ namespace perlin::replay::ffmpeg {
                 } else {
                     a.insert(a.end(), {"-crf", std::to_string(std::min(crf, 51))});
                 }
-                a.insert(a.end(), {"-preset", s.preset.empty() ? "medium" : s.preset});
+                a.insert(a.end(), {"-preset", s.preset.empty() ? "veryfast" : s.preset});
                 if (enc == "libx265")
                     a.insert(a.end(), {"-tag:v", "hvc1"});
             } else if (Contains(enc, "nvenc")) {

@@ -17,3 +17,10 @@ If a build has no FFmpeg libraries (`-DPERLIN_LIBAV=OFF` or they were not found)
 - **Recorded player**: drawn standing on the ground (recorded positions are eye height) with movement and rotation interpolated between samples, wearing the skin from their PlayerList entry (updated by skin-change packets).
 - **Server resource packs** in use when recording are stored inside the `.perlinreplay` (`packs/` + `packs.json`, including the pack content key) and are mounted when the replay opens, so it looks the same on any computer. Replays recorded before this change have no stored packs.
 - **Mouse**: stays free in the replay; hold the right button or press Tab to capture it, Esc/Tab to release.
+
+## Export speed and progress
+
+- Frames are captured without waiting: the renderer keeps drawing the next frame while finished frames are scaled and encoded on a separate thread (memory is capped, so a slow encoder just throttles the renderer).
+- VSync is switched off while exporting, and only the first frame waits for the world to be fully drawn; later frames wait one step.
+- The default x264/x265 preset is now `veryfast` (change it under Advanced > Encoder preset).
+- Progress is shown as a panel (percent, frames, speed, time left) and in the window title. The panel is hidden for the frame being captured, so it never appears in the video.

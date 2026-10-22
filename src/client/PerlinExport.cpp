@@ -245,13 +245,26 @@ namespace perlin {
         j.phaseStart = j.realStart;
         j.lastOverlay = {};
         j.settleIters = j.quietIters = j.waitIters = 0;
-        j.capReady = false;
+        {
+            std::lock_guard<std::mutex> lk(j.capMutex);
+            j.ready.clear();
+            j.stopWriter = false;
+            j.sizeMismatch = false;
+            j.writerError.clear();
+        }
+        j.written = 0;
+        j.lastWritten = 0;
+        j.lastTitle = {};
+        j.lastProgress = Clock::now();
+        j.overlayRml.clear();
+        j.maxInFlight = std::clamp<long long>((static_cast<long long>(256) << 20) / std::max<long long>(1, static_cast<long long>(renderW) * renderH * 4), 2, 8);
         j.advanceNow = false;
         j.finishing = false;
         j.phase = req.screenshot ? ExportJob::Phase::Settle : ExportJob::Phase::Seeking;
         if (!req.screenshot)
             replayCtl.Seek(j.startMs);
         j.active = true;
+        j.writer = std::thread([this] { ExportWriterLoop(); });
         std::cout << "[export] " << (req.screenshot ? "screenshot" : "video") << " " << outW << "x" << outH << " (render " << renderW << "x" << renderH << ") "
                   << cfg.fps << " fps, " << j.total << " frames -> " << j.outPath << std::endl;
         return true;
@@ -263,6 +276,22 @@ namespace perlin {
             return;
         std::string message;
         std::string err = error;
+        {
+            // Let the writer finish what was already captured (a cancelled export drops the queue to stop quickly).
+            std::lock_guard<std::mutex> lk(j.capMutex);
+            if (cancelled || !err.empty())
+                j.ready.clear();
+            j.stopWriter = true;
+        }
+        j.capCv.notify_all();
+        if (j.writer.joinable())
+            j.writer.join();
+        {
+            std::lock_guard<std::mutex> lk(j.capMutex);
+            if (err.empty() && !j.writerError.empty())
+                err = j.writerError;
+        }
+        j.frame = j.written.load();
         if (j.encoder) {
             std::string finishError;
             if (cancelled || !err.empty()) {
@@ -277,6 +306,7 @@ namespace perlin {
         if (renderer)
             renderer->SetForcedSize(0, 0);
         j.active = false;
+        SetStatusHint("");
         replayUi.hideHud = j.savedHideHud;
         replayCtl.SetSpeed(j.savedSpeed);
         replayCtl.SetPaused(j.savedPaused);
@@ -314,6 +344,54 @@ namespace perlin {
         }
     }
 
+    // Runs on the writer thread: scales and encodes frames in order while the render thread keeps going.
+    void Perlin::ExportWriterLoop() {
+        ExportJob& j = exportJob;
+        for (;;) {
+            ExportJob::CapturedFrame frame;
+            {
+                std::unique_lock<std::mutex> lk(j.capMutex);
+                j.capCv.wait(lk, [&] { return j.stopWriter || !j.ready.empty(); });
+                if (j.ready.empty())
+                    return; // stopped and drained
+                frame = std::move(j.ready.front());
+                j.ready.pop_front();
+            }
+            j.capCv.notify_all();
+            bool ok = true;
+            std::string err;
+            const long long index = j.written.load() + 1;
+            if (j.screenshot || (!j.useFfmpeg)) {
+                std::vector<uint8_t> scaled;
+                const uint8_t* data = frame.data.data();
+                if (j.renderW != j.outW) {
+                    scaled = replay::ffmpeg::DownscaleBgra(frame.data.data(), j.renderW, j.renderH, static_cast<size_t>(j.renderW) * 4, false, j.outW, j.outH);
+                    data = scaled.data();
+                }
+                std::string target = j.outPath;
+                if (!j.screenshot) {
+                    char name[64];
+                    std::snprintf(name, sizeof name, "_%05lld.png", index);
+                    target = j.outPath + "/" + j.name + name;
+                }
+                ok = replay::ffmpeg::WritePngBgra(target, j.outW, j.outH, data, static_cast<size_t>(j.outW) * 4, false, false);
+                if (!ok)
+                    err = "could not write " + target;
+            } else {
+                ok = j.encoder->WriteFrame(frame.data.data(), frame.data.size());
+                if (!ok)
+                    err = "the encoder stopped: " + j.encoder->Log().substr(0, 400);
+            }
+            if (!ok) {
+                std::lock_guard<std::mutex> lk(j.capMutex);
+                j.writerError = err;
+                j.ready.clear();
+                return;
+            }
+            j.written++;
+        }
+    }
+
     void Perlin::ExportPreFrame(Clock::time_point& frameStart, float& dt) {
         ExportJob& j = exportJob;
         const auto realNow = Clock::now();
@@ -329,9 +407,29 @@ namespace perlin {
             ExportFinish(true, "the replay was closed");
             return;
         }
-        if (j.encoder && !j.encoder->Alive() && j.phase != ExportJob::Phase::Waiting) {
-            ExportFinish(false, "ffmpeg stopped unexpectedly: " + j.encoder->Log().substr(0, 400));
-            return;
+        {
+            std::string werr;
+            {
+                std::lock_guard<std::mutex> lk(j.capMutex);
+                werr = j.writerError;
+            }
+            if (!werr.empty()) {
+                ExportFinish(false, werr);
+                return;
+            }
+        }
+        // progress in the window title (visible even while the on-screen panel is hidden for a capture)
+        if (realNow - j.lastTitle > std::chrono::milliseconds(250)) {
+            j.lastTitle = realNow;
+            const long long done = j.written.load();
+            const double elapsed = std::chrono::duration<double>(realNow - j.realStart).count();
+            std::string t = "Exporting " + Num(100.0 * static_cast<double>(done) / static_cast<double>(std::max<long long>(1, j.total)), 1) + "% (" +
+                            std::to_string(done) + "/" + std::to_string(j.total) + ")";
+            if (done > 2 && elapsed > 0.5) {
+                t += ", " + Num(static_cast<double>(done) / elapsed, 1) + " fps, " +
+                     ui::FormatReplayTime(elapsed / static_cast<double>(done) * static_cast<double>(j.total - done) * 1000.0) + " left";
+            }
+            SetStatusHint(t);
         }
         j.advanceNow = false;
         switch (j.phase) {
@@ -349,81 +447,81 @@ namespace perlin {
             j.settleIters++;
             const bool quiet = levelRenderer && levelRenderer->PendingMeshes() == 0 && levelRenderer->MeshesInFlight() == 0 && session->ChunkWorkIdle();
             j.quietIters = quiet ? j.quietIters + 1 : 0;
-            if ((j.settleIters >= 3 && j.quietIters >= 3) || realNow - j.phaseStart > std::chrono::seconds(30))
+            // the first frame waits for the world to be fully drawn; later frames only need the meshes of the last step
+            const int need = j.frame == 0 ? 3 : 1;
+            if ((j.settleIters >= need && j.quietIters >= need) || realNow - j.phaseStart > std::chrono::seconds(30))
                 j.phase = ExportJob::Phase::Capture;
             break;
         }
         case ExportJob::Phase::Capture:
             break;
-        case ExportJob::Phase::Waiting:
-            if (j.capReady.load()) {
-                // ---- consume the frame ----
-                std::vector<uint8_t> frame;
-                uint32_t w = 0, h = 0;
-                {
-                    std::lock_guard<std::mutex> lk(j.capMutex);
-                    w = j.capW;
-                    h = j.capH;
-                    if (w == static_cast<uint32_t>(j.renderW) && h == static_cast<uint32_t>(j.renderH)) {
-                        frame.resize(static_cast<size_t>(w) * h * 4);
-                        for (uint32_t y = 0; y < h; y++) {
-                            const uint8_t* src = j.capBuf.data() + static_cast<size_t>(j.capFlip ? h - 1 - y : y) * j.capPitch;
-                            std::copy(src, src + static_cast<size_t>(w) * 4, frame.data() + static_cast<size_t>(y) * w * 4);
-                        }
-                    }
-                }
-                j.capReady = false;
-                if (frame.empty()) {
-                    // the back buffer had not been resized yet; try again
-                    if (++j.waitIters > 120) {
-                        ExportFinish(false, "the renderer would not produce " + std::to_string(j.renderW) + "x" + std::to_string(j.renderH) + " frames (got " + std::to_string(w) + "x" + std::to_string(h) + ")");
-                        return;
-                    }
-                    j.phase = ExportJob::Phase::Capture;
-                    break;
-                }
-                bool ok = true;
-                std::string err;
-                if (j.screenshot) {
-                    std::vector<uint8_t> scaled;
-                    const uint8_t* data = frame.data();
-                    if (j.renderW != j.outW) {
-                        scaled = replay::ffmpeg::DownscaleBgra(frame.data(), j.renderW, j.renderH, static_cast<size_t>(j.renderW) * 4, false, j.outW, j.outH);
-                        data = scaled.data();
-                    }
-                    ok = replay::ffmpeg::WritePngBgra(j.outPath, j.outW, j.outH, data, static_cast<size_t>(j.outW) * 4, false, false);
-                    if (!ok) err = "could not write " + j.outPath;
-                } else if (j.useFfmpeg) {
-                    ok = j.encoder->WriteFrame(frame.data(), frame.size());
-                    if (!ok) err = "ffmpeg closed the pipe: " + j.encoder->Log().substr(0, 400);
-                } else {
-                    std::vector<uint8_t> scaled;
-                    const uint8_t* data = frame.data();
-                    if (j.renderW != j.outW) {
-                        scaled = replay::ffmpeg::DownscaleBgra(frame.data(), j.renderW, j.renderH, static_cast<size_t>(j.renderW) * 4, false, j.outW, j.outH);
-                        data = scaled.data();
-                    }
-                    char name[64];
-                    std::snprintf(name, sizeof name, "_%05lld.png", j.frame + 1);
-                    ok = replay::ffmpeg::WritePngBgra(j.outPath + "/" + j.name + name, j.outW, j.outH, data, static_cast<size_t>(j.outW) * 4, false, false);
-                    if (!ok) err = "could not write frames to " + j.outPath;
-                }
-                if (!ok) {
-                    ExportFinish(false, err);
+        case ExportJob::Phase::Waiting: {
+            // first frame only: make sure the renderer really produces frames of the requested size
+            bool good = false, mismatch = false;
+            {
+                std::lock_guard<std::mutex> lk(j.capMutex);
+                good = !j.ready.empty() || j.written.load() > 0;
+                mismatch = j.sizeMismatch;
+                j.sizeMismatch = false;
+            }
+            if (good) {
+                j.phase = ExportJob::Phase::Captured;
+            } else if (mismatch) {
+                if (++j.waitIters > 120) {
+                    ExportFinish(false, "the renderer would not produce " + std::to_string(j.renderW) + "x" + std::to_string(j.renderH) + " frames");
                     return;
                 }
-                j.frame++;
-                if (j.frame >= j.total) {
-                    ExportFinish(false, "");
-                    return;
-                }
-                j.targetMs += j.stepMs * timeline.SpeedAt(j.targetMs);
-                j.phase = ExportJob::Phase::Advance;
+                j.frame = 0;
+                j.phase = ExportJob::Phase::Capture; // the back buffer had not been resized yet; try again
             } else if (++j.waitIters > 600) {
                 ExportFinish(false, "the renderer did not deliver a frame");
                 return;
             }
             break;
+        }
+        case ExportJob::Phase::Captured: {
+            bool mismatch = false;
+            long long queued = 0;
+            {
+                std::lock_guard<std::mutex> lk(j.capMutex);
+                mismatch = j.sizeMismatch;
+                queued = static_cast<long long>(j.ready.size());
+            }
+            if (mismatch) {
+                ExportFinish(false, "the window size changed during the export");
+                return;
+            }
+            if (j.frame >= j.total) {
+                j.phase = ExportJob::Phase::Draining;
+                j.lastProgress = realNow;
+                j.lastWritten = j.written.load();
+                break;
+            }
+            if (j.frame - j.written.load() >= j.maxInFlight || queued >= j.maxInFlight) {
+                // the encoder is behind: let it catch up instead of piling frames up in memory
+                std::this_thread::sleep_for(std::chrono::milliseconds(2));
+                break;
+            }
+            j.targetMs += j.stepMs * timeline.SpeedAt(j.targetMs);
+            j.phase = ExportJob::Phase::Advance;
+            break;
+        }
+        case ExportJob::Phase::Draining: {
+            const long long done = j.written.load();
+            if (done >= j.total) {
+                ExportFinish(false, "");
+                return;
+            }
+            if (done != j.lastWritten) {
+                j.lastWritten = done;
+                j.lastProgress = realNow;
+            } else if (realNow - j.lastProgress > std::chrono::seconds(120)) {
+                ExportFinish(false, "the encoder stopped responding");
+                return;
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(2));
+            break;
+        }
         case ExportJob::Phase::Advance:
             break;
         }
@@ -444,35 +542,57 @@ namespace perlin {
             return;
         ExportJob* job = &j;
         renderer->RequestFrameCapture([job](uint32_t w, uint32_t h, uint32_t pitch, const uint8_t* bgra, bool flipY) {
-            std::lock_guard<std::mutex> lk(job->capMutex);
-            job->capW = w;
-            job->capH = h;
-            job->capPitch = pitch;
-            job->capFlip = flipY;
-            job->capBuf.assign(bgra, bgra + static_cast<size_t>(pitch) * h);
-            job->capReady = true;
+            ExportJob::CapturedFrame f;
+            bool match = w == static_cast<uint32_t>(job->renderW) && h == static_cast<uint32_t>(job->renderH);
+            if (match) {
+                f.data.resize(static_cast<size_t>(w) * h * 4);
+                for (uint32_t y = 0; y < h; y++) {
+                    const uint8_t* src = bgra + static_cast<size_t>(flipY ? h - 1 - y : y) * pitch;
+                    std::copy(src, src + static_cast<size_t>(w) * 4, f.data.data() + static_cast<size_t>(y) * w * 4);
+                }
+            }
+            {
+                std::lock_guard<std::mutex> lk(job->capMutex);
+                if (match)
+                    job->ready.push_back(std::move(f));
+                else
+                    job->sizeMismatch = true;
+            }
+            job->capCv.notify_all();
         });
-        j.phase = ExportJob::Phase::Waiting;
+        j.frame++; // frames requested so far
+        j.phase = j.frame == 1 ? ExportJob::Phase::Waiting : ExportJob::Phase::Captured;
         j.waitIters = 0;
     }
 
     void Perlin::ExportOverlay(ui::Hud& h, int fbW, int fbH) {
         ExportJob& j = exportJob;
         const auto now = Clock::now();
-        const bool show = j.phase == ExportJob::Phase::Settle && j.settleIters <= 1 && now - j.lastOverlay > std::chrono::milliseconds(500) && !j.screenshot;
-        if (!show) {
-            if (h.Overlay().HasOverlay() && !(j.phase == ExportJob::Phase::Settle && j.settleIters <= 1))
+        // The panel is on screen for every frame except the one that gets captured, so it never ends up in the video.
+        const bool visible = !j.screenshot && (j.phase == ExportJob::Phase::Seeking || j.phase == ExportJob::Phase::Draining ||
+                                                (j.phase == ExportJob::Phase::Settle && j.settleIters <= 1));
+        if (!visible) {
+            if (h.Overlay().HasOverlay())
                 h.Overlay().ClearOverlay();
             return;
         }
+        const bool rebuild = j.overlayRml.empty() || now - j.lastOverlay > std::chrono::milliseconds(250);
+        if (!rebuild) {
+            std::string error;
+            if (!h.Overlay().HasOverlay() && !h.Overlay().SetOverlay(j.overlayRml, error))
+                std::cout << "[ui] export overlay: " << error << std::endl;
+            h.UpdateOverlay(fbW, fbH, options.guiScale);
+            return;
+        }
         j.lastOverlay = now;
+        const long long done = j.written.load();
         const double elapsed = std::chrono::duration<double>(now - j.realStart).count();
-        const double perFrame = j.frame > 0 ? elapsed / static_cast<double>(j.frame) : 0.0;
-        const double eta = perFrame * static_cast<double>(j.total - j.frame);
+        const double perFrame = done > 0 ? elapsed / static_cast<double>(done) : 0.0;
+        const double eta = perFrame * static_cast<double>(j.total - done);
         ui::PanelModel m;
         m.title = "Exporting " + j.name;
-        m.status = Num(100.0 * static_cast<double>(j.frame) / static_cast<double>(std::max<long long>(1, j.total)), 1) + "%";
-        m.progress = static_cast<float>(j.frame) / static_cast<float>(std::max<long long>(1, j.total));
+        m.status = Num(100.0 * static_cast<double>(done) / static_cast<double>(std::max<long long>(1, j.total)), 1) + "%";
+        m.progress = static_cast<float>(done) / static_cast<float>(std::max<long long>(1, j.total));
         const auto info = [&](const std::string& a, const std::string& b) {
             ui::PanelRow r;
             r.kind = ui::PanelRow::Kind::Info;
@@ -480,12 +600,14 @@ namespace perlin {
             r.value = b;
             m.rows.push_back(r);
         };
-        info("Frame", std::to_string(j.frame) + " / " + std::to_string(j.total));
+        info("Frame", std::to_string(done) + " / " + std::to_string(j.total));
+        if (done > 2 && elapsed > 0.5)
+            info("Speed", Num(static_cast<double>(done) / elapsed, 1) + " frames/s");
         info("Resolution", std::to_string(j.outW) + "x" + std::to_string(j.outH) + (j.renderW != j.outW ? " (supersampled " + std::to_string(j.renderW / j.outW) + "x)" : ""));
         info("Frame rate", replay::FpsLabel(j.cfg.fps));
         info("Replay time", ui::FormatReplayTime(j.targetMs) + " / " + ui::FormatReplayTime(j.endMs));
         info("Elapsed", ui::FormatReplayTime(elapsed * 1000.0));
-        info("Remaining", j.frame > 2 ? ui::FormatReplayTime(eta * 1000.0) : std::string("estimating..."));
+        info("Remaining", done > 2 ? ui::FormatReplayTime(eta * 1000.0) : std::string("estimating..."));
         info("Output", j.outPath);
         if (!exportUi.queue.empty())
             info("Queued after this", std::to_string(exportUi.queue.size()));
@@ -498,7 +620,8 @@ namespace perlin {
         const int guiH = static_cast<int>(std::ceil(static_cast<float>(fbH) / static_cast<float>(scale)));
         std::string error;
         m.scroll = 0;
-        if (!h.Overlay().SetOverlay(ui::BuildPanelRml(m, guiW, guiH), error))
+        j.overlayRml = ui::BuildPanelRml(m, guiW, guiH);
+        if (!h.Overlay().SetOverlay(j.overlayRml, error))
             std::cout << "[ui] export overlay: " << error << std::endl;
         h.UpdateOverlay(fbW, fbH, options.guiScale);
     }

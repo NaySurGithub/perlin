@@ -209,7 +209,7 @@ namespace perlin::replay::ffmpeg {
             return false;
         }
         m.headerWritten = true;
-        m.sws = sws_getContext(m.inW, m.inH, AV_PIX_FMT_BGRA, s.width, s.height, pix, SWS_AREA | SWS_ACCURATE_RND | SWS_FULL_CHR_H_INT, nullptr, nullptr, nullptr);
+        m.sws = sws_getContext(m.inW, m.inH, AV_PIX_FMT_BGRA, s.width, s.height, pix, SWS_AREA, nullptr, nullptr, nullptr);
         if (!m.sws) {
             error = "cannot convert frames to " + plan.pixFmt;
             m.Free();
