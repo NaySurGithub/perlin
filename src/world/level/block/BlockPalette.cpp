@@ -293,7 +293,15 @@ namespace perlin {
 
     void BlockPalette::InsertCustomRuns(std::vector<CustomRun> runs) {
         std::lock_guard<std::mutex> lk(mutex);
-        if (baseSequence.empty() || runs.empty())
+        if (baseSequence.empty())
+            return;
+        std::unordered_set<std::string> vanilla;
+        for (const int32_t h : baseSequence)
+            if (const auto it = nameByHash.find(h); it != nameByHash.end())
+                vanilla.insert(it->second);
+        runs.erase(std::remove_if(runs.begin(), runs.end(), [&](const CustomRun& r) { return vanilla.count(r.name) > 0; }),
+                   runs.end());
+        if (runs.empty())
             return;
         struct Keyed {
             uint64_t key;
