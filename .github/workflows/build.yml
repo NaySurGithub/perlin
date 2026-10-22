@@ -51,7 +51,8 @@ jobs:
           python-version: "3.12"
 
       - name: Cache dependencies
-        uses: actions/cache@v4
+        id: cpm-cache
+        uses: actions/cache/restore@v4
         with:
           path: .cpm-cache
           key: cpm-${{ matrix.name }}-${{ hashFiles('CMakeLists.txt', 'cmake/CPM.cmake') }}
@@ -79,10 +80,10 @@ jobs:
       - name: Cache OpenSSL (Windows)
         if: runner.os == 'Windows'
         id: openssl-cache
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
           path: ${{ github.workspace }}/openssl-install
-          key: openssl-static-x64-v1-${{ env.OPENSSL_VERSION }}
+          key: openssl-static-x64-v2-${{ env.OPENSSL_VERSION }}
 
       - name: Install OpenSSL
         if: runner.os == 'Windows' && steps.openssl-cache.outputs.cache-hit != 'true'
@@ -90,13 +91,21 @@ jobs:
         run: |
           & "$env:VCPKG_INSTALLATION_ROOT\vcpkg.exe" install openssl:x64-windows-static --x-install-root="$env:GITHUB_WORKSPACE/openssl-install"
 
+      # Saved right away (not at the end of the job) so a later failing step cannot throw the cache away.
+      - name: Save OpenSSL cache
+        if: runner.os == 'Windows' && steps.openssl-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ github.workspace }}/openssl-install
+          key: openssl-static-x64-v2-${{ env.OPENSSL_VERSION }}
+
       - name: Cache FFmpeg (Windows)
         if: runner.os == 'Windows'
         id: ffmpeg-cache
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
           path: ${{ github.workspace }}/ffmpeg-install
-          key: ffmpeg-static-x64-v2
+          key: ffmpeg-static-x64-v3
 
       - name: Install FFmpeg libraries (Windows)
         if: runner.os == 'Windows' && steps.ffmpeg-cache.outputs.cache-hit != 'true'
@@ -104,6 +113,13 @@ jobs:
         continue-on-error: true
         run: |
           & "$env:VCPKG_INSTALLATION_ROOT\vcpkg.exe" install "ffmpeg[core,avcodec,avformat,swscale,swresample,gpl,x264,x265,vpx,aom,webp]:x64-windows-static" --x-install-root="$env:GITHUB_WORKSPACE/ffmpeg-install"
+
+      - name: Save FFmpeg cache
+        if: runner.os == 'Windows' && steps.ffmpeg-cache.outputs.cache-hit != 'true' && hashFiles('ffmpeg-install/x64-windows-static/lib/avcodec.lib') != ''
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ github.workspace }}/ffmpeg-install
+          key: ffmpeg-static-x64-v3
 
       - name: Set up MSVC environment
         if: runner.os == 'Windows'
@@ -141,6 +157,13 @@ jobs:
 
       - name: Package
         run: cmake --install build --config Release --prefix dist
+
+      - name: Save dependency cache
+        if: always() && steps.cpm-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: .cpm-cache
+          key: cpm-${{ matrix.name }}-${{ hashFiles('CMakeLists.txt', 'cmake/CPM.cmake') }}
 
       - name: Keep debug symbols (Windows)
         if: runner.os == 'Windows'
