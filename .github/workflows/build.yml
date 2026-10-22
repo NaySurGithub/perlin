@@ -194,7 +194,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: build-shaders/shaders/essl
-          key: essl-v1-${{ steps.bgfx.outputs.tag }}-${{ hashFiles('src/shaders/**') }}
+          key: essl-v1-${{ steps.bgfx.outputs.tag }}-${{ hashFiles('src/shaders/**', 'tools/gen_renderdragon_shaders.py', 'cmake/Materials.cmake') }}
 
       - uses: actions/setup-python@v5
         if: steps.essl-cache.outputs.cache-hit != 'true'

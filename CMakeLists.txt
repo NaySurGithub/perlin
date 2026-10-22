@@ -118,6 +118,7 @@ endif()
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
 
 include(cmake/CPM.cmake)
+include(cmake/Materials.cmake)
 
 if(PERLIN_BUILD_APP)
 CPMAddPackage("gh:stephenberry/glaze@7.1.1")
@@ -405,18 +406,28 @@ set(PERLIN_SHADER_NAMES
     vs_terrain fs_terrain_solid fs_terrain_cutout fs_terrain_translucent vs_sky fs_sky vs_star fs_star
     vs_sunrise fs_sunrise vs_celestial fs_celestial vs_cloud fs_cloud vs_screen fs_screen vs_ui fs_ui vs_post fs_post
     vs_entity_shadow fs_entity_shadow fs_bloom fs_upscale fs_taa fs_framegen
+    fs_entity fs_entity_mask fs_entity_emissive fs_entity_glint fs_particle fs_particle_cutout fs_weather fs_cracks fs_nametag
     vv_vs_terrain vv_fs_terrain_solid vv_fs_terrain_cutout vv_fs_terrain_translucent vv_vs_sky vv_fs_sky vv_vs_star vv_fs_star
     vv_vs_sunrise vv_fs_sunrise vv_vs_celestial vv_fs_celestial vv_vs_cloud vv_fs_cloud vv_vs_shadow vv_fs_shadow vv_fs_shadow_cutout vv_fs_shadow_glass)
 
 function(perlin_compile_shaders type varying)
     set(sources)
     foreach(name IN LISTS ARGN)
-        list(APPEND sources "${PERLIN_SHADER_DIR}/${name}.sc")
+        if(EXISTS "${PERLIN_RD_SHADER_DIR}/${name}.sc")
+            list(APPEND sources "${PERLIN_RD_SHADER_DIR}/${name}.sc")
+        else()
+            list(APPEND sources "${PERLIN_SHADER_DIR}/${name}.sc")
+        endif()
     endforeach()
+    if(EXISTS "${PERLIN_RD_SHADER_DIR}/${varying}")
+        set(varying_path "${PERLIN_RD_SHADER_DIR}/${varying}")
+    else()
+        set(varying_path "${PERLIN_SHADER_DIR}/${varying}")
+    endif()
     bgfx_compile_shaders(
         TYPE ${type}
         SHADERS ${sources}
-        VARYING_DEF "${PERLIN_SHADER_DIR}/${varying}"
+        VARYING_DEF "${varying_path}"
         OUTPUT_DIR "${PERLIN_SHADER_OUT}"
         PROFILES ${PERLIN_SHADER_PROFILES}
         INCLUDE_DIRS ${PERLIN_SHADER_INCLUDES}
@@ -442,7 +453,8 @@ perlin_compile_shaders(FRAGMENT varying_cloud.def.sc fs_cloud)
 perlin_compile_shaders(VERTEX varying_screen.def.sc vs_screen)
 perlin_compile_shaders(FRAGMENT varying_screen.def.sc fs_screen)
 perlin_compile_shaders(VERTEX varying_ui.def.sc vs_ui)
-perlin_compile_shaders(FRAGMENT varying_ui.def.sc fs_ui)
+perlin_compile_shaders(FRAGMENT varying_ui.def.sc fs_ui fs_entity fs_entity_mask fs_entity_emissive fs_entity_glint
+    fs_particle fs_particle_cutout fs_weather fs_cracks fs_nametag)
 perlin_compile_shaders(VERTEX varying_post.def.sc vs_post)
 perlin_compile_shaders(FRAGMENT varying_post.def.sc fs_post fs_bloom fs_upscale fs_taa fs_framegen)
 perlin_compile_shaders(VERTEX varying_entity_shadow.def.sc vs_entity_shadow)
@@ -953,6 +965,14 @@ if(PERLIN_BUILD_TESTS AND NOT EMSCRIPTEN AND NOT ANDROID)
     target_include_directories(material_selftest PRIVATE src)
     target_compile_features(material_selftest PRIVATE cxx_std_23)
     add_test(NAME material_selftest COMMAND material_selftest)
+    if(TARGET shaderc)
+        set(perlin_rd_test_profiles ${PERLIN_SHADER_PROFILES} 300_es)
+        list(REMOVE_DUPLICATES perlin_rd_test_profiles)
+        add_test(NAME renderdragon_shader_selftest
+            COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tests/renderdragon_shader_selftest.py"
+                    --source "${PERLIN_MCBE_SHADER_SOURCE_DIR}" --shaderc "$<TARGET_FILE:shaderc>"
+                    --bgfx-include "${bgfx_SOURCE_DIR}/bgfx/src" --profiles ${perlin_rd_test_profiles})
+    endif()
 
     add_executable(replay_selftest
         tests/replay_selftest.cpp

@@ -94,6 +94,35 @@ int main() {
     const material::Def* add = empty.Find("particles_add");
     Expect(add && add->blendDst == BlendFactor::One && !add->DepthWrite(), "builtin particles add");
 
+    const material::Def* terrain = empty.Find("terrain_opaque");
+    Expect(terrain && terrain->sourceFamily == "RenderChunk" && terrain->sourcePass == "Opaque" &&
+               terrain->vertexShader == "materials/RenderChunk/Opaque.Vertex.glsl",
+           "terrain references upstream shader pass");
+    const material::Def* cutout = empty.Find("RenderChunk.AlphaTest");
+    Expect(cutout && cutout->Define("ALPHA_TEST"), "upstream pass lookup is case insensitive");
+    const material::Def* depthOnly = empty.Find("RenderChunk.DepthOnlyOpaque");
+    Expect(depthOnly && !depthOnly->ColorWrite() && !depthOnly->AlphaWrite() && depthOnly->DepthWrite(),
+           "upstream depth-only pass");
+    const material::Def* sheep = empty.Find("sheep");
+    Expect(sheep && sheep->sourceFamily == "Entity" && entity::InfoFromDef(*sheep).colorMask,
+           "upstream color mask pass");
+    Expect(entity::MaterialLibrary::Builtin("entity_glint").glint, "fallback uses source glint pass");
+    Expect(entity::MaterialLibrary::Builtin("creeper").resolved, "legacy entity alias resolves through upstream");
+    Expect(entity::MaterialLibrary::Builtin("unknown_pack_material").blend == entity::MaterialInfo::Blend::AlphaTest,
+           "unknown entities have a source-backed cutout fallback");
+    empty.AddText(R"MAT({"materials":{"pack_terrain:RenderChunk.Opaque":{"+states":["DisableCulling"]}}})MAT", {});
+    empty.Resolve();
+    empty.InstallBuiltins();
+    const material::Def* packTerrain = empty.Find("pack_terrain");
+    Expect(packTerrain && packTerrain->sourceFamily == "RenderChunk" && packTerrain->NoCull(),
+           "pack inherits upstream pass");
+    empty.AddText(R"MAT({"materials":{"terrain_opaque":{"+defines":["PACK_OVERRIDE"]}}})MAT", {});
+    empty.Resolve();
+    empty.InstallBuiltins();
+    Expect(empty.Find("terrain_opaque")->Define("PACK_OVERRIDE"), "pack overrides source alias");
+    // Resolve invalidates pointers into the database; reacquire before later checks.
+    add = empty.Find("particles_add");
+
     namespace fs = std::filesystem;
     const fs::path dir = fs::temp_directory_path() / "perlin_material_selftest";
     fs::create_directories(dir / "materials");

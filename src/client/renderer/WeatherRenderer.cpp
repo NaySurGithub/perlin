@@ -248,6 +248,7 @@ namespace perlin {
             if (!mesh)
                 return;
             UiDraw draw;
+            draw.material = DrawMaterial::Weather;
             draw.mesh = mesh;
             draw.texture = texture;
             draw.premultiplied = false;

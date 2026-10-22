@@ -227,6 +227,8 @@ namespace perlin {
         bool vsync = true;
         bool initialized = false;
 
+        bgfx::UniformHandle rdMaterial = BGFX_INVALID_HANDLE;
+
         bgfx::VertexLayout layout;
         bgfx::VertexLayout positionLayout;
         bgfx::VertexLayout colorLayout;

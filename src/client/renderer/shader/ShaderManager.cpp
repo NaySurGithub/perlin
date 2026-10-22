@@ -42,6 +42,15 @@ namespace perlin {
             BGFX_EMBEDDED_SHADER(fs_upscale),
             BGFX_EMBEDDED_SHADER(fs_taa),
             BGFX_EMBEDDED_SHADER(fs_framegen),
+            BGFX_EMBEDDED_SHADER(fs_entity),
+            BGFX_EMBEDDED_SHADER(fs_entity_mask),
+            BGFX_EMBEDDED_SHADER(fs_entity_emissive),
+            BGFX_EMBEDDED_SHADER(fs_entity_glint),
+            BGFX_EMBEDDED_SHADER(fs_particle),
+            BGFX_EMBEDDED_SHADER(fs_particle_cutout),
+            BGFX_EMBEDDED_SHADER(fs_weather),
+            BGFX_EMBEDDED_SHADER(fs_cracks),
+            BGFX_EMBEDDED_SHADER(fs_nametag),
             BGFX_EMBEDDED_SHADER_END(),
         };
 
@@ -71,6 +80,15 @@ namespace perlin {
             {"vs_post", "fs_upscale"},
             {"vs_post", "fs_taa"},
             {"vs_post", "fs_framegen"},
+            {"vs_ui", "fs_entity"},
+            {"vs_ui", "fs_entity_mask"},
+            {"vs_ui", "fs_entity_emissive"},
+            {"vs_ui", "fs_entity_glint"},
+            {"vs_ui", "fs_particle"},
+            {"vs_ui", "fs_particle_cutout"},
+            {"vs_ui", "fs_weather"},
+            {"vs_ui", "fs_cracks"},
+            {"vs_ui", "fs_nametag"},
         };
         static_assert(std::size(kSources) == static_cast<size_t>(ShaderProgram::Count));
         constexpr size_t kPackOnlyFrom = static_cast<size_t>(ShaderProgram::Shadow);
@@ -120,8 +138,10 @@ namespace perlin {
             programs[i] = BGFX_INVALID_HANDLE;
             if (i >= kBuiltinOnlyFrom) {
                 programs[i] = bgfx::createProgram(Load(source.vertex, false), Load(source.fragment, false), true);
-                if (!bgfx::isValid(programs[i]))
-                    std::cout << "[shader] built-in program failed: " << source.vertex << " + " << source.fragment << std::endl;
+                if (!bgfx::isValid(programs[i])) {
+                    std::cout << "[shader] required built-in program failed: " << source.vertex << " + " << source.fragment << std::endl;
+                    return false;
+                }
                 continue;
             }
             if (i >= kPackOnlyFrom && !packActive)

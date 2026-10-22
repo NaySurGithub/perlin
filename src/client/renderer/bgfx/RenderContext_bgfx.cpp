@@ -469,6 +469,7 @@ namespace perlin {
             .add(bgfx::Attrib::Color0, 4, bgfx::AttribType::Uint8, true)
             .add(bgfx::Attrib::TexCoord0, 2, bgfx::AttribType::Float)
             .end();
+        rdMaterial = bgfx::createUniform("u_rdMaterial", bgfx::UniformType::Vec4);
         uiSampler = bgfx::createUniform("s_uiTex", bgfx::UniformType::Sampler);
         uiParams = bgfx::createUniform("u_uiParams", bgfx::UniformType::Vec4);
         uiOverlay = bgfx::createUniform("u_uiOverlay", bgfx::UniformType::Vec4);
@@ -1332,6 +1333,7 @@ namespace perlin {
                 mvp[c * 4 + 2] = 2.0f * params.viewProjection[c * 4 + 2] - params.viewProjection[c * 4 + 3];
         }
         shaders.SetFrame(params, tileSize);
+        shaders.ApplyFrame();
         {
             float cloudMap[4] = {0.0f, 3.96f, 1.0f / 3072.0f, 1.0f / 3072.0f};
             if (cloudTexture.width > 0 && cloudTexture.height > 0) {
@@ -1711,6 +1713,12 @@ namespace perlin {
             return;
         bindMesh();
         const float params[4] = {draw.alphaCutoff, glint ? 1.0f : 0.0f, draw.glintStrength, static_cast<float>(draw.emissive)};
+        const bool world = layer == UiLayer::World || layer == UiLayer::WorldLate;
+        const bool entityView = world || layer == UiLayer::Hand || layer == UiLayer::Doll;
+        const DrawMaterial domain = draw.material == DrawMaterial::Auto
+            ? (entityView ? DrawMaterial::Entity : DrawMaterial::Auto) : draw.material;
+        const float materialParams[4] = {world && domain != DrawMaterial::Nametag ? 1.0f : 0.0f, 0, 0, 0};
+        bgfx::setUniform(rdMaterial, materialParams);
         bgfx::setUniform(uiParams, params);
         bgfx::setUniform(uiOverlay, draw.overlay);
         bgfx::setTexture(1, uiGlintSampler, glint ? uiTextures[draw.glintTexture - 1].handle : uiWhite);
@@ -1756,7 +1764,21 @@ namespace perlin {
                              static_cast<uint16_t>(std::max(0, draw.scissorRect[1])),
                              static_cast<uint16_t>(std::max(0, draw.scissorRect[2])),
                              static_cast<uint16_t>(std::max(0, draw.scissorRect[3])));
-        bgfx::submit(view, shaders.Program(ShaderProgram::Ui));
+        ShaderProgram program = ShaderProgram::Ui;
+        if (glint)
+            program = ShaderProgram::EntityGlint;
+        else if (domain == DrawMaterial::Particle)
+            program = draw.alphaCutoff >= 0.5f ? ShaderProgram::ParticleCutout : ShaderProgram::Particle;
+        else if (domain == DrawMaterial::Weather)
+            program = ShaderProgram::Weather;
+        else if (domain == DrawMaterial::Cracks)
+            program = ShaderProgram::Cracks;
+        else if (domain == DrawMaterial::Nametag)
+            program = draw.texture ? ShaderProgram::Ui : ShaderProgram::Nametag;
+        else if (domain == DrawMaterial::Entity)
+            program = draw.colorMask ? ShaderProgram::EntityMask
+                : draw.emissive == 1 ? ShaderProgram::EntityEmissive : ShaderProgram::Entity;
+        bgfx::submit(view, shaders.Program(program));
     }
 
     void RenderContext_bgfx::DestroyUi() {
@@ -1771,6 +1793,8 @@ namespace perlin {
         uiTextures.clear();
         if (bgfx::isValid(uiWhite)) bgfx::destroy(uiWhite);
         if (bgfx::isValid(uiSampler)) bgfx::destroy(uiSampler);
+        if (bgfx::isValid(rdMaterial)) bgfx::destroy(rdMaterial);
+        rdMaterial = BGFX_INVALID_HANDLE;
         if (bgfx::isValid(uiParams)) bgfx::destroy(uiParams);
         if (bgfx::isValid(uiOverlay)) bgfx::destroy(uiOverlay);
         if (bgfx::isValid(uiGlintSampler)) bgfx::destroy(uiGlintSampler);

@@ -56,7 +56,12 @@ namespace perlin {
         Export // above everything, never part of an export capture
     };
 
+    // Auto selects entities for world/hand/doll views and UI for screen views.
+    enum class DrawMaterial : uint8_t { Auto, Entity, Particle, Weather, Cracks, Nametag };
+
     struct UiDraw {
+        DrawMaterial material = DrawMaterial::Auto;
+        bool colorMask = false;
         uint32_t mesh = 0;
         uint32_t texture = 0;
         float model[16] = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
