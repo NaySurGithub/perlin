@@ -8069,6 +8069,17 @@ namespace perlin {
                     ein.outlineHi = gAim.boxHi;
                     ein.outlineShape = gAim.shape;
                 }
+                const auto crackAt = [&](int x, int y, int z, int stage) {
+                    entity::EntityRenderer::FrameIn::Crack crack{x, y, z, stage, {}};
+                    if (live && levelRenderer) {
+                        std::vector<physics::Box> boxes;
+                        if (LevelCollision(live->NetLevel(), &levelRenderer->Blocks()).Selection(x, y, z, boxes))
+                            for (const physics::Box& b : boxes)
+                                crack.boxes.push_back({static_cast<float>(b.x0), static_cast<float>(b.y0), static_cast<float>(b.z0),
+                                                       static_cast<float>(b.x1), static_cast<float>(b.y1), static_cast<float>(b.z1)});
+                    }
+                    return crack;
+                };
                 if (live)
                     for (const auto& c : live->Cracks()) {
                         bool present = false;
@@ -8076,12 +8087,12 @@ namespace perlin {
                         if (present && cur == 0)
                             continue;
                         if (!(gLocalCrack.active && c.x == gLocalCrack.x && c.y == gLocalCrack.y && c.z == gLocalCrack.z))
-                            ein.cracks.push_back({c.x, c.y, c.z, c.stage});
+                            ein.cracks.push_back(crackAt(c.x, c.y, c.z, c.stage));
                     }
                 if (gLocalCrack.active)
-                    ein.cracks.push_back({gLocalCrack.x, gLocalCrack.y, gLocalCrack.z, gLocalCrack.stage});
+                    ein.cracks.push_back(crackAt(gLocalCrack.x, gLocalCrack.y, gLocalCrack.z, gLocalCrack.stage));
                 if (const char* cr = PERLIN_ENV("PERLIN_PREVIEW_CRACK"); cr && gAim.kind == AimHit::Kind::Block)
-                    ein.cracks.push_back({gAim.bx, gAim.by, gAim.bz, std::atoi(cr)});
+                    ein.cracks.push_back(crackAt(gAim.bx, gAim.by, gAim.bz, std::atoi(cr)));
                 ein.groundY = [&](double x, double y, double z) -> double {
                     const int top = entityLevel.FindBlockBelow(static_cast<int>(std::floor(x)), static_cast<int>(std::floor(z)),
                                                                static_cast<int>(std::floor(y)),
