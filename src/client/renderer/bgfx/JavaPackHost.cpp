@@ -489,8 +489,8 @@ namespace perlin {
         }
     }
 
-    jshader::DrawState JavaPackHost::TerrainDraw(const FrameParams& params, const jshader::FrameState& state) const {
-        jshader::DrawState d;
+    jshader::PackDrawState JavaPackHost::TerrainDraw(const FrameParams& params, const jshader::FrameState& state) const {
+        jshader::PackDrawState d;
         std::memcpy(d.modelView, params.view, sizeof(d.modelView));
         std::memcpy(d.projection, state.projection, sizeof(d.projection));
         const glm::mat3 normalMat(ToMat(params.view));

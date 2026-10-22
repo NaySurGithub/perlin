@@ -79,7 +79,7 @@ namespace perlin::jshader {
 
         // Looks up (and converts if needed) the program for a draw, sets uniforms/textures on the current encoder.
         // `baseState` is the state the caller wants; blend/depth overrides from shaders.properties are merged.
-        DrawResult Prepare(Slot slot, const std::string& program, uint32_t attribMask, const DrawState& draw, uint64_t baseState);
+        DrawResult Prepare(Slot slot, const std::string& program, uint32_t attribMask, const PackDrawState& draw, uint64_t baseState);
 
         // Runs shadowcomp/prepare/deferred/composite/final. Call once per frame after all scene draws.
         // `backbuffer` is the framebuffer the final pass writes to (BGFX_INVALID_HANDLE = default backbuffer) and its size.

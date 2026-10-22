@@ -308,7 +308,7 @@ namespace perlin::jshader {
         if (name == "false") { out.v[0] = 0; return out; }
         if (name == "pi") { out.v[0] = 3.14159265358979323846; return out; }
         UniformTable::Context ctx;
-        DrawState draw;
+        PackDrawState draw;
         ctx.frame = frame;
         ctx.draw = &draw;
         float tmp[16] = {};
@@ -483,7 +483,7 @@ namespace perlin::jshader {
     UniformTable::UniformTable() {
         using C = const Context&;
         auto F = [](C c) -> const FrameState& { return *c.frame; };
-        auto D = [](C c) -> const DrawState& { return *c.draw; };
+        auto D = [](C c) -> const PackDrawState& { return *c.draw; };
 
         // --- matrices
         Add("gbufferModelView", 16, [=](C c, float* o) { CopyMat(F(c).modelView, o); });

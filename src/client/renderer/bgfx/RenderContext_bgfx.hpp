@@ -115,7 +115,7 @@ namespace perlin {
         void ApplyViewOrder();
         void DrawPackWorld(const Frustum& frustum, float camX, float camZ);
         void DrawPackLayer(RenderLayer layer, jshader::Slot slot, const char* program, const std::vector<VisibleChunk>& chunks,
-                           const std::vector<const GpuSection*>& sections, const jshader::DrawState& draw, bool shadowPass);
+                           const std::vector<const GpuSection*>& sections, const jshader::PackDrawState& draw, bool shadowPass);
         void DrawPackShadows(float camX, float camZ);
         std::unique_ptr<JavaPackHost> jpack;
         std::string jpackError, jpackPath;

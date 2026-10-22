@@ -79,7 +79,7 @@ namespace perlin {
 
         // Fills the pipeline's frame state and shadow matrices from the renderer's frame description.
         void BuildFrame(const FrameParams& params, jshader::FrameState& state, PackShadowSetup& shadow, bool shadowsOn);
-        jshader::DrawState TerrainDraw(const FrameParams& params, const jshader::FrameState& state) const;
+        jshader::PackDrawState TerrainDraw(const FrameParams& params, const jshader::FrameState& state) const;
 
         int PackBlockId(uint16_t paletteId);
 

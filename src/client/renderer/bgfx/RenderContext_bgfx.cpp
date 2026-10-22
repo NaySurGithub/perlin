@@ -3111,7 +3111,7 @@ namespace perlin {
     }
 
     void RenderContext_bgfx::DrawPackLayer(RenderLayer layer, jshader::Slot slot, const char* program, const std::vector<VisibleChunk>& chunks,
-                                           const std::vector<const GpuSection*>& sections, const jshader::DrawState& draw, bool shadowPass) {
+                                           const std::vector<const GpuSection*>& sections, const jshader::PackDrawState& draw, bool shadowPass) {
         const size_t slotIndex = static_cast<size_t>(layer);
         struct Run {
             int page;
@@ -3188,7 +3188,7 @@ namespace perlin {
         }
         if (packShadowChunks.empty())
             return;
-        jshader::DrawState draw = jpack->TerrainDraw(frame, jFrame);
+        jshader::PackDrawState draw = jpack->TerrainDraw(frame, jFrame);
         std::memcpy(draw.modelView, jShadow.drawView, sizeof(draw.modelView));
         std::memcpy(draw.projection, jShadow.projection, sizeof(draw.projection));
         for (int c = 0; c < 3; c++)
@@ -3204,7 +3204,7 @@ namespace perlin {
             return;
         if (jpack->Pipe().Config().shadowEnabled && !gpuChunks.empty())
             DrawPackShadows(camX, camZ);
-        const jshader::DrawState draw = jpack->TerrainDraw(frame, jFrame);
+        const jshader::PackDrawState draw = jpack->TerrainDraw(frame, jFrame);
         if (!visible.empty()) {
             DrawPackLayer(RenderLayer::Solid, jshader::Slot::Terrain, "gbuffers_terrain", visible, visibleSections, draw, false);
             DrawPackLayer(RenderLayer::Cutout, jshader::Slot::Terrain, "gbuffers_terrain", visible, visibleSections, draw, false);

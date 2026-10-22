@@ -195,7 +195,7 @@ namespace perlin::jshader {
             std::shared_ptr<ProgramSource> source;
             std::vector<float> frameRegs, drawRegs;
             int frameStamp = -1;
-            DrawState lastDraw;
+            PackDrawState lastDraw;
             bool haveDraw = false;
             bool anyPerDraw = false;
             bool valid = false;
@@ -540,7 +540,7 @@ namespace perlin::jshader {
         }
 
         // ---------------------------------------------------------------- uniforms
-        void FillUniforms(Program& p, const DrawState& draw, bool perDrawOnly) {
+        void FillUniforms(Program& p, const PackDrawState& draw, bool perDrawOnly) {
             UniformTable::Context ctx;
             ctx.frame = &frame;
             ctx.draw = &draw;
@@ -555,14 +555,14 @@ namespace perlin::jshader {
             }
         }
 
-        void BindProgram(Program& p, const DrawState& draw) {
+        void BindProgram(Program& p, const PackDrawState& draw) {
             if (p.frameStamp != frameStamp) {
                 p.frameStamp = frameStamp;
                 p.haveDraw = false;
-                FillUniforms(p, DrawState(), false);
+                FillUniforms(p, PackDrawState(), false);
                 p.drawRegs = p.frameRegs;
             }
-            if (p.anyPerDraw && (!p.haveDraw || std::memcmp(&p.lastDraw, &draw, sizeof(DrawState)) != 0)) {
+            if (p.anyPerDraw && (!p.haveDraw || std::memcmp(&p.lastDraw, &draw, sizeof(PackDrawState)) != 0)) {
                 FillUniforms(p, draw, true);
                 p.lastDraw = draw;
                 p.haveDraw = true;
@@ -649,8 +649,8 @@ namespace perlin::jshader {
         }
 
         // ---------------------------------------------------------------- fullscreen passes
-        DrawState FullscreenDraw(int w, int h) {
-            DrawState d;
+        PackDrawState FullscreenDraw(int w, int h) {
+            PackDrawState d;
             // Unit quad (0..1) -> NDC.
             const float mv[16] = {2, 0, 0, 0, 0, 2, 0, 0, 0, 0, 1, 0, -1, -1, 0, 1};
             std::memcpy(d.modelView, mv, sizeof(mv));
@@ -659,7 +659,7 @@ namespace perlin::jshader {
             return d;
         }
 
-        bool SubmitQuad(bgfx::ViewId view, Program& p, const DrawState& draw, uint64_t state) {
+        bool SubmitQuad(bgfx::ViewId view, Program& p, const PackDrawState& draw, uint64_t state) {
             bgfx::TransientVertexBuffer tvb;
             if (bgfx::getAvailTransientVertexBuffer(6, quadLayout) < 6) return false;
             bgfx::allocTransientVertexBuffer(&tvb, 6, quadLayout);
@@ -720,7 +720,7 @@ namespace perlin::jshader {
             }
             const int vw = std::max(1, static_cast<int>(rw * scale)), vh = std::max(1, static_cast<int>(rh * scale));
             SetupView(view, fb, vw, vh);
-            DrawState d = FullscreenDraw(rw, rh);
+            PackDrawState d = FullscreenDraw(rw, rh);
             d.viewHeight = rh;
             uint64_t state = BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A;
             if (pc && pc->blend.set && !pc->blend.off)
@@ -869,7 +869,7 @@ namespace perlin::jshader {
         m.RunChain("begin", VBegin);
     }
 
-    DrawResult Pipeline::Prepare(Slot slot, const std::string& program, uint32_t attribMask, const DrawState& draw, uint64_t baseState) {
+    DrawResult Pipeline::Prepare(Slot slot, const std::string& program, uint32_t attribMask, const PackDrawState& draw, uint64_t baseState) {
         Impl& m = *impl;
         DrawResult r;
         Impl::Program* p = m.GetProgram(program, attribMask, false);
@@ -925,7 +925,7 @@ namespace perlin::jshader {
             if (p) {
                 p->debugCopy = true;
                 m.SetupView(finalView, backbuffer, outW, outH);
-                DrawState d = m.FullscreenDraw(outW, outH);
+                PackDrawState d = m.FullscreenDraw(outW, outH);
                 m.SubmitQuad(finalView, *p, d, BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A);
             }
         }

@@ -68,7 +68,7 @@ namespace perlin::jshader {
     };
 
     // Per-draw values that change between submissions of the same program.
-    struct DrawState {
+    struct PackDrawState {
         float modelView[16] = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};  // gl_ModelViewMatrix
         float normalMatrix[9] = {1, 0, 0, 0, 1, 0, 0, 0, 1};
         float textureMatrix0[16] = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
@@ -119,7 +119,7 @@ namespace perlin::jshader {
 
         struct Context {
             const FrameState* frame = nullptr;
-            const DrawState* draw = nullptr;
+            const PackDrawState* draw = nullptr;
         };
 
         // Writes the natural components of the uniform. Returns false for unknown names.
