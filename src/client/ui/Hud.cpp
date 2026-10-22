@@ -85,6 +85,23 @@ namespace perlin::ui {
         services.textureSize = [](const std::string& tex, int& w, int& h) { return UiAssets::Instance().ImageSize(tex, w, h); };
         services.localize = [](const std::string& key) { return UiAssets::Instance().Localize(key); };
 
+        services.anim = &animHost;
+        services.animDef = [this](const std::string& ref, const std::string& ns) -> Json {
+            std::string full = ref;
+            if (!full.empty() && full[0] == '@')
+                full.erase(0, 1);
+            if (full.find('.') == std::string::npos)
+                full = ns + "." + full;
+            const auto cached = animCache.find(full);
+            if (cached != animCache.end())
+                return cached->second;
+            BuildReport report;
+            Json props = Json::MakeObject();
+            if (auto node = BuildTree(library, full, EngineRootVariables(), report))
+                props = node->props;
+            animCache[full] = props;
+            return props;
+        };
         data = std::make_unique<HudData>(state);
         RegisterHudRenderers(emitter, state, services);
         return Rebuild();
@@ -141,6 +158,9 @@ namespace perlin::ui {
         }
         lastSignature = 0;
         lastRcss.clear();
+        animCache.clear();
+        animHost.recs.clear();
+        animHost.destroyed.clear();
         rebuilds++;
         std::cout << "[ui] hud built: " << report.nodes << " controls from " << library.FileCount() << " files" << std::endl;
         return true;
@@ -228,7 +248,9 @@ namespace perlin::ui {
 
         if (crosshairTree && (!cursorValid || resized || rebuilt)) {
             cursorValid = false;
-            auto crossEvaluated = EvaluateTree(*crosshairTree, *data, services, guiW, guiH);
+            UiServices crossServices = services;
+            crossServices.anim = nullptr;
+            auto crossEvaluated = EvaluateTree(*crosshairTree, *data, crossServices, guiW, guiH);
             cursorEmitter.Emit(*crossEvaluated, guiW, guiH, std::string(), false);
         }
         if (!cursorValid) {
@@ -237,13 +259,16 @@ namespace perlin::ui {
             cursorValid = true;
         }
 
+        animHost.now = now;
+        const bool animTick = animHost.animating && now - lastAnimEval >= 1.0 / 60.0;
         const std::string& rcss = rcssCache;
         const uint64_t signature = stateChanged || resized || rebuilt ? HudSignature(state) : lastSignature;
-        if (!rebuilt && !resized && signature == lastSignature && rcss == lastRcss && fontVersion == McFont::Instance().Version()) {
+        if (!rebuilt && !resized && !animTick && signature == lastSignature && rcss == lastRcss && fontVersion == McFont::Instance().Version()) {
             backend.Update();
             return scale;
         }
         lastSignature = signature;
+        lastAnimEval = now;
         lastRcss = rcss;
         fontVersion = McFont::Instance().Version();
 

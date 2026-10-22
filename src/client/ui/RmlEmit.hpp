@@ -39,9 +39,11 @@ namespace perlin::ui {
         void Rect(float ax, float ay, float w, float h, int z, float r, float g, float b, float a);
         void Text(float ax, float ay, float w, float h, int z, const std::vector<std::string>& lines, const TextStyle& style);
         void Comment(const std::string& text);
+        void Gradient(float ax, float ay, float w, float h, int z, bool vertical, const float c1[4], const float c2[4]);
         void Link(float ax, float ay, float w, float h, int z, const std::string& command);
 
-        void BeginBox(float ax, float ay, float w, float h, int z, const std::string& cls, const std::string& id, bool clip, float scroll = 0.0f);
+        void BeginBox(float ax, float ay, float w, float h, int z, const std::string& cls, const std::string& id, bool clip, float scroll = 0.0f,
+                      const std::string& extraAttrs = {});
         void EndBox();
 
         void BeginSection();

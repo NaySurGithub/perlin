@@ -955,6 +955,7 @@ namespace perlin {
                         continue;
                     }
                     float bx = (float)(baseX + x), by = (float)y, bz = (float)(baseZ + z);
+                    tess.SetBlock(id, bx, by, bz);
 
                     const int biomeId = cache.Biome(x, y, z);
                     const std::string* biomeNamePtr = &kPlainsName;

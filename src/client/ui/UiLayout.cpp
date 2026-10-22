@@ -4,6 +4,8 @@
 #include <algorithm>
 #include <cctype>
 #include <cmath>
+#include <cstdio>
+#include <cstdlib>
 #include <limits>
 #include <unordered_map>
 
@@ -148,6 +150,90 @@ namespace perlin::ui {
                                [](const Term& t) { return t.kind == Term::Pct || t.kind == Term::Fill; });
         }
 
+
+        double Ease(const std::string& name, double t) {
+            t = std::clamp(t, 0.0, 1.0);
+            if (name.empty() || name == "linear")
+                return t;
+            const bool in = name.rfind("in_out_", 0) != 0 && name.rfind("in_", 0) == 0;
+            const bool out = name.rfind("out_", 0) == 0;
+            const bool inOut = name.rfind("in_out_", 0) == 0;
+            std::string kind = name;
+            if (inOut) kind = name.substr(7);
+            else if (in) kind = name.substr(3);
+            else if (out) kind = name.substr(4);
+            constexpr double kPi = 3.14159265358979323846;
+            auto easeIn = [&](double x) -> double {
+                if (kind == "sine") return 1 - std::cos(x * kPi / 2);
+                if (kind == "quad") return x * x;
+                if (kind == "cubic") return x * x * x;
+                if (kind == "quart") return x * x * x * x;
+                if (kind == "quint") return x * x * x * x * x;
+                if (kind == "expo") return x == 0 ? 0 : std::pow(2.0, 10 * x - 10);
+                if (kind == "circ") return 1 - std::sqrt(1 - x * x);
+                if (kind == "back") { const double c1 = 1.70158; return (c1 + 1) * x * x * x - c1 * x * x; }
+                if (kind == "elastic") {
+                    if (x == 0 || x == 1) return x;
+                    return -std::pow(2.0, 10 * x - 10) * std::sin((x * 10 - 10.75) * (2 * kPi / 3));
+                }
+                if (kind == "bounce") {
+                    const double y = 1 - x;
+                    const double n1 = 7.5625, d1 = 2.75;
+                    double b;
+                    if (y < 1 / d1) b = n1 * y * y;
+                    else if (y < 2 / d1) { const double z = y - 1.5 / d1; b = n1 * z * z + 0.75; }
+                    else if (y < 2.5 / d1) { const double z = y - 2.25 / d1; b = n1 * z * z + 0.9375; }
+                    else { const double z = y - 2.625 / d1; b = n1 * z * z + 0.984375; }
+                    return 1 - b;
+                }
+                if (kind == "spring") {
+                    return 1 - std::exp(-6 * x) * std::cos(x * 2 * kPi * 2) ;
+                }
+                return x;
+            };
+            if (kind == "spring")
+                return std::clamp(1 - std::exp(-6 * t) * std::cos(t * 4 * kPi), -0.5, 1.5);
+            if (in) return easeIn(t);
+            if (out) return 1 - easeIn(1 - t);
+            if (inOut) return t < 0.5 ? easeIn(t * 2) / 2 : 1 - easeIn((1 - t) * 2) / 2;
+            return t;
+        }
+
+        // Parses "12", 12 or "50%" into a number plus a percent flag.
+        bool AnimNumber(const Json& j, double& v, bool& pct) {
+            pct = false;
+            if (j.IsNumber()) { v = j.number; return true; }
+            if (j.IsString() && !j.string.empty()) {
+                char* end = nullptr;
+                v = std::strtod(j.string.c_str(), &end);
+                if (end == j.string.c_str()) return false;
+                pct = j.string.find('%') != std::string::npos;
+                return true;
+            }
+            return false;
+        }
+
+        Json LerpJson(const Json& a, const Json& b, double t) {
+            if (a.IsArray() && b.IsArray()) {
+                Json out = Json::MakeArray();
+                for (size_t i = 0; i < std::min(a.array.size(), b.array.size()); i++)
+                    out.Push(LerpJson(a.array[i], b.array[i], t));
+                return out;
+            }
+            double av, bv;
+            bool ap, bp;
+            if (AnimNumber(a, av, ap) && AnimNumber(b, bv, bp)) {
+                const double v = av + (bv - av) * t;
+                if (ap || bp) {
+                    char buf[48];
+                    std::snprintf(buf, sizeof(buf), "%g%%", v);
+                    return Json(std::string(buf));
+                }
+                return Json(v);
+            }
+            return t < 1.0 ? a : b;
+        }
+
         struct Collection {
             std::string name;
             int index;
@@ -188,14 +274,31 @@ namespace perlin::ui {
                 if (const Json* v = n->bag.Find("#visible"))
                     visible = visible && Truthy(*v);
                 n->visible = visible;
+                if (services.anim && services.anim->destroyed.count(n->id))
+                    return nullptr;
+                if (visible)
+                    ApplyAnimations(*n, AnimKey(*n));
 
                 n->layer = parentLayer + static_cast<int>(n->Num("layer", 0));
                 float alpha = 1.0f;
                 if (const Json* a = n->p.Find("alpha")) {
                     if (a->IsNumber())
                         alpha = static_cast<float>(a->number);
-                    else if (a->IsString() && !a->string.empty() && a->string[0] == '@')
-                        alpha = AnimatedAlpha(a->string);
+                    else if (a->IsString() && !a->string.empty() && a->string[0] == '@') {
+                        const bool known = a->string.find("background") != std::string::npos ||
+                                           a->string.find("item_name") != std::string::npos ||
+                                           a->string.find("actionbar") != std::string::npos ||
+                                           a->string.find("title") != std::string::npos ||
+                                           a->string.find("chat") != std::string::npos;
+                        if (!known && services.anim && services.animDef) {
+                            std::unordered_map<std::string, Json> out;
+                            RunAnimation(a->string, n->src->ns, AnimKey(*n) + "|alpha" + a->string, n.get(), out);
+                            const auto it = out.find("alpha");
+                            alpha = it != out.end() && it->second.IsNumber() ? static_cast<float>(it->second.number) : 1.0f;
+                        } else {
+                            alpha = AnimatedAlpha(a->string);
+                        }
+                    }
                 }
                 if (const Json* a = n->bag.Find("#alpha"); a && a->IsNumber())
                     alpha *= static_cast<float>(a->number);
@@ -585,6 +688,178 @@ namespace perlin::ui {
                 return text;
             }
 
+
+            // Evaluates an animation chain starting at `ref` for the control identified by `key`. Fills `out` with the
+            // property overrides (alpha, offset, size, uv, color, clip) the chain currently produces.
+            void RunAnimation(const std::string& ref, const std::string& ns, const std::string& key, LNode* n,
+                              std::unordered_map<std::string, Json>& out) {
+                AnimHost* host = services.anim;
+                if (!host || !services.animDef || ref.empty())
+                    return;
+                struct Step {
+                    Json def;
+                    double duration = 0;
+                };
+                std::vector<Step> chain;
+                std::unordered_map<std::string, size_t> visited;
+                size_t loopStart = SIZE_MAX;
+                std::string cur = ref;
+                while (!cur.empty() && chain.size() < 64) {
+                    const auto hit = visited.find(cur);
+                    if (hit != visited.end()) {
+                        loopStart = hit->second;
+                        break;
+                    }
+                    Json def = services.animDef(cur, ns);
+                    if (!def.IsObject())
+                        break;
+                    visited[cur] = chain.size();
+                    Step s;
+                    s.duration = std::max(0.0, def.Find("duration") ? def.Find("duration")->NumberOr(0) : 0.0);
+                    const Json* next = def.Find("next");
+                    s.def = std::move(def);
+                    chain.push_back(std::move(s));
+                    cur = next && next->IsString() ? next->string : std::string();
+                }
+                if (chain.empty())
+                    return;
+
+                auto& rec = host->recs[key];
+                if (rec.seen == 0 && !rec.finished)
+                    rec.start = host->now;
+                rec.seen = host->epoch;
+
+                double start = rec.start;
+                const Json& first = chain.front().def;
+                if (const Json* pe = first.Find("play_event"); pe && pe->IsString() && !pe->string.empty()) {
+                    const auto ev = host->events.find(pe->string);
+                    if (ev == host->events.end())
+                        return;
+                    start = std::max(start, ev->second);
+                }
+                if (const Json* rn = first.Find("animation_reset_name"); rn && rn->IsString() && !rn->string.empty()) {
+                    const auto ev = host->events.find(rn->string);
+                    if (ev != host->events.end() && ev->second > start)
+                        start = ev->second;
+                }
+                double elapsed = std::max(0.0, host->now - start);
+                if (loopStart != SIZE_MAX) {
+                    double pre = 0, loop = 0;
+                    for (size_t i = 0; i < chain.size(); i++)
+                        (i < loopStart ? pre : loop) += chain[i].duration;
+                    if (loop > 1e-4 && elapsed > pre)
+                        elapsed = pre + std::fmod(elapsed - pre, loop);
+                    else if (loop <= 1e-4)
+                        elapsed = pre;
+                }
+
+                auto currentOf = [&](const std::string& type) -> Json {
+                    if (n) {
+                        if (type == "alpha") return Json(1.0);
+                        if (type == "offset" || type == "size" || type == "uv") {
+                            if (const Json* v = n->p.Find(type); v && v->IsArray()) return *v;
+                        }
+                    }
+                    Json z = Json::MakeArray();
+                    z.Push(Json(0.0));
+                    z.Push(Json(0.0));
+                    return type == "alpha" || type == "clip" ? Json(0.0) : z;
+                };
+                bool active = false, finished = true;
+                for (size_t i = 0; i < chain.size(); i++) {
+                    const Json& def = chain[i].def;
+                    const std::string type = def.Find("anim_type") ? def.Find("anim_type")->StringOr("") : std::string();
+                    const double d = chain[i].duration;
+                    const bool current = elapsed < d || (d <= 0 && i + 1 == chain.size() && false);
+                    double t = d > 0 ? std::min(1.0, elapsed / d) : 1.0;
+                    if (type == "flip_book") {
+                        const double fps = def.Find("fps") ? def.Find("fps")->NumberOr(1) : 1.0;
+                        const int frames = std::max(1, static_cast<int>(def.Find("frame_count") ? def.Find("frame_count")->NumberOr(1) : 1));
+                        int frame = static_cast<int>(std::floor(std::min(elapsed, d > 0 ? d : elapsed) * fps));
+                        frame = std::clamp(frame, 0, frames - 1);
+                        Json uv = Json::MakeArray();
+                        double ix = 0, iy = 0, sx = 0, sy = 0;
+                        if (const Json* iu = def.Find("initial_uv"); iu && iu->IsArray() && iu->array.size() >= 2) {
+                            ix = iu->array[0].NumberOr(0);
+                            iy = iu->array[1].NumberOr(0);
+                        }
+                        if (const Json* fs = def.Find("frame_step"); fs && fs->IsArray() && fs->array.size() >= 2) {
+                            sx = fs->array[0].NumberOr(0);
+                            sy = fs->array[1].NumberOr(0);
+                        } else if (const Json* fs1 = def.Find("frame_step"); fs1 && fs1->IsNumber()) {
+                            sx = fs1->number;
+                        }
+                        uv.Push(Json(ix + sx * frame));
+                        uv.Push(Json(iy + sy * frame));
+                        out["uv"] = uv;
+                    } else if (type == "alpha" || type == "offset" || type == "size" || type == "uv" || type == "color" ||
+                               type == "clip") {
+                        const Json* from = def.Find("from");
+                        const Json* to = def.Find("to");
+                        const Json fromJson = from ? *from : currentOf(type);
+                        const Json toJson = to ? *to : fromJson;
+                        const std::string easing = def.Find("easing") ? def.Find("easing")->StringOr("linear") : "linear";
+                        out[type] = elapsed >= d ? toJson : LerpJson(fromJson, toJson, Ease(easing, t));
+                    }
+                    if (elapsed < d) {
+                        active = true;
+                        finished = false;
+                        (void)current;
+                        break;
+                    }
+                    elapsed -= d;
+                }
+                if (loopStart != SIZE_MAX) {
+                    finished = false;
+                    active = true;
+                }
+                if (active)
+                    host->animating = true;
+                if (finished && !rec.finished) {
+                    rec.finished = true;
+                    const Json& last = chain.back().def;
+                    if (const Json* de = last.Find("destroy_at_end"); de && de->IsString() && !de->string.empty()) {
+                        rec.destroyName = de->string;
+                        host->destroyed.insert(de->string);
+                    } else if (const Json* de2 = last.Find("destroy_at_end"); de2 && de2->IsBool() && de2->boolean && n) {
+                        rec.destroyName = n->id;
+                        host->destroyed.insert(n->id);
+                    }
+                    host->animating = true;
+                }
+                if (finished) {
+                    const Json* roe = chain.back().def.Find("reset_on_end");
+                    if (roe && Truthy(*roe))
+                        out.clear();
+                }
+            }
+
+            void ApplyAnimations(LNode& n, const std::string& instanceKey) {
+                if (!services.anim || !services.animDef || !n.src)
+                    return;
+                const Json* list = n.src->props.Find("anims");
+                if (!list || !list->IsArray())
+                    return;
+                std::unordered_map<std::string, Json> out;
+                for (const Json& entry : list->array)
+                    if (entry.IsString())
+                        RunAnimation(entry.string, n.src->ns, instanceKey + "|" + entry.string, &n, out);
+                for (auto& [type, value] : out) {
+                    if (type == "clip") {
+                        if (value.IsNumber()) n.bag.Set("#clip_ratio", value);
+                    } else {
+                        n.p.Set(type, value);
+                    }
+                }
+            }
+
+            std::string AnimKey(const LNode& n) const {
+                std::string key = n.src ? n.src->path : n.id;
+                if (n.index >= 0)
+                    key += "#" + std::to_string(n.index);
+                return key;
+            }
+
             float AnimatedAlpha(const std::string& reference) const {
                 Json v;
                 float backdrop = 1.0f;
@@ -644,6 +919,9 @@ namespace perlin::ui {
                     if (w.empty()) w.push_back(intrinsic ? def : hundred);
                     if (h.empty()) h.push_back(intrinsic ? def : hundred);
                 }
+                // inherit_max_sibling_width/height: take the size of the largest sibling (same as 100%sm).
+                if (n.Bool("inherit_max_sibling_width", false)) w = Dim{Term{Term::PctSibling, 100, 1}};
+                if (n.Bool("inherit_max_sibling_height", false)) h = Dim{Term{Term::PctSibling, 100, 1}};
             }
 
             void Intrinsic(LNode& n, float pw, const Dim& wd, float& iw, float& ih) {
@@ -940,7 +1218,18 @@ namespace perlin::ui {
     std::unique_ptr<LNode> EvaluateTree(const Node& root, const UiData& data, const UiServices& services, float guiW,
                                         float guiH) {
         Evaluator evaluator(data, services);
+        if (AnimHost* host = services.anim) {
+            host->epoch++;
+            host->animating = false;
+            host->destroyed.clear();
+            for (const auto& rec : host->recs)
+                if (rec.second.finished && !rec.second.destroyName.empty())
+                    host->destroyed.insert(rec.second.destroyName);
+        }
         auto tree = evaluator.Instantiate(root, {}, nullptr, 0, 1.0f, false);
+        if (AnimHost* host = services.anim)
+            for (auto it = host->recs.begin(); it != host->recs.end();)
+                it = (it->second.seen != host->epoch && it->second.destroyName.empty()) ? host->recs.erase(it) : std::next(it);
         if (!tree)
             return nullptr;
         evaluator.Measure(*tree, guiW, guiH, kUnknown, kUnknown, kUnknown, kUnknown);

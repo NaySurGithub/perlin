@@ -429,7 +429,7 @@ namespace perlin::ui {
                 }
 
                 float dx = 0, dy = 0, dw = size.x, dh = size.y;
-                if (GetAttribute<int>("keep", 0)) {
+                if (GetAttribute<int>("keep", 0) && !HasAttribute("nine") && !UiAssets::Instance().Sidecar(source).nine) {
                     const float ratio = sw / std::max(sh, 1.0f);
                     if (dw / dh > ratio) {
                         const float w = dh * ratio;
@@ -741,13 +741,27 @@ namespace perlin::ui {
     bool RmlBackend::OverlayHoverIsButton() const {
         if (!context || !overlay)
             return false;
-        static const char* const kClickable[] = {"btn", "sbtn", "rbtn", "pg", "row", "ticon", "go", "acc"};
+        static const char* const kClickable[] = {"btn", "sbtn", "rbtn", "pg", "row", "ticon", "go", "acc", "bt"};
         for (Rml::Element* e = context->GetHoverElement(); e && e->GetOwnerDocument() == overlay; e = e->GetParentNode()) {
             if (e->IsClassSet("off"))
                 return false;
             for (const char* name : kClickable)
                 if (e->IsClassSet(name))
                     return true;
+        }
+        return false;
+    }
+
+    bool RmlBackend::OverlayHoverSound(std::string& name, float& volume, float& pitch) const {
+        if (!context || !overlay)
+            return false;
+        for (Rml::Element* e = context->GetHoverElement(); e && e->GetOwnerDocument() == overlay; e = e->GetParentNode()) {
+            if (!e->HasAttribute("snd"))
+                continue;
+            name = e->GetAttribute<Rml::String>("snd", "");
+            volume = e->GetAttribute<float>("vol", 1.0f);
+            pitch = e->GetAttribute<float>("pit", 1.0f);
+            return true;
         }
         return false;
     }

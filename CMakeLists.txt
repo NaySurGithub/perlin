@@ -270,8 +270,40 @@ CPMAddPackage(
     GIT_SHALLOW YES
 )
 if(TARGET bgfx)
-    target_compile_definitions(bgfx PRIVATE BGFX_CONFIG_MAX_VERTEX_BUFFERS=16384 BGFX_CONFIG_MAX_INDEX_BUFFERS=16384)
+    # Java shader packs bind more than 16 textures in one pass and carry large uniform sets.
+    target_compile_definitions(bgfx PRIVATE BGFX_CONFIG_MAX_VERTEX_BUFFERS=16384 BGFX_CONFIG_MAX_INDEX_BUFFERS=16384
+                               BGFX_CONFIG_MAX_TEXTURE_SAMPLERS=32 BGFX_CONFIG_MAX_UNIFORMS=1024)
 endif()
+
+# Direct3D 11 has 16 sampler slots; bgfx would pass the larger configured count to PSSetSamplers.
+if(TARGET bgfx AND WIN32)
+    set(PERLIN_BGFX_D3D11 "${bgfx_SOURCE_DIR}/bgfx/src/renderer_d3d11.cpp")
+    file(READ "${PERLIN_BGFX_D3D11}" perlin_d3d11_src)
+    if(NOT perlin_d3d11_src MATCHES "perlin sampler clamp")
+        string(REPLACE "Samplers(0, maxTextureSamplers," "Samplers(0, bx::min<uint32_t>(maxTextureSamplers, D3D11_COMMONSHADER_SAMPLER_SLOT_COUNT)," perlin_d3d11_src "${perlin_d3d11_src}")
+        string(APPEND perlin_d3d11_src "\n// perlin sampler clamp\n")
+        file(WRITE "${PERLIN_BGFX_D3D11}" "${perlin_d3d11_src}")
+    endif()
+endif()
+
+# Java (OptiFine / Iris) shader packs: GLSL -> SPIR-V (glslang) -> GLSL / HLSL (SPIRV-Cross).
+set(ENABLE_OPT OFF CACHE BOOL "" FORCE)
+set(ENABLE_HLSL OFF CACHE BOOL "" FORCE)
+set(ENABLE_GLSLANG_BINARIES OFF CACHE BOOL "" FORCE)
+set(ENABLE_SPVREMAPPER OFF CACHE BOOL "" FORCE)
+set(GLSLANG_TESTS OFF CACHE BOOL "" FORCE)
+set(GLSLANG_ENABLE_INSTALL OFF CACHE BOOL "" FORCE)
+set(BUILD_EXTERNAL OFF CACHE BOOL "" FORCE)
+CPMAddPackage(NAME glslang GITHUB_REPOSITORY KhronosGroup/glslang GIT_TAG e2bb10631198bc9d73daf752d9170608d5e2c8bd GIT_SHALLOW NO)
+set(SPIRV_CROSS_CLI OFF CACHE BOOL "" FORCE)
+set(SPIRV_CROSS_ENABLE_TESTS OFF CACHE BOOL "" FORCE)
+set(SPIRV_CROSS_ENABLE_MSL OFF CACHE BOOL "" FORCE)
+set(SPIRV_CROSS_ENABLE_CPP OFF CACHE BOOL "" FORCE)
+set(SPIRV_CROSS_ENABLE_REFLECT OFF CACHE BOOL "" FORCE)
+set(SPIRV_CROSS_ENABLE_C_API OFF CACHE BOOL "" FORCE)
+set(SPIRV_CROSS_ENABLE_UTIL OFF CACHE BOOL "" FORCE)
+set(SPIRV_CROSS_SKIP_INSTALL ON CACHE BOOL "" FORCE)
+CPMAddPackage(NAME SPIRV-Cross GITHUB_REPOSITORY KhronosGroup/SPIRV-Cross GIT_TAG 300681bbcb8365a8d1eacdacdbdd0249bbf1d6b1 GIT_SHALLOW NO)
 
 if(ANDROID AND TARGET bgfx)
     set(PERLIN_BGFX_EGL "${bgfx_SOURCE_DIR}/bgfx/src/glcontext_egl.cpp")
@@ -641,6 +673,8 @@ target_include_directories(Perlin PRIVATE
     "${stb_SOURCE_DIR}"
     "${concurrentqueue_SOURCE_DIR}"
     "${glm_SOURCE_DIR}"
+    "${glslang_SOURCE_DIR}"
+    "${SPIRV-Cross_SOURCE_DIR}"
 )
 if(NOT EMSCRIPTEN)
     target_include_directories(Perlin PRIVATE "${httplib_SOURCE_DIR}" "${libdatachannel_SOURCE_DIR}/include")
@@ -659,6 +693,7 @@ if(WIN32)
 endif()
 
 target_link_libraries(Perlin PRIVATE
+    glslang SPIRV glslang-default-resource-limits spirv-cross-hlsl spirv-cross-glsl spirv-cross-core
     ${PERLIN_WASM_ENGINE}
     perlin_protocol
     glaze::glaze

@@ -6,6 +6,7 @@
 #include "client/resources/TextureLoader.hpp"
 
 #include <cstdint>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -134,6 +135,17 @@ namespace perlin {
         virtual bool Initialize(AppPlatform& platform, const Options& options) = 0;
         virtual void Shutdown() = 0;
         virtual bool ReloadShaders() { return false; }
+        // Java (OptiFine / Iris) shader packs. `options` overrides the pack's own settings (name -> value).
+        // Callers re-mesh the world after a successful change (the pack needs extra vertex data).
+        virtual bool SetJavaShaderPack(const std::string& /*path*/, const std::map<std::string, std::string>& /*options*/,
+                                       std::string& error) {
+            error = "Java shader packs are not supported by this renderer";
+            return false;
+        }
+        virtual void ClearJavaShaderPack() {}
+        virtual bool JavaShaderPackActive() const { return false; }
+        virtual std::string JavaShaderPackError() const { return {}; }
+        virtual void SetJavaShaderPackDimension(const std::string& /*folder*/) {}
         virtual bool PackShadowsActive() const { return false; }
         virtual void SetVsync(bool) {}
         virtual std::string RendererName() const { return {}; }

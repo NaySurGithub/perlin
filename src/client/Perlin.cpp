@@ -18,6 +18,7 @@
 #include "client/multiplayer/SkinLoader.hpp"
 #include "client/mods/ModManager.hpp"
 #include "client/resources/ShaderPack.hpp"
+#include "client/javashaders/PackSource.hpp"
 #include "client/resources/PackInfo.hpp"
 #include "client/resources/TextureLoader.hpp"
 #include "client/resources/TexturePack.hpp"
@@ -648,14 +649,52 @@ namespace perlin {
         pack.Close();
         gPackSettingsKey = "\x01";
         gPackPresetsKey = "\x01";
+        javaPackPending.clear();
         if (!options.shaderPack.empty()) {
-            std::string error;
-            if (!pack.Open(paths::DataDir() + "/shaderpacks", options.shaderPack, error))
-                std::cout << "[shaders] " << error << " - using the built-in shaders" << std::endl;
+            const std::string full = paths::DataDir() + "/shaderpacks/" + options.shaderPack;
+            if (jshader::LooksLikeJavaPack(full)) {
+                javaPackPending = full;   // applied once the block atlas exists (PollJavaPack)
+            } else {
+                std::string error;
+                if (!pack.Open(paths::DataDir() + "/shaderpacks", options.shaderPack, error))
+                    std::cout << "[shaders] " << error << " - using the built-in shaders" << std::endl;
+            }
+        }
+        if (javaPackPending.empty() && renderer && renderer->JavaShaderPackActive()) {
+            renderer->ClearJavaShaderPack();
+            if (levelRenderer)
+                levelRenderer->RemeshAll();
         }
         if (renderer)
             renderer->ReloadShaders();
         hotShaderStamp.clear();
+    }
+
+    void Perlin::PollJavaPack() {
+        if (!renderer)
+            return;
+        if (!javaPackPending.empty() && levelRenderer && levelRenderer->Blocks().Complete()) {
+            std::string error;
+            const std::string path = javaPackPending;
+            if (renderer->SetJavaShaderPack(path, jshader::ReadJavaPackOptions(path), error)) {
+                javaPackPending.clear();
+                levelRenderer->RemeshAll();
+                std::cout << "[javapack] loaded " << path << std::endl;
+            } else if (error.find("atlas is not loaded") == std::string::npos) {
+                javaPackPending.clear();
+                std::cout << "[javapack] " << error << std::endl;
+                chat.AddMessage("Shader pack failed: " + error, hudAnim.ticks);
+            }
+        }
+        if (renderer->JavaShaderPackActive() && live) {
+            const int dim = std::clamp(live->DimensionId(), 0, 2);
+            if (dim != javaPackDimension) {
+                javaPackDimension = dim;
+                renderer->SetJavaShaderPackDimension(dim == 1 ? "world-1" : dim == 2 ? "world1" : "world0");
+                if (levelRenderer)
+                    levelRenderer->RemeshAll();
+            }
+        }
     }
 
     void Perlin::PollHotReload() {
@@ -6571,6 +6610,7 @@ namespace perlin {
             levelRenderer->SetBetterGrass(options.betterGrass ? 1 : 0);
             levelRenderer->SetGlassMode(options.glass == "connected" ? 1 : options.glass == "connectedClear" ? 2 : options.glass == "clear" ? 3 : 0);
             levelRenderer->ReloadAssetsIfNeeded();
+            PollJavaPack();
 
             if (live)
                 for (const std::string& line : live->TakeChat())
@@ -8187,7 +8227,13 @@ namespace perlin {
                         const bool pressed = this->input.IsMouseDown(0);
                         const bool onButton = hud->Overlay().OverlayHoverIsButton();
                         if (pressed && !uiClickWasDown && onButton && !chat.IsOpen())
-                            sounds.PlayNamed("random.click", {camera.x, camera.y, camera.z}, 1.0f, 1.0f, false);
+                        {
+                            std::string clickName = "random.click";
+                            float clickVolume = 1.0f, clickPitch = 1.0f;
+                            hud->Overlay().OverlayHoverSound(clickName, clickVolume, clickPitch);
+                            if (!clickName.empty())
+                                sounds.PlayNamed(clickName, {camera.x, camera.y, camera.z}, clickVolume, clickPitch, false);
+                        }
                         uiClickWasDown = pressed;
                     }
                     hud->Render();

@@ -134,6 +134,23 @@ namespace perlin::ui {
         body += "/>\n";
     }
 
+    void RmlWriter::Gradient(float ax, float ay, float w, float h, int z, bool vertical, const float c1[4], const float c2[4]) {
+        ax -= ox;
+        ay -= oy;
+        if (w <= 0 || h <= 0)
+            return;
+        const auto hex = [](const float c[4]) {
+            char buf[16];
+            const auto q = [](float v) { return static_cast<int>(std::lround(std::clamp(v, 0.0f, 1.0f) * 255.0f)); };
+            std::snprintf(buf, sizeof(buf), "#%02x%02x%02x%02x", q(c[0]), q(c[1]), q(c[2]), q(c[3]));
+            return std::string(buf);
+        };
+        count++;
+        body += "  <div style=\"position:absolute;display:block;left:" + Num(ax) + "px;top:" + Num(ay) + "px;width:" + Num(w) + "px;height:" +
+                Num(h) + "px;z-index:" + std::to_string(z) + ";decorator:" + (vertical ? "vertical" : "horizontal") + "-gradient(" +
+                hex(c1) + " " + hex(c2) + ");\"></div>\n";
+    }
+
     void RmlWriter::Link(float ax, float ay, float w, float h, int z, const std::string& command) {
         ax -= ox;
         ay -= oy;
@@ -142,9 +159,10 @@ namespace perlin::ui {
                 Num(w) + "px;height:" + Num(h) + "px;z-index:" + std::to_string(z) + ";\"><div class=\"ul\"></div></div>\n";
     }
 
-    void RmlWriter::BeginBox(float ax, float ay, float w, float h, int z, const std::string& cls, const std::string& id, bool clip, float scroll) {
+    void RmlWriter::BeginBox(float ax, float ay, float w, float h, int z, const std::string& cls, const std::string& id, bool clip, float scroll,
+                            const std::string& extraAttrs) {
         count++;
-        body += "  <div" + (cls.empty() ? std::string() : " class=\"" + cls + "\"") + (id.empty() ? std::string() : " id=\"" + EscapeRml(id) + "\"") +
+        body += "  <div" + (cls.empty() ? std::string() : " class=\"" + cls + "\"") + (id.empty() ? std::string() : " id=\"" + EscapeRml(id) + "\"") + extraAttrs +
                 " style=\"position:absolute;display:block;left:" + Num(ax - ox) + "px;top:" + Num(ay - oy) + "px;width:" + Num(w) + "px;height:" + Num(h) +
                 "px;z-index:" + std::to_string(z) + ";" + (clip ? "overflow:hidden;" : "") + "\">\n";
         origins.emplace_back(ox, oy);
@@ -270,7 +288,9 @@ namespace perlin::ui {
         st.clipRatio = std::clamp(ratio, 0.0f, 1.0f);
         ReadColor(n.Get("color"), st.r, st.g, st.b);
         st.alpha = n.alpha;
-        st.keepRatio = n.Bool("keep_ratio", false);
+        // Bedrock images keep the texture's aspect ratio by default and fit it inside the box (centered); only
+        // nine-slice and tiled images are stretched to fill.
+        st.keepRatio = n.Bool("keep_ratio", true) && !st.hasNine && !st.tiled;
         if (st.alpha <= 0.0f)
             return;
         out.Image(n.ax, n.ay, n.w, n.h, n.layer, texture, st);
@@ -343,7 +363,11 @@ namespace perlin::ui {
         const std::string defName = n.Str("default_control"), hoverName = n.Str("hover_control"), pressedName = n.Str("pressed_control"),
                           lockedName = n.Str("locked_control");
         const bool hasHover = FindKid(n, hoverName) != nullptr && !command.empty();
-        out.BeginBox(n.ax, n.ay, n.w, n.h, n.layer, "bt", command, false);
+        std::string soundAttrs;
+        if (const Json* sn = n.Get("sound_name"); sn && sn->IsString())
+            soundAttrs = " snd=\"" + EscapeRml(sn->string) + "\" vol=\"" + Num(static_cast<float>(n.Num("sound_volume", 1.0))) +
+                         "\" pit=\"" + Num(static_cast<float>(n.Num("sound_pitch", 1.0))) + "\"";
+        out.BeginBox(n.ax, n.ay, n.w, n.h, n.layer, "bt", command, false, 0.0f, soundAttrs);
         for (const auto& kid : n.kids) {
             if (!kid->visible)
                 continue;
@@ -388,6 +412,24 @@ namespace perlin::ui {
             VisitButton(n, out);
             return;
         }
+        if (n.type == "toggle") {
+            // Only the control for the current state is drawn (default: unchecked unless toggle_default_state / #toggle_state).
+            bool on = n.Bool("toggle_default_state", false);
+            if (const Json* s = n.bag.Find("#toggle_state"); s && s->IsBool())
+                on = s->boolean;
+            const std::string shown = on ? n.Str("checked_control") : n.Str("unchecked_control");
+            const std::string hidden = on ? n.Str("unchecked_control") : n.Str("checked_control");
+            const std::string hoverShown = on ? n.Str("checked_hover_control") : n.Str("unchecked_hover_control");
+            const std::string hoverHidden = on ? n.Str("unchecked_hover_control") : n.Str("checked_hover_control");
+            if (!shown.empty()) {
+                for (const auto& kid : n.kids) {
+                    if (kid->id == hidden || kid->id == hoverShown || kid->id == hoverHidden)
+                        continue;
+                    Visit(*kid, out);
+                }
+                return;
+            }
+        }
         if (n.type == "scroll_view") {
             viewportName = n.Str("scrolling_view_port", "scrolling_view_port");
             contentName = n.Str("scrolling_content", "scrolling_content");
@@ -399,6 +441,13 @@ namespace perlin::ui {
             EmitImage(n, out);
         } else if (n.type == "label") {
             EmitLabel(n, out);
+        } else if (n.type == "custom" && n.Str("renderer") == "gradient_renderer") {
+            float c1[4] = {1, 1, 1, 1}, c2[4] = {1, 1, 1, 1};
+            ReadColor(n.Get("color1"), c1[0], c1[1], c1[2], &c1[3]);
+            ReadColor(n.Get("color2"), c2[0], c2[1], c2[2], &c2[3]);
+            c1[3] *= n.alpha;
+            c2[3] *= n.alpha;
+            out.Gradient(n.ax, n.ay, n.w, n.h, n.layer, n.Str("gradient_direction", "vertical") != "horizontal", c1, c2);
         } else if (n.type == "custom") {
             const std::string name = n.Str("renderer");
             auto it = renderers.find(name);
@@ -408,8 +457,13 @@ namespace perlin::ui {
                 unknown.push_back(name);
             }
         }
+        const bool clips = n.Bool("clips_children", false) && n.type != "button" && n.w > 0 && n.h > 0 && !n.kids.empty();
+        if (clips)
+            out.BeginBox(n.ax, n.ay, n.w, n.h, n.layer, "", "", true);
         for (const auto& kid : n.kids)
             Visit(*kid, out);
+        if (clips)
+            out.EndBox();
     }
 
     std::string DefaultHudTemplate() {

@@ -1,6 +1,7 @@
 #pragma once
 #include <future>
 #include "client/renderer/RangeAllocator.hpp"
+#include "client/renderer/bgfx/JavaPackHost.hpp"
 #include "client/renderer/RenderContext.hpp"
 #include "client/renderer/Tessellator.hpp"
 #include "client/renderer/shader/ShaderManager.hpp"
@@ -12,6 +13,7 @@
 #include <array>
 #include <atomic>
 #include <cstdint>
+#include <map>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -40,6 +42,11 @@ namespace perlin {
         void UploadAtlas(const uint8_t* rgba, int tilePx, int tiles) override;
         int MaxAtlasLayers(int tilePx) const override;
         bool ReloadShaders() override;
+        bool SetJavaShaderPack(const std::string& path, const std::map<std::string, std::string>& options, std::string& error) override;
+        void ClearJavaShaderPack() override;
+        bool JavaShaderPackActive() const override { return jpack && jpack->Active(); }
+        std::string JavaShaderPackError() const override { return jpackError; }
+        void SetJavaShaderPackDimension(const std::string& folder) override;
         bool PackShadowsActive() const override { return shadow.enabled; }
         void UploadTileFlags(const std::vector<uint8_t>& flags) override;
         void SetVsync(bool enabled) override;
@@ -72,9 +79,11 @@ namespace perlin {
             float distance;
             const GpuChunk* chunk;
             bool fullyInside;
+            uint32_t secBegin = 0, secEnd = 0;
         };
         struct Page {
             bgfx::DynamicVertexBufferHandle vb = BGFX_INVALID_HANDLE;
+            bgfx::DynamicVertexBufferHandle vbPack = BGFX_INVALID_HANDLE;   // Java shader pack vertices (same indices as vb)
             std::array<bgfx::DynamicIndexBufferHandle, kRenderLayerCount> ib;
             RangeAllocator vAlloc;
             std::array<RangeAllocator, kRenderLayerCount> iAlloc;
@@ -101,6 +110,24 @@ namespace perlin {
             uint32_t secVis = ~0u;
         };
         void UpdateCaveVisibility(float camX, float camY, float camZ);
+        // Java shader pack path.
+        bool PackActive() const { return jpack && jpack->Active(); }
+        void ApplyViewOrder();
+        void DrawPackWorld(const Frustum& frustum, float camX, float camZ);
+        void DrawPackLayer(RenderLayer layer, jshader::Slot slot, const char* program, const std::vector<VisibleChunk>& chunks,
+                           const std::vector<const GpuSection*>& sections, const jshader::DrawState& draw, bool shadowPass);
+        void DrawPackShadows(float camX, float camZ);
+        std::unique_ptr<JavaPackHost> jpack;
+        std::string jpackError, jpackPath;
+        std::map<std::string, std::string> jpackOptions;
+        std::string jpackDimension = "world0";
+        uint16_t appliedViewOrder = 0;
+        std::vector<uint8_t> atlasCopy;
+        int atlasCopyTilePx = 0, atlasCopyTiles = 0;
+        jshader::FrameState jFrame;
+        PackShadowSetup jShadow;
+        std::vector<VisibleChunk> packShadowChunks;
+        std::vector<const GpuSection*> packShadowSections;
         uint64_t meshGeneration = 1;
         double caveLastRun = 0.0;
         uint64_t drawnIndices = 0;
@@ -339,6 +366,7 @@ namespace perlin {
         int crosshairPx = 0;
 
         std::vector<VisibleChunk> visible;
+        std::vector<const GpuSection*> visibleSections;
         uint32_t drawCalls = 0;
 
         std::vector<Page> pages;

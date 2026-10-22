@@ -1390,11 +1390,17 @@ namespace perlin {
         const char* geometry = skin.slimArms ? "geometry.humanoid.customSlim" : "geometry.humanoid.custom";
         p.skin.skinResourcePack = std::string("{\"geometry\":{\"default\":\"") + geometry + "\"}}";
         p.skin.armSize = skin.slimArms ? proto::SkinArmSize::Slim : proto::SkinArmSize::Wide;
-        p.skin.geometryData = "null";
-        p.skin.geometryDataVersion = "1.14.0";
-        p.skin.animationData = "null";
+        // Same geometry the login skin carries; "null" here made servers and other players drop the new skin.
+        p.skin.geometryData = B64UrlDecode(kDefaultSkinGeometryB64);
+        p.skin.geometryDataVersion = "0.0.0";
+        p.skin.animationData = std::string();
+        p.skin.skinColor = static_cast<int32_t>(0xffb37b62u);
+        p.skin.premium = false;
+        p.skin.persona = false;
         p.skin.primaryUser = true;
         p.skin.trusted = "true";
+        p.oldSkinName = lastSentSkinName;
+        lastSentSkinName = skin.skinId;
         p.skinName = skin.skinId;
         return Send(p);
     }

@@ -5,6 +5,8 @@
 #include <functional>
 #include <memory>
 #include <string>
+#include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 namespace perlin::ui {
@@ -27,7 +29,29 @@ namespace perlin::ui {
         virtual std::vector<FactoryItem> Factory(const std::string& name) const { return {}; }
     };
 
+    // Shared animation clock and per-control animation state. Owned by whoever re-evaluates the tree (the HUD);
+    // the evaluator reads `now`, records which controls were seen, and raises `animating` while anything is moving
+    // so the owner knows to evaluate again next frame.
+    struct AnimHost {
+        struct Rec {
+            double start = 0;
+            uint64_t seen = 0;
+            bool finished = false;
+            std::string destroyName;
+        };
+        double now = 0;
+        uint64_t epoch = 0;
+        bool animating = false;
+        std::unordered_map<std::string, Rec> recs;
+        std::unordered_map<std::string, double> events;     // event name -> time it last fired
+        std::unordered_set<std::string> destroyed;           // control names removed by destroy_at_end
+        void Fire(const std::string& name) { events[name] = now; }
+    };
+
     struct UiServices {
+        // Resolves "@namespace.name" (or a bare name in `ns`) to the merged properties of an animation control.
+        std::function<Json(const std::string& ref, const std::string& ns)> animDef;
+        AnimHost* anim = nullptr;
         std::function<float(const std::string& text, float scale)> textWidth;
         std::function<float(float scale)> lineHeight;
         std::function<bool(const std::string& texture, int& width, int& height)> textureSize;

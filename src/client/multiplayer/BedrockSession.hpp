@@ -226,6 +226,7 @@ namespace perlin {
         bool SendCommand(const std::string& command);
         bool SendSettingsCommand(const std::string& command);
         bool SendSkinUpdate();
+        std::string lastSentSkinName;
         uint32_t CommandsVersion() const { std::lock_guard<std::mutex> lk(commandMutex); return commandVersion; }
         std::vector<ui::CommandInfo> Commands() const { std::lock_guard<std::mutex> lk(commandMutex); return commands; }
         struct TabPlayer {
