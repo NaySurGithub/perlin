@@ -418,6 +418,7 @@ namespace perlin::jshader {
             BackendOptions bo;
             bo.kind = o.host.backend;
             bo.hlslCompiler = o.host.hlslCompiler;
+            bo.explicitLod0 = name.compare(0, 9, "gbuffers_") != 0 && name != "shadow";
             auto fut = pool.Submit([vertex = std::move(vertex), fragment = std::move(fragment), opts, bo]() {
                 auto c = std::make_shared<Converted>();
                 c->transform = TransformProgram(vertex, fragment, opts);
@@ -729,6 +730,7 @@ namespace perlin::jshader {
             if (pc && pc->blend.set && !pc->blend.off)
                 state |= BGFX_STATE_BLEND_FUNC_SEPARATE(BlendFactor(pc->blend.src), BlendFactor(pc->blend.dst), BlendFactor(pc->blend.srcA), BlendFactor(pc->blend.dstA));
             if (!SubmitQuad(view, *p, d, state)) return false;
+            o.passesRun++;
             if (Trace()) {
                 std::fprintf(stderr, "[jshader] pass %s view=%u viewport=%dx%d targets:", name.c_str(), view, vw, vh);
                 for (int a : p->attachments) std::fprintf(stderr, " %d", a);
@@ -787,6 +789,12 @@ namespace perlin::jshader {
         return l;
     }
 
+    bool Pipeline::ProgramUsable(const std::string& name, uint32_t mask, bool toBackbuffer) {
+        Impl& m = *impl;
+        const auto it = m.programs.find(m.KeyFor(name, mask, toBackbuffer));
+        return it != m.programs.end() && it->second->valid;
+    }
+
     int Pipeline::WarmUp(uint32_t terrainMask) {
         Impl& m = *impl;
         int remaining = 0, started = 0;
@@ -838,6 +846,8 @@ namespace perlin::jshader {
     void Pipeline::BeginFrame(const FrameState& state) {
         Impl& m = *impl;
         m.frame = state;
+        passesRun = 0;
+        finalOk = false;
         m.frame.viewWidth = host.width;
         m.frame.viewHeight = host.height;
         m.frame.dimensionId = pack->Dimension() == "world-1" ? -1 : (pack->Dimension() == "world1" ? 1 : 0);
@@ -952,6 +962,11 @@ namespace perlin::jshader {
                 PackDrawState d = m.FullscreenDraw(outW, outH);
                 m.SubmitQuad(finalView, *p, d, BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A);
             }
+        }
+        finalOk = done;
+        if (!done) {
+            // the built-in copy runs only when the pack has no final pass or it failed; it counts as a pass when it ran
+            finalOk = passesRun > 0;
         }
         if (depthToBackbuffer) m.RunDepthToBackbuffer(m.ViewId(VBackDepth, 0), backbuffer, outW, outH);
     }

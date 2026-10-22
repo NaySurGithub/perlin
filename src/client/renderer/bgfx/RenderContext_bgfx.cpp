@@ -1195,7 +1195,16 @@ namespace perlin {
         if (PackLoaded() && !packReady) {
             static uint32_t waitFrames = 0;
             const int left = jpack->Pipe().WarmUp(JavaPackHost::AttribMask());
-            if (left == 0) {
+            if (left == 0 && !jpack->Pipe().ProgramUsable("gbuffers_terrain", JavaPackHost::AttribMask())) {
+                // Without a terrain program nothing would be drawn: give up and keep the normal renderer.
+                jpackError = "the shader pack's terrain program failed to compile (see [jshader] lines above)";
+                std::cout << "[javapack] " << jpackError << std::endl;
+                jpack.reset();
+                packReady = false;
+                jpackPath.clear();
+                Tessellator::SetCaptureQuadInfo(false);
+                ClearChunkMeshes();
+            } else if (left == 0) {
                 packReady = true;
                 appliedViewOrder = 0;
                 std::cout << "[javapack] shaders ready" << std::endl;
@@ -1259,7 +1268,7 @@ namespace perlin {
         };
         const uint32_t clear = (quantize(params.fogColor[0]) << 24) | (quantize(params.fogColor[1]) << 16) |
                                (quantize(params.fogColor[2]) << 8) | 0xFF;
-        bgfx::setViewClear(0, PackActive() ? BGFX_CLEAR_NONE : (BGFX_CLEAR_COLOR | BGFX_CLEAR_DEPTH), clear, 1.0f, 0);
+        bgfx::setViewClear(0, BGFX_CLEAR_COLOR | BGFX_CLEAR_DEPTH, clear, 1.0f, 0);
         bgfx::setViewRect(0, 0, 0, static_cast<uint16_t>(width), static_cast<uint16_t>(height));
         bgfx::touch(0);
 
@@ -3273,6 +3282,10 @@ namespace perlin {
             DrawPackLayer(RenderLayer::TranslucentCull, jshader::Slot::Translucent, "gbuffers_water", visible, visibleSections, draw, false);
         }
         jpack->Pipe().RunPostPasses(BGFX_INVALID_HANDLE, width, height, jshader::Pipeline::FullscreenLayout(), true);
+        static uint32_t statFrames = 0;
+        if (++statFrames % 300 == 1)
+            std::cout << "[javapack] frame " << statFrames << ": post passes=" << jpack->Pipe().PassesRun() << " final=" << (jpack->Pipe().FinalOk() ? "ok" : "MISSING")
+                      << " chunks=" << visible.size() << " submits=" << drawCalls << std::endl;
     }
 
     void RenderContext_bgfx::ClearChunkMeshes() {

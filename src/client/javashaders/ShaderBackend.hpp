@@ -16,6 +16,8 @@ namespace perlin::jshader {
         BackendKind kind = BackendKind::OpenGL;
         int glslVersion = 430;
         HlslCompiler hlslCompiler;
+        // HLSL only: sample with an explicit LOD 0 so lookups may sit in loops / divergent flow (screen-space buffers have no mips).
+        bool explicitLod0 = false;
     };
 
     struct SamplerInfo {

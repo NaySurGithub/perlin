@@ -75,6 +75,12 @@ namespace perlin::jshader {
         // Returns how many are still unfinished (0 = ready to render).
         int WarmUp(uint32_t terrainMask);
 
+        // Diagnostics of the last RunPostPasses: did a final pass reach the output, and how many fullscreen passes ran.
+        bool FinalOk() const { return finalOk; }
+        int PassesRun() const { return passesRun; }
+        // Is this program converted and usable (call after WarmUp finished)?
+        bool ProgramUsable(const std::string& name, uint32_t mask, bool toBackbuffer = false);
+
         // Starts a frame: evaluates uniforms, clears buffers, prepares views.
         void BeginFrame(const FrameState& state);
 
@@ -110,6 +116,8 @@ namespace perlin::jshader {
         PipelineConfig config;
         EngineTextures engine;
         bool usable = false;
+        bool finalOk = false;
+        int passesRun = 0;
         std::string error;
     };
 }

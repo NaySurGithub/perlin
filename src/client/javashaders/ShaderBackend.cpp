@@ -156,7 +156,37 @@ namespace perlin::jshader {
             }
         }
 
-        bool CrossHlsl(const std::vector<uint32_t>& spirv, Stage stage, CrossResult& out, std::string& error) {
+        // fxc rejects implicit-derivative lookups inside loops that cannot be unrolled; GLSL allows them.
+        std::string ForceLod0(const std::string& src) {
+            const std::string key = ".Sample(";
+            std::string out;
+            size_t pos = 0;
+            for (;;) {
+                const size_t at = src.find(key, pos);
+                if (at == std::string::npos) { out += src.substr(pos); break; }
+                out += src.substr(pos, at - pos);
+                const size_t first = at + key.size();
+                int depth = 1;
+                std::vector<size_t> commas;
+                size_t j = first;
+                for (; j < src.size(); j++) {
+                    const char c = src[j];
+                    if (c == '(') depth++;
+                    else if (c == ')') { if (--depth == 0) break; }
+                    else if (c == ',' && depth == 1) commas.push_back(j);
+                }
+                if (depth != 0 || commas.empty()) { out += src.substr(at); break; }
+                const std::string sampler = src.substr(first, commas[0] - first);
+                const size_t coordEnd = commas.size() > 1 ? commas[1] : j;
+                const std::string coord = src.substr(commas[0] + 1, coordEnd - commas[0] - 1);
+                const std::string rest = commas.size() > 1 ? "," + src.substr(commas[1] + 1, j - commas[1] - 1) : "";
+                out += ".SampleLevel(" + sampler + "," + coord + ", 0.0" + rest + ")";
+                pos = j + 1;
+            }
+            return out;
+        }
+
+        bool CrossHlsl(const std::vector<uint32_t>& spirv, Stage stage, bool lod0, CrossResult& out, std::string& error) {
             try {
                 spirv_cross::CompilerHLSL c(spirv);
                 spirv_cross::ShaderResources res = c.get_shader_resources();
@@ -199,6 +229,7 @@ namespace perlin::jshader {
                 h.flatten_matrix_vertex_input_semantics = false;
                 c.set_hlsl_options(h);
                 out.source = c.compile();
+                if (lod0 && stage == Stage::Fragment) out.source = ForceLod0(out.source);
                 return true;
             } catch (const std::exception& e) {
                 error = e.what();
@@ -268,7 +299,7 @@ namespace perlin::jshader {
             std::string err;
             bool ok = false;
             if (options.kind == BackendKind::OpenGL) ok = CrossGlsl(spirv, stages[i].s->stage, options, cross, err);
-            else if (options.kind == BackendKind::D3D11) ok = CrossHlsl(spirv, stages[i].s->stage, cross, err);
+            else if (options.kind == BackendKind::D3D11) ok = CrossHlsl(spirv, stages[i].s->stage, options.explicitLod0, cross, err);
             else err = "this renderer is not supported by Java shader packs yet";
             if (!ok) {
                 result.error = std::string(stages[i].fragment ? "fragment" : "vertex") + " shader conversion failed: " + err;
