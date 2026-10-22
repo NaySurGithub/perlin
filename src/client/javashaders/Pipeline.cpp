@@ -1,3 +1,4 @@
+#include <chrono>
 #include "client/javashaders/Pipeline.hpp"
 
 #include "client/javashaders/GlslangBridge.hpp"
@@ -521,9 +522,11 @@ namespace perlin::jshader {
                 }
             }
             auto fut = Schedule(key, name, mask, toBackbuffer, vs, fs);
+            // Never stall the render thread on conversion: the program is simply unavailable until it is done.
+            if (fut.wait_for(std::chrono::seconds(0)) != std::future_status::ready) return nullptr;
             std::shared_ptr<Converted> c = fut.get();
             if (!c->ok) {
-                std::fprintf(stderr, "[jshader] program %s failed: %.300s\n", name.c_str(), c->error.c_str());
+                std::fprintf(stderr, "[jshader] program %s failed: %.1500s\n", name.c_str(), c->error.c_str());
                 lastError = c->error;
                 programs[key] = std::make_unique<Program>();
                 return nullptr;
@@ -782,6 +785,27 @@ namespace perlin::jshader {
         bgfx::VertexLayout l;
         l.begin().add(bgfx::Attrib::Position, 3, bgfx::AttribType::Float).add(bgfx::Attrib::TexCoord0, 2, bgfx::AttribType::Float).end();
         return l;
+    }
+
+    int Pipeline::WarmUp(uint32_t terrainMask) {
+        Impl& m = *impl;
+        int remaining = 0, started = 0;
+        const auto touch = [&](const std::string& name, uint32_t mask, bool toBackbuffer) {
+            const std::string key = m.KeyFor(name, mask, toBackbuffer);
+            if (m.programs.count(key)) return;
+            if (!m.pending.count(key)) {
+                if (started >= 2) { remaining++; return; }   // reading and expanding sources is the part that runs on this thread
+                started++;
+            }
+            m.GetProgram(name, mask, toBackbuffer);
+            if (!m.programs.count(key)) remaining++;
+        };
+        for (const char* name : {"gbuffers_terrain", "gbuffers_water", "shadow"}) touch(name, terrainMask, false);
+        for (const char* base : {"begin", "prepare", "deferred", "composite", "shadowcomp"})
+            for (const std::string& name : pack->PassChain(base))
+                if (pack->ProgramEnabled(name)) touch(name, m.FullscreenMask(), false);
+        touch("final", m.FullscreenMask(), true);
+        return remaining;
     }
 
     uint16_t Pipeline::ViewCount() const { return static_cast<uint16_t>(TotalViews()); }

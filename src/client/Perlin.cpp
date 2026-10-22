@@ -673,6 +673,15 @@ namespace perlin {
     void Perlin::PollJavaPack(BedrockSession* live) {
         if (!renderer)
             return;
+        static bool startupChecked = false;
+        if (!startupChecked) {
+            startupChecked = true;
+            if (!options.shaderPack.empty()) {
+                const std::string full = paths::DataDir() + "/shaderpacks/" + options.shaderPack;
+                if (jshader::LooksLikeJavaPack(full))
+                    javaPackPending = full;
+            }
+        }
         if (!javaPackPending.empty() && levelRenderer && levelRenderer->Blocks().Complete()) {
             std::string error;
             const std::string path = javaPackPending;

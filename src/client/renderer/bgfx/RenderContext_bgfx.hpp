@@ -44,7 +44,7 @@ namespace perlin {
         bool ReloadShaders() override;
         bool SetJavaShaderPack(const std::string& path, const std::map<std::string, std::string>& options, std::string& error) override;
         void ClearJavaShaderPack() override;
-        bool JavaShaderPackActive() const override { return jpack && jpack->Active(); }
+        bool JavaShaderPackActive() const override { return PackLoaded(); }
         std::string JavaShaderPackError() const override { return jpackError; }
         void SetJavaShaderPackDimension(const std::string& folder) override;
         bool PackShadowsActive() const override { return shadow.enabled; }
@@ -111,7 +111,9 @@ namespace perlin {
         };
         void UpdateCaveVisibility(float camX, float camY, float camZ);
         // Java shader pack path.
-        bool PackActive() const { return jpack && jpack->Active(); }
+        bool PackLoaded() const { return jpack && jpack->Active(); }
+        bool PackActive() const { return PackLoaded() && packReady; }
+        bool packReady = false;
         void ApplyViewOrder();
         void DrawPackWorld(const Frustum& frustum, float camX, float camZ);
         void DrawPackLayer(RenderLayer layer, jshader::Slot slot, const char* program, const std::vector<VisibleChunk>& chunks,

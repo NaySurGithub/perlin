@@ -12,6 +12,7 @@
 #include "client/Options.hpp"
 #include "client/resources/ShaderPack.hpp"
 #include "world/level/block/BlockPalette.hpp"
+#include "client/javashaders/PackSource.hpp"
 #include "util/Paths.hpp"
 
 #include <bx/math.h>
@@ -46,20 +47,62 @@ namespace perlin {
                 error = "d3dcompiler_47.dll is not available";
                 return false;
             }
-            ID3DBlob* code = nullptr;
-            ID3DBlob* messages = nullptr;
-            const HRESULT hr = compile(hlsl.data(), hlsl.size(), "javapack", nullptr, nullptr, "main", fragment ? "ps_5_0" : "vs_5_0",
-                                       D3DCOMPILE_OPTIMIZATION_LEVEL1, 0, &code, &messages);
-            if (FAILED(hr) || !code) {
-                error = messages ? std::string(static_cast<const char*>(messages->GetBufferPointer()), messages->GetBufferSize()) : "D3DCompile failed";
+            const auto run = [&](UINT flags, std::string& err) -> bool {
+                ID3DBlob* code = nullptr;
+                ID3DBlob* messages = nullptr;
+                const HRESULT hr = compile(hlsl.data(), hlsl.size(), "javapack", nullptr, nullptr, "main", fragment ? "ps_5_0" : "vs_5_0", flags, 0,
+                                           &code, &messages);
+                if (FAILED(hr) || !code) {
+                    std::string text = messages ? std::string(static_cast<const char*>(messages->GetBufferPointer()), messages->GetBufferSize()) : "D3DCompile failed";
+                    // Keep only the error lines and quote the offending source line.
+                    std::string errors;
+                    size_t first = 0, srcLine = 0;
+                    for (size_t at = 0; at < text.size();) {
+                        size_t end = text.find('\n', at);
+                        if (end == std::string::npos) end = text.size();
+                        const std::string line = text.substr(at, end - at);
+                        if (line.find("error") != std::string::npos) {
+                            const size_t slash = line.find_last_of("\\/");
+                            errors += (slash == std::string::npos ? line : line.substr(slash + 1)) + " | ";
+                            if (!first) {
+                                first = 1;
+                                const size_t tag = line.find("javapack(");
+                                if (tag != std::string::npos) srcLine = static_cast<size_t>(std::atoi(line.c_str() + tag + 9));
+                            }
+                        }
+                        at = end + 1;
+                    }
+                    if (errors.empty()) errors = text.substr(0, 400);
+                    if (srcLine > 0) {
+                        size_t at = 0;
+                        for (size_t n = 1; n < srcLine && at != std::string::npos; n++) {
+                            at = hlsl.find('\n', at);
+                            if (at != std::string::npos) at++;
+                        }
+                        if (at != std::string::npos) {
+                            size_t end = hlsl.find('\n', at);
+                            errors += "src: " + hlsl.substr(at, std::min<size_t>(200, (end == std::string::npos ? hlsl.size() : end) - at));
+                        }
+                    }
+                    err = errors;
+                    if (messages) messages->Release();
+                    if (code) code->Release();
+                    return false;
+                }
+                dxbc.assign(static_cast<const uint8_t*>(code->GetBufferPointer()), static_cast<const uint8_t*>(code->GetBufferPointer()) + code->GetBufferSize());
+                code->Release();
                 if (messages) messages->Release();
-                if (code) code->Release();
-                return false;
-            }
-            dxbc.assign(static_cast<const uint8_t*>(code->GetBufferPointer()), static_cast<const uint8_t*>(code->GetBufferPointer()) + code->GetBufferSize());
-            code->Release();
-            if (messages) messages->Release();
-            return true;
+                return true;
+            };
+            // GLSL allows texture lookups with implicit derivatives inside divergent flow; HLSL needs the branches flattened.
+            std::string first;
+            if (run(D3DCOMPILE_OPTIMIZATION_LEVEL1, first))
+                return true;
+            std::string second;
+            if (run(D3DCOMPILE_OPTIMIZATION_LEVEL1 | D3DCOMPILE_AVOID_FLOW_CONTROL, second))
+                return true;
+            error = first + " || retry(avoid flow control): " + second;
+            return false;
 #else
             (void)hlsl; (void)fragment; (void)dxbc;
             error = "HLSL compilation is only available on Windows";
@@ -249,7 +292,7 @@ namespace perlin {
         init.type = bgfx::RendererType::OpenGLES;
 #endif
         ShaderPack& pack = ShaderPack::Instance();
-        if (!options.shaderPack.empty()) {
+        if (!options.shaderPack.empty() && !jshader::LooksLikeJavaPack(paths::DataDir() + "/shaderpacks/" + options.shaderPack)) {
             std::string error;
             if (!pack.Open(paths::DataDir() + "/shaderpacks", options.shaderPack, error))
                 std::cout << "[shaders] " << error << " - using the built-in shaders" << std::endl;
@@ -1149,6 +1192,17 @@ namespace perlin {
 
     void RenderContext_bgfx::BeginFrame(const FrameParams& paramsIn) {
         // The pack owns post processing, so the built-in scaling / blur / bloom / shadow passes stay off while it runs.
+        if (PackLoaded() && !packReady) {
+            static uint32_t waitFrames = 0;
+            const int left = jpack->Pipe().WarmUp(JavaPackHost::AttribMask());
+            if (left == 0) {
+                packReady = true;
+                appliedViewOrder = 0;
+                std::cout << "[javapack] shaders ready" << std::endl;
+            } else if (++waitFrames % 120 == 1) {
+                std::cout << "[javapack] compiling shaders, " << left << " left (using the normal renderer meanwhile)" << std::endl;
+            }
+        }
         FrameParams packParams;
         const FrameParams* chosen = &paramsIn;
         if (PackActive()) {
@@ -1927,7 +1981,7 @@ namespace perlin {
             h = BGFX_INVALID_HANDLE;
         p.vb = bgfx::createDynamicVertexBuffer(vCap, layout, BGFX_BUFFER_NONE);
         bool ok = bgfx::isValid(p.vb);
-        if (ok && PackActive()) {
+        if (ok && PackLoaded()) {
             p.vbPack = bgfx::createDynamicVertexBuffer(vCap, JavaPackHost::Layout(), BGFX_BUFFER_NONE);
             ok = bgfx::isValid(p.vbPack);
         }
@@ -2087,7 +2141,7 @@ namespace perlin {
         Page& pg = pages[g.page];
 
         bgfx::update(pg.vb, g.vOff, bgfx::copy(verts.data(), g.vCount * (uint32_t)sizeof(Vertex)));
-        if (PackActive() && bgfx::isValid(pg.vbPack)) {
+        if (PackLoaded() && bgfx::isValid(pg.vbPack)) {
             static thread_local std::vector<PackVertex> packVerts;
             jpack->Convert(tess, packVerts);
             if (packVerts.size() == verts.size())
@@ -3045,6 +3099,7 @@ namespace perlin {
         }
         host->SetAtlas(atlasCopy.data(), atlasCopyTilePx, atlasCopyTiles);
         jpack = std::move(host);
+        packReady = false;
         Tessellator::SetCaptureQuadInfo(true);
         shadowConfigDirty = true;
         appliedViewOrder = 0;
@@ -3058,6 +3113,7 @@ namespace perlin {
             return;
         const bool had = jpack != nullptr;
         jpack.reset();
+        packReady = false;
         jpackPath.clear();
         Tessellator::SetCaptureQuadInfo(false);
         shadowConfigDirty = true;

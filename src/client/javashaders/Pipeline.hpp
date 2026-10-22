@@ -71,6 +71,10 @@ namespace perlin::jshader {
         void Resize(int width, int height);
         void SetEngineTextures(const EngineTextures& tex) { engine = tex; }
 
+        // Converts every program the frame needs in the background, a couple of sources per call.
+        // Returns how many are still unfinished (0 = ready to render).
+        int WarmUp(uint32_t terrainMask);
+
         // Starts a frame: evaluates uniforms, clears buffers, prepares views.
         void BeginFrame(const FrameState& state);
 
