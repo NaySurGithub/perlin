@@ -1408,7 +1408,7 @@ namespace perlin::entity {
             draw.shadowOnly = shadowOnlyPass;
             renderer->UiSubmit(dollModel ? UiLayer::Doll : fpModel ? UiLayer::Hand : UiLayer::World, draw);
         }
-        if (itemRenderer && !e.Has(flag::Invisible) && !fpModel && !dollModel) {
+        if (itemRenderer && !e.Has(flag::Invisible) && !fpModel && (!dollModel || dollClip)) {
             const auto held = [&](const std::string& name, const glm::mat4& arm, bool left) {
                 if (name.empty())
                     return;
@@ -1419,10 +1419,12 @@ namespace perlin::entity {
                 itemRenderer->DrawHeldItem(item, model * arm, left, light);
             };
             itemRenderer->SetWorldShadowOnly(shadowOnlyPass);
+            itemRenderer->SetDollClip(dollModel ? dollClip : nullptr);
             if (v.hasArmR && !v.attachedItem[0])
                 held(e.mainHand, v.armR, false);
             if (v.hasArmL && !v.attachedItem[1])
                 held(e.offHand, v.armL, true);
+            itemRenderer->SetDollClip(nullptr);
             itemRenderer->SetWorldShadowOnly(false);
         }
     }
