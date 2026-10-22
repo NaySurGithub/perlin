@@ -699,8 +699,13 @@ namespace perlin {
             // Same red hurt overlay mobs get in EntityRenderer.
             draw.overlay[0] = 1.0f; draw.overlay[1] = 0.0f; draw.overlay[2] = 0.0f; draw.overlay[3] = 0.3f;
         }
-        draw.shadowOnly = worldPass && worldShadowOnly;
-        renderer->UiSubmit(worldPass ? UiLayer::World : UiLayer::Hand, draw);
+        draw.shadowOnly = worldPass && worldShadowOnly && !dollClip;
+        if (worldPass && dollClip) {
+            draw.scissor = true;
+            std::copy_n(dollClip, 4, draw.scissorRect);
+        }
+        const UiLayer layer = !worldPass ? UiLayer::Hand : dollClip ? UiLayer::Doll : UiLayer::World;
+        renderer->UiSubmit(layer, draw);
         if (glint) {
             if (glintTexture == 0)
                 glintTexture = ui::CreateGlintTexture(*renderer, &glintWidth);
@@ -713,7 +718,7 @@ namespace perlin {
                 draw.glintStrength = PERLIN_ENV("PERLIN_GLINT_STRENGTH") ? static_cast<float>(std::atof(PERLIN_ENV("PERLIN_GLINT_STRENGTH"))) : 1.3f;
                 std::copy(g.matrix, g.matrix + 4, draw.glintMatrix);
                 std::copy(g.offset, g.offset + 2, draw.glintOffset);
-                renderer->UiSubmit(worldPass ? UiLayer::World : UiLayer::Hand, draw);
+                renderer->UiSubmit(layer, draw);
             }
         }
     }
