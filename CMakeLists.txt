@@ -287,23 +287,43 @@ if(TARGET bgfx AND WIN32)
 endif()
 
 # Java (OptiFine / Iris) shader packs: GLSL -> SPIR-V (glslang) -> GLSL / HLSL (SPIRV-Cross).
-set(ENABLE_OPT OFF CACHE BOOL "" FORCE)
-set(ENABLE_HLSL OFF CACHE BOOL "" FORCE)
-set(ENABLE_GLSLANG_BINARIES OFF CACHE BOOL "" FORCE)
-set(ENABLE_SPVREMAPPER OFF CACHE BOOL "" FORCE)
-set(GLSLANG_TESTS OFF CACHE BOOL "" FORCE)
-set(GLSLANG_ENABLE_INSTALL OFF CACHE BOOL "" FORCE)
-set(BUILD_EXTERNAL OFF CACHE BOOL "" FORCE)
-CPMAddPackage(NAME glslang GITHUB_REPOSITORY KhronosGroup/glslang GIT_TAG e2bb10631198bc9d73daf752d9170608d5e2c8bd GIT_SHALLOW NO)
-set(SPIRV_CROSS_CLI OFF CACHE BOOL "" FORCE)
-set(SPIRV_CROSS_ENABLE_TESTS OFF CACHE BOOL "" FORCE)
-set(SPIRV_CROSS_ENABLE_MSL OFF CACHE BOOL "" FORCE)
-set(SPIRV_CROSS_ENABLE_CPP OFF CACHE BOOL "" FORCE)
-set(SPIRV_CROSS_ENABLE_REFLECT OFF CACHE BOOL "" FORCE)
-set(SPIRV_CROSS_ENABLE_C_API OFF CACHE BOOL "" FORCE)
-set(SPIRV_CROSS_ENABLE_UTIL OFF CACHE BOOL "" FORCE)
-set(SPIRV_CROSS_SKIP_INSTALL ON CACHE BOOL "" FORCE)
-CPMAddPackage(NAME SPIRV-Cross GITHUB_REPOSITORY KhronosGroup/SPIRV-Cross GIT_TAG 300681bbcb8365a8d1eacdacdbdd0249bbf1d6b1 GIT_SHALLOW NO)
+# bgfx.cmake already owns targets named glslang / spirv-cross, so these are compiled here under their own names.
+CPMAddPackage(NAME glslang GITHUB_REPOSITORY KhronosGroup/glslang GIT_TAG e2bb10631198bc9d73daf752d9170608d5e2c8bd GIT_SHALLOW NO DOWNLOAD_ONLY YES)
+CPMAddPackage(NAME SPIRV-Cross GITHUB_REPOSITORY KhronosGroup/SPIRV-Cross GIT_TAG 300681bbcb8365a8d1eacdacdbdd0249bbf1d6b1 GIT_SHALLOW NO DOWNLOAD_ONLY YES)
+set(PERLIN_GLSLANG_GEN "${CMAKE_BINARY_DIR}/perlin_glslang_gen")
+file(WRITE "${PERLIN_GLSLANG_GEN}/glslang/build_info.h" "#pragma once\n#define GLSLANG_VERSION_MAJOR 16\n#define GLSLANG_VERSION_MINOR 6\n#define GLSLANG_VERSION_PATCH 0\n#define GLSLANG_VERSION_FLAVOR \"\"\n#define GLSLANG_VERSION_GREATER_THAN(major, minor, patch) ((GLSLANG_VERSION_MAJOR) > (major) || ((major) == GLSLANG_VERSION_MAJOR && ((GLSLANG_VERSION_MINOR) > (minor) || ((minor) == GLSLANG_VERSION_MINOR && (GLSLANG_VERSION_PATCH) > (patch)))))\n#define GLSLANG_VERSION_GREATER_OR_EQUAL_TO(major, minor, patch) (GLSLANG_VERSION_GREATER_THAN(major, minor, patch) || ((major) == GLSLANG_VERSION_MAJOR && (minor) == GLSLANG_VERSION_MINOR && (patch) == GLSLANG_VERSION_PATCH))\n#define GLSLANG_VERSION_LESS_THAN(major, minor, patch) (!GLSLANG_VERSION_GREATER_OR_EQUAL_TO(major, minor, patch))\n#define GLSLANG_VERSION_LESS_OR_EQUAL_TO(major, minor, patch) (!GLSLANG_VERSION_GREATER_THAN(major, minor, patch))\n")
+file(GLOB PERLIN_GLSLANG_SOURCES
+    "${glslang_SOURCE_DIR}/glslang/GenericCodeGen/*.cpp"
+    "${glslang_SOURCE_DIR}/glslang/MachineIndependent/*.cpp"
+    "${glslang_SOURCE_DIR}/glslang/MachineIndependent/preprocessor/*.cpp"
+    "${glslang_SOURCE_DIR}/glslang/ResourceLimits/*.cpp"
+    "${glslang_SOURCE_DIR}/glslang/CInterface/*.cpp"
+    "${glslang_SOURCE_DIR}/SPIRV/*.cpp")
+if(WIN32)
+    list(APPEND PERLIN_GLSLANG_SOURCES "${glslang_SOURCE_DIR}/glslang/OSDependent/Windows/ossource.cpp")
+else()
+    list(APPEND PERLIN_GLSLANG_SOURCES "${glslang_SOURCE_DIR}/glslang/OSDependent/Unix/ossource.cpp")
+endif()
+add_library(perlin_glslang STATIC ${PERLIN_GLSLANG_SOURCES})
+target_include_directories(perlin_glslang PUBLIC "${glslang_SOURCE_DIR}" "${PERLIN_GLSLANG_GEN}")
+target_compile_definitions(perlin_glslang PRIVATE ENABLE_OPT=0)
+set_target_properties(perlin_glslang PROPERTIES POSITION_INDEPENDENT_CODE ON CXX_STANDARD 17)
+if(MSVC)
+    target_compile_options(perlin_glslang PRIVATE /w /EHsc)
+else()
+    target_compile_options(perlin_glslang PRIVATE -w)
+endif()
+add_library(perlin_spirv_cross STATIC
+    "${SPIRV-Cross_SOURCE_DIR}/spirv_cross.cpp" "${SPIRV-Cross_SOURCE_DIR}/spirv_cfg.cpp"
+    "${SPIRV-Cross_SOURCE_DIR}/spirv_cross_parsed_ir.cpp" "${SPIRV-Cross_SOURCE_DIR}/spirv_parser.cpp"
+    "${SPIRV-Cross_SOURCE_DIR}/spirv_glsl.cpp" "${SPIRV-Cross_SOURCE_DIR}/spirv_hlsl.cpp")
+target_include_directories(perlin_spirv_cross PUBLIC "${SPIRV-Cross_SOURCE_DIR}")
+set_target_properties(perlin_spirv_cross PROPERTIES POSITION_INDEPENDENT_CODE ON CXX_STANDARD 17)
+if(MSVC)
+    target_compile_options(perlin_spirv_cross PRIVATE /w /EHsc)
+else()
+    target_compile_options(perlin_spirv_cross PRIVATE -w)
+endif()
 
 if(ANDROID AND TARGET bgfx)
     set(PERLIN_BGFX_EGL "${bgfx_SOURCE_DIR}/bgfx/src/glcontext_egl.cpp")
@@ -673,8 +693,6 @@ target_include_directories(Perlin PRIVATE
     "${stb_SOURCE_DIR}"
     "${concurrentqueue_SOURCE_DIR}"
     "${glm_SOURCE_DIR}"
-    "${glslang_SOURCE_DIR}"
-    "${SPIRV-Cross_SOURCE_DIR}"
 )
 if(NOT EMSCRIPTEN)
     target_include_directories(Perlin PRIVATE "${httplib_SOURCE_DIR}" "${libdatachannel_SOURCE_DIR}/include")
@@ -693,7 +711,7 @@ if(WIN32)
 endif()
 
 target_link_libraries(Perlin PRIVATE
-    glslang SPIRV glslang-default-resource-limits spirv-cross-hlsl spirv-cross-glsl spirv-cross-core
+    perlin_glslang perlin_spirv_cross
     ${PERLIN_WASM_ENGINE}
     perlin_protocol
     glaze::glaze
