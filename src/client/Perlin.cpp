@@ -287,12 +287,26 @@ namespace perlin {
         bool ParseServer(const std::string& text, std::string& host, uint16_t& port) {
             host = text;
             port = 19132;
-            const auto colon = text.rfind(':');
-            if (colon == std::string::npos)
-                return !host.empty();
-            host = text.substr(0, colon);
+            std::string portText;
+            if (!text.empty() && text[0] == '[') {
+                const auto close = text.find(']');
+                if (close == std::string::npos)
+                    return false;
+                host = text.substr(1, close - 1);
+                if (close + 1 == text.size())
+                    return !host.empty();
+                if (text[close + 1] != ':')
+                    return false;
+                portText = text.substr(close + 2);
+            } else {
+                const auto colon = text.rfind(':');
+                if (colon == std::string::npos || text.find(':') != colon)
+                    return !host.empty();
+                host = text.substr(0, colon);
+                portText = text.substr(colon + 1);
+            }
             try {
-                const int value = std::stoi(text.substr(colon + 1));
+                const int value = std::stoi(portText);
                 if (value <= 0 || value > 65535)
                     return false;
                 port = static_cast<uint16_t>(value);

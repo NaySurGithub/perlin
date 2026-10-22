@@ -94,12 +94,34 @@ namespace perlin {
         uint32_t GetBe32(const uint8_t* p) { return (uint32_t(p[0]) << 24) | (p[1] << 16) | (p[2] << 8) | p[3]; }
         uint64_t GetBe64(const uint8_t* p) { return (uint64_t(GetBe32(p)) << 32) | GetBe32(p + 4); }
 
-        void PutAddr(std::vector<uint8_t>& o, const sockaddr_in& a) {
+        struct Address {
+            sockaddr_storage storage{};
+            socklen_t length = 0;
+
+            int Family() const { return storage.ss_family; }
+            const sockaddr* Raw() const { return reinterpret_cast<const sockaddr*>(&storage); }
+            size_t HeaderBytes() const { return Family() == AF_INET6 ? 48 : 28; }
+        };
+
+        void PutAddr(std::vector<uint8_t>& o, const Address& a) {
+            if (a.Family() == AF_INET6) {
+                const auto& in6 = reinterpret_cast<const sockaddr_in6&>(a.storage);
+                o.push_back(6);
+                o.push_back(uint8_t(AF_INET6));
+                o.push_back(uint8_t(AF_INET6 >> 8));
+                PutBe16(o, ntohs(in6.sin6_port));
+                PutBe32(o, ntohl(in6.sin6_flowinfo));
+                const uint8_t* ip = reinterpret_cast<const uint8_t*>(&in6.sin6_addr);
+                o.insert(o.end(), ip, ip + 16);
+                PutBe32(o, in6.sin6_scope_id);
+                return;
+            }
+            const auto& in4 = reinterpret_cast<const sockaddr_in&>(a.storage);
             o.push_back(4);
-            const uint8_t* ip = reinterpret_cast<const uint8_t*>(&a.sin_addr);
+            const uint8_t* ip = reinterpret_cast<const uint8_t*>(&in4.sin_addr);
             for (int i = 0; i < 4; i++)
                 o.push_back(uint8_t(~ip[i]));
-            PutBe16(o, ntohs(a.sin_port));
+            PutBe16(o, ntohs(in4.sin_port));
         }
         void PutBlankAddr(std::vector<uint8_t>& o) {
             o.insert(o.end(), {4, 255, 255, 255, 255, 0, 0});
@@ -115,23 +137,39 @@ namespace perlin {
             return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start).count();
         }
 
-        bool Resolve(const std::string& host, uint16_t port, sockaddr_in& out, std::string& error) {
+        bool Resolve(const std::string& host, uint16_t port, Address& out, std::string& error) {
             EnsureSockets();
             addrinfo hints{};
-            hints.ai_family = AF_INET;
+            hints.ai_family = AF_UNSPEC;
             hints.ai_socktype = SOCK_DGRAM;
             addrinfo* res = nullptr;
             if (getaddrinfo(host.c_str(), std::to_string(port).c_str(), &hints, &res) != 0 || !res) {
-                error = "cannot resolve '" + host + "' (IPv4)";
+                error = "cannot resolve '" + host + "'";
                 return false;
             }
-            out = *reinterpret_cast<sockaddr_in*>(res->ai_addr);
+            const addrinfo* pick = nullptr;
+            for (const addrinfo* r = res; r; r = r->ai_next) {
+                if (r->ai_family == AF_INET) {
+                    pick = r;
+                    break;
+                }
+                if (!pick && r->ai_family == AF_INET6)
+                    pick = r;
+            }
+            if (!pick || pick->ai_addrlen > sizeof(out.storage)) {
+                freeaddrinfo(res);
+                error = "cannot resolve '" + host + "'";
+                return false;
+            }
+            out = {};
+            std::memcpy(&out.storage, pick->ai_addr, pick->ai_addrlen);
+            out.length = static_cast<socklen_t>(pick->ai_addrlen);
             freeaddrinfo(res);
             return true;
         }
 
-        Socket OpenSocket(const sockaddr_in& to, int timeoutMs) {
-            Socket s = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+        Socket OpenSocket(const Address& to, int timeoutMs) {
+            Socket s = socket(to.Family(), SOCK_DGRAM, IPPROTO_UDP);
             if (s == kInvalid)
                 return kInvalid;
 #ifdef _WIN32
@@ -144,7 +182,7 @@ namespace perlin {
             timeval tv{timeoutMs / 1000, (timeoutMs % 1000) * 1000};
             setsockopt(s, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
 #endif
-            if (connect(s, reinterpret_cast<const sockaddr*>(&to), sizeof(to)) != 0) {
+            if (connect(s, to.Raw(), to.length) != 0) {
                 CloseSocket(s);
                 return kInvalid;
             }
@@ -193,7 +231,7 @@ namespace perlin {
 
     struct RakNet::Impl {
         Socket sock = kInvalid;
-        sockaddr_in server{};
+        Address server{};
         int64_t guid = 0;
         int mtu = 1400;
         std::thread thread;
@@ -274,7 +312,7 @@ namespace perlin {
             if (sock == kInvalid || n == 0)
                 return false;
             std::lock_guard<std::mutex> lock(sendMutex);
-            const size_t whole = size_t(mtu) - 28 - 14;
+            const size_t whole = size_t(mtu) - server.HeaderBytes() - 14;
             const size_t chunk = whole - 10;
             const uint32_t ord = IsOrdered(rel) ? (orderIndex++ & 0xFFFFFF) : 0;
             if (n <= whole) {
@@ -304,7 +342,7 @@ namespace perlin {
             while (i < acks.size()) {
                 std::vector<uint8_t> d{0xC0, 0, 0};
                 uint16_t records = 0;
-                while (i < acks.size() && d.size() < size_t(mtu) - 28 - 8 && records < 0xFFFF) {
+                while (i < acks.size() && d.size() < size_t(mtu) - server.HeaderBytes() - 8 && records < 0xFFFF) {
                     size_t j = i;
                     while (j + 1 < acks.size() && acks[j + 1] == acks[j] + 1)
                         j++;
@@ -571,7 +609,7 @@ namespace perlin {
     std::string RakNet::LastError() const { return lastError; }
 
     bool RakNet::Ping(const std::string& host, uint16_t port, std::string& ad, std::string& error, int timeoutMs) {
-        sockaddr_in to{};
+        Address to{};
         if (!Resolve(host, port, to, error))
             return false;
         Socket s = OpenSocket(to, 300);
@@ -699,7 +737,7 @@ namespace perlin {
         uint32_t cookie = 0;
         int mtu = 0;
         for (int size : {kMaxMtu, 1200, kMinMtu}) {
-            std::vector<uint8_t> r1(size_t(size) - 28, 0);
+            std::vector<uint8_t> r1(size_t(size) - s.server.HeaderBytes(), 0);
             r1[0] = IdOcr1;
             std::memcpy(&r1[1], kMagic, 16);
             r1[17] = kProtocolVersion;
