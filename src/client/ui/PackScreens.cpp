@@ -267,7 +267,7 @@ div, mcimg { display: block; position: absolute; }
         d += "<div style=\"left: 0px; top: " + N(l.listTop) + "px; width: " + N(static_cast<float>(guiW)) + "px; height: " + N(h) + "px; overflow: hidden;\">\n";
         for (int i = 0; i < static_cast<int>(rows.size()); i++) {
             const float y = l.RowY(i, scroll) - l.listTop;
-            if (y + 18.0f < 0.0f || y > h)
+            if (y < 0.0f || y + 18.0f > h)
                 continue;
             const bool selected = i == selectedRow;
             const bool toggle = i == toggleRow;
@@ -519,7 +519,7 @@ div, mcimg { display: block; position: absolute; }
         d += "<div style=\"left: 0px; top: " + N(l.listTop) + "px; width: " + N(static_cast<float>(guiW)) + "px; height: " + N(h) + "px; overflow: hidden;\">\n";
         for (int i = 0; i < static_cast<int>(rows.size()); i++) {
             const float y = l.RowY(i, scroll) - l.listTop;
-            if (y + 18.0f < 0.0f || y > h)
+            if (y < 0.0f || y + 18.0f > h)
                 continue;
             const bool selected = i == selectedRow;
             if (selected)
