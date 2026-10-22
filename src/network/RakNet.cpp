@@ -6,6 +6,8 @@
 #include <ws2tcpip.h>
 #else
 #include <arpa/inet.h>
+#include <ifaddrs.h>
+#include <net/if.h>
 #include <netdb.h>
 #include <sys/socket.h>
 #include <sys/time.h>
@@ -15,6 +17,7 @@
 #include "network/RakNet.hpp"
 
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cstring>
 #include <iostream>
@@ -49,6 +52,10 @@ namespace perlin {
         constexpr uint8_t kProtocolVersion = 11;
         constexpr int kMaxMtu = 1492;
         constexpr int kMinMtu = 576;
+        constexpr size_t kInternalAddresses = 20;
+        constexpr int kOrderingChannels = 32;
+        constexpr int64_t kMinRto = 250;
+        constexpr int64_t kMaxRto = 8000;
 
         enum : uint8_t {
             IdConnectedPing = 0x00,
@@ -206,6 +213,64 @@ namespace perlin {
             return static_cast<int>(recv(s, reinterpret_cast<char*>(buf), static_cast<int>(cap), 0));
         }
 
+        std::vector<Address> LocalAddresses(Socket s, int family) {
+            std::vector<Address> out;
+            Address bound;
+            bound.length = sizeof(bound.storage);
+            if (getsockname(s, reinterpret_cast<sockaddr*>(&bound.storage), &bound.length) != 0)
+                return out;
+            const uint16_t port = bound.Family() == AF_INET6 ? reinterpret_cast<const sockaddr_in6&>(bound.storage).sin6_port
+                                                             : reinterpret_cast<const sockaddr_in&>(bound.storage).sin_port;
+            const auto add = [&](const sockaddr* a) {
+                if (!a || a->sa_family != family || out.size() >= kInternalAddresses)
+                    return;
+                Address addr;
+                if (family == AF_INET6) {
+                    auto& in6 = reinterpret_cast<sockaddr_in6&>(addr.storage);
+                    in6 = *reinterpret_cast<const sockaddr_in6*>(a);
+                    if (IN6_IS_ADDR_UNSPECIFIED(&in6.sin6_addr) || IN6_IS_ADDR_LOOPBACK(&in6.sin6_addr))
+                        return;
+                    in6.sin6_port = port;
+                    addr.length = sizeof(sockaddr_in6);
+                } else {
+                    auto& in4 = reinterpret_cast<sockaddr_in&>(addr.storage);
+                    in4 = *reinterpret_cast<const sockaddr_in*>(a);
+                    const uint32_t ip = ntohl(in4.sin_addr.s_addr);
+                    if (ip == INADDR_ANY || (ip >> 24) == 127)
+                        return;
+                    in4.sin_port = port;
+                    addr.length = sizeof(sockaddr_in);
+                }
+                for (const Address& e : out)
+                    if (e.length == addr.length && std::memcmp(&e.storage, &addr.storage, addr.length) == 0)
+                        return;
+                out.push_back(addr);
+            };
+#ifdef _WIN32
+            char hostname[256] = {};
+            if (gethostname(hostname, sizeof(hostname)) == 0) {
+                addrinfo hints{};
+                hints.ai_family = family;
+                hints.ai_socktype = SOCK_DGRAM;
+                addrinfo* res = nullptr;
+                if (getaddrinfo(hostname, nullptr, &hints, &res) == 0) {
+                    for (const addrinfo* r = res; r; r = r->ai_next)
+                        add(r->ai_addr);
+                    freeaddrinfo(res);
+                }
+            }
+#else
+            ifaddrs* interfaces = nullptr;
+            if (getifaddrs(&interfaces) == 0) {
+                for (const ifaddrs* i = interfaces; i; i = i->ifa_next)
+                    if (i->ifa_flags & IFF_UP)
+                        add(i->ifa_addr);
+                freeifaddrs(interfaces);
+            }
+#endif
+            return out;
+        }
+
         int64_t ClientGuid(uint64_t entropy) {
             return static_cast<int64_t>((entropy & 0x3fffffffffffffffull) | 0x8000000000000000ull);
         }
@@ -248,14 +313,24 @@ namespace perlin {
         struct Sent {
             std::vector<uint8_t> frame;
             int64_t at = 0;
+            bool resent = false;
         };
         std::map<uint32_t, Sent> inflight;
+        int64_t averageRtt = 0;
+        int64_t rto = 1000;
 
         std::vector<uint32_t> acks;
+        std::vector<uint32_t> naks;
+        uint32_t expectedSeq = 0;
         uint32_t msgLow = 0;
         std::set<uint32_t> msgSeen;
-        uint32_t nextOrder = 0;
-        std::map<uint32_t, std::vector<uint8_t>> pendingOrdered;
+        struct Channel {
+            uint32_t nextOrder = 0;
+            uint32_t sequenceOrder = 0;
+            uint32_t nextSequence = 0;
+            std::map<uint32_t, std::vector<uint8_t>> pending;
+        };
+        std::array<Channel, kOrderingChannels> channels;
         struct Split {
             uint32_t count = 0;
             uint32_t have = 0;
@@ -273,7 +348,7 @@ namespace perlin {
             running = false;
         }
 
-        void EmitDatagramLocked(const std::vector<uint8_t>& frame, bool reliable) {
+        void EmitDatagramLocked(const std::vector<uint8_t>& frame, bool reliable, bool resent = false) {
             std::vector<uint8_t> d;
             d.reserve(frame.size() + 4);
             d.push_back(0x84);
@@ -282,7 +357,7 @@ namespace perlin {
             d.insert(d.end(), frame.begin(), frame.end());
             Send(sock, d);
             if (reliable)
-                inflight[seq] = {frame, NowMs()};
+                inflight[seq] = {frame, NowMs(), resent};
         }
 
         static std::vector<uint8_t> BuildFrame(uint8_t rel, uint32_t msgIdx, uint32_t ordIdx, bool split, uint32_t splitCount,
@@ -334,25 +409,30 @@ namespace perlin {
         bool SendControl(const std::vector<uint8_t>& payload, uint8_t rel) { return SendPayload(payload.data(), payload.size(), rel); }
 
         void FlushAcks() {
-            if (acks.empty())
+            FlushRanges(acks, 0xC0);
+            FlushRanges(naks, 0xA0);
+        }
+
+        void FlushRanges(std::vector<uint32_t>& list, uint8_t header) {
+            if (list.empty())
                 return;
-            std::sort(acks.begin(), acks.end());
-            acks.erase(std::unique(acks.begin(), acks.end()), acks.end());
+            std::sort(list.begin(), list.end());
+            list.erase(std::unique(list.begin(), list.end()), list.end());
             size_t i = 0;
-            while (i < acks.size()) {
-                std::vector<uint8_t> d{0xC0, 0, 0};
+            while (i < list.size()) {
+                std::vector<uint8_t> d{header, 0, 0};
                 uint16_t records = 0;
-                while (i < acks.size() && d.size() < size_t(mtu) - server.HeaderBytes() - 8 && records < 0xFFFF) {
+                while (i < list.size() && d.size() < size_t(mtu) - server.HeaderBytes() - 8 && records < 0xFFFF) {
                     size_t j = i;
-                    while (j + 1 < acks.size() && acks[j + 1] == acks[j] + 1)
+                    while (j + 1 < list.size() && list[j + 1] == list[j] + 1)
                         j++;
                     if (i == j) {
                         d.push_back(1);
-                        PutLe24(d, acks[i]);
+                        PutLe24(d, list[i]);
                     } else {
                         d.push_back(0);
-                        PutLe24(d, acks[i]);
-                        PutLe24(d, acks[j]);
+                        PutLe24(d, list[i]);
+                        PutLe24(d, list[j]);
                     }
                     records++;
                     i = j + 1;
@@ -361,7 +441,7 @@ namespace perlin {
                 d[2] = uint8_t(records);
                 Send(sock, d);
             }
-            acks.clear();
+            list.clear();
         }
 
         void Resend(const std::vector<uint32_t>& seqs) {
@@ -372,7 +452,7 @@ namespace perlin {
                     continue;
                 std::vector<uint8_t> frame = std::move(it->second.frame);
                 inflight.erase(it);
-                EmitDatagramLocked(frame, true);
+                EmitDatagramLocked(frame, true, true);
             }
         }
 
@@ -381,7 +461,7 @@ namespace perlin {
             {
                 std::lock_guard<std::mutex> lock(sendMutex);
                 for (auto& [seq, sent] : inflight)
-                    if (now - sent.at > 600)
+                    if (now - sent.at > rto)
                         due.push_back(seq);
             }
             Resend(due);
@@ -409,10 +489,32 @@ namespace perlin {
             if (nak) {
                 Resend(seqs);
             } else {
+                const int64_t now = NowMs();
                 std::lock_guard<std::mutex> lock(sendMutex);
-                for (uint32_t s : seqs)
-                    inflight.erase(s);
+                for (uint32_t s : seqs) {
+                    const auto it = inflight.find(s);
+                    if (it == inflight.end())
+                        continue;
+                    if (!it->second.resent)
+                        UpdateRtt(now - it->second.at);
+                    inflight.erase(it);
+                }
             }
+        }
+
+        void UpdateRtt(int64_t rtt) {
+            averageRtt = averageRtt == 0 ? rtt : (averageRtt * 7 + rtt) / 8;
+            rto = std::clamp(averageRtt * 2 + 100, kMinRto, kMaxRto);
+        }
+
+        void TrackDatagram(uint32_t seq) {
+            acks.push_back(seq);
+            const uint32_t ahead = (seq - expectedSeq) & 0xFFFFFF;
+            if (ahead >= 0x800000)
+                return;
+            for (uint32_t missing = expectedSeq; missing != seq && naks.size() < 4096; missing = (missing + 1) & 0xFFFFFF)
+                naks.push_back(missing);
+            expectedSeq = (seq + 1) & 0xFFFFFF;
         }
 
         bool MarkMessageSeen(uint32_t idx) {
@@ -428,7 +530,7 @@ namespace perlin {
         void HandleDatagram(const uint8_t* b, int n) {
             if (n < 4)
                 return;
-            acks.push_back(GetLe24(b + 1));
+            TrackDatagram(GetLe24(b + 1));
             int off = 4;
             while (off < n) {
                 if (n - off < 3)
@@ -438,7 +540,8 @@ namespace perlin {
                 const bool split = head & 0x10;
                 const size_t len = GetBe16(b + off + 1) >> 3;
                 off += 3;
-                uint32_t msgIdx = 0, ordIdx = 0;
+                uint32_t msgIdx = 0, seqIdx = 0, ordIdx = 0;
+                uint8_t channel = 0;
                 if (IsReliable(rel)) {
                     if (n - off < 3)
                         return;
@@ -448,13 +551,17 @@ namespace perlin {
                 if (IsSequenced(rel)) {
                     if (n - off < 3)
                         return;
+                    seqIdx = GetLe24(b + off);
                     off += 3;
                 }
                 if (IsOrdered(rel)) {
                     if (n - off < 4)
                         return;
                     ordIdx = GetLe24(b + off);
+                    channel = b[off + 3];
                     off += 4;
+                    if (channel >= kOrderingChannels)
+                        return;
                 }
                 uint32_t sCount = 0, sIdx = 0;
                 uint16_t sId = 0;
@@ -492,27 +599,38 @@ namespace perlin {
                     splits.erase(sId);
                 }
                 if (rel == ReliableOrdered)
-                    Ordered(ordIdx, std::move(content));
+                    Ordered(channels[channel], ordIdx, std::move(content));
+                else if (IsSequenced(rel))
+                    Sequenced(channels[channel], ordIdx, seqIdx, std::move(content));
                 else
                     Deliver(std::move(content));
             }
         }
 
-        void Ordered(uint32_t idx, std::vector<uint8_t> content) {
-            if (((idx - nextOrder) & 0xFFFFFF) >= 0x800000)
+        static bool Before(uint32_t a, uint32_t b) { return ((a - b) & 0xFFFFFF) >= 0x800000; }
+
+        void Ordered(Channel& ch, uint32_t idx, std::vector<uint8_t> content) {
+            if (Before(idx, ch.nextOrder))
                 return;
-            pendingOrdered.emplace(idx, std::move(content));
-            if (pendingOrdered.size() > 20000) {
+            ch.pending.emplace(idx, std::move(content));
+            if (ch.pending.size() > 20000) {
                 Fail("RakNet: too many out-of-order packets");
                 return;
             }
-            for (auto it = pendingOrdered.find(nextOrder); it != pendingOrdered.end();
-                 it = pendingOrdered.find(nextOrder)) {
+            for (auto it = ch.pending.find(ch.nextOrder); it != ch.pending.end(); it = ch.pending.find(ch.nextOrder)) {
                 std::vector<uint8_t> c = std::move(it->second);
-                pendingOrdered.erase(it);
-                nextOrder = (nextOrder + 1) & 0xFFFFFF;
+                ch.pending.erase(it);
+                ch.nextOrder = (ch.nextOrder + 1) & 0xFFFFFF;
                 Deliver(std::move(c));
             }
+        }
+
+        void Sequenced(Channel& ch, uint32_t ordIdx, uint32_t seqIdx, std::vector<uint8_t> content) {
+            if (Before(ordIdx, ch.sequenceOrder) || (ordIdx == ch.sequenceOrder && Before(seqIdx, ch.nextSequence)))
+                return;
+            ch.sequenceOrder = ordIdx;
+            ch.nextSequence = (seqIdx + 1) & 0xFFFFFF;
+            Deliver(std::move(content));
         }
 
         void Deliver(std::vector<uint8_t> c) {
@@ -547,8 +665,13 @@ namespace perlin {
                     pongTime = GetBe64(c.data() + off + 8);
                 std::vector<uint8_t> nic{IdNewIncoming};
                 PutAddr(nic, server);
-                for (int i = 0; i < 20; i++)
-                    PutBlankAddr(nic);
+                const std::vector<Address> local = LocalAddresses(sock, server.Family());
+                for (size_t i = 0; i < kInternalAddresses; i++) {
+                    if (i < local.size())
+                        PutAddr(nic, local[i]);
+                    else
+                        PutBlankAddr(nic);
+                }
                 PutBe64(nic, pongTime);
                 PutBe64(nic, static_cast<uint64_t>(NowMs()));
                 SendControl(nic, ReliableOrdered);
@@ -818,7 +941,7 @@ namespace perlin {
         PutBe64(req, static_cast<uint64_t>(s.guid));
         PutBe64(req, static_cast<uint64_t>(NowMs()));
         req.push_back(0);
-        s.SendControl(req, ReliableOrdered);
+        s.SendControl(req, Reliable);
         const int64_t until = NowMs() + 8000;
         while (!s.accepted && s.running && NowMs() < until)
             std::this_thread::sleep_for(std::chrono::milliseconds(5));
@@ -837,7 +960,16 @@ namespace perlin {
         Impl& s = *impl;
         if (s.sock != kInvalid && connected) {
             std::vector<uint8_t> bye{IdDisconnect};
-            s.SendControl(bye, Unreliable);
+            s.SendControl(bye, ReliableOrdered);
+            const int64_t until = NowMs() + 300;
+            while (s.running && NowMs() < until) {
+                {
+                    std::lock_guard<std::mutex> lock(s.sendMutex);
+                    if (s.inflight.empty())
+                        break;
+                }
+                std::this_thread::sleep_for(std::chrono::milliseconds(5));
+            }
         }
         connected = false;
         s.running = false;
