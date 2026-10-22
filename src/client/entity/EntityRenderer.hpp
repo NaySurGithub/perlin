@@ -56,7 +56,11 @@ namespace perlin::entity {
             double worldTicks = 0;
             const Frustum* frustum = nullptr;
             bool outline = false;
-            std::vector<std::array<int, 4>> cracks;
+            struct Crack {
+                int x = 0, y = 0, z = 0, stage = 0;
+                std::vector<std::array<float, 6>> boxes;
+            };
+            std::vector<Crack> cracks;
             std::function<double(double, double, double)> groundY;
             bool chunkBorders = false;
             bool hitboxes = false;
