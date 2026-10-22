@@ -96,14 +96,14 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ github.workspace }}/ffmpeg-install
-          key: ffmpeg-static-x64-v1
+          key: ffmpeg-static-x64-v2
 
       - name: Install FFmpeg libraries (Windows)
         if: runner.os == 'Windows' && steps.ffmpeg-cache.outputs.cache-hit != 'true'
         shell: pwsh
         continue-on-error: true
         run: |
-          & "$env:VCPKG_INSTALLATION_ROOT\vcpkg.exe" install "ffmpeg[core,avcodec,avformat,swscale,swresample,gpl,x264,x265,vpx,aom,webp,nvcodec,amf,qsv]:x64-windows-static" --x-install-root="$env:GITHUB_WORKSPACE/ffmpeg-install"
+          & "$env:VCPKG_INSTALLATION_ROOT\vcpkg.exe" install "ffmpeg[core,avcodec,avformat,swscale,swresample,gpl,x264,x265,vpx,aom,webp]:x64-windows-static" --x-install-root="$env:GITHUB_WORKSPACE/ffmpeg-install"
 
       - name: Set up MSVC environment
         if: runner.os == 'Windows'

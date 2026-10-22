@@ -4,8 +4,7 @@
 
 namespace perlin::ui {
     struct PauseScreenText {
-        std::string title, back, options, quit, advancements, stats, feedback, bugs, lan, players, world, mods, serverSettings;
-        bool hasServerSettings = false;
+        std::string title, back, options, quit, advancements, stats, feedback, bugs, lan, players, world, mods;
         // Replay row: two half-width buttons, the inactive one is drawn locked.
         bool showReplay = false;
         bool replayRecording = false;
@@ -27,7 +26,6 @@ namespace perlin::ui {
     inline constexpr const char* kPauseWorldId = "world";
     inline constexpr const char* kPauseWardrobeId = "wardrobe";
     inline constexpr const char* kPauseModsId = "mods";
-    inline constexpr const char* kPauseServerSettingsId = "srvsettings";
     inline constexpr const char* kPauseBugsId = "bugs";
     inline constexpr const char* kPauseReplayStartId = "replaystart";
     inline constexpr const char* kPauseReplayStopId = "replaystop";

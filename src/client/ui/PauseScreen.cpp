@@ -635,15 +635,6 @@ div { display: block; position: absolute; }
         ReplaceAll(d, "options", EscapeRml(t.options));
         ReplaceAll(d, "world", EscapeRml(t.world));
         ReplaceAll(d, "quit", EscapeRml(t.quit));
-        if (t.hasServerSettings) {
-            const size_t from = d.find("<div id=\"mods\"");
-            const size_t to = d.find("<div id=\"quit\"");
-            if (from != std::string::npos && to != std::string::npos && from < to) {
-                d.erase(from, to - from);
-                d.insert(from, Button("mods", static_cast<float>(x1), static_cast<float>(top + 126), 100.0f, t.mods, false) +
-                                   Button("srvsettings", static_cast<float>(x1 + 104), static_cast<float>(top + 126), 100.0f, t.serverSettings, false));
-            }
-        }
         if (t.showReplay) {
             const size_t at = d.find("<div id=\"quit\"");
             if (at != std::string::npos)

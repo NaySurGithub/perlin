@@ -4047,8 +4047,6 @@ namespace perlin {
         t.bugs = tr("menu.reportBugs", "Report Bugs");
         t.lan = tr("menu.shareToLan", "Open to LAN");
         t.players = tr("gui.playerList", "Player List");
-        t.serverSettings = tr("perlin.serverSettings", "Server Settings");
-        t.hasServerSettings = live != nullptr;
         t.showReplay = live != nullptr && !preview && !live->IsReplay();
         t.replayRecording = replayCtl.Recording();
         t.replayStart = tr("perlin.replay.start", "Start Replay");
@@ -4071,7 +4069,7 @@ namespace perlin {
         std::string panelSig;
         for (const auto& r : t.panel)
             panelSig += r.name + ":" + std::to_string(r.perm) + ",";
-        const std::string signature = std::to_string(guiW) + "x" + std::to_string(guiH) + (t.showPanel ? "P" : "p") + panelSig + (t.hasServerSettings ? "S" : "s") + (t.showReplay ? (t.replayRecording ? "R" : "r") : "") + t.replayStart + t.replayStop + t.title + t.back + t.options + t.quit + t.advancements + t.stats + t.feedback + t.bugs + t.lan + t.players + t.world + t.mods;
+        const std::string signature = std::to_string(guiW) + "x" + std::to_string(guiH) + (t.showPanel ? "P" : "p") + panelSig + (t.showReplay ? (t.replayRecording ? "R" : "r") : "") + t.replayStart + t.replayStop + t.title + t.back + t.options + t.quit + t.advancements + t.stats + t.feedback + t.bugs + t.lan + t.players + t.world + t.mods;
         if (signature != pauseSignature || !hud.Overlay().HasOverlay()) {
             pauseSignature = signature;
             std::string error;
@@ -4107,11 +4105,6 @@ namespace perlin {
                 pauseView = 5;
                 optionsSignature.clear();
                 hud.Overlay().ClearOverlay();
-            } else if (hover == ui::kPauseServerSettingsId && live) {
-                live->SendServerSettingsRequest();
-                hud.Overlay().ClearOverlay();
-                pauseShown = false;
-                input.SetTextMode(false);
             } else if (hover == ui::kPauseModsId) {
                 pauseView = 4;
                 optionsSignature.clear();
