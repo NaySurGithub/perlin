@@ -153,6 +153,13 @@ namespace perlin::replay {
                      std::string& error);
     // Rewrites metadata.json / editor.json of an existing replay without touching packet data.
     bool UpdateArchiveFile(const std::string& path, const std::string& name, const std::string& content, std::string& error);
+    struct ArchiveAdd {
+        std::string name;      // path inside the archive
+        std::string diskPath;  // file to copy in, or empty to use `content`
+        std::string content;
+    };
+    // Adds (or replaces) several files in an existing replay in one rewrite.
+    bool AddArchiveFiles(const std::string& path, const std::vector<ArchiveAdd>& files, std::string& error);
     std::string SafeFileName(const std::string& name);
     std::string ReplayDirectory();
 }

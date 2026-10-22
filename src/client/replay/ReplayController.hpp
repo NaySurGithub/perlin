@@ -25,6 +25,10 @@ namespace perlin::replay {
             int protocol = 0;
             uint64_t runtimeId = 0;
             Pose pose;
+            struct Pack {
+                std::string path, fileName, uuid, key;
+            };
+            std::vector<Pack> packs; // the server's resource packs, stored in the replay
             uint32_t snapshotMs = 120000;  // periodic full-state snapshots so seeking is fast
         };
         bool StartRecording(const LiveInfo& info, const std::string& perlinVersion, std::string& error);
@@ -50,6 +54,7 @@ namespace perlin::replay {
         bool Advance(double dtMs, const std::function<void(const Record&)>& inject, double budgetMs);
         void Seek(double ms);
         bool SeekPending() const { return seekTarget >= 0; }
+        double SeekTargetMs() const { return seekTarget >= 0 ? seekTarget : timeMs; }
         bool NeedsRestart() const { return restartRequested; }
         void ClearRestart() { restartRequested = false; }
         double TimeMs() const { return timeMs; }
@@ -59,7 +64,14 @@ namespace perlin::replay {
         bool Paused() const { return paused; }
         void SetPaused(bool p) { paused = p; }
         bool AtEnd() const { return ended; }
+        struct StoredPack {
+            std::string file, uuid, key;
+        };
+        // Resource packs stored in the opened replay (extracted data comes from ReadArchiveFile(file)).
+        std::vector<StoredPack> StoredPacks();
         Pose RecordedPose() const { return recorded; }
+        // Pose at the current replay time, interpolated between the surrounding recorded samples.
+        Pose InterpolatedPose() const;
         bool CatchingUp() const { return seekTarget >= 0; }
         const std::vector<Marker>& Markers() const { return meta.markers; }
         void AddPlaybackMarker(const std::string& name, uint32_t atMs);
@@ -73,6 +85,7 @@ namespace perlin::replay {
     private:
         void LoadChunkFor(size_t index);
         Recorder recorder;
+        std::vector<LiveInfo::Pack> recordingPacks;
         StateCache cache;
         std::atomic<uint64_t> generation{0};
         std::string workDir;
@@ -86,5 +99,6 @@ namespace perlin::replay {
         double timeMs = 0, speed = 1.0, seekTarget = -1.0;
         bool paused = false, ended = false, restartRequested = false, useSnapshot = false;
         Pose recorded;
+        double recordedAtMs = 0;
     };
 }

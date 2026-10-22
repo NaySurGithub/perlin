@@ -763,4 +763,56 @@ namespace perlin::replay {
         }
         return true;
     }
+
+    bool AddArchiveFiles(const std::string& path, const std::vector<ArchiveAdd>& files, std::string& error) {
+        ZipHolder src;
+        if (!mz_zip_reader_init_file(&src.za, path.c_str(), 0)) {
+            error = "cannot open " + path;
+            return false;
+        }
+        src.open = true;
+        const std::string tmp = path + ".tmp";
+        mz_zip_archive dst{};
+        if (!mz_zip_writer_init_file(&dst, tmp.c_str(), 0)) {
+            error = "cannot write " + tmp;
+            return false;
+        }
+        bool ok = true;
+        const mz_uint count = mz_zip_reader_get_num_files(&src.za);
+        for (mz_uint i = 0; i < count && ok; i++) {
+            mz_zip_archive_file_stat st;
+            if (!mz_zip_reader_file_stat(&src.za, i, &st))
+                continue;
+            bool replaced = false;
+            for (const ArchiveAdd& f : files)
+                replaced = replaced || f.name == st.m_filename;
+            if (!replaced)
+                ok = mz_zip_writer_add_from_zip_reader(&dst, &src.za, i);
+        }
+        for (const ArchiveAdd& f : files) {
+            if (!ok)
+                break;
+            if (!f.diskPath.empty())
+                ok = mz_zip_writer_add_file(&dst, f.name.c_str(), f.diskPath.c_str(), nullptr, 0, MZ_NO_COMPRESSION); // packs are zips already
+            else
+                ok = mz_zip_writer_add_mem(&dst, f.name.c_str(), f.content.data(), f.content.size(), MZ_DEFAULT_LEVEL);
+        }
+        ok = ok && mz_zip_writer_finalize_archive(&dst);
+        mz_zip_writer_end(&dst);
+        std::error_code ec;
+        if (!ok) {
+            fs::remove(tmp, ec);
+            error = "failed to rewrite the archive";
+            return false;
+        }
+        src.open = false;
+        mz_zip_reader_end(&src.za);
+        fs::remove(path, ec);
+        fs::rename(tmp, path, ec);
+        if (ec) {
+            error = ec.message();
+            return false;
+        }
+        return true;
+    }
 }

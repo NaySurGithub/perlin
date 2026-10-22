@@ -90,6 +90,14 @@ namespace perlin {
         entities.clear();
     }
 
+    void BlockEntityStore::TakeFrom(BlockEntityStore& other) {
+        if (&other == this)
+            return;
+        std::scoped_lock lock(mutex, other.mutex);
+        entities = std::move(other.entities);
+        other.entities.clear();
+    }
+
     size_t BlockEntityStore::Size() const {
         std::lock_guard lock(mutex);
         return entities.size();

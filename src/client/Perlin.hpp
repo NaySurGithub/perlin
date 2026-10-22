@@ -432,7 +432,7 @@ namespace perlin {
         void FinishReplayRecording(const char* why);
         // ---- replay playback ----
         struct ReplayUi {
-            bool menuOpen = false, hideHud = true, uiHidden = false, camInit = false, leftDown = false, scrubbing = false, dirty = false;
+            bool menuOpen = true, grab = false, hideHud = true, uiHidden = false, camInit = false, leftDown = false, scrubbing = false, dirty = false;
             double scrubMs = -1, flySpeed = 12.0, inMs = -1, outMs = -1;
             int speedIdx = 3;
             std::string signature, status;
@@ -514,8 +514,10 @@ namespace perlin {
 
         void StartReplayPlayback(const std::string& path);
         void MakeReplaySession();
+        void MountReplayPacks();
         void ExitReplayPlayback(ui::Hud& hud);
         void PumpReplay(float dt);
+        void UpdateReplayCursor();
         bool UpdateReplayScreen(ui::Hud& hud, BedrockSession* live, int fbW, int fbH);
         void ReplayStatus(const std::string& text);
         void RefreshReplayList();
@@ -524,6 +526,7 @@ namespace perlin {
         bool ImportReplayFile(const std::string& source);
         bool replayRecoveryChecked = false;
         double replayPrevMs = 0;
+        double replayWorldFromMs = 0; // world packets older than this are already in the (kept) world
         bool titleReturnToReplays = false;
         int replayClickRow = -1;
         std::chrono::steady_clock::time_point replayClickAt{};

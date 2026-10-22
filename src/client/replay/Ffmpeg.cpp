@@ -5,6 +5,7 @@
 #include <cstdio>
 #include <sstream>
 
+#include "client/replay/LibavEncoder.hpp"
 #include "util/Paths.hpp"
 #include <miniz.h>
 
@@ -56,6 +57,7 @@ namespace perlin::replay::ffmpeg {
             {"gif", "Animated GIF (.gif)", "gif", "gif", false, {"gif"}},
             {"webp", "Animated WebP (.webp)", "webp", "webp", false, {"webp"}},
             {"apng", "Animated PNG (.apng)", "apng", "apng", false, {"apng"}},
+            {"builtin", "Built-in AVI / MJPEG (no ffmpeg needed)", "avi", "", false, {}},
             {"png", "PNG sequence", "png", "", true, {}},
             {"jpg", "JPEG sequence", "jpg", "", true, {}},
             {"bmp", "BMP sequence", "bmp", "", true, {}},
@@ -87,7 +89,16 @@ namespace perlin::replay::ffmpeg {
         const char* exe = "ffmpeg";
 #endif
         const std::string base = paths::DataDir();
-        const std::vector<fs::path> candidates = {fs::path(base) / "ffmpeg" / exe, fs::path(base) / exe, fs::path(base) / "ffmpeg" / "bin" / exe};
+        std::vector<fs::path> candidates;
+        {
+            const std::string app = paths::ExeDir();
+            if (!app.empty()) {
+                candidates.push_back(fs::path(app) / exe);
+                candidates.push_back(fs::path(app) / "ffmpeg" / exe);
+            }
+        }
+        for (const fs::path& extra : {fs::path(base) / "ffmpeg" / exe, fs::path(base) / exe, fs::path(base) / "ffmpeg" / "bin" / exe})
+            candidates.push_back(extra);
         std::error_code ec;
         for (const fs::path& c : candidates)
             if (fs::exists(c, ec)) {
@@ -302,6 +313,88 @@ namespace perlin::replay::ffmpeg {
         }
     }
 
+    bool PlanEncode(const Settings& s, const Catalog& cat, EncodePlan& p, std::string& error) {
+        p = EncodePlan{};
+        if (s.width < 16 || s.height < 16 || s.width > 16384 || s.height > 16384) {
+            error = "resolution out of range (16..16384)";
+            return false;
+        }
+        if (!(s.fps > 0.0) || s.fps > 1000.0) {
+            error = "frame rate out of range";
+            return false;
+        }
+        const Container* cont = FindContainer(s.container);
+        if (!cont) {
+            error = "unknown container " + s.container;
+            return false;
+        }
+        const auto addExtra = [&] {
+            const std::vector<std::string> extra = SplitArgs(s.extraArgs);
+            for (size_t i = 0; i + 1 < extra.size(); i++) {
+                if (extra[i].size() > 1 && extra[i][0] == '-') {
+                    std::string key = extra[i].substr(1);
+                    if (const size_t colon = key.find(':'); colon != std::string::npos) key.resize(colon);
+                    if (key == "b") { p.options.emplace_back("b", extra[i + 1]); }
+                    else if (key == "q") { p.qscale = std::atoi(extra[i + 1].c_str()); }
+                    else p.options.emplace_back(key, extra[i + 1]);
+                    i++;
+                }
+            }
+        };
+        if (cont->imageSequence) {
+            p.imageSequence = true;
+            p.muxer = "image2";
+            if (s.container == "png") { p.encoder = "png"; p.pixFmt = s.transparent ? "rgba" : "rgb24"; }
+            else if (s.container == "jpg") { p.encoder = "mjpeg"; p.pixFmt = "yuvj444p"; p.qscale = std::clamp(2 + s.crf / 6, 1, 31); }
+            else if (s.container == "bmp") { p.encoder = "bmp"; p.pixFmt = "bgr24"; }
+            else if (s.container == "tiff") { p.encoder = "tiff"; p.pixFmt = s.transparent ? "rgba" : "rgb24"; }
+            else if (s.container == "exr") { p.encoder = "exr"; p.pixFmt = s.transparent ? "gbrapf32le" : "gbrpf32le"; }
+            else { p.encoder = "libwebp"; p.pixFmt = "yuv420p"; p.options.emplace_back("quality", std::to_string(std::clamp(100 - s.crf * 2, 0, 100))); }
+            addExtra();
+            return true;
+        }
+        const Codec* codec = nullptr;
+        std::string enc;
+        if (s.container == "custom") {
+            enc = s.encoderOverride;
+            if (enc.empty()) { error = "custom export needs an encoder name"; return false; }
+        } else {
+            codec = FindCodec(s.codec);
+            if (!codec && s.encoderOverride.empty()) { error = "unknown codec " + s.codec; return false; }
+            if (codec && s.encoderOverride.empty() && std::find(cont->codecs.begin(), cont->codecs.end(), codec->id) == cont->codecs.end()) {
+                error = codec->label + " can't be stored in " + cont->label + " (choose another codec or container)";
+                return false;
+            }
+            enc = codec ? PickEncoder(s, *codec, cat) : s.encoderOverride;
+            if (!s.encoderOverride.empty()) enc = s.encoderOverride;
+        }
+        if (cat.available && !cat.HasEncoder(enc)) { error = "no encoder \"" + enc + "\" in this build"; return false; }
+        if (enc == "dnxhd" && (s.width < 256 || s.height < 120)) { error = "DNxHD needs at least 256x120 pixels"; return false; }
+        p.encoder = enc;
+        p.muxer = !s.muxerOverride.empty() ? s.muxerOverride : cont->muxer;
+        if (cat.available && !p.muxer.empty() && !cat.HasMuxer(p.muxer)) { error = "no muxer \"" + p.muxer + "\" in this build"; return false; }
+        const bool alpha = s.transparent && ((codec && codec->hasAlpha) || !s.pixelFormat.empty());
+        p.pixFmt = s.pixelFormat.empty() ? DefaultPixFmt(enc, alpha) : s.pixelFormat;
+        if (enc == "gif") {
+            p.gif = true;
+            if (s.pixelFormat.empty()) p.pixFmt = "bgr8";
+        } else {
+            std::vector<std::string> q;
+            QualityArgs(s, enc, q);
+            for (size_t i = 0; i + 1 < q.size(); i += 2) {
+                std::string key = q[i].substr(1);
+                if (key == "b:v") key = "b";
+                else if (key == "profile:v") key = "profile";
+                if (key == "tag:v") p.codecTag = q[i + 1];
+                else if (key == "q:v") p.qscale = std::atoi(q[i + 1].c_str());
+                else p.options.emplace_back(key, q[i + 1]);
+            }
+            if (enc == "libx264" || enc == "libx265" || enc == "libsvtav1" || enc == "libvpx-vp9") p.tagColors = true;
+        }
+        addExtra();
+        return true;
+    }
+
     bool BuildArgs(const Settings& s, const Catalog& cat, std::vector<std::string>& argv, std::string& error) {
         argv.clear();
         if (s.ffmpegPath.empty()) {
@@ -435,7 +528,35 @@ namespace perlin::replay::ffmpeg {
         return true;
     }
 
+    Encoder::Encoder() = default;
+    Encoder::~Encoder() = default;
+
     bool Encoder::Start(const Settings& s, const Catalog& cat, std::string& error) {
+        if (cat.builtin && s.container != "builtin") {
+            inW = s.inputWidth > 0 ? s.inputWidth : s.width;
+            inH = s.inputHeight > 0 ? s.inputHeight : s.height;
+            frameBytes = static_cast<size_t>(inW) * static_cast<size_t>(inH) * 4;
+            lib = std::make_unique<LibavEncoder>();
+            if (!lib->Start(s, cat, error)) {
+                lib.reset();
+                return false;
+            }
+            return true;
+        }
+        if (s.container == "builtin") {
+            inW = s.inputWidth > 0 ? s.inputWidth : s.width;
+            inH = s.inputHeight > 0 ? s.inputHeight : s.height;
+            frameBytes = static_cast<size_t>(inW) * static_cast<size_t>(inH) * 4;
+            avi = std::make_unique<AviMjpegWriter>();
+            outW = s.width;
+            outH = s.height;
+            const int quality = std::clamp(100 - s.crf, 40, 100);
+            if (!avi->Open(s.outputPath, s.width, s.height, s.fps, quality, error)) {
+                avi.reset();
+                return false;
+            }
+            return true;
+        }
         std::vector<std::string> argv;
         if (!BuildArgs(s, cat, argv, error))
             return false;
@@ -449,15 +570,35 @@ namespace perlin::replay::ffmpeg {
     }
 
     bool Encoder::WriteFrame(const uint8_t* bgra, size_t bytes) {
+        if (lib)
+            return lib->WriteFrame(bgra, bytes);
+        if (avi) {
+            if (bytes != frameBytes)
+                return false;
+            if (inW == outW && inH == outH)
+                return avi->AddFrameBgra(bgra);
+            const std::vector<uint8_t> scaled = DownscaleBgra(bgra, inW, inH, static_cast<size_t>(inW) * 4, false, outW, outH);
+            return avi->AddFrameBgra(scaled.data());
+        }
         if (!proc || bytes != frameBytes)
             return false;
         return proc->WriteStdin(bgra, bytes);
     }
 
-    bool Encoder::Alive() { return proc && proc->Running(); }
+    bool Encoder::Alive() { return lib || avi || (proc && proc->Running()); }
     std::string Encoder::Log() { return proc ? proc->Output() : std::string(); }
 
     bool Encoder::Finish(std::string& error) {
+        if (lib) {
+            const bool ok = lib->Finish(error);
+            lib.reset();
+            return ok;
+        }
+        if (avi) {
+            const bool ok = avi->Close(error);
+            avi.reset();
+            return ok;
+        }
         if (!proc)
             return false;
         proc->CloseStdin();
@@ -475,6 +616,8 @@ namespace perlin::replay::ffmpeg {
     }
 
     void Encoder::Abort() {
+        lib.reset();
+        avi.reset();
         if (proc) {
             proc->Kill();
             proc->Wait();

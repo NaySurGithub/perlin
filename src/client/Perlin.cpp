@@ -4827,6 +4827,8 @@ namespace perlin {
             info.runtimeId = session->GetRuntimeId();
             const auto pose = session->GetPose();
             info.pose = {pose.x, pose.y, pose.z, pose.yaw, pose.pitch, pose.known};
+            for (const auto& pf : session->ServerPackFiles())
+                info.packs.push_back({pf.path, pf.fileName, pf.uuid, pf.key});
             std::string error;
             if (replayCtl.StartRecording(info, PERLIN_VERSION, error)) {
                 chat.AddMessage("\xC2\xA7" "aReplay recording started", hudAnim.ticks);
@@ -7838,9 +7840,9 @@ namespace perlin {
                     self.pitch = -camera.pitch;
                     if (replayCtl.Playing()) {
                         // The camera is free; draw the recorded player where they actually were.
-                        const replay::Pose rp = replayCtl.RecordedPose();
+                        const replay::Pose rp = replayCtl.InterpolatedPose();
                         if (rp.known) {
-                            self.pos = {rp.x, rp.y, rp.z};
+                            self.pos = {rp.x, rp.y - entity::kPlayerEye, rp.z};
                             self.yaw = self.headYaw = rp.yaw;
                             self.pitch = rp.pitch;
                         }
@@ -7885,6 +7887,16 @@ namespace perlin {
                             selfSkinKey = key;
                         }
                         self.skin = selfSkinData;
+                    }
+                    if (replayCtl.Playing() && live) {
+                        // Use the skin the recorded player wore (their PlayerList entry), not the viewer's own.
+                        const std::string& rn = replayCtl.Meta().playerName;
+                        for (const auto& tp : live->PlayerList())
+                            if (tp.skin && (tp.name == rn || tp.uid == static_cast<int64_t>(replayCtl.Meta().localRuntimeId))) {
+                                self.skin = tp.skin;
+                                if (tp.name == rn)
+                                    break;
+                            }
                     }
                     fpSelf = self;
                     if (live && live->RidingUid() != 0) {

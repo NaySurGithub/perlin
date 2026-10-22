@@ -2,6 +2,7 @@
 #include "client/Perlin.hpp"
 
 #include "client/input/Keys.hpp"
+#include "client/replay/LibavEncoder.hpp"
 #include "client/platform/AppPlatform.hpp"
 #include "client/ui/ReplayScreen.hpp"
 #include "util/Paths.hpp"
@@ -89,7 +90,7 @@ namespace perlin {
         LoadExportConfig();
         if (!exportUi.catQueried) {
             exportUi.catQueried = true;
-            exportUi.cat = replay::ffmpeg::Query(replay::ffmpeg::FindExecutable());
+            exportUi.cat = replay::ffmpeg::LibavCompiledIn() ? replay::ffmpeg::QueryLibav() : replay::ffmpeg::Query(replay::ffmpeg::FindExecutable());
         }
         exportUi.open = true;
         exportUi.tab = 0;
@@ -126,7 +127,7 @@ namespace perlin {
             u.downloadHandled = true;
             u.downloader->Join();
             if (u.downloader->Succeeded()) {
-                u.cat = ffmpeg::Query(ffmpeg::FindExecutable());
+                u.cat = ffmpeg::LibavCompiledIn() ? ffmpeg::QueryLibav() : ffmpeg::Query(ffmpeg::FindExecutable());
                 u.status = u.cat.available ? "ffmpeg is ready" : "ffmpeg was installed but could not be started";
             } else {
                 u.status = u.downloader->Status();
@@ -250,7 +251,7 @@ namespace perlin {
             return l;
         };
         if (u.tab == 0) {
-            m.rows.push_back(u.cat.available ? Info("ffmpeg", u.cat.version.substr(0, 40)) : Info("ffmpeg not found", "PNG sequence only - see Advanced"));
+            m.rows.push_back(u.cat.available ? Info(u.cat.builtin ? "Encoder (built in)" : "ffmpeg", u.cat.version.substr(0, 40)) : Info("ffmpeg not found", "using built-in AVI (Advanced: get ffmpeg)"));
             m.rows.push_back(Header("Format"));
             m.rows.push_back(Cycle("ex_container", "Container", containerLabel(*cont)));
             if (!seq && !custom) {
@@ -303,7 +304,7 @@ namespace perlin {
             m.rows.push_back(fieldRow("ex_mux", "Muxer override"));
             m.rows.push_back(fieldRow("ex_ext", "File extension"));
             m.rows.push_back(fieldRow("ex_extra", "Extra ffmpeg args"));
-            m.rows.push_back(Header("ffmpeg"));
+            m.rows.push_back(Header(u.cat.builtin ? "Built-in encoders" : "ffmpeg"));
             if (u.cat.available) {
                 m.rows.push_back(Info("Found", u.cat.path));
                 m.rows.push_back(Info("Encoders / muxers", std::to_string(u.cat.encoders.size()) + " / " + std::to_string(u.cat.muxers.size())));
@@ -312,9 +313,10 @@ namespace perlin {
                 m.rows.push_back(Info("Put ffmpeg(.exe) in", ExportDirectory(c).substr(0, ExportDirectory(c).rfind('/')) .substr(0, 60)));
             }
             const bool dl = u.downloader && u.downloader->Running();
-            if (ffmpeg::Downloader::Supported())
+            if (ffmpeg::Downloader::Supported() && !u.cat.builtin)
                 m.rows.push_back(Btn("ex_dl", dl ? "Downloading ffmpeg " + Num(std::max(0.0f, u.downloader->Progress()) * 100.0f) + "%" : (u.cat.available ? "Re-download ffmpeg" : "Download ffmpeg (about 150 MB)"), !dl));
-            m.rows.push_back(Btn("ex_recheck", "Check for ffmpeg again"));
+            if (!u.cat.builtin)
+                m.rows.push_back(Btn("ex_recheck", "Check for ffmpeg again"));
             if (!u.queue.empty()) {
                 m.rows.push_back(Header("Queue"));
                 m.rows.push_back(Info("Waiting jobs", std::to_string(u.queue.size())));
@@ -400,7 +402,7 @@ namespace perlin {
                 u.downloader->Start();
                 u.status = "Downloading ffmpeg...";
             } else if (hover == "ex_recheck") {
-                u.cat = ffmpeg::Query(ffmpeg::FindExecutable());
+                u.cat = ffmpeg::LibavCompiledIn() ? ffmpeg::QueryLibav() : ffmpeg::Query(ffmpeg::FindExecutable());
                 u.status = u.cat.available ? "ffmpeg found" : "ffmpeg still not found";
             } else if (hover == "ex_clearq") {
                 u.queue.clear();

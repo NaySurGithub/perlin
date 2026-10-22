@@ -90,6 +90,21 @@ jobs:
         run: |
           & "$env:VCPKG_INSTALLATION_ROOT\vcpkg.exe" install openssl:x64-windows-static --x-install-root="$env:GITHUB_WORKSPACE/openssl-install"
 
+      - name: Cache FFmpeg (Windows)
+        if: runner.os == 'Windows'
+        id: ffmpeg-cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}/ffmpeg-install
+          key: ffmpeg-static-x64-v1
+
+      - name: Install FFmpeg libraries (Windows)
+        if: runner.os == 'Windows' && steps.ffmpeg-cache.outputs.cache-hit != 'true'
+        shell: pwsh
+        continue-on-error: true
+        run: |
+          & "$env:VCPKG_INSTALLATION_ROOT\vcpkg.exe" install "ffmpeg[core,avcodec,avformat,swscale,swresample,gpl,x264,x265,vpx,aom,webp,nvcodec,amf,qsv]:x64-windows-static" --x-install-root="$env:GITHUB_WORKSPACE/ffmpeg-install"
+
       - name: Set up MSVC environment
         if: runner.os == 'Windows'
         uses: ilammy/msvc-dev-cmd@v1
@@ -109,6 +124,7 @@ jobs:
           -DCMAKE_C_COMPILER=clang-cl -DCMAKE_CXX_COMPILER=clang-cl -DCMAKE_LINKER=lld-link
           -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
           -DOPENSSL_ROOT_DIR="$env:GITHUB_WORKSPACE/openssl-install/x64-windows-static"
+          -DFFMPEG_ROOT="$env:GITHUB_WORKSPACE/ffmpeg-install/x64-windows-static"
 
       - name: Configure (Unix)
         if: runner.os != 'Windows'

@@ -78,6 +78,7 @@ namespace perlin {
         bool Connect(const std::string& host, uint16_t port);
         void Disconnect();
         void SetPackDirectory(const std::string& dir) { packs.SetDirectory(dir); }
+        std::vector<PackDownloader::PackFile> ServerPackFiles() const { return packs.Files(); }
         bool Transferring() const { return transferring; }
 
         void Update();
@@ -344,6 +345,29 @@ void RequestRespawn();
             runtimeId = localRuntimeId;
             serverProtocol = protocol;
             state = State::InGame;
+            netLevel.EnableUndo(static_cast<size_t>(768) << 20);
+        }
+        // Seamless rewinds: the world (chunks, undo log, block entities) moves to the new session untouched.
+        void AdoptWorld(BedrockSession& old) {
+            old.WaitChunkWorkIdle();
+            netLevel.TakeFrom(old.netLevel);
+            blockEntities.TakeFrom(old.blockEntities);
+        }
+        void WaitChunkWorkIdle() {
+            for (int i = 0; i < 20000 && !ChunkWorkIdle(); i++)
+                std::this_thread::sleep_for(std::chrono::microseconds(100));
+        }
+        // Marks the replay second whose packets are about to be applied (for the undo log).
+        void ReplayEpoch(int64_t epoch) {
+            if (epoch == netLevel.Epoch())
+                return;
+            WaitChunkWorkIdle();
+            netLevel.SetEpoch(epoch);
+        }
+        bool ReplayCanRewind(int64_t epoch) const { return netLevel.CanRewindTo(epoch); }
+        bool ReplayRewindWorld(int64_t epoch) {
+            WaitChunkWorkIdle();
+            return netLevel.RewindTo(epoch);
         }
         bool IsReplay() const { return replayMode; }
         bool ChunkWorkIdle() {

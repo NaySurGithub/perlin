@@ -22,6 +22,14 @@ int main(int argc, char** argv) {
         std::printf("ssaa ok\n");
         if (!WritePngBgra(dir + "/p.png", 128, 96, f.data(), 128 * 4, false, false)) { std::puts("FAIL png"); return 1; }
         std::printf("png ok\n");
+        {   // built-in encoder with supersampled input
+            Settings b; b.container = "builtin"; b.width = 64; b.height = 48; b.inputWidth = 128; b.inputHeight = 96; b.fps = 30; b.outputPath = dir + "/builtin.avi";
+            Encoder be; std::string e2;
+            if (!be.Start(b, cat, e2)) { std::printf("FAIL builtin: %s\n", e2.c_str()); return 1; }
+            for (int i = 0; i < 5; i++) if (!be.WriteFrame(f.data(), f.size())) { std::puts("FAIL builtin write"); return 1; }
+            if (!be.Finish(e2)) { std::printf("FAIL builtin finish: %s\n", e2.c_str()); return 1; }
+            std::printf("builtin ok\n");
+        }
         std::vector<uint8_t> d = DownscaleBgra(f.data(), 128, 96, 128 * 4, false, 64, 48);
         if (d.size() != 64 * 48 * 4 || d[0] != 200) { std::puts("FAIL downscale"); return 1; }
         if (argc > 3) return 0;

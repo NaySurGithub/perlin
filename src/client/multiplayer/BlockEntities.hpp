@@ -33,6 +33,7 @@ namespace perlin {
         void Remove(int x, int y, int z);
         void RemoveChunk(int cx, int cz);
         void Clear();
+        void TakeFrom(BlockEntityStore& other);
         size_t Size() const;
 
     private:

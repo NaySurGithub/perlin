@@ -53,6 +53,9 @@ namespace perlin {
         void OnKeyRepeat(int key);
         void OnChar(int codepoint);
         void SetTextMode(bool on) { textMode = on; }
+        // Replays: clicking the window must not grab the mouse (the game grabs it explicitly instead).
+        void SetFreeCursor(bool on) { freeCursor = on; }
+        bool FreeCursor() const { return freeCursor; }
         bool TextMode() const { return textMode; }
         void SetKeyboard(bool on) { keyboard = on; }
         bool Keyboard() const { return keyboard; }
@@ -77,6 +80,7 @@ namespace perlin {
         std::atomic<float> lookX{0}, lookY{0};
         std::atomic<float> wheel{0};
         std::atomic<bool> captured{false};
+        std::atomic<bool> freeCursor{false};
         std::atomic<bool> textMode{false};
         std::atomic<bool> keyboard{false};
     };

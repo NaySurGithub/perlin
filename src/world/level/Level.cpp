@@ -12,6 +12,76 @@ namespace perlin {
         return *slot;
     }
 
+    Chunk Chunk::Clone() const {
+        Chunk c;
+        c.version = version;
+        c.borderVersion = borderVersion;
+        c.streaming = streaming;
+        c.readyAt = readyAt;
+        c.firstSeen = firstSeen;
+        c.queued = false;
+        c.lodOnly = lodOnly;
+        for (int i = 0; i < SECTION_COUNT; i++) {
+            const auto& src = sections[static_cast<size_t>(i)];
+            if (!src)
+                continue;
+            auto dst = std::make_unique<Section>();
+            dst->uniform = src->uniform;
+            dst->uniformBiome = src->uniformBiome;
+            if (src->blocks)
+                dst->blocks = std::make_unique<std::array<uint16_t, 4096>>(*src->blocks);
+            if (src->liquid)
+                dst->liquid = std::make_unique<std::array<uint16_t, 4096>>(*src->liquid);
+            if (src->biomes)
+                dst->biomes = std::make_unique<std::array<uint8_t, 4096>>(*src->biomes);
+            c.sections[static_cast<size_t>(i)] = std::move(dst);
+        }
+        return c;
+    }
+
+    bool Chunk::SectionEquals(int section, const uint16_t* cells, const uint16_t* liquidCells) const {
+        const auto& s = sections[static_cast<size_t>(section)];
+        if (!s)
+            return false;
+        bool anyLiquid = false;
+        if (liquidCells)
+            for (int i = 0; i < 4096 && !anyLiquid; i++)
+                anyLiquid = liquidCells[i] != 0;
+        if (anyLiquid != (s->liquid != nullptr))
+            return false;
+        for (int x = 0; x < 16; x++)
+            for (int z = 0; z < 16; z++)
+                for (int y = 0; y < 16; y++) {
+                    const int src = x * 256 + z * 16 + y;
+                    const int dst = (y * 16 + z) * 16 + x;
+                    if (s->Block(dst) != cells[src])
+                        return false;
+                    if (anyLiquid && (*s->liquid)[static_cast<size_t>(dst)] != liquidCells[src])
+                        return false;
+                }
+        return true;
+    }
+
+    bool Chunk::BiomeSectionEquals(int section, const uint8_t* cells) const {
+        const auto& s = sections[static_cast<size_t>(section)];
+        if (!s)
+            return false;
+        for (int x = 0; x < 16; x++)
+            for (int z = 0; z < 16; z++)
+                for (int y = 0; y < 16; y++)
+                    if (s->Biome((y * 16 + z) * 16 + x) != cells[x * 256 + z * 16 + y])
+                        return false;
+        return true;
+    }
+
+    size_t Chunk::ApproxBytes() const {
+        size_t n = sizeof(Chunk);
+        for (const auto& s : sections)
+            if (s)
+                n += sizeof(Section) + (s->blocks ? 8192 : 0) + (s->liquid ? 8192 : 0) + (s->biomes ? 4096 : 0);
+        return n;
+    }
+
     uint16_t Chunk::Get(int x, int y, int z) const {
         if (!InBounds(x, y, z))
             return 0;
@@ -187,6 +257,120 @@ namespace perlin {
         chunks.clear();
         lodOnlyCount = 0;
         dirty.clear();
+        undo.clear();
+        loggedEpoch.clear();
+        undoBytes = 0;
+        undoFloor = currentEpoch.load();
+    }
+
+    void Level::EnableUndo(size_t capBytes) {
+        std::lock_guard lock(mutex);
+        undoOn = capBytes > 0;
+        undoCap = capBytes;
+        undo.clear();
+        loggedEpoch.clear();
+        undoBytes = 0;
+        undoFloor = currentEpoch.load();
+    }
+
+    void Level::LogBefore(const ChunkPos& pos) {
+        if (!undoOn)
+            return;
+        const int64_t epoch = currentEpoch.load();
+        auto [slot, fresh] = loggedEpoch.try_emplace(pos, epoch);
+        if (!fresh) {
+            if (slot->second == epoch)
+                return;
+            slot->second = epoch;
+        }
+        UndoEntry entry;
+        entry.epoch = epoch;
+        entry.pos = pos;
+        const auto it = chunks.find(pos);
+        entry.existed = it != chunks.end();
+        if (entry.existed) {
+            entry.data = it->second.Clone();
+            entry.bytes = entry.data.ApproxBytes();
+        } else {
+            entry.bytes = sizeof(UndoEntry);
+        }
+        undoBytes += entry.bytes;
+        undo.push_back(std::move(entry));
+        while (undoBytes > undoCap && undo.size() > 1) {
+            // drop the oldest epoch entirely: its first entries are gone, so nothing at or before it can be undone
+            const int64_t oldest = undo.front().epoch;
+            while (!undo.empty() && undo.front().epoch == oldest) {
+                undoBytes -= std::min(undoBytes, undo.front().bytes);
+                undo.pop_front();
+            }
+            undoFloor = oldest + 1;
+        }
+    }
+
+    bool Level::CanRewindTo(int64_t epoch) const {
+        std::lock_guard lock(mutex);
+        return undoOn && epoch >= undoFloor;
+    }
+
+    bool Level::RewindTo(int64_t epoch) {
+        std::lock_guard lock(mutex);
+        if (!undoOn || epoch < undoFloor)
+            return false;
+        while (!undo.empty() && undo.back().epoch >= epoch) {
+            UndoEntry& e = undo.back();
+            const auto cur = chunks.find(e.pos);
+            if (e.existed) {
+                uint64_t version = e.data.version, border = e.data.borderVersion;
+                if (cur != chunks.end()) {
+                    version = std::max(version, cur->second.version);
+                    border = std::max(border, cur->second.borderVersion);
+                    if (cur->second.lodOnly)
+                        lodOnlyCount--;
+                    chunks.erase(cur);
+                }
+                auto [it, inserted] = chunks.emplace(e.pos, std::move(e.data));
+                (void)inserted;
+                it->second.version = version + 1;
+                it->second.borderVersion = border + 1;
+                it->second.queued = false;
+                if (it->second.lodOnly)
+                    lodOnlyCount++;
+                Touch(it->first, it->second);
+            }
+            // existed == false: the chunk was created after the target; it is kept so it never has to be rebuilt
+            undoBytes -= std::min(undoBytes, e.bytes);
+            undo.pop_back();
+        }
+        loggedEpoch.clear();
+        changeCounter++;
+        currentEpoch.store(epoch);
+        return true;
+    }
+
+    void Level::TakeFrom(Level& other) {
+        if (&other == this)
+            return;
+        std::scoped_lock lock(mutex, other.mutex);
+        chunks = std::move(other.chunks);
+        other.chunks.clear();
+        dirty = std::move(other.dirty);
+        other.dirty.clear();
+        undo = std::move(other.undo);
+        other.undo.clear();
+        loggedEpoch = std::move(other.loggedEpoch);
+        other.loggedEpoch.clear();
+        undoBytes = other.undoBytes;
+        other.undoBytes = 0;
+        undoCap = other.undoCap;
+        undoOn = other.undoOn;
+        undoFloor = other.undoFloor;
+        currentEpoch.store(other.currentEpoch.load());
+        lodOnlyCount = other.lodOnlyCount.load();
+        other.lodOnlyCount = 0;
+        changeCounter++;
+        for (auto& [pos, chunk] : chunks)
+            chunk.queued = false;
+        dirty.clear(); // the renderer already has these chunks; it is rebound without a reset
     }
 
     uint16_t Level::GetBlock(int x, int y, int z) const {
@@ -215,6 +399,7 @@ namespace perlin {
             return;
         if (it->second.GetLiquid(x & 15, y, z & 15) == id)
             return;
+        LogBefore(it->first);
         changeCounter++;
         it->second.SetLiquid(x & 15, y, z & 15, id);
         it->second.version++;
@@ -249,6 +434,7 @@ namespace perlin {
             return;
         if (it->second.Get(x & 15, y, z & 15) == id)
             return;
+        LogBefore(it->first);
         changeCounter++;
         it->second.Set(x & 15, y, z & 15, id);
         it->second.version++;
@@ -262,6 +448,7 @@ namespace perlin {
         const auto found = chunks.find({cx, cz});
         if (found == chunks.end())
             return false;
+        LogBefore(found->first);
         if (found->second.lodOnly)
             lodOnlyCount--;
         chunks.erase(found);
@@ -318,6 +505,7 @@ namespace perlin {
         if (it == chunks.end())
             return false;
         if (it->second.lodOnly) {
+            LogBefore(it->first);
             it->second.lodOnly = false;
             lodOnlyCount--;
             it->second.version++;
@@ -333,6 +521,7 @@ namespace perlin {
         const auto it = chunks.find({cx, cz});
         if (it == chunks.end() || !it->second.lodOnly)
             return false;
+        LogBefore(it->first);
         chunks.erase(it);
         lodOnlyCount--;
         dirty.push_back({cx, cz});
@@ -343,6 +532,8 @@ namespace perlin {
     void Level::EnsureChunk(int cx, int cz, bool streaming, bool lodOnly) {
         std::lock_guard lock(mutex);
         changeCounter++;
+        if (chunks.find({cx, cz}) == chunks.end())
+            LogBefore({cx, cz});
         const auto [it, inserted] = chunks.try_emplace({cx, cz});
         if (inserted) {
             it->second.lodOnly = lodOnly;
@@ -387,6 +578,9 @@ namespace perlin {
         const auto found = chunks.find({cx, cz});
         if (found == chunks.end())
             return;
+        if (found->second.SectionEquals((baseY - Chunk::MIN_Y) >> 4, cells, liquidCells))
+            return;
+        LogBefore(found->first);
         changeCounter++;
         Chunk& chunk = found->second;
         chunk.SetSection((baseY - Chunk::MIN_Y) >> 4, cells, liquidCells);
@@ -404,6 +598,9 @@ namespace perlin {
         const auto found = chunks.find({cx, cz});
         if (found == chunks.end())
             return;
+        if (found->second.BiomeSectionEquals((baseY - Chunk::MIN_Y) >> 4, cells))
+            return;
+        LogBefore(found->first);
         changeCounter++;
         Chunk& chunk = found->second;
         chunk.SetBiomeSection((baseY - Chunk::MIN_Y) >> 4, cells);

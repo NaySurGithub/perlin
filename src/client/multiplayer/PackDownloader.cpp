@@ -157,6 +157,17 @@ namespace perlin {
         return request;
     }
 
+    std::vector<PackDownloader::PackFile> PackDownloader::Files() const {
+        std::vector<PackFile> out;
+        for (const Offered& o : offeredPacks) {
+            const auto path = std::filesystem::path(directory) / o.fileName;
+            std::error_code ec;
+            if (std::filesystem::exists(path, ec))
+                out.push_back({path.string(), o.fileName, o.uuid, o.key});
+        }
+        return out;
+    }
+
     void PackDownloader::MountAll() {
         ServerPacks::Instance().Clear();
         for (const Offered& o : offeredPacks) {

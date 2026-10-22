@@ -5,7 +5,9 @@
 #include <string>
 #include <vector>
 
+#include "client/replay/AviWriter.hpp"
 #include "client/replay/Process.hpp"
+#include <utility>
 
 namespace perlin::replay::ffmpeg {
     struct Codec {
@@ -29,6 +31,7 @@ namespace perlin::replay::ffmpeg {
         bool available = false;
         std::string path;
         std::string version;
+        bool builtin = false; // encoders live inside Perlin (libavcodec linked in); no external program
         std::vector<std::string> encoders; // all video encoders ffmpeg reports
         std::vector<std::string> muxers;   // all muxers ffmpeg reports
         bool HasEncoder(const std::string& e) const;
@@ -69,6 +72,18 @@ namespace perlin::replay::ffmpeg {
     bool BuildArgs(const Settings& s, const Catalog& cat, std::vector<std::string>& argv, std::string& error);
     std::vector<std::string> SplitArgs(const std::string& line);
 
+    // Everything an encoder needs, independent of whether it is driven through the ffmpeg
+    // command line or the linked-in libav libraries.
+    struct EncodePlan {
+        std::string encoder, muxer, pixFmt, codecTag;
+        std::vector<std::pair<std::string, std::string>> options; // AVOption name -> value
+        int qscale = -1;        // MPEG-style quality scale (q:v), -1 = unused
+        bool imageSequence = false;
+        bool tagColors = false; // BT.709 limited-range tagging for YUV output
+        bool gif = false;
+    };
+    bool PlanEncode(const Settings& s, const Catalog& cat, EncodePlan& plan, std::string& error);
+
     // Writes a PNG without needing ffmpeg. `bgra` rows are `pitch` bytes apart; flipY for bottom-up captures.
     bool WritePngBgra(const std::string& path, int w, int h, const uint8_t* bgra, size_t pitch, bool flipY, bool keepAlpha);
     // Writes a 24-bit BMP (used for the box-filter downscale fallback / quick screenshots).
@@ -77,6 +92,8 @@ namespace perlin::replay::ffmpeg {
     // Streams BGRA frames into ffmpeg.
     class Encoder {
     public:
+        Encoder();
+        ~Encoder();
         bool Start(const Settings& s, const Catalog& cat, std::string& error);
         bool WriteFrame(const uint8_t* bgra, size_t bytes);
         bool Finish(std::string& error); // closes the pipe and waits
@@ -86,6 +103,9 @@ namespace perlin::replay::ffmpeg {
 
     private:
         std::unique_ptr<Process> proc;
+        std::unique_ptr<AviMjpegWriter> avi; // built-in encoder (no ffmpeg)
+        std::unique_ptr<class LibavEncoder> lib; // linked-in libavcodec encoder
+        int inW = 0, inH = 0, outW = 0, outH = 0;
         size_t frameBytes = 0;
     };
 }

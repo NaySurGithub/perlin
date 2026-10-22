@@ -845,6 +845,75 @@ if(MSVC)
     install(FILES "$<TARGET_PDB_FILE:Perlin>" DESTINATION . OPTIONAL)
     install(FILES "$<TARGET_FILE_DIR:Perlin>/Perlin.map" DESTINATION . OPTIONAL)
 endif()
+# FFmpeg libraries compiled straight into Perlin: video export then needs no ffmpeg program at all.
+# Windows CI installs a static build with vcpkg (see .github/workflows/build.yml) and passes -DFFMPEG_ROOT=...;
+# Linux/macOS use pkg-config. If nothing is found Perlin still builds and falls back to its built-in AVI encoder.
+option(PERLIN_LIBAV "Link FFmpeg libraries into Perlin for built-in video encoding" ON)
+set(PERLIN_LIBAV_FOUND OFF)
+if(PERLIN_LIBAV AND NOT EMSCRIPTEN AND NOT ANDROID)
+    set(FFMPEG_ROOT "" CACHE PATH "Prefix containing include/libavcodec and lib/ with static FFmpeg libraries")
+    if(FFMPEG_ROOT AND EXISTS "${FFMPEG_ROOT}/include/libavcodec/avcodec.h")
+        file(GLOB _av_libs "${FFMPEG_ROOT}/lib/*.lib" "${FFMPEG_ROOT}/lib/*.a")
+        # drop libraries that are not part of the codec stack (test helpers, pkgconfig dirs are not matched anyway)
+        if(_av_libs)
+            target_include_directories(Perlin PRIVATE "${FFMPEG_ROOT}/include")
+            target_link_libraries(Perlin PRIVATE ${_av_libs})
+            set(PERLIN_LIBAV_FOUND ON)
+        endif()
+    elseif(NOT WIN32)
+        find_package(PkgConfig QUIET)
+        if(PkgConfig_FOUND)
+            pkg_check_modules(PERLIN_AV QUIET IMPORTED_TARGET libavformat libavcodec libswscale libavutil)
+            if(PERLIN_AV_FOUND)
+                target_link_libraries(Perlin PRIVATE PkgConfig::PERLIN_AV)
+                set(PERLIN_LIBAV_FOUND ON)
+            endif()
+        endif()
+    endif()
+    if(PERLIN_LIBAV_FOUND)
+        target_compile_definitions(Perlin PRIVATE PERLIN_HAVE_LIBAV)
+        if(WIN32)
+            target_link_libraries(Perlin PRIVATE ws2_32 secur32 bcrypt ole32 oleaut32 uuid user32 mfuuid mfplat strmiids shlwapi ncrypt advapi32 gdi32 psapi)
+        endif()
+        message(STATUS "FFmpeg libraries found: video encoders are built into Perlin")
+    else()
+        message(STATUS "FFmpeg libraries not found: using ffmpeg executable if present, else the built-in AVI encoder")
+    endif()
+endif()
+
+# Ship ffmpeg next to Perlin.exe on Windows so video export works with nothing to install.
+# The LGPL build is used (no GPL obligations on redistribution); Perlin also has a built-in
+# AVI/MJPEG encoder as a last resort and can download the full GPL build from the export dialog.
+if(WIN32 AND NOT EMSCRIPTEN AND NOT ANDROID AND NOT PERLIN_LIBAV_FOUND)
+    option(PERLIN_BUNDLE_FFMPEG "Download an LGPL ffmpeg build and ship it next to Perlin.exe" ON)
+    if(PERLIN_BUNDLE_FFMPEG)
+        set(PERLIN_FFMPEG_DIR "${CMAKE_BINARY_DIR}/ffmpeg-bundle")
+        if(NOT EXISTS "${PERLIN_FFMPEG_DIR}/ffmpeg.exe")
+            set(_ff_zip "${CMAKE_BINARY_DIR}/ffmpeg-lgpl.zip")
+            message(STATUS "Downloading ffmpeg (LGPL build) for bundling...")
+            file(DOWNLOAD
+                "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-lgpl.zip"
+                "${_ff_zip}" STATUS _ff_status TLS_VERIFY ON)
+            list(GET _ff_status 0 _ff_code)
+            if(_ff_code EQUAL 0)
+                file(ARCHIVE_EXTRACT INPUT "${_ff_zip}" DESTINATION "${CMAKE_BINARY_DIR}/ffmpeg-extract" PATTERNS "*/bin/ffmpeg.exe" "*/LICENSE.txt")
+                file(GLOB_RECURSE _ff_exe "${CMAKE_BINARY_DIR}/ffmpeg-extract/*/bin/ffmpeg.exe")
+                if(_ff_exe)
+                    list(GET _ff_exe 0 _ff_exe_one)
+                    file(COPY "${_ff_exe_one}" DESTINATION "${PERLIN_FFMPEG_DIR}")
+                endif()
+                file(REMOVE "${_ff_zip}")
+            else()
+                message(WARNING "Could not download ffmpeg for bundling (${_ff_status}); Perlin will use its built-in encoder or download it at runtime.")
+            endif()
+        endif()
+        if(EXISTS "${PERLIN_FFMPEG_DIR}/ffmpeg.exe")
+            add_custom_command(TARGET Perlin POST_BUILD
+                COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${PERLIN_FFMPEG_DIR}/ffmpeg.exe" "$<TARGET_FILE_DIR:Perlin>/ffmpeg.exe")
+            install(FILES "${PERLIN_FFMPEG_DIR}/ffmpeg.exe" DESTINATION .)
+        endif()
+    endif()
+endif()
 option(PERLIN_BUILD_TESTS "Build unit tests" OFF)
 if(PERLIN_BUILD_TESTS AND NOT EMSCRIPTEN AND NOT ANDROID)
     enable_testing()
@@ -898,10 +967,13 @@ if(PERLIN_BUILD_TESTS AND NOT EMSCRIPTEN AND NOT ANDROID)
 
     add_executable(ffmpeg_selftest
         tests/ffmpeg_selftest.cpp
+        tests/stb_write_impl.cpp
+        src/client/replay/AviWriter.cpp
         src/client/replay/Ffmpeg.cpp
+        src/client/replay/LibavEncoder.cpp
         src/client/replay/Process.cpp
         src/util/Paths.cpp)
-    target_include_directories(ffmpeg_selftest PRIVATE src)
+    target_include_directories(ffmpeg_selftest PRIVATE src "${stb_SOURCE_DIR}")
     target_link_libraries(ffmpeg_selftest PRIVATE miniz Threads::Threads)
     target_compile_features(ffmpeg_selftest PRIVATE cxx_std_23)
 
@@ -912,6 +984,13 @@ if(PERLIN_BUILD_TESTS AND NOT EMSCRIPTEN AND NOT ANDROID)
     target_include_directories(timeline_selftest PRIVATE src)
     target_compile_features(timeline_selftest PRIVATE cxx_std_23)
     add_test(NAME timeline_selftest COMMAND timeline_selftest)
+
+    add_executable(level_undo_selftest
+        tests/level_undo_selftest.cpp
+        src/world/level/Level.cpp)
+    target_include_directories(level_undo_selftest PRIVATE src)
+    target_compile_features(level_undo_selftest PRIVATE cxx_std_23)
+    add_test(NAME level_undo_selftest COMMAND level_undo_selftest)
 
     add_executable(chunk_selftest
         tests/chunk_selftest.cpp

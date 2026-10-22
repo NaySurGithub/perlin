@@ -534,7 +534,7 @@ void AppPlatform_SDL::HandleEvent(const SDL_Event& e) {
             SetTouchMode(false);
 #endif
         }
-        if (!cursorCaptured && !(input && input->TextMode())) {
+        if (!cursorCaptured && !(input && (input->TextMode() || input->FreeCursor()))) {
             SetCursorCaptured(true);
             break;
         }

@@ -5,6 +5,7 @@
 #include <cstdio>
 #include <cstring>
 #include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <thread>
 
@@ -99,6 +100,27 @@ int main(int argc, char** argv) {
     Metadata quick;
     CHECK(Reader::ReadMetadata(file, quick, nullptr, error));
     CHECK(quick.chunks.size() == c.Meta().chunks.size());
+
+    {   // stored resource packs
+        const fs::path fake = base / "pack.zip";
+        { std::ofstream f(fake, std::ios::binary); f << "PK-fake-pack-bytes"; }
+        std::vector<ArchiveAdd> adds;
+        ArchiveAdd a;
+        a.name = "packs/pack.zip";
+        a.diskPath = fake.string();
+        adds.push_back(a);
+        ArchiveAdd idx;
+        idx.name = "packs.json";
+        idx.content = R"([{"file":"packs/pack.zip","uuid":"u-1","key":"k-1"}])";
+        adds.push_back(idx);
+        CHECK(AddArchiveFiles(file, adds, error));
+        ReplayController withPacks;
+        CHECK(withPacks.Open(file, error));
+        const auto sp = withPacks.StoredPacks();
+        CHECK(sp.size() == 1 && sp[0].uuid == "u-1" && sp[0].key == "k-1");
+        CHECK(withPacks.ReadArchiveFile(sp[0].file) == "PK-fake-pack-bytes");
+        CHECK(withPacks.Meta().chunks.size() == c.Meta().chunks.size());
+    }
 
     fs::remove_all(base, ec);
     if (failures == 0)

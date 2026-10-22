@@ -1,11 +1,14 @@
 #include "client/replay/ReplayController.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <chrono>
 #include <cstring>
 #include <ctime>
 #include <filesystem>
 #include <fstream>
+#include <iostream>
+#include <set>
 
 namespace perlin::replay {
     namespace fs = std::filesystem;
@@ -73,6 +76,7 @@ namespace perlin::replay {
         m.localRuntimeId = info.runtimeId;
         m.startPose = info.pose;
         const std::vector<Record> snapshot = cache.Snapshot();
+        recordingPacks = info.packs;
         return recorder.Start(WorkDir(), std::move(m), snapshot, error, [this] { return cache.Snapshot(); }, info.snapshotMs, 160u << 20);
     }
 
@@ -86,7 +90,36 @@ namespace perlin::replay {
         while (fs::exists(outPath)) {
             outPath = ReplayDirectory() + "/" + Stamp() + "_" + std::to_string(n++) + kExtension;
         }
-        return recorder.Stop(outPath, {}, error);
+        if (!recorder.Stop(outPath, {}, error))
+            return false;
+        if (!recordingPacks.empty()) {
+            // The server's resource packs are stored too, so the replay looks the same on any computer.
+            std::vector<ArchiveAdd> adds;
+            ui::Json list = ui::Json::MakeArray();
+            std::set<std::string> seen;
+            for (const auto& pk : recordingPacks) {
+                if (!seen.insert(pk.fileName).second)
+                    continue;
+                ArchiveAdd a;
+                a.name = "packs/" + SafeFileName(pk.fileName);
+                a.diskPath = pk.path;
+                adds.push_back(a);
+                ui::Json e = ui::Json::MakeObject();
+                e.Set("file", ui::Json(a.name));
+                e.Set("uuid", ui::Json(pk.uuid));
+                e.Set("key", ui::Json(pk.key));
+                list.Push(e);
+            }
+            ArchiveAdd idx;
+            idx.name = "packs.json";
+            idx.content = list.Dump(2);
+            adds.push_back(idx);
+            std::string packError;
+            if (!AddArchiveFiles(outPath, adds, packError))
+                std::cout << "[replay] could not store the resource packs: " << packError << std::endl;
+        }
+        recordingPacks.clear();
+        return true;
     }
 
     bool ReplayController::RecoverInterrupted(std::string& recoveredPath) {
@@ -161,6 +194,27 @@ namespace perlin::replay {
         return ok;
     }
 
+    std::vector<ReplayController::StoredPack> ReplayController::StoredPacks() {
+        std::vector<StoredPack> out;
+        if (!reader)
+            return out;
+        const std::string text = reader->ReadFile("packs.json");
+        ui::Json j;
+        std::string err;
+        if (text.empty() || !ui::Json::Parse(text, j, err) || !j.IsArray())
+            return out;
+        for (const ui::Json& e : j.array) {
+            StoredPack sp;
+            const auto str = [&](const char* k) { const ui::Json* v = e.Find(k); return v ? v->StringOr("") : std::string(); };
+            sp.file = str("file");
+            sp.uuid = str("uuid");
+            sp.key = str("key");
+            if (!sp.file.empty())
+                out.push_back(sp);
+        }
+        return out;
+    }
+
     bool ReplayController::Open(const std::string& p, std::string& error) {
         auto r = std::make_unique<Reader>();
         if (!r->Open(p, error))
@@ -204,9 +258,9 @@ namespace perlin::replay {
             if (meta.chunks[i].snapshot && meta.chunks[i].startMs <= ms)
                 best = i;
         const bool backwards = ms < timeMs - 1.0;
-        const bool jumpAhead = best > chunkIndex + 1 && meta.chunks[best].startMs > timeMs;
-        if (backwards || jumpAhead) {
-            // World changes cannot be undone, so restart the replay session and start again from the snapshot.
+        if (backwards) {
+            // Going back: the caller rewinds the world (undo log) and restarts the entity state from the snapshot.
+            // Going forward never restarts, the packets in between are simply applied faster.
             restartRequested = true;
             chunkIndex = best;
             recordIndex = 0;
@@ -268,6 +322,7 @@ namespace perlin::replay {
                         recorded.y = F32(rec.body.data() + 12);
                         recorded.z = F32(rec.body.data() + 16);
                         recorded.known = true;
+                        recordedAtMs = rec.timeMs;
                     }
                 } else {
                     inject(rec);
@@ -322,5 +377,44 @@ namespace perlin::replay {
         if (r->Open(path, err2))
             reader = std::move(r);
         return ok;
+    }
+}
+
+namespace perlin::replay {
+    namespace {
+        float Angle(float a, float b, float t) {
+            float d = std::fmod(b - a, 360.0f);
+            if (d > 180.0f) d -= 360.0f;
+            if (d < -180.0f) d += 360.0f;
+            return a + d * t;
+        }
+    }
+
+    Pose ReplayController::InterpolatedPose() const {
+        Pose out = recorded;
+        if (!recorded.known || !chunkLoaded)
+            return out;
+        // next recorded sample after the ones already applied
+        const size_t limit = std::min(chunkRecords.size(), recordIndex + 600);
+        for (size_t i = recordIndex; i < limit; i++) {
+            const Record& r = chunkRecords[i];
+            if (r.dir != Dir::ToServer || r.id != 144 || r.body.size() < 20)
+                continue;
+            const auto f = [&](size_t o) { float v; std::memcpy(&v, r.body.data() + o, 4); return v; };
+            const double span = static_cast<double>(r.timeMs) - recordedAtMs;
+            if (span <= 0.5 || span > 600.0)
+                return out;
+            const float dx = f(8) - recorded.x, dy = f(12) - recorded.y, dz = f(16) - recorded.z;
+            if (dx * dx + dy * dy + dz * dz > 64.0f) // teleport: don't slide across the map
+                return out;
+            const float t = static_cast<float>(std::clamp((timeMs - recordedAtMs) / span, 0.0, 1.0));
+            out.x = recorded.x + dx * t;
+            out.y = recorded.y + dy * t;
+            out.z = recorded.z + dz * t;
+            out.pitch = Angle(recorded.pitch, f(0), t);
+            out.yaw = Angle(recorded.yaw, f(4), t);
+            return out;
+        }
+        return out;
     }
 }

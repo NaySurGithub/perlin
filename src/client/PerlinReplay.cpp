@@ -4,6 +4,8 @@
 #include "client/i18n/Lang.hpp"
 #include "client/input/Keys.hpp"
 #include "client/replay/ReplayController.hpp"
+#include "client/resources/ServerPacks.hpp"
+#include "client/ui/UiAssets.hpp"
 #include "client/platform/AppPlatform.hpp"
 #include "client/renderer/chunk/LodStore.hpp"
 #include "client/ui/ReplayScreen.hpp"
@@ -15,6 +17,7 @@
 #include <cmath>
 #include <ctime>
 #include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <map>
 
@@ -332,6 +335,44 @@ namespace perlin {
             std::erase_if(retiredSessions, [](const std::unique_ptr<BedrockSession>& r) { return !r->Transferring(); });
     }
 
+    // The resource packs the server used are stored in the replay; they are mounted exactly like live server packs.
+    void Perlin::MountReplayPacks() {
+        const auto stored = replayCtl.StoredPacks();
+        const bool had = !ServerPacks::Instance().Directories().empty();
+        if (stored.empty() && !had)
+            return;
+        ServerPacks::Instance().Clear();
+        ServerPacks::Instance().SetRoot(paths::DataDir() + "/server_packs_extracted");
+        namespace fs = std::filesystem;
+        const fs::path dir = fs::path(paths::DataDir()) / "server_packs" / "replay";
+        std::error_code ec;
+        fs::create_directories(dir, ec);
+        size_t mounted = 0;
+        for (const auto& sp : stored) {
+            const std::string bytes = replayCtl.ReadArchiveFile(sp.file);
+            if (bytes.empty())
+                continue;
+            const fs::path out = dir / replay::SafeFileName(fs::path(sp.file).filename().string());
+            if (!fs::exists(out, ec) || fs::file_size(out, ec) != bytes.size()) {
+                std::ofstream f(out, std::ios::binary | std::ios::trunc);
+                f.write(bytes.data(), static_cast<std::streamsize>(bytes.size()));
+                if (!f)
+                    continue;
+            }
+            if (ServerPacks::Instance().Mount(out.string(), sp.uuid, sp.key))
+                mounted++;
+        }
+        std::cout << "[replay] mounted " << mounted << " of " << stored.size() << " stored resource packs" << std::endl;
+        if (levelRenderer)
+            levelRenderer->ReloadResources();
+        entityRenderer.ClearCaches();
+        ui::UiAssets::Instance().ClearItemCache();
+        i18n::Lang::Get().Invalidate();
+        sounds.Reload();
+        if (hud)
+            hud->Reload();
+    }
+
     void Perlin::StartReplayPlayback(const std::string& path) {
         std::string error;
         if (!replayCtl.Open(path, error)) {
@@ -351,8 +392,10 @@ namespace perlin {
             retiredSessions.push_back(std::move(session));
         }
         replayUi = ReplayUi{};
+        MountReplayPacks();
         SimClock::EnterVirtual();
         replayPrevMs = 0;
+        replayWorldFromMs = 0;
         MakeReplaySession();
         titleActive = false;
         loadingDone = false;
@@ -365,6 +408,10 @@ namespace perlin {
     }
 
     void Perlin::ExitReplayPlayback(ui::Hud& hud) {
+        input.SetFreeCursor(false);
+        input.SetTextMode(false);
+        if (input.Captured())
+            platform->SetCursorCaptured(false);
         SaveTimeline();
         timeline = replay::Timeline{};
         exportUi.open = false;
@@ -386,20 +433,46 @@ namespace perlin {
         titleReturnToReplays = true;
     }
 
+    // The mouse stays free in a replay. It is only captured while the user holds the right button
+    // or has toggled mouse-look with Tab, and never while a dialog is open.
+    void Perlin::UpdateReplayCursor() {
+        const bool panel = exportUi.open || kfUi.open;
+        if (!pauseShown)
+            input.SetTextMode(panel);
+        input.SetFreeCursor(true);
+        const bool wantGrab = !panel && !pauseShown && !exportJob.active && (replayUi.grab || input.IsMouseDown(Mouse::Right));
+        if (wantGrab != input.Captured())
+            platform->SetCursorCaptured(wantGrab);
+        if (panel || pauseShown || exportJob.active)
+            replayUi.grab = false;
+    }
+
     void Perlin::PumpReplay(float dt) {
         if (!replayCtl.Playing() || !session || !session->IsReplay())
             return;
         if (replayCtl.NeedsRestart()) {
             replayCtl.ClearRestart();
-            if (!session->Transferring())
-                session->Disconnect();
-            retiredSessions.push_back(std::move(session));
+            // Seamless rewind: the world is rolled back with the undo log and handed to the new session, so no terrain is rebuilt.
+            const int64_t epoch = static_cast<int64_t>(replayCtl.SeekTargetMs()) / 1000;
+            bool keepWorld = loadingDone && session->ReplayCanRewind(epoch) && session->ReplayRewindWorld(epoch);
+            std::unique_ptr<BedrockSession> old = std::move(session);
             particleLevel = nullptr;
             MakeReplaySession();
+            if (keepWorld) {
+                session->AdoptWorld(*old);
+                if (levelRenderer)
+                    levelRenderer->RebindLevel(&session->NetLevel());
+                replayWorldFromMs = static_cast<double>(epoch) * 1000.0;
+            } else {
+                replayWorldFromMs = 0;
+                loadingDone = false;
+                loadingStartAt = {};
+                loadingReadyArmed = false;
+            }
+            if (!old->Transferring())
+                old->Disconnect();
+            retiredSessions.push_back(std::move(old));
             replayPrevMs = replayCtl.TimeMs();
-            loadingDone = false;
-            loadingStartAt = {};
-            loadingReadyArmed = false;
         }
         BedrockSession* s = session.get();
         double dtMs = loadingDone ? static_cast<double>(dt) * 1000.0 : 0.0;
@@ -407,15 +480,24 @@ namespace perlin {
             dtMs = loadingDone && exportJob.advanceNow ? std::max(0.0, exportJob.targetMs - replayCtl.TimeMs()) : 0.0;
         else if (!timeline.speed.empty())
             replayCtl.SetSpeed(kSpeeds[replayUi.speedIdx] * timeline.SpeedAt(replayCtl.TimeMs()));
-        replayCtl.Advance(dtMs, [s](const replay::Record& r) { s->InjectIncoming(r.id, r.body); }, exportJob.active ? 0.0 : 6.0);
+        const double worldFrom = replayWorldFromMs;
+        replayCtl.Advance(dtMs, [s, worldFrom](const replay::Record& r) {
+            const bool world = r.id == 21 || r.id == 58 || r.id == 110 || r.id == 172 || r.id == 174;
+            if (world) {
+                if (static_cast<double>(r.timeMs) < worldFrom)
+                    return; // already part of the kept world
+                s->ReplayEpoch(std::max<int64_t>(r.timeMs / 1000, static_cast<int64_t>(worldFrom / 1000.0)));
+            }
+            s->InjectIncoming(r.id, r.body);
+        }, exportJob.active ? 0.0 : (replayCtl.CatchingUp() ? 20.0 : 6.0));
         SimClock::Advance(replayCtl.TimeMs() - replayPrevMs);
         replayPrevMs = replayCtl.TimeMs();
 
-        const replay::Pose rec = replayCtl.RecordedPose();
+        const replay::Pose rec = replayCtl.InterpolatedPose();
         const bool follow = replayCtl.cameraMode == replay::CameraMode::Follow;
         if ((!replayUi.camInit || follow) && rec.known) {
             camera.x = rec.x;
-            camera.y = rec.y + 1.62f;
+            camera.y = rec.y; // PlayerAuthInput positions are eye level
             camera.z = rec.z;
             camera.yaw = rec.yaw + 90.0f;
             camera.pitch = std::clamp(-rec.pitch, -89.0f, 89.0f);
@@ -429,6 +511,7 @@ namespace perlin {
                 replayUi.camInit = true;
             }
         }
+        UpdateReplayCursor();
         replayUi.roll = 0.0f;
         replayUi.fovOverride = -1.0f;
         if (replayCtl.cameraMode == replay::CameraMode::Keyframes) {
@@ -445,7 +528,7 @@ namespace perlin {
             }
         }
         const bool flyEnabled = replayCtl.cameraMode == replay::CameraMode::Free || (replayCtl.cameraMode == replay::CameraMode::Keyframes && timeline.camera.empty());
-        if (flyEnabled && replayUi.camInit && !replayUi.menuOpen && !pauseShown && !exportJob.active) {
+        if (flyEnabled && replayUi.camInit && !pauseShown && !exportJob.active) {
             const float wheel = inputManager.Scroll();
             if (wheel != 0.0f && !inputManager.IsDown(Action::Zoom))
                 replayUi.flySpeed = std::clamp(replayUi.flySpeed * std::pow(1.15, static_cast<double>(wheel)), 1.0, 200.0);
@@ -486,8 +569,6 @@ namespace perlin {
             replayUi.signature.clear();
             replayUi.openedAt = now;
             replayUi.leftDown = true;
-            if (replayUi.menuOpen)
-                input.SetTextMode(true);
         }
         if (exportUi.open)
             return UpdateExportMenu(hud, fbW, fbH);
@@ -500,12 +581,11 @@ namespace perlin {
 
         // ---- keys ----
         bool escape = false;
-        if (replayUi.menuOpen) {
-            for (const auto& t : inputManager.TakeTyped())
-                if (!t.character && t.key == Key::Escape && now - replayUi.openedAt > std::chrono::milliseconds(120))
-                    escape = true;
-        } else if (inputManager.Pressed(Action::Pause)) {
-            escape = true;
+        if (inputManager.Pressed(Action::Pause)) {
+            if (replayUi.grab)
+                replayUi.grab = false; // Esc first gives the mouse back
+            else
+                escape = true;
         }
         const auto keyEdge = [&](int code) {
             const bool down = input.IsKeyDown(code);
@@ -514,18 +594,21 @@ namespace perlin {
             return edge;
         };
         const bool kSpace = keyEdge(Key::Space), kLeft = keyEdge(Key::Left), kRight = keyEdge(Key::Right), kF1 = false,
-                   kM = keyEdge('M'), kC = keyEdge('C'), kK = keyEdge('K'), kI = keyEdge('I'), kO = keyEdge('O'), kComma = keyEdge(0xBC), kPeriod = keyEdge(0xBE);
+                   kM = keyEdge('M'), kC = keyEdge('C'), kK = keyEdge('K'), kI = keyEdge('I'), kO = keyEdge('O'), kTab = keyEdge(Key::Tab), kComma = keyEdge(0xBC), kPeriod = keyEdge(0xBE);
         const auto openMenu = [&](bool open) {
             replayUi.menuOpen = open;
             replayUi.openedAt = now;
             replayUi.signature.clear();
             replayUi.leftDown = true;
-            input.SetTextMode(open);
             if (!open)
                 hud.Overlay().ClearOverlay();
         };
         if (escape)
             openMenu(!replayUi.menuOpen);
+        if (kTab) {
+            replayUi.grab = !replayUi.grab;
+            ReplayStatus(replayUi.grab ? "Mouse captured - Tab or Esc to release" : "Mouse released");
+        }
         const auto togglePlay = [&] {
             if (replayCtl.AtEnd() || replayCtl.TimeMs() >= replayCtl.DurationMs() - 1) {
                 replayCtl.Seek(0);

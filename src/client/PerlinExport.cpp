@@ -5,6 +5,7 @@
 #include "client/platform/AppPlatform.hpp"
 #include "client/ui/Json.hpp"
 #include "client/ui/ReplayScreen.hpp"
+#include "client/replay/LibavEncoder.hpp"
 #include "util/Paths.hpp"
 
 #include <algorithm>
@@ -91,6 +92,11 @@ namespace perlin {
             return false;
         }
         replay::ExportConfig cfg = req.cfg;
+        if (!req.screenshot && !exportUi.cat.available && cfg.container != "png" && cfg.container != "builtin" &&
+            replay::ffmpeg::FindContainer(cfg.container) && !replay::ffmpeg::FindContainer(cfg.container)->imageSequence) {
+            cfg.container = "builtin"; // no ffmpeg anywhere: use the encoder that is part of Perlin
+            std::cout << "[export] ffmpeg not found, using the built-in AVI encoder" << std::endl;
+        }
         const replay::ffmpeg::Container* cont = replay::ffmpeg::FindContainer(cfg.container);
         if (!cont) {
             exportUi.status = "Unknown format";
@@ -191,11 +197,12 @@ namespace perlin {
                 j.outPath = replay::UniquePath(dir + "/" + j.name + "." + ext, false);
                 fs2.outputPath = j.outPath;
             }
+            const bool builtin = cfg.container == "builtin";
             const bool pngFallback = j.imageSeq && cfg.container == "png" && !exportUi.cat.available;
             if (pngFallback) {
                 j.useFfmpeg = false; // written by miniz
             } else {
-                if (!exportUi.cat.available) {
+                if (!exportUi.cat.available && !builtin) {
                     exportUi.status = "ffmpeg is needed for this format (Advanced tab), or pick PNG sequence";
                     return false;
                 }
@@ -277,7 +284,6 @@ namespace perlin {
         replayUi.menuOpen = true;
         replayUi.openedAt = Clock::now();
         replayUi.signature.clear();
-        input.SetTextMode(true);
         if (hud)
             hud->Overlay().ClearOverlay();
         const double secs = std::chrono::duration<double>(Clock::now() - j.realStart).count();

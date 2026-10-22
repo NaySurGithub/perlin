@@ -32,6 +32,11 @@ namespace perlin {
         Result OnChunk(const proto::ResourcePackChunkDataPacket& chunk);
 
         void MountAll();
+        struct PackFile {
+            std::string path, fileName, uuid, key;
+        };
+        // Pack zips of this session that exist on disk (used to store them in replays).
+        std::vector<PackFile> Files() const;
         bool AllReceived() const { return awaiting.empty() && active.empty(); }
         size_t Downloaded() const { return downloaded; }
         struct Progress {

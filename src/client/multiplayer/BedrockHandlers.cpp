@@ -1095,7 +1095,15 @@ namespace perlin {
             }
         });
 
-        On<PlayerSkinPacket>([this](const PlayerSkinPacket& p) { entities.SetSkin(UuidKey(p.uuid), ConvertSkin(p.skin)); });
+        On<PlayerSkinPacket>([this](const PlayerSkinPacket& p) {
+            const std::string key = UuidKey(p.uuid);
+            auto skin = ConvertSkin(p.skin);
+            entities.SetSkin(key, skin);
+            std::lock_guard<std::mutex> lk(tabMutex);
+            for (TabPlayer& t : tabPlayers)
+                if (t.uuid == key)
+                    t.skin = skin;
+        });
 
         On<MobEquipmentPacket>([this](const MobEquipmentPacket& p) {
             if (runtimeId != 0 && p.runtimeEntityId == runtimeId)
