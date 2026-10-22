@@ -2902,6 +2902,9 @@ namespace perlin {
 
     void RenderContext_bgfx::DrawChunkMeshes(const Frustum& frustum, float camX, float camZ) {
         const bool packMode = PackActive();
+        // Pointers from the previous frame dangle once meshes were cleared or replaced.
+        visible.clear();
+        visibleSections.clear();
         if (!packMode)
             DrawSky();
         if (PERLIN_ENV("PERLIN_STATS") || PERLIN_ENV("PERLIN_PROFILE")) {
