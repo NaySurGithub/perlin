@@ -404,6 +404,7 @@ namespace perlin {
         replayCtl.cameraMode = replay::CameraMode::Free;
         exportUi.open = false;
         kfUi = KeyframeUi{};
+        editorUi = EditorUi{};
         LoadTimeline();
     }
 
@@ -425,6 +426,7 @@ namespace perlin {
         replayCtl.Close();
         SimClock::ExitVirtual();
         replayUi = ReplayUi{};
+        editorUi = EditorUi{};
         pauseShown = false;
         titleReturnToServers = false;
         titleReturnToReplays = true;
@@ -440,7 +442,10 @@ namespace perlin {
         if (!pauseShown)
             input.SetTextMode(panel);
         input.SetFreeCursor(true);
-        const bool wantGrab = !panel && !pauseShown && !exportJob.active && (replayUi.grab || input.IsMouseDown(Mouse::Right));
+        const float mxPx = input.MouseX(), myPx = input.MouseY();
+        const bool inView = !editorUi.open || input.Captured() ||
+                            (mxPx >= replayUi.editorViewX0 && mxPx < replayUi.editorViewX1 && myPx >= replayUi.editorViewY0 && myPx < replayUi.editorViewY1);
+        const bool wantGrab = !panel && !pauseShown && !exportJob.active && (replayUi.grab || (input.IsMouseDown(Mouse::Right) && inView));
         if (wantGrab != input.Captured())
             platform->SetCursorCaptured(wantGrab);
         if (panel || pauseShown || exportJob.active)
@@ -530,7 +535,7 @@ namespace perlin {
         const bool flyEnabled = replayCtl.cameraMode == replay::CameraMode::Free || (replayCtl.cameraMode == replay::CameraMode::Keyframes && timeline.camera.empty());
         if (flyEnabled && replayUi.camInit && !pauseShown && !exportJob.active) {
             const float wheel = inputManager.Scroll();
-            if (wheel != 0.0f && !inputManager.IsDown(Action::Zoom))
+            if (wheel != 0.0f && !inputManager.IsDown(Action::Zoom) && !(editorUi.open && replayUi.editorOverUi))
                 replayUi.flySpeed = std::clamp(replayUi.flySpeed * std::pow(1.15, static_cast<double>(wheel)), 1.0, 200.0);
             const glm::vec3 dir = camera.Direction();
             const glm::vec3 right = glm::normalize(glm::cross(dir, glm::vec3(0, 1, 0)));
@@ -547,12 +552,25 @@ namespace perlin {
                 move.y += 1.0f;
             if (inputManager.IsDown(Action::Sneak))
                 move.y -= 1.0f;
-            if (glm::length(move) > 0.001f) {
-                move = glm::normalize(move) * static_cast<float>(replayUi.flySpeed * (inputManager.IsDown(Action::Sprint) ? 3.0 : 1.0)) * dt;
-                camera.x += move.x;
-                camera.y += move.y;
-                camera.z += move.z;
+            // Smooth acceleration: the camera eases into and out of movement instead of jerking.
+            glm::vec3 wanted(0.0f);
+            if (glm::length(move) > 0.001f)
+                wanted = glm::normalize(move) * static_cast<float>(replayUi.flySpeed * (inputManager.IsDown(Action::Sprint) ? 3.0 : 1.0));
+            const float k = 1.0f - std::exp(-12.0f * dt);
+            replayUi.flyVel += (wanted - replayUi.flyVel) * k;
+            camera.x += replayUi.flyVel.x * dt;
+            camera.y += replayUi.flyVel.y * dt;
+            camera.z += replayUi.flyVel.z * dt;
+            // Arrow keys turn the camera, so the mouse can stay free.
+            if (!input.TextMode()) {
+                const float turn = 110.0f * dt;
+                if (input.IsKeyDown(Key::Left)) camera.yaw -= turn;
+                if (input.IsKeyDown(Key::Right)) camera.yaw += turn;
+                if (input.IsKeyDown(Key::Up)) camera.pitch = std::clamp(camera.pitch + turn, -89.0f, 89.0f);
+                if (input.IsKeyDown(Key::Down)) camera.pitch = std::clamp(camera.pitch - turn, -89.0f, 89.0f);
             }
+        } else {
+            replayUi.flyVel = glm::vec3(0.0f);
         }
         player.ReplayPlace(camera.x, camera.y - 1.62, camera.z);
     }
@@ -574,6 +592,8 @@ namespace perlin {
             return UpdateExportMenu(hud, fbW, fbH);
         if (kfUi.open)
             return UpdateKeyframePanel(hud, fbW, fbH);
+        if (editorUi.open)
+            return UpdateEditor(hud, fbW, fbH);
         const int scale = hud.OverlayScale();
         const int guiW = static_cast<int>(std::ceil(static_cast<float>(fbW) / static_cast<float>(scale)));
         const int guiH = static_cast<int>(std::ceil(static_cast<float>(fbH) / static_cast<float>(scale)));
@@ -593,7 +613,7 @@ namespace perlin {
             replayUi.keyPrev[code & 255] = down;
             return edge;
         };
-        const bool kSpace = keyEdge(Key::Space), kLeft = keyEdge(Key::Left), kRight = keyEdge(Key::Right), kF1 = false,
+        const bool kSpace = keyEdge(Key::Space), kLeft = keyEdge('J'), kRight = keyEdge('L'), kF1 = false,
                    kM = keyEdge('M'), kC = keyEdge('C'), kK = keyEdge('K'), kI = keyEdge('I'), kO = keyEdge('O'), kTab = keyEdge(Key::Tab), kComma = keyEdge(0xBC), kPeriod = keyEdge(0xBE);
         const auto openMenu = [&](bool open) {
             replayUi.menuOpen = open;
@@ -735,12 +755,20 @@ namespace perlin {
         if (replayUi.scrubbing) {
             const double frac = std::clamp((static_cast<double>(mx) - layout.trackX) / std::max(1.0f, layout.trackW), 0.0, 1.0);
             replayUi.scrubMs = frac * replayCtl.DurationMs();
+            // The replay follows the handle while dragging (seeks are cheap now), and lands exactly where it is let go.
             if (!down) {
                 replayUi.scrubbing = false;
                 replayCtl.Seek(replayUi.scrubMs);
+                replayUi.lastScrubSeekMs = -1e9;
                 replayUi.signature.clear();
-            } else if (static_cast<long long>(replayUi.scrubMs) / 100 != static_cast<long long>(model.scrubMs) / 100) {
-                replayUi.signature.clear();
+            } else {
+                if (std::fabs(replayUi.scrubMs - replayUi.lastScrubSeekMs) > 40.0 && now - replayUi.lastScrubAt > std::chrono::milliseconds(70)) {
+                    replayCtl.Seek(replayUi.scrubMs);
+                    replayUi.lastScrubSeekMs = replayUi.scrubMs;
+                    replayUi.lastScrubAt = now;
+                }
+                if (static_cast<long long>(replayUi.scrubMs) / 100 != static_cast<long long>(model.scrubMs) / 100)
+                    replayUi.signature.clear();
             }
         } else if (!down && replayUi.leftDown && now - replayUi.openedAt > std::chrono::milliseconds(150)) {
             if (hover == ui::kRbPlay) {
@@ -779,10 +807,10 @@ namespace perlin {
                 ExportOpenMenu();
                 return true;
             } else if (hover == ui::kRbKeyframes) {
-                kfUi.open = true;
-                kfUi.openedAt = now;
-                kfUi.leftDown = true;
-                kfUi.signature.clear();
+                editorUi.open = true;
+                editorUi.openedAt = now;
+                editorUi.leftDown = true;
+                editorUi.signature.clear();
                 hud.Overlay().ClearOverlay();
                 return true;
             }

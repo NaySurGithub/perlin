@@ -47,7 +47,7 @@ mcimg { display: block; position: absolute; }
     std::string BuildLoadingScreenRml(const std::string& templateText, const LoadingScreenText& t, int guiW, int guiH, double) {
         const int msgY = guiH / 2 - 24;
         const int detailY = msgY + 14;
-        const int btnY = std::min(guiH - 24, detailY + 36);
+        const int btnY = std::min(guiH - 24, detailY + 36 + (t.warning.empty() ? 0 : 32));
         std::string d = templateText;
         ReplaceAll(d, "w", std::to_string(guiW));
         ReplaceAll(d, "h", std::to_string(guiH));
@@ -61,6 +61,16 @@ mcimg { display: block; position: absolute; }
         ReplaceAll(d, "cancel", EscapeRml(t.cancel.empty() ? std::string("Cancel") : t.cancel));
         ReplaceAll(d, "message", EscapeRml(t.message));
         ReplaceAll(d, "detail", EscapeRml(t.detail));
+        if (!t.warning.empty()) {
+            // Added here (not in the template) so a customised loading template cannot drop it.
+            const int w = std::min(guiW - 20, 330);
+            const std::string note = "<div style=\"left: " + std::to_string((guiW - w) / 2) + "px; top: " + std::to_string(btnY - 30) + "px; width: " + std::to_string(w) +
+                                     "px; height: 27px; font-family: minecraft-shadow; font-size: 8px; line-height: 9px; text-align: center; color: #ffff55; z-index: 4;\">" +
+                                     EscapeRml(t.warning) + "</div>\n";
+            const size_t at = d.rfind("</body>");
+            if (at != std::string::npos)
+                d.insert(at, note);
+        }
         return d;
     }
 

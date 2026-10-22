@@ -1,4 +1,5 @@
 #pragma once
+#include <algorithm>
 #include <string>
 #include <vector>
 
@@ -81,4 +82,50 @@ namespace perlin::ui {
     PanelLayout ComputePanelLayout(const PanelModel& m, int guiW, int guiH);
     std::string BuildPanelRml(const PanelModel& m, int guiW, int guiH);
     inline constexpr const char* kPanelTabPrefix = "pn_tab";
+
+    // ---------------------------------------------------------------------------------------------
+    // Video-editor style layout used while editing a replay: menu bar on top, inspector on the right,
+    // timeline dock (transport, ruler, tracks) at the bottom. The 3D view stays visible in between.
+    struct EditorRow {
+        enum class Kind { Header, Info, Cycle, Toggle, Button } kind = Kind::Info;
+        std::string id, label, value;
+        bool on = false, enabled = true;
+    };
+    struct EditorModel {
+        double timeMs = 0, durationMs = 1, viewStartMs = 0, viewSpanMs = 1, inMs = -1, outMs = -1;
+        bool paused = false, ended = false, catching = false;
+        std::string cameraLabel, status, title;
+        bool hideHud = true;
+        std::vector<double> keyMs[3];          // camera, speed, time of day
+        std::vector<double> markerMs;
+        int selTrack = -1, selIndex = -1;
+        std::vector<EditorRow> rows;           // inspector
+        int sideScroll = 0;
+        int dragKind = 0;                      // 0 none, 1 playhead, 2 key, 3 scrollbar thumb
+    };
+    struct EditorLayout {
+        float guiW = 0, guiH = 0;
+        float menuH = 16, dockY = 0, dockH = 126;
+        float sideX = 0, sideW = 0, sideTop = 0, sideBottom = 0, rowH = 16;
+        float labelW = 64, tlX0 = 0, tlX1 = 0;
+        float transportY = 0, rulerY = 0, rulerH = 14, tracksY = 0, trackH = 18, scrollY = 0, scrollH = 6;
+        int sideVisibleRows = 1;
+    };
+    struct EditorHit {
+        std::string id;
+        float x = 0, y = 0, w = 0, h = 0;
+    };
+    struct EditorBuilt {
+        std::string rml;
+        std::vector<EditorHit> hits; // later entries are drawn on top
+    };
+    EditorLayout ComputeEditorLayout(int guiW, int guiH);
+    EditorBuilt BuildEditorRml(const EditorModel& m, int guiW, int guiH);
+    std::string FormatReplayTimeMs(double ms); // m:ss.mmm
+    inline double EditorTimeAtX(const EditorLayout& l, const EditorModel& m, float x) {
+        return m.viewStartMs + static_cast<double>((x - l.tlX0) / std::max(1.0f, l.tlX1 - l.tlX0)) * m.viewSpanMs;
+    }
+    inline float EditorXAtTime(const EditorLayout& l, const EditorModel& m, double t) {
+        return l.tlX0 + static_cast<float>((t - m.viewStartMs) / std::max(1.0, m.viewSpanMs)) * (l.tlX1 - l.tlX0);
+    }
 }

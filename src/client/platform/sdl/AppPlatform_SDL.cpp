@@ -1,3 +1,4 @@
+#include <algorithm>
 #include "client/platform/sdl/AppPlatform_SDL.hpp"
 #include "client/renderer/bgfx/RenderContext_bgfx.hpp"
 #include "client/input/Keys.hpp"
@@ -115,6 +116,91 @@ void AppPlatform_SDL::SetTitle(const std::string& title) {
     std::lock_guard lock(titleMutex);
     pendingTitle = title;
     titleDirty = true;
+}
+
+void AppPlatform_SDL::SetProgressWindow(bool visible, const std::string& title, const std::string& line1, const std::string& line2, float fraction) {
+    std::lock_guard lock(progMutex);
+    progWant = visible;
+    progTitle = title;
+    progLine1 = line1;
+    progLine2 = line2;
+    progFraction = fraction;
+    progDirty = true;
+}
+
+void AppPlatform_SDL::UpdateProgressWindow() {
+#if !defined(__EMSCRIPTEN__) && !defined(__ANDROID__)
+    bool want, dirty;
+    std::string title, l1, l2;
+    float frac;
+    {
+        std::lock_guard lock(progMutex);
+        want = progWant;
+        dirty = progDirty;
+        title = progTitle;
+        l1 = progLine1;
+        l2 = progLine2;
+        frac = progFraction;
+        progDirty = false;
+    }
+    if (!want) {
+        if (progRenderer) {
+            SDL_DestroyRenderer(progRenderer);
+            progRenderer = nullptr;
+        }
+        if (progWindow) {
+            SDL_DestroyWindow(progWindow);
+            progWindow = nullptr;
+            progWindowId = 0;
+        }
+        progCancel = false;
+        return;
+    }
+    if (!dirty && progWindow)
+        return;
+    if (!progWindow) {
+        progWindow = SDL_CreateWindow(title.c_str(), 380, 118, SDL_WINDOW_ALWAYS_ON_TOP);
+        if (progWindow)
+            progRenderer = SDL_CreateRenderer(progWindow, "software");
+        if (!progWindow || !progRenderer) {
+            std::cout << "[sdl] could not create the export progress window: " << SDL_GetError() << std::endl;
+            if (progRenderer)
+                SDL_DestroyRenderer(progRenderer);
+            if (progWindow)
+                SDL_DestroyWindow(progWindow);
+            progRenderer = nullptr;
+            progWindow = nullptr;
+            progFailed = true;
+            return;
+        }
+        progWindowId = SDL_GetWindowID(progWindow);
+    }
+    SDL_SetWindowTitle(progWindow, title.c_str());
+    SDL_Renderer* r = progRenderer;
+    const auto fill = [&](float x, float y, float w, float h, Uint8 cr, Uint8 cg, Uint8 cb) {
+        SDL_SetRenderDrawColor(r, cr, cg, cb, 255);
+        SDL_FRect rect{x, y, w, h};
+        SDL_RenderFillRect(r, &rect);
+    };
+    SDL_SetRenderDrawColor(r, 28, 28, 28, 255);
+    SDL_RenderClear(r);
+    SDL_SetRenderDrawColor(r, 255, 255, 255, 255);
+    SDL_RenderDebugText(r, 14, 12, l1.c_str());
+    // progress bar: dark track, light fill
+    fill(14, 34, 352, 20, 0, 0, 0);
+    fill(15, 35, 350, 18, 85, 85, 85);
+    fill(15, 35, 350.0f * std::clamp(frac, 0.0f, 1.0f), 18, 198, 198, 198);
+    SDL_SetRenderDrawColor(r, 170, 170, 170, 255);
+    SDL_RenderDebugText(r, 14, 62, l2.c_str());
+    // Cancel button (same look as the game's grey buttons)
+    fill(250, 84, 116, 24, 0, 0, 0);
+    fill(251, 85, 114, 20, 170, 170, 170);
+    fill(252, 86, 112, 19, 111, 111, 111);
+    fill(251, 103, 114, 4, 86, 86, 86);
+    SDL_SetRenderDrawColor(r, 255, 255, 255, 255);
+    SDL_RenderDebugText(r, 280, 92, "Cancel");
+    SDL_RenderPresent(r);
+#endif
 }
 
 void AppPlatform_SDL::ShowSignInCode(const std::string& url, const std::string& code) {
@@ -380,6 +466,29 @@ void AppPlatform_SDL::SetCursorCaptured(bool captured) {
 }
 
 void AppPlatform_SDL::HandleEvent(const SDL_Event& e) {
+    if (progWindowId != 0) {
+        // events of the export progress window never reach the game
+        Uint32 wid = 0;
+        if (e.type == SDL_EVENT_KEY_DOWN || e.type == SDL_EVENT_KEY_UP)
+            wid = e.key.windowID;
+        else if (e.type == SDL_EVENT_MOUSE_BUTTON_DOWN || e.type == SDL_EVENT_MOUSE_BUTTON_UP)
+            wid = e.button.windowID;
+        else if (e.type == SDL_EVENT_MOUSE_MOTION)
+            wid = e.motion.windowID;
+        else if (e.type == SDL_EVENT_MOUSE_WHEEL)
+            wid = e.wheel.windowID;
+        else if (e.type >= SDL_EVENT_WINDOW_FIRST && e.type <= SDL_EVENT_WINDOW_LAST)
+            wid = e.window.windowID;
+        if (wid == progWindowId) {
+            if (e.type == SDL_EVENT_KEY_DOWN && e.key.key == SDLK_ESCAPE)
+                progCancel = true;
+            else if (e.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED)
+                progCancel = true;
+            else if (e.type == SDL_EVENT_MOUSE_BUTTON_DOWN && e.button.x >= 250 && e.button.x <= 366 && e.button.y >= 84 && e.button.y <= 108)
+                progCancel = true;
+            return;
+        }
+    }
     perlin::Input* input = game ? &game->GetInput() : nullptr;
     switch (e.type) {
     case SDL_EVENT_QUIT:
@@ -682,6 +791,8 @@ void AppPlatform_SDL::PumpFrame() {
             titleDirty = false;
         }
     }
+
+    UpdateProgressWindow();
 
     if (game && touchMode)
         touch.Update(game->GetInput());

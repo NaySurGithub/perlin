@@ -169,7 +169,7 @@ div { display: block; position: absolute; }
         const std::vector<B> row = {
             {kRbBack, "-5s"}, {kRbPlay, m.paused || m.ended ? "Play" : "Pause"}, {kRbFwd, "+5s"},
             {kRbSlower, "-"}, {kRbSpeed, speedBuf}, {kRbFaster, "+"},
-            {kRbCamera, camLabel}, {kRbMarker, "Marker"}, {kRbKeyframes, "Keyframes"},
+            {kRbCamera, camLabel}, {kRbMarker, "Marker"}, {kRbKeyframes, "Editor"},
             {kRbHud, m.hideHud ? "HUD: Off" : "HUD: On", !m.hideHud}, {kRbExport, "Export"}, {kRbOptions, "Options"}, {kRbExit, "Exit"},
         };
         std::vector<float> widths;
@@ -290,5 +290,265 @@ div { display: block; position: absolute; }
         }
         d += "</body>\n</rml>\n";
         return d;
+    }
+
+    std::string FormatReplayTimeMs(double ms) {
+        if (ms < 0)
+            ms = 0;
+        const long long total = static_cast<long long>(ms);
+        char buf[48];
+        std::snprintf(buf, sizeof buf, "%lld:%02lld.%03lld", total / 60000, (total / 1000) % 60, total % 1000);
+        return buf;
+    }
+
+    EditorLayout ComputeEditorLayout(int guiW, int guiH) {
+        EditorLayout l;
+        l.guiW = static_cast<float>(guiW);
+        l.guiH = static_cast<float>(guiH);
+        l.dockH = 126;
+        l.dockY = std::max(l.menuH + 40.0f, l.guiH - l.dockH);
+        l.dockH = l.guiH - l.dockY;
+        l.sideW = std::clamp(l.guiW * 0.27f, 120.0f, 156.0f);
+        l.sideX = l.guiW - l.sideW;
+        l.sideTop = l.menuH;
+        l.sideBottom = l.dockY;
+        l.tlX0 = l.labelW;
+        l.tlX1 = l.guiW - 6;
+        l.transportY = l.dockY + 3;
+        l.rulerY = l.dockY + 27;
+        l.tracksY = l.rulerY + l.rulerH + 1;
+        l.scrollY = l.tracksY + 4 * l.trackH + 3;
+        l.sideVisibleRows = std::max(1, static_cast<int>((l.sideBottom - l.sideTop - 18) / l.rowH));
+        return l;
+    }
+
+    EditorBuilt BuildEditorRml(const EditorModel& m, int guiW, int guiH) {
+        EditorBuilt out;
+        std::string& d = out.rml;
+        d = kStyle;
+        const size_t body = d.find("<body>");
+        d.replace(body, 6, "<body style=\"width: " + N(guiW) + "px; height: " + N(guiH) + "px;\">");
+        const EditorLayout l = ComputeEditorLayout(guiW, guiH);
+        const auto hit = [&](const std::string& id, float x, float y, float w, float h) { out.hits.push_back({id, x, y, w, h}); };
+        const auto button = [&](const std::string& id, float x, float y, float w, const std::string& label, bool on = false, bool off = false) {
+            d += Button(id, x, y, w, label, on, off);
+            if (!off)
+                hit(id, x, y, w, 20);
+        };
+        const float panelBg = 0;
+        (void)panelBg;
+
+        // ---- menu bar ----
+        d += Rect(0, 0, l.guiW, l.menuH + 4, "#0d0f14ee", 2);
+        d += Rect(0, l.menuH + 4, l.guiW, 1, "#ffffff22", 3);
+        {
+            struct B { const char* id; std::string label; };
+            const std::vector<B> bar = {{"m_exit", "Close editor"}, {"m_export", "Export"}, {"m_options", "Options"}, {"m_camera", m.cameraLabel},
+                                        {"m_hud", m.hideHud ? "HUD: Hidden" : "HUD: Shown"}, {"m_marker", "Add marker"}};
+            float x = 3;
+            for (const B& b : bar) {
+                const float w = static_cast<float>(std::max(24, TextWidth(b.label) + 12));
+                if (x + w > l.guiW - 80)
+                    break;
+                // slim 14px buttons: drawn at full size scaled by clipping, so use the normal button but tighter spacing
+                button(b.id, x, -3, w, b.label);
+                x += w + 3;
+            }
+            d += Text(x + 4, 5, l.guiW - x - 8, m.status.empty() ? m.title : m.status, m.status.empty() ? "gray" : "yellow", "right");
+        }
+
+        // ---- inspector (right) ----
+        d += Rect(l.sideX, l.sideTop + 4, l.sideW, l.sideBottom - l.sideTop - 4, "#101218ee", 2);
+        d += Rect(l.sideX, l.sideTop + 4, 1, l.sideBottom - l.sideTop - 4, "#ffffff22", 3);
+        {
+            float y = l.sideTop + 8;
+            const float lx = l.sideX + 6, rw = l.sideW - 12;
+            const int total = static_cast<int>(m.rows.size());
+            for (int i = m.sideScroll; i < total && i < m.sideScroll + l.sideVisibleRows; i++, y += l.rowH) {
+                const EditorRow& r = m.rows[static_cast<size_t>(i)];
+                const std::string cls = r.enabled ? "" : "gray";
+                switch (r.kind) {
+                case EditorRow::Kind::Header:
+                    d += Text(lx, y + 4, rw, r.label, "yellow");
+                    d += Rect(lx, y + 14, rw, 1, "#ffffff33", 3);
+                    break;
+                case EditorRow::Kind::Info:
+                    d += Text(lx, y + 4, rw, r.label, "gray");
+                    break;
+                case EditorRow::Kind::Cycle: {
+                    const float labelW = rw * 0.36f;
+                    d += Text(lx, y + 4, labelW, r.label, cls);
+                    const float bx = lx + labelW;
+                    const float vw = rw - labelW - 36;
+                    d += Button(r.id + ":-", bx, y - 2, 16, "<", false, !r.enabled);
+                    d += Text(bx + 18, y + 4, vw, r.value, cls, "center");
+                    d += Button(r.id + ":+", bx + 18 + vw + 2, y - 2, 16, ">", false, !r.enabled);
+                    if (r.enabled) {
+                        hit(r.id + ":-", bx, y - 2, 16, 20);
+                        hit(r.id + ":+", bx + 18 + vw + 2, y - 2, 16, 20);
+                    }
+                    break;
+                }
+                case EditorRow::Kind::Toggle: {
+                    d += Rect(lx, y + 2, 11, 11, "#000000", 4);
+                    d += Rect(lx + 1, y + 3, 9, 9, "#3a3d48", 5);
+                    if (r.on)
+                        d += Rect(lx + 3, y + 5, 5, 5, "#ffffff", 6);
+                    d += Text(lx + 16, y + 4, rw - 16, r.label, cls);
+                    if (r.enabled)
+                        hit(r.id, lx, y, rw, l.rowH);
+                    break;
+                }
+                case EditorRow::Kind::Button:
+                    d += Button(r.id, lx, y - 2, rw, r.label, false, !r.enabled);
+                    if (r.enabled)
+                        hit(r.id, lx, y - 2, rw, 20);
+                    break;
+                }
+            }
+            if (total > l.sideVisibleRows) {
+                const float trackH = l.sideVisibleRows * l.rowH;
+                const float thumbH = std::max(8.0f, trackH * static_cast<float>(l.sideVisibleRows) / static_cast<float>(total));
+                const float maxScroll = static_cast<float>(total - l.sideVisibleRows);
+                const float thumbY = l.sideTop + 8 + (trackH - thumbH) * (static_cast<float>(m.sideScroll) / maxScroll);
+                d += Rect(l.guiW - 3, l.sideTop + 8, 2, trackH, "#333333", 3);
+                d += Rect(l.guiW - 3, thumbY, 2, thumbH, "#aaaaaa", 4);
+            }
+        }
+
+        // ---- timeline dock ----
+        d += Rect(0, l.dockY, l.guiW, l.dockH, "#0d0f14f2", 2);
+        d += Rect(0, l.dockY, l.guiW, 1, "#ffffff33", 3);
+        {
+            float x = 4;
+            // the zoom group on the right keeps its space; left items that do not fit are dropped
+            const float limit = l.guiW - 6 - static_cast<float>(TextWidth("Fit") + 12 + TextWidth("Zoom +") + 12 + TextWidth("Zoom -") + 12 + 6);
+            const auto tb = [&](const char* id, const std::string& label, float w) {
+                if (x + w > limit)
+                    return;
+                button(id, x, l.transportY - 2, w, label);
+                x += w + 2;
+            };
+            tb("t_start", "|<", 22);
+            tb("t_back", "<<", 22);
+            tb("t_play", m.paused || m.ended ? "Play" : "Pause", 38);
+            tb("t_fwd", ">>", 22);
+            tb("t_end", ">|", 22);
+            const std::string shown = FormatReplayTimeMs(m.timeMs) + " / " + FormatReplayTime(m.durationMs) + (m.catching ? "  (seeking...)" : "");
+            if (x + 6 + static_cast<float>(TextWidth(shown)) < limit) {
+                d += Text(x + 6, l.transportY + 4, 170, shown);
+                x += 6 + static_cast<float>(TextWidth(shown)) + 12;
+            }
+            tb("t_addkey", "+ Camera key", static_cast<float>(TextWidth("+ Camera key") + 12));
+            tb("t_delkey", "Delete key", static_cast<float>(TextWidth("Delete key") + 12));
+            // zoom group on the right
+            float rx = l.guiW - 6;
+            const auto rb = [&](const char* id, const std::string& label) {
+                const float w = static_cast<float>(std::max(20, TextWidth(label) + 12));
+                rx -= w;
+                button(id, rx, l.transportY - 2, w, label);
+                rx -= 2;
+            };
+            rb("t_fit", "Fit");
+            rb("t_zoomin", "Zoom +");
+            rb("t_zoomout", "Zoom -");
+        }
+
+        const float tlW = l.tlX1 - l.tlX0;
+        const auto xAt = [&](double t) { return EditorXAtTime(l, m, t); };
+        const auto visible = [&](float x) { return x >= l.tlX0 - 1 && x <= l.tlX1 + 1; };
+        // ruler
+        d += Rect(l.tlX0, l.rulerY, tlW, l.rulerH, "#181b24", 3);
+        {
+            static const double steps[] = {50, 100, 200, 500, 1000, 2000, 5000, 10000, 15000, 30000, 60000, 120000, 300000, 600000, 1800000, 3600000};
+            const double pxPerMs = tlW / std::max(1.0, m.viewSpanMs);
+            double step = steps[15];
+            for (double s : steps)
+                if (s * pxPerMs >= 52) {
+                    step = s;
+                    break;
+                }
+            const double first = std::floor(m.viewStartMs / step) * step;
+            for (double t = first; t <= m.viewStartMs + m.viewSpanMs + step; t += step) {
+                const float x = xAt(t);
+                if (visible(x)) {
+                    d += Rect(x, l.rulerY + 6, 1, l.rulerH - 6, "#9a9ca6", 4);
+                    d += Text(x + 3, l.rulerY + 1, 60, step >= 1000 ? FormatReplayTime(t) : FormatReplayTimeMs(t), "gray");
+                }
+                for (int i = 1; i < 5; i++) {
+                    const float mx = xAt(t + step * i / 5.0);
+                    if (step * pxPerMs / 5.0 >= 5.0 && visible(mx))
+                        d += Rect(mx, l.rulerY + 10, 1, l.rulerH - 10, "#55575f", 4);
+                }
+            }
+        }
+        // track rows
+        static const char* const kTrackName[4] = {"Camera", "Speed", "Time of day", "Markers"};
+        static const char* const kTrackColor[4] = {"#ffd84d", "#4dc3ff", "#ff7a4d", "#7dff7d"};
+        static const char* const kClipColor[3] = {"#5a4a1a", "#1a4a5a", "#5a2a1a"};
+        for (int tr = 0; tr < 4; tr++) {
+            const float y = l.tracksY + static_cast<float>(tr) * l.trackH;
+            d += Rect(0, y, l.guiW, l.trackH - 1, tr % 2 ? "#14161d" : "#191c25", 3);
+            d += Text(6, y + 5, l.labelW - 8, kTrackName[tr], "gray");
+            d += Rect(l.tlX0 - 1, y, 1, l.trackH - 1, "#ffffff22", 4);
+            hit("track" + N(tr), l.tlX0, y, tlW, l.trackH - 1);
+        }
+        hit("ruler", l.tlX0, l.rulerY, tlW, l.rulerH);
+        // in/out region
+        if (m.inMs >= 0 || m.outMs >= 0) {
+            const float a = std::clamp(xAt(m.inMs >= 0 ? m.inMs : 0.0), l.tlX0, l.tlX1);
+            const float b = std::clamp(xAt(m.outMs >= 0 ? m.outMs : m.durationMs), l.tlX0, l.tlX1);
+            if (b > a)
+                d += Rect(a, l.rulerY, b - a, l.rulerH + 4 * l.trackH, "#3d5a7a40", 4);
+        }
+        for (int tr = 0; tr < 3; tr++) {
+            const auto& keys = m.keyMs[tr];
+            const float y = l.tracksY + static_cast<float>(tr) * l.trackH;
+            for (size_t i = 0; i + 1 < keys.size(); i++) {
+                const float a = std::clamp(xAt(keys[i]), l.tlX0, l.tlX1), b = std::clamp(xAt(keys[i + 1]), l.tlX0, l.tlX1);
+                if (b > a)
+                    d += Rect(a, y + 6, b - a, 5, kClipColor[tr], 5);
+            }
+            for (size_t i = 0; i < keys.size(); i++) {
+                const float x = xAt(keys[i]);
+                if (!visible(x))
+                    continue;
+                const bool sel = m.selTrack == tr && m.selIndex == static_cast<int>(i);
+                if (sel)
+                    d += Rect(x - 4, y + 3, 9, 11, "#ffffff", 6);
+                d += Rect(x - 3, y + 4, 7, 9, "#000000", 7);
+                d += Rect(x - 2, y + 5, 5, 7, kTrackColor[tr], 8);
+                hit("key:" + N(tr) + ":" + N(static_cast<int>(i)), x - 5, y, 11, l.trackH - 1);
+            }
+        }
+        {
+            const float y = l.tracksY + 3 * l.trackH;
+            for (double t : m.markerMs) {
+                const float x = xAt(t);
+                if (!visible(x))
+                    continue;
+                d += Rect(x - 1, y + 2, 3, 13, kTrackColor[3], 7);
+            }
+        }
+        // playhead
+        {
+            const float x = xAt(m.timeMs);
+            if (visible(x)) {
+                d += Rect(x, l.rulerY, 1, l.rulerH + 4 * l.trackH, "#ffffff", 9);
+                d += Rect(x - 3, l.rulerY, 7, 5, "#ffffff", 9);
+            }
+        }
+        // horizontal scrollbar
+        {
+            const double dur = std::max(1.0, m.durationMs);
+            d += Rect(l.tlX0, l.scrollY, tlW, l.scrollH, "#1d2029", 3);
+            const float tw = std::max(14.0f, tlW * static_cast<float>(std::min(1.0, m.viewSpanMs / dur)));
+            const float tx = l.tlX0 + (tlW - tw) * static_cast<float>(std::clamp(m.viewStartMs / std::max(1.0, dur - m.viewSpanMs), 0.0, 1.0));
+            d += Rect(tx, l.scrollY, tw, l.scrollH, m.dragKind == 3 ? "#cfd2dc" : "#8a8d99", 4);
+            hit("scroll", l.tlX0, l.scrollY - 2, tlW, l.scrollH + 4);
+            hit("thumb", tx, l.scrollY - 2, tw, l.scrollH + 4);
+        }
+        d += "</body>\n</rml>\n";
+        return out;
     }
 }

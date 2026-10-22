@@ -435,7 +435,12 @@ namespace perlin {
         // ---- replay playback ----
         struct ReplayUi {
             bool menuOpen = true, grab = false, hideHud = true, uiHidden = false, camInit = false, leftDown = false, scrubbing = false, dirty = false;
-            double scrubMs = -1, flySpeed = 12.0, inMs = -1, outMs = -1;
+            glm::vec3 flyVel{0.0f};
+            bool showPlayers = true, showEntities = true, showNametags = true, editorOverUi = false;
+            float editorViewX0 = 0, editorViewY0 = 0, editorViewX1 = 1e9f, editorViewY1 = 1e9f; // framebuffer px of the free 3D view while editing
+            double lastScrubSeekMs = -1e9;
+            std::chrono::steady_clock::time_point lastScrubAt{};
+            double scrubMs = -1, flySpeed = 16.0, inMs = -1, outMs = -1;
             int speedIdx = 3;
             std::string signature, status;
             std::chrono::steady_clock::time_point openedAt{}, statusUntil{};
@@ -457,6 +462,19 @@ namespace perlin {
             std::chrono::steady_clock::time_point openedAt{};
         } kfUi;
         bool UpdateKeyframePanel(ui::Hud& hud, int fbW, int fbH);
+        // Video-editor style timeline (menu bar, inspector, tracks) for replays.
+        struct EditorUi {
+            bool open = false, leftDown = false;
+            double viewStart = 0, viewSpan = 0; // span 0 = fit the whole replay
+            int selTrack = -1, selIndex = -1, sideScroll = 0;
+            int drag = 0, dragTrack = -1; // 1 playhead, 2 key, 3 scrollbar thumb
+            double dragOffset = 0;
+            double lastSeekMs = -1e9;
+            std::chrono::steady_clock::time_point lastSeekAt{}, openedAt{};
+            std::string signature;
+            bool keyPrev[256] = {};
+        } editorUi;
+        bool UpdateEditor(ui::Hud& hud, int fbW, int fbH);
         void LoadTimeline();
         void SaveTimeline();
 

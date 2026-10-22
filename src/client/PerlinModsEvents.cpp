@@ -358,7 +358,7 @@ namespace perlin {
 
     void Perlin::UpdateModLayer(ui::Hud& hud) {
         auto& mm = mods::ModManager::Instance();
-        const bool want = options.showHud && !pauseShown && !invShown && !deathShown && mm.HasPlugins();
+        const bool want = options.showHud && !pauseShown && !invShown && !deathShown && mm.HasPlugins() && !(replayCtl.Playing() && replayUi.hideHud);
         if (!want) {
             if (modLayerShown) {
                 hud.Overlay().ClearPluginLayer();

@@ -5651,6 +5651,8 @@ namespace perlin {
         };
         ui::LoadingScreenText t;
         t.title = tr("progressScreen.title.connectingExternal", "Connecting to external server");
+        if (!replayCtl.Playing())
+            t.warning = "Perlin is not yet stable, and may get you kicked/banned by server anticheats, due to movement and other inaccuracies";
         bool show = false;
         const bool transferring = session && session->Transferring();
         if (preview) {
@@ -6494,7 +6496,9 @@ namespace perlin {
             inputManager.Poll();
             if (exportJob.active)
                 ExportPreFrame(frameStart, dt);
-            if (inputManager.Pressed(Action::CyclePerspective))
+            if (replayCtl.Playing())
+                camera.mode = PerspectiveMode::FirstPerson; // replays are always first person (the recorded player is drawn separately)
+            else if (inputManager.Pressed(Action::CyclePerspective))
                 camera.CycleMode();
             zoom.SetConfig(options.zoom);
             PollHotReload();
@@ -7863,7 +7867,7 @@ namespace perlin {
                         self.flags |= entity::flag::Gliding;
                     if (player.Swimming())
                         self.flags |= entity::flag::Swimming;
-                    if (live) {
+                    if (live && !replayCtl.Playing()) {
                         const LoadedSkin& ls = live->Skin();
                         const std::string key = ls.skinId + (ls.slimArms ? "/slim" : "/classic") + "/" + ls.capeId;
                         if (!selfSkinData || key != selfSkinKey) {
@@ -7885,7 +7889,7 @@ namespace perlin {
                         // Use the skin the recorded player wore (their PlayerList entry), not the viewer's own.
                         const std::string& rn = replayCtl.Meta().playerName;
                         for (const auto& tp : live->PlayerList())
-                            if (tp.skin && (tp.name == rn || tp.uid == static_cast<int64_t>(replayCtl.Meta().localRuntimeId))) {
+                            if (tp.skin && !tp.skin->skinRgba.empty() && (tp.name == rn || tp.uid == static_cast<int64_t>(replayCtl.Meta().localRuntimeId))) {
                                 self.skin = tp.skin;
                                 if (tp.name == rn)
                                     break;
@@ -7902,6 +7906,15 @@ namespace perlin {
                         ApplyBedPose(live->NetLevel(), self);
                     }
                     entities.push_back(std::move(self));
+                }
+                if (replayCtl.Playing() && (!replayUi.showPlayers || !replayUi.showEntities || !replayUi.showNametags)) {
+                    // editor visibility toggles (they apply to exports too)
+                    entities.erase(std::remove_if(entities.begin(), entities.end(), [&](const entity::Entity& en) {
+                                       return en.isPlayer ? !replayUi.showPlayers : !replayUi.showEntities;
+                                   }), entities.end());
+                    if (!replayUi.showNametags)
+                        for (entity::Entity& en : entities)
+                            en.name.clear();
                 }
                 entity::EntityRenderer::FrameIn ein;
                 ein.time = std::chrono::duration<double>(frameStart - startedAt).count();
@@ -7923,7 +7936,7 @@ namespace perlin {
                     std::lock_guard lock(modAdv.mutex);
                     if (std::chrono::steady_clock::now() < modAdv.poseUntil)
                         ein.ownPose = glm::vec3(modAdv.pose.pitch, modAdv.pose.yaw, modAdv.pose.roll);
-                    if (!modAdv.frameLines.empty())
+                    if (!modAdv.frameLines.empty() && !(replayCtl.Playing() && replayUi.hideHud))
                         ein.modLines = &modAdv.frameLines;
                 }
                 ein.capePhysics = options.capePhysics == "shoulder" ? 2 : options.capePhysics == "off" ? 0 : 1;
@@ -8230,7 +8243,8 @@ namespace perlin {
                     }
                 }
             }
-            if ((live || preview) && !replayCtl.Playing() && camera.mode == PerspectiveMode::FirstPerson && options.showHud &&
+            // In a replay the hand is shown only when watching through the recorded player's eyes.
+            if ((live || preview) && (!replayCtl.Playing() || replayCtl.cameraMode == replay::CameraMode::Follow) && camera.mode == PerspectiveMode::FirstPerson && options.showHud &&
                 hudState.mode != ui::GameMode::Spectator && ui::UiAssets::Instance().VanillaRoot().size()) {
                 HandRenderer::FrameIn handFrame;
                 handFrame.partial = partial;
@@ -8247,10 +8261,31 @@ namespace perlin {
                 handFrame.viewEffect = handViewEffect;
                 handFrame.skins3d = options.skins3d;
                 handFrame.hurt = damage.HurtFraction(partial);
-                if (session) {
-                    handFrame.skin = &session->Skin();
-                    handFrame.skinSerial = std::hash<std::string>{}(session->Skin().skinId) * 2 + (session->Skin().slimArms ? 1 : 0);
-                    handFrame.slimArm = session->Skin().slimArms;
+                static LoadedSkin replayHandSkin;
+                static uint64_t replayHandSerial = 0;
+                const LoadedSkin* handSkin = session ? &session->Skin() : nullptr;
+                if (session && replayCtl.Playing()) {
+                    // the recorded player's own skin, taken from their PlayerList entry
+                    for (const auto& tp : session->PlayerList()) {
+                        if (!tp.skin || tp.skin->skinRgba.empty() || tp.name != replayCtl.Meta().playerName)
+                            continue;
+                        if (replayHandSerial != tp.skin->serial) {
+                            replayHandSerial = tp.skin->serial;
+                            replayHandSkin = LoadedSkin{};
+                            replayHandSkin.skinWidth = tp.skin->skinWidth;
+                            replayHandSkin.skinHeight = tp.skin->skinHeight;
+                            replayHandSkin.skinRgba = tp.skin->skinRgba;
+                            replayHandSkin.slimArms = tp.skin->slim;
+                            replayHandSkin.skinId = "replay-" + std::to_string(tp.skin->serial);
+                        }
+                        handSkin = &replayHandSkin;
+                        break;
+                    }
+                }
+                if (session && handSkin) {
+                    handFrame.skin = handSkin;
+                    handFrame.skinSerial = std::hash<std::string>{}(handSkin->skinId) * 2 + (handSkin->slimArms ? 1 : 0);
+                    handFrame.slimArm = handSkin->slimArms;
                     handFrame.leftSleeve = options.skinParts.leftSleeve;
                     handFrame.rightSleeve = options.skinParts.rightSleeve;
                 }

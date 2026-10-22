@@ -40,6 +40,13 @@ public:
 
     virtual void SetTitle(const std::string& title) { (void)title; }
 
+    // A small separate progress window (used by exports so nothing has to be drawn into the frames being captured).
+    virtual bool HasProgressWindow() const { return false; }
+    virtual void SetProgressWindow(bool visible, const std::string& title, const std::string& line1, const std::string& line2, float fraction) {
+        (void)visible; (void)title; (void)line1; (void)line2; (void)fraction;
+    }
+    virtual bool TakeProgressCancel() { return false; }
+
     virtual bool ConfirmDialog(const std::string& title, const std::string& message) {
         (void)title;
         (void)message;

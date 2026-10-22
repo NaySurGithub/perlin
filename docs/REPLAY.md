@@ -23,4 +23,18 @@ If a build has no FFmpeg libraries (`-DPERLIN_LIBAV=OFF` or they were not found)
 - Frames are captured without waiting: the renderer keeps drawing the next frame while finished frames are scaled and encoded on a separate thread (memory is capped, so a slow encoder just throttles the renderer).
 - VSync is switched off while exporting, and only the first frame waits for the world to be fully drawn; later frames wait one step.
 - The default x264/x265 preset is now `veryfast` (change it under Advanced > Encoder preset).
-- Progress is shown as a panel (percent, frames, speed, time left) and in the window title. The panel is hidden for the frame being captured, so it never appears in the video.
+- Progress is shown in its own small window ("Frame 12/300", a progress bar, percent, speed, time left, and a Cancel button; Esc also cancels) and in the main window's title. Nothing is drawn into the frames being captured, so there is no flicker and nothing can leak into the video. Platforms without that window fall back to an on-screen panel.
+- Replay camera: WASD/Space/Shift fly with smooth acceleration, arrow keys turn, scroll changes speed, hold the right mouse button (or press Tab) to look with the mouse. The game HUD and HUD mods are hidden during replays.
+
+## Editor
+
+Open it with **Editor** on the replay bar. It has a menu bar (close, export, options, camera mode, HUD, marker), an inspector on the right and a timeline dock at the bottom:
+
+- Transport (|< << Play >> >|), a zoomable ruler, and tracks for **Camera**, **Speed**, **Time of day** and **Markers**.
+- Click or drag on the ruler or an empty track area to scrub - the replay follows live (rewinding is seamless). Wheel zooms the timeline, Shift+wheel pans, drag the scrollbar, or press F / **Fit** to show everything.
+- Click a key to select it (the replay jumps there); drag it to retime (snaps to 10 ms, hold Shift for free). The inspector edits its time, easing, FOV, roll, speed value or time of day, and can set a camera key from the current view.
+- K adds a camera key at the playhead, Del removes the selected key, I/O set in/out points, M adds a marker, Space plays/pauses, J/L seek 5 s.
+- Visuals: hide the HUD, hide players, entities or nametags (these apply to exports too).
+- Replays always use first person. In **Cam: Player** mode you see through the recorded player's eyes including their held item/hand.
+- Dragging the bar's progress slider now rewinds/fast-forwards the replay while you drag.
+- The multiplayer connect screen shows a yellow stability/anticheat notice above Cancel.

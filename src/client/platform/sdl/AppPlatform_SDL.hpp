@@ -24,6 +24,9 @@ public:
     NativeWindowInfo GetNativeWindowInfo() override;
     void GetFramebufferSize(int& width, int& height) override;
     void SetTitle(const std::string& title) override;
+    bool HasProgressWindow() const override { return !progFailed; }
+    void SetProgressWindow(bool visible, const std::string& title, const std::string& line1, const std::string& line2, float fraction) override;
+    bool TakeProgressCancel() override { return progCancel.exchange(false); }
     void ShowSignInCode(const std::string& url, const std::string& code) override;
     bool ConfirmDialog(const std::string& title, const std::string& message) override;
     std::unique_ptr<perlin::RenderContext> CreateRenderContext() override;
@@ -64,5 +67,16 @@ private:
     std::mutex titleMutex;
     std::string pendingTitle;
     bool titleDirty = false;
+    // export progress window (created, drawn and destroyed on the main thread from PumpFrame)
+    std::mutex progMutex;
+    bool progWant = false, progDirty = false;
+    std::string progTitle, progLine1, progLine2;
+    float progFraction = 0.0f;
+    struct SDL_Window* progWindow = nullptr;
+    struct SDL_Renderer* progRenderer = nullptr;
+    unsigned progWindowId = 0;
+    std::atomic<bool> progFailed{false};
+    std::atomic<bool> progCancel{false};
+    void UpdateProgressWindow();
     perlin::LaunchArgs args;
 };

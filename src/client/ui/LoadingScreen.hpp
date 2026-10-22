@@ -9,6 +9,7 @@ namespace perlin::ui {
         std::string detail;
         float progress = -1.0f;
         std::string cancel;
+        std::string warning; // yellow notice shown above the cancel button
     };
     inline constexpr const char* kLoadingCancelId = "cancel";
 

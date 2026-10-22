@@ -307,6 +307,7 @@ namespace perlin {
             renderer->SetForcedSize(0, 0);
         j.active = false;
         SetStatusHint("");
+        platform->SetProgressWindow(false, "", "", "", 0.0f);
         replayUi.hideHud = j.savedHideHud;
         replayCtl.SetSpeed(j.savedSpeed);
         replayCtl.SetPaused(j.savedPaused);
@@ -399,7 +400,7 @@ namespace perlin {
             ExportFinish(true, "");
             return;
         }
-        if (inputManager.Pressed(Action::Pause)) {
+        if (inputManager.Pressed(Action::Pause) || platform->TakeProgressCancel()) {
             ExportFinish(true, "");
             return;
         }
@@ -430,6 +431,14 @@ namespace perlin {
                      ui::FormatReplayTime(elapsed / static_cast<double>(done) * static_cast<double>(j.total - done) * 1000.0) + " left";
             }
             SetStatusHint(t);
+            if (platform->HasProgressWindow()) {
+                std::string l2 = Num(100.0 * static_cast<double>(done) / static_cast<double>(std::max<long long>(1, j.total)), 1) + "%";
+                if (done > 2 && elapsed > 0.5)
+                    l2 += "   " + Num(static_cast<double>(done) / elapsed, 1) + " frames/s   " +
+                          ui::FormatReplayTime(elapsed / static_cast<double>(done) * static_cast<double>(j.total - done) * 1000.0) + " left";
+                platform->SetProgressWindow(true, "Exporting " + j.name, "Frame " + std::to_string(std::min(done + 1, j.total)) + "/" + std::to_string(j.total), l2,
+                                            static_cast<float>(done) / static_cast<float>(std::max<long long>(1, j.total)));
+            }
         }
         j.advanceNow = false;
         switch (j.phase) {
@@ -568,6 +577,12 @@ namespace perlin {
     void Perlin::ExportOverlay(ui::Hud& h, int fbW, int fbH) {
         ExportJob& j = exportJob;
         const auto now = Clock::now();
+        if (platform->HasProgressWindow()) {
+            // progress lives in its own window, so nothing is ever drawn into the frames being captured
+            if (h.Overlay().HasOverlay())
+                h.Overlay().ClearOverlay();
+            return;
+        }
         // The panel is on screen for every frame except the one that gets captured, so it never ends up in the video.
         const bool visible = !j.screenshot && (j.phase == ExportJob::Phase::Seeking || j.phase == ExportJob::Phase::Draining ||
                                                 (j.phase == ExportJob::Phase::Settle && j.settleIters <= 1));
