@@ -7,7 +7,7 @@
 
 namespace perlin::ui {
     std::string DefaultPauseScreenTemplate() {
-        return R"PERLINRML(<!--perlin-ui:pause-10-->
+        return R"PERLINRML(<!--perlin-ui:pause-11-->
 <rml>
 <head>
 <title>pause</title>
@@ -65,7 +65,7 @@ mcimg { display: block; position: absolute; }
     <div class="rim" style="width: 201px;"></div><div class="face" style="width: 200px;"></div><div class="shade" style="width: 202px;"></div><div class="edge" style="left: 202px;"></div>
     <div class="lbl" style="width: 204px;">{{mods}}</div>
   </div>
-  <div id="quit" class="btn" style="left: {{x1}}px; top: {{y5}}px; width: 204px;">
+  <div id="quit" class="btn" style="left: {{x1}}px; top: {{y6}}px; width: 204px;">
     <div class="rim" style="width: 201px;"></div><div class="face" style="width: 200px;"></div><div class="shade" style="width: 202px;"></div><div class="edge" style="left: 202px;"></div>
     <div class="lbl" style="width: 204px;">{{quit}}</div>
   </div>
@@ -612,7 +612,8 @@ div { display: block; position: absolute; }
 
     std::string BuildPauseScreenRml(const std::string& templateText, const PauseScreenText& t, int guiW, int guiH) {
         std::string d = templateText;
-        const int top = (guiH - 154) / 4;
+        const int top = (guiH - (t.showReplay ? 178 : 154)) / 4;
+        const int quitY = t.showReplay ? top + 174 : top + 150;
         const int x1 = guiW / 2 - 102;
         ReplaceAll(d, "w", std::to_string(guiW));
         ReplaceAll(d, "h", std::to_string(guiH));
@@ -623,6 +624,7 @@ div { display: block; position: absolute; }
         ReplaceAll(d, "y3", std::to_string(top + 102));
         ReplaceAll(d, "y4", std::to_string(top + 126));
         ReplaceAll(d, "y5", std::to_string(top + 150));
+        ReplaceAll(d, "y6", std::to_string(quitY));
         ReplaceAll(d, "xw", std::to_string(x1 + 208));
         ReplaceAll(d, "xr", std::to_string(x1 + 104));
         ReplaceAll(d, "mods", EscapeRml(t.mods));
@@ -641,6 +643,12 @@ div { display: block; position: absolute; }
                 d.insert(from, Button("mods", static_cast<float>(x1), static_cast<float>(top + 126), 100.0f, t.mods, false) +
                                    Button("srvsettings", static_cast<float>(x1 + 104), static_cast<float>(top + 126), 100.0f, t.serverSettings, false));
             }
+        }
+        if (t.showReplay) {
+            const size_t at = d.find("<div id=\"quit\"");
+            if (at != std::string::npos)
+                d.insert(at, Button(kPauseReplayStartId, static_cast<float>(x1), static_cast<float>(top + 150), 100.0f, t.replayStart, t.replayRecording) +
+                                 Button(kPauseReplayStopId, static_cast<float>(x1 + 104), static_cast<float>(top + 150), 100.0f, t.replayStop, !t.replayRecording));
         }
         if (t.showPanel) {
             const int pw = 150;

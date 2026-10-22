@@ -460,7 +460,9 @@ namespace perlin {
         const uint64_t gen = ++connectGeneration;
         if (session)
             retiredSessions.push_back(std::move(session));
+        FinishReplayRecording("the connection was reset");
         session = std::make_unique<BedrockSession>();
+        session->SetRecordTap(replayCtl.NewSessionTap());
         if (connectsInFlight.load() == 0)
             std::erase_if(retiredSessions, [](const std::unique_ptr<BedrockSession>& s) { return !s->Transferring(); });
         session->SetPacketHandler([this](uint32_t id, const std::vector<uint8_t>& body) {
@@ -769,6 +771,7 @@ namespace perlin {
     }
 
     void Perlin::Shutdown() {
+        FinishReplayRecording("the game closed");
         renderRunning = false;
         if (renderThread.joinable())
             renderThread.join();
@@ -1931,7 +1934,7 @@ namespace perlin {
                 }
             }
         }
-        if (titleOptions && pauseShown && pauseView == 0)
+        if ((titleOptions || replayCtl.Playing()) && pauseShown && pauseView == 0)
             resume = true;
         if (resume) {
             if (titleOptions) {
@@ -4046,6 +4049,10 @@ namespace perlin {
         t.players = tr("gui.playerList", "Player List");
         t.serverSettings = tr("perlin.serverSettings", "Server Settings");
         t.hasServerSettings = live != nullptr;
+        t.showReplay = live != nullptr && !preview && !live->IsReplay();
+        t.replayRecording = replayCtl.Recording();
+        t.replayStart = tr("perlin.replay.start", "Start Replay");
+        t.replayStop = tr("perlin.replay.stop", "Stop Replay");
         t.showPanel = pausePlayers && live;
         if (t.showPanel) {
             t.panelTitle = t.players;
@@ -4064,7 +4071,7 @@ namespace perlin {
         std::string panelSig;
         for (const auto& r : t.panel)
             panelSig += r.name + ":" + std::to_string(r.perm) + ",";
-        const std::string signature = std::to_string(guiW) + "x" + std::to_string(guiH) + (t.showPanel ? "P" : "p") + panelSig + (t.hasServerSettings ? "S" : "s") + t.title + t.back + t.options + t.quit + t.advancements + t.stats + t.feedback + t.bugs + t.lan + t.players + t.world + t.mods;
+        const std::string signature = std::to_string(guiW) + "x" + std::to_string(guiH) + (t.showPanel ? "P" : "p") + panelSig + (t.hasServerSettings ? "S" : "s") + (t.showReplay ? (t.replayRecording ? "R" : "r") : "") + t.replayStart + t.replayStop + t.title + t.back + t.options + t.quit + t.advancements + t.stats + t.feedback + t.bugs + t.lan + t.players + t.world + t.mods;
         if (signature != pauseSignature || !hud.Overlay().HasOverlay()) {
             pauseSignature = signature;
             std::string error;
@@ -4082,6 +4089,12 @@ namespace perlin {
                 hud.Overlay().ClearOverlay();
                 pauseShown = false;
                 input.SetTextMode(false);
+            } else if (hover == ui::kPauseReplayStartId && live && !replayCtl.Recording()) {
+                ToggleReplayRecording(true);
+                pauseSignature.clear();
+            } else if (hover == ui::kPauseReplayStopId && live && replayCtl.Recording()) {
+                ToggleReplayRecording(false);
+                pauseSignature.clear();
             } else if (hover == ui::kPauseQuitId && !preview) {
                 LeaveToServerList(hud);
             } else if (hover == ui::kPauseFeedbackId) {
@@ -4802,8 +4815,48 @@ namespace perlin {
         std::thread([lease = std::move(lease)]() mutable { lease.reset(); }).detach();
     }
 
+    void Perlin::ToggleReplayRecording(bool start) {
+        if (start) {
+            if (!session || replayCtl.Recording())
+                return;
+            replay::ReplayController::LiveInfo info;
+            info.server = session->ServerAddress();
+            info.gameVersion = session->GameVersion();
+            info.playerName = session->PlayerName();
+            info.protocol = session->ServerProtocol();
+            info.runtimeId = session->GetRuntimeId();
+            const auto pose = session->GetPose();
+            info.pose = {pose.x, pose.y, pose.z, pose.yaw, pose.pitch, pose.known};
+            std::string error;
+            if (replayCtl.StartRecording(info, PERLIN_VERSION, error)) {
+                chat.AddMessage("\xC2\xA7" "aReplay recording started", hudAnim.ticks);
+                std::cout << "[replay] recording started" << std::endl;
+            } else {
+                chat.AddMessage("\xC2\xA7" "cCould not start the replay: " + error, hudAnim.ticks);
+                std::cout << "[replay] start failed: " << error << std::endl;
+            }
+        } else {
+            FinishReplayRecording("you stopped it");
+        }
+    }
+
+    void Perlin::FinishReplayRecording(const char* why) {
+        if (!replayCtl.Recording())
+            return;
+        const uint32_t ms = replayCtl.RecordingMs();
+        std::string path, error;
+        if (replayCtl.StopRecording(path, error)) {
+            std::cout << "[replay] saved " << path << " (" << ms / 1000 << "s) because " << why << std::endl;
+            chat.AddMessage("\xC2\xA7" "aReplay saved: " + std::filesystem::path(path).filename().string() + " (" + std::to_string(ms / 1000) + "s)", hudAnim.ticks);
+        } else {
+            std::cout << "[replay] save failed: " << error << std::endl;
+            chat.AddMessage("\xC2\xA7" "cReplay could not be saved: " + error, hudAnim.ticks);
+        }
+    }
+
     void Perlin::LeaveToServerList(ui::Hud& hud) {
         std::cout << "[perlin] left " << options.server << ", back to the server list" << std::endl;
+        FinishReplayRecording("you left the server");
         connectGeneration++;
         if (account)
             account->Cancel();
@@ -5068,6 +5121,13 @@ namespace perlin {
                     if (title.servers[i].address == options.server)
                         title.selected = static_cast<int>(i);
             }
+            if (titleReturnToReplays) {
+                titleReturnToReplays = false;
+                title.page = ui::TitlePage::Replays;
+                title.replaySelected = -1;
+                title.replayScroll = 0;
+                RefreshReplayList();
+            }
             title.copyright = "Not affiliated with Mojang AB.";
             if (const char* p = PERLIN_ENV("PERLIN_PREVIEW_TITLE")) {
                 const std::string page = p;
@@ -5150,6 +5210,9 @@ namespace perlin {
                 case ui::TitlePage::Direct:
                 case ui::TitlePage::AddRealm: title.page = ui::TitlePage::Servers; break;
                 case ui::TitlePage::Accounts: title.page = ui::TitlePage::Main; break;
+                case ui::TitlePage::Replays: title.page = ui::TitlePage::Main; break;
+                case ui::TitlePage::ReplayRename:
+                case ui::TitlePage::ReplayDelete: title.page = ui::TitlePage::Replays; break;
                 case ui::TitlePage::AccountName: title.page = ui::TitlePage::Accounts; break;
                 case ui::TitlePage::AccountSignIn:
                     CancelAccountSignIn();
@@ -5188,6 +5251,8 @@ namespace perlin {
             const bool fields = title.page == ui::TitlePage::Edit || title.page == ui::TitlePage::Direct || title.page == ui::TitlePage::AddRealm;
             if (!t.character && t.key == Key::Escape) {
                 back();
+            } else if (title.page == ui::TitlePage::Replays || title.page == ui::TitlePage::ReplayRename || title.page == ui::TitlePage::ReplayDelete) {
+                TitleReplayTyped(t.key, t.character, t.ctrl);
             } else if (title.page == ui::TitlePage::AccountName) {
                 if (!t.character && t.key == Key::Backspace)
                     PopUtf8(title.accountName);
@@ -5228,6 +5293,18 @@ namespace perlin {
                 title.scroll = std::max(title.scroll, title.selected - rows + 1);
             }
             title.scroll = std::clamp(title.scroll, 0, maxScroll);
+        }
+
+        if (title.page == ui::TitlePage::Replays) {
+            const int rows = ui::TitleVisibleRows(guiH);
+            const int maxScroll = std::max(0, static_cast<int>(title.replays.size()) - rows);
+            if (const float wheel = inputManager.Scroll(); wheel != 0.0f)
+                title.replayScroll -= wheel > 0 ? 1 : -1;
+            if (title.replaySelected >= 0) {
+                title.replayScroll = std::min(title.replayScroll, title.replaySelected);
+                title.replayScroll = std::max(title.replayScroll, title.replaySelected - rows + 1);
+            }
+            title.replayScroll = std::clamp(title.replayScroll, 0, maxScroll);
         }
 
         if (title.page == ui::TitlePage::Accounts) {
@@ -5384,6 +5461,12 @@ namespace perlin {
             signature += "|" + title.accountName + (title.caret ? "c" : "n");
         else if (title.page == ui::TitlePage::AccountSignIn)
             signature += "|" + title.signInUrl + "|" + title.signInCode + "|" + title.signInStatus;
+        if (title.page == ui::TitlePage::Replays || title.page == ui::TitlePage::ReplayRename || title.page == ui::TitlePage::ReplayDelete) {
+            signature += "|r" + std::to_string(title.replaySelected) + "|" + std::to_string(title.replayScroll) + "|" + std::to_string(title.replaySort) +
+                         (title.replaySortDesc ? "d" : "a") + "|" + title.replayMessage + "|" + title.replayName + (title.caret ? "c" : "n") + "|" + std::to_string(title.replays.size());
+            for (const ui::ReplayEntry& r : title.replays)
+                signature += "|" + r.file + r.name + r.line1;
+        }
         if (title.page == ui::TitlePage::Edit || title.page == ui::TitlePage::Direct || title.page == ui::TitlePage::AddRealm)
             signature += "|" + title.joinMessage + "|" + title.name + "|" + title.address + "|" + (title.caret ? "c" : "n") + (title.adding ? "a" : "e");
         else if (title.page == ui::TitlePage::Servers) {
@@ -5415,7 +5498,8 @@ namespace perlin {
                 const std::string p = prefix;
                 return hover.compare(0, p.size(), p) == 0 ? std::atoi(hover.c_str() + p.size()) : -1;
             };
-            if (hover == ui::kTitleAccounts) {
+            if (TitleReplayClick(hover)) {
+            } else if (hover == ui::kTitleAccounts) {
                 title.page = ui::TitlePage::Accounts;
             } else if (hover == ui::kAccountDone) {
                 title.page = ui::TitlePage::Main;
@@ -5864,7 +5948,7 @@ namespace perlin {
     }
 
     void Perlin::FillHudState(ui::HudState& s, BedrockSession* live, bool preview) {
-        s.visible = options.showHud && (live || preview);
+        s.visible = options.showHud && (live || preview) && !(replayCtl.Playing() && replayUi.hideHud);
         s.tick = preview ? static_cast<uint64_t>(std::chrono::duration<double>(Clock::now().time_since_epoch()).count() * 20.0)
                          : hudAnim.ticks;
         s.inWater = headUnderwater;
@@ -6403,7 +6487,7 @@ namespace perlin {
 #ifdef __EMSCRIPTEN__
             platform->PumpFrame();
 #endif
-            const auto frameStart = Clock::now();
+            auto frameStart = Clock::now();
             if ((frames & 15) == 0)
                 i18n::Lang::Get().Configure(ui::UiAssets::Instance().VanillaRoot(), paths::DataDir(), options.language);
             float dt = std::chrono::duration<float>(frameStart - previous).count();
@@ -6413,6 +6497,8 @@ namespace perlin {
 
             input.SetPadDeadzone(options.padDeadzone);
             inputManager.Poll();
+            if (exportJob.active)
+                ExportPreFrame(frameStart, dt);
             if (inputManager.Pressed(Action::CyclePerspective))
                 camera.CycleMode();
             zoom.SetConfig(options.zoom);
@@ -6431,6 +6517,10 @@ namespace perlin {
                 std::transform(lowerName.begin(), lowerName.end(), lowerName.begin(), [](unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
                 const bool dropIsCape = lowerName.find("cape") != std::string::npos;
                 const char* sub = onWardrobe ? (dropIsCape ? "capes" : "skins") : ext == ".wasm" ? "mods" : onShaders ? "shaderpacks" : "texturepacks";
+                if (ext == ".perlinreplay") {
+                    ImportReplayFile(dropped);
+                    continue;
+                }
                 if (!onWardrobe && ext != ".wasm" && ext != ".zip" && ext != ".mcpack" && !fsys::is_directory(src, e))
                     continue;
                 const fsys::path destDir = fsys::path(paths::DataDir()) / sub;
@@ -6541,10 +6631,11 @@ namespace perlin {
             }
 
             int width = 0, height = 0;
-            platform->GetFramebufferSize(width, height);
+            FramebufferSizeEffective(width, height);
             if (width > 0 && height > 0)
                 camera.aspect = static_cast<float>(width) / static_cast<float>(height);
 
+            PumpReplay(dt);
             BedrockSession* live = sessionReady && session && !session->Transferring() ? session.get() : nullptr;
             static std::vector<entity::Entity> frameEntities;
             if (live) {
@@ -6596,7 +6687,8 @@ namespace perlin {
                 player.SetToggleModes(options.sprintMode == "toggle", options.sneakMode == "toggle");
                 hudState.moveStatus.clear();
                 player.SetItemSlow(gItemSlow);
-                player.Update(*live, inputManager, camera, levelRenderer->Blocks(), dt);
+                if (!replayCtl.Playing())
+                    player.Update(*live, inputManager, camera, levelRenderer->Blocks(), dt);
             }
             if (const char* g = PERLIN_ENV("PERLIN_GLASS"))
                 options.glass = g;
@@ -6635,7 +6727,7 @@ namespace perlin {
                     chat.SetPlayers(std::move(names));
                 }
             }
-            if (live || preview) {
+            if ((live || preview) && !replayCtl.Playing()) {
                 if (!chat.IsOpen()) {
                     if (inputManager.Pressed(Action::Chat) || inputManager.Pressed(Action::Command)) {
                         chat.Open(inputManager.Pressed(Action::Chat) ? "" : "/", MsNow());
@@ -6672,7 +6764,7 @@ namespace perlin {
 
             if (inputManager.Pressed(Action::ToggleHud))
                 options.showHud = !options.showHud;
-            if ((live || preview) && input.Captured()) {
+            if ((live || preview) && input.Captured() && !replayCtl.Playing()) {
                 int newSlot = -1;
                 for (int i = 0; i < 9; i++)
                     if (inputManager.Pressed(static_cast<Action>(static_cast<int>(Action::Hotbar1) + i)))
@@ -7027,6 +7119,11 @@ namespace perlin {
             double worldTicks = preview ? previewTicks : kNoonTick;
             if (live)
                 live->GetWorldTicks(worldTicks);
+            if (replayCtl.Playing()) {
+                float forcedTicks = 0;
+                if (timeline.TimeOfDayAt(replayCtl.TimeMs(), forcedTicks))
+                    worldTicks = forcedTicks;
+            }
             if (preview && !previewLevel) {
                 static auto lastNote = frameStart;
                 if (frameStart - lastNote > std::chrono::seconds(3)) {
@@ -7384,6 +7481,12 @@ namespace perlin {
                                            static_cast<float>(GraphicsSettings::From(options).cloudRange * 16));
                 camera.nearPlane = std::clamp(0.05f + (camera.farPlane - 1500.0f) * 0.00004f, 0.05f, 0.25f);
             }
+            if (replayCtl.Playing()) {
+                if (replayUi.fovOverride > 0)
+                    camera.fov = replayUi.fovOverride;
+                if (replayUi.roll != 0.0f)
+                    camera.viewEffect = glm::rotate(glm::mat4(1.0f), glm::radians(replayUi.roll), glm::vec3(0.0f, 0.0f, 1.0f)) * camera.viewEffect;
+            }
             ApplyModCamera(camera.fov, camera.viewEffect);
             const glm::mat4 viewProjection = camera.ViewProjection();
             {
@@ -7733,6 +7836,15 @@ namespace perlin {
                     self.pos = {camera.x, camera.y - (live ? static_cast<double>(player.EyeOffset()) : entity::kPlayerEye), camera.z};
                     self.yaw = self.headYaw = camera.yaw - 90.0f;
                     self.pitch = -camera.pitch;
+                    if (replayCtl.Playing()) {
+                        // The camera is free; draw the recorded player where they actually were.
+                        const replay::Pose rp = replayCtl.RecordedPose();
+                        if (rp.known) {
+                            self.pos = {rp.x, rp.y, rp.z};
+                            self.yaw = self.headYaw = rp.yaw;
+                            self.pitch = rp.pitch;
+                        }
+                    }
                     self.moveSerial = 1;
                     self.swingSerial = gSelfSwing;
                     // Drive the same red hurt flash other mobs get; the own player isn't in the tracker so its
@@ -7793,7 +7905,7 @@ namespace perlin {
                     const glm::vec3 eyePos = camera.EyePosition();
                     ein.camera = {eyePos.x, eyePos.y, eyePos.z};
                 }
-                ein.firstPerson = firstPerson;
+                ein.firstPerson = firstPerson && !(replayCtl.Playing() && replayCtl.cameraMode != replay::CameraMode::Follow);
                 {
                     const bool packShadows = renderer->PackShadowsActive() && options.shadowEntities;
                     ein.blobShadows = options.shadows && !packShadows;
@@ -7830,7 +7942,7 @@ namespace perlin {
                 ein.worldTicks = worldTicks;
                 {
                     int fw = 0, fh = 0;
-                    platform->GetFramebufferSize(fw, fh);
+                    FramebufferSizeEffective(fw, fh);
                     ein.pixelScale = fh > 0 ? 2.0f * std::tan(glm::radians(camera.fov) * 0.5f) / static_cast<float>(fh) : 0.0f;
                     ein.lineWidthPx = std::max(2.5f, static_cast<float>(fw) / 1920.0f * 2.5f);
                     ein.chunkBorders = showChunkBorders;
@@ -8113,7 +8225,7 @@ namespace perlin {
                     }
                 }
             }
-            if ((live || preview) && camera.mode == PerspectiveMode::FirstPerson && options.showHud &&
+            if ((live || preview) && !replayCtl.Playing() && camera.mode == PerspectiveMode::FirstPerson && options.showHud &&
                 hudState.mode != ui::GameMode::Spectator && ui::UiAssets::Instance().VanillaRoot().size()) {
                 HandRenderer::FrameIn handFrame;
                 handFrame.partial = partial;
@@ -8213,7 +8325,12 @@ namespace perlin {
                     const bool titleUp = !touchEditing && UpdateTitleScreen(*hud, fbW, fbH);
                     const bool disconnectUp = !touchEditing && !titleUp && UpdateDisconnectScreen(*hud, fbW, fbH);
                     const bool loadingUp = !touchEditing && !titleUp && !disconnectUp && UpdateLoadingScreen(*hud, fbW, fbH);
-                    if (!touchEditing && !titleUp && !disconnectUp && !loadingUp) {
+                    if (!touchEditing && !titleUp && !disconnectUp && !loadingUp && replayCtl.Playing() && live && live->IsReplay()) {
+                        if (exportJob.active)
+                            ExportOverlay(*hud, fbW, fbH);
+                        else
+                            UpdateReplayScreen(*hud, live, fbW, fbH);
+                    } else if (!touchEditing && !titleUp && !disconnectUp && !loadingUp) {
                         UpdateDeathScreen(*hud, live, hudState, fbW, fbH);
                         UpdateFormScreen(*hud, live, fbW, fbH);
                         UpdateInventoryScreen(*hud, live, hudState, fbW, fbH);
@@ -8226,7 +8343,7 @@ namespace perlin {
                             bool keyboard = chat.IsOpen();
                             if (titleUp)
                                 keyboard = keyboard || title.page == ui::TitlePage::Edit || title.page == ui::TitlePage::Direct || title.page == ui::TitlePage::AddRealm ||
-                                           title.page == ui::TitlePage::AccountName;
+                                           title.page == ui::TitlePage::AccountName || title.page == ui::TitlePage::ReplayRename;
                             if (formShown && formModel.focus >= 0 && static_cast<size_t>(formModel.focus) < formModel.elements.size())
                                 keyboard = keyboard || formModel.elements[static_cast<size_t>(formModel.focus)].kind == ui::FormElement::Kind::Input;
                             if (invShown && creativeTab == ui::kCreativeSearchTab)
@@ -8311,7 +8428,7 @@ namespace perlin {
                         }
                     }
                     float cx, cy, cw, ch;
-                    if (options.showHud && !deathShown && !formShown && !invShown && !pauseShown && !disconnectShown && !loadingShown && !titleShown && (camera.mode == PerspectiveMode::FirstPerson || options.thirdPersonCrosshair) &&
+                    if (options.showHud && !replayCtl.Playing() && !deathShown && !formShown && !invShown && !pauseShown && !disconnectShown && !loadingShown && !titleShown && (camera.mode == PerspectiveMode::FirstPerson || options.thirdPersonCrosshair) &&
                         hudState.mode != ui::GameMode::Spectator &&
                         hud->Cursor(cx, cy, cw, ch))
                         renderer->DrawHudCursor(cx, cy, cw, ch);
@@ -8343,8 +8460,10 @@ namespace perlin {
             }
             if (inputManager.Pressed(Action::Screenshot))
                 TakeScreenshot();
+            if (exportJob.active)
+                ExportPostRender();
             { ProfScope p(6); renderer->EndFrame(); }
-            if (options.frameGen != "off") {
+            if (options.frameGen != "off" && !exportJob.active) {
                 const int total = options.frameGen == "4x" ? 4 : options.frameGen == "3x" ? 3 : 2;
                 static double workMs = 16.0;
                 const auto realEnd = Clock::now();
@@ -8418,7 +8537,9 @@ namespace perlin {
             {
                 static bool background = false;
                 static int backgroundCheck = 0;
-                if (++backgroundCheck >= 30) {
+                if (exportJob.active) {
+                    background = false;
+                } else if (++backgroundCheck >= 30) {
                     backgroundCheck = 0;
                     background = ProcessInBackground();
                 }
@@ -8428,7 +8549,7 @@ namespace perlin {
                         std::this_thread::sleep_until(target);
                 }
             }
-            if (options.maxFps > 0) {
+            if (options.maxFps > 0 && !exportJob.active) {
                 const auto target = frameStart + std::chrono::microseconds(1000000 / options.maxFps);
                 const auto coarse = target - std::chrono::microseconds(1500);
                 if (Clock::now() < coarse)
@@ -8456,6 +8577,15 @@ namespace perlin {
 #else
         while (renderRunning && platform->isRunning)
             frameStep();
+        if (exportJob.active)
+            ExportFinish(true, "");
+        if (replayCtl.Playing()) {
+            SaveTimeline();
+            if (replayUi.dirty) {
+                std::string saveError;
+                replayCtl.SaveMarkers(saveError);
+            }
+        }
         teardown();
 #endif
     }

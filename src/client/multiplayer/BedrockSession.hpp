@@ -330,6 +330,28 @@ void RequestRespawn();
             dropOutActive.store(!droppedOut.empty(), std::memory_order_release);
         }
         void InjectIncoming(uint32_t id, const std::vector<uint8_t>& body) { OnGamePacket(id, body); }
+        // Replay support. The tap sees every clientbound packet and the outgoing PlayerAuthInput (dir 1).
+        using RecordTap = std::function<void(int dir, uint32_t id, const std::vector<uint8_t>& body)>;
+        void SetRecordTap(RecordTap t) {
+            std::lock_guard<std::mutex> lk(tapMutex);
+            recordTap = std::move(t);
+            tapActive.store(static_cast<bool>(recordTap), std::memory_order_release);
+        }
+        // Turns this session into an offline playback target: nothing is sent, no timeouts, packets come from InjectIncoming.
+        void BeginReplayMode(const std::string& name, uint64_t localRuntimeId, int protocol) {
+            replayMode = true;
+            playerName = name;
+            runtimeId = localRuntimeId;
+            serverProtocol = protocol;
+            state = State::InGame;
+        }
+        bool IsReplay() const { return replayMode; }
+        bool ChunkWorkIdle() {
+            std::lock_guard<std::mutex> lk(chunkMutex);
+            return chunkIn.empty() && !chunkBusy;
+        }
+        std::string ServerAddress() const { return serverAddress; }
+        std::string GameVersion() const { return gameVersion; }
 
         State GetState() const { return state; }
         PackDownloader::Progress PackProgress() const { return packs.GetProgress(); }
@@ -673,6 +695,10 @@ void RequestRespawn();
         std::atomic<State> state{State::Disconnected};
         std::string lastError;
         PacketHandler onPacket;
+        RecordTap recordTap;
+        std::mutex tapMutex;
+        std::atomic<bool> tapActive{false};
+        bool replayMode = false;
         std::mutex dropMutex;
         std::vector<uint32_t> dropped;
         std::atomic<bool> dropActive{false};

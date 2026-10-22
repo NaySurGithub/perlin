@@ -236,7 +236,10 @@ namespace perlin {
         void cacheWrite(uint64_t, const void*, uint32_t) override {}
         void screenShot(const char* filePath, uint32_t w, uint32_t h, uint32_t pitch,
                         bgfx::TextureFormat::Enum, const void* data, uint32_t, bool yflip) override {
-            owner->SaveScreenshotData(filePath, w, h, pitch, static_cast<const uint8_t*>(data), yflip);
+            if (filePath && std::strcmp(filePath, "perlin:capture") == 0)
+                owner->DeliverCapture(w, h, pitch, static_cast<const uint8_t*>(data), yflip);
+            else
+                owner->SaveScreenshotData(filePath, w, h, pitch, static_cast<const uint8_t*>(data), yflip);
         }
         void captureBegin(uint32_t, uint32_t, uint32_t, bgfx::TextureFormat::Enum, bool) override {}
         void captureEnd() override {}
@@ -1228,6 +1231,10 @@ namespace perlin {
         const FrameParams& params = *chosen;
         int w = 0, h = 0;
         platform->GetFramebufferSize(w, h);
+        if (forcedW > 0 && forcedH > 0) {
+            w = forcedW;
+            h = forcedH;
+        }
         if (platform->TakeSurfaceChanged() && w > 0 && h > 0 && initialized) {
             width = w + 1;
             height = h;
@@ -1805,6 +1812,28 @@ namespace perlin {
         if (!initialized)
             return;
         bgfx::requestScreenShot(BGFX_INVALID_HANDLE, path.c_str());
+    }
+
+    void RenderContext_bgfx::RequestFrameCapture(CaptureSink sink) {
+        if (!initialized || !sink)
+            return;
+        {
+            std::lock_guard<std::mutex> lk(captureMutex);
+            captureSinks.push_back(std::move(sink));
+        }
+        bgfx::requestScreenShot(BGFX_INVALID_HANDLE, "perlin:capture");
+    }
+
+    void RenderContext_bgfx::DeliverCapture(uint32_t w, uint32_t h, uint32_t pitch, const uint8_t* bgra, bool flipY) {
+        CaptureSink sink;
+        {
+            std::lock_guard<std::mutex> lk(captureMutex);
+            if (captureSinks.empty())
+                return;
+            sink = std::move(captureSinks.front());
+            captureSinks.pop_front();
+        }
+        sink(w, h, pitch, bgra, flipY);
     }
 
     void RenderContext_bgfx::SaveScreenshotData(const std::string& path, uint32_t w, uint32_t h,

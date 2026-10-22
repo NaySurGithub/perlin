@@ -885,6 +885,34 @@ if(PERLIN_BUILD_TESTS AND NOT EMSCRIPTEN AND NOT ANDROID)
     target_compile_features(material_selftest PRIVATE cxx_std_23)
     add_test(NAME material_selftest COMMAND material_selftest)
 
+    add_executable(replay_selftest
+        tests/replay_selftest.cpp
+        src/client/replay/ReplayFormat.cpp
+        src/client/replay/ReplayController.cpp
+        src/client/ui/Json.cpp
+        src/util/Paths.cpp)
+    target_include_directories(replay_selftest PRIVATE src)
+    target_link_libraries(replay_selftest PRIVATE miniz Threads::Threads)
+    target_compile_features(replay_selftest PRIVATE cxx_std_23)
+    add_test(NAME replay_selftest COMMAND replay_selftest)
+
+    add_executable(ffmpeg_selftest
+        tests/ffmpeg_selftest.cpp
+        src/client/replay/Ffmpeg.cpp
+        src/client/replay/Process.cpp
+        src/util/Paths.cpp)
+    target_include_directories(ffmpeg_selftest PRIVATE src)
+    target_link_libraries(ffmpeg_selftest PRIVATE miniz Threads::Threads)
+    target_compile_features(ffmpeg_selftest PRIVATE cxx_std_23)
+
+    add_executable(timeline_selftest
+        tests/timeline_selftest.cpp
+        src/client/replay/Timeline.cpp
+        src/client/ui/Json.cpp)
+    target_include_directories(timeline_selftest PRIVATE src)
+    target_compile_features(timeline_selftest PRIVATE cxx_std_23)
+    add_test(NAME timeline_selftest COMMAND timeline_selftest)
+
     add_executable(chunk_selftest
         tests/chunk_selftest.cpp
         src/world/level/chunk/ChunkCodec.cpp)

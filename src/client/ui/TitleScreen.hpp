@@ -36,7 +36,15 @@ namespace perlin::ui {
         return e.kind == ServerEntry::Kind::Header ? false : (e.kind == ServerEntry::Kind::Friend ? e.hosting : true);
     }
 
-    enum class TitlePage { Main, Servers, Edit, Direct, AddRealm, Accounts, AccountName, AccountSignIn };
+    struct ReplayEntry {
+        std::string name, file, line1, line2;
+        bool broken = false;
+        long long created = 0;
+        long long sizeBytes = 0;
+        unsigned durationMs = 0;
+    };
+
+    enum class TitlePage { Main, Servers, Edit, Direct, AddRealm, Accounts, AccountName, AccountSignIn, Replays, ReplayRename, ReplayDelete };
 
     struct TitleModel {
         TitlePage page = TitlePage::Main;
@@ -69,6 +77,14 @@ namespace perlin::ui {
         std::string logoSrc;
         int logoW = 256, logoH = 64;
 
+        std::vector<ReplayEntry> replays;
+        int replaySelected = -1;
+        int replayScroll = 0;
+        int replaySort = 0;  // 0 created, 1 name, 2 server, 3 duration, 4 size
+        bool replaySortDesc = true;
+        std::string replayMessage;
+        std::string replayName;
+
         std::string accountLabel;
         std::string accountUser;
         std::string accountHead;
@@ -83,6 +99,19 @@ namespace perlin::ui {
     inline constexpr const char* kTitleOptions = "title_options";
     inline constexpr const char* kTitleMods = "title_mods";
     inline constexpr const char* kTitleWardrobe = "title_wardrobe";
+    inline constexpr const char* kTitleReplays = "title_replays";
+    inline constexpr const char* kReplayPlay = "rp_play";
+    inline constexpr const char* kReplayRename = "rp_rename";
+    inline constexpr const char* kReplayDelete = "rp_delete";
+    inline constexpr const char* kReplayFolder = "rp_folder";
+    inline constexpr const char* kReplaySort = "rp_sort";
+    inline constexpr const char* kReplayDirection = "rp_dir";
+    inline constexpr const char* kReplayDone = "rp_done";
+    inline constexpr const char* kReplayRowPrefix = "rprow_";
+    inline constexpr const char* kReplayRenameOk = "rp_rename_ok";
+    inline constexpr const char* kReplayNameField = "rp_name";
+    inline constexpr const char* kReplayDeleteOk = "rp_delete_ok";
+    inline constexpr const char* kReplayDialogCancel = "rp_dialog_cancel";
     inline constexpr const char* kServerJoin = "servers_join";
     inline constexpr const char* kServerDirect = "servers_direct";
     inline constexpr const char* kServerAdd = "servers_add";

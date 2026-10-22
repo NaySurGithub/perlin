@@ -40,6 +40,14 @@ namespace perlin {
 
         void ModMotion(bool add, double x, double y, double z, bool ax, bool ay, bool az);
         void ModTeleport(double x, double y, double z, bool keepVelocity);
+        // Replay playback: pin the (otherwise unused) local player to the free camera.
+        void ReplayPlace(double px, double py, double pz) {
+            state.x = px;
+            state.y = py;
+            state.z = pz;
+            state.vx = state.vy = state.vz = 0;
+            state.onGround = false;
+        }
 
         float EyeOffset() const { return eyeOffset; }
 

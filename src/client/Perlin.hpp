@@ -15,6 +15,11 @@
 #include "client/input/Input.hpp"
 #include "client/input/InputManager.hpp"
 #include "client/multiplayer/BedrockSession.hpp"
+#include "client/replay/ExportConfig.hpp"
+#include "client/replay/Ffmpeg.hpp"
+#include "client/replay/FfmpegDownload.hpp"
+#include "client/replay/ReplayController.hpp"
+#include "client/replay/Timeline.hpp"
 #include "client/particle/ParticleSystem.hpp"
 #include "client/particle/DataParticles.hpp"
 #include "client/renderer/FogDefs.hpp"
@@ -422,6 +427,106 @@ namespace perlin {
         float previousRainLevel = 0.0f;
         float previousThunderLevel = 0.0f;
 
+        replay::ReplayController replayCtl;
+        void ToggleReplayRecording(bool start);
+        void FinishReplayRecording(const char* why);
+        // ---- replay playback ----
+        struct ReplayUi {
+            bool menuOpen = false, hideHud = true, uiHidden = false, camInit = false, leftDown = false, scrubbing = false, dirty = false;
+            double scrubMs = -1, flySpeed = 12.0, inMs = -1, outMs = -1;
+            int speedIdx = 3;
+            std::string signature, status;
+            std::chrono::steady_clock::time_point openedAt{}, statusUntil{};
+            bool keyPrev[256] = {};
+            float roll = 0, fovOverride = -1;
+        } replayUi;
+        replay::Timeline timeline;
+        bool timelineDirty = false;
+
+        // ---- keyframe editor panel ----
+        struct KeyframeUi {
+            bool open = false;
+            int tab = 0, scroll = 0;
+            int sel[3] = {-1, -1, -1};
+            int interp = 0;
+            float fov = 70, roll = 0, speed = 1.0f, timeTicks = 6000;
+            std::string signature;
+            bool leftDown = false;
+            std::chrono::steady_clock::time_point openedAt{};
+        } kfUi;
+        bool UpdateKeyframePanel(ui::Hud& hud, int fbW, int fbH);
+        void LoadTimeline();
+        void SaveTimeline();
+
+        // ---- export ----
+        struct ExportRequest {
+            replay::ExportConfig cfg;
+            bool screenshot = false;
+        };
+        struct ExportUi {
+            bool open = false, cfgLoaded = false, catQueried = false, leftDown = false;
+            int tab = 0, scroll = 0;
+            std::string focus, signature, status;
+            std::map<std::string, std::string> text;
+            replay::ExportConfig cfg;
+            replay::ffmpeg::Catalog cat;
+            std::unique_ptr<replay::ffmpeg::Downloader> downloader;
+            std::vector<ExportRequest> queue;
+            std::chrono::steady_clock::time_point openedAt{}, caretAt{};
+            bool caret = true;
+            bool downloadHandled = false;
+        } exportUi;
+        struct ExportJob {
+            bool active = false, screenshot = false, useFfmpeg = true, imageSeq = false, finishing = false, advanceNow = false;
+            replay::ExportConfig cfg;
+            replay::ffmpeg::Settings fs;
+            std::unique_ptr<replay::ffmpeg::Encoder> encoder;
+            std::string outPath, name, error;
+            int renderW = 0, renderH = 0, outW = 0, outH = 0;
+            double startMs = 0, endMs = 0, targetMs = 0, stepMs = 0;
+            long long frame = 0, total = 0;
+            enum class Phase { Seeking, Settle, Capture, Waiting, Advance } phase = Phase::Seeking;
+            int settleIters = 0, quietIters = 0, waitIters = 0;
+            long long virtualUs = 0;
+            std::chrono::steady_clock::time_point virtualBase{}, realStart{}, phaseStart{}, lastOverlay{};
+            std::mutex capMutex;
+            std::vector<uint8_t> capBuf;
+            uint32_t capW = 0, capH = 0, capPitch = 0;
+            bool capFlip = false;
+            std::atomic<bool> capReady{false};
+            // state restored afterwards
+            bool savedHideHud = true, savedPaused = false, savedMenu = false;
+            double savedSpeed = 1, savedTimeMs = 0;
+            replay::CameraMode savedMode = replay::CameraMode::Free;
+            std::string lastMessage;
+        } exportJob;
+        bool UpdateExportMenu(ui::Hud& hud, int fbW, int fbH);
+        void ExportOpenMenu();
+        bool ExportStart(const ExportRequest& req);
+        void ExportPreFrame(std::chrono::steady_clock::time_point& frameStart, float& dt);
+        void ExportPostRender();
+        void ExportFinish(bool cancelled, const std::string& error);
+        void ExportStartNext();
+        void ExportOverlay(ui::Hud& hud, int fbW, int fbH);
+        void FramebufferSizeEffective(int& w, int& h);
+        void LoadExportConfig();
+        void SaveExportConfig();
+
+        void StartReplayPlayback(const std::string& path);
+        void MakeReplaySession();
+        void ExitReplayPlayback(ui::Hud& hud);
+        void PumpReplay(float dt);
+        bool UpdateReplayScreen(ui::Hud& hud, BedrockSession* live, int fbW, int fbH);
+        void ReplayStatus(const std::string& text);
+        void RefreshReplayList();
+        bool TitleReplayTyped(int key, bool character, bool ctrl);
+        bool TitleReplayClick(const std::string& hover);
+        bool ImportReplayFile(const std::string& source);
+        bool replayRecoveryChecked = false;
+        double replayPrevMs = 0;
+        bool titleReturnToReplays = false;
+        int replayClickRow = -1;
+        std::chrono::steady_clock::time_point replayClickAt{};
         std::unique_ptr<BedrockSession> session;
         std::shared_ptr<xbox::Account> account;
         std::mutex statusMutex;

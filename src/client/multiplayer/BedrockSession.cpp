@@ -1,5 +1,6 @@
 #include "util/Paths.hpp"
 #include "client/multiplayer/BedrockSession.hpp"
+#include "util/SimClock.hpp"
 #include "util/SystemInfo.hpp"
 #include "client/multiplayer/NbtJson.hpp"
 #include "client/multiplayer/DeviceProfile.hpp"
@@ -593,6 +594,13 @@ namespace perlin {
     }
 
     bool BedrockSession::Transmit(uint32_t packetId, const std::vector<uint8_t>& body, bool reliable) {
+        if (replayMode)
+            return true;
+        if (packetId == 144 && tapActive.load(std::memory_order_acquire)) {
+            std::lock_guard<std::mutex> tl(tapMutex);
+            if (recordTap)
+                recordTap(1, packetId, body);
+        }
         if (dropOutActive.load(std::memory_order_acquire)) {
             std::lock_guard<std::mutex> lk(dropMutex);
             if (std::find(droppedOut.begin(), droppedOut.end(), packetId) != droppedOut.end())
@@ -687,7 +695,7 @@ namespace perlin {
             if (columns >= 9 || std::chrono::steady_clock::now() - dimAckSince > std::chrono::seconds(4))
                 FinishDimensionChange();
         }
-        if (state == State::InGame && !transferring && !transferRequested && !diagLostLogged && lastPacketMs.load() != 0) {
+        if (!replayMode && state == State::InGame && !transferring && !transferRequested && !diagLostLogged && lastPacketMs.load() != 0) {
             const int64_t nowMs = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
             if (nowMs - lastPacketMs.load() > 30000) {
                 diagLostLogged = true;
@@ -841,6 +849,11 @@ namespace perlin {
         }
         if (onPacket)
             onPacket(id, body);
+        if (tapActive.load(std::memory_order_acquire)) {
+            std::lock_guard<std::mutex> tl(tapMutex);
+            if (recordTap)
+                recordTap(0, id, body);
+        }
         if (dropActive.load(std::memory_order_acquire)) {
             std::lock_guard<std::mutex> lk(dropMutex);
             if (std::find(dropped.begin(), dropped.end(), id) != dropped.end())
@@ -1875,19 +1888,19 @@ namespace perlin {
     void BedrockSession::NoteTime(int64_t v) {
         std::lock_guard<std::mutex> lk(timeMutex);
         timeTotal = v >= 0 ? v : ((v % 24000) + 24000) % 24000;
-        timeAt = std::chrono::steady_clock::now();
+        timeAt = SimClock::Now();
     }
 
     void BedrockSession::NoteClock(int64_t time, bool paused) {
         std::lock_guard<std::mutex> lk(timeMutex);
         timeTotal = time;
         clockPaused = paused;
-        timeAt = std::chrono::steady_clock::now();
+        timeAt = SimClock::Now();
     }
 
     void BedrockSession::SetDayCycle(bool running) {
         std::lock_guard<std::mutex> lk(timeMutex);
-        const auto now = std::chrono::steady_clock::now();
+        const auto now = SimClock::Now();
         if (timeTotal >= 0 && dayCycleRunning && !clockPaused && timeAt.time_since_epoch().count() != 0)
             timeTotal += std::chrono::duration_cast<std::chrono::milliseconds>(now - timeAt).count() / 50;
         timeAt = now;
@@ -1900,7 +1913,7 @@ namespace perlin {
             return false;
         double advance = 0.0;
         if (dayCycleRunning && !clockPaused && timeAt.time_since_epoch().count() != 0)
-            advance = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - timeAt).count() / 50.0;
+            advance = std::chrono::duration<double, std::milli>(SimClock::Now() - timeAt).count() / 50.0;
         outTicks = static_cast<double>(timeTotal) + advance;
         return true;
     }
@@ -1910,7 +1923,7 @@ namespace perlin {
         if (timeTotal < 0)
             return false;
         int64_t adv = dayCycleRunning && !clockPaused ? std::chrono::duration_cast<std::chrono::milliseconds>(
-                                            std::chrono::steady_clock::now() - timeAt)
+                                            SimClock::Now() - timeAt)
                                                 .count() /
                                             50
                                       : 0;

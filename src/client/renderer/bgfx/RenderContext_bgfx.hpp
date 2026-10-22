@@ -1,4 +1,6 @@
 #pragma once
+#include <deque>
+#include <mutex>
 #include <future>
 #include "client/renderer/RangeAllocator.hpp"
 #include "client/renderer/bgfx/JavaPackHost.hpp"
@@ -36,6 +38,9 @@ namespace perlin {
         void EndFrame() override;
         bool PresentGenerated(int index, int total) override;
         void RequestScreenshot(const std::string& path) override;
+        void SetForcedSize(int w, int h) override { forcedW = w; forcedH = h; }
+        void RequestFrameCapture(CaptureSink sink) override;
+        void DeliverCapture(uint32_t w, uint32_t h, uint32_t pitch, const uint8_t* bgra, bool flipY);
         void UploadSkyTextures(const Texture& sun, const Texture& moon, const Texture& clouds) override;
         void UploadCrosshair(const Texture& icons) override;
         void DrawHudCursor(float x, float y, float w, float h) override;
@@ -360,6 +365,9 @@ namespace perlin {
         bool homogeneousDepth = false;
 
         int width = 0, height = 0;
+        int forcedW = 0, forcedH = 0;
+        std::mutex captureMutex;
+        std::deque<CaptureSink> captureSinks;
 
         std::unordered_map<const uint8_t*, std::vector<std::vector<uint8_t>>> animatedTiles;
         int atlasLayers = 0;

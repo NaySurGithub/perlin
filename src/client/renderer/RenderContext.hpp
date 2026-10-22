@@ -1,4 +1,5 @@
 #pragma once
+#include <functional>
 #include "client/renderer/RenderStates.hpp"
 #include "client/renderer/Frustum.hpp"
 #include "client/renderer/Lightmap.hpp"
@@ -156,6 +157,10 @@ namespace perlin {
         virtual void EndFrame() = 0;
         virtual bool PresentGenerated(int  , int  ) { return false; }
         virtual void RequestScreenshot(const std::string& path) = 0;
+        // Replay export: render at a fixed size independent of the window, and receive the finished frame (BGRA8).
+        using CaptureSink = std::function<void(uint32_t width, uint32_t height, uint32_t pitch, const uint8_t* bgra, bool flipY)>;
+        virtual void SetForcedSize(int, int) {}
+        virtual void RequestFrameCapture(CaptureSink) {}
 
         virtual void UploadCrosshair(const Texture& icons) = 0;
         virtual void DrawHudCursor(float x, float y, float w, float h) = 0;

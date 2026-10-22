@@ -279,8 +279,9 @@ mcimg { display: block; position: absolute; }
             d += Btn(kTitleMulti, cx - 100, j + 24, 200, "Multiplayer");
             d += Btn(kTitleMods, cx - 100, j + 48, 200, "Mods");
             d += IconBtn(kTitleWardrobe, cx + 104, j + 48, "textures/ui/glyph_skin_pack.png");
-            d += Btn(kTitleOptions, cx - 100, j + 84, 98, "Options...");
-            d += Btn(kTitleQuit, cx + 2, j + 84, 98, "Quit Game");
+            d += Btn(kTitleReplays, cx - 100, j + 72, 200, "Replays");
+            d += Btn(kTitleOptions, cx - 100, j + 102, 98, "Options...");
+            d += Btn(kTitleQuit, cx + 2, j + 102, 98, "Quit Game");
             if (!m.accountUser.empty()) {
                 const int textX = m.accountHead.empty() ? 6 : 20;
                 const int bw = std::clamp(textX + TextWidth(m.accountUser) + 7, 40, std::max(40, w - 8));
@@ -437,6 +438,90 @@ mcimg { display: block; position: absolute; }
         }
     }
 
+
+    namespace {
+        std::string PlayGlyph(int x, int y) {
+            std::string d;
+            for (int i = 0; i < 12; i++) {
+                const int w = i < 6 ? i + 1 : 12 - i;
+                d += "<div style=\"left:" + N(x + 11) + "px;top:" + N(y + 10 + i) + "px;width:" + N(w * 2) + "px;height:1px;background-color:#ffffff;z-index:3;\"></div>";
+            }
+            return d;
+        }
+
+        std::string Replays(const TitleModel& m, int w, int h) {
+            std::string d = Dirt(w, h, "0.25 0.25 0.25");
+            const int cx = w / 2;
+            const int listTop = TitleListTop(), listBottom = TitleListBottom(h);
+            d += "<mcimg src=\"textures/blocks/dirt\" tiled=\"1\" tilescale=\"2\" color=\"0.12 0.12 0.12\" style=\"left:0px;top:" + N(listTop) + "px;width:" + N(w) + "px;height:" + N(listBottom - listTop) + "px;z-index:1;\"></mcimg>\n";
+            d += "<div style=\"left:0px;top:" + N(listTop) + "px;width:" + N(w) + "px;height:4px;decorator:vertical-gradient(#000000ff #00000000);z-index:2;\"></div>\n";
+            d += "<div style=\"left:0px;top:" + N(listBottom - 4) + "px;width:" + N(w) + "px;height:4px;decorator:vertical-gradient(#00000000 #000000ff);z-index:2;\"></div>\n";
+            d += "<div style=\"left:0px;top:" + N(listTop - 1) + "px;width:" + N(w) + "px;height:1px;background-color:#000000;z-index:3;\"></div>\n";
+            d += "<div style=\"left:0px;top:" + N(listBottom) + "px;width:" + N(w) + "px;height:1px;background-color:#000000;z-index:3;\"></div>\n";
+            d += "<div class=\"txt ctr\" style=\"left:0px;top:12px;width:" + N(w) + "px;height:9px;\">Select Replay</div>\n";
+            const int rows = TitleVisibleRows(h);
+            const int rowX = cx - kRowW / 2;
+            int y = listTop + 4;
+            const int count = static_cast<int>(m.replays.size());
+            for (int i = m.replayScroll; i < count && i < m.replayScroll + rows; i++, y += kRowH) {
+                const ReplayEntry& r = m.replays[static_cast<size_t>(i)];
+                if (i == m.replaySelected) {
+                    d += "<div style=\"left:" + N(rowX - 2) + "px;top:" + N(y - 2) + "px;width:" + N(kRowW + 4) + "px;height:" + N(kRowH) + "px;background-color:#ffffff;z-index:2;\"></div>\n";
+                    d += "<div style=\"left:" + N(rowX - 1) + "px;top:" + N(y - 1) + "px;width:" + N(kRowW + 2) + "px;height:" + N(kRowH - 2) + "px;background-color:#000000;z-index:2;\"></div>\n";
+                }
+                d += "<div id=\"" + std::string(kReplayRowPrefix) + N(i) + "\" class=\"row\" style=\"left:" + N(rowX) + "px;top:" + N(y) + "px;width:" + N(kRowW) + "px;height:" + N(kRowH - 4) + "px;\">\n";
+                d += "<div style=\"left:0px;top:0px;width:32px;height:32px;background-color:" + std::string(r.broken ? "#5a2a2a" : "#2a3d4f") + ";\"></div>\n";
+                if (!r.broken)
+                    d += PlayGlyph(0, 0);
+                d += Text(35, 1, kRowW - 40, r.name.empty() ? r.file : r.name);
+                d += Text(35, 12, kRowW - 40, r.line1, r.broken ? "red" : "gray");
+                d += Text(35, 23, kRowW - 40, r.line2, "dark");
+                d += "</div>\n";
+            }
+            if (m.replays.empty()) {
+                d += "<div class=\"txt ctr\" style=\"left:0px;top:" + N(listTop + 28) + "px;width:" + N(w) + "px;height:9px;\">No replays yet</div>\n";
+                d += "<div class=\"txt ctr gray\" style=\"left:0px;top:" + N(listTop + 42) + "px;width:" + N(w) + "px;height:9px;\">Use Start Replay in the pause menu while playing, or drop a .perlinreplay file on this window</div>\n";
+            }
+            if (!m.replayMessage.empty())
+                d += "<div class=\"txt ctr yellow\" style=\"left:0px;top:" + N(h - 62) + "px;width:" + N(w) + "px;height:9px;z-index:4;\">" + EscapeRml(m.replayMessage) + "</div>\n";
+            const bool has = m.replaySelected >= 0 && m.replaySelected < count;
+            const bool playable = has && !m.replays[static_cast<size_t>(m.replaySelected)].broken;
+            static const char* const kSort[] = {"Created", "Name", "Server", "Duration", "Size"};
+            const int r1 = h - 52, r2 = h - 28;
+            d += Btn(playable ? kReplayPlay : "", cx - 154, r1, 100, "Open Replay", !playable);
+            d += Btn(kReplayFolder, cx - 50, r1, 100, "Open Folder");
+            d += Btn(kReplaySort, cx + 54, r1, 100, std::string("Sort: ") + kSort[std::clamp(m.replaySort, 0, 4)]);
+            d += Btn(has ? kReplayRename : "", cx - 154, r2, 72, "Rename", !has);
+            d += Btn(has ? kReplayDelete : "", cx - 74, r2, 72, "Delete", !has);
+            d += Btn(kReplayDirection, cx + 4, r2, 72, m.replaySortDesc ? "Newest" : "Oldest");
+            d += Btn(kReplayDone, cx + 82, r2, 72, "Done");
+            return d;
+        }
+
+        std::string ReplayRename(const TitleModel& m, int w, int h) {
+            std::string d = Dirt(w, h, "0.25 0.25 0.25");
+            const int cx = w / 2;
+            d += "<div class=\"txt ctr\" style=\"left:0px;top:17px;width:" + N(w) + "px;height:9px;\">Edit Replay</div>\n";
+            d += Text(cx - 100, 53, 200, "Replay Name", "dim");
+            d += Field(kReplayNameField, cx - 100, 66, 200, m.replayName, true, m.caret);
+            d += Btn(kReplayRenameOk, cx - 100, h / 4 + 96 + 18, 200, "Save Changes");
+            d += Btn(kReplayDialogCancel, cx - 100, h / 4 + 120 + 18, 200, "Cancel");
+            return d;
+        }
+
+        std::string ReplayDelete(const TitleModel& m, int w, int h) {
+            std::string d = Dirt(w, h, "0.25 0.25 0.25");
+            const int cx = w / 2;
+            const std::string name = m.replaySelected >= 0 && m.replaySelected < static_cast<int>(m.replays.size()) ? m.replays[static_cast<size_t>(m.replaySelected)].name : std::string();
+            d += "<div class=\"txt ctr\" style=\"left:0px;top:40px;width:" + N(w) + "px;height:9px;\">Are you sure you want to delete this replay?</div>\n";
+            d += "<div class=\"txt ctr yellow\" style=\"left:0px;top:56px;width:" + N(w) + "px;height:9px;\">" + EscapeRml(name) + "</div>\n";
+            d += "<div class=\"txt ctr gray\" style=\"left:0px;top:70px;width:" + N(w) + "px;height:9px;\">You won't be able to recover it</div>\n";
+            d += Btn(kReplayDeleteOk, cx - 100, h / 4 + 96 + 18, 200, "Delete");
+            d += Btn(kReplayDialogCancel, cx - 100, h / 4 + 120 + 18, 200, "Cancel");
+            return d;
+        }
+    }
+
     int TitleRowHeight() { return kRowH; }
     int TitleListTop() { return 32; }
     int TitleListBottom(int guiH) { return guiH - 64; }
@@ -460,6 +545,9 @@ mcimg { display: block; position: absolute; }
             case TitlePage::Accounts: out += Accounts(m, guiW, guiH); break;
             case TitlePage::AccountName: out += AccountName(m, guiW, guiH); break;
             case TitlePage::AccountSignIn: out += AccountSignIn(m, guiW, guiH); break;
+            case TitlePage::Replays: out += Replays(m, guiW, guiH); break;
+            case TitlePage::ReplayRename: out += ReplayRename(m, guiW, guiH); break;
+            case TitlePage::ReplayDelete: out += ReplayDelete(m, guiW, guiH); break;
         }
         out += "</body>\n</rml>\n";
         return out;
