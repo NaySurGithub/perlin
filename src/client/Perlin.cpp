@@ -670,7 +670,7 @@ namespace perlin {
         hotShaderStamp.clear();
     }
 
-    void Perlin::PollJavaPack() {
+    void Perlin::PollJavaPack(BedrockSession* live) {
         if (!renderer)
             return;
         if (!javaPackPending.empty() && levelRenderer && levelRenderer->Blocks().Complete()) {
@@ -6610,7 +6610,7 @@ namespace perlin {
             levelRenderer->SetBetterGrass(options.betterGrass ? 1 : 0);
             levelRenderer->SetGlassMode(options.glass == "connected" ? 1 : options.glass == "connectedClear" ? 2 : options.glass == "clear" ? 3 : 0);
             levelRenderer->ReloadAssetsIfNeeded();
-            PollJavaPack();
+            PollJavaPack(live);
 
             if (live)
                 for (const std::string& line : live->TakeChat())
