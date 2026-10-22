@@ -596,7 +596,7 @@ namespace perlin {
     bool BedrockSession::Transmit(uint32_t packetId, const std::vector<uint8_t>& body, bool reliable) {
         if (replayMode)
             return true;
-        if (packetId == 144 && tapActive.load(std::memory_order_acquire)) {
+        if ((packetId == 144 || packetId == 36 || packetId == 44 || packetId == 31) && tapActive.load(std::memory_order_acquire)) {
             std::lock_guard<std::mutex> tl(tapMutex);
             if (recordTap)
                 recordTap(1, packetId, body);

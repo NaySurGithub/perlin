@@ -40,7 +40,8 @@ namespace perlin {
         void RequestScreenshot(const std::string& path) override;
         void SetForcedSize(int w, int h) override { forcedW = w; forcedH = h; }
         void RequestFrameCapture(CaptureSink sink) override;
-        void DeliverCapture(uint32_t w, uint32_t h, uint32_t pitch, const uint8_t* bgra, bool flipY);
+        bool SetExportTarget(bool on) override;
+        void DeliverCapture(uint32_t w, uint32_t h, uint32_t pitch, const uint8_t* bgra, bool flipY, bool rgba = false);
         void UploadSkyTextures(const Texture& sun, const Texture& moon, const Texture& clouds) override;
         void UploadCrosshair(const Texture& icons) override;
         void DrawHudCursor(float x, float y, float w, float h) override;
@@ -366,6 +367,7 @@ namespace perlin {
 
         int width = 0, height = 0;
         int forcedW = 0, forcedH = 0;
+        bool exportTarget = false;
         std::mutex captureMutex;
         std::deque<CaptureSink> captureSinks;
 

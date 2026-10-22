@@ -497,6 +497,7 @@ namespace perlin {
             bool downloadHandled = false;
         } exportUi;
         struct ExportJob {
+            bool offscreen = false; // frames come from an offscreen target, so the progress panel can stay up
             bool active = false, screenshot = false, useFfmpeg = true, imageSeq = false, finishing = false, advanceNow = false;
             replay::ExportConfig cfg;
             replay::ffmpeg::Settings fs;

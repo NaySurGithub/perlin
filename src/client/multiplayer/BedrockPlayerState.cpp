@@ -182,6 +182,58 @@ namespace perlin {
         return Send(p);
     }
 
+    void BedrockSession::InjectClientPacket(uint32_t id, const std::vector<uint8_t>& body) {
+        if (!replayMode)
+            return;
+        if (!replayClientReady) {
+            replayClientReady = true;
+            replayClientDispatcher.On<AnimatePacket>([this](const AnimatePacket& p) {
+                if (p.actionId != AnimatePacketActionId::SwingArm)
+                    return;
+                ReplayClientEvent e;
+                e.kind = ReplayClientEvent::Kind::Swing;
+                replayClientEvents.push_back(e);
+            });
+            replayClientDispatcher.On<MobEquipmentPacket>([this](const MobEquipmentPacket& p) {
+                ReplayClientEvent e;
+                e.kind = ReplayClientEvent::Kind::Hotbar;
+                e.slot = p.selectedSlot;
+                replayClientEvents.push_back(e);
+            });
+            replayClientDispatcher.On<PlayerActionPacket>([this](const PlayerActionPacket& p) {
+                ReplayClientEvent e;
+                e.kind = ReplayClientEvent::Kind::BlockAction;
+                e.action = static_cast<uint32_t>(p.action);
+                e.x = p.position.x;
+                e.y = p.position.y;
+                e.z = p.position.z;
+                e.face = p.face;
+                replayClientEvents.push_back(e);
+            });
+            replayClientDispatcher.On<PlayerAuthInputPacket>([this](const auto& p) {
+                const auto each = [&](const auto& list) {
+                    for (const auto& a : list) {
+                        ReplayClientEvent e;
+                        e.kind = ReplayClientEvent::Kind::BlockAction;
+                        e.action = static_cast<uint32_t>(a.action);
+                        e.x = a.position.x;
+                        e.y = a.position.y;
+                        e.z = a.position.z;
+                        e.face = a.face;
+                        replayClientEvents.push_back(e);
+                    }
+                };
+                if constexpr (requires { p.blockAction.has_value(); }) {
+                    if (p.blockAction.has_value())
+                        each(*p.blockAction);
+                } else {
+                    each(p.blockAction);
+                }
+            });
+        }
+        replayClientDispatcher.Dispatch(id, body.data(), body.size());
+    }
+
     void BedrockSession::RegisterPlayerStateHandlers() {
         const auto convert = [this](const ItemV4& raw) {
             ItemStackInfo info;

@@ -6807,6 +6807,88 @@ namespace perlin {
                     }
                 }
 
+                // Replays: act out the recorded player's client-side packets (swings, mining, hotbar) so the
+                // hand, cracks, hit particles and sounds match what they did.
+                if (replayCtl.Playing() && live) {
+                    struct ReplayMine { bool active = false; int x = 0, y = 0, z = 0, face = 0; float progress = 0.0f; int hits = 0; };
+                    static ReplayMine rm;
+                    std::vector<BedrockSession::ReplayClientEvent> events;
+                    live->TakeReplayClientEvents(events);
+                    if (replayCtl.CatchingUp()) {
+                        events.clear();
+                        rm = ReplayMine{};
+                        gLocalCrack.active = false;
+                    }
+                    const auto heldName = [&]() {
+                        const auto inv = live->GetInventory();
+                        return inv.hotbar[std::clamp(inv.selected, 0, 8)].name;
+                    };
+                    const auto finishMine = [&](bool broke) {
+                        if (broke && rm.active) {
+                            bool loadedHere = false;
+                            const uint16_t oldId = live->NetLevel().GetBlock(rm.x, rm.y, rm.z, loadedHere);
+                            if (loadedHere && oldId != 0) {
+                                const std::string nm = BlockPalette::Instance().Name(oldId);
+                                if (!nm.empty())
+                                    sounds.PlayBlockEvent(nm, "break", glm::dvec3(rm.x + 0.5, rm.y + 0.5, rm.z + 0.5));
+                                particles.Destroy(rm.x, rm.y, rm.z, oldId);
+                                lastLocalBreak = {rm.x, rm.y, rm.z, std::chrono::steady_clock::now()};
+                            }
+                        }
+                        rm = ReplayMine{};
+                        gLocalCrack.active = false;
+                    };
+                    for (const auto& ev : events) {
+                        using Kind = BedrockSession::ReplayClientEvent::Kind;
+                        if (ev.kind == Kind::Swing) {
+                            handRenderer.Swing(options.hand);
+                            gSelfSwing++;
+                        } else if (ev.kind == Kind::Hotbar) {
+                            live->ReplaySelectSlot(ev.slot);
+                        } else {
+                            switch (ev.action) {
+                            case 0: // start breaking
+                                rm = ReplayMine{true, ev.x, ev.y, ev.z, ev.face, 0.0f, 0};
+                                break;
+                            case 18: // crack / continue
+                            case 27: {
+                                if (!rm.active || rm.x != ev.x || rm.y != ev.y || rm.z != ev.z)
+                                    rm = ReplayMine{true, ev.x, ev.y, ev.z, ev.face, 0.0f, 0};
+                                bool loaded = false;
+                                const uint16_t id = live->NetLevel().GetBlock(rm.x, rm.y, rm.z, loaded);
+                                const std::string nm = loaded ? BlockPalette::Instance().Name(id) : std::string();
+                                float step = creative ? 1.0f : 0.0f;
+                                if (!creative && !nm.empty() && nm != "minecraft:air") {
+                                    destroy::Conditions c;
+                                    c.heldItem = heldName();
+                                    c.onGround = true;
+                                    c.inWater = false;
+                                    step = destroy::ProgressPerTick(destroy::Lookup(nm), c);
+                                }
+                                rm.progress += step;
+                                if (!creative && loaded && id != 0)
+                                    particles.Crack(rm.x, rm.y, rm.z, rm.face, id);
+                                if (!creative && ++rm.hits % 4 == 0 && !nm.empty())
+                                    sounds.PlayBlockEvent(nm, "hit", glm::dvec3(rm.x + 0.5, rm.y + 0.5, rm.z + 0.5));
+                                gLocalCrack = {rm.progress > 0.0f && rm.progress < 1.0f, rm.x, rm.y, rm.z,
+                                               std::clamp(static_cast<int>(rm.progress * 10.0f), 0, 9),
+                                               std::clamp(rm.progress, 0.0f, 1.0f)};
+                                break;
+                            }
+                            case 26: // predicted destroy
+                            case 2:  // stop break
+                                finishMine(true);
+                                break;
+                            case 1: // abort
+                                finishMine(false);
+                                break;
+                            default:
+                                break;
+                            }
+                        }
+                    }
+                }
+
                 gAim = AimHit{};
                 if ((live || previewLevel) && !spectator && levelRenderer) {
                     const std::vector<entity::Entity>& aimEntities = frameEntities;

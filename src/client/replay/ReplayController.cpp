@@ -324,6 +324,8 @@ namespace perlin::replay {
                         recorded.known = true;
                         recordedAtMs = rec.timeMs;
                     }
+                    if (clientSink)
+                        clientSink(rec);
                 } else {
                     inject(rec);
                 }

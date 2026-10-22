@@ -211,6 +211,8 @@ div { display: block; position: absolute; }
         const size_t body = d.find("<body>");
         d.replace(body, 6, "<body style=\"width: " + N(guiW) + "px; height: " + N(guiH) + "px;\">");
         const PanelLayout l = ComputePanelLayout(m, guiW, guiH);
+        if (m.exportLayer)
+            d += "<mclayer layer=\"export\" style=\"display: block; position: absolute; width: 0px; height: 0px; z-index: -999;\"></mclayer>\n";
         d += Rect(l.x, l.y, l.w, l.h, "#000000d0", 1);
         d += Rect(l.x, l.y, l.w, 1, "#ffffff66", 2);
         d += Rect(l.x, l.y + l.h - 1, l.w, 1, "#ffffff66", 2);
@@ -288,6 +290,8 @@ div { display: block; position: absolute; }
             for (size_t i = 0; i < m.buttons.size(); i++)
                 d += Button(m.buttons[i].id, l.x + 6 + (bw + gap) * static_cast<float>(i), by, bw, m.buttons[i].label, false, !m.buttons[i].enabled);
         }
+        if (m.exportLayer)
+            d += "<mclayer layer=\"gui\" style=\"display: block; position: absolute; width: 0px; height: 0px; z-index: 999;\"></mclayer>\n";
         d += "</body>\n</rml>\n";
         return d;
     }

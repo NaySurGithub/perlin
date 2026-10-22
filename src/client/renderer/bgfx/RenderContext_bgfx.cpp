@@ -147,6 +147,7 @@ namespace perlin {
         constexpr bgfx::ViewId kViewCopy2 = 22;
         constexpr bgfx::ViewId kViewPresent = 23;
         constexpr bgfx::ViewId kViewGen = 24;
+        constexpr bgfx::ViewId kViewExportUi = 25; // drawn last, straight to the window
         constexpr uint32_t kPageVerts = 1u << 20;
         constexpr uint32_t kPageIdx = (kPageVerts / 4) * 6;
 
@@ -235,9 +236,9 @@ namespace perlin {
         bool cacheRead(uint64_t, void*, uint32_t) override { return false; }
         void cacheWrite(uint64_t, const void*, uint32_t) override {}
         void screenShot(const char* filePath, uint32_t w, uint32_t h, uint32_t pitch,
-                        bgfx::TextureFormat::Enum, const void* data, uint32_t, bool yflip) override {
+                        bgfx::TextureFormat::Enum format, const void* data, uint32_t, bool yflip) override {
             if (filePath && std::strcmp(filePath, "perlin:capture") == 0)
-                owner->DeliverCapture(w, h, pitch, static_cast<const uint8_t*>(data), yflip);
+                owner->DeliverCapture(w, h, pitch, static_cast<const uint8_t*>(data), yflip, format == bgfx::TextureFormat::RGBA8);
             else
                 owner->SaveScreenshotData(filePath, w, h, pitch, static_cast<const uint8_t*>(data), yflip);
         }
@@ -459,6 +460,7 @@ namespace perlin {
         bgfx::setViewMode(kViewGui, bgfx::ViewMode::Sequential);
         bgfx::setViewMode(kViewDoll, bgfx::ViewMode::Sequential);
         bgfx::setViewMode(kViewTop, bgfx::ViewMode::Sequential);
+        bgfx::setViewMode(kViewExportUi, bgfx::ViewMode::Sequential);
         bgfx::setViewMode(kViewBlur, bgfx::ViewMode::Sequential);
         bgfx::setViewMode(kViewBlurOut, bgfx::ViewMode::Sequential);
 
@@ -863,7 +865,7 @@ namespace perlin {
     }
 
     bool RenderContext_bgfx::PresentGenerated(int index, int total) {
-        if (!initialized || !fg.ready || !fg.valid || !cam.haveCur || !cam.havePrev || cam.teleported || total < 2 ||
+        if (!initialized || exportTarget || !fg.ready || !fg.valid || !cam.haveCur || !cam.havePrev || cam.teleported || total < 2 ||
             !bgfx::isValid(blur.worldDepth) || !shaders.Has(ShaderProgram::FrameGen))
             return false;
         const double nowSec = std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
@@ -1087,7 +1089,7 @@ namespace perlin {
             blur.w = renderW;
             blur.h = renderH;
         }
-        const bool on = blurOn || sceneWanted || bloomOn || scaled || plan.temporal || plan.frameGen;
+        const bool on = blurOn || sceneWanted || bloomOn || scaled || plan.temporal || plan.frameGen || exportTarget;
         if (!on || !EnsureMotionBlurTargets()) {
             if (on && !blur.targets) {
                 if (blurOn)
@@ -1136,7 +1138,7 @@ namespace perlin {
         for (const bgfx::ViewId view : {bgfx::ViewId(0), kViewEntity, kViewLate})
             bgfx::setViewRect(view, 0, 0, static_cast<uint16_t>(blur.scaled ? blur.w : width), static_cast<uint16_t>(blur.scaled ? blur.h : height));
         const int worldW = blur.scaled ? blur.w : width, worldH = blur.scaled ? blur.h : height;
-        const bool fgRun = plan.frameGen && EnsureFrameGen();
+        const bool fgRun = (plan.frameGen || exportTarget) && EnsureFrameGen();
         if (!fgRun && fg.ready)
             DestroyFrameGen();
         bgfx::FrameBufferHandle screenFb = BGFX_INVALID_HANDLE;
@@ -1311,6 +1313,10 @@ namespace perlin {
             bgfx::setViewRect(kViewTop, 0, 0, static_cast<uint16_t>(width), static_cast<uint16_t>(height));
             bgfx::setViewTransform(kViewTop, identity, guiProj);
             bgfx::touch(kViewTop);
+            bgfx::setViewFrameBuffer(kViewExportUi, BGFX_INVALID_HANDLE);
+            bgfx::setViewRect(kViewExportUi, 0, 0, static_cast<uint16_t>(width), static_cast<uint16_t>(height));
+            bgfx::setViewTransform(kViewExportUi, identity, guiProj);
+            bgfx::touch(kViewExportUi);
         }
         if (shadowConfigDirty || params.shadowQuality != shadowQualityBuilt || params.shadowDistance != shadowDistanceBuilt) {
             shadowConfigDirty = false;
@@ -1674,7 +1680,7 @@ namespace perlin {
         bgfx::TextureHandle texture = uiWhite;
         if (draw.texture != 0 && draw.texture <= uiTextures.size() && uiTextures[draw.texture - 1].used)
             texture = uiTextures[draw.texture - 1].handle;
-        const bgfx::ViewId view = layer == UiLayer::World ? kViewEntity : layer == UiLayer::WorldLate ? kViewLate : layer == UiLayer::Hand ? kViewHand : layer == UiLayer::Doll ? kViewDoll : layer == UiLayer::Top ? kViewTop : kViewGui;
+        const bgfx::ViewId view = layer == UiLayer::World ? kViewEntity : layer == UiLayer::WorldLate ? kViewLate : layer == UiLayer::Hand ? kViewHand : layer == UiLayer::Doll ? kViewDoll : layer == UiLayer::Top ? kViewTop : layer == UiLayer::Export ? kViewExportUi : kViewGui;
 
         float model[16];
         std::memcpy(model, draw.model, sizeof(model));
@@ -1821,10 +1827,28 @@ namespace perlin {
             std::lock_guard<std::mutex> lk(captureMutex);
             captureSinks.push_back(std::move(sink));
         }
-        bgfx::requestScreenShot(BGFX_INVALID_HANDLE, "perlin:capture");
+        // With an export target the finished frame (without the progress panel) is read from it, not from the window.
+        const bool offscreen = exportTarget && fg.valid && bgfx::isValid(fg.finalFb);
+        bgfx::FrameBufferHandle target = BGFX_INVALID_HANDLE;
+        if (offscreen)
+            target = fg.finalFb;
+        bgfx::requestScreenShot(target, "perlin:capture");
     }
 
-    void RenderContext_bgfx::DeliverCapture(uint32_t w, uint32_t h, uint32_t pitch, const uint8_t* bgra, bool flipY) {
+    bool RenderContext_bgfx::SetExportTarget(bool on) {
+        if (!on) {
+            exportTarget = false;
+            return true;
+        }
+        if (!initialized || PackActive() || PERLIN_ENV("PERLIN_EXPORT_DIRECT"))
+            return false;
+        if (!EnsureFrameGen())
+            return false;
+        exportTarget = true;
+        return true;
+    }
+
+    void RenderContext_bgfx::DeliverCapture(uint32_t w, uint32_t h, uint32_t pitch, const uint8_t* bgra, bool flipY, bool rgba) {
         CaptureSink sink;
         {
             std::lock_guard<std::mutex> lk(captureMutex);
@@ -1832,6 +1856,22 @@ namespace perlin {
                 return;
             sink = std::move(captureSinks.front());
             captureSinks.pop_front();
+        }
+        if (rgba && w > 0 && h > 0) {
+            // the offscreen target is RGBA8 but sinks expect BGRA8
+            std::vector<uint8_t> swapped(static_cast<size_t>(pitch) * h);
+            for (uint32_t y = 0; y < h; y++) {
+                const uint8_t* src = bgra + static_cast<size_t>(y) * pitch;
+                uint8_t* dst = swapped.data() + static_cast<size_t>(y) * pitch;
+                for (uint32_t x = 0; x < w; x++) {
+                    dst[x * 4 + 0] = src[x * 4 + 2];
+                    dst[x * 4 + 1] = src[x * 4 + 1];
+                    dst[x * 4 + 2] = src[x * 4 + 0];
+                    dst[x * 4 + 3] = src[x * 4 + 3];
+                }
+            }
+            sink(w, h, pitch, swapped.data(), flipY);
+            return;
         }
         sink(w, h, pitch, bgra, flipY);
     }

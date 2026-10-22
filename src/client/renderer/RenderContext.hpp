@@ -52,7 +52,8 @@ namespace perlin {
         Hand,
         Gui,
         Doll,
-        Top
+        Top,
+        Export // above everything, never part of an export capture
     };
 
     struct UiDraw {
@@ -160,6 +161,9 @@ namespace perlin {
         // Replay export: render at a fixed size independent of the window, and receive the finished frame (BGRA8).
         using CaptureSink = std::function<void(uint32_t width, uint32_t height, uint32_t pitch, const uint8_t* bgra, bool flipY)>;
         virtual void SetForcedSize(int, int) {}
+        // Replay export: render the game into an offscreen target that is captured instead of the window, so
+        // UiLayer::Export (the progress panel) can stay on screen without ending up in the video. False = unsupported.
+        virtual bool SetExportTarget(bool) { return false; }
         virtual void RequestFrameCapture(CaptureSink) {}
 
         virtual void UploadCrosshair(const Texture& icons) = 0;

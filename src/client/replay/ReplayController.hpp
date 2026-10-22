@@ -51,6 +51,8 @@ namespace perlin::replay {
         void Rewind();
         // Advances playback; every due packet is handed to `inject`. Returns false once the end is reached.
         // `budgetMs` bounds wall time spent in one call (catching up after a seek).
+        // Receives every recorded client->server packet (pose included) as it becomes due.
+        void SetClientSink(std::function<void(const Record&)> sink) { clientSink = std::move(sink); }
         bool Advance(double dtMs, const std::function<void(const Record&)>& inject, double budgetMs);
         void Seek(double ms);
         bool SeekPending() const { return seekTarget >= 0; }
@@ -83,6 +85,7 @@ namespace perlin::replay {
         CameraMode cameraMode = CameraMode::Free;
 
     private:
+        std::function<void(const Record&)> clientSink;
         void LoadChunkFor(size_t index);
         Recorder recorder;
         std::vector<LiveInfo::Pack> recordingPacks;

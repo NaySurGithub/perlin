@@ -370,6 +370,23 @@ void RequestRespawn();
             return netLevel.RewindTo(epoch);
         }
         bool IsReplay() const { return replayMode; }
+        // What the recorded player did on the client side (swing, block actions, hotbar), decoded from the
+        // serverbound packets stored in a replay.
+        struct ReplayClientEvent {
+            enum class Kind { Swing, BlockAction, Hotbar } kind = Kind::Swing;
+            uint32_t action = 0;
+            int x = 0, y = 0, z = 0, face = 0;
+            int slot = 0;
+        };
+        void ReplaySelectSlot(int slot) {
+            std::lock_guard lock(statusMutex);
+            inventory.selected = std::clamp(slot, 0, 8);
+        }
+        void InjectClientPacket(uint32_t id, const std::vector<uint8_t>& body);
+        void TakeReplayClientEvents(std::vector<ReplayClientEvent>& out) {
+            out.insert(out.end(), replayClientEvents.begin(), replayClientEvents.end());
+            replayClientEvents.clear();
+        }
         bool ChunkWorkIdle() {
             std::lock_guard<std::mutex> lk(chunkMutex);
             return chunkIn.empty() && !chunkBusy;
@@ -723,6 +740,9 @@ void RequestRespawn();
         std::mutex tapMutex;
         std::atomic<bool> tapActive{false};
         bool replayMode = false;
+        net::PacketDispatcher replayClientDispatcher;
+        bool replayClientReady = false;
+        std::vector<ReplayClientEvent> replayClientEvents;
         std::mutex dropMutex;
         std::vector<uint32_t> dropped;
         std::atomic<bool> dropActive{false};

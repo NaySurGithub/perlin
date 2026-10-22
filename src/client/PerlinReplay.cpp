@@ -486,6 +486,10 @@ namespace perlin {
         else if (!timeline.speed.empty())
             replayCtl.SetSpeed(kSpeeds[replayUi.speedIdx] * timeline.SpeedAt(replayCtl.TimeMs()));
         const double worldFrom = replayWorldFromMs;
+        replayCtl.SetClientSink([s](const replay::Record& r) {
+            if (r.id == 144 || r.id == 36 || r.id == 44 || r.id == 31)
+                s->InjectClientPacket(r.id, r.body);
+        });
         replayCtl.Advance(dtMs, [s, worldFrom](const replay::Record& r) {
             const bool world = r.id == 21 || r.id == 58 || r.id == 110 || r.id == 172 || r.id == 174;
             if (world) {

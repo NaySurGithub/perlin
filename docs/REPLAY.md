@@ -38,3 +38,13 @@ Open it with **Editor** on the replay bar. It has a menu bar (close, export, opt
 - Replays always use first person. In **Cam: Player** mode you see through the recorded player's eyes including their held item/hand.
 - Dragging the bar's progress slider now rewinds/fast-forwards the replay while you drag.
 - The multiplayer connect screen shows a yellow stability/anticheat notice above Cancel.
+
+## Client-side actions (swings, mining, hotbar)
+
+Besides the player's position, recordings now store the serverbound packets that show what the player *did*: arm swings (Animate), block actions inside PlayerAuthInput and PlayerAction (start / crack / continue / predict / stop / abort) and hotbar changes (MobEquipment). During playback they are decoded and acted out: the first-person hand swings, break cracks grow on the block being mined, hit particles and hit/break sounds play, and the selected hotbar slot follows the recording. Older replays only contain the position packets, so they show none of this. Seeking discards these events until the target time is reached.
+
+Limits: mining speed is recomputed from the held item (haste, enchantments and effects are not known), and place/use animations rely on the recorded swing packets.
+
+## Offscreen export
+
+While exporting, the game is rendered into an offscreen target (the frame-generation target is reused) and that target is what gets captured. The window shows a copy of it with the progress panel drawn on top in its own last view, so the panel stays on screen the whole time and never appears in the video. Set `PERLIN_EXPORT_DIRECT=1` to go back to capturing the window directly (the panel then hides on captured frames). The offscreen path is skipped automatically while a Java shader pack is active.

@@ -17,6 +17,9 @@
 #include <sstream>
 
 namespace perlin {
+    // The panel is drawn inside the game window (like the other dialogs); a separate window is not used.
+    static constexpr bool kExportProgressWindow = false;
+
     namespace fs = std::filesystem;
 
     namespace {
@@ -236,6 +239,7 @@ namespace perlin {
         replayCtl.SetPaused(false);
         replayCtl.SetSpeed(1.0);
         renderer->SetForcedSize(renderW, renderH);
+        j.offscreen = renderer->SetExportTarget(true);
         j.stepMs = 1000.0 / cfg.fps;
         j.targetMs = j.startMs;
         j.frame = 0;
@@ -305,6 +309,8 @@ namespace perlin {
         }
         if (renderer)
             renderer->SetForcedSize(0, 0);
+        renderer->SetExportTarget(false);
+        j.offscreen = false;
         j.active = false;
         SetStatusHint("");
         platform->SetProgressWindow(false, "", "", "", 0.0f);
@@ -431,7 +437,7 @@ namespace perlin {
                      ui::FormatReplayTime(elapsed / static_cast<double>(done) * static_cast<double>(j.total - done) * 1000.0) + " left";
             }
             SetStatusHint(t);
-            if (platform->HasProgressWindow()) {
+            if (kExportProgressWindow && platform->HasProgressWindow()) {
                 std::string l2 = Num(100.0 * static_cast<double>(done) / static_cast<double>(std::max<long long>(1, j.total)), 1) + "%";
                 if (done > 2 && elapsed > 0.5)
                     l2 += "   " + Num(static_cast<double>(done) / elapsed, 1) + " frames/s   " +
@@ -577,14 +583,14 @@ namespace perlin {
     void Perlin::ExportOverlay(ui::Hud& h, int fbW, int fbH) {
         ExportJob& j = exportJob;
         const auto now = Clock::now();
-        if (platform->HasProgressWindow()) {
+        if (kExportProgressWindow && platform->HasProgressWindow()) {
             // progress lives in its own window, so nothing is ever drawn into the frames being captured
             if (h.Overlay().HasOverlay())
                 h.Overlay().ClearOverlay();
             return;
         }
         // The panel is on screen for every frame except the one that gets captured, so it never ends up in the video.
-        const bool visible = !j.screenshot && (j.phase == ExportJob::Phase::Seeking || j.phase == ExportJob::Phase::Draining ||
+        const bool visible = j.offscreen || !j.screenshot && (j.phase == ExportJob::Phase::Seeking || j.phase == ExportJob::Phase::Draining ||
                                                 (j.phase == ExportJob::Phase::Settle && j.settleIters <= 1));
         if (!visible) {
             if (h.Overlay().HasOverlay())
@@ -615,17 +621,11 @@ namespace perlin {
             r.value = b;
             m.rows.push_back(r);
         };
-        info("Frame", std::to_string(done) + " / " + std::to_string(j.total));
-        if (done > 2 && elapsed > 0.5)
-            info("Speed", Num(static_cast<double>(done) / elapsed, 1) + " frames/s");
-        info("Resolution", std::to_string(j.outW) + "x" + std::to_string(j.outH) + (j.renderW != j.outW ? " (supersampled " + std::to_string(j.renderW / j.outW) + "x)" : ""));
-        info("Frame rate", replay::FpsLabel(j.cfg.fps));
-        info("Replay time", ui::FormatReplayTime(j.targetMs) + " / " + ui::FormatReplayTime(j.endMs));
-        info("Elapsed", ui::FormatReplayTime(elapsed * 1000.0));
-        info("Remaining", done > 2 ? ui::FormatReplayTime(eta * 1000.0) : std::string("estimating..."));
-        info("Output", j.outPath);
-        if (!exportUi.queue.empty())
-            info("Queued after this", std::to_string(exportUi.queue.size()));
+        m.exportLayer = j.offscreen;
+        m.title = "Exporting";
+        m.status = "Frame " + std::to_string(std::min(done + 1, j.total)) + "/" + std::to_string(j.total) + "   " +
+                   Num(100.0 * static_cast<double>(done) / static_cast<double>(std::max<long long>(1, j.total)), 0) + "%";
+        info("Time left", done > 2 && elapsed > 0.5 ? ui::FormatReplayTime(eta * 1000.0) : std::string("estimating..."));
         ui::PanelRow esc;
         esc.kind = ui::PanelRow::Kind::Info;
         esc.label = "Press Esc to cancel";

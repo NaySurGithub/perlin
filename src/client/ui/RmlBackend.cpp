@@ -359,7 +359,8 @@ namespace perlin::ui {
 
         protected:
             void OnRender() override {
-                gLayer = GetAttribute<Rml::String>("layer", "gui") == "top" ? UiLayer::Top : UiLayer::Gui;
+                const Rml::String layer = GetAttribute<Rml::String>("layer", "gui");
+                gLayer = layer == "top" ? UiLayer::Top : layer == "export" ? UiLayer::Export : UiLayer::Gui;
             }
         };
 

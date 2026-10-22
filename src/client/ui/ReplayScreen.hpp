@@ -73,6 +73,7 @@ namespace perlin::ui {
         int scroll = 0; // first visible row
         bool caret = false;
         float progress = -1; // >=0 draws a progress bar above the buttons
+        bool exportLayer = false; // draw on the layer that is never captured by an export
     };
     struct PanelLayout {
         float x = 0, y = 0, w = 0, h = 0;
