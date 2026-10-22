@@ -971,7 +971,8 @@ if(PERLIN_BUILD_TESTS AND NOT EMSCRIPTEN AND NOT ANDROID)
         add_test(NAME renderdragon_shader_selftest
             COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tests/renderdragon_shader_selftest.py"
                     --source "${PERLIN_MCBE_SHADER_SOURCE_DIR}" --shaderc "$<TARGET_FILE:shaderc>"
-                    --bgfx-include "${bgfx_SOURCE_DIR}/bgfx/src" --profiles ${perlin_rd_test_profiles})
+                    --bgfx-include "${bgfx_SOURCE_DIR}/bgfx/src" --profiles ${perlin_rd_test_profiles}
+                    --optimization "$<IF:$<CONFIG:Debug>,0,3>")
     endif()
 
     add_executable(replay_selftest

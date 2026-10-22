@@ -14,6 +14,7 @@ parser.add_argument('--source', required=True, type=Path)
 parser.add_argument('--shaderc', required=True, type=Path)
 parser.add_argument('--bgfx-include', required=True, type=Path)
 parser.add_argument('--profiles', nargs='+', default=['metal', '430', '300_es', 'spirv'])
+parser.add_argument('--optimization', choices=['0', '1', '2', '3'], default='3')
 args = parser.parse_args()
 sys.dont_write_bytecode = True
 repo = Path(__file__).resolve().parents[1]
@@ -42,7 +43,8 @@ with tempfile.TemporaryDirectory(prefix='perlin-rd-') as temp:
                    '--type', 'vertex' if path.name.startswith('vs_') else 'fragment',
                    '--platform', 'android' if profile == '300_es' else 'osx' if profile == 'metal' else 'windows' if profile == 's_5_0' else 'linux',
                    '--profile', profile, '--varyingdef', str(root / ('varying_' + domain + '.def.sc')),
-                   '-i', str(repo / 'src/shaders'), '-i', str(args.bgfx_include.resolve()), '--Werror']
+                   '-i', str(repo / 'src/shaders'), '-i', str(args.bgfx_include.resolve()),
+                   '-O', args.optimization, '--Werror']
         result = subprocess.run(command, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
         if result.returncode:
             return path.name + ' [' + profile + ']\n' + result.stdout
