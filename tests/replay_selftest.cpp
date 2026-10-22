@@ -101,7 +101,10 @@ int main(int argc, char** argv) {
     CHECK(Reader::ReadMetadata(file, quick, nullptr, error));
     CHECK(quick.chunks.size() == c.Meta().chunks.size());
 
-    {   // stored resource packs
+    {   // stored resource packs (Windows cannot replace a file that is still open)
+        const size_t chunkCount = c.Meta().chunks.size();
+        c.Close();
+        again.Close();
         const fs::path fake = base / "pack.zip";
         { std::ofstream f(fake, std::ios::binary); f << "PK-fake-pack-bytes"; }
         std::vector<ArchiveAdd> adds;
@@ -117,9 +120,13 @@ int main(int argc, char** argv) {
         ReplayController withPacks;
         CHECK(withPacks.Open(file, error));
         const auto sp = withPacks.StoredPacks();
-        CHECK(sp.size() == 1 && sp[0].uuid == "u-1" && sp[0].key == "k-1");
-        CHECK(withPacks.ReadArchiveFile(sp[0].file) == "PK-fake-pack-bytes");
-        CHECK(withPacks.Meta().chunks.size() == c.Meta().chunks.size());
+        CHECK(sp.size() == 1);
+        if (sp.size() == 1) {
+            CHECK(sp[0].uuid == "u-1" && sp[0].key == "k-1");
+            CHECK(withPacks.ReadArchiveFile(sp[0].file) == "PK-fake-pack-bytes");
+        }
+        CHECK(withPacks.Meta().chunks.size() == chunkCount);
+        withPacks.Close();
     }
 
     fs::remove_all(base, ec);
