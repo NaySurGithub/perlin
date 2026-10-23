@@ -1920,6 +1920,12 @@ namespace perlin {
                             col[i][2] = base[2] * kv[i];
                         }
                         const bool flip = nx != 0;
+                        // Fallback cube faces need the same alpha classification as
+                        // baked models. The opaque shader does not discard holes.
+                        const bool holes = library && library->AlphaOf(tile).holes;
+                        const RenderLayer faceLayer = translucent ? RenderLayer::Translucent
+                            : holes ? RenderLayer::CutoutCull : RenderLayer::Solid;
+                        tess.SetLayer(faceLayer);
                         tess.AddQuad(v, col, uv, flip, lt);
                         if (ovTile && ny == 0) {
                             float ou0, ov0, ou1, ov1;
@@ -1937,7 +1943,7 @@ namespace perlin {
                             }
                             tess.SetLayer(RenderLayer::Cutout);
                             tess.AddQuad(v, col2, uv2, flip, lt);
-                            tess.SetLayer(translucent ? RenderLayer::Translucent : RenderLayer::Solid);
+                            tess.SetLayer(faceLayer);
                         }
                     };
 

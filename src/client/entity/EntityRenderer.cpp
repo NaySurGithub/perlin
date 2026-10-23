@@ -80,6 +80,10 @@ namespace perlin::entity {
         }
 
         void StyleFromMaterial(UiDraw& draw, const char* name) {
+            const std::string_view materialName(name);
+            if (materialName.starts_with("particles_")) draw.material = DrawMaterial::Particle;
+            else if (materialName.starts_with("name_")) draw.material = DrawMaterial::Nametag;
+            else if (materialName == "cracks_overlay") draw.material = DrawMaterial::Cracks;
             const material::Def* def = material::Registry::Instance().Get().Find(name);
             if (!def)
                 return;
@@ -1385,6 +1389,8 @@ namespace perlin::entity {
                 draw.blend = 0;
             else
                 draw.blend = layer.material.blend == Blend::Additive ? 2 : 1;
+            draw.material = DrawMaterial::Entity;
+            draw.colorMask = layer.material.colorMask;
             draw.emissive = layer.material.emissive;
             if (layerHurt > 0.0f) {
                 draw.overlay[0] = 1.0f; draw.overlay[1] = 0.0f; draw.overlay[2] = 0.0f; draw.overlay[3] = 0.3f;

@@ -29,6 +29,15 @@ namespace perlin {
         Upscale,
         Temporal,
         FrameGen,
+        Entity,
+        EntityMask,
+        EntityEmissive,
+        EntityGlint,
+        Particle,
+        ParticleCutout,
+        Weather,
+        Cracks,
+        Nametag,
         Count
     };
 
