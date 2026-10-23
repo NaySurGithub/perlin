@@ -459,11 +459,17 @@ namespace perlin {
     }
 
     int BlockLibrary::SynthTile(const std::string& label) {
-        if (nextTile >= MaxTiles())
-            return 0;
         uint32_t h = 2166136261u;
         for (char c : label)
             h = (h ^ static_cast<uint8_t>(c)) * 16777619u;
+        // A server with hundreds of untextured custom blocks must not eat the whole
+        // atlas: once it is nearly full, reuse a placeholder instead of hiding the block.
+        if (nextTile + 24 >= MaxTiles()) {
+            if (!synthTiles.empty())
+                return synthTiles[h % synthTiles.size()];
+            if (nextTile >= MaxTiles())
+                return 0;
+        }
         const int px = tilePxValue;
         const int tile = NewTile();
         uint8_t* out = atlas.data() + static_cast<size_t>(tile) * px * px * 4;
@@ -485,6 +491,7 @@ namespace perlin {
             }
         alphaByTile[tile] = TileAlpha{};
         pathByTile[tile] = "synthetic/" + label;
+        synthTiles.push_back(tile);
         return tile;
     }
 
@@ -555,6 +562,7 @@ namespace perlin {
         lastFileMisses = -1;
         stallStreak = 0;
         nextTile = 1;
+        synthTiles.clear();
         atlas.clear();
         tileByPng.clear();
         tileByHash.clear();
@@ -651,6 +659,7 @@ namespace perlin {
         const int kTilePx = tilePxValue;
         if (atlas.empty()) {
             nextTile = 1;
+            synthTiles.clear();
             atlas.assign((size_t)kTilePx * kTilePx * 4, 255);
         }
 

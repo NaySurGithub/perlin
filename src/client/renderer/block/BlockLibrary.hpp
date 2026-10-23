@@ -106,6 +106,7 @@ namespace perlin {
         int lastFileMisses = -1;
         int stallStreak = 0;
         int nextTile = 1;
+        std::vector<int> synthTiles;
         std::unordered_map<std::string, BlockAppearance> appearances;
         std::vector<uint8_t> atlas;
         std::unordered_map<std::string, int> tileByPng;

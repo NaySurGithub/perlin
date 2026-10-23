@@ -1544,14 +1544,22 @@ namespace perlin {
                 parsed.emplace_back(absY, std::move(sc));
             }
             BlockPalette& blockPalette = BlockPalette::Instance();
-            if (blockPalette.Sequential() && blockPalette.SequentialAir() < 0 && !parsed.empty()) {
+            if (blockPalette.Sequential() && !parsed.empty()) {
+                // The highest sub-chunk of a column is normally nothing but air, so a
+                // single-entry palette there gives the id this server uses for air.
                 const auto top = std::max_element(parsed.begin(), parsed.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
                 if (!top->second.storages.empty() && !top->second.storages[0].persistent && top->second.storages[0].palette.size() == 1) {
-                    const int32_t guess = top->second.storages[0].palette[0];
-                    blockPalette.SetSequentialAir(guess);
-                    std::cout << "[block] server uses sequential block ids; the top sub-chunk of column (" << pkt.x << "," << pkt.z
-                              << ") is a single id " << guess << ", treating it as air (our table maps it to '"
-                              << blockPalette.Name(blockPalette.Intern(blockPalette.NetworkId(blockPalette.InternRuntime(guess)))) << "')" << std::endl;
+                    const int32_t seen = top->second.storages[0].palette[0];
+                    if (!blockPalette.SequenceVerified() && blockPalette.SequenceLoaded()) {
+                        if (!blockPalette.CalibrateSequence(seen) && blockPalette.SequentialAir() != seen) {
+                            blockPalette.SetSequentialAir(seen);
+                            std::cout << "[block] server uses sequential block ids but its air id " << seen
+                                      << " does not match our table; treating it as air (table says '"
+                                      << blockPalette.Name(blockPalette.InternRuntime(seen)) << "')" << std::endl;
+                        }
+                    } else if (blockPalette.SequentialAir() < 0) {
+                        blockPalette.SetSequentialAir(seen);
+                    }
                 }
             }
             for (auto& [absY, sc] : parsed)
