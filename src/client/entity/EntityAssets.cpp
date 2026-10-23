@@ -264,7 +264,18 @@ namespace perlin::entity {
         "leftarm": {"rotation": ["-math.sin(query.life_time * 76.8) * 2.865", 0.0, "-((math.cos(query.life_time * 103.2) * 2.865) + 2.865)"]}
       }
     },
-    "animation.player.java_marker_v3": {"loop": true, "bones": {}},
+    "animation.player.move.legs": {
+      "loop": true,
+      "bones": {
+        "leftleg": {"rotation": ["variable.tcos0 * -1.4", -0.2865, -0.2865]},
+        "rightleg": {"rotation": ["variable.tcos0 * 1.4", 0.2865, 0.2865]}
+      }
+    },
+    "animation.player.sneaking": {
+      "loop": true,
+      "bones": {}
+    },
+    "animation.player.java_marker_v2": {"loop": true, "bones": {}},
     "animation.humanoid.bob": {
       "loop": true,
       "bones": {
@@ -311,7 +322,7 @@ namespace perlin::entity {
                 if (std::ifstream in(file, std::ios::binary); in) {
                     std::stringstream ss;
                     ss << in.rdbuf();
-                    current = ss.str().find("animation.player.java_marker_v3") != std::string::npos;
+                    current = ss.str().find("animation.player.java_marker_v2") != std::string::npos;
                 }
                 if (!current) {
                     fs::create_directories(dir, ec);

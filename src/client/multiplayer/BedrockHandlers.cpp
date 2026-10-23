@@ -6,7 +6,6 @@
 #include "client/i18n/Lang.hpp"
 #include "client/player/VoxelShapes.hpp"
 #include "network/ClientIdentity.hpp"
-#include "network/EntityMetadata.hpp"
 #include "network/PacketDump.hpp"
 #include "world/level/block/BlockPalette.hpp"
 
@@ -62,18 +61,15 @@ namespace perlin {
                             tracker.SetNameTag(rid, *str);
                     continue;
                 }
-                int64_t integer = 0;
-                if (m.key == MetadataDictionaryEntryKey::Flags || m.key == MetadataDictionaryEntryKey::FlagsExtended) {
-                    if (net::MetadataInteger(m, integer)) {
-                        if (m.key == MetadataDictionaryEntryKey::Flags) tracker.SetFlags(rid, static_cast<uint64_t>(integer));
-                        else tracker.SetFlagsExtended(rid, static_cast<uint64_t>(integer));
-                    }
-                    continue;
-                }
                 double n = 0;
                 if (!MetaNumber(m, n))
                     continue;
                 switch (m.key) {
+                case MetadataDictionaryEntryKey::Flags: tracker.SetFlags(rid, static_cast<uint64_t>(static_cast<int64_t>(n))); break;
+                case MetadataDictionaryEntryKey::FlagsExtended:
+                    tracker.SetCrawling(rid, ((static_cast<uint64_t>(static_cast<int64_t>(n)) >> 50) & 1ull) != 0);
+                    tracker.SetSleeping(rid, ((static_cast<uint64_t>(static_cast<int64_t>(n)) >> 11) & 1ull) != 0);
+                    break;
                 case MetadataDictionaryEntryKey::PlayerFlags: tracker.SetSleeping(rid, (static_cast<int64_t>(n) & 2) != 0, true); break;
                 case MetadataDictionaryEntryKey::Scale: tracker.SetScale(rid, static_cast<float>(n)); break;
                 case MetadataDictionaryEntryKey::Variant: variant = static_cast<int>(n); break;
@@ -102,9 +98,9 @@ namespace perlin {
 
         uint64_t MetaFlags(const std::vector<MetadataDictionaryEntry>& metadata) {
             for (const MetadataDictionaryEntry& m : metadata) {
-                int64_t n = 0;
-                if (m.key == MetadataDictionaryEntryKey::Flags && net::MetadataInteger(m, n))
-                    return static_cast<uint64_t>(n);
+                double n = 0;
+                if (m.key == MetadataDictionaryEntryKey::Flags && MetaNumber(m, n))
+                    return static_cast<uint64_t>(static_cast<int64_t>(n));
             }
             return 0;
         }
@@ -1042,16 +1038,14 @@ namespace perlin {
             if (runtimeId != 0 && p.runtimeEntityId == runtimeId) {
                 std::lock_guard lk(attrMutex);
                 for (const MetadataDictionaryEntry& m : p.metadata) {
-                    int64_t integer = 0;
-                    if (m.key == MetadataDictionaryEntryKey::Flags || m.key == MetadataDictionaryEntryKey::FlagsExtended) {
-                        if (net::MetadataInteger(m, integer))
-                            ownFlagWords[m.key == MetadataDictionaryEntryKey::Flags ? 0 : 1] = static_cast<uint64_t>(integer);
-                        continue;
-                    }
                     double n = 0;
                     if (!MetaNumber(m, n))
                         continue;
-                    if (m.key == MetadataDictionaryEntryKey::PlayerFlags)
+                    if (m.key == MetadataDictionaryEntryKey::Flags)
+                        ownFlagWords[0] = static_cast<uint64_t>(static_cast<int64_t>(n));
+                    else if (m.key == MetadataDictionaryEntryKey::FlagsExtended)
+                        ownFlagWords[1] = static_cast<uint64_t>(static_cast<int64_t>(n));
+                    else if (m.key == MetadataDictionaryEntryKey::PlayerFlags)
                         ownPlayerFlags = static_cast<int64_t>(n);
                     else if (m.key == MetadataDictionaryEntryKey::Scale)
                         ownScale = static_cast<float>(n);

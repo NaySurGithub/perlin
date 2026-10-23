@@ -195,6 +195,16 @@ namespace perlin {
         const uint32_t packets = static_cast<uint32_t>(abi::Permission::Packets);
         using abi::Op;
 
+        // Click position for an attack or interact sent on a plugin's behalf: where the player's crosshair ray meets the target's
+        // hitbox, relative to the target's base coordinate; the box centre when the ray does not hit it.
+        const auto ModEntityClick = [this](const entity::Entity& e) {
+            const auto hb = entityRenderer.HitBox(e);
+            const double scale = e.scale > 0 ? e.scale : 1.0;
+            const double halfWidth = hb.first * 0.5 * scale, height = hb.second * scale;
+            const glm::dvec3 centre(e.pos.x, e.pos.y + height * 0.5, e.pos.z);
+            return EntityClickOffset({camera.x, camera.y, camera.z}, glm::dvec3(camera.Direction()), e.pos, halfWidth, height, centre);
+        };
+
         const auto optionTable = [this]() {
             std::vector<OptionAccess> t;
             const auto boolean = [&](const char* key, bool& ref) {
@@ -1156,7 +1166,7 @@ namespace perlin {
             return Status::Ok;
         }, control);
 
-        mm.Register(Op::AttackEntity, [this](CallContext&, abi::Reader& r, abi::Writer&) {
+        mm.Register(Op::AttackEntity, [this, ModEntityClick](CallContext&, abi::Reader& r, abi::Writer&) {
             const uint64_t id = r.get<uint64_t>();
             if (!r.Ok())
                 return Status::BadArguments;
@@ -1166,14 +1176,15 @@ namespace perlin {
             if (!modLive->Entities().Find(id, e))
                 return Status::NotFound;
             const float eye[3] = {camera.x, camera.y, camera.z};
-            const float click[3] = {0.0f, 0.0f, 0.0f};
+            const glm::vec3 offset = ModEntityClick(e);
+            const float click[3] = {offset.x, offset.y, offset.z};
             handRenderer.Swing(options.hand);
             modLive->SendSwingArm("attack");
             modLive->SendAttackEntity(id, eye, click);
             return Status::Ok;
         }, control);
 
-        mm.Register(Op::InteractEntity, [this](CallContext&, abi::Reader& r, abi::Writer&) {
+        mm.Register(Op::InteractEntity, [this, ModEntityClick](CallContext&, abi::Reader& r, abi::Writer&) {
             const uint64_t id = r.get<uint64_t>();
             if (!r.Ok())
                 return Status::BadArguments;
@@ -1183,7 +1194,8 @@ namespace perlin {
             if (!modLive->Entities().Find(id, e))
                 return Status::NotFound;
             const float eye[3] = {camera.x, camera.y, camera.z};
-            const float click[3] = {0.0f, 0.0f, 0.0f};
+            const glm::vec3 offset = ModEntityClick(e);
+            const float click[3] = {offset.x, offset.y, offset.z};
             handRenderer.Swing(options.hand);
             modLive->SendSwingArm("interact");
             modLive->SendInteractEntity(id, eye, click);

@@ -1,6 +1,7 @@
 #include "client/resources/TexturePack.hpp"
 
 #include "client/resources/JavaPack.hpp"
+#include "util/ZipFile.hpp"
 
 #include <miniz.h>
 
@@ -22,6 +23,7 @@ namespace perlin {
             bool java = false; // a Java Edition pack: assets/minecraft/textures/..., translated to Bedrock names on lookup
             std::string folder;
             mz_zip_archive zip{};
+            FILE* zipFile = nullptr;
             bool zipOpen = false;
             std::unordered_map<std::string, mz_uint> index;
             std::string label;
@@ -29,6 +31,9 @@ namespace perlin {
             void Reset() {
                 if (zipOpen)
                     mz_zip_reader_end(&zip);
+                if (zipFile)
+                    std::fclose(zipFile);
+                zipFile = nullptr;
                 zip = {};
                 zipOpen = false;
                 zipMode = false;
@@ -120,7 +125,7 @@ namespace perlin {
                     std::cout << "[textures] " << name << " is a Java Edition pack" << std::endl;
                 return true;
             }
-            if (!mz_zip_reader_init_file(&layer.zip, source.string().c_str(), 0)) {
+            if (!OpenZipReader(layer.zip, source, layer.zipFile)) {
                 error = "not a readable zip/mcpack archive: " + source.generic_string();
                 layer.zip = {};
                 return false;
@@ -138,23 +143,27 @@ namespace perlin {
                     continue;
                 std::string path = st.m_filename;
                 std::replace(path.begin(), path.end(), '\\', '/');
-                const std::string lower = Lower(path);
-                if (!prefixFound) {
-                    const size_t java = lower.find("assets/minecraft/textures/");
-                    if (java != std::string::npos && (java == 0 || lower[java - 1] == '/')) {
-                        prefix = lower.substr(0, java) + "assets/minecraft/";
-                        prefixFound = true;
-                    }
+                entries.emplace_back(Lower(path), i);
+            }
+            // A Java pack keeps its textures under assets/minecraft/ (possibly inside a wrapper folder); look for that first,
+            // over every entry, since other namespaces (assets/realms/...) can come earlier in the archive. Otherwise the first
+            // textures/ folder found is the root, as in a Bedrock pack.
+            for (const auto& [lower, idx] : entries) {
+                const size_t java = lower.find("assets/minecraft/textures/");
+                if (java != std::string::npos && (java == 0 || lower[java - 1] == '/') &&
+                    (!prefixFound || java + 17 < prefix.size())) {
+                    prefix = lower.substr(0, java) + "assets/minecraft/";
+                    prefixFound = true;
                 }
-                if (!prefixFound) {
+            }
+            if (!prefixFound)
+                for (const auto& [lower, idx] : entries) {
                     const size_t at = lower.find("textures/");
-                    if (at != std::string::npos && (at == 0 || lower[at - 1] == '/')) {
+                    if (at != std::string::npos && (at == 0 || lower[at - 1] == '/') && (!prefixFound || at < prefix.size())) {
                         prefix = lower.substr(0, at);
                         prefixFound = true;
                     }
                 }
-                entries.emplace_back(lower, i);
-            }
             if (!prefixFound) {
                 error = "no textures folder inside " + source.generic_string();
                 layer.Reset();

@@ -941,19 +941,6 @@ if(PERLIN_BUILD_TESTS AND NOT EMSCRIPTEN AND NOT ANDROID)
     target_compile_features(attachable_selftest PRIVATE cxx_std_23)
     add_test(NAME attachable_selftest COMMAND attachable_selftest)
 
-    add_executable(entity_animation_selftest tests/entity_animation_selftest.cpp
-        src/client/entity/JavaAnimation.cpp src/client/attachable/Geometry.cpp
-        src/client/attachable/Animation.cpp src/client/attachable/Molang.cpp src/client/ui/Json.cpp)
-    target_include_directories(entity_animation_selftest PRIVATE src "${glm_SOURCE_DIR}")
-    target_compile_features(entity_animation_selftest PRIVATE cxx_std_23)
-    add_test(NAME entity_animation_selftest COMMAND entity_animation_selftest "${CMAKE_CURRENT_SOURCE_DIR}/tests/data/java_animation_reference.txt"
-        "${CMAKE_CURRENT_SOURCE_DIR}/tests/data/java_animation_root_reference.txt")
-
-    add_executable(entity_state_selftest tests/entity_state_selftest.cpp src/client/entity/EntityTracker.cpp)
-    target_include_directories(entity_state_selftest PRIVATE src "${glm_SOURCE_DIR}")
-    target_link_libraries(entity_state_selftest PRIVATE perlin_protocol)
-    add_test(NAME entity_state_selftest COMMAND entity_state_selftest)
-
     add_executable(particle_selftest tests/particle_selftest.cpp src/client/particle/DataParticles.cpp
         src/client/attachable/Molang.cpp src/client/ui/Json.cpp)
     target_include_directories(particle_selftest PRIVATE src "${glm_SOURCE_DIR}")

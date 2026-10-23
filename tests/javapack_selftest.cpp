@@ -135,6 +135,25 @@ int main() {
         CHECK(!pack.Load("textures/blocks/not_there.png", t));
     }
 
+    // a zip whose first entries belong to another namespace and whose textures sit inside a wrapper folder with a section sign
+    {
+        mz_zip_archive zip{};
+        const std::string path = (tmp / "packs/Realms.zip").string();
+        CHECK(mz_zip_writer_init_file(&zip, path.c_str(), 0));
+        const std::string wrapper = "\xC2\xA7" "9midnight [16x]/";
+        const std::string other = oak.png();
+        CHECK(mz_zip_writer_add_mem(&zip, (wrapper + "assets/realms/textures/gui/x.png").c_str(), other.data(), other.size(), MZ_DEFAULT_LEVEL));
+        for (const auto& f : files)
+            CHECK(mz_zip_writer_add_mem(&zip, (wrapper + f[0]).c_str(), f[1].data(), f[1].size(), MZ_DEFAULT_LEVEL));
+        mz_zip_writer_finalize_archive(&zip);
+        mz_zip_writer_end(&zip);
+        std::string error;
+        CHECK(pack.Open((tmp / "packs").string(), "Realms.zip", error));
+        Texture t;
+        CHECK(pack.Load("textures/ui/hotbar_3.png", t) && t.width == 20);
+        CHECK(pack.Load("textures/blocks/planks_oak.png", t) && t.width == 16);
+    }
+
     // a high-resolution sheet scales the cut
     {
         Image big(512, 512);

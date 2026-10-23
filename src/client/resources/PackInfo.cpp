@@ -2,9 +2,12 @@
 
 #include "client/ui/Json.hpp"
 
+#include "util/ZipFile.hpp"
+
 #include <miniz.h>
 
 #include <algorithm>
+#include <cstdio>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
@@ -18,16 +21,26 @@ namespace perlin {
             return s;
         }
 
+        // Text files saved by Windows editors often start with a UTF-8 byte order mark, which the JSON reader rejects.
+        void StripBom(std::string& text) {
+            if (text.size() >= 3 && static_cast<unsigned char>(text[0]) == 0xEF && static_cast<unsigned char>(text[1]) == 0xBB &&
+                static_cast<unsigned char>(text[2]) == 0xBF)
+                text.erase(0, 3);
+        }
+
         struct Source {
             bool zip = false;
             fs::path folder;
             mz_zip_archive archive{};
+            FILE* file = nullptr;
             bool open = false;
             std::string prefix;
 
             ~Source() {
                 if (open)
                     mz_zip_reader_end(&archive);
+                if (file)
+                    std::fclose(file);
             }
 
             bool Read(const std::string& rel, std::string& out) {
@@ -36,6 +49,7 @@ namespace perlin {
                     if (!in)
                         return false;
                     out.assign(std::istreambuf_iterator<char>(in), {});
+                    StripBom(out);
                     return true;
                 }
                 const int index = mz_zip_reader_locate_file(&archive, (prefix + rel).c_str(), nullptr, 0);
@@ -47,6 +61,7 @@ namespace perlin {
                     return false;
                 out.assign(static_cast<const char*>(data), size);
                 mz_free(data);
+                StripBom(out);
                 return true;
             }
         };
@@ -104,25 +119,32 @@ namespace perlin {
         if (fs::is_directory(p, ec)) {
             src.folder = p;
         } else {
-            if (!mz_zip_reader_init_file(&src.archive, path.c_str(), 0))
+            if (!OpenZipReader(src.archive, p, src.file))
                 return meta;
             src.zip = true;
             src.open = true;
+            // The pack's root is the folder holding its manifest.json / pack.mcmeta / pack.json (the shallowest one if there are
+            // several), which may be inside a wrapper folder.
             const mz_uint count = mz_zip_reader_get_num_files(&src.archive);
+            size_t bestDepth = std::string::npos;
             for (mz_uint i = 0; i < count; i++) {
                 mz_zip_archive_file_stat st;
                 if (!mz_zip_reader_file_stat(&src.archive, i, &st))
                     continue;
-                const std::string file = Lower(st.m_filename);
-                const size_t slash = file.find('/');
-                if (file == "manifest.json" || file == "pack_icon.png" || file == "pack.png" || file == "pack.mcmeta")
-                    break;
-                if (slash != std::string::npos && (file.compare(slash + 1, std::string::npos, "manifest.json") == 0 ||
-                                                   file.compare(slash + 1, std::string::npos, "pack_icon.png") == 0 ||
-                                                   file.compare(slash + 1, std::string::npos, "pack.png") == 0 ||
-                                                   file.compare(slash + 1, std::string::npos, "pack.mcmeta") == 0)) {
-                    src.prefix = std::string(st.m_filename).substr(0, slash + 1);
-                    break;
+                std::string file = st.m_filename;
+                std::replace(file.begin(), file.end(), '\\', '/');
+                const std::string lower = Lower(file);
+                for (const char* marker : {"manifest.json", "pack.mcmeta", "pack.json"}) {
+                    const std::string m = marker;
+                    if (lower.size() < m.size() || lower.compare(lower.size() - m.size(), m.size(), m) != 0)
+                        continue;
+                    if (lower.size() > m.size() && lower[lower.size() - m.size() - 1] != '/')
+                        continue;
+                    const size_t depth = static_cast<size_t>(std::count(lower.begin(), lower.end(), '/'));
+                    if (depth < bestDepth && depth <= 2) {
+                        bestDepth = depth;
+                        src.prefix = file.substr(0, file.size() - m.size());
+                    }
                 }
             }
         }

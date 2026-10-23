@@ -71,6 +71,7 @@
 #include "world/level/block/BlockPalette.hpp"
 #include "client/ui/UiAssets.hpp"
 #include "util/Paths.hpp"
+#include "util/Utf8.hpp"
 #include "client/platform/web/WebLoop.hpp"
 #include "network/NetherNet.hpp"
 
@@ -254,7 +255,6 @@ namespace perlin {
                         bestD = d;
                         e.pos = {cx - kStep[dir][0] * 1.3, y + 0.5625, cz - kStep[dir][1] * 1.3};
                         e.yaw = static_cast<float>(dir * 90 + 180);
-                        e.bedDirection = dir;
                         e.headYaw = e.yaw;
                         e.pitch = 0.0f;
                     }
@@ -2566,7 +2566,7 @@ namespace perlin {
                     const std::string& name = packPending[i];
                     const PackMeta& m = packMeta(dir, name);
                     ui::PackEntry e;
-                    e.name = m.name.empty() ? name : m.name;
+                    e.name = EnsureUtf8(m.name.empty() ? name : m.name);
                     e.desc = m.description;
                     e.icon = packIcon(dir, name, m, "textures/blocks/stone");
                     e.canUnselect = true;
@@ -2586,7 +2586,7 @@ namespace perlin {
                         continue;
                     const PackMeta& m = packMeta(dir, name);
                     ui::PackEntry e;
-                    e.name = m.name.empty() ? name : m.name;
+                    e.name = EnsureUtf8(m.name.empty() ? name : m.name);
                     e.desc = m.description;
                     e.icon = packIcon(dir, name, m, "textures/blocks/stone");
                     e.canSelect = true;
@@ -6383,18 +6383,10 @@ namespace perlin {
                 const uint64_t flags = variant.find("baby") != std::string::npos ? entity::flag::Baby : 0;
                 previewEntities.AddEntity(rid, static_cast<int64_t>(rid), "minecraft:" + type, p, PERLIN_ENV("PERLIN_PREVIEW_ENTITY_PITCH") ? static_cast<float>(std::atof(PERLIN_ENV("PERLIN_PREVIEW_ENTITY_PITCH"))) : 0.0f, yaw, yaw, flags, 1.0f, 0, 0, 0);
             }
-            if (PERLIN_ENV("PERLIN_PREVIEW_HEAD_YAW") || PERLIN_ENV("PERLIN_PREVIEW_ENTITY_PITCH")) {
-                const float head = yaw + (PERLIN_ENV("PERLIN_PREVIEW_HEAD_YAW") ? static_cast<float>(std::atof(PERLIN_ENV("PERLIN_PREVIEW_HEAD_YAW"))) : 0.0f);
-                const float pitch = PERLIN_ENV("PERLIN_PREVIEW_ENTITY_PITCH") ? static_cast<float>(std::atof(PERLIN_ENV("PERLIN_PREVIEW_ENTITY_PITCH"))) : 0.0f;
-                previewEntities.Move(rid, type == "player" ? p + glm::dvec3(0, entity::kPlayerEye, 0) : p, pitch, yaw, head, true);
-            }
             if (type == "fishing_hook")
                 previewEntities.SetOwner(rid, 1000);
             if (const char* held = PERLIN_ENV("PERLIN_PREVIEW_HELD"))
                 previewEntities.SetHeld(rid, held);
-            if (const char* off = PERLIN_ENV("PERLIN_PREVIEW_OFFHAND"))
-                previewEntities.SetOffHand(rid, off);
-            previewEntities.SetMainLeft(rid, PERLIN_ENV("PERLIN_PREVIEW_LEFT_HANDED") != nullptr);
             if (const char* armor = PERLIN_ENV("PERLIN_PREVIEW_ARMOR")) {
                 static const char* parts[4] = {"helmet", "chestplate", "leggings", "boots"};
                 for (int i = 0; i < 4; i++)
@@ -6410,13 +6402,6 @@ namespace perlin {
                 previewEntities.SetFlags(rid, entity::flag::Gliding);
                 previewEntities.SetArmor(rid, 1, "minecraft:elytra");
             }
-            if (PERLIN_ENV("PERLIN_PREVIEW_USING")) {
-                entity::Entity preview;
-                if (previewEntities.Find(rid, preview))
-                    previewEntities.SetFlags(rid, preview.flags | entity::flag::UsingItem);
-            }
-            if (PERLIN_ENV("PERLIN_PREVIEW_BLOCKING"))
-                previewEntities.SetFlagsExtended(rid, 1ull << 8);
             if (PERLIN_ENV("PERLIN_PREVIEW_DEAD"))
                 previewEntities.Die(rid);
             if (PERLIN_ENV("PERLIN_PREVIEW_ENTITY_WALK"))
@@ -6975,8 +6960,13 @@ namespace perlin {
                         if (live) {
                             live->SendSwingArm(gAim.kind == AimHit::Kind::Block ? "mine" : "attack");
                             if (gAim.kind == AimHit::Kind::Entity) {
-                                float click[3] = {static_cast<float>(gAim.point.x), static_cast<float>(gAim.point.y),
-                                                  static_cast<float>(gAim.point.z)};
+                                // The click position is where the ray meets the target's hitbox, relative to the target's base
+                                // coordinate, not a world position.
+                                const glm::dvec3 feet((gAim.boxLo.x + gAim.boxHi.x) * 0.5, gAim.boxLo.y, (gAim.boxLo.z + gAim.boxHi.z) * 0.5);
+                                const glm::vec3 offset = EntityClickOffset({camera.x, camera.y, camera.z}, glm::dvec3(camera.Direction()), feet,
+                                                                           (gAim.boxHi.x - gAim.boxLo.x) * 0.5, gAim.boxHi.y - gAim.boxLo.y,
+                                                                           (gAim.boxLo + gAim.boxHi) * 0.5);
+                                float click[3] = {offset.x, offset.y, offset.z};
                                 live->SendAttackEntity(gAim.entity, eyeF, click);
                             }
                         }
@@ -7150,8 +7140,10 @@ namespace perlin {
                         if (usePressed && live && gAim.kind == AimHit::Kind::Entity) {
                             entity::Entity target;
                             if (live->Entities().Find(gAim.entity, target) && IsInteractable(target.type)) {
-                                float click[3] = {static_cast<float>(gAim.point.x - target.pos.x), static_cast<float>(gAim.point.y - target.pos.y),
-                                                  static_cast<float>(gAim.point.z - target.pos.z)};
+                                const glm::vec3 offset = EntityClickOffset({camera.x, camera.y, camera.z}, glm::dvec3(camera.Direction()), target.pos,
+                                                                           (gAim.boxHi.x - gAim.boxLo.x) * 0.5, gAim.boxHi.y - gAim.boxLo.y,
+                                                                           (gAim.boxLo + gAim.boxHi) * 0.5);
+                                float click[3] = {offset.x, offset.y, offset.z};
                                 { handRenderer.Swing(options.hand); gSelfSwing++; }
                                 live->SendSwingArm("interact");
                                 live->SendInteractEntity(gAim.entity, eyeF, click);
@@ -7926,19 +7918,16 @@ namespace perlin {
                     for (entity::Entity& e : entities)
                         if (e.sleeping && e.isPlayer)
                             ApplyBedPose(live->NetLevel(), e);
-                if (!live && (!previewWalk.empty() || PERLIN_ENV("PERLIN_PREVIEW_TURN"))) {
+                if (!live && !previewWalk.empty()) {
                     static std::unordered_map<uint64_t, glm::dvec3> base;
                     static const auto t0 = std::chrono::steady_clock::now();
                     const double t = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
                     for (entity::Entity& pe : entities)
-                        if (std::find(previewWalk.begin(), previewWalk.end(), pe.runtimeId) != previewWalk.end() || PERLIN_ENV("PERLIN_PREVIEW_TURN")) {
+                        if (std::find(previewWalk.begin(), previewWalk.end(), pe.runtimeId) != previewWalk.end()) {
                             const glm::dvec3 b = base.emplace(pe.runtimeId, pe.pos).first->second;
                             const double yawRad = glm::radians(static_cast<double>(pe.yaw));
-                            if (std::find(previewWalk.begin(), previewWalk.end(), pe.runtimeId) != previewWalk.end())
-                                pe.pos = b + glm::dvec3(-std::sin(yawRad), 0.0, std::cos(yawRad)) * std::sin(t * 1.5) * 1.5;
-                            if (PERLIN_ENV("PERLIN_PREVIEW_TURN"))
-                                pe.headYaw = pe.yaw + static_cast<float>(std::sin(t * 1.5) * 100.0);
-                            previewEntities.Move(pe.runtimeId, pe.isPlayer ? pe.pos + glm::dvec3(0, entity::kPlayerEye, 0) : pe.pos, pe.pitch, pe.yaw, pe.headYaw, true);
+                            pe.pos = b + glm::dvec3(-std::sin(yawRad), 0.0, std::cos(yawRad)) * std::sin(t * 1.5) * 1.5;
+                            previewEntities.Move(pe.runtimeId, pe.pos, pe.pitch, pe.yaw, pe.headYaw, true);
                         }
                 }
                 const bool firstPerson = camera.mode == PerspectiveMode::FirstPerson;
@@ -7962,7 +7951,6 @@ namespace perlin {
                     }
                     self.moveSerial = 1;
                     self.swingSerial = gSelfSwing;
-                    self.mainLeft = options.hand.leftHanded;
                     // Drive the same red hurt flash other mobs get; the own player isn't in the tracker so its
                     // hurt events never reached the renderer before.
                     self.hurtSerial = live ? live->HurtCount() : 0;
@@ -8439,8 +8427,6 @@ namespace perlin {
                     fpSelf->offHand = options.hand.showOffhand ? rs.off : std::string();
                     if (options.hand.leftHanded)
                         std::swap(fpSelf->mainHand, fpSelf->offHand);
-                    // The legacy first-person resource rig consumes physical slots.
-                    fpSelf->mainLeft = false;
                     entity::EntityRenderer::FrameIn fin;
                     fin.time = std::chrono::duration<double>(frameStart - startedAt).count();
                     fin.dt = dt;
