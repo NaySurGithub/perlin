@@ -7,6 +7,7 @@
 #include "client/player/BdsLanding.hpp"
 #include "client/player/BdsWorldCollision.hpp"
 #include "client/player/BdsBlockOffset.hpp"
+#include "client/player/BdsJump.hpp"
 
 #include <vector>
 
@@ -38,6 +39,7 @@ namespace perlin::physics {
     struct BlockShape {
         std::vector<Box> boxes;
         std::optional<bds::BlockRandomOffset> randomOffset;
+        uint64_t jumpProperties = 0;
         float friction = 0.6f;
         uint8_t surface = 0;
         uint8_t fluid = 0;
@@ -63,7 +65,7 @@ namespace perlin::physics {
         float speed = 0.1f;
         float flySpeed = 0.05f;
         float verticalFlySpeed = 1.0f;
-        float jumpHeight = 0.42f;
+        std::optional<float> jumpHeight;
         int jumpBoost = 0;
         int levitation = 0;
         bool slowFalling = false;
@@ -116,6 +118,7 @@ namespace perlin::physics {
         float fallDistance = 0;
         bds::MovementEffects movementEffects;
         bds::Rotation previousRotation;
+        bds::Float3 previousJumpPosition{};
         std::optional<bds::Float3> restitution;
 
         bds::RecoveryState recovery;

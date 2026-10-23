@@ -613,14 +613,24 @@ namespace perlin::physics {
         const bool climbJump = in.jump && s.onClimbable;
         const bool jumpInitiated = in.jump && !glide && !climbJump && s.onGround && s.jumpDelay == 0 && !water && !lava;
         if (jumpInitiated) {
-            s.vy = F(std::max(static_cast<float>(s.vy), (attr.jumpHeight > 0.0f ? attr.jumpHeight : 0.42f) + static_cast<float>(attr.jumpBoost) * 0.1f));
+            bds::JumpParameters jump;
+            jump.bodyMinimumY = static_cast<float>(BoundingBox(s, crouched).y0);
+            jump.position = {static_cast<float>(s.x), static_cast<float>(s.y), static_cast<float>(s.z)};
+            jump.velocity = {static_cast<float>(s.vx), static_cast<float>(s.vy), static_cast<float>(s.vz)};
+            jump.previousJumpPosition = s.previousJumpPosition;
+            jump.yaw = s.yaw;
+            jump.sprinting = in.sprint;
+            jump.customHeight = attr.jumpHeight;
+            if (attr.jumpBoost != 0)
+                jump.effectAmplifier = std::bit_cast<int32_t>(static_cast<uint32_t>(attr.jumpBoost) - 1);
+            const auto result = bds::GroundJump(jump, [&](bds::BlockPosition position) {
+                return world.Query(position[0], position[1], position[2]).jumpProperties;
+            });
+            s.vx = result.velocity.x;
+            s.vy = result.velocity.y;
+            s.vz = result.velocity.z;
+            s.previousJumpPosition = result.previousJumpPosition;
             s.jumpDelay = 10;
-            if (in.sprint) {
-                const auto velocity = bds::ApplySprintJump(
-                    {static_cast<float>(s.vx), static_cast<float>(s.vy), static_cast<float>(s.vz)}, s.yaw);
-                s.vx = velocity.x;
-                s.vz = velocity.z;
-            }
         }
 
         if (s.onClimbable) {

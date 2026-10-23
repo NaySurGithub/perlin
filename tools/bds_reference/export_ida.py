@@ -50,7 +50,7 @@ def export_reference():
                     0x140F9DAF0, 0x140355790, 0x140C1EF20,
                     0x140B58EA0, 0x140B80D80, 0x140C1EF10,
                     0x140C1EE80, 0x140C1EDC0, 0x140E76AD0, 0x140E76C70,
-                    0x1410EE9B0, 0x143E8D580):
+                    0x1410EE9B0, 0x143E8D580, 0x140EAFFD0, 0x140EC4780):
         function = ida_funcs.get_func(address)
         if function is None or function.start_ea != address:
             raise ValueError(f"Missing function at {address:#x}")
@@ -72,6 +72,9 @@ def export_reference():
         if address == 0x140355790:
             # RIP-relative invalid-AABB sentinel is not a defined data xref.
             pages['0x14740e000'] = read_page(0x14740E000)
+        if address in (0x140EAFAF0, 0x140EAFFD0):
+            pages['0x147337000'] = read_page(0x147337000)
+            pages['0x147147000'] = read_page(0x147147000)
         functions[hex(address)] = {
             "chunks": chunks,
             "code_sha256": code_hash.hexdigest(),

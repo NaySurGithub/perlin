@@ -42,6 +42,40 @@ static BlockShape Slab(double h) {
 int main() {
     Attributes attr;
 
+    // Optional jump-height presence is distinct from a supplied zero. Surface
+    // properties here are raw native masks, independent of block-name mapping.
+    {
+        TestWorld empty;
+        empty.fn = [](int, int, int) { return BlockShape{}; };
+        Input input;
+        input.jump = true;
+        input.gravity.hasGravity = false;
+        State state;
+        state.onGround = true;
+        state.x = 2;
+        state.z = -3;
+        Attributes custom;
+        custom.jumpHeight = 0;
+        Step(state, input, custom, empty);
+        CHECK(state.y == 0);
+        CHECK(state.previousJumpPosition.x == 2 && state.previousJumpPosition.y == 0 &&
+              state.previousJumpPosition.z == -3);
+        state = {};
+        state.onGround = true;
+        custom.jumpHeight = 0.125f;
+        Step(state, input, custom, empty);
+        CHECK(state.y == 0.125f);
+        empty.fn = [](int, int y, int) {
+            BlockShape shape;
+            if (y == -1) shape.jumpProperties = uint64_t{1} << 43;
+            return shape;
+        };
+        state = {};
+        state.onGround = true;
+        Step(state, input, custom, empty);
+        CHECK(state.y == static_cast<double>(0.125f * 0.6f));
+    }
+
     // Slowdown activation is per-lane nonzero, including subnormals. It
     // clears StateVector velocity before collision response and is consumed.
     {

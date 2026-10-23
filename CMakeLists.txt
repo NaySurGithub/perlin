@@ -1215,6 +1215,12 @@ if(PERLIN_BUILD_TESTS AND NOT EMSCRIPTEN AND NOT ANDROID)
     add_test(NAME bds_inside_query_selftest COMMAND bds_inside_query_selftest
         "${CMAKE_CURRENT_SOURCE_DIR}/tests/data/bds_inside_query.txt")
 
+    add_executable(bds_jump_selftest tests/bds_jump_selftest.cpp)
+    target_include_directories(bds_jump_selftest PRIVATE src)
+    target_compile_features(bds_jump_selftest PRIVATE cxx_std_23)
+    add_test(NAME bds_jump_selftest COMMAND bds_jump_selftest
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/data/bds_jump.txt")
+
     add_executable(bedsim_trace_selftest
         tests/bedsim_trace_selftest.cpp
         src/client/player/PlayerPhysics.cpp)

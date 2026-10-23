@@ -24,7 +24,7 @@ Decompiler argument names and inferred types are not treated as semantic names.
 | Jump-delay decrement | `DecrementNoJumpDelaySystem` registration `0x1402CBA10` → vtable `0x1466D1E60` slot 5 → wrapper `0x140EC0610` → loop `0x140EB15B0` → callback `0x140EB0DA0` | Eight machine-code cases including negative values and integer boundaries. Step calls the verified decrement helper; system order remains under audit. |
 | Sine-table construction | Static initializer `0x1401162A0` → builder `0x1454F9850` → bundled vector sinf dispatcher `0x146251E10` → SSE2 `0x146251EA0` / SSE4 `0x1462527E0` | Both machine-code implementations produce the same 65,536 entries for the builder's float arguments. Portable construction matches every entry bit-for-bit. Replaces Perlin's double-argument host-libm table. This proves the bounded table, not equivalence of general-purpose sinf. |
 | Sprint-jump impulse | Ground jump routine `0x140EAFAF0`, instruction range `[0x140EAFD9C, 0x140EAFDFA)` | Direct degrees-to-index conversion and two horizontal impulse operations ported. 277 machine-code block executions record both lookup indices and resulting velocities. Full jump eligibility, attribute/effect sources, special surfaces, and jump-system ordering remain under audit. |
-| Ground jump height | `0x140EAFAF0`; alternate path `0x140EAFFD0` | Traced defaults, optional height callback, effect addition, surface multiplier, max with existing vertical speed. Surface and component identities require confirmation before integration. |
+| Ground jump callbacks | `0x140EAFAF0`; alternate path `0x140EAFFD0` | 1,536 complete callback executions match checked outputs bit-for-bit on ARM64 and x86-64. Ordinary Step uses optional height presence, native effect arithmetic, raw block properties and previous-jump position. Request production/selection, real block-property production and trigger consumption remain incomplete. |
 | Water travel acceleration | `WaterTravelSystem` registration `0x1402CE3E0` → vtable `0x1466D2A60` → wrapper `0x140F27220` → loop `0x140F1E920` → callback `0x140F1E690` | Complete callback executed for 6,912 cases covering optional movement/underwater attributes, player membership and registry generation, dolphin/ground tags, enchantment clamp and swim multiplier. Step uses the verified arithmetic and own-player underwater attribute. Full attribute modifier production and scheduler behavior remain under audit. |
 | Ground acceleration arithmetic | `GroundTravelTypeSystem` factory `0x140E0B080`; vtables `0x1466D0238` / `0x1466D0270`; wrappers `0x140E25FA0` / `0x140E26110`; callbacks `0x140E172E0` / `0x140E16EE0`; kernels `0x140E105A0` / `0x140E104A0` | 336 executions of both complete kernels with a synthetic block-source query. Covers ordinary/special/air identities, ability flag, zero friction fallback and differing runtime/definition friction. Step uses the verified ratio-cubed-then-speed evaluation order. Definition-friction selection, feature gates and exemption component identity still need integration. |
 | Swept contact and overlap recovery | `ActorMoveSystem` factory `0x140BB1410` → vtable `0x1466C4F60` → wrapper `0x140BC7D40` → loop `0x140BBD5D0` → callback `0x140BBD410` → sequential kernel `0x14103BE00` → contact kernel `0x144795D10` | Contact/movement kernels ported and integrated in Step. 2,404 contact cases and 512 complete sequential-movement executions compare all output fields exactly, including penetration depth, both velocity candidates, axis, total displacement and final bounds. Covers non-positive stationary dimensions, `1e-6` contact tolerance, ties, reverse shape order, cross-axis recovery, and recovery limits. Broad-phase shape selection/order is not yet equivalent. |
@@ -299,7 +299,7 @@ substitute for Windows/x86, other platforms or real game/server validation.
 
 Bundled trig and relative movement add 10,832 cases, bringing the kernel/table
 count to 103,616. Move finalization adds 1,792, bringing the total to 105,408. Landing response adds 1,856, and supporting-block selection adds 1,280,
-for 108,544. Unavailable-chunk collision collection adds 564, for 109,108. Terrain traversal adds 382 and the common block collector adds 310, for 109,800. Position seeding, offsets and description conversion add 1,388, for 111,188. Collision-cache append, subtraction and refresh add 1,593, for 112,781. Native request initialization and 256 nonempty cache refresh callbacks add 257, for 113,038. Block slowdown callbacks add 2,304, for 115,342. Sneak filtering and cached-shape clipping add 1,024, for 116,366. Entity-inside traversal and region readiness add 1,316, for 117,682, plus the separately reported 288 chained glide ticks. The
+for 108,544. Unavailable-chunk collision collection adds 564, for 109,108. Terrain traversal adds 382 and the common block collector adds 310, for 109,800. Position seeding, offsets and description conversion add 1,388, for 111,188. Collision-cache append, subtraction and refresh add 1,593, for 112,781. Native request initialization and 256 nonempty cache refresh callbacks add 257, for 113,038. Block slowdown callbacks add 2,304, for 115,342. Sneak filtering and cached-shape clipping add 1,024, for 116,366. Entity-inside traversal and region readiness add 1,316, for 117,682. Complete ordinary and alternate ground-jump callbacks add 1,536, for 119,218, plus the separately reported 288 chained glide ticks. The
 trig inputs include all exponent classes, mantissa boundaries, both signs,
 small/large reduction thresholds, infinities, quiet/signaling NaN payloads and
 seeded random float bit patterns. Both BDS SSE2 and SSE4 implementations agree
@@ -847,3 +847,65 @@ bit-cast dependency explicitly; local rebuild and the three affected cache
 self-tests pass. A new Windows CI result is still required to verify that fix.
 The later entity-inside additions have separate local ARM64/x86-64 evidence and
 must also complete current-head CI before platform validation is claimed.
+
+
+## Complete ground-jump callbacks
+
+`BdsJump.hpp` ports the full ordinary callback `0x140EAFAF0` and alternate
+callback `0x140EAFFD0`, beyond the previously tested sprint impulse. The
+reference executes their original instructions and the native event constructor
+`0x140EC4780`. Synthetic services supply world blocks, the optional height
+callback, the synchronized-data type query, and mechanical ECS allocation/index
+lookup. These services do not replace jump arithmetic or branch decisions.
+
+The 1,536 cases check every queried block position, previous-jump position,
+velocity, and the trigger's semantic bool/position fields. Native trigger padding
+is uninitialized and is excluded. Cases include supplied zero/negative heights,
+missing height providers, invalid/missing effect records, extreme signed effect
+amplifiers, existing triggers, property-mask combinations, below-cell probing,
+sprint headings, existing upward/downward velocity, and typed synchronized data.
+Both optimized ARM64 and x86-64/Rosetta implementations match every checked bit;
+regeneration is byte-identical. Runtime regressions check zero versus missing
+height, previous position, and the lower-cell property multiplier.
+
+Ordinary jumping copies position into MobJumpComponent, chooses forced `0.2f`
+or optional height/default `0.42f`, adds `(float(amplifier)+1)*0.1f`, applies the
+surface multiplier, and uses native max-with-existing vertical speed before the
+sprint impulse. The alternate callback has distinct effect rounding
+`float(amplifier)*0.1f+0.52f`, adds the resolved type-2 integer from
+SynchedActorData slot 2 times `0.1f`, overwrites vertical speed without that max,
+and leaves previous position and horizontal velocity unchanged. Both create
+TriggerJumpRequestComponent only when absent, retaining an existing record.
+BlockLegacy property bit 43 selects multiplier `0.6f`; bit 8 permits the lower
+cell query when body-minimum rounding would otherwise skip it. Actual block
+identities and property producers have not yet been established.
+
+Native view constructors establish request identities:
+`0x140EC27A0` selects OtherJumpRequestComponent `0x9D529862`;
+`0x140EC2610` selects SquidJumpRequestComponent `0x3B31D80A` and forces the low
+ordinary height; `0x140EC2420` selects LavaSlimeJumpRequestComponent `0x83B7F546`
+and the alternate callback. The optional 88-byte component is JumpControlComponent (`0xBA17447D`):
+its pool constructor `0x140E08B30` records the class name and type hash. The seven required ordinary view
+members include AABBShape, ActorDataFlag, ActorRotation, MobEffects, MobJump,
+StateVector, and the request. `0x140EB0720` dispatches ordinary, squid, lava-slime
+and another predicate-gated ordinary path in that order; phase integration is
+still under audit. Trigger cleanup helpers `0x140EC9800` and `0x140EC98D0` remove
+one record or clear the pool, but their schedule and all consumers are not yet
+reconstructed. Step therefore integrates ordinary calculations only and does
+not pretend a persistent Perlin event is equivalent to native trigger lifetime.
+
+Reproduce with the current ignored IDA export:
+
+```sh
+build/bds-oracle-venv/bin/python tools/bds_reference/jump.py \
+  --export build/bds-reference.json --sine tests/data/bds_sine.bin \
+  --out build/bds-jump-regenerated.txt
+cmp build/bds-jump-regenerated.txt tests/data/bds_jump.txt
+ctest --test-dir build -R '^(bds_jump_selftest|physics_selftest)$' --output-on-failure
+```
+
+Run `39938936441` on head `3c1959a` confirms Windows compiles and runs its suite:
+47/48 Windows tests pass, with the same 152 legacy trace differences as macOS.
+The missing-header compile failure is resolved. Local tests after the jump port
+report 53/54 passing targets; the sole failing target and its 152 mismatches are
+unchanged. No expectations or tolerances were changed.
