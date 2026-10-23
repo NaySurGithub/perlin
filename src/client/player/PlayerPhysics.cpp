@@ -15,6 +15,7 @@
 #include "client/player/BdsInsideQuery.hpp"
 #include "client/player/BdsJumpRequests.hpp"
 #include "client/player/BdsHoney.hpp"
+#include "client/player/BdsFluidState.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -226,30 +227,19 @@ namespace perlin::physics {
             bool water = false, lava = false, web = false;
         };
 
-        Box Shrink(const Box& b, double dx, double dy, double dz) {
-            Box r{b.x0 + dx, b.y0 + dy, b.z0 + dz, b.x1 - dx, b.y1 - dy, b.z1 - dz};
-            if (r.x0 > r.x1) r.x0 = r.x1 = (b.x0 + b.x1) * 0.5;
-            if (r.y0 > r.y1) r.y0 = r.y1 = (b.y0 + b.y1) * 0.5;
-            if (r.z0 > r.z1) r.z0 = r.z1 = (b.z0 + b.z1) * 0.5;
-            return r;
-        }
-
         bool TouchesFluid(const World& world, const Box& shrunk, int kind) {
-            const CellRange c = Cells(shrunk);
-            for (int y = c.y0; y <= c.y1; y++)
-                for (int x = c.x0; x <= c.x1; x++)
-                    for (int z = c.z0; z <= c.z1; z++) {
-                        const BlockShape s = world.Query(x, y, z);
-                        if (s.fluid == kind && shrunk.y1 > y && shrunk.y0 < y + s.fluidLevel)
-                            return true;
-                    }
-            return false;
+            return bds::CollectLiquidCells(CollisionBox(shrunk), kind == 1 ? 5 : 6, false,
+                [&](bds::BlockPosition position) {
+                    const auto shape = world.Query(position[0], position[1], position[2]);
+                    return shape.fluid == 1 ? 5u : (shape.fluid == 2 ? 6u : 0u);
+                }, [](bds::BlockPosition, uint8_t) {});
         }
 
         Environment Scan(const World& world, const Box& box) {
             Environment env;
-            env.water = TouchesFluid(world, Shrink(box, 0.001, 0.401, 0.001), 1);
-            env.lava = TouchesFluid(world, Shrink(box, 0.1, 0.4, 0.1), 2);
+            const auto bounds = bds::MakeLiquidQueryBounds(CollisionBox(box));
+            env.lava = TouchesFluid(world, PhysicsBox(bounds.lava), 2);
+            env.water = TouchesFluid(world, PhysicsBox(bounds.water), 1);
             const Box shrunk = box.Inflate(-0.001);
             const CellRange c = Cells(shrunk);
             for (int y = c.y0; y <= c.y1; y++)
@@ -317,16 +307,10 @@ namespace perlin::physics {
         }
 
         void ApplyCurrent(State& s, const World& w, bool sneaking) {
-            const float half = static_cast<float>(kWidth) * 0.5f;
-            const float h = static_cast<float>(s.crawling ? kCrawlHeight : sneaking ? kSneakHeight : kStandHeight);
-            const float px = static_cast<float>(s.x), py = static_cast<float>(s.y), pz = static_cast<float>(s.z);
+            const auto bounds = bds::MakeLiquidQueryBounds(CollisionBox(BoundingBox(s, sneaking)));
             for (int mat = 2; mat >= 1; mat--) {
-                const bool water = mat == 1;
-                const float ix = water ? 0.001f : 0.1f, iy = water ? 0.401f : 0.4f;
-                const float mnx = px - half, mxx = px + half, mny = py, mxy = py + h, mnz = pz - half, mxz = pz + half;
-                const float cx = (mnx + mxx) * 0.5f, cy = (mny + mxy) * 0.5f, cz = (mnz + mxz) * 0.5f;
-                const float lx = std::min(mnx + ix, cx), ly = std::min(mny + iy, cy), lz = std::min(mnz + ix, cz);
-                const float hx = std::max(mxx - ix, cx), hy = std::max(mxy - iy, cy), hz = std::max(mxz - ix, cz);
+                const auto& box = mat == 1 ? bounds.water : bounds.lava;
+                const float lx = box[0], ly = box[1], lz = box[2], hx = box[3], hy = box[4], hz = box[5];
                 const int x0 = static_cast<int>(std::floor(lx)), y0 = static_cast<int>(std::floor(ly)),
                           z0 = static_cast<int>(std::floor(lz));
                 const int x1 = static_cast<int>(std::floor(hx + 1.0f)), y1 = static_cast<int>(std::floor(hy + 1.0f)),
@@ -366,7 +350,7 @@ namespace perlin::physics {
                 }
                 const float l = std::sqrt(sum[0] * sum[0] + sum[1] * sum[1] + sum[2] * sum[2]);
                 if (l >= 0.0001f) {
-                    const float k = water ? 0.014f : 0.0035f;
+                    const float k = mat == 1 ? 0.014f : 0.0035f;
                     s.vx = F(static_cast<float>(s.vx) + sum[0] / l * k);
                     s.vy = F(static_cast<float>(s.vy) + sum[1] / l * k);
                     s.vz = F(static_cast<float>(s.vz) + sum[2] / l * k);
@@ -493,8 +477,13 @@ namespace perlin::physics {
             s.jumpDelay = 0;
 
         const Environment env = Scan(world, BoundingBox(s, crouched));
-        s.inWater = env.water;
-        s.inLava = env.lava && !env.water;
+        // Scan remains the world adapter. Feed its selected material through
+        // the native state callbacks, including water entry and fall reset.
+        // This player path has no Passenger/FallingBlock component.
+        const uint32_t fluidMaterial = bds::SelectFluidMaterial(env.water, env.lava);
+        bds::UpdateWaterState(fluidMaterial, s.inWater, s.fallDistance,
+            s.waterSplashRequest, [] { return false; }, [] { return false; });
+        s.inLava = bds::WasInLava(fluidMaterial);
         const BlockShape feet = world.Query(static_cast<int>(std::floor(s.x)), static_cast<int>(std::floor(s.y)),
                                             static_cast<int>(std::floor(s.z)));
         s.onClimbable = feet.climbable;
@@ -768,9 +757,8 @@ namespace perlin::physics {
         StepMovement(s, in, attr, world);
         // EntityInside, player immunity, adjustFallDistance and applied-record
         // cleanup are registered in this order by 0x1402D48A0.
-        // WasInWaterFlag is produced by native fluid-state processing. Use
-        // the sensed water state here; complete native producer timing remains
-        // part of the fluid-system port.
+        // WasInWaterFlag has passed through the native water-state callback.
+        // World material sensing and complete native phase timing remain open.
         UpdateBlockContacts(s, in, world, s.inWater);
         // MovementEffectsTick is registered in the post-player-movement phase,
         // 0x1402D5190. Flying and no-clip paths must also advance effect state.

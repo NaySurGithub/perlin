@@ -42,6 +42,69 @@ static BlockShape Slab(double h) {
 int main() {
     Attributes attr;
 
+    // Native fluid-state callback integration: entry creates/overwrites the
+    // pending splash payload, continued immersion preserves it, exit clears
+    // the water flag, and each water update resets ordinary player fall distance.
+    {
+        TestWorld world;
+        uint8_t fluid = 1;
+        world.fn = [&](int, int, int) {
+            BlockShape shape;
+            shape.fluid = fluid;
+            shape.fluidLevel = 1;
+            shape.fluidDepth = 0;
+            return shape;
+        };
+        State state;
+        state.fallDistance = 20;
+        Step(state, Input{}, attr, world);
+        CHECK(state.inWater && !state.inLava && state.fallDistance == 0);
+        CHECK(state.waterSplashRequest == 1);
+        state.waterSplashRequest = 7;
+        state.fallDistance = 4;
+        Step(state, Input{}, attr, world);
+        CHECK(state.inWater && state.fallDistance == 0 && state.waterSplashRequest == 7);
+        fluid = 2;
+        Step(state, Input{}, attr, world);
+        CHECK(!state.inWater && state.inLava && state.waterSplashRequest == 7);
+        fluid = 1;
+        Step(state, Input{}, attr, world);
+        CHECK(state.inWater && !state.inLava && state.waterSplashRequest == 1);
+        fluid = 0;
+        Step(state, Input{}, attr, world);
+        CHECK(!state.inWater && !state.inLava && state.waterSplashRequest == 1);
+
+        // LiquidBlocksFetch gives lava priority even while its separate water
+        // intersection result is true. An actor can span adjacent fluid cells.
+        world.fn = [](int x, int, int) {
+            BlockShape shape;
+            shape.fluid = x < 1 ? 1 : 2;
+            shape.fluidLevel = 1;
+            shape.fluidDepth = 0;
+            return shape;
+        };
+        state = {};
+        state.x = 1;
+        Step(state, Input{}, attr, world);
+        CHECK(!state.inWater && state.inLava && !state.waterSplashRequest);
+
+        // Body sensing uses cell material, independently of the rendered liquid
+        // surface. Here the contracted body starts above the shallow surface.
+        world.fn = [](int, int y, int) {
+            BlockShape shape;
+            if (y == 0) {
+                shape.fluid = 1;
+                shape.fluidLevel = 0.125f;
+                shape.fluidDepth = 0;
+            }
+            return shape;
+        };
+        state = {};
+        state.y = 0.5f;
+        Step(state, Input{}, attr, world);
+        CHECK(state.inWater && state.waterSplashRequest == 1);
+    }
+
     // Honey contact is applied after motion and before accumulated slowdown.
     // The side contact resets fall distance and clamps downward velocity.
     {

@@ -19,6 +19,7 @@ Decompiler argument names and inferred types are not treated as semantic names.
 
 | Behavior | BDS evidence | Port and verification status |
 | --- | --- | --- |
+| Fluid state and body sensing | Registration `0x1402D15D0`; `LiquidBlocksFetch` callback `0x140FC98E0`; common collector `0x140FC94C0` → `0x140FC8FA0`; bounds conversion `0x1447976A0`; InWater/InLava callbacks `0x140E0E820` / `0x140E0E6F0` | 4,256 new native executions cover state transitions, contracted bounds, material priority, cell traversal and boundary records. Ordinary Step uses the ported state callbacks, float contraction and single-body collector. Flow producers, ready/unready behavior, secondary bodies, head sensing, passenger integration and request consumption remain incomplete. See the fluid section below. |
 | Travel-intent attenuation | `MobTravelIntentSystem` string `0x1468B56F8` → factory `0x140EB2E40` → vtable `0x1466D1D80` slot 5 → wrapper `0x140EBF3A0` → loop `0x140EB2C80` → callback `0x140EB2C20` | Three float intent lanes multiply by `0.98f`; turn scalar multiplies by `0.9f`; attenuated vector is copied. Numeric helper verified against 109 executed BDS cases. Step uses its horizontal intent output. The meaning/integration of the other lanes still needs tracing. |
 | Friction arithmetic | Ground/air/flying registration `0x14103DBC0`; run wrappers `0x141051710`, `0x1410512D0`, `0x141050E90`; common callback `0x14103D9D0`, shared tail `0x14103D8F0` | 3,052 BDS executions cover both membership branches, vertical flag, coefficient products, threshold boundaries, and signed zero. Step uses the corrected per-component kernel. Metadata builder `0x14106DCC0` identifies the special membership as `VexFlagComponent` (hash `0x02BE52F4`), coefficient/vertical fields as `MobTravelComponent` offsets 28/40, and the multiplier as `FrictionModifierComponent`. The full ECS selection logic and coefficient writers have not been ported. |
 | Jump-delay decrement | `DecrementNoJumpDelaySystem` registration `0x1402CBA10` → vtable `0x1466D1E60` slot 5 → wrapper `0x140EC0610` → loop `0x140EB15B0` → callback `0x140EB0DA0` | Eight machine-code cases including negative values and integer boundaries. Step calls the verified decrement helper; system order remains under audit. |
@@ -299,7 +300,7 @@ substitute for Windows/x86, other platforms or real game/server validation.
 
 Bundled trig and relative movement add 10,832 cases, bringing the kernel/table
 count to 103,616. Move finalization adds 1,792, bringing the total to 105,408. Landing response adds 1,856, and supporting-block selection adds 1,280,
-for 108,544. Unavailable-chunk collision collection adds 564, for 109,108. Terrain traversal adds 382 and the common block collector adds 310, for 109,800. Position seeding, offsets and description conversion add 1,388, for 111,188. Collision-cache append, subtraction and refresh add 1,593, for 112,781. Native request initialization and 256 nonempty cache refresh callbacks add 257, for 113,038. Block slowdown callbacks add 2,304, for 115,342. Sneak filtering and cached-shape clipping add 1,024, for 116,366. Entity-inside traversal and region readiness add 1,316, for 117,682. Complete ordinary and alternate ground-jump callbacks add 1,536, for 119,218. Jump request classification adds 1,296, for 120,514. Ground-jump permission adds 2,048, for 122,562. Honey contacts add 640, for 123,202. Seven native sprint impulses observed during independent legacy-trace replay bring this to 123,209, plus the separately reported 288 chained glide ticks. The
+for 108,544. Unavailable-chunk collision collection adds 564, for 109,108. Terrain traversal adds 382 and the common block collector adds 310, for 109,800. Position seeding, offsets and description conversion add 1,388, for 111,188. Collision-cache append, subtraction and refresh add 1,593, for 112,781. Native request initialization and 256 nonempty cache refresh callbacks add 257, for 113,038. Block slowdown callbacks add 2,304, for 115,342. Sneak filtering and cached-shape clipping add 1,024, for 116,366. Entity-inside traversal and region readiness add 1,316, for 117,682. Complete ordinary and alternate ground-jump callbacks add 1,536, for 119,218. Jump request classification adds 1,296, for 120,514. Ground-jump permission adds 2,048, for 122,562. Honey contacts add 640, for 123,202. Seven native sprint impulses observed during independent legacy-trace replay bring this to 123,209. Fluid-state, finite-bounds and common liquid-collector executions add 4,256, bringing the current total to 127,465, plus the separately reported 288 chained glide ticks. The
 trig inputs include all exponent classes, mantissa boundaries, both signs,
 small/large reduction thresholds, infinities, quiet/signaling NaN payloads and
 seeded random float bit patterns. Both BDS SSE2 and SSE4 implementations agree
@@ -1139,3 +1140,114 @@ Ordinary CTest runs use committed fixtures and require neither an external
 simulator checkout nor BDS executable pages. Those pages remain untracked.
 Earlier failing-gate results elsewhere in this document describe the historical
 state before this migration; the current gate is green locally.
+
+
+## Native fluid-state and common liquid-collector port
+
+The reference remains the same BDS binary and SHA-256 above. Registration
+`0x1402D15D0` names LiquidBlocksFetch, InLavaSensingSystem,
+InWaterSensingSystem, UnderWaterSensingSystem and LiquidSplashRequestSystem.
+The first three lead to callbacks `0x140FC98E0`, `0x140E0E6F0` and
+`0x140E0E820`. Registration order alone does not establish all native execution
+or deferred component-mutation timing.
+
+`BdsFluidState.hpp` ports these verified behaviors:
+
+- Water and lava contract the supplied body using native float arithmetic,
+  respectively by `(0.001, 0.401, 0.001)` and `(0.1, 0.4, 0.1)`. Crossed
+  axes collapse to their original center. The common readiness query uses the
+  union of both contracted boxes. An optional native membership bypasses
+  contraction; its identity/producer is still unresolved, so ordinary player
+  integration uses contraction.
+- Both fluid regions are tested, with lava winning material selection when both
+  intersect. This fixes the previous water-first adapter. The native request's
+  separate water-intersection byte can still be true when selected material is
+  lava; it is not interchangeable with WasInWaterFlag.
+- The common liquid collector computes lower floors and `floor(upper + 1.0f)`,
+  traverses Y/Z/X with X fastest, emits matching-material records and their four
+  horizontal boundary-face bits, and supports material 25 as a wildcard. Without
+  a destination vector it returns at the first admitted cell. With a destination
+  it keeps collecting after a hit. The hit predicate checks integer cell origins
+  against floored lower/original upper bounds. Fluid surface height is absent
+  from this body-sensing path; head sensing is separate. This fixes the old
+  body's comparison with `fluidLevel`.
+- InLavaSensing sets membership exactly for selected material 6. InWaterSensing
+  removes membership for non-water material or a valid boat passenger. Passenger
+  sparse membership, referenced-registry ID and boat-view membership are distinct
+  gates. Otherwise it resets fall distance unless FallingBlockFlag is present.
+  When WasInWaterFlag is absent, it creates that flag and get-or-creates a splash
+  request followed by a dword store of 1. Continued water membership preserves an
+  existing splash payload, including values other than 1.
+
+Ordinary Step uses these body bounds, material selection, collector and
+water/lava flag logic. It has no Passenger/FallingBlock component, so those
+runtime predicates are false. A pending splash payload is retained in State;
+its subsequent replacement, erasure, event and presentation consumers are not
+implemented. Integration regressions cover water entry/stay/exit/reentry,
+fall-distance reset, pending-payload retention, adjacent water/lava cells and
+body contact above a shallow rendered liquid surface. These integration checks
+reuse the behavioral findings and are not additional native-reference cases.
+
+The independent fixtures contain **4,256 native executions**:
+
+| Reference output | Executions |
+| --- | ---: |
+| Complete InWaterSensing callback, supplied optional sparse pools | 2,048 |
+| Complete InLavaSensing callback | 128 |
+| Chained water callbacks, 32 actors with 16 updates each | 512 |
+| Complete LiquidBlocksFetch, selected material/intersection outputs | 32 |
+| Complete LiquidBlocksFetch, finite water/lava/readiness bounds | 1,024 |
+| Complete common liquid collector, bounds conversion and record writes | 512 |
+
+Both new portable suites match every checked bit, membership, queried cell,
+record position and boundary mask on optimized ARM64 and x86-64/Rosetta builds.
+The collector fixture includes narrow/zero extents, negative coordinates,
+rounding boundaries and large coordinates up to the native world range. The
+chained water fixtures preserve each actor's preceding native flag, fall-distance
+and pending splash output, with no synthetic splash consumption between updates.
+They do not execute a complete native multi-system tick.
+
+`fluid_state.py` substitutes ECS pool getters, insertion/erasure, the composite
+boat-view query, block collection and world readiness as documented. The native
+water callback still executes its own sparse membership, referenced registry-ID
+checks and all branch decisions. The finite-bounds/selection cases execute the
+complete fetch callback with flow disabled and a finite-only fdclass service.
+Readiness returns true. `liquid_cells.py` separately executes the real common
+collector and bounds conversion, supplying only deterministic block reads. It
+preallocates record capacity, uses no secondary bodies and does not exercise
+allocator growth. No fluid-surface-height or flow decision is substituted into
+the real collector. All original callback code and function hashes come from the
+read-only IDA export; executable pages are not committed.
+
+Reproduce after exporting the added functions with `export_ida.py`:
+
+```sh
+build/bds-oracle-venv/bin/python tools/bds_reference/fluid_state.py \
+  --export build/bds-reference.json --out build/bds-fluid-state-regenerated.txt
+cmp build/bds-fluid-state-regenerated.txt tests/data/bds_fluid_state.txt
+build/bds-oracle-venv/bin/python tools/bds_reference/liquid_cells.py \
+  --export build/bds-reference.json --out build/bds-liquid-cells-regenerated.txt
+cmp build/bds-liquid-cells-regenerated.txt tests/data/bds_liquid_cells.txt
+ctest --test-dir build --output-on-failure
+```
+
+Both fixtures regenerate byte-identically. The full local application build and
+**60/60 tests pass**, including all **5,400 legacy trace checks** without changing
+those fixtures or tolerances. All seven CI build jobs, including Windows, passed
+on the preceding commit `17a5957` (run 39944748400); new-head CI is reported in the
+PR as it completes.
+
+The new total is **127,465 exact native reference cases/entries**, including the
+512 chained water callbacks above and excluding the separately counted 288 glide
+ticks and all external compatibility-simulator frames. This remains a bounded
+reference count, not an overall BDS physics accuracy percentage.
+
+Fluid work still required includes real world readiness and multiple block
+layers, secondary bodies, flow admission/aggregation, the underlying flow-vector
+producer, head-height/surface sensing, swimming/lava/bubble movement producers,
+passengers, full native system ordering and all request consumers/cleanup.
+The later LiquidSplashRequest callback `0x140FCA240` has been located: it considers
+ActorGameType, world game type, head-water transitions and WasInLava, and can
+replace or erase the pending splash request and create PostSplashGameEventRequest.
+That callback and its lifetime interactions are not yet ported. These explicit
+remaining paths prevent a claim of complete 1:1 physics.

@@ -112,6 +112,9 @@ namespace perlin::physics {
         bool collidableMobNear = false;
         bool inWater = false;
         bool inLava = false;
+        // Pending native request payload. Later replacement/removal phases and
+        // splash sound/particle consumption are not ported yet.
+        std::optional<uint32_t> waterSplashRequest;
         bool onClimbable = false;
         bool crawling = false;
         int jumpDelay = 0;
