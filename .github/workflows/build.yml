@@ -75,7 +75,11 @@ jobs:
 
       - name: Install macOS packages
         if: runner.os == 'macOS'
-        run: brew install ninja
+        run: |
+          brew install ninja
+          # Homebrew's fmt is a dynamic library that would get picked up by a dependency's find_package/pkg-config and then
+          # be missing on other Macs (libfmt.12.dylib). Remove it so everything is built from the pinned sources instead.
+          brew uninstall --ignore-dependencies fmt || true
 
       - name: Cache OpenSSL (macOS)
         if: runner.os == 'macOS'
@@ -167,7 +171,7 @@ jobs:
           cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DPERLIN_BUILD_TESTS=ON
           -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
           -DCMAKE_OSX_DEPLOYMENT_TARGET=12.0
-          ${{ runner.os == 'macOS' && format('-DOPENSSL_ROOT_DIR={0}/ossl-mac', github.workspace) || '' }}
+          ${{ runner.os == 'macOS' && format('-DOPENSSL_ROOT_DIR={0}/ossl-mac -DCMAKE_DISABLE_FIND_PACKAGE_fmt=ON', github.workspace) || '' }}
 
       - name: Build
         run: cmake --build build --config Release --parallel

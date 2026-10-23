@@ -51,7 +51,7 @@ namespace perlin::ui {
         std::vector<ServerEntry> servers;
         ServerTab tab = ServerTab::Lan;
         std::vector<ServerEntry> lan, realms, friends;
-        bool friendsOpen[4] = {true, true, false, true};  // 3 = Featured Servers (Servers tab)
+        bool friendsOpen[4] = {true, true, false, false};  // 3 = Featured Servers (Servers tab)
         std::vector<ServerEntry> featured, savedView;
         std::string tabMessage;
         std::string joinMessage;
@@ -65,7 +65,11 @@ namespace perlin::ui {
         }
         const std::vector<ServerEntry>& Shown() const { return const_cast<TitleModel*>(this)->Shown(); }
         int selected = -1;
-        bool SavedSelected() const { return selected >= 0 && selected < static_cast<int>(servers.size()); }
+        int savedOffset = 0;  // rows shown above the saved servers (the Featured Servers group)
+        int SavedIndex() const {
+            const int i = selected - savedOffset;
+            return tab == ServerTab::Saved && selected >= 0 && i >= 0 && i < static_cast<int>(servers.size()) ? i : -1;
+        }
         int scroll = 0;
         bool adding = false;
         std::string name;

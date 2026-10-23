@@ -87,6 +87,25 @@ mcimg { display: block; position: absolute; }
             return d;
         }
 
+        // Cut text to fit a width (the font is about 5px per character at this size), ending in "..." when shortened.
+        std::string Fit(const std::string& text, int widthPx) {
+            const size_t maxChars = static_cast<size_t>(std::max(4, widthPx / 5));
+            size_t chars = 0, cut = std::string::npos;
+            for (size_t i = 0; i < text.size(); i++) {
+                if ((static_cast<unsigned char>(text[i]) & 0xC0) == 0x80)
+                    continue;
+                if (chars == maxChars - 3)
+                    cut = i;
+                if (++chars > maxChars)
+                    return text.substr(0, cut) + "...";
+            }
+            return text;
+        }
+
+        std::string RowText(int x, int y, int w, const std::string& text, const std::string& cls = "") {
+            return "<div class=\"txt " + cls + "\" style=\"left:" + N(x) + "px;top:" + N(y) + "px;width:" + N(w) + "px;height:9px;overflow:hidden;\">" + EscapeRml(Fit(text, w)) + "</div>\n";
+        }
+
         std::string Text(int x, int y, int w, const std::string& text, const std::string& cls = "") {
             return "<div class=\"txt " + cls + "\" style=\"left:" + N(x) + "px;top:" + N(y) + "px;width:" + N(w) + "px;height:9px;\">" + EscapeRml(text) + "</div>\n";
         }
@@ -335,14 +354,14 @@ mcimg { display: block; position: absolute; }
                     d += "<mcimg src=\"mchead:" + EscapeRml(s.icon) + "\" style=\"left:0px;top:0px;width:32px;height:32px;" + (s.offline ? "opacity:0.5;" : "") + "\"></mcimg>\n";
                 if (Joinable(s))
                 d += "<div id=\"" + std::string(kServerJoinPrefix) + N(i) + "\" class=\"go\" style=\"left:0px;top:0px;width:32px;height:32px;\"><mcimg src=\"mcres:ui_menu_join_hi.png\" style=\"left:0px;top:0px;width:32px;height:32px;\"></mcimg></div>\n";
-                d += Text(35, 1, kRowW - 110, s.name.empty() ? "Minecraft Server" : s.name);
+                d += RowText(35, 1, kRowW - 110, s.name.empty() ? "Minecraft Server" : s.name);
                 std::string right, rightCls = "gray";
                 using St = ServerEntry::Status;
                 if (s.kind != ServerEntry::Kind::Server) {
                     d += "<div class=\"txt " + std::string(s.offline ? "dark" : "green") + "\" style=\"left:" + N(kRowW - 105) + "px;top:1px;width:100px;height:9px;text-align:right;\">" +
                          EscapeRml(s.right) + "</div>\n";
-                    d += Text(35, 12, kRowW - 40, s.motd.empty() ? " " : s.motd, s.offline ? "dark" : "gray");
-                    d += Text(35, 23, kRowW - 40, s.note, "dark");
+                    d += RowText(35, 12, kRowW - 40, s.motd.empty() ? " " : s.motd, s.offline ? "dark" : "gray");
+                    d += RowText(35, 23, kRowW - 40, s.note, "dark");
                     d += "</div>\n";
                     continue;
                 }
@@ -362,13 +381,13 @@ mcimg { display: block; position: absolute; }
                     const char* latencyCls = s.pingMs < 150 ? "green" : (s.pingMs < 300 ? "yellow" : "red");
                     d += "<div class=\"txt " + std::string(latencyCls) + "\" style=\"left:" + N(kRowW - 33) + "px;top:1px;width:30px;height:9px;text-align:right;\">" +
                          N(s.pingMs) + "ms</div>\n";
-                    d += Text(35, 12, kRowW - 40, s.motd.empty() ? "A Minecraft Server" : s.motd, "gray");
-                    d += Text(35, 23, kRowW - 40, s.address + (s.version.empty() ? "" : "  -  " + s.version), "dark");
+                    d += RowText(35, 12, kRowW - 40, s.motd.empty() ? "A Minecraft Server" : s.motd, "gray");
+                    d += RowText(35, 23, kRowW - 40, s.address + (s.version.empty() ? "" : "  -  " + s.version), "dark");
                 } else if (s.status == St::Offline) {
-                    d += Text(35, 12, kRowW - 40, "Can't connect to server", "red");
-                    d += Text(35, 23, kRowW - 40, s.address, "dark");
+                    d += RowText(35, 12, kRowW - 40, "Can't connect to server", "red");
+                    d += RowText(35, 23, kRowW - 40, s.address, "dark");
                 } else {
-                    d += Text(35, 12, kRowW - 40, s.address, "gray");
+                    d += RowText(35, 12, kRowW - 40, s.address, "gray");
                 }
                 d += "</div>\n";
             }
@@ -390,7 +409,7 @@ mcimg { display: block; position: absolute; }
             if (!m.joinMessage.empty())
                 d += "<div class=\"txt ctr yellow\" style=\"left:0px;top:" + N(h - 62) + "px;width:" + N(w) + "px;height:9px;z-index:4;\">" + EscapeRml(m.joinMessage) + "</div>\n";
             const bool has = m.selected >= 0 && m.selected < static_cast<int>(list.size()) && Joinable(list[static_cast<size_t>(m.selected)]);
-            const bool hasRow = m.selected >= 0 && m.selected < static_cast<int>(list.size()) && (m.tab != ServerTab::Saved || m.SavedSelected());
+            const bool hasRow = m.selected >= 0 && m.selected < static_cast<int>(list.size()) && (m.tab != ServerTab::Saved || m.SavedIndex() >= 0);
             const bool saved = m.tab == ServerTab::Saved;
             const int r1 = h - 52, r2 = h - 28;
             d += Btn(has ? kServerJoin : "", cx - 154, r1, 100, m.tab == ServerTab::Friends ? "Join Friend" : (m.tab == ServerTab::Realms ? "Join Realm" : "Join Server"), !has);

@@ -5186,7 +5186,7 @@ namespace perlin {
                 title.tab = ui::ServerTab::Saved;
                 for (size_t i = 0; i < title.servers.size(); i++)
                     if (title.servers[i].address == options.server)
-                        title.selected = static_cast<int>(i);
+                        title.selected = static_cast<int>(i) + title.savedOffset;
             }
             if (titleReturnToReplays) {
                 titleReturnToReplays = false;
@@ -5237,11 +5237,11 @@ namespace perlin {
                 return;
             }
             const ui::ServerEntry entry{title.name.empty() ? "Minecraft Server" : title.name, title.address};
-            if (title.adding || title.selected < 0 || title.selected >= static_cast<int>(title.servers.size())) {
+            if (title.adding || title.SavedIndex() < 0) {
                 title.servers.push_back(entry);
-                title.selected = static_cast<int>(title.servers.size()) - 1;
+                title.selected = static_cast<int>(title.servers.size()) - 1 + title.savedOffset;
             } else {
-                title.servers[static_cast<size_t>(title.selected)] = entry;
+                title.servers[static_cast<size_t>(title.SavedIndex())] = entry;
             }
             SaveServers(title.servers);
             title.page = ui::TitlePage::Servers;
@@ -5306,7 +5306,7 @@ namespace perlin {
                 title.name = "Minecraft Server";
                 title.address.clear();
             } else {
-                const ui::ServerEntry& s = title.servers[static_cast<size_t>(title.selected)];
+                const ui::ServerEntry& s = title.servers[static_cast<size_t>(std::max(0, title.SavedIndex()))];
                 title.name = s.name;
                 title.address = s.address;
             }
@@ -5497,15 +5497,24 @@ namespace perlin {
                 e.pingMs = r.pingMs;
             }
         }
-        title.savedView = title.servers;
-        if (!title.featured.empty()) {
-            ui::ServerEntry head;
-            head.kind = ui::ServerEntry::Kind::Header;
-            head.name = "Featured Servers [" + std::to_string(title.featured.size()) + "]";
-            head.realmId = 3;
-            title.savedView.push_back(head);
-            if (title.friendsOpen[3])
-                title.savedView.insert(title.savedView.end(), title.featured.begin(), title.featured.end());
+        {
+            title.savedView.clear();
+            if (!title.featured.empty()) {
+                ui::ServerEntry head;
+                head.kind = ui::ServerEntry::Kind::Header;
+                head.name = "Featured Servers [" + std::to_string(title.featured.size()) + "]";
+                head.realmId = 3;
+                title.savedView.push_back(head);
+                if (title.friendsOpen[3])
+                    title.savedView.insert(title.savedView.end(), title.featured.begin(), title.featured.end());
+            }
+            const int offset = static_cast<int>(title.savedView.size());
+            if (offset != title.savedOffset) {
+                if (title.tab == ui::ServerTab::Saved && title.selected >= title.savedOffset)
+                    title.selected += offset - title.savedOffset;
+                title.savedOffset = offset;
+            }
+            title.savedView.insert(title.savedView.end(), title.servers.begin(), title.servers.end());
         }
         title.nativePanorama = panoramaReady;
         if (!logoBedrock && now >= logoRetryAt) {
@@ -5635,8 +5644,8 @@ namespace perlin {
             } else if (hover == ui::kServerEdit) {
                 edit(false);
             } else if (hover == ui::kServerDelete) {
-                if (title.tab == ui::ServerTab::Saved && title.selected >= 0 && title.selected < static_cast<int>(title.servers.size())) {
-                    title.servers.erase(title.servers.begin() + title.selected);
+                if (title.SavedIndex() >= 0) {
+                    title.servers.erase(title.servers.begin() + title.SavedIndex());
                     title.selected = -1;
                     SaveServers(title.servers);
                 }

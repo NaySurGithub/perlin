@@ -2,6 +2,8 @@ cmake_minimum_required(VERSION 3.28)
 
 if(APPLE)
     set(CMAKE_OSX_DEPLOYMENT_TARGET "12.0" CACHE STRING "" FORCE)
+    # Never pick up Homebrew's dynamic fmt: it would be linked as /opt/homebrew/.../libfmt.12.dylib and missing on other Macs.
+    set(CMAKE_DISABLE_FIND_PACKAGE_fmt ON CACHE BOOL "" FORCE)
 endif()
 
 option(PERLIN_USE_CLANG_CL "Build with clang-cl on Windows" ON)
