@@ -1,7 +1,22 @@
+#include <algorithm>
 #include <chrono>
+#include <cmath>
 #include "client/entity/EntityTracker.hpp"
 
 namespace perlin::entity {
+    namespace {
+        // Move packets carry rotations as bytes scaled to 0..360, so a pitch of -10 degrees arrives as 350. Pitch is a signed
+        // angle within +-90; wrapping it here keeps the head from tilting through almost a full turn.
+        float SignedPitch(float degrees) {
+            if (!std::isfinite(degrees))
+                return 0.0f;
+            degrees = std::fmod(degrees + 180.0f, 360.0f);
+            if (degrees < 0.0f)
+                degrees += 360.0f;
+            return std::clamp(degrees - 180.0f, -90.0f, 90.0f);
+        }
+    }
+
     void EntityTracker::Clear() {
         std::lock_guard lock(mutex);
         entities.clear();
@@ -28,7 +43,7 @@ namespace perlin::entity {
         e.uuid = uuid;
         e.name = name;
         e.pos = {eyePos.x, eyePos.y - kPlayerEye, eyePos.z};
-        e.pitch = pitch;
+        e.pitch = SignedPitch(pitch);
         e.yaw = yaw;
         e.headYaw = headYaw;
         e.flags = flags;
@@ -49,7 +64,7 @@ namespace perlin::entity {
         e.type = type;
         e.isPlayer = type == "minecraft:player";
         e.pos = feetPos;
-        e.pitch = pitch;
+        e.pitch = SignedPitch(pitch);
         e.yaw = yaw;
         e.headYaw = headYaw;
         e.flags = flags;
@@ -132,7 +147,7 @@ namespace perlin::entity {
         if (e.dying && e.isPlayer && glm::dot(next - e.pos, next - e.pos) > 2.25)
             e.dying = false;
         e.pos = next;
-        e.pitch = pitch;
+        e.pitch = SignedPitch(pitch);
         e.yaw = yaw;
         e.headYaw = headYaw;
         e.onGround = onGround;
@@ -153,7 +168,7 @@ namespace perlin::entity {
         if (x) e.pos.x = *x;
         if (y) e.pos.y = *y;
         if (z) e.pos.z = *z;
-        if (pitch) e.pitch = *pitch;
+        if (pitch) e.pitch = SignedPitch(*pitch);
         if (yaw) e.yaw = *yaw;
         if (headYaw) e.headYaw = *headYaw;
         e.onGround = onGround;

@@ -460,7 +460,7 @@ namespace perlin::entity {
                 const auto mix = [&](float x, float y) { return x + WrapDegrees(y - x) * static_cast<float>(f); };
                 v.yaw = mix(a.yaw, b.yaw);
                 v.headYaw = mix(a.headYaw, b.headYaw);
-                v.pitch = a.pitch + (b.pitch - a.pitch) * static_cast<float>(f);
+                v.pitch = a.pitch + WrapDegrees(b.pitch - a.pitch) * static_cast<float>(f);
             } else if (v.samples.size() >= 2) {
                 v.pos = v.samples[0].pos;
             } else if (!v.samples.empty()) {
@@ -469,7 +469,7 @@ namespace perlin::entity {
                 const auto turnTo = [&](float cur, float target) { return cur + WrapDegrees(target - cur) * static_cast<float>(catchUp); };
                 v.yaw = turnTo(v.yaw, v.samples.back().yaw);
                 v.headYaw = turnTo(v.headYaw, v.samples.back().headYaw);
-                v.pitch += (v.samples.back().pitch - v.pitch) * static_cast<float>(catchUp);
+                v.pitch += WrapDegrees(v.samples.back().pitch - v.pitch) * static_cast<float>(catchUp);
             }
             v.yawSpeed = WrapDegrees(v.yaw - prevYaw) / dt;
         } else {
@@ -478,7 +478,7 @@ namespace perlin::entity {
             v.yaw = turn(v.yaw, e.yaw);
             v.yawSpeed = WrapDegrees(v.yaw - prevYaw) / dt;
             v.headYaw = turn(v.headYaw, e.headYaw);
-            v.pitch = v.pitch + (e.pitch - v.pitch) * static_cast<float>(follow);
+            v.pitch = v.pitch + WrapDegrees(e.pitch - v.pitch) * static_cast<float>(follow);
         }
         if (e.type == "minecraft:arrow" || e.type == "minecraft:thrown_trident") {
             const double len = glm::length(d);

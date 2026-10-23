@@ -175,6 +175,28 @@ namespace perlin {
             const TileAlpha baseAlpha = AlphaOf(base);
             const bool keepInterior = tinted.count(base) > 0;
             std::vector<int> list(33, 0);
+            // Stained glass keeps its colour when the interior is made clear: the interior becomes a flat translucent wash of the
+            // glass's average colour instead of nothing. Plain glass stays fully clear.
+            uint8_t wash[4] = {0, 0, 0, 0};
+            if (keepInterior) {
+                double r = 0, g = 0, b = 0, a = 0;
+                int count = 0;
+                for (int y = fw; y < T - fw; y++)
+                    for (int x = fw; x < T - fw; x++) {
+                        const uint8_t* in = src.data() + ((size_t)y * T + x) * 4;
+                        r += in[0] * (double)in[3];
+                        g += in[1] * (double)in[3];
+                        b += in[2] * (double)in[3];
+                        a += in[3];
+                        count++;
+                    }
+                if (a > 0 && count > 0) {
+                    wash[0] = static_cast<uint8_t>(r / a);
+                    wash[1] = static_cast<uint8_t>(g / a);
+                    wash[2] = static_cast<uint8_t>(b / a);
+                    wash[3] = static_cast<uint8_t>(std::clamp(a / count, 70.0, 210.0));
+                }
+            }
             const auto make = [&](int mode, int mask) {
                 const int t = NewTile();
                 uint8_t* out = atlas.data() + (size_t)t * T * T * 4;
@@ -185,8 +207,13 @@ namespace perlin {
                         const bool frame = l || r || tp || bt;
                         uint8_t* px = out + ((size_t)y * T + x) * 4;
                         if (!frame) {
-                            if (mode >= 2)
-                                px[3] = 0;
+                            if (mode >= 2) {
+                                if (keepInterior && wash[3]) {
+                                    px[0] = wash[0], px[1] = wash[1], px[2] = wash[2], px[3] = wash[3];
+                                } else {
+                                    px[3] = 0;
+                                }
+                            }
                             continue;
                         }
                         if (mode == 3)

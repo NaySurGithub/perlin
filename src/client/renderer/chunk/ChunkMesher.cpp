@@ -1236,34 +1236,47 @@ namespace perlin {
                             int tile = q.tile ? q.tile : bm.tiles[q.tex];
                             if (!tile)
                                 return;
+                            const int baseTile = tile;
                             const BlockLibrary::TileAlpha ta = library->AlphaOf(tile);
                             const bool glassTile = library->IsGlassBase(tile);
                             if (const int glassMode = library->GlassMode(); glassMode && library->IsGlassBase(tile)) {
+                                // Panes are made of narrow quads (an arm is 8 wide, the post 2), so the corners are found from the
+                                // quad's own uv bounds rather than assuming it spans the whole 16x16 tile.
                                 int ia = -1, ib = -1, ic = -1;
+                                float umin = 1e9f, umax = -1e9f, vmin = 1e9f, vmax = -1e9f;
                                 for (int k = 0; k < 4; k++) {
-                                    const bool u0z = std::fabs(q.uv[k][0]) < 0.01f, u16 = std::fabs(q.uv[k][0] - 16.0f) < 0.01f;
-                                    const bool v0z = std::fabs(q.uv[k][1]) < 0.01f, v16 = std::fabs(q.uv[k][1] - 16.0f) < 0.01f;
+                                    umin = std::min(umin, q.uv[k][0]);
+                                    umax = std::max(umax, q.uv[k][0]);
+                                    vmin = std::min(vmin, q.uv[k][1]);
+                                    vmax = std::max(vmax, q.uv[k][1]);
+                                }
+                                for (int k = 0; k < 4; k++) {
+                                    const bool u0z = std::fabs(q.uv[k][0] - umin) < 0.01f, u16 = std::fabs(q.uv[k][0] - umax) < 0.01f;
+                                    const bool v0z = std::fabs(q.uv[k][1] - vmin) < 0.01f, v16 = std::fabs(q.uv[k][1] - vmax) < 0.01f;
                                     if (u0z && v0z) ia = k;
                                     else if (u16 && v0z) ib = k;
                                     else if (u0z && v16) ic = k;
                                 }
+                                // Only the edges that lie on the tile border (uv 0 or 16) carry the glass frame; an edge in the middle
+                                // of the tile, such as where an arm meets the post, never shows one.
+                                const bool edgeL = umin < 0.01f, edgeR = umax > 15.99f, edgeT = vmin < 0.01f, edgeB = vmax > 15.99f;
                                 if (ia >= 0 && ib >= 0 && ic >= 0) {
                                     int mask = 0;
                                     const auto exposed = [&](const float* from, const float* to, bool negate) {
                                         int d[3];
                                         for (int a = 0; a < 3; a++) {
                                             const float diff = to[a] - from[a];
-                                            d[a] = std::fabs(diff) < 0.5f ? 0 : (diff > 0 ? 1 : -1);
+                                            d[a] = std::fabs(diff) < 1e-3f ? 0 : (diff > 0 ? 1 : -1);
                                             if (negate)
                                                 d[a] = -d[a];
                                         }
                                         const uint16_t nn = cache.Get(x + d[0], y + d[1], z + d[2]);
                                         return nn != id;
                                     };
-                                    if (exposed(q.pos[ia], q.pos[ib], true)) mask |= 1;
-                                    if (exposed(q.pos[ia], q.pos[ib], false)) mask |= 2;
-                                    if (exposed(q.pos[ia], q.pos[ic], true)) mask |= 4;
-                                    if (exposed(q.pos[ia], q.pos[ic], false)) mask |= 8;
+                                    if (edgeL && exposed(q.pos[ia], q.pos[ib], true)) mask |= 1;
+                                    if (edgeR && exposed(q.pos[ia], q.pos[ib], false)) mask |= 2;
+                                    if (edgeT && exposed(q.pos[ia], q.pos[ic], true)) mask |= 4;
+                                    if (edgeB && exposed(q.pos[ia], q.pos[ic], false)) mask |= 8;
                                     tile = library->GlassTile(tile, glassMode, mask);
                                 } else if (glassMode == 3) {
                                     tile = library->GlassTile(tile, glassMode, 0);
@@ -1274,7 +1287,7 @@ namespace perlin {
                                 const uint16_t nid = cache.Get(x + nb[0], y + nb[1], z + nb[2]);
                                 if (nid != 0 && cache.Occ(x + nb[0], y + nb[1], z + nb[2]))
                                     return;
-                                if ((nid == id || (library->GlassMode() && nid != 0 && library->IsGlassBase(library->Look(nid).side))) && (ta.translucent || glassTile))
+                                if ((nid == id || (library->GlassMode() && nid != 0 && library->Look(nid).side == baseTile)) && (ta.translucent || glassTile))
                                     return;
                             }
                             const int dir = q.dir;
@@ -1287,7 +1300,7 @@ namespace perlin {
                                     flush = false;
                             if (flush && q.cull < 0 && (glassTile || ta.translucent)) {
                                 const uint16_t nid = cache.Get(x + nrm[0], y + nrm[1], z + nrm[2]);
-                                if (nid != 0 && (nid == id || (library->GlassMode() && glassTile && library->IsGlassBase(library->Look(nid).side))))
+                                if (nid != 0 && (nid == id || (library->GlassMode() && glassTile && library->Look(nid).side == baseTile)))
                                     return;
                             }
                             const int axis1 = nrm[0] != 0 ? 1 : 0;

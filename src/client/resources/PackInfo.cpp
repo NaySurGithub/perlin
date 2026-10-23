@@ -51,6 +51,44 @@ namespace perlin {
             }
         };
 
+        // pack.mcmeta descriptions are plain text or a text component ({"text": "...", "color": "gold", "extra": [...]}, or a
+        // list of them). Flattened to text with section-sign formatting codes so the UI can colour it.
+        void Flatten(const ui::Json& node, std::string& out, const std::string& inheritedCode) {
+            static const std::pair<const char*, char> kColors[] = {
+                {"black", '0'}, {"dark_blue", '1'}, {"dark_green", '2'}, {"dark_aqua", '3'}, {"dark_red", '4'}, {"dark_purple", '5'},
+                {"gold", '6'}, {"gray", '7'}, {"dark_gray", '8'}, {"blue", '9'}, {"green", 'a'}, {"aqua", 'b'}, {"red", 'c'},
+                {"light_purple", 'd'}, {"yellow", 'e'}, {"white", 'f'}};
+            if (node.IsString()) {
+                out += node.string;
+                return;
+            }
+            if (node.IsArray()) {
+                for (const ui::Json& item : node.array)
+                    Flatten(item, out, inheritedCode);
+                return;
+            }
+            if (!node.IsObject())
+                return;
+            std::string code = inheritedCode;
+            if (const ui::Json* color = node.Find("color"))
+                for (const auto& [name, letter] : kColors)
+                    if (color->StringOr("") == name)
+                        code = std::string("\xC2\xA7") + letter;
+            std::string styles;
+            for (const auto& [key, letter] : {std::pair<const char*, char>{"bold", 'l'}, {"italic", 'o'}, {"obfuscated", 'k'}})
+                if (const ui::Json* flag = node.Find(key); flag && flag->type == ui::Json::Type::Bool && flag->boolean)
+                    styles += std::string("\xC2\xA7") + letter;
+            const bool formatted = !code.empty() || !styles.empty();
+            if (formatted)
+                out += code + styles;
+            if (const ui::Json* text = node.Find("text"))
+                out += text->StringOr("");
+            if (const ui::Json* extra = node.Find("extra"))
+                Flatten(*extra, out, code);
+            if (formatted)
+                out += "\xC2\xA7r";
+        }
+
         std::string TrimExt(std::string name) {
             const size_t dot = name.rfind('.');
             return dot == std::string::npos || dot == 0 ? name : name.substr(0, dot);
@@ -119,7 +157,7 @@ namespace perlin {
             if (ui::Json::Parse(text, json, error))
                 if (const ui::Json* pack = json.Find("pack"))
                     if (const ui::Json* d = pack->Find("description"))
-                        meta.description = d->StringOr("");
+                        Flatten(*d, meta.description, "");
         }
         if (meta.name.empty() || meta.name.find("pack.name") != std::string::npos)
             meta.name = TrimExt(p.filename().string());
