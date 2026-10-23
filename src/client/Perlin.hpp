@@ -205,7 +205,10 @@ namespace perlin {
         std::chrono::steady_clock::time_point realmAddedAt{};
         void SetJoinMessage(const std::string& text);
         std::mutex tabMutex;
-        std::vector<ui::ServerEntry> tabLan, tabRealms, tabFriends;
+        std::vector<ui::ServerEntry> tabLan, tabRealms, tabFriends, tabFeatured;
+        std::atomic<bool> featuredBusy{false};
+        std::chrono::steady_clock::time_point featuredAt{};
+        void RefreshFeatured(bool force);
         std::string tabLanMsg, tabRealmsMsg, tabFriendsMsg, tabJoinMsg, realmJoinAddress;
         bool tabDirty = false, realmJoinReady = false;
         std::atomic<bool> lanBusy{false}, realmsBusy{false}, friendsBusy{false}, realmJoinBusy{false};

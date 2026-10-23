@@ -47,6 +47,7 @@
 #include "network/LanDiscovery.hpp"
 #include "network/RakNet.hpp"
 #include "network/Realms.hpp"
+#include "network/Featured.hpp"
 #include "client/ui/TitleScreen.hpp"
 #include "client/ui/TitlePanorama.hpp"
 #include "client/ui/UiLayout.hpp"
@@ -4586,6 +4587,10 @@ namespace perlin {
             }).detach();
             return;
         }
+        if (tab == T::Saved) {
+            RefreshFeatured(false);
+            return;
+        }
         if (tab != T::Realms && tab != T::Friends)
             return;
         const bool forRealms = tab == T::Realms;
@@ -4670,6 +4675,57 @@ namespace perlin {
             message = !ok ? error : (target.empty() ? (forRealms ? "You have no Realms yet" : "Your friends list is empty") : std::string());
             tabDirty = true;
             busy = false;
+        }).detach();
+    }
+
+    // Featured servers: the catalog the game's own Servers screen shows. Needs a Microsoft account; without one the
+    // dropdown just isn't there. Refetched at most every 10 minutes unless the Refresh button asks.
+    void Perlin::RefreshFeatured(bool force) {
+        if (!(accounts.Active() && accounts.Active()->microsoft)) {
+            std::lock_guard lock(tabMutex);
+            tabFeatured.clear();
+            return;
+        }
+        if (!force && featuredAt != Clock::time_point{} && Clock::now() - featuredAt < std::chrono::minutes(10))
+            return;
+        if (featuredBusy.exchange(true))
+            return;
+        const std::string authPath = ActiveAuthPath();
+        std::thread([this, authPath] {
+            xbox::Account acct(authPath);
+            std::string error;
+            std::vector<featured::Server> list;
+            const bool ok = acct.SignInSaved(error) && featured::List(acct, list, error);
+            if (!ok)
+                std::cout << "[featured] " << error << std::endl;
+            std::vector<ui::ServerEntry> rows;
+            for (const featured::Server& f : list) {
+                ui::ServerEntry e;
+                e.kind = ui::ServerEntry::Kind::Lan;
+                e.name = f.name;
+                e.address = f.host + ":" + std::to_string(f.port);
+                e.right = f.ranked ? "Featured" : "Creator";
+                e.motd = f.description;
+                e.note = e.address;
+                const std::string key = "fs:" + e.address;
+                if (!f.logoUrl.empty() && !ui::UiAssets::Instance().HasHead(key)) {
+                    const http::Response pic = http::GetUrl(f.logoUrl, {}, 8);
+                    Texture t;
+                    if (pic.status == 200 && LoadTextureMemory(reinterpret_cast<const unsigned char*>(pic.body.data()), pic.body.size(), t))
+                        ui::UiAssets::Instance().SetHead(key, std::move(t));
+                }
+                if (ui::UiAssets::Instance().HasHead(key))
+                    e.icon = key;
+                rows.push_back(std::move(e));
+            }
+            {
+                std::lock_guard lock(tabMutex);
+                if (ok) {
+                    tabFeatured = std::move(rows);
+                    featuredAt = Clock::now();
+                }
+            }
+            featuredBusy = false;
         }).detach();
     }
 
@@ -5370,6 +5426,8 @@ namespace perlin {
             for (const ui::ServerEntry& e : title.servers)
                 addresses.push_back(e.address);
             PingServers(addresses);
+            if (!PERLIN_ENV("PERLIN_PREVIEW"))
+                RefreshFeatured(false);
         }
         titleLastPage = title.page;
         {
@@ -5378,6 +5436,7 @@ namespace perlin {
             {
                 std::lock_guard lock(tabMutex);
                 joinedFriend = std::move(friendLeaseReady);
+                title.featured = tabFeatured;
                 if (tabDirty) {
                     title.lan = tabLan;
                     title.realms = tabRealms;
@@ -5438,6 +5497,16 @@ namespace perlin {
                 e.pingMs = r.pingMs;
             }
         }
+        title.savedView = title.servers;
+        if (!title.featured.empty()) {
+            ui::ServerEntry head;
+            head.kind = ui::ServerEntry::Kind::Header;
+            head.name = "Featured Servers [" + std::to_string(title.featured.size()) + "]";
+            head.realmId = 3;
+            title.savedView.push_back(head);
+            if (title.friendsOpen[3])
+                title.savedView.insert(title.savedView.end(), title.featured.begin(), title.featured.end());
+        }
         title.nativePanorama = panoramaReady;
         if (!logoBedrock && now >= logoRetryAt) {
             logoRetryAt = now + std::chrono::seconds(2);
@@ -5482,7 +5551,7 @@ namespace perlin {
             signature += "|" + title.joinMessage + "|" + title.name + "|" + title.address + "|" + (title.caret ? "c" : "n") + (title.adding ? "a" : "e");
         else if (title.page == ui::TitlePage::Servers) {
             signature += "|t" + std::to_string(static_cast<int>(title.tab)) + "|" + title.tabMessage + "|" + title.joinMessage;
-            signature += "|" + std::to_string(title.Shown().size()) + (title.friendsOpen[0] ? "H" : "h") + (title.friendsOpen[1] ? "O" : "o") + (title.friendsOpen[2] ? "F" : "f");
+            signature += "|" + std::to_string(title.Shown().size()) + (title.friendsOpen[0] ? "H" : "h") + (title.friendsOpen[1] ? "O" : "o") + (title.friendsOpen[2] ? "F" : "f") + (title.friendsOpen[3] ? "S" : "s");
             for (const ui::ServerEntry& s : title.Shown())
                 signature += "|" + s.name + "|" + s.address + "|" + std::to_string(static_cast<int>(s.status)) + s.motd + "|" + std::to_string(s.players) + "/" +
                              std::to_string(s.maxPlayers) + "|" + std::to_string(s.pingMs) + s.right + s.note + (s.offline ? "o" : "") +
@@ -5581,6 +5650,7 @@ namespace perlin {
                 SetJoinMessage({});
                 RefreshTab(title.tab);
             } else if (hover == ui::kServerRefresh) {
+                RefreshFeatured(true);
                 LoadServers(title.servers, options.server);
                 title.selected = -1;
                 std::vector<std::string> addresses;
@@ -5603,7 +5673,7 @@ namespace perlin {
             } else if (const int row = rowOf(ui::kServerRowPrefix); row >= 0) {
                 const std::vector<ui::ServerEntry>& shown = title.Shown();
                 if (row < static_cast<int>(shown.size()) && shown[static_cast<size_t>(row)].kind == ui::ServerEntry::Kind::Header) {
-                    title.friendsOpen[std::clamp<long long>(shown[static_cast<size_t>(row)].realmId, 0, 2)] ^= true;
+                    title.friendsOpen[std::clamp<long long>(shown[static_cast<size_t>(row)].realmId, 0, 3)] ^= true;
                     title.selected = -1;
                 } else {
                     if (row == titleClickRow && now - titleClickAt < std::chrono::milliseconds(400))
@@ -5714,8 +5784,9 @@ namespace perlin {
                 loadingStartAt = now;
             const int chunks = session->ChunksReceived();
             const bool assets = levelRenderer && levelRenderer->Blocks().Complete();
-            const bool meshed = levelRenderer && levelRenderer->PendingMeshes() == 0 && levelRenderer->MeshesInFlight() == 0;
-            const bool enough = chunks >= 9 && assets && meshed;
+            // Don't wait for the mesh queue to drain: chunks keep streaming in, so it can stay busy for many
+            // seconds and the screen would sit at 98% while you're already standing in the world.
+            const bool enough = chunks >= 9 && assets;
             if (enough) {
                 if (!loadingReadyArmed) {
                     loadingReadyArmed = true;
@@ -5724,8 +5795,8 @@ namespace perlin {
             } else {
                 loadingReadyArmed = false;
             }
-            const bool timeout = now - loadingStartAt > std::chrono::seconds(12);
-            if ((loadingReadyArmed && now - loadingReadyAt > std::chrono::milliseconds(250)) || timeout) {
+            const bool timeout = now - loadingStartAt > std::chrono::seconds(5);
+            if (loadingReadyArmed || timeout) {
                 loadingDone = true;
                 show = false;
             } else {

@@ -124,17 +124,15 @@ namespace perlin {
         }
     }
 
-    int BlockLibrary::GlassTile(int baseTile, int mode, int mask) const {
-        const auto it = glassTiles.find(baseTile);
-        if (it == glassTiles.end() || it->second.empty())
+    int BlockLibrary::GlassTile(int baseTile, int mode, int) const {
+        // Mode 1 (connected) reuses the base tile: the mesher just samples inside the frame on connected edges.
+        // Modes 2 and 3 need a tile with a cleared interior: list[0] keeps the frame, list[1] has none.
+        if (mode != 2 && mode != 3)
             return baseTile;
-        int t = 0;
-        if (mode == 1)
-            t = it->second[mask & 15];
-        else if (mode == 2)
-            t = it->second[16 + (mask & 15)];
-        else if (mode == 3)
-            t = it->second[32];
+        const auto it = glassTiles.find(baseTile);
+        if (it == glassTiles.end() || it->second.size() < 2)
+            return baseTile;
+        const int t = it->second[mode == 2 ? 0 : 1];
         return t > 0 ? t : baseTile;
     }
 
@@ -158,23 +156,16 @@ namespace perlin {
         }
         std::sort(bases.begin(), bases.end());
         bases.erase(std::unique(bases.begin(), bases.end()), bases.end());
-        const int current = glassMode.load();
-        constexpr int kHeadroom = 256;
-        glassLean = T > 64 || nextTile + static_cast<int>(bases.size()) * 33 + kHeadroom > MaxTiles();
-        glassBuiltMode = current;
-        const bool all = !glassLean;
-        const int perBase = all ? 33 : (current == 1 || current == 2 ? 16 : (current == 3 ? 1 : 0));
-        if (perBase == 0)
-            return;
+        constexpr int kPerBase = 2;
         for (int base : bases) {
-            if (nextTile + perBase + 32 > MaxTiles()) {
+            if (nextTile + kPerBase + 32 > MaxTiles()) {
                 std::cout << "[blocks] atlas full: glass connection disabled for remaining glass tiles" << std::endl;
                 break;
             }
             const std::vector<uint8_t> src(atlas.begin() + (size_t)base * T * T * 4, atlas.begin() + ((size_t)base + 1) * T * T * 4);
             const TileAlpha baseAlpha = AlphaOf(base);
             const bool keepInterior = tinted.count(base) > 0;
-            std::vector<int> list(33, 0);
+            std::vector<int> list(2, 0);
             // Stained glass keeps its colour when the interior is made clear: the interior becomes a flat translucent wash of the
             // glass's average colour instead of nothing. Plain glass stays fully clear.
             uint8_t wash[4] = {0, 0, 0, 0};
@@ -233,14 +224,8 @@ namespace perlin {
                 pathByTile[t] = "__glass_variant";
                 return t;
             };
-            if (all || current == 1)
-                for (int m = 0; m < 16; m++)
-                    list[m] = make(1, m);
-            if (all || current == 2)
-                for (int m = 0; m < 16; m++)
-                    list[16 + m] = make(2, m);
-            if (all || current == 3)
-                list[32] = make(3, 0);
+            list[0] = make(2, 15);
+            list[1] = make(3, 0);
             glassTiles[base] = std::move(list);
         }
     }

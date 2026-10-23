@@ -322,10 +322,10 @@ mcimg { display: block; position: absolute; }
                     d += "<div style=\"left:" + N(rowX - 1) + "px;top:" + N(y - 1) + "px;width:" + N(kRowW + 2) + "px;height:" + N(kRowH - 2) + "px;background-color:#000000;z-index:2;\"></div>\n";
                 }
                 if (s.kind == ServerEntry::Kind::Header) {
-                    const bool open = m.friendsOpen[std::clamp<long long>(s.realmId, 0, 2)];
+                    const bool open = m.friendsOpen[std::clamp<long long>(s.realmId, 0, 3)];
                     d += "<div id=\"" + std::string(kServerRowPrefix) + N(i) + "\" class=\"row\" style=\"left:" + N(rowX) + "px;top:" + N(y) + "px;width:" + N(kRowW) + "px;height:" + N(kRowH - 4) + "px;\">\n";
                     d += "<mcimg src=\"" + std::string(open ? "textures/ui/chevron_white_down.png" : "textures/ui/chevron_white_up.png") + "\" style=\"left:4px;top:11px;width:8px;height:8px;\"></mcimg>\n";
-                    d += Text(18, 11, kRowW - 20, s.name, s.realmId == 2 ? "gray" : "green");
+                    d += Text(18, 11, kRowW - 20, s.name, s.realmId == 2 ? "gray" : (s.realmId == 3 ? "yellow" : "green"));
                     d += "</div>\n";
                     continue;
                 }
@@ -373,16 +373,24 @@ mcimg { display: block; position: absolute; }
                 d += "</div>\n";
             }
             if (list.empty() && m.tab != ServerTab::Saved) {
-                d += "<div class=\"txt ctr\" style=\"left:0px;top:" + N(listTop + 28) + "px;width:" + N(w) + "px;height:9px;\">" + EscapeRml(m.tabMessage) + "</div>\n";
+                // Animated "..." like the server pings, for the messages that mean "still working".
+                std::string msg = m.tabMessage;
+                const bool busy = msg.rfind("Scanning", 0) == 0 || msg.rfind("Loading", 0) == 0;
+                if (busy) {
+                    while (!msg.empty() && msg.back() == '.')
+                        msg.pop_back();
+                    msg += std::string(static_cast<size_t>(m.spinner & 3), '.');
+                }
+                d += "<div class=\"txt ctr\" style=\"left:0px;top:" + N(listTop + 28) + "px;width:" + N(w) + "px;height:9px;\">" + EscapeRml(msg) + "</div>\n";
             } else if (list.empty()) {
-                d += "<div class=\"txt ctr\" style=\"left:0px;top:" + N(listTop + 28) + "px;width:" + N(w) + "px;height:9px;\">Scanning for games on your local network</div>\n";
+                d += "<div class=\"txt ctr\" style=\"left:0px;top:" + N(listTop + 28) + "px;width:" + N(w) + "px;height:9px;\">Scanning for games on your local network" + std::string(static_cast<size_t>(m.spinner & 3), '.') + "</div>\n";
                 static const char* const kSpin[] = {"O o o", "o O o", "o o O", "o O o"};
                 d += "<div class=\"txt ctr gray\" style=\"left:0px;top:" + N(listTop + 40) + "px;width:" + N(w) + "px;height:9px;\">" + std::string(kSpin[m.spinner & 3]) + "</div>\n";
             }
             if (!m.joinMessage.empty())
                 d += "<div class=\"txt ctr yellow\" style=\"left:0px;top:" + N(h - 62) + "px;width:" + N(w) + "px;height:9px;z-index:4;\">" + EscapeRml(m.joinMessage) + "</div>\n";
             const bool has = m.selected >= 0 && m.selected < static_cast<int>(list.size()) && Joinable(list[static_cast<size_t>(m.selected)]);
-            const bool hasRow = m.selected >= 0 && m.selected < static_cast<int>(list.size());
+            const bool hasRow = m.selected >= 0 && m.selected < static_cast<int>(list.size()) && (m.tab != ServerTab::Saved || m.SavedSelected());
             const bool saved = m.tab == ServerTab::Saved;
             const int r1 = h - 52, r2 = h - 28;
             d += Btn(has ? kServerJoin : "", cx - 154, r1, 100, m.tab == ServerTab::Friends ? "Join Friend" : (m.tab == ServerTab::Realms ? "Join Realm" : "Join Server"), !has);

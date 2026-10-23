@@ -1239,6 +1239,11 @@ namespace perlin {
                             const int baseTile = tile;
                             const BlockLibrary::TileAlpha ta = library->AlphaOf(tile);
                             const bool glassTile = library->IsGlassBase(tile);
+                            float quv[4][2];
+                            for (int k = 0; k < 4; k++) {
+                                quv[k][0] = q.uv[k][0];
+                                quv[k][1] = q.uv[k][1];
+                            }
                             if (const int glassMode = library->GlassMode(); glassMode && library->IsGlassBase(tile)) {
                                 // Panes are made of narrow quads (an arm is 8 wide, the post 2), so the corners are found from the
                                 // quad's own uv bounds rather than assuming it spans the whole 16x16 tile.
@@ -1278,6 +1283,18 @@ namespace perlin {
                                     if (edgeT && exposed(q.pos[ia], q.pos[ic], true)) mask |= 4;
                                     if (edgeB && exposed(q.pos[ia], q.pos[ic], false)) mask |= 8;
                                     tile = library->GlassTile(tile, glassMode, mask);
+                                    if (glassMode == 1 || glassMode == 2) {
+                                        // Connected edges don't draw the glass frame: sample just inside it instead of swapping in another tile.
+                                        const float k = BlockLibrary::GlassInset() * 16.0f;
+                                        for (int c = 0; c < 4; c++) {
+                                            float& u = quv[c][0];
+                                            float& v = quv[c][1];
+                                            if (edgeL && !(mask & 1) && std::fabs(u - umin) < 0.01f) u = k;
+                                            else if (edgeR && !(mask & 2) && std::fabs(u - umax) < 0.01f) u = 16.0f - k;
+                                            if (edgeT && !(mask & 4) && std::fabs(v - vmin) < 0.01f) v = k;
+                                            else if (edgeB && !(mask & 8) && std::fabs(v - vmax) < 0.01f) v = 16.0f - k;
+                                        }
+                                    }
                                 } else if (glassMode == 3) {
                                     tile = library->GlassTile(tile, glassMode, 0);
                                 }
@@ -1410,8 +1427,8 @@ namespace perlin {
                                 col[k][2] = base[2] * kv;
                                 lt[k][0] = bl;
                                 lt[k][1] = sk;
-                                uv[k][0] = u0 + (q.uv[i][0] / 16.0f) * (u1 - u0);
-                                uv[k][1] = v0uv + (q.uv[i][1] / 16.0f) * (v1uv - v0uv);
+                                uv[k][0] = u0 + (quv[i][0] / 16.0f) * (u1 - u0);
+                                uv[k][1] = v0uv + (quv[i][1] / 16.0f) * (v1uv - v0uv);
                             }
                             tess.SetLayer(ta.translucent ? RenderLayer::TranslucentCull
                                           : ta.holes     ? RenderLayer::CutoutCull
@@ -1798,7 +1815,10 @@ namespace perlin {
                             if (other != 0 && LiquidKind(library, other) == liquidKind)
                                 return;
                         }
+                        int glassMask = 15;
+                        int glassModeNow = 0;
                         if (const int glassMode = library ? library->GlassMode() : 0; glassMode && library->IsGlassBase(tile)) {
+                            glassModeNow = glassMode;
                             int du[3] = {0, 0, 0}, dv[3] = {0, 0, 0};
                             if (nx != 0) { du[2] = nx > 0 ? -1 : 1; dv[1] = -1; }
                             else if (nz != 0) { du[0] = nz < 0 ? -1 : 1; dv[1] = -1; }
@@ -1809,6 +1829,7 @@ namespace perlin {
                             if (!sameGlass(cache.Get(x + du[0], y + du[1], z + du[2]))) mask |= 2;
                             if (!sameGlass(cache.Get(x - dv[0], y - dv[1], z - dv[2]))) mask |= 4;
                             if (!sameGlass(cache.Get(x + dv[0], y + dv[1], z + dv[2]))) mask |= 8;
+                            glassMask = mask;
                             tile = library->GlassTile(tile, glassMode, mask);
                         }
                         float u0, v0uv, u1, v1uv;
@@ -1833,6 +1854,14 @@ namespace perlin {
                             }
                             fuA[i] = fu;
                             fvA[i] = fv;
+                            if (glassModeNow == 1 || glassModeNow == 2) {
+                                // Connected edges don't draw the glass frame: sample just inside it instead of swapping in another tile.
+                                const float k = BlockLibrary::GlassInset();
+                                if (!(glassMask & 1) && fu < 0.001f) fu = k;
+                                else if (!(glassMask & 2) && fu > 0.999f) fu = 1.0f - k;
+                                if (!(glassMask & 4) && fv < 0.001f) fv = k;
+                                else if (!(glassMask & 8) && fv > 0.999f) fv = 1.0f - k;
+                            }
                             uv[i][0] = u0 + fu * (u1 - u0);
                             uv[i][1] = v0uv + fv * (v1uv - v0uv);
                         }

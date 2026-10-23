@@ -92,6 +92,9 @@ if(WIN32 AND NOT OPENSSL_ROOT_DIR)
 endif()
 
 if(APPLE AND NOT OPENSSL_ROOT_DIR)
+    # Homebrew's OpenSSL is built for the runner's macOS (15), so linking it at target 12.0 warns and can crash on
+    # older systems. CI passes -DOPENSSL_ROOT_DIR to a copy built with -mmacosx-version-min=12.0; this is only a local fallback.
+    message(WARNING "OPENSSL_ROOT_DIR not set: falling back to Homebrew OpenSSL (built for a newer macOS than ${CMAKE_OSX_DEPLOYMENT_TARGET})")
     foreach(candidate /opt/homebrew/opt/openssl@3 /usr/local/opt/openssl@3)
         if(EXISTS "${candidate}")
             set(OPENSSL_ROOT_DIR "${candidate}" CACHE PATH "OpenSSL root")
@@ -872,7 +875,10 @@ if(PERLIN_LIBAV AND NOT EMSCRIPTEN AND NOT ANDROID)
             target_link_libraries(Perlin PRIVATE ${_av_libs})
             set(PERLIN_LIBAV_FOUND ON)
         endif()
-    elseif(NOT WIN32)
+    elseif(NOT WIN32 AND NOT APPLE)
+        # Not on macOS: pkg-config finds Homebrew's *dynamic* FFmpeg, which drags in libfmt/libx264/... dylibs that
+        # do not exist on other Macs ("libfmt.12.dylib not found") and are built for a newer macOS than 12.
+        # Pass -DFFMPEG_ROOT=<static prefix built with -mmacosx-version-min=12.0> to link FFmpeg on macOS.
         find_package(PkgConfig QUIET)
         if(PkgConfig_FOUND)
             pkg_check_modules(PERLIN_AV QUIET IMPORTED_TARGET libavformat libavcodec libswscale libavutil)
