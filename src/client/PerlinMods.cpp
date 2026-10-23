@@ -1007,6 +1007,27 @@ namespace perlin {
             return Status::Ok;
         });
 
+        mm.Register(Op::GfxDisplay, [this](CallContext&, abi::Reader&, abi::Writer& w) {
+            abi::GfxDisplayInfo d;
+            d.width = modFbW.load();
+            d.height = modFbH.load();
+            d.guiScale = modHud ? std::max(1, modHud->Scale()) : 1;
+            d.mouseX = input.MouseX();
+            d.mouseY = input.MouseY();
+            d.mouseFree = !input.Captured();
+            d.inGame = modLive != nullptr;
+            w.write(d);
+            return Status::Ok;
+        });
+
+        mm.Register(Op::NativeInfo, [this](CallContext&, abi::Reader&, abi::Writer& w) {
+            std::lock_guard lock(modNativeMutex);
+            if (!modNativeReady)
+                return Status::Unavailable;
+            w.write(modNative);
+            return Status::Ok;
+        }, static_cast<uint32_t>(abi::Permission::Native));
+
         mm.Register(Op::InputOverride, [this](CallContext&, abi::Reader& r, abi::Writer&) {
             const abi::InputOverrideState s = r.read<abi::InputOverrideState>();
             if (!r.Ok())

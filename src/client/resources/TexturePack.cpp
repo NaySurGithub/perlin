@@ -1,5 +1,7 @@
 #include "client/resources/TexturePack.hpp"
 
+#include "client/resources/JavaPack.hpp"
+
 #include <miniz.h>
 
 #include <algorithm>
@@ -17,6 +19,7 @@ namespace perlin {
     struct TexturePack::Impl {
         struct Layer {
             bool zipMode = false;
+            bool java = false; // a Java Edition pack: assets/minecraft/textures/..., translated to Bedrock names on lookup
             std::string folder;
             mz_zip_archive zip{};
             bool zipOpen = false;
@@ -29,6 +32,7 @@ namespace perlin {
                 zip = {};
                 zipOpen = false;
                 zipMode = false;
+                java = false;
                 folder.clear();
                 index.clear();
                 label.clear();
@@ -111,6 +115,9 @@ namespace perlin {
                     return false;
                 }
                 layer.label = name;
+                layer.java = fs::path(layer.folder).parent_path().filename() == "assets";
+                if (layer.java)
+                    std::cout << "[textures] " << name << " is a Java Edition pack" << std::endl;
                 return true;
             }
             if (!mz_zip_reader_init_file(&layer.zip, source.string().c_str(), 0)) {
@@ -133,6 +140,13 @@ namespace perlin {
                 std::replace(path.begin(), path.end(), '\\', '/');
                 const std::string lower = Lower(path);
                 if (!prefixFound) {
+                    const size_t java = lower.find("assets/minecraft/textures/");
+                    if (java != std::string::npos && (java == 0 || lower[java - 1] == '/')) {
+                        prefix = lower.substr(0, java) + "assets/minecraft/";
+                        prefixFound = true;
+                    }
+                }
+                if (!prefixFound) {
                     const size_t at = lower.find("textures/");
                     if (at != std::string::npos && (at == 0 || lower[at - 1] == '/')) {
                         prefix = lower.substr(0, at);
@@ -150,7 +164,8 @@ namespace perlin {
                 if (path.compare(0, prefix.size(), prefix) == 0)
                     layer.index.emplace(path.substr(prefix.size()), idx);
             layer.label = name;
-            std::cout << "[textures] opened " << name << " (" << layer.index.size() << " files)" << std::endl;
+            layer.java = prefix.size() >= 17 && prefix.compare(prefix.size() - 17, 17, "assets/minecraft/") == 0;
+            std::cout << "[textures] opened " << name << " (" << layer.index.size() << " files" << (layer.java ? ", Java Edition" : "") << ")" << std::endl;
             return true;
         }
     }
@@ -180,6 +195,12 @@ namespace perlin {
     bool TexturePack::Has(const std::string& rel) const {
         std::lock_guard lock(impl->mutex);
         for (const auto& l : impl->layers) {
+            if (l->java)
+                for (const javapack::Source& source : javapack::Sources(rel)) {
+                    if (l->zipMode ? (l->zipOpen && l->index.count(Lower(source.path)))
+                                   : (!l->folder.empty() && fs::exists(fs::path(l->folder) / source.path)))
+                        return true;
+                }
             if (l->zipMode) {
                 if (l->zipOpen && l->index.count(Lower(rel)))
                     return true;
@@ -198,31 +219,31 @@ namespace perlin {
         return false;
     }
 
-    bool TexturePack::Load(const std::string& rel, Texture& out) const {
-        std::lock_guard lock(impl->mutex);
-        for (const auto& l : impl->layers) {
+    namespace {
+        bool LoadDirect(TexturePack::Impl::Layer* l, const std::string& rel, Texture& out) {
+            {
             if (l->zipMode) {
                 if (!l->zipOpen)
-                    continue;
+                    return false;
                 const auto it = l->index.find(Lower(rel));
                 if (it == l->index.end()) {
                     const size_t dot = rel.find_last_of('.');
                     if (dot == std::string::npos)
-                        continue;
+                        return false;
                     const std::string base = rel.substr(0, dot);
                     const auto setIt = l->index.find(Lower(base + ".texture_set.json"));
                     if (setIt == l->index.end())
-                        continue;
+                        return false;
                     size_t setSize = 0;
                     void* setData = mz_zip_reader_extract_to_heap(&l->zip, setIt->second, &setSize, 0);
                     if (!setData)
-                        continue;
+                        return false;
                     std::string image;
                     unsigned char rgba[4] = {255, 255, 255, 255};
                     const bool parsed = TextureSetColor(std::string(static_cast<const char*>(setData), setSize), image, rgba);
                     mz_free(setData);
                     if (!parsed)
-                        continue;
+                        return false;
                     if (image.empty()) {
                         MakeFlatTexture(rgba, 16, out);
                         return true;
@@ -242,12 +263,12 @@ namespace perlin {
                         if (loaded && out.width > 0 && out.height > 0)
                             return true;
                     }
-                    continue;
+                    return false;
                 }
                 size_t size = 0;
                 void* data = mz_zip_reader_extract_to_heap(&l->zip, it->second, &size, 0);
                 if (!data)
-                    continue;
+                    return false;
                 const bool ok = LoadTextureMemory(static_cast<const unsigned char*>(data), size, out);
                 mz_free(data);
                 if (ok && out.width > 0 && out.height > 0)
@@ -256,6 +277,46 @@ namespace perlin {
                 if (LoadTexture(l->folder + "/" + rel, out) && out.width > 0 && out.height > 0)
                     return true;
             }
+            }
+            return false;
+        }
+
+        // One Java file by its path under assets/minecraft/.
+        bool LoadJavaFile(TexturePack::Impl::Layer& l, const std::string& path, Texture& out) {
+            if (l.zipMode) {
+                if (!l.zipOpen)
+                    return false;
+                const auto it = l.index.find(Lower(path));
+                if (it == l.index.end())
+                    return false;
+                size_t size = 0;
+                void* data = mz_zip_reader_extract_to_heap(&l.zip, it->second, &size, 0);
+                if (!data)
+                    return false;
+                const bool ok = LoadTextureMemory(static_cast<const unsigned char*>(data), size, out);
+                mz_free(data);
+                return ok && out.width > 0 && out.height > 0;
+            }
+            return !l.folder.empty() && LoadTexture(l.folder + "/" + path, out) && out.width > 0 && out.height > 0;
+        }
+
+        bool LoadJava(TexturePack::Impl::Layer& l, const std::string& rel, Texture& out) {
+            for (const javapack::Source& source : javapack::Sources(rel)) {
+                Texture sheet;
+                if (LoadJavaFile(l, source.path, sheet) && javapack::Crop(sheet, source, out))
+                    return true;
+            }
+            return false;
+        }
+    }
+
+    bool TexturePack::Load(const std::string& rel, Texture& out) const {
+        std::lock_guard lock(impl->mutex);
+        for (const auto& l : impl->layers) {
+            if (LoadDirect(l.get(), rel, out))
+                return true;
+            if (l->java && LoadJava(*l, rel, out))
+                return true;
         }
         return false;
     }

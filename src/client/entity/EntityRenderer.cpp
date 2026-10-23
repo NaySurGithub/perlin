@@ -80,6 +80,10 @@ namespace perlin::entity {
         }
 
         void StyleFromMaterial(UiDraw& draw, const char* name) {
+            const std::string_view materialName(name);
+            if (materialName.starts_with("particles_")) draw.material = DrawMaterial::Particle;
+            else if (materialName.starts_with("name_")) draw.material = DrawMaterial::Nametag;
+            else if (materialName == "cracks_overlay") draw.material = DrawMaterial::Cracks;
             const material::Def* def = material::Registry::Instance().Get().Find(name);
             if (!def)
                 return;
@@ -1385,6 +1389,8 @@ namespace perlin::entity {
                 draw.blend = 0;
             else
                 draw.blend = layer.material.blend == Blend::Additive ? 2 : 1;
+            draw.material = DrawMaterial::Entity;
+            draw.colorMask = layer.material.colorMask;
             draw.emissive = layer.material.emissive;
             if (layerHurt > 0.0f) {
                 draw.overlay[0] = 1.0f; draw.overlay[1] = 0.0f; draw.overlay[2] = 0.0f; draw.overlay[3] = 0.3f;
@@ -1408,7 +1414,7 @@ namespace perlin::entity {
             draw.shadowOnly = shadowOnlyPass;
             renderer->UiSubmit(dollModel ? UiLayer::Doll : fpModel ? UiLayer::Hand : UiLayer::World, draw);
         }
-        if (itemRenderer && !e.Has(flag::Invisible) && !fpModel && !dollModel) {
+        if (itemRenderer && !e.Has(flag::Invisible) && !fpModel && (!dollModel || dollClip)) {
             const auto held = [&](const std::string& name, const glm::mat4& arm, bool left) {
                 if (name.empty())
                     return;
@@ -1419,10 +1425,12 @@ namespace perlin::entity {
                 itemRenderer->DrawHeldItem(item, model * arm, left, light);
             };
             itemRenderer->SetWorldShadowOnly(shadowOnlyPass);
+            itemRenderer->SetDollClip(dollModel ? dollClip : nullptr);
             if (v.hasArmR && !v.attachedItem[0])
                 held(e.mainHand, v.armR, false);
             if (v.hasArmL && !v.attachedItem[1])
                 held(e.offHand, v.armL, true);
+            itemRenderer->SetDollClip(nullptr);
             itemRenderer->SetWorldShadowOnly(false);
         }
     }
@@ -1810,7 +1818,7 @@ namespace perlin::entity {
 
     void EntityRenderer::DrawCracks(const FrameIn& in) {
         for (const auto& c : in.cracks) {
-            const std::string path = "textures/environment/destroy_stage_" + std::to_string(std::clamp(c[3], 0, 9));
+            const std::string path = "textures/environment/destroy_stage_" + std::to_string(std::clamp(c.stage, 0, 9));
             auto it = textures.find(path);
             if (it == textures.end()) {
                 Texture t;
@@ -1821,33 +1829,45 @@ namespace perlin::entity {
             }
             if (!it->second)
                 continue;
-            const glm::dvec3 d = glm::dvec3(c[0] + 0.5, c[1] + 0.5, c[2] + 0.5) - in.camera;
+            const glm::dvec3 d = glm::dvec3(c.x + 0.5, c.y + 0.5, c.z + 0.5) - in.camera;
             if (glm::dot(d, d) > 48.0 * 48.0)
                 continue;
-            const float lo = -0.002f, hi = 1.002f;
             const uint32_t white = 0xFFFFFFFFu;
             std::vector<UiVertex> v;
             std::vector<uint32_t> idx;
             const auto face = [&](glm::vec3 a, glm::vec3 b, glm::vec3 cc, glm::vec3 dd) {
+                const glm::vec3 n = glm::abs(glm::cross(b - a, dd - a));
+                const auto uv = [&](glm::vec3 p) {
+                    if (n.y >= n.x && n.y >= n.z)
+                        return glm::vec2(p.x, p.z);
+                    if (n.z >= n.x)
+                        return glm::vec2(p.x, 1.0f - p.y);
+                    return glm::vec2(p.z, 1.0f - p.y);
+                };
                 const uint32_t base = static_cast<uint32_t>(v.size());
-                v.push_back({a.x, a.y, a.z, white, 0, 0});
-                v.push_back({b.x, b.y, b.z, white, 1, 0});
-                v.push_back({cc.x, cc.y, cc.z, white, 1, 1});
-                v.push_back({dd.x, dd.y, dd.z, white, 0, 1});
+                for (const glm::vec3& p : {a, b, cc, dd}) {
+                    const glm::vec2 t = uv(p);
+                    v.push_back({p.x, p.y, p.z, white, t.x, t.y});
+                }
                 for (uint32_t i : {0u, 1u, 2u, 0u, 2u, 3u})
                     idx.push_back(base + i);
             };
-            face({lo, hi, lo}, {hi, hi, lo}, {hi, hi, hi}, {lo, hi, hi});
-            face({lo, lo, hi}, {hi, lo, hi}, {hi, lo, lo}, {lo, lo, lo});
-            face({hi, hi, lo}, {lo, hi, lo}, {lo, lo, lo}, {hi, lo, lo});
-            face({lo, hi, hi}, {hi, hi, hi}, {hi, lo, hi}, {lo, lo, hi});
-            face({lo, hi, lo}, {lo, hi, hi}, {lo, lo, hi}, {lo, lo, lo});
-            face({hi, hi, hi}, {hi, hi, lo}, {hi, lo, lo}, {hi, lo, hi});
+            const std::vector<std::array<float, 6>> fullCube{{0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f}};
+            for (const std::array<float, 6>& b : c.boxes.empty() ? fullCube : c.boxes) {
+                const float x0 = b[0] - 0.002f, y0 = b[1] - 0.002f, z0 = b[2] - 0.002f;
+                const float x1 = b[3] + 0.002f, y1 = b[4] + 0.002f, z1 = b[5] + 0.002f;
+                face({x0, y1, z0}, {x1, y1, z0}, {x1, y1, z1}, {x0, y1, z1});
+                face({x0, y0, z1}, {x1, y0, z1}, {x1, y0, z0}, {x0, y0, z0});
+                face({x1, y1, z0}, {x0, y1, z0}, {x0, y0, z0}, {x1, y0, z0});
+                face({x0, y1, z1}, {x1, y1, z1}, {x1, y0, z1}, {x0, y0, z1});
+                face({x0, y1, z0}, {x0, y1, z1}, {x0, y0, z1}, {x0, y0, z0});
+                face({x1, y1, z1}, {x1, y1, z0}, {x1, y0, z0}, {x1, y0, z1});
+            }
             const uint32_t mesh = renderer->UiCreateFrameMesh(v.data(), static_cast<uint32_t>(v.size()), idx.data(), static_cast<uint32_t>(idx.size()));
             if (!mesh)
                 continue;
             pendingMeshes.push_back(mesh);
-            glm::mat4 model = glm::translate(glm::mat4(1.0f), glm::vec3(c[0], c[1], c[2]));
+            glm::mat4 model = glm::translate(glm::mat4(1.0f), glm::vec3(c.x, c.y, c.z));
             UiDraw draw;
             draw.mesh = mesh;
             draw.texture = it->second;

@@ -65,6 +65,7 @@ namespace perlin {
 
         void DrawHeldItem(const ui::HudItem& item, const glm::mat4& arm, bool left, const glm::vec3& light);
         void SetWorldShadowOnly(bool on) { worldShadowOnly = on; }
+        void SetDollClip(const int* clip) { dollClip = clip; }
 
         bool ThirdPersonAttachable(const std::string& item, bool left, bool firstPerson, bool sneaking, bool using_, float usedTicks,
                                    bool blocking, double life, const std::string& mainItem, const std::string& offItem,
@@ -161,5 +162,6 @@ namespace perlin {
         std::vector<uint32_t> worldMeshes;
         bool worldPass = false;
         bool worldShadowOnly = false;
+        const int* dollClip = nullptr;
     };
 }

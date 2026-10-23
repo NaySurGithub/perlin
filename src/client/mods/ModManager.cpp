@@ -54,6 +54,11 @@ namespace perlin::mods {
             case abi::Event::Title: return "title";
             case abi::Event::SettingChanged: return "setting_changed";
             case abi::Event::Look: return "look";
+            case abi::Event::MouseMove: return "mouse_move";
+            case abi::Event::MouseButton: return "mouse_button";
+            case abi::Event::MouseWheel: return "mouse_wheel";
+            case abi::Event::KeyRaw: return "key_raw";
+            case abi::Event::TextInput: return "text_input";
             default: return nullptr;
             }
         }
@@ -64,6 +69,59 @@ namespace perlin::mods {
                 return false;
             out.assign(std::istreambuf_iterator<char>(in), {});
             return !out.empty();
+        }
+
+        // Finds the "perlin_manifest" custom section of a WebAssembly module without loading or running it.
+        std::string EmbeddedManifest(const std::string& path) {
+            std::ifstream in(path, std::ios::binary);
+            if (!in)
+                return {};
+            char magic[8];
+            if (!in.read(magic, 8) || std::memcmp(magic, "\0asm", 4) != 0)
+                return {};
+            const auto leb = [&](uint64_t& value) {
+                value = 0;
+                for (int shift = 0; shift <= 63; shift += 7) {
+                    const int c = in.get();
+                    if (c == EOF)
+                        return false;
+                    value |= static_cast<uint64_t>(c & 0x7F) << shift;
+                    if (!(c & 0x80))
+                        return true;
+                }
+                return false;
+            };
+            for (int guard = 0; guard < 256; guard++) {
+                const int id = in.get();
+                if (id == EOF)
+                    break;
+                uint64_t size = 0;
+                if (!leb(size))
+                    break;
+                const std::streamoff start = in.tellg();
+                if (id == 0) {
+                    uint64_t nameLen = 0;
+                    if (!leb(nameLen) || nameLen > size || nameLen > 64)
+                        break;
+                    std::string name(static_cast<size_t>(nameLen), '\0');
+                    if (nameLen && !in.read(name.data(), static_cast<std::streamsize>(nameLen)))
+                        break;
+                    if (name == "perlin_manifest") {
+                        const uint64_t rest = size - (static_cast<uint64_t>(in.tellg() - start));
+                        if (rest == 0 || rest > (64u << 10))
+                            return {};
+                        std::string text(static_cast<size_t>(rest), '\0');
+                        if (!in.read(text.data(), static_cast<std::streamsize>(rest)))
+                            return {};
+                        return text;
+                    }
+                }
+                in.clear();
+                in.seekg(start + static_cast<std::streamoff>(size));
+                if (!in)
+                    break;
+            }
+            return {};
         }
 
         bool SafeRelative(const std::string& rel, fs::path& out) {
@@ -112,6 +170,17 @@ namespace perlin::mods {
         std::vector<PluginCommand> commands;
         std::vector<PluginKey> keys;
         std::map<std::string, UiLayer> layers;
+        std::map<std::string, GfxLayer> gfxLayers;
+        struct Tex {
+            int w = 0, h = 0;
+            bool linear = true;
+            uint64_t version = 0;
+            std::shared_ptr<const std::vector<uint8_t>> rgba;
+        };
+        std::map<uint32_t, Tex> textures;
+        uint32_t nextTexture = 1;
+        uint64_t textureBytes = 0;
+        std::atomic<uint8_t> grab{0}; // bit 0 mouse, bit 1 keyboard
         std::map<std::string, std::string> savedKeys;
         std::vector<abi::SettingDef> settings;
         std::map<std::string, std::string> savedSettings;
@@ -358,7 +427,8 @@ namespace perlin::mods {
 
     uint32_t ModManager::DangerousMask() {
         return static_cast<uint32_t>(abi::Permission::Network) | static_cast<uint32_t>(abi::Permission::Packets) |
-               static_cast<uint32_t>(abi::Permission::Control) | static_cast<uint32_t>(abi::Permission::Files);
+               static_cast<uint32_t>(abi::Permission::Control) | static_cast<uint32_t>(abi::Permission::Files) |
+               static_cast<uint32_t>(abi::Permission::Native);
     }
 
     void ModManager::SetApproved(const std::vector<std::string>& entries) {
@@ -493,6 +563,55 @@ namespace perlin::mods {
         return out;
     }
 
+    std::vector<GfxLayer> ModManager::GfxLayers() const {
+        std::lock_guard lock(const_cast<std::mutex&>(mutex));
+        std::vector<GfxLayer> out;
+        for (const auto& mod : mods)
+            if (mod->loaded && !mod->revoked)
+                for (const auto& entry : mod->gfxLayers)
+                    out.push_back(entry.second);
+        std::stable_sort(out.begin(), out.end(), [](const GfxLayer& a, const GfxLayer& b) { return a.z < b.z; });
+        return out;
+    }
+
+    std::vector<GfxTexture> ModManager::GfxTextures() const {
+        std::lock_guard lock(const_cast<std::mutex&>(mutex));
+        std::vector<GfxTexture> out;
+        for (const auto& mod : mods)
+            if (mod->loaded && !mod->revoked)
+                for (const auto& entry : mod->textures)
+                    out.push_back({mod->name, entry.first, entry.second.w, entry.second.h, entry.second.linear, entry.second.version, entry.second.rgba});
+        return out;
+    }
+
+    std::vector<std::string> ModManager::GrabbingPlugins() const {
+        std::lock_guard lock(const_cast<std::mutex&>(mutex));
+        std::vector<std::string> out;
+        for (const auto& mod : mods)
+            if (mod->loaded && !mod->revoked && !mod->stuck && mod->grab.load())
+                out.push_back(mod->name);
+        return out;
+    }
+
+    void ModManager::RefreshGrabs() {
+        bool mouse = false, keyboard = false;
+        for (const auto& mod : mods)
+            if (mod->loaded && !mod->revoked && !mod->stuck) {
+                const uint8_t g = mod->grab.load();
+                mouse = mouse || (g & 1);
+                keyboard = keyboard || (g & 2);
+            }
+        grabMouse = mouse;
+        grabKeyboard = keyboard;
+    }
+
+    void ModManager::ReleaseGrabs() {
+        std::lock_guard lock(mutex);
+        for (const auto& mod : mods)
+            mod->grab = 0;
+        RefreshGrabs();
+    }
+
     std::string ModManager::KeysFile(const Plugin& mod) const { return (fs::path(directory) / (mod.name + ".keys.json")).string(); }
 
     void ModManager::LoadKeys(Plugin& mod) {
@@ -574,6 +693,11 @@ namespace perlin::mods {
             mod.commands.clear();
             mod.keys.clear();
             mod.layers.clear();
+            mod.gfxLayers.clear();
+            mod.textures.clear();
+            mod.textureBytes = 0;
+            mod.grab = 0;
+            RefreshGrabs();
             mod.settings.clear();
             mod.runtimeIcon.clear();
         }
@@ -741,6 +865,11 @@ namespace perlin::mods {
             mod.commands.clear();
             mod.keys.clear();
             mod.layers.clear();
+            mod.gfxLayers.clear();
+            mod.textures.clear();
+            mod.textureBytes = 0;
+            mod.grab = 0;
+            RefreshGrabs();
             mod.settings.clear();
             mod.runtimeIcon.clear();
             layerVersion++;
@@ -832,6 +961,11 @@ namespace perlin::mods {
             mod.commands.clear();
             mod.keys.clear();
             mod.layers.clear();
+            mod.gfxLayers.clear();
+            mod.textures.clear();
+            mod.textureBytes = 0;
+            mod.grab = 0;
+            RefreshGrabs();
             mod.settings.clear();
             mod.runtimeIcon.clear();
         }
@@ -849,9 +983,18 @@ namespace perlin::mods {
         std::error_code ec;
         std::string manifestIcon;
         std::vector<abi::SettingDef> manifestSettings;
-        std::ifstream in(base.string() + ".json", std::ios::binary);
-        if (in) {
-            const std::string text((std::istreambuf_iterator<char>(in)), {});
+        // A name.json next to the plugin wins; otherwise the manifest a plugin built with PERLIN_REGISTER carries in its
+        // own "perlin_manifest" custom section is used (read straight from the file, nothing is run).
+        std::string manifestText;
+        {
+            std::ifstream in(base.string() + ".json", std::ios::binary);
+            if (in)
+                manifestText.assign((std::istreambuf_iterator<char>(in)), {});
+            else
+                manifestText = EmbeddedManifest(mod.path);
+        }
+        if (!manifestText.empty()) {
+            const std::string& text = manifestText;
             ui::Json json;
             std::string error;
             if (ui::Json::Parse(text, json, error) && json.IsObject()) {
@@ -879,6 +1022,8 @@ namespace perlin::mods {
                             permissions |= static_cast<uint32_t>(abi::Permission::Control);
                         else if (p == "files")
                             permissions |= static_cast<uint32_t>(abi::Permission::Files);
+                        else if (p == "native")
+                            permissions |= static_cast<uint32_t>(abi::Permission::Native);
                     }
             }
         }
@@ -890,6 +1035,8 @@ namespace perlin::mods {
             meta.permissions.push_back("control");
         if (permissions & static_cast<uint32_t>(abi::Permission::Files))
             meta.permissions.push_back("files");
+        if (permissions & static_cast<uint32_t>(abi::Permission::Native))
+            meta.permissions.push_back("native");
         meta.permissions.push_back("storage");
         {
             std::vector<fs::path> candidates;
@@ -1683,6 +1830,151 @@ namespace perlin::mods {
             return abi::Status::Ok;
         });
 
+        RegisterGfxOps();
         RegisterSettingOps();
+    }
+
+    namespace {
+        // Checks a draw list before it is stored, so the renderer can trust it every frame.
+        bool ValidGfx(const std::vector<uint8_t>& blob) {
+            if (blob.size() < sizeof(abi::GfxHeader) || blob.size() > abi::kGfxMaxBytes)
+                return false;
+            abi::GfxHeader h;
+            std::memcpy(&h, blob.data(), sizeof(h));
+            const bool wide = (h.flags & abi::kGfxIndex32) != 0;
+            if (h.vertexCount > abi::kGfxMaxVertices || h.indexCount > 4u * abi::kGfxMaxVertices || h.commandCount > 65536)
+                return false;
+            const uint64_t need = sizeof(h) + static_cast<uint64_t>(h.vertexCount) * sizeof(abi::GfxVertex) +
+                                  static_cast<uint64_t>(h.indexCount) * (wide ? 4 : 2) + static_cast<uint64_t>(h.commandCount) * sizeof(abi::GfxCmd);
+            if (need != blob.size())
+                return false;
+            const uint8_t* idx = blob.data() + sizeof(h) + static_cast<size_t>(h.vertexCount) * sizeof(abi::GfxVertex);
+            const uint8_t* cmds = idx + static_cast<size_t>(h.indexCount) * (wide ? 4 : 2);
+            for (uint32_t i = 0; i < h.commandCount; i++) {
+                abi::GfxCmd c;
+                std::memcpy(&c, cmds + static_cast<size_t>(i) * sizeof(c), sizeof(c));
+                if (c.indexCount % 3 != 0 || static_cast<uint64_t>(c.indexOffset) + c.indexCount > h.indexCount ||
+                    static_cast<uint64_t>(c.vertexOffset) > h.vertexCount)
+                    return false;
+                for (float v : c.clip)
+                    if (!std::isfinite(v))
+                        return false;
+                for (uint32_t k = 0; k < c.indexCount; k++) {
+                    uint32_t at = 0;
+                    if (wide) {
+                        std::memcpy(&at, idx + (static_cast<size_t>(c.indexOffset) + k) * 4, 4);
+                    } else {
+                        uint16_t s = 0;
+                        std::memcpy(&s, idx + (static_cast<size_t>(c.indexOffset) + k) * 2, 2);
+                        at = s;
+                    }
+                    if (static_cast<uint64_t>(at) + c.vertexOffset >= h.vertexCount)
+                        return false;
+                }
+            }
+            return true;
+        }
+    }
+
+    void ModManager::RegisterGfxOps() {
+        Register(abi::Op::GfxTextureCreate, [this](CallContext& ctx, abi::Reader& r, abi::Writer& w) {
+            const int32_t width = r.get<int32_t>(), height = r.get<int32_t>();
+            const bool linear = r.boolean();
+            std::vector<uint8_t> rgba = r.bytes();
+            if (!r.Ok() || width <= 0 || height <= 0 || width > static_cast<int32_t>(abi::kGfxMaxTextureSide) ||
+                height > static_cast<int32_t>(abi::kGfxMaxTextureSide) || rgba.size() != static_cast<size_t>(width) * static_cast<size_t>(height) * 4)
+                return abi::Status::BadArguments;
+            std::lock_guard lock(mutex);
+            auto* mod = static_cast<Plugin*>(ctx.user);
+            if (mod->textures.size() >= abi::kGfxMaxTextures || mod->textureBytes + rgba.size() > abi::kGfxMaxTextureBytes)
+                return abi::Status::Failed;
+            const uint32_t id = mod->nextTexture++;
+            Plugin::Tex tex;
+            tex.w = width;
+            tex.h = height;
+            tex.linear = linear;
+            tex.version = 1;
+            mod->textureBytes += rgba.size();
+            tex.rgba = std::make_shared<const std::vector<uint8_t>>(std::move(rgba));
+            mod->textures[id] = std::move(tex);
+            w.put<uint32_t>(id);
+            return abi::Status::Ok;
+        });
+
+        Register(abi::Op::GfxTextureUpdate, [this](CallContext& ctx, abi::Reader& r, abi::Writer&) {
+            const uint32_t id = r.get<uint32_t>();
+            const int32_t x = r.get<int32_t>(), y = r.get<int32_t>(), width = r.get<int32_t>(), height = r.get<int32_t>();
+            std::vector<uint8_t> rgba = r.bytes();
+            if (!r.Ok() || width <= 0 || height <= 0 || x < 0 || y < 0 || rgba.size() != static_cast<size_t>(width) * static_cast<size_t>(height) * 4)
+                return abi::Status::BadArguments;
+            std::lock_guard lock(mutex);
+            auto* mod = static_cast<Plugin*>(ctx.user);
+            const auto it = mod->textures.find(id);
+            if (it == mod->textures.end())
+                return abi::Status::NotFound;
+            Plugin::Tex& tex = it->second;
+            if (static_cast<int64_t>(x) + width > tex.w || static_cast<int64_t>(y) + height > tex.h)
+                return abi::Status::BadArguments;
+            auto copy = std::make_shared<std::vector<uint8_t>>(*tex.rgba);
+            for (int32_t row = 0; row < height; row++)
+                std::memcpy(copy->data() + (static_cast<size_t>(y + row) * static_cast<size_t>(tex.w) + static_cast<size_t>(x)) * 4,
+                            rgba.data() + static_cast<size_t>(row) * static_cast<size_t>(width) * 4, static_cast<size_t>(width) * 4);
+            tex.rgba = std::move(copy);
+            tex.version++;
+            return abi::Status::Ok;
+        });
+
+        Register(abi::Op::GfxTextureDestroy, [this](CallContext& ctx, abi::Reader& r, abi::Writer&) {
+            const uint32_t id = r.get<uint32_t>();
+            if (!r.Ok())
+                return abi::Status::BadArguments;
+            std::lock_guard lock(mutex);
+            auto* mod = static_cast<Plugin*>(ctx.user);
+            const auto it = mod->textures.find(id);
+            if (it == mod->textures.end())
+                return abi::Status::NotFound;
+            mod->textureBytes -= std::min<uint64_t>(mod->textureBytes, it->second.rgba ? it->second.rgba->size() : 0);
+            mod->textures.erase(it);
+            return abi::Status::Ok;
+        });
+
+        Register(abi::Op::GfxSubmit, [this](CallContext& ctx, abi::Reader& r, abi::Writer&) {
+            const std::string name = r.str();
+            const int32_t z = r.get<int32_t>();
+            std::vector<uint8_t> blob = r.bytes();
+            if (!r.Ok() || name.empty() || name.size() > 64 || !ValidGfx(blob))
+                return abi::Status::BadArguments;
+            std::lock_guard lock(mutex);
+            auto* mod = static_cast<Plugin*>(ctx.user);
+            if (mod->gfxLayers.size() >= abi::kGfxMaxLayers && !mod->gfxLayers.count(name))
+                return abi::Status::Failed;
+            GfxLayer& layer = mod->gfxLayers[name];
+            layer.plugin = ctx.plugin;
+            layer.name = name;
+            layer.z = z;
+            layer.data = std::make_shared<const std::vector<uint8_t>>(std::move(blob));
+            layer.serial = ++mod->serial;
+            return abi::Status::Ok;
+        });
+
+        Register(abi::Op::GfxClear, [this](CallContext& ctx, abi::Reader& r, abi::Writer&) {
+            const std::string name = r.str();
+            if (!r.Ok())
+                return abi::Status::BadArguments;
+            std::lock_guard lock(mutex);
+            static_cast<Plugin*>(ctx.user)->gfxLayers.erase(name);
+            return abi::Status::Ok;
+        });
+
+        // Taking the mouse / keyboard away from the game is the same level of trust as driving it.
+        Register(abi::Op::InputGrab, [this](CallContext& ctx, abi::Reader& r, abi::Writer&) {
+            const bool mouse = r.boolean(), keyboard = r.boolean();
+            if (!r.Ok())
+                return abi::Status::BadArguments;
+            std::lock_guard lock(mutex);
+            static_cast<Plugin*>(ctx.user)->grab = static_cast<uint8_t>((mouse ? 1 : 0) | (keyboard ? 2 : 0));
+            RefreshGrabs();
+            return abi::Status::Ok;
+        }, static_cast<uint32_t>(abi::Permission::Control));
     }
 }

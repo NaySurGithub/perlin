@@ -39,6 +39,11 @@ namespace perlin {
         double gameTicks = 0.0;
     };
 
+    struct NativeHandleInfo {
+        std::string api, adapter;
+        uint64_t window = 0, display = 0, device = 0;
+    };
+
     struct UiVertex {
         float x, y, z;
         uint32_t abgr;
@@ -56,7 +61,12 @@ namespace perlin {
         Export // above everything, never part of an export capture
     };
 
+    // Auto selects entities for world/hand/doll views and UI for screen views.
+    enum class DrawMaterial : uint8_t { Auto, Entity, Particle, Weather, Cracks, Nametag };
+
     struct UiDraw {
+        DrawMaterial material = DrawMaterial::Auto;
+        bool colorMask = false;
         uint32_t mesh = 0;
         uint32_t texture = 0;
         float model[16] = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
@@ -164,6 +174,7 @@ namespace perlin {
         // Replay export: render the game into an offscreen target that is captured instead of the window, so
         // UiLayer::Export (the progress panel) can stay on screen without ending up in the video. False = unsupported.
         virtual bool SetExportTarget(bool) { return false; }
+        virtual bool QueryNativeHandles(NativeHandleInfo&) const { return false; }
         virtual void RequestFrameCapture(CaptureSink) {}
 
         virtual void UploadCrosshair(const Texture& icons) = 0;

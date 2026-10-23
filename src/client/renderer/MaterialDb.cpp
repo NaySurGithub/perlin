@@ -1,12 +1,14 @@
 #include "client/renderer/MaterialDb.hpp"
 
 #include "client/ui/Json.hpp"
+#include "MaterialCatalog.hpp"
 
 #include <algorithm>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <sstream>
+#include <stdexcept>
 
 namespace perlin::material {
     namespace fs = std::filesystem;
@@ -266,7 +268,7 @@ namespace perlin::material {
             return &it->second;
         const auto raw = rawIndex.find(name);
         if (raw == rawIndex.end()) {
-            if (const auto b = builtins.find(name); b != builtins.end())
+            if (const auto b = builtins.find(Lower(name)); b != builtins.end())
                 return &b->second;
             return nullptr;
         }
@@ -356,6 +358,46 @@ namespace perlin::material {
 
     void Db::FillBuiltins() {
         builtins.clear();
+        // Upstream owns the available shader families and passes. These definitions
+        // describe source identity; Perlin's bgfx shaders adapt its vertex/uniform ABI.
+        for (const SourcePass& source : kSourcePasses) {
+            Def d;
+            d.name = std::string(source.family) + "." + source.pass;
+            d.sourceFamily = source.family;
+            d.sourcePass = source.pass;
+            d.vertexShader = source.vertex;
+            d.fragmentShader = source.fragment;
+            const std::string pass = source.pass;
+            if (pass.find("AlphaTest") != std::string::npos)
+                d.defines.insert("ALPHA_TEST");
+            if (pass.find("Transparent") != std::string::npos) {
+                d.states.insert("Blending");
+                d.states.insert("DisableDepthWrite");
+                d.blendSet = true;
+            }
+            if (pass.find("DepthOnly") != std::string::npos) {
+                d.states.insert("DisableColorWrite");
+                d.states.insert("DisableAlphaWrite");
+            }
+            if (pass.find("Emissive") != std::string::npos)
+                d.defines.insert("USE_EMISSIVE");
+            if (pass.find("EmissiveOnly") != std::string::npos)
+                d.defines.insert("USE_ONLY_EMISSIVE");
+            if (pass.find("ColorMask") != std::string::npos)
+                d.defines.insert("USE_COLOR_MASK");
+            if (pass.find("Glint") != std::string::npos)
+                d.defines.insert("GLINT");
+            builtins.emplace(Lower(d.name), std::move(d));
+        }
+        const auto alias = [&](const char* name, const char* family, const char* pass) -> Def& {
+            const std::string key = Lower(std::string(family) + "." + pass);
+            const auto source = builtins.find(key);
+            if (source == builtins.end())
+                throw std::runtime_error("Missing upstream material pass: " + key);
+            Def d = source->second;
+            d.name = name;
+            return builtins.insert_or_assign(name, std::move(d)).first->second;
+        };
         using B = BlendFactor;
         const bool fancy = mode == Mode::Fancy;
         const Builtin table[] = {
@@ -384,15 +426,286 @@ namespace perlin::material {
             {"entity_emissive_alpha", "DisableCulling,Blending", B::SrcAlpha, B::InvSrcAlpha, DepthFunc::LessEqual, "USE_OVERLAY,USE_EMISSIVE,ALPHA_TEST"},
         };
         for (const Builtin& b : table) {
-            Def d;
-            d.name = b.name;
+            const std::string name = b.name;
+            const char* family = name == "clouds" ? "Clouds" : name == "sun_moon" ? "SunMoon"
+                : name == "stars" ? "Stars" : name == "ui_crosshair" ? "UISprite"
+                : name.starts_with("particles_") ? "Particle" : name == "cracks_overlay" ? "Cracks"
+                : name.starts_with("name_") ? "NameTag" : name == "precipitation" ? "Weather" : "Actor";
+            const char* pass = name == "ui_crosshair" ? "Transparent"
+                : name == "entity" || name == "entity_multitexture" || name == "entity_emissive" ? "Opaque"
+                : name == "particles_alpha" || name == "particles_opaque" || name == "entity_alphatest" ? "AlphaTest" : "Transparent";
+            Def& d = alias(b.name, family, pass);
             d.states = Split(b.states);
             d.defines = Split(b.defines);
             d.blendSrc = b.src;
             d.blendDst = b.dst;
             d.blendSet = true;
             d.depthFunc = b.depth;
-            builtins.emplace(d.name, std::move(d));
+        }
+        struct Alias { const char* name; const char* family; const char* pass; };
+        const Alias aliases[] = {
+            {"terrain_base", "RenderChunk", "Opaque"},
+            {"terrain_opaque", "RenderChunk", "Opaque"},
+            {"terrain_opaque_seasons", "RenderChunk", "Opaque"},
+            {"terrain_blend", "RenderChunk", "Transparent"},
+            {"terrain_blend_far", "RenderChunk", "Transparent"},
+            {"terrain_blend_no_culling", "RenderChunk", "Transparent"},
+            {"terrain_doubleside", "RenderChunk", "Opaque"},
+            {"terrain_alpha", "RenderChunk", "AlphaTest"},
+            {"terrain_alpha_single_side", "RenderChunk", "AlphaTest"},
+            {"terrain_alpha_seasons", "RenderChunk", "AlphaTest"},
+            {"entity_static", "Actor", "Opaque"},
+            {"entity_glint", "Entity", "AlphaTestGlint"},
+            {"entity_emissive_layer", "Entity", "Emissive"},
+            {"entity_emissive_layer_alpha_test", "Entity", "AlphaTestEmissiveOnly"},
+            {"spider", "Entity", "AlphaTestEmissiveOnly"},
+            {"enderman", "Entity", "AlphaTestEmissiveOnly"},
+            {"sheep", "Entity", "AlphaTestColorMask"},
+            {"arrow", "Actor", "AlphaTest"},
+            {"skyplane", "Sky", "Opaque"},
+            {"end_sky", "EndSky", "Opaque"},
+            {"portal", "EndPortal", "Opaque"},
+        };
+        for (const Alias& a : aliases) {
+            Def& d = alias(a.name, a.family, a.pass);
+            if (d.sourceFamily == "Actor" || d.sourceFamily == "Entity")
+                d.defines.insert("USE_OVERLAY");
+            if (d.sourceFamily == "RenderChunk") {
+                d.states.insert("DisableAlphaWrite");
+                if (fancy) d.defines.insert("FANCY");
+                if (d.Define("ALPHA_TEST")) d.states.insert("DisableCulling");
+                if (d.name.find("seasons") != std::string::npos) d.defines.insert("SEASONS");
+            }
+            if (d.name == "terrain_blend_no_culling" || d.name == "arrow")
+                d.states.insert("DisableCulling");
+            if (d.name == "skyplane" || d.name == "end_sky") {
+                d.states.insert("DisableDepthWrite");
+                d.states.insert("DisableAlphaWrite");
+            }
+        }
+        // Legacy names are aliases only; shader identity comes from upstream.
+        const std::pair<const char*, const char*> entityAliases[] = {
+            {"agent", "entity"},
+            {"allay", "entity_alphatest"},
+            {"alpha_block", "entity_static"},
+            {"alpha_block_color", "entity_static"},
+            {"armadillo", "entity_alphatest"},
+            {"armor", "entity_alphatest"},
+            {"armor_enchanted", "entity_alphatest"},
+            {"armor_leather", "entity"},
+            {"armor_leather_enchanted", "entity"},
+            {"armor_stand", "entity_alphatest"},
+            {"axolotl", "entity_alphatest"},
+            {"axolotl_limbs", "entity"},
+            {"banner", "entity_alphatest"},
+            {"banner_pole", "entity_alphatest"},
+            {"bat", "entity_alphatest"},
+            {"bat_v2", "entity_alphatest"},
+            {"beacon_beam", "entity"},
+            {"beacon_beam_transparent", "entity"},
+            {"bed", "entity_alphatest"},
+            {"bee", "entity_alphatest"},
+            {"bell", "entity"},
+            {"blaze_body", "entity_emissive"},
+            {"blaze_head", "entity_emissive_alpha"},
+            {"boat", "entity"},
+            {"bogged", "entity_alphatest"},
+            {"bogged_clothes", "entity_alphatest"},
+            {"breeze", "entity_alphatest"},
+            {"breeze_eyes", "entity_emissive_layer_alpha_test"},
+            {"breeze_wind", "entity_static"},
+            {"breeze_wind_charge", "entity_static"},
+            {"camel", "entity_alphatest"},
+            {"camera", "entity"},
+            {"cat", "entity"},
+            {"chalkboard", "entity"},
+            {"charged_creeper", "entity_static"},
+            {"chest", "entity"},
+            {"chest_boat", "entity"},
+            {"chicken", "entity"},
+            {"chicken_cold", "entity_alphatest"},
+            {"chicken_legs", "entity_alphatest"},
+            {"clownfish", "entity_alphatest"},
+            {"cod", "entity_alphatest"},
+            {"conduit", "entity_alphatest"},
+            {"conduit_wind", "entity_alphatest"},
+            {"copper_golem", "entity"},
+            {"copper_golem_eyes", "entity_emissive_layer_alpha_test"},
+            {"copper_golem_flower", "entity_alphatest"},
+            {"cow", "entity"},
+            {"cow_cold", "entity_alphatest"},
+            {"creaking", "entity_alphatest"},
+            {"creaking_eyes", "entity_emissive_layer_alpha_test"},
+            {"creeper", "entity"},
+            {"cushion", "entity"},
+            {"dolphin", "entity"},
+            {"dragon_head", "entity_alphatest"},
+            {"dragon_head_glint", "entity_glint"},
+            {"drowned", "entity_emissive_alpha"},
+            {"egg", "entity_alphatest"},
+            {"elytra", "entity_alphatest"},
+            {"elytra_glint", "entity_alphatest"},
+            {"enchanting_table_book", "entity"},
+            {"ender_crystal", "entity_alphatest"},
+            {"ender_dragon", "entity_emissive_alpha_one_sided"},
+            {"ender_pearl", "entity_alphatest"},
+            {"enderman_invisible", "entity_emissive_alpha"},
+            {"endermite", "entity_alphatest"},
+            {"entity_alphablend_nocolor", "entity_alphablend"},
+            {"entity_alphatest_change_color", "entity"},
+            {"entity_alphatest_change_color_glint", "entity"},
+            {"entity_alphatest_glint", "entity_alphatest"},
+            {"entity_alphatest_glint_item", "entity_alphatest"},
+            {"entity_alphatest_multicolor_tint", "entity"},
+            {"entity_alphatest_one_sided", "entity"},
+            {"entity_beam", "entity"},
+            {"entity_beam_additive", "entity_alphablend"},
+            {"entity_change_color", "entity"},
+            {"entity_change_color_glint", "entity_glint"},
+            {"entity_custom", "entity"},
+            {"entity_dissolve_layer0", "entity"},
+            {"entity_dissolve_layer1", "entity"},
+            {"entity_emissive_layer_alpha_blend", "entity"},
+            {"entity_flat_color_line", "entity_alphatest"},
+            {"entity_lead_base", "entity"},
+            {"entity_loyalty_rope", "entity_glint"},
+            {"entity_multitexture_alpha_test", "entity_multitexture"},
+            {"entity_multitexture_alpha_test_color_mask", "entity_multitexture"},
+            {"entity_multitexture_color_mask", "entity_multitexture"},
+            {"entity_multitexture_masked", "entity_alphatest"},
+            {"entity_multitexture_multiplicative_blend", "entity"},
+            {"entity_nocull", "entity"},
+            {"evoker", "entity_alphatest"},
+            {"experience_orb", "entity"},
+            {"eye_of_ender_signal", "entity_alphatest"},
+            {"fang", "entity_alphatest"},
+            {"fireball", "entity_alphatest"},
+            {"fireworks_rocket", "entity_alphatest"},
+            {"fishing_hook", "entity_alphatest"},
+            {"fox", "entity"},
+            {"frog", "entity_alphatest"},
+            {"ghast", "entity_emissive_alpha"},
+            {"glow_squid", "entity_emissive"},
+            {"goat", "entity_alphatest"},
+            {"guardian", "entity_alphatest"},
+            {"guardian_ghost", "entity_alphablend"},
+            {"harness", "entity_alphatest"},
+            {"hoglin", "entity_alphatest"},
+            {"horse", "entity_alphatest"},
+            {"horse_leather_armor", "entity_multitexture"},
+            {"husk", "entity_alphatest"},
+            {"husk_clothes", "entity_alphatest"},
+            {"iron_golem", "entity_alphatest"},
+            {"item_in_hand", "entity"},
+            {"item_in_hand_entity_alphatest", "entity_alphatest"},
+            {"item_in_hand_entity_alphatest_color", "entity_alphatest"},
+            {"item_in_hand_entity_alphatest_one_sided_color", "entity"},
+            {"item_in_hand_glint", "entity"},
+            {"item_in_hand_multicolor_tint", "entity"},
+            {"leash_knot", "entity"},
+            {"lingering_potion_enchanted", "entity_alphatest"},
+            {"llama", "entity_multitexture"},
+            {"llama_spit", "entity"},
+            {"magma_cube", "entity_emissive_alpha"},
+            {"map", "entity_alphatest"},
+            {"map_decoration", "entity_alphatest"},
+            {"map_marker", "entity_alphatest"},
+            {"minecart", "entity_alphatest"},
+            {"mob_head", "entity_alphatest"},
+            {"mob_head_glint", "entity_glint"},
+            {"mooshroom", "entity"},
+            {"mooshroom_mushrooms", "entity_alphatest"},
+            {"moving_block", "entity_alphatest"},
+            {"moving_block_alpha", "entity_alphatest"},
+            {"moving_block_alpha_seasons", "entity_alphatest"},
+            {"moving_block_alpha_single_side", "entity_alphatest"},
+            {"moving_block_blend", "entity_alphatest"},
+            {"moving_block_double_side", "entity_alphatest"},
+            {"moving_block_seasons", "entity_alphatest"},
+            {"nautilus", "entity_alphatest"},
+            {"nautilus_armor", "entity_alphatest"},
+            {"npc", "entity_alphatest"},
+            {"ocelot", "entity_alphatest"},
+            {"on_screen_effect", "entity_alphatest"},
+            {"opaque_block", "entity_static"},
+            {"opaque_block_color", "entity_static"},
+            {"opaque_block_color_uv2", "entity_static"},
+            {"panda", "entity"},
+            {"parrot", "entity_alphatest"},
+            {"pattern", "entity_alphatest"},
+            {"pattern_glint", "entity_alphatest"},
+            {"phantom", "entity_emissive_alpha"},
+            {"phantom_invisible", "entity_emissive_alpha"},
+            {"pig", "entity"},
+            {"pig_v3", "entity_alphatest"},
+            {"piglin", "entity_alphatest"},
+            {"piglin_brute", "entity_alphatest"},
+            {"pillager", "entity_alphatest"},
+            {"piston_arm", "entity"},
+            {"player", "entity"},
+            {"player_alphatest", "entity_alphatest"},
+            {"player_animated", "entity_alphatest"},
+            {"player_spectator", "entity_alphablend"},
+            {"polar_bear", "entity"},
+            {"pufferfish", "entity_alphatest"},
+            {"rabbit", "entity"},
+            {"ravager", "entity_alphatest"},
+            {"saddle", "entity_alphatest"},
+            {"salmon", "entity_alphatest"},
+            {"shield", "entity"},
+            {"shield_glint", "entity_glint"},
+            {"shulker", "entity_alphatest"},
+            {"shulker_box", "entity_alphatest"},
+            {"shulker_bullet", "entity_alphatest"},
+            {"sign", "entity_static"},
+            {"silverfish", "entity"},
+            {"silverfish_layers", "entity_alphatest"},
+            {"skeleton", "entity_alphatest"},
+            {"slime", "entity_alphatest"},
+            {"sniffer", "entity_alphatest"},
+            {"snow_golem", "entity"},
+            {"snow_golem_pumpkin", "entity"},
+            {"snowball", "entity_alphatest"},
+            {"spider_invisible", "entity_emissive_alpha"},
+            {"splash_potion_enchanted", "entity_alphatest"},
+            {"squid", "entity"},
+            {"stray", "entity_alphatest"},
+            {"stray_clothes", "entity_alphatest"},
+            {"strider", "entity_alphatest"},
+            {"sulfur_cube", "entity_alphatest"},
+            {"sulfur_cube_outer", "entity"},
+            {"tadpole", "entity_alphatest"},
+            {"trial_spawner", "entity_alphatest"},
+            {"trident", "entity"},
+            {"trident_glint", "entity_glint"},
+            {"trident_riptide", "entity_alphatest"},
+            {"tropicalfish", "entity"},
+            {"turtle", "entity"},
+            {"vex", "entity_alphatest"},
+            {"villager", "entity_alphatest"},
+            {"villager_v2", "entity_alphatest"},
+            {"villager_v2_masked", "entity_alphatest"},
+            {"vindicator", "entity_alphatest"},
+            {"wandering_trader", "entity_alphatest"},
+            {"warden", "entity_alphatest"},
+            {"warden_bioluminescent_layer", "entity"},
+            {"witch", "entity_alphatest"},
+            {"wither_boss", "entity_alphatest"},
+            {"wither_boss_armor", "entity_static"},
+            {"wither_skull", "entity_alphatest"},
+            {"wolf", "entity"},
+            {"wolf_armor", "entity"},
+            {"xp_bottle", "entity_alphatest"},
+            {"zoglin", "entity_alphatest"},
+            {"zombie", "entity_alphatest"},
+            {"zombie_villager", "entity_alphatest"},
+            {"zombie_villager_v2", "entity_alphatest"},
+            {"zombie_villager_v2_masked", "entity_alphatest"},
+        };
+        for (const auto& [name, target] : entityAliases) {
+            Def d = builtins.at(target);
+            d.name = name;
+            builtins.emplace(name, std::move(d));
         }
     }
 

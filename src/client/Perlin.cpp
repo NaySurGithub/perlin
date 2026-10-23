@@ -287,12 +287,26 @@ namespace perlin {
         bool ParseServer(const std::string& text, std::string& host, uint16_t& port) {
             host = text;
             port = 19132;
-            const auto colon = text.rfind(':');
-            if (colon == std::string::npos)
-                return !host.empty();
-            host = text.substr(0, colon);
+            std::string portText;
+            if (!text.empty() && text[0] == '[') {
+                const auto close = text.find(']');
+                if (close == std::string::npos)
+                    return false;
+                host = text.substr(1, close - 1);
+                if (close + 1 == text.size())
+                    return !host.empty();
+                if (text[close + 1] != ':')
+                    return false;
+                portText = text.substr(close + 2);
+            } else {
+                const auto colon = text.rfind(':');
+                if (colon == std::string::npos || text.find(':') != colon)
+                    return !host.empty();
+                host = text.substr(0, colon);
+                portText = text.substr(colon + 1);
+            }
             try {
-                const int value = std::stoi(text.substr(colon + 1));
+                const int value = std::stoi(portText);
                 if (value <= 0 || value > 65535)
                     return false;
                 port = static_cast<uint16_t>(value);
@@ -2878,6 +2892,7 @@ namespace perlin {
                     add(abi::Permission::Files, "copy, move and download files");
                     add(abi::Permission::Control, "act for you (chat, commands, movement, options)");
                     add(abi::Permission::Packets, "send raw game packets");
+                    add(abi::Permission::Native, "read the game window and graphics-device handles");
                     body += "\n\n" + std::string(info.needsApproval ? "This mod asks to: " : "Allowed to: ") + asks + ".";
                     if (info.needsApproval)
                         body += " It stays off until you press Allow & Enable.";
@@ -8055,6 +8070,17 @@ namespace perlin {
                     ein.outlineHi = gAim.boxHi;
                     ein.outlineShape = gAim.shape;
                 }
+                const auto crackAt = [&](int x, int y, int z, int stage) {
+                    entity::EntityRenderer::FrameIn::Crack crack{x, y, z, stage, {}};
+                    if (live && levelRenderer) {
+                        std::vector<physics::Box> boxes;
+                        if (LevelCollision(live->NetLevel(), &levelRenderer->Blocks()).Selection(x, y, z, boxes))
+                            for (const physics::Box& b : boxes)
+                                crack.boxes.push_back({static_cast<float>(b.x0), static_cast<float>(b.y0), static_cast<float>(b.z0),
+                                                       static_cast<float>(b.x1), static_cast<float>(b.y1), static_cast<float>(b.z1)});
+                    }
+                    return crack;
+                };
                 if (live)
                     for (const auto& c : live->Cracks()) {
                         bool present = false;
@@ -8062,12 +8088,12 @@ namespace perlin {
                         if (present && cur == 0)
                             continue;
                         if (!(gLocalCrack.active && c.x == gLocalCrack.x && c.y == gLocalCrack.y && c.z == gLocalCrack.z))
-                            ein.cracks.push_back({c.x, c.y, c.z, c.stage});
+                            ein.cracks.push_back(crackAt(c.x, c.y, c.z, c.stage));
                     }
                 if (gLocalCrack.active)
-                    ein.cracks.push_back({gLocalCrack.x, gLocalCrack.y, gLocalCrack.z, gLocalCrack.stage});
+                    ein.cracks.push_back(crackAt(gLocalCrack.x, gLocalCrack.y, gLocalCrack.z, gLocalCrack.stage));
                 if (const char* cr = PERLIN_ENV("PERLIN_PREVIEW_CRACK"); cr && gAim.kind == AimHit::Kind::Block)
-                    ein.cracks.push_back({gAim.bx, gAim.by, gAim.bz, std::atoi(cr)});
+                    ein.cracks.push_back(crackAt(gAim.bx, gAim.by, gAim.bz, std::atoi(cr)));
                 ein.groundY = [&](double x, double y, double z) -> double {
                     const int top = entityLevel.FindBlockBelow(static_cast<int>(std::floor(x)), static_cast<int>(std::floor(z)),
                                                                static_cast<int>(std::floor(y)),
@@ -8485,6 +8511,7 @@ namespace perlin {
                         uiClickWasDown = pressed;
                     }
                     hud->Render();
+                    DrawModGfx(fbW, fbH);
                     const bool creativeUi = hudState.mode == ui::GameMode::Creative || PERLIN_ENV("PERLIN_PREVIEW_CREATIVE");
                     if (invShown && dollSelf && !invWorkbench && !invHorse && (!creativeUi || creativeDollVisible)) {
                         const int scale = hud->OverlayScale();

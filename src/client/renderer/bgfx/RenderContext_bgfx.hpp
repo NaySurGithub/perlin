@@ -41,6 +41,7 @@ namespace perlin {
         void SetForcedSize(int w, int h) override { forcedW = w; forcedH = h; }
         void RequestFrameCapture(CaptureSink sink) override;
         bool SetExportTarget(bool on) override;
+        bool QueryNativeHandles(NativeHandleInfo& out) const override;
         void DeliverCapture(uint32_t w, uint32_t h, uint32_t pitch, const uint8_t* bgra, bool flipY, bool rgba = false);
         void UploadSkyTextures(const Texture& sun, const Texture& moon, const Texture& clouds) override;
         void UploadCrosshair(const Texture& icons) override;
@@ -227,6 +228,8 @@ namespace perlin {
         bool vsync = true;
         bool initialized = false;
 
+        bgfx::UniformHandle rdMaterial = BGFX_INVALID_HANDLE;
+
         bgfx::VertexLayout layout;
         bgfx::VertexLayout positionLayout;
         bgfx::VertexLayout colorLayout;
@@ -368,6 +371,8 @@ namespace perlin {
         int width = 0, height = 0;
         int forcedW = 0, forcedH = 0;
         bool exportTarget = false;
+        uint64_t nativeWindow = 0, nativeDisplay = 0;
+        std::string adapterName;
         std::mutex captureMutex;
         std::deque<CaptureSink> captureSinks;
 

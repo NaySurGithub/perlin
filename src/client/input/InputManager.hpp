@@ -7,6 +7,7 @@
 #include <bitset>
 #include <chrono>
 #include <optional>
+#include <string>
 #include <vector>
 
 namespace perlin {
@@ -34,6 +35,27 @@ namespace perlin {
         };
         std::vector<Typed> TakeTyped() { return std::move(typed); }
 
+        // Raw input for plugins that took the mouse / keyboard (Op::InputGrab). While a grab is on, the matching events
+        // never reach the game; they are queued here for the plugin instead. Coordinates are framebuffer pixels.
+        struct PluginInput {
+            enum class Type { Move, Button, Wheel, Key, Text } type = Type::Move;
+            int code = 0;
+            bool down = false, repeat = false, ctrl = false, shift = false, alt = false;
+            float x = 0, y = 0;
+            std::string text;
+        };
+        void SetPluginGrab(bool mouse, bool keyboard) {
+            grabMouse = mouse;
+            grabKeyboard = keyboard;
+        }
+        std::vector<PluginInput> TakePluginInput() { return std::move(pluginEvents); }
+        // Escape pressed three times within 1.5 s while a plugin holds the keyboard: the game takes everything back.
+        bool TakeGrabFailsafe() {
+            const bool v = failsafe;
+            failsafe = false;
+            return v;
+        }
+
         void Hold(Action action, std::chrono::steady_clock::time_point until) { holds[static_cast<size_t>(action)] = until; }
         void SetBlocked(bool b) { blocked = b; }
         void SetServerLocks(uint32_t value) { locks = value; }
@@ -56,6 +78,9 @@ namespace perlin {
         bool haveMouse = false;
         std::chrono::steady_clock::time_point lastPoll{};
         bool blocked = false;
+        bool grabMouse = false, grabKeyboard = false, failsafe = false;
+        std::vector<PluginInput> pluginEvents;
+        std::array<std::chrono::steady_clock::time_point, 3> escapes{};
         uint32_t locks = 0;
         std::array<std::chrono::steady_clock::time_point, kActionCount> holds{};
     };

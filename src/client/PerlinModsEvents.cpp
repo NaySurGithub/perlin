@@ -7,6 +7,7 @@
 
 #include "client/input/KeyMapping.hpp"
 #include "client/mods/ModManager.hpp"
+#include "client/platform/AppPlatform.hpp"
 #include "client/ui/PluginLayer.hpp"
 
 #include <algorithm>
@@ -409,6 +410,8 @@ namespace perlin {
         modLevel = level;
         modHud = hudPtr;
         modDt = dt;
+        inputManager.SetPluginGrab(mm.GrabsMouse(), mm.GrabsKeyboard());
+        PumpModInput(mm);
         if (hudPtr) {
             modGuiW = static_cast<int>(hudPtr->GuiWidth());
             modGuiH = static_cast<int>(hudPtr->GuiHeight());
@@ -608,6 +611,109 @@ namespace perlin {
             abi::Writer w;
             w.write(f);
             mm.Dispatch(abi::Event::Frame, w);
+        }
+    }
+}
+
+namespace perlin {
+    // Hands raw input to the plugins that hold a grab, keeps the cursor free while one holds the mouse, and gives the
+    // keyboard back (and the game's chat / pause handling) when the last grab ends.
+    void Perlin::PumpModInput(mods::ModManager& mm) {
+        if (inputManager.TakeGrabFailsafe() && (mm.GrabsMouse() || mm.GrabsKeyboard())) {
+            mm.ReleaseGrabs();
+            inputManager.SetPluginGrab(false, false);
+            chat.AddMessage("\xC2\xA7" "eA plugin was holding the mouse and keyboard; Escape x3 gave them back.", hudAnim.ticks);
+        }
+        const bool gm = mm.GrabsMouse(), gk = mm.GrabsKeyboard();
+        if (renderer) {
+            int w = 0, h = 0;
+            renderer->FramebufferSize(w, h);
+            modFbW = w;
+            modFbH = h;
+        }
+        if (!modNativeReady && renderer) {
+            NativeHandleInfo n;
+            if (renderer->QueryNativeHandles(n)) {
+                std::lock_guard lock(modNativeMutex);
+                modNative = {n.api, n.adapter, n.window, n.display, n.device};
+                modNativeReady = true;
+            }
+        }
+        if (gm != modGrabMouseWas) {
+            modGrabMouseWas = gm;
+            if (gm) {
+                input.SetFreeCursor(true);
+                if (input.Captured())
+                    platform->SetCursorCaptured(false);
+            } else if (!replayCtl.Playing()) {
+                input.SetFreeCursor(false);
+            }
+        }
+        if (gk != modGrabKeyboardWas) {
+            modGrabKeyboardWas = gk;
+            if (gk)
+                input.SetTextMode(true);
+            else if (!pauseShown && !chat.IsOpen() && !exportUi.open && !kfUi.open)
+                input.SetTextMode(false);
+        }
+        std::vector<InputManager::PluginInput> events = inputManager.TakePluginInput();
+        if (events.empty() || (!gm && !gk))
+            return;
+        const std::vector<std::string> targets = mm.GrabbingPlugins();
+        if (targets.empty())
+            return;
+        for (const InputManager::PluginInput& e : events) {
+            abi::Writer w;
+            abi::Event type = abi::Event::MouseMove;
+            switch (e.type) {
+            case InputManager::PluginInput::Type::Move: {
+                abi::EventMouseMove m;
+                m.x = e.x;
+                m.y = e.y;
+                w.write(m);
+                type = abi::Event::MouseMove;
+                break;
+            }
+            case InputManager::PluginInput::Type::Button: {
+                abi::EventMouseButton m;
+                m.button = e.code;
+                m.down = e.down;
+                m.x = e.x;
+                m.y = e.y;
+                w.write(m);
+                type = abi::Event::MouseButton;
+                break;
+            }
+            case InputManager::PluginInput::Type::Wheel: {
+                abi::EventMouseWheel m;
+                m.dx = e.x;
+                m.dy = e.y;
+                w.write(m);
+                type = abi::Event::MouseWheel;
+                break;
+            }
+            case InputManager::PluginInput::Type::Key: {
+                abi::EventKeyRaw m;
+                m.key = e.code;
+                m.down = e.down;
+                m.repeat = e.repeat;
+                m.ctrl = e.ctrl;
+                m.shift = e.shift;
+                m.alt = e.alt;
+                w.write(m);
+                type = abi::Event::KeyRaw;
+                break;
+            }
+            case InputManager::PluginInput::Type::Text: {
+                abi::EventText m;
+                m.text = e.text;
+                w.write(m);
+                type = abi::Event::TextInput;
+                break;
+            }
+            }
+            for (const std::string& plugin : targets)
+                mm.DispatchTo(plugin, type, w);
         }
     }
 }

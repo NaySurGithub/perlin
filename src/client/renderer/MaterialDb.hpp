@@ -35,6 +35,8 @@ namespace perlin::material {
 
     struct Def {
         std::string name;
+        std::string sourceFamily;
+        std::string sourcePass;
         std::string vertexShader;
         std::string geometryShader;
         std::string fragmentShader;

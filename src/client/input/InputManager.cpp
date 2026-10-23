@@ -31,7 +31,71 @@ namespace perlin {
         pressed.reset();
         InputEvent ev;
         typed.clear();
+        pluginEvents.clear();
         while (input.events.try_dequeue(ev)) {
+            if (grabMouse || grabKeyboard) {
+                PluginInput p;
+                p.ctrl = input.IsKeyDown(Key::Control);
+                p.shift = input.IsKeyDown(Key::Shift);
+                p.alt = input.IsKeyDown(Key::Alt);
+                if (ev.type == InputEvent::MouseMove && grabMouse) {
+                    p.type = PluginInput::Type::Move;
+                    p.x = ev.x;
+                    p.y = ev.y;
+                    if (!pluginEvents.empty() && pluginEvents.back().type == PluginInput::Type::Move)
+                        pluginEvents.back() = p; // only the latest position matters
+                    else
+                        pluginEvents.push_back(p);
+                    continue;
+                }
+                if ((ev.type == InputEvent::MouseDown || ev.type == InputEvent::MouseUp) && grabMouse) {
+                    p.type = PluginInput::Type::Button;
+                    p.code = ev.key;
+                    p.down = ev.type == InputEvent::MouseDown;
+                    p.x = ev.x;
+                    p.y = ev.y;
+                    pluginEvents.push_back(p);
+                    continue;
+                }
+                if (grabKeyboard && (ev.type == InputEvent::KeyDown || ev.type == InputEvent::KeyUp || ev.type == InputEvent::KeyRepeat)) {
+                    p.type = PluginInput::Type::Key;
+                    p.code = ev.key;
+                    p.down = ev.type != InputEvent::KeyUp;
+                    p.repeat = ev.type == InputEvent::KeyRepeat;
+                    pluginEvents.push_back(p);
+                    if (ev.type == InputEvent::KeyDown && ev.key == Key::Escape) {
+                        const auto now = std::chrono::steady_clock::now();
+                        escapes = {escapes[1], escapes[2], now};
+                        if (escapes[0].time_since_epoch().count() != 0 && now - escapes[0] < std::chrono::milliseconds(1500))
+                            failsafe = true;
+                    }
+                    continue;
+                }
+                if (grabKeyboard && ev.type == InputEvent::Char) {
+                    p.type = PluginInput::Type::Text;
+                    p.code = ev.key;
+                    const int cp = ev.key;
+                    if (cp > 0 && cp < 0x110000 && !(cp >= 0xD800 && cp < 0xE000)) {
+                        if (cp < 0x80) {
+                            p.text += static_cast<char>(cp);
+                        } else if (cp < 0x800) {
+                            p.text += static_cast<char>(0xC0 | (cp >> 6));
+                            p.text += static_cast<char>(0x80 | (cp & 0x3F));
+                        } else if (cp < 0x10000) {
+                            p.text += static_cast<char>(0xE0 | (cp >> 12));
+                            p.text += static_cast<char>(0x80 | ((cp >> 6) & 0x3F));
+                            p.text += static_cast<char>(0x80 | (cp & 0x3F));
+                        } else {
+                            p.text += static_cast<char>(0xF0 | (cp >> 18));
+                            p.text += static_cast<char>(0x80 | ((cp >> 12) & 0x3F));
+                            p.text += static_cast<char>(0x80 | ((cp >> 6) & 0x3F));
+                            p.text += static_cast<char>(0x80 | (cp & 0x3F));
+                        }
+                        pluginEvents.push_back(p);
+                    }
+                    continue;
+                }
+            }
             if (input.TextMode()) {
                 if (ev.type == InputEvent::Char)
                     typed.push_back({true, ev.key, false});
@@ -54,11 +118,20 @@ namespace perlin {
         const float my = input.MouseY();
         look = {};
         scroll = input.TakeWheel();
+        if (grabMouse && scroll != 0.0f) {
+            PluginInput p;
+            p.type = PluginInput::Type::Wheel;
+            p.y = scroll;
+            pluginEvents.push_back(p);
+            scroll = 0.0f;
+        }
         float dx = 0, dy = 0;
         input.TakeMouseDelta(dx, dy);
         if (blocked) {
             look = {};
             pressed.reset();
+        } else if (grabMouse) {
+            look = {};
         } else if (input.Captured()) {
             const float sens = options.mouseSensitivity;
             look.yaw = dx * sens;
@@ -106,6 +179,8 @@ namespace perlin {
         if (pb.device == Binding::Device::Gamepad && input.IsPadDown(pb.code))
             return true;
         const Binding& b = options.GetKey(action);
+        if ((grabMouse && b.device == Binding::Device::Mouse) || (grabKeyboard && b.device == Binding::Device::Keyboard))
+            return false;
         switch (b.device) {
         case Binding::Device::Keyboard:
             return input.IsKeyDown(b.code);

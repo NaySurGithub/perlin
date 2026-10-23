@@ -1,4 +1,4 @@
-#include <perlin/perlin.hpp>
+#include <perlin/plugin.hpp>
 
 #include <mod_settings.hpp>
 
@@ -303,16 +303,28 @@ namespace {
     }
 }
 
-PERLIN_PLUGIN(ctx) {
-    ctx.bind("toggle", "Toggle Do a Barrel Roll", Key::None, [] {
+struct BarrelRoll : Plugin {
+    void onEnable(PluginCtx& ctx) override {
+        ctx.bind<"toggle">("Toggle Do a Barrel Roll", Key::None, this, &BarrelRoll::toggle);
+        ctx.bind<"pitch_up">("Pitch up", Key::None, this, &BarrelRoll::pitchUp);
+        ctx.bind<"pitch_down">("Pitch down", Key::None, this, &BarrelRoll::pitchDown);
+        ctx.bind<"yaw_left">("Yaw left", Key::None, this, &BarrelRoll::yawLeft);
+        ctx.bind<"yaw_right">("Yaw right", Key::None, this, &BarrelRoll::yawRight);
+        ctx.bind<"roll_left">("Roll left", Key::None, this, &BarrelRoll::rollLeft);
+        ctx.bind<"roll_right">("Roll right", Key::None, this, &BarrelRoll::rollRight);
+    }
+
+    void onLook(const abi::EventLook& ev) { run(ev); }
+
+    void toggle() {
         flight.enabled_by_key = !flight.enabled_by_key;
         (void)act::toast(flight.enabled_by_key ? "Do a Barrel Roll enabled" : "Do a Barrel Roll disabled");
-    });
-    ctx.bind("pitch_up", "Pitch up", Key::None, [](bool down) { flight.pitch_up = down; });
-    ctx.bind("pitch_down", "Pitch down", Key::None, [](bool down) { flight.pitch_down = down; });
-    ctx.bind("yaw_left", "Yaw left", Key::None, [](bool down) { flight.yaw_left = down; });
-    ctx.bind("yaw_right", "Yaw right", Key::None, [](bool down) { flight.yaw_right = down; });
-    ctx.bind("roll_left", "Roll left", Key::None, [](bool down) { flight.roll_left = down; });
-    ctx.bind("roll_right", "Roll right", Key::None, [](bool down) { flight.roll_right = down; });
-    ctx.on<event::Look>([](const abi::EventLook& ev) { run(ev); });
-}
+    }
+    void pitchUp(bool down) { flight.pitch_up = down; }
+    void pitchDown(bool down) { flight.pitch_down = down; }
+    void yawLeft(bool down) { flight.yaw_left = down; }
+    void yawRight(bool down) { flight.yaw_right = down; }
+    void rollLeft(bool down) { flight.roll_left = down; }
+    void rollRight(bool down) { flight.roll_right = down; }
+};
+PERLIN_REGISTER(BarrelRoll)

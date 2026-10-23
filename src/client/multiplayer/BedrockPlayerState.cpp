@@ -408,8 +408,11 @@ namespace perlin {
                               << (invSummaries.count(r.requestId) ? invSummaries[r.requestId] : std::string()) << std::endl;
                 else if (debug)
                     std::cout << "[inventory] request " << r.requestId << " ok" << std::endl;
+                std::optional<InvSnapshot> before;
                 if (const auto snap = invSnapshots.find(r.requestId); snap != invSnapshots.end()) {
-                    if (r.status != ItemStackResponsesEntryStatus::Ok) {
+                    if (r.status == ItemStackResponsesEntryStatus::Ok)
+                        before = snap->second;
+                    else {
                         const int selected = inventory.selected;
                         inventory = snap->second.view;
                         inventory.selected = selected;
@@ -441,6 +444,13 @@ namespace perlin {
                             continue;
                         ItemStackInfo& info = InvInfoLocked(slot);
                         ItemV4& raw = InvRawLocked(slot);
+                        if (s.count != 0 && raw.networkId == 0 && before && slot < 36) {
+                            const ItemV4& old = before->raw[slot];
+                            if (old.networkId != 0 && (!s.itemStackId || !old.stackId || *s.itemStackId == *old.stackId)) {
+                                info = slot < 9 ? before->view.hotbar[slot] : before->view.main[slot - 9];
+                                raw = old;
+                            }
+                        }
                         if (s.count == 0) {
                             info = ItemStackInfo{};
                             raw = ItemV4{};

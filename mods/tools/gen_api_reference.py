@@ -94,7 +94,7 @@ def main():
 
     parts.append("### Permissions per operation\n")
     table, perms = ops()
-    perm_names = {"network": "network", "packets": "packets", "control": "control", "files": "files"}
+    perm_names = {"network": "network", "packets": "packets", "control": "control", "files": "files", "native": "native"}
     parts.append("| Op | Id | Needs |\n| --- | --- | --- |")
     for name, (num, note, group) in table.items():
         need = perms.get(name, "")
