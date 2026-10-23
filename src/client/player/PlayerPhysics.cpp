@@ -1,5 +1,21 @@
 #include <array>
 #include "client/player/PlayerPhysics.hpp"
+#include "client/player/BdsPhysicsNumerics.hpp"
+#include "client/player/BdsSineTable.hpp"
+#include "client/player/BdsWaterDrag.hpp"
+#include "client/player/BdsGliding.hpp"
+#include "client/player/BdsRelativeMovement.hpp"
+#include "client/player/BdsMoveFinalization.hpp"
+#include "client/player/BdsSupport.hpp"
+#include "client/player/BdsWorldCollision.hpp"
+#include "client/player/BdsBlockGeometry.hpp"
+#include "client/player/BdsCollisionCache.hpp"
+#include "client/player/BdsBlockSlowdown.hpp"
+#include "client/player/BdsSneak.hpp"
+#include "client/player/BdsInsideQuery.hpp"
+#include "client/player/BdsJumpRequests.hpp"
+#include "client/player/BdsHoney.hpp"
+#include "client/player/BdsFluidState.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -7,8 +23,6 @@
 
 namespace perlin::physics {
     namespace {
-        constexpr double kEps = 1.0e-7;
-        constexpr double kPi = 3.14159265358979323846;
         constexpr float kFloatEps = 1.1920929e-7f;
         constexpr double kClimbSpeed = 0.2;
 
@@ -18,27 +32,53 @@ namespace perlin::physics {
             double operator[](int i) const { return i == 0 ? x : (i == 1 ? y : z); }
         };
 
-        double HorizontalSq(const Vec3& v) { return v.x * v.x + v.z * v.z; }
-        double F(double v) { return static_cast<double>(static_cast<float>(v)); }
+        double F(double v) {
+            return static_cast<double>(static_cast<float>(v));
+        }
 
-        void Gather(const World& world, const Box& region, std::vector<Box>& out) {
+        struct ShapeMetadata {
+            uint8_t surface;
+            bool preserveHorizontalMotion;
+            bool hasBlock;
+            bds::BlockPosition position;
+        };
+
+        bds::CollisionBox CollisionBox(const Box& box);
+
+        void Gather(const World& world, const Box& region, std::vector<Box>& out,
+                    std::vector<ShapeMetadata>* metadata = nullptr) {
             out.clear();
-            const int x0 = static_cast<int>(std::floor(region.x0)) - 1;
-            const int y0 = static_cast<int>(std::floor(region.y0)) - 1;
-            const int z0 = static_cast<int>(std::floor(region.z0)) - 1;
-            const int x1 = static_cast<int>(std::floor(region.x1)) + 1;
-            const int y1 = static_cast<int>(std::floor(region.y1)) + 1;
-            const int z1 = static_cast<int>(std::floor(region.z1)) + 1;
-            for (int x = x0; x <= x1; x++)
-                for (int z = z0; z <= z1; z++)
-                    for (int y = y0; y <= y1; y++) {
-                        const BlockShape shape = world.Query(x, y, z);
-                        for (int i = 0; i < shape.count; i++) {
-                            const Box b = shape.boxes[i].Offset(x, y, z);
-                            if (b.Intersects(region))
-                                out.push_back(b);
-                        }
+            if (metadata)
+                metadata->clear();
+            const auto nativeRegion = CollisionBox(region);
+            bds::CollectUnavailableChunkBarriers(nativeRegion, [&](int32_t x, int32_t z) {
+                return bds::ChunkCollisionState{world.CollisionChunkReady(x, z)};
+            }, [&](const bds::CollisionBox& box) {
+                out.push_back({box[0], box[1], box[2], box[3], box[4], box[5]});
+                if (metadata)
+                    metadata->push_back({0, true, false, {}});
+            });
+            bds::CollectTerrainCells(nativeRegion, world.CollisionHeightLimits(),
+                                    [&](int32_t x, int32_t z) { return world.CollisionColumnPresent(x, z); },
+                                    [&](int32_t x, int32_t y, int32_t z) {
+                const BlockShape shape = world.Query(x, y, z);
+                const bds::BlockPosition position{x, y, z};
+                const auto offset = shape.randomOffset ? bds::GenerateBlockOffset(*shape.randomOffset, position)
+                                                       : bds::Float3{};
+                const auto origin = bds::BlockCollisionOrigin(offset, position);
+                for (const auto& local : shape.boxes) {
+                    const auto box = bds::TranslateBlockCollisionShape(CollisionBox(local), origin);
+                    if (bds::AcceptBlockCollisionShape(box, &nativeRegion)) {
+                        out.push_back({box[0], box[1], box[2], box[3], box[4], box[5]});
+                        if (metadata)
+                            metadata->push_back({shape.surface, false, true, {x, y, z}});
                     }
+                }
+            }, [&](const bds::CollisionBox& box) {
+                out.push_back({box[0], box[1], box[2], box[3], box[4], box[5]});
+                if (metadata)
+                    metadata->push_back({0, false, false, {}});
+            });
         }
 
         bool NoCollision(const World& world, const Box& box, std::vector<Box>& scratch) {
@@ -49,212 +89,128 @@ namespace perlin::physics {
             return true;
         }
 
-        bool ZeroVolume(const Box& b) { return b.x0 == b.x1 && b.y0 == b.y1 && b.z0 == b.z1; }
-
-        double Lo(const Box& b, int a) { return a == 0 ? b.x0 : (a == 1 ? b.y0 : b.z0); }
-        double Hi(const Box& b, int a) { return a == 0 ? b.x1 : (a == 1 ? b.y1 : b.z1); }
-
-        Vec3 ClipAgainst(const Box& self, const Box& stationary, Vec3 velocity) {
-            if (ZeroVolume(stationary))
-                return velocity;
-            float axisPen[3] = {0, 0, 0}, signedPen[3] = {0, 0, 0}, normal[3] = {0, 0, 0};
-            int separating = 0, separatingAxis = 0;
-            for (int axis = 0; axis < 3; axis++) {
-                float minPen = static_cast<float>(Hi(self, axis)) - static_cast<float>(Lo(stationary, axis));
-                float maxPen = static_cast<float>(Hi(stationary, axis)) - static_cast<float>(Lo(self, axis));
-                if (std::fabs(minPen) <= 1.0e-7f)
-                    minPen = 0.0f;
-                if (std::fabs(maxPen) <= 1.0e-7f)
-                    maxPen = 0.0f;
-                const float minPos = std::max(minPen, 0.0f), maxPos = std::max(maxPen, 0.0f);
-                if (minPos == 0.0f) {
-                    axisPen[axis] = 0.0f;
-                    signedPen[axis] = minPen;
-                    normal[axis] = -1.0f;
-                    separating++;
-                    separatingAxis = axis;
-                } else if (maxPos == 0.0f) {
-                    axisPen[axis] = 0.0f;
-                    signedPen[axis] = maxPen;
-                    normal[axis] = 1.0f;
-                    separating++;
-                    separatingAxis = axis;
-                } else if (minPos < maxPos) {
-                    axisPen[axis] = minPos;
-                    signedPen[axis] = minPos;
-                    normal[axis] = -1.0f;
-                } else {
-                    axisPen[axis] = maxPos;
-                    signedPen[axis] = maxPos;
-                    normal[axis] = 1.0f;
-                }
-                if (separating > 1)
-                    return velocity;
-            }
-            if (separating == 0) {
-                int best = 0;
-                for (int axis = 1; axis < 3; axis++)
-                    if (axisPen[axis] < axisPen[best])
-                        best = axis;
-                const float desired = axisPen[best] * normal[best];
-                Vec3 out = velocity;
-                const float v = static_cast<float>(velocity[best]);
-                out[best] = static_cast<double>(desired > 0.0f ? std::max(desired, v) : std::min(desired, v));
-                return out;
-            }
-            const float swept = signedPen[separatingAxis] - normal[separatingAxis] * static_cast<float>(velocity[separatingAxis]);
-            if (swept <= 0.0f)
-                return velocity;
-            Vec3 out = velocity;
-            out[separatingAxis] = static_cast<double>(signedPen[separatingAxis] * normal[separatingAxis]);
-            return out;
+        bds::CollisionBox CollisionBox(const Box& box) {
+            return {static_cast<float>(box.x0), static_cast<float>(box.y0), static_cast<float>(box.z0),
+                    static_cast<float>(box.x1), static_cast<float>(box.y1), static_cast<float>(box.z1)};
         }
 
-        Vec3 Add(Vec3 a, Vec3 b) { return {a.x + b.x, a.y + b.y, a.z + b.z}; }
-        Box TranslateBy(const Box& b, Vec3 d) {
-            const auto f = [](double a, double delta) {
-                return static_cast<double>(static_cast<float>(a) + static_cast<float>(delta));
-            };
-            return {f(b.x0, d.x), f(b.y0, d.y), f(b.z0, d.z), f(b.x1, d.x), f(b.y1, d.y), f(b.z1, d.z)};
-        }
-
-        double ClipAxis(const std::vector<Box>& colliders, const Box& cur, int axis, double v, bool reverse = false) {
-            Vec3 vel;
-            vel[axis] = v;
-            if (reverse) {
-                for (auto it = colliders.rbegin(); it != colliders.rend(); ++it)
-                    vel = ClipAgainst(cur, *it, vel);
-            } else {
-                for (const Box& b : colliders)
-                    vel = ClipAgainst(cur, b, vel);
-            }
-            return vel[axis];
-        }
-
-        Box Translate(const Box& b, int axis, double d) {
-            Vec3 v;
-            v[axis] = d;
-            return TranslateBy(b, v);
-        }
-
-        double ClampTowardZero(double value, double limit) {
-            return limit >= 0 ? std::clamp(value, 0.0, limit) : std::clamp(value, limit, 0.0);
-        }
-
-        void ResolveAxes(const Box& start, const Vec3& v, const std::vector<Box>& colliders, Box& outBox, Vec3& moved) {
-            Box cur = start;
-            moved = {};
-            for (const int axis : {1, 0, 2}) {
-                double m = ClipAxis(colliders, cur, axis, v[axis], true);
-                if (axis != 1)
-                    m = ClampTowardZero(m, v[axis]);
-                cur = Translate(cur, axis, m);
-                moved[axis] = m;
-            }
-            outBox = cur;
-        }
-
-        void ResolveStep(const Box& start, const Vec3& v, const std::vector<Box>& colliders, Box& outBox, Vec3& moved) {
-            Box cur = start;
-            Vec3 up{0, kStepHeight, 0};
-            for (const Box& b : colliders)
-                up = ClipAgainst(cur, b, up);
-            cur = TranslateBy(cur, up);
-            Vec3 horizontal;
-            for (const int axis : {0, 2}) {
-                Vec3 vel;
-                vel[axis] = v[axis];
-                for (const Box& b : colliders)
-                    vel = ClipAgainst(cur, b, vel);
-                cur = TranslateBy(cur, vel);
-                horizontal = Add(horizontal, vel);
-            }
-            Vec3 down{-up.x, -up.y, -up.z};
-            for (const Box& b : colliders)
-                down = ClipAgainst(cur, b, down);
-            cur = TranslateBy(cur, down);
-            outBox = cur;
-            moved = Add(Add(horizontal, up), down);
+        Box PhysicsBox(const bds::CollisionBox& box) {
+            return {box[0], box[1], box[2], box[3], box[4], box[5]};
         }
 
         struct Motion {
             Box box;
             Vec3 resolved;
-            Vec3 position;
+            bds::Float3 requested;
+            Vec3 velocity;
             bool cx = false, cy = false, cz = false;
             bool stepped = false;
+            uint8_t supportingSurface = 0;
+            bool preserveHorizontalMotion = false;
+            float penetration = 0;
         };
 
-        Motion ResolveMotion(const World& world, const Box& start, const Vec3& v, bool wasOnGround,
-                             std::vector<Box>& scratch) {
-            Motion m;
-            std::vector<Box>& colliders = scratch;
-            Gather(world, start.Expand(v.x, v.y, v.z), colliders);
-            Box normalBox;
-            Vec3 normal;
-            ResolveAxes(start, v, colliders, normalBox, normal);
-            const bool normalHorizontal = normal.x != v.x || normal.z != v.z;
-            const bool normalY = normal.y != v.y;
-            const bool onGround = wasOnGround || (normalY && v.y < 0.0);
-            Box box = normalBox;
-            Vec3 resolved = normal;
-            if (onGround && normalHorizontal) {
-                std::vector<Box> envelope;
-                Gather(world, start.Expand(v.x, kStepHeight, v.z), envelope);
-                Box stepBox;
-                Vec3 step;
-                ResolveStep(start, v, envelope, stepBox, step);
-                bool blocked = false;
-                for (const Box& b : envelope)
-                    if (b.Intersects(stepBox)) {
-                        blocked = true;
-                        break;
-                    }
-                if (!blocked && HorizontalSq(step) > HorizontalSq(normal)) {
-                    box = stepBox;
-                    resolved = step;
-                    m.stepped = true;
+        Motion ResolveMotion(const World& world, const Box& start, const Vec3& velocity, Vec3 storedVelocity, bool wasOnGround,
+                             std::vector<Box>& scratch, bds::CollisionVector recoveryLimits, float stepHeight,
+                             bool flyingAbility, bool& oneShotStep, bool sneakEdge = false) {
+            Motion result;
+            const auto search =
+                bds::SearchMovement(CollisionBox(start),
+                                    {static_cast<float>(velocity.x), static_cast<float>(velocity.y),
+                                     static_cast<float>(velocity.z)},
+                                    stepHeight);
+            std::vector<ShapeMetadata> metadata;
+            // One request scope for this Step. Native removal registrations and
+            // multi-request scheduling still require full phase reconstruction.
+            bds::CollisionCache cache;
+            bds::RefreshCollisionCache(cache, search.region, [&](const bds::CollisionBox& region) {
+                std::vector<ShapeMetadata> incoming;
+                Gather(world, PhysicsBox(region), scratch, &incoming);
+                const size_t base = metadata.size();
+                metadata.insert(metadata.end(), incoming.begin(), incoming.end());
+                std::vector<bds::CollisionRecord> records;
+                records.reserve(scratch.size());
+                for (size_t i = 0; i < scratch.size(); ++i) {
+                    const auto& entry = incoming[i];
+                    records.push_back({CollisionBox(scratch[i]),
+                                       {entry.hasBlock ? static_cast<uint64_t>(base + i + 1) : 0, entry.position},
+                                       entry.preserveHorizontalMotion});
                 }
+                return records;
+            });
+            const auto& shapes = cache.shapes;
+            auto requested = search.movement;
+            if (sneakEdge) {
+                const auto clipped = bds::ClipSneakMovement(
+                    CollisionBox(start), stepHeight, requested,
+                    {static_cast<float>(storedVelocity.x), static_cast<float>(storedVelocity.y),
+                     static_cast<float>(storedVelocity.z)}, shapes);
+                requested = clipped.movement;
+                storedVelocity = {clipped.velocity[0], clipped.velocity[1], clipped.velocity[2]};
             }
-            m.box = box;
-            m.resolved = resolved;
-            m.position = {F((static_cast<float>(box.x0) + static_cast<float>(box.x1)) * 0.5f), box.y0,
-                          F((static_cast<float>(box.z0) + static_cast<float>(box.z1)) * 0.5f)};
-            m.cx = std::fabs(static_cast<float>(v.x) - static_cast<float>(resolved.x)) > kFloatEps;
-            m.cy = std::fabs(static_cast<float>(v.y) - static_cast<float>(resolved.y)) > kFloatEps;
-            m.cz = std::fabs(static_cast<float>(v.z) - static_cast<float>(resolved.z)) > kFloatEps;
-            return m;
+            result.velocity = storedVelocity;
+            result.requested = {requested[0], requested[1], requested[2]};
+            const std::array<bds::CollisionVector, 3> moves{
+                {{0, requested[1], 0}, {requested[0], 0, 0}, {0, 0, requested[2]}}};
+            auto resolved = bds::ResolveMoves(CollisionBox(start), moves, shapes, recoveryLimits);
+            result.penetration = resolved.penetration;
+            if (bds::ShouldAutoStep(stepHeight, requested, resolved.displacement, wasOnGround, flyingAbility,
+                                    oneShotStep))
+                result.stepped = bds::TryAutoStep(CollisionBox(start), requested, stepHeight, shapes,
+                                                  recoveryLimits, resolved);
+            result.box = PhysicsBox(resolved.box);
+            const auto support = bds::SelectSupportingShape(resolved.box, shapes);
+            if (support.index && cache.blocks[*support.index].block)
+                result.supportingSurface = metadata[cache.blocks[*support.index].block - 1].surface;
+            result.preserveHorizontalMotion = cache.preserveHorizontalMotion;
+            result.resolved = {resolved.displacement[0], resolved.displacement[1], resolved.displacement[2]};
+            result.cx = std::fabs(requested[0] - resolved.displacement[0]) > kFloatEps;
+            result.cy = std::fabs(requested[1] - resolved.displacement[1]) > kFloatEps;
+            result.cz = std::fabs(requested[2] - resolved.displacement[2]) > kFloatEps;
+            return result;
         }
 
-        double ReduceTowardZero(double value, double offset) {
-            if (std::fabs(value) <= offset)
-                return 0.0;
-            return F(static_cast<float>(value) - (value < 0 ? -1.0f : 1.0f) * static_cast<float>(offset));
+        Vec3 FinalizeMotion(State& state, const Motion& motion, const Vec3& velocity) {
+            // Perlin stores feet coordinates; the native OffsetsComponent producer
+            // and conversion to actor position remain separate from this callback.
+            const auto result = bds::FinalizeMove(
+                CollisionBox(motion.box), 0.0f, motion.requested,
+                {static_cast<float>(motion.resolved.x), static_cast<float>(motion.resolved.y),
+                 static_cast<float>(motion.resolved.z)},
+                {static_cast<float>(velocity.x), static_cast<float>(velocity.y), static_cast<float>(velocity.z)},
+                {state.horizontalCollision, state.verticalCollision, state.onGround,
+                 state.collision, state.collidableMobNear}, false,
+                motion.preserveHorizontalMotion);
+            state.x = result.position.x;
+            state.y = result.position.y;
+            state.z = result.position.z;
+            state.box = motion.box;
+            state.hasBox = true;
+            state.horizontalCollision = result.flags.horizontalCollision;
+            state.verticalCollision = result.flags.verticalCollision;
+            state.onGround = result.flags.onGround;
+            state.collision = result.flags.collision;
+            state.collidableMobNear = result.flags.collidableMobNear;
+            return {result.velocity.x, result.velocity.y, result.velocity.z};
         }
 
-        Vec3 ClipSneakEdge(const World& world, const State& s, bool sneaking, Vec3 v, std::vector<Box>& scratch) {
-            constexpr double kOffset = static_cast<double>(0.05f);
-            const Box full = BoundingBox(s, sneaking);
-            const Box player{F(static_cast<float>(full.x0) + 0.025f), full.y0, F(static_cast<float>(full.z0) + 0.025f),
-                             F(static_cast<float>(full.x1) - 0.025f), full.y1, F(static_cast<float>(full.z1) - 0.025f)};
-            const double drop = -kStepHeight * 1.01;
-            Vec3 clipped = v;
-            for (const int axis : {0, 2}) {
-                while (clipped[axis] != 0.0) {
-                    Vec3 probe{0, drop, 0};
-                    probe[axis] = clipped[axis];
-                    if (!NoCollision(world, player.Offset(probe.x, probe.y, probe.z), scratch))
-                        break;
-                    clipped[axis] = ReduceTowardZero(clipped[axis], kOffset);
-                }
+        Vec3 LandingResponse(State& state, Vec3 velocity, uint8_t supportingSurface, bool collided, bool sneaking) {
+            bds::Float3 motion{static_cast<float>(velocity.x), static_cast<float>(velocity.y),
+                               static_cast<float>(velocity.z)};
+            if (collided) {
+                const auto surface = supportingSurface == 1 ? bds::LandingSurface::Slime
+                                     : supportingSurface == 2 ? bds::LandingSurface::Bed
+                                                            : bds::LandingSurface::Ordinary;
+                // BounceComponent production/event consumers and native actor
+                // position conversion remain separate from velocity response.
+                motion = bds::VerticalCollision(motion, {}, surface, sneaking, false, false, true,
+                                                state.restitution).velocity;
             }
-            while (clipped.x != 0.0 || clipped.z != 0.0) {
-                if (!NoCollision(world, player.Offset(clipped.x, drop, clipped.z), scratch))
-                    break;
-                clipped.x = ReduceTowardZero(clipped.x, kOffset);
-                clipped.z = ReduceTowardZero(clipped.z, kOffset);
+            if (state.restitution) {
+                motion = bds::ApplyRestitution(motion, *state.restitution);
+                state.restitution.reset();
             }
-            return clipped;
+            return {motion.x, motion.y, motion.z};
         }
 
         struct CellRange {
@@ -271,30 +227,19 @@ namespace perlin::physics {
             bool water = false, lava = false, web = false;
         };
 
-        Box Shrink(const Box& b, double dx, double dy, double dz) {
-            Box r{b.x0 + dx, b.y0 + dy, b.z0 + dz, b.x1 - dx, b.y1 - dy, b.z1 - dz};
-            if (r.x0 > r.x1) r.x0 = r.x1 = (b.x0 + b.x1) * 0.5;
-            if (r.y0 > r.y1) r.y0 = r.y1 = (b.y0 + b.y1) * 0.5;
-            if (r.z0 > r.z1) r.z0 = r.z1 = (b.z0 + b.z1) * 0.5;
-            return r;
-        }
-
         bool TouchesFluid(const World& world, const Box& shrunk, int kind) {
-            const CellRange c = Cells(shrunk);
-            for (int y = c.y0; y <= c.y1; y++)
-                for (int x = c.x0; x <= c.x1; x++)
-                    for (int z = c.z0; z <= c.z1; z++) {
-                        const BlockShape s = world.Query(x, y, z);
-                        if (s.fluid == kind && shrunk.y1 > y && shrunk.y0 < y + s.fluidLevel)
-                            return true;
-                    }
-            return false;
+            return bds::CollectLiquidCells(CollisionBox(shrunk), kind == 1 ? 5 : 6, false,
+                [&](bds::BlockPosition position) {
+                    const auto shape = world.Query(position[0], position[1], position[2]);
+                    return shape.fluid == 1 ? 5u : (shape.fluid == 2 ? 6u : 0u);
+                }, [](bds::BlockPosition, uint8_t) {});
         }
 
         Environment Scan(const World& world, const Box& box) {
             Environment env;
-            env.water = TouchesFluid(world, Shrink(box, 0.001, 0.401, 0.001), 1);
-            env.lava = TouchesFluid(world, Shrink(box, 0.1, 0.4, 0.1), 2);
+            const auto bounds = bds::MakeLiquidQueryBounds(CollisionBox(box));
+            env.lava = TouchesFluid(world, PhysicsBox(bounds.lava), 2);
+            env.water = TouchesFluid(world, PhysicsBox(bounds.water), 1);
             const Box shrunk = box.Inflate(-0.001);
             const CellRange c = Cells(shrunk);
             for (int y = c.y0; y <= c.y1; y++)
@@ -345,7 +290,7 @@ namespace perlin::physics {
                     const BlockShape a = w.Query(n[0], n[1], n[2]);
                     const BlockShape b = w.Query(n[0], n[1] + 1, n[2]);
                     auto full = [](const BlockShape& s) {
-                        return s.count == 1 && s.boxes[0].x0 <= 0 && s.boxes[0].z0 <= 0 && s.boxes[0].x1 >= 1 &&
+                        return s.boxes.size() == 1 && s.boxes[0].x0 <= 0 && s.boxes[0].z0 <= 0 && s.boxes[0].x1 >= 1 &&
                                s.boxes[0].z1 >= 1 && s.boxes[0].y0 <= 0 && s.boxes[0].y1 >= 1;
                     };
                     solid = full(a) || full(b);
@@ -362,16 +307,10 @@ namespace perlin::physics {
         }
 
         void ApplyCurrent(State& s, const World& w, bool sneaking) {
-            const float half = static_cast<float>(kWidth) * 0.5f;
-            const float h = static_cast<float>(s.crawling ? kCrawlHeight : sneaking ? kSneakHeight : kStandHeight);
-            const float px = static_cast<float>(s.x), py = static_cast<float>(s.y), pz = static_cast<float>(s.z);
+            const auto bounds = bds::MakeLiquidQueryBounds(CollisionBox(BoundingBox(s, sneaking)));
             for (int mat = 2; mat >= 1; mat--) {
-                const bool water = mat == 1;
-                const float ix = water ? 0.001f : 0.1f, iy = water ? 0.401f : 0.4f;
-                const float mnx = px - half, mxx = px + half, mny = py, mxy = py + h, mnz = pz - half, mxz = pz + half;
-                const float cx = (mnx + mxx) * 0.5f, cy = (mny + mxy) * 0.5f, cz = (mnz + mxz) * 0.5f;
-                const float lx = std::min(mnx + ix, cx), ly = std::min(mny + iy, cy), lz = std::min(mnz + ix, cz);
-                const float hx = std::max(mxx - ix, cx), hy = std::max(mxy - iy, cy), hz = std::max(mxz - ix, cz);
+                const auto& box = mat == 1 ? bounds.water : bounds.lava;
+                const float lx = box[0], ly = box[1], lz = box[2], hx = box[3], hy = box[4], hz = box[5];
                 const int x0 = static_cast<int>(std::floor(lx)), y0 = static_cast<int>(std::floor(ly)),
                           z0 = static_cast<int>(std::floor(lz));
                 const int x1 = static_cast<int>(std::floor(hx + 1.0f)), y1 = static_cast<int>(std::floor(hy + 1.0f)),
@@ -411,7 +350,7 @@ namespace perlin::physics {
                 }
                 const float l = std::sqrt(sum[0] * sum[0] + sum[1] * sum[1] + sum[2] * sum[2]);
                 if (l >= 0.0001f) {
-                    const float k = water ? 0.014f : 0.0035f;
+                    const float k = mat == 1 ? 0.014f : 0.0035f;
                     s.vx = F(static_cast<float>(s.vx) + sum[0] / l * k);
                     s.vy = F(static_cast<float>(s.vy) + sum[1] / l * k);
                     s.vz = F(static_cast<float>(s.vz) + sum[2] / l * k);
@@ -420,35 +359,33 @@ namespace perlin::physics {
             }
         }
 
-        const float* SinTable() {
-            static const std::vector<float> table = [] {
-                std::vector<float> t(65536);
-                for (int i = 0; i < 65536; i++)
-                    t[static_cast<size_t>(i)] = static_cast<float>(std::sin(static_cast<double>(i) * 3.14159265358979323846 * 2.0 / 65536.0));
-                return t;
-            }();
-            return table.data();
-        }
-
-        float McSin(float v) { return SinTable()[static_cast<uint16_t>(static_cast<int32_t>(v * 10430.378f))]; }
-
-        float McCos(float v) { return SinTable()[static_cast<uint16_t>(static_cast<int32_t>(v * 10430.378f + 16384.0f))]; }
-
         void MoveRelative(State& s, double strafeIn, double forwardIn, double speed) {
-            const float strafe = static_cast<float>(strafeIn), forward = static_cast<float>(forwardIn);
-            const float forceSq = forward * forward + strafe * strafe;
-            if (forceSq < 1.0e-4f)
-                return;
-            const float force = static_cast<float>(speed) / std::max(std::sqrt(forceSq), 1.0f);
-            const float yaw = static_cast<float>(s.yaw) * static_cast<float>(kPi / 180.0);
-            const float sn = std::sin(yaw), cs = std::cos(yaw);
-            s.vx = F((-strafe * force * cs - sn * forward * force) + static_cast<float>(s.vx));
-            s.vz = F((-strafe * force * sn + forward * force * cs) + static_cast<float>(s.vz));
+            const auto velocity = bds::RelativeMovement(
+                {static_cast<float>(s.vx), static_cast<float>(s.vy), static_cast<float>(s.vz)}, s.yaw,
+                {-static_cast<float>(strafeIn), 0.0f, static_cast<float>(forwardIn)}, static_cast<float>(speed));
+            s.vx = velocity.x;
+            s.vy = velocity.y;
+            s.vz = velocity.z;
         }
 
         double DampHorizontal(double value, float retention) {
-            const float v = static_cast<float>(value);
-            return std::fabs(v) <= kFloatEps ? 0.0 : static_cast<double>(v * retention);
+            return bds::DampComponent(static_cast<float>(value), retention);
+        }
+
+        Vec3 ApplyStoredBlockSlowdown(State& state, Vec3 requested) {
+            bds::Float3 multiplier{state.stuckX, state.stuckY, state.stuckZ};
+            bds::Float3 movement{static_cast<float>(requested.x), static_cast<float>(requested.y),
+                                 static_cast<float>(requested.z)};
+            bds::Float3 velocity{static_cast<float>(state.vx), static_cast<float>(state.vy),
+                                 static_cast<float>(state.vz)};
+            bds::ApplyBlockSlowdown(multiplier, movement, velocity);
+            state.stuckX = multiplier.x;
+            state.stuckY = multiplier.y;
+            state.stuckZ = multiplier.z;
+            state.vx = velocity.x;
+            state.vy = velocity.y;
+            state.vz = velocity.z;
+            return {movement.x, movement.y, movement.z};
         }
 
         const BlockShape& Below(const World& world, const State& s, BlockShape& storage) {
@@ -470,6 +407,12 @@ namespace perlin::physics {
         return static_cast<float>(x1) > static_cast<float>(o.x0) && static_cast<float>(x0) < static_cast<float>(o.x1) &&
                static_cast<float>(y1) > static_cast<float>(o.y0) && static_cast<float>(y0) < static_cast<float>(o.y1) &&
                static_cast<float>(z1) > static_cast<float>(o.z0) && static_cast<float>(z0) < static_cast<float>(o.z1);
+    }
+
+    bool World::InsideRegionReady(const bds::CollisionBox& bounds) const {
+        return bds::InsideRegionReady(bounds, false, [&](int32_t x, int32_t z) {
+            return bds::ChunkCollisionState{CollisionChunkReady(x, z)};
+        });
     }
 
     MoveVector ProcessMoveInput(float forward, float strafe, bool sneaking, bool inWater) {
@@ -513,8 +456,9 @@ namespace perlin::physics {
         return NoCollision(world, box, scratch);
     }
 
-    void Step(State& s, const Input& in, const Attributes& attr, const World& world) {
+    static void StepMovement(State& s, const Input& in, const Attributes& attr, const World& world) {
         thread_local std::vector<Box> scratch;
+        const float swimSpeedMultiplier = bds::SwimSpeedMultiplier(in.swimming, s.movementEffects);
         s.crawling = in.crawl && !in.flying;
         const bool sneaking = in.sneak && !in.flying;
         const bool crouched = (in.sneak || in.forceCrouch) && !in.flying;
@@ -533,8 +477,13 @@ namespace perlin::physics {
             s.jumpDelay = 0;
 
         const Environment env = Scan(world, BoundingBox(s, crouched));
-        s.inWater = env.water;
-        s.inLava = env.lava && !env.water;
+        // Scan remains the world adapter. Feed its selected material through
+        // the native state callbacks, including water entry and fall reset.
+        // This player path has no Passenger/FallingBlock component.
+        const uint32_t fluidMaterial = bds::SelectFluidMaterial(env.water, env.lava);
+        bds::UpdateWaterState(fluidMaterial, s.inWater, s.fallDistance,
+            s.waterSplashRequest, [] { return false; }, [] { return false; });
+        s.inLava = bds::WasInLava(fluidMaterial);
         const BlockShape feet = world.Query(static_cast<int>(std::floor(s.x)), static_cast<int>(std::floor(s.y)),
                                             static_cast<int>(std::floor(s.z)));
         s.onClimbable = feet.climbable;
@@ -552,16 +501,16 @@ namespace perlin::physics {
                 ns /= length;
             }
         }
-        const double forward = static_cast<float>(nf) * 0.98f;
-        const double strafe = static_cast<float>(ns) * 0.98f;
+        const auto intent = bds::AttenuateTravelIntent({ns, 0.0f, nf}, 0.0f);
+        const double forward = intent.movement.z;
+        const double strafe = intent.movement.x;
 
         if (in.flying) {
             const bool hovering = std::max(std::fabs(forward), std::fabs(strafe)) < 0.01f * 0.98f + 1e-9;
             const float hoverMod = hovering ? (in.creativeFlight ? 0.375f : 0.75f) : 1.0f;
-            const double fwd = nf * 0.98f, str = ns * 0.98f;
             const bool hover = std::max(std::fabs(in.forward), std::fabs(in.strafe)) < 0.01f;
             (void)hoverMod;
-            MoveRelative(s, str, fwd, static_cast<double>(attr.flySpeed) * (in.sprint ? 2.0 : 1.0));
+            MoveRelative(s, strafe, forward, static_cast<double>(attr.flySpeed) * (in.sprint ? 2.0 : 1.0));
             if (in.flyUp && in.flyDown) {
                 s.vy = 0;
             } else {
@@ -572,43 +521,42 @@ namespace perlin::physics {
                 s.vy = F(accel * attr.verticalFlySpeed + prev);
             }
             const float hMod = hover ? (in.creativeFlight ? 0.375f : 0.75f) : 1.0f;
+            const Vec3 req = ApplyStoredBlockSlowdown(s, {s.vx, s.vy, s.vz});
             if (in.noClip) {
                 s.hasBox = false;
-                s.x = F(s.x + s.vx);
-                s.y = F(s.y + s.vy);
-                s.z = F(s.z + s.vz);
-                s.onGround = false;
-                s.horizontalCollision = s.verticalCollision = false;
+                s.x = F(s.x + req.x);
+                s.y = F(s.y + req.y);
+                s.z = F(s.z + req.z);
+                s.collidableMobNear = false;
+                const auto velocity = LandingResponse(s, {s.vx, s.vy, s.vz}, 0, false, in.sneak);
+                s.vx = velocity.x;
+                s.vy = velocity.y;
+                s.vz = velocity.z;
                 s.jumpDelay = 0;
                 const float h = 1.0f * hMod * 0.91f;
                 s.vx = DampHorizontal(s.vx, h);
                 s.vz = DampHorizontal(s.vz, h);
-                s.vy = F(static_cast<float>(s.vy) * 0.6f);
+                s.vy = bds::FlyingVerticalDrag(static_cast<float>(s.vy), s.fallDistance);
                 return;
             }
             const double groundFriction = grounded ? blockFriction : 1.0;
-            Vec3 req{s.vx, s.vy, s.vz};
-            if (env.web && !in.creativeFlight) {
-                req.x *= 0.25; req.y *= 0.05; req.z *= 0.25;
-            }
             const Box box = BoundingBox(s, false);
-            const Motion m = ResolveMotion(world, box, req, grounded, scratch);
-            s.x = m.position.x; s.y = m.position.y; s.z = m.position.z;
-            s.box = m.box;
-            s.hasBox = true;
-            s.onGround = m.cy && req.y < 0.0;
-            s.vx = m.resolved.x; s.vy = m.resolved.y; s.vz = m.resolved.z;
-            if (m.stepped || m.cy) s.vy = 0;
-            if (m.cx) s.vx = 0;
-            if (m.cz) s.vz = 0;
-            s.horizontalCollision = m.cx || m.cz;
-            s.verticalCollision = m.cy;
+            const Motion m =
+                ResolveMotion(world, box, req, {s.vx, s.vy, s.vz}, grounded, scratch, bds::RecoveryLimits(s.recovery),
+                              attr.maxAutoStep, in.flying, s.canAlwaysAutoStep);
+            bds::UpdateRecovery(s.recovery, m.penetration >= 1.0e-6f, in.pushTowardsClosestSpace);
+            auto finalized = FinalizeMotion(s, m, m.velocity);
+            if (m.stepped)
+                finalized.y = 0;
+            finalized = LandingResponse(s, finalized, m.supportingSurface, m.cy, in.sneak);
+            s.vx = finalized.x;
+            s.vy = finalized.y;
+            s.vz = finalized.z;
             const float h = static_cast<float>(groundFriction) * hMod * 0.91f;
             s.vx = DampHorizontal(s.vx, h);
             s.vz = DampHorizontal(s.vz, h);
-            s.vy = F(static_cast<float>(s.vy) * 0.6f);
-            if (s.onGround && s.verticalCollision && in.flyDown == false && m.cy && req.y < 0) {
-            }
+            s.vy = bds::FlyingVerticalDrag(static_cast<float>(s.vy), s.fallDistance);
+            if (s.onGround && s.verticalCollision && in.flyDown == false && m.cy && req.y < 0) {}
             return;
         }
 
@@ -616,7 +564,8 @@ namespace perlin::physics {
         const float friction = grounded ? 0.91f * blockFriction : 0.91f;
         double relSpeed;
         if (water) {
-            relSpeed = 0.02;
+            relSpeed = bds::WaterAcceleration(attr.speed, attr.underwaterSpeed, attr.speed,
+                swimSpeedMultiplier, attr.waterWalkSpeedEnchant, attr.dolphin, grounded, true);
         } else if (lava) {
             relSpeed = 0.02;
         } else if (grounded) {
@@ -624,9 +573,7 @@ namespace perlin::physics {
             float accFriction = blockFriction;
             if (under.surface == 4)
                 accFriction *= 1.225f;
-            const float drag = accFriction * 0.91f;
-            const float ratio = drag == 0.0f ? 1.0f : 0.54600006f / drag;
-            relSpeed = speed * ratio * ratio * ratio;
+            relSpeed = bds::GroundAcceleration(speed, accFriction);
         } else {
             relSpeed = in.sprint ? 0.026 : 0.02;
         }
@@ -643,48 +590,40 @@ namespace perlin::physics {
 
         const bool glide = in.gliding && !water && !lava;
         if (glide) {
-            const double yawR = static_cast<double>(s.yaw) * kPi / 180.0;
-            const double pitchR = static_cast<double>(in.javaPitch) * kPi / 180.0;
-            const double lx = -std::sin(yawR) * std::cos(pitchR);
-            const double lz = std::cos(yawR) * std::cos(pitchR);
-            const double horizLook = std::sqrt(lx * lx + lz * lz);
-            const double horizMove = std::sqrt(s.vx * s.vx + s.vz * s.vz);
-            double lift = std::cos(pitchR);
-            lift = lift * lift;
-            s.vy += 0.08 * (-1.0 + lift * 0.75);
-            if (s.vy < 0 && horizLook > 0) {
-                const double m = s.vy * -0.1 * lift;
-                s.vx += lx * m / horizLook;
-                s.vy += m;
-                s.vz += lz * m / horizLook;
-            }
-            if (pitchR < 0 && horizLook > 0) {
-                const double m = horizMove * -std::sin(pitchR) * 0.04;
-                s.vx += -lx * m / horizLook;
-                s.vy += m * 3.2;
-                s.vz += -lz * m / horizLook;
-            }
-            if (horizLook > 0) {
-                s.vx += (lx / horizLook * horizMove - s.vx) * 0.1;
-                s.vz += (lz / horizLook * horizMove - s.vz) * 0.1;
-            }
-            s.vx *= 0.99;
-            s.vy *= 0.98;
-            s.vz *= 0.99;
+            const bool boost = s.movementEffects[static_cast<int32_t>(bds::MovementEffectType::GlideBoost)].type != -1;
+            const auto velocity = bds::GlideVelocity(
+                {static_cast<float>(s.vx), static_cast<float>(s.vy), static_cast<float>(s.vz)},
+                s.previousRotation, {in.pitch, s.yaw}, attr.slowFalling, boost, s.fallDistance);
+            s.vx = velocity.x;
+            s.vy = velocity.y;
+            s.vz = velocity.z;
         } else {
             MoveRelative(s, strafe, forward, relSpeed);
         }
 
         const bool climbJump = in.jump && s.onClimbable;
-        const bool jumpInitiated = in.jump && !glide && !climbJump && s.onGround && s.jumpDelay == 0 && !water && !lava;
+        const bool jumpInitiated = in.jump && !glide && !climbJump && s.onGround && s.jumpDelay == 0 && !water && !lava &&
+            bds::ScaffoldingAllowsJump(in.gravity.inScaffolding, in.gravity.overScaffolding,
+                                      in.gravity.descendThroughBlock);
         if (jumpInitiated) {
-            s.vy = F(std::max(static_cast<float>(s.vy), (attr.jumpHeight > 0.0f ? attr.jumpHeight : 0.42f) + static_cast<float>(attr.jumpBoost) * 0.1f));
+            bds::JumpParameters jump;
+            jump.bodyMinimumY = static_cast<float>(BoundingBox(s, crouched).y0);
+            jump.position = {static_cast<float>(s.x), static_cast<float>(s.y), static_cast<float>(s.z)};
+            jump.velocity = {static_cast<float>(s.vx), static_cast<float>(s.vy), static_cast<float>(s.vz)};
+            jump.previousJumpPosition = s.previousJumpPosition;
+            jump.yaw = s.yaw;
+            jump.sprinting = in.sprint;
+            jump.customHeight = attr.jumpHeight;
+            if (attr.jumpBoost != 0)
+                jump.effectAmplifier = std::bit_cast<int32_t>(static_cast<uint32_t>(attr.jumpBoost) - 1);
+            const auto result = bds::GroundJump(jump, [&](bds::BlockPosition position) {
+                return world.Query(position[0], position[1], position[2]).jumpProperties;
+            });
+            s.vx = result.velocity.x;
+            s.vy = result.velocity.y;
+            s.vz = result.velocity.z;
+            s.previousJumpPosition = result.previousJumpPosition;
             s.jumpDelay = 10;
-            if (in.sprint) {
-                const float force = static_cast<float>(s.yaw) * 0.017453292f;
-                s.vx = F(static_cast<float>(s.vx) - McSin(force) * 0.2f);
-                s.vz = F(static_cast<float>(s.vz) + McCos(force) * 0.2f);
-            }
         }
 
         if (s.onClimbable) {
@@ -697,55 +636,17 @@ namespace perlin::physics {
         if (water && sneaking)
             s.vy = F(static_cast<float>(s.vy) - 0.04f);
 
-        Vec3 req{s.vx, s.vy, s.vz};
-        const bool stuck = s.stuckX * s.stuckX + s.stuckY * s.stuckY + s.stuckZ * s.stuckZ > 1.0e-7f;
-        if (stuck) {
-            req.x = F(static_cast<float>(req.x) * s.stuckX);
-            req.y = F(static_cast<float>(req.y) * s.stuckY);
-            req.z = F(static_cast<float>(req.z) * s.stuckZ);
-            s.stuckX = s.stuckY = s.stuckZ = 0;
-        }
-        Vec3 edgeVel = req;
-        bool hasEdge = false;
-        if (sneaking && grounded) {
-            const Vec3 clipped = ClipSneakEdge(world, s, true, req, scratch);
-            for (const int axis : {0, 2})
-                if (std::fabs(static_cast<float>(clipped[axis])) <= kFloatEps)
-                    edgeVel[axis] = 0;
-            hasEdge = true;
-            req = clipped;
-        }
-        const Vec3 pre = req;
+        Vec3 req = ApplyStoredBlockSlowdown(s, {s.vx, s.vy, s.vz});
         const Box box = BoundingBox(s, crouched);
-        const Motion m = ResolveMotion(world, box, req, grounded, scratch);
-        s.x = m.position.x; s.y = m.position.y; s.z = m.position.z;
-        s.box = m.box;
-        s.hasBox = true;
-        s.onGround = m.cy ? (pre.y < 0.0) : (grounded && pre.y == 0.0);
-        Vec3 v = m.resolved;
-        if (hasEdge) {
-            v.x = edgeVel.x;
-            v.z = edgeVel.z;
-        }
-        if (m.stepped) v.y = 0;
-        if (m.cx) v.x = 0;
-        if (m.cy) {
-            const BlockShape support = world.Query(static_cast<int>(std::floor(s.x)),
-                                                   static_cast<int>(std::floor(s.y - 0.2f)),
-                                                   static_cast<int>(std::floor(s.z)));
-            const bool bounces = !sneaking && static_cast<float>(pre.y) <= -0.08000012f;
-            if (pre.y < 0 && support.surface == 1 && bounces)
-                v.y = -pre.y;
-            else if (pre.y < 0 && support.surface == 2 && bounces)
-                v.y = F(-0.75f * static_cast<float>(pre.y));
-            else
-                v.y = 0;
-        }
-        if (m.cz) v.z = 0;
-        if (stuck)
-            v = {};
-        s.horizontalCollision = m.cx || m.cz;
-        s.verticalCollision = m.cy;
+        bool requestSneakFlag = false;
+        const bool clipSneak = bds::ShouldClipSneak(in.actorMovementFlags, sneaking, grounded, requestSneakFlag);
+        const Motion m = ResolveMotion(world, box, req, {s.vx, s.vy, s.vz}, grounded, scratch, bds::RecoveryLimits(s.recovery),
+                                       attr.maxAutoStep, in.flying, s.canAlwaysAutoStep, clipSneak);
+        bds::UpdateRecovery(s.recovery, m.penetration >= 1.0e-6f, in.pushTowardsClosestSpace);
+        Vec3 v = FinalizeMotion(s, m, m.velocity);
+        if (m.stepped)
+            v.y = 0;
+        v = LandingResponse(s, v, m.supportingSurface, m.cy, sneaking);
 
         const bool autoClimb =
             !water && !lava && (m.cx || m.cz) &&
@@ -757,24 +658,24 @@ namespace perlin::physics {
 
         if (water || lava) {
             if (water) {
-                const float base = in.sprint ? 0.9f : 0.8f;
-                v.x = F(static_cast<float>(v.x) * base);
-                v.y = F(static_cast<float>(v.y) * 0.8f);
-                v.z = F(static_cast<float>(v.z) * base);
+                const auto dragged = bds::WaterDrag(
+                    {static_cast<float>(v.x), static_cast<float>(v.y), static_cast<float>(v.z)},
+                    s.onGround, in.sprint, swimSpeedMultiplier, attr.waterWalkSpeedEnchant, attr.waterDrag);
+                v = {dragged.x, dragged.y, dragged.z};
             } else {
                 v.x = F(static_cast<float>(v.x) * 0.5f);
                 v.y = F(static_cast<float>(v.y) * 0.5f);
                 v.z = F(static_cast<float>(v.z) * 0.5f);
             }
-            if (attr.levitation > 0)
-                v.y = F(static_cast<float>(v.y) + (0.05f * static_cast<float>(attr.levitation) - static_cast<float>(v.y)) * 0.2f);
+            if (water)
+                v.y = bds::PostWaterVertical(static_cast<float>(v.y), s.fallDistance, attr.levitation, in.swimming);
+            else if (attr.levitation > 0)
+                v.y = bds::LevitateVelocity(static_cast<float>(v.y), attr.levitation);
             else
-                v.y = F(static_cast<float>(v.y) - (water ? 0.005f : 0.02f));
+                v.y = F(static_cast<float>(v.y) - 0.02f);
         } else if (!glide) {
-            if (attr.levitation > 0)
-                v.y = F(static_cast<float>(v.y) + (0.05f * static_cast<float>(attr.levitation) - static_cast<float>(v.y)) * 0.2f);
-            else if (!autoClimb)
-                v.y = F((static_cast<float>(v.y) - (attr.slowFalling && v.y < 0.0 ? 0.01f : 0.08f)) * 0.98f);
+            v.y = bds::PostGroundVertical(static_cast<float>(v.y), s.fallDistance, in.gravity,
+                                         attr.levitation, attr.slowFalling, autoClimb);
             v.x = DampHorizontal(v.x, friction);
             v.z = DampHorizontal(v.z, friction);
         }
@@ -806,24 +707,62 @@ namespace perlin::physics {
             }
         }
         s.vx = v.x; s.vy = v.y; s.vz = v.z;
+        s.jumpDelay = bds::TickJumpDelay(s.jumpDelay);
+    }
+
+    static void UpdateBlockContacts(State& s, const Input& in, const World& world, bool wasInWater) {
+        const bool crouched = (in.sneak || in.forceCrouch) && !in.flying;
         {
             const Box inside = BoundingBox(s, crouched);
-            const int x0 = static_cast<int>(std::floor(static_cast<float>(inside.x0) + 0.001f)), x1 = static_cast<int>(std::floor(static_cast<float>(inside.x1) - 0.001f));
-            const int y0 = static_cast<int>(std::floor(static_cast<float>(inside.y0) + 0.001f)), y1 = static_cast<int>(std::floor(static_cast<float>(inside.y1) - 0.001f));
-            const int z0 = static_cast<int>(std::floor(static_cast<float>(inside.z0) + 0.001f)), z1 = static_cast<int>(std::floor(static_cast<float>(inside.z1) - 0.001f));
             bool web = false;
-            for (int cx = x0; cx <= x1 && !web; cx++)
-                for (int cy = y0; cy <= y1 && !web; cy++)
-                    for (int cz = z0; cz <= z1 && !web; cz++)
-                        web = world.Query(cx, cy, cz).web;
+            std::vector<bds::BlockPosition> honey;
+            // InsideBlockComponent alternate bounds and expansion producers
+            // remain separate; use this actor's ordinary shape and zero expansion.
+            bds::CollectInsideCells(CollisionBox(inside), 0.0f, true,
+                                   [&](const bds::CollisionBox& region) { return world.InsideRegionReady(region); },
+                                   [&](int32_t x, int32_t y, int32_t z) {
+                const auto shape = world.Query(x, y, z);
+                web |= shape.web;
+                if (shape.honey)
+                    honey.push_back({x, y, z});
+            });
+            if (!wasInWater && !honey.empty()) {
+                const auto velocity = bds::HoneyContacts(
+                    {static_cast<float>(s.x), static_cast<float>(s.y), static_cast<float>(s.z)},
+                    {static_cast<float>(s.vx), static_cast<float>(s.vy), static_cast<float>(s.vz)},
+                    static_cast<float>(kWidth), honey, s.fallDistance);
+                s.vx = velocity.x;
+                s.vy = velocity.y;
+                s.vz = velocity.z;
+            }
             if (web) {
-                const bool any = s.stuckX * s.stuckX + s.stuckY * s.stuckY + s.stuckZ * s.stuckZ > 1.0e-7f;
-                s.stuckX = any ? std::min(s.stuckX, 0.25f) : 0.25f;
-                s.stuckY = any ? std::min(s.stuckY, 0.05f) : 0.05f;
-                s.stuckZ = any ? std::min(s.stuckZ, 0.25f) : 0.25f;
+                bds::Float3 multiplier{s.stuckX, s.stuckY, s.stuckZ};
+                std::optional<bool> firstApplication;
+                bds::AccumulateBlockSlowdown(multiplier, {0.25f, 0.05f, 0.25f}, firstApplication);
+                // immunePlayer: MovementAbilities value bits 0 (flying) and
+                // 2 (instabuild); it also removes the first-application record.
+                bds::ApplyPlayerSlowdownImmunity(multiplier, firstApplication, in.flying, in.creativeFlight);
+                if (firstApplication)
+                    bds::AdjustSlowdownFallDistance(*firstApplication, s.fallDistance);
+                s.stuckX = multiplier.x;
+                s.stuckY = multiplier.y;
+                s.stuckZ = multiplier.z;
             }
         }
-        if (s.jumpDelay > 0)
-            s.jumpDelay--;
+    }
+
+    void Step(State& s, const Input& in, const Attributes& attr, const World& world) {
+        for (const auto& effect : in.movementEffects)
+            bds::ApplyMovementEffect(s.movementEffects, effect);
+        StepMovement(s, in, attr, world);
+        // EntityInside, player immunity, adjustFallDistance and applied-record
+        // cleanup are registered in this order by 0x1402D48A0.
+        // WasInWaterFlag has passed through the native water-state callback.
+        // World material sensing and complete native phase timing remain open.
+        UpdateBlockContacts(s, in, world, s.inWater);
+        // MovementEffectsTick is registered in the post-player-movement phase,
+        // 0x1402D5190. Flying and no-clip paths must also advance effect state.
+        bds::TickMovementEffects(s.movementEffects);
+        s.previousRotation = {in.pitch, s.yaw};
     }
 }

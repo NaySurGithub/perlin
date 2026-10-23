@@ -33,8 +33,7 @@ namespace perlin {
         }
 
         void Add(BlockShape& s, double x0, double y0, double z0, double x1, double y1, double z1) {
-            if (s.count < physics::kMaxShapeBoxes)
-                s.boxes[s.count++] = {x0, y0, z0, x1, y1, z1};
+            s.boxes.push_back({x0, y0, z0, x1, y1, z1});
         }
 
         int State(uint16_t id, const char* key, int fallback) {
@@ -221,8 +220,7 @@ namespace perlin {
             out.push_back({0, 0, 0, 1, 1, 1});
             return true;
         }
-        for (int b = 0; b < shape.count; b++) {
-            physics::Box box = shape.boxes[b];
+        for (physics::Box box : shape.boxes) {
             if (info.kind == Kind::Fence || info.kind == Kind::Wall)
                 box.y1 = std::min(box.y1, 1.0);
             out.push_back(box);
@@ -236,60 +234,81 @@ namespace perlin {
 
     const LevelCollision::Info& LevelCollision::Lookup(uint16_t id, const BlockLibrary* blocks) {
         static std::array<std::atomic<Info*>, 65536> table{};
-        Info* slot = table[id].load(std::memory_order_acquire);
-        if (slot)
-            return *slot;
-        Info info = Classify(id, blocks);
-        if (id != 0 && BlockPalette::Instance().Name(id).empty()) {
-            static thread_local Info transient;
-            transient = std::move(info);
-            return transient;
+        static std::mutex publishMutex;
+        // ShapeOf returns persistent references. Keep older immutable snapshots
+        // alive when a server definition or voxel packet replaces their data.
+        static std::vector<std::unique_ptr<Info>> snapshots;
+        for (;;) {
+            const auto definitions = ServerBlocks::Instance().CollisionRevision();
+            const auto voxels = VoxelShapeRegistry::Instance().Revision();
+            Info* slot = table[id].load(std::memory_order_acquire);
+            if (slot && slot->definitionRevision == definitions && slot->voxelRevision == voxels)
+                return *slot;
+            Info info = Classify(id, blocks);
+            if (id != 0 && BlockPalette::Instance().Name(id).empty()) {
+                static thread_local Info transient;
+                transient = std::move(info);
+                return transient;
+            }
+            info.ready = true;
+            info.definitionRevision = definitions;
+            info.voxelRevision = voxels;
+            std::lock_guard lock(publishMutex);
+            if (ServerBlocks::Instance().CollisionRevision() != definitions ||
+                VoxelShapeRegistry::Instance().Revision() != voxels)
+                continue;
+            slot = table[id].load(std::memory_order_acquire);
+            if (slot && slot->definitionRevision == definitions && slot->voxelRevision == voxels)
+                return *slot;
+            snapshots.push_back(std::make_unique<Info>(std::move(info)));
+            Info* fresh = snapshots.back().get();
+            table[id].store(fresh, std::memory_order_release);
+            return *fresh;
         }
-        info.ready = true;
-        Info* fresh = new Info(std::move(info));
-        Info* expected = nullptr;
-        if (!table[id].compare_exchange_strong(expected, fresh, std::memory_order_acq_rel)) {
-            delete fresh;
-            return *expected;
-        }
-        return *fresh;
     }
 
     LevelCollision::Info LevelCollision::Classify(uint16_t id, const BlockLibrary* blocks) {
-        if (id != 0) {
-            CustomBlockCollision custom;
-            if (ServerBlocks::Instance().Collision(BlockPalette::Instance().Name(id), custom)) {
-                const CollisionSet* chosen = custom.base.defined ? &custom.base : nullptr;
-                for (const auto& [condition, set] : custom.permutations)
-                    if (EvaluateBlockCondition(condition, id))
-                        chosen = &set;
-                if (!chosen && custom.friction >= 0.0f) {
-                    Info info = ClassifyVanilla(id, blocks);
-                    info.shape.friction = custom.friction;
-                    return info;
-                }
-                if (chosen) {
-                    Info info;
-                    if (custom.friction >= 0.0f)
-                        info.shape.friction = custom.friction;
-                    for (const CollisionBox& b : chosen->boxes)
-                        Add(info.shape, b[0], b[1], b[2], b[3], b[4], b[5]);
-                    info.full = info.shape.count == 1 && info.shape.boxes[0].x0 <= 0 && info.shape.boxes[0].y0 <= 0 &&
-                                info.shape.boxes[0].z0 <= 0 && info.shape.boxes[0].x1 >= 1 && info.shape.boxes[0].y1 >= 1 && info.shape.boxes[0].z1 >= 1;
-                    return info;
-                }
+        CustomBlockCollision custom;
+        const bool hasCustom = id != 0 &&
+            ServerBlocks::Instance().Collision(BlockPalette::Instance().Name(id), custom);
+        const CollisionSet* chosen = hasCustom && custom.base.defined ? &custom.base : nullptr;
+        if (hasCustom)
+            for (const auto& [condition, set] : custom.permutations)
+                if (EvaluateBlockCondition(condition, id))
+                    chosen = &set;
+        Info info = chosen ? Info{} : ClassifyVanilla(id, blocks);
+        // BDS honey-block registration 0x140584982 -> 0x1406B78D0 sets
+        // BlockLegacy property 43, independently of supplied collision boxes.
+        const std::string blockName = BlockPalette::Instance().Name(id);
+        if (blockName == "minecraft:honey_block" || blockName == "honey_block") {
+            info.shape.jumpProperties |= physics::bds::ReducedJumpSurfaceProperty;
+            info.shape.honey = true;
+        }
+        bool replacedGeometry = chosen != nullptr;
+        if (chosen)
+            for (const CollisionBox& box : chosen->boxes)
+                Add(info.shape, box[0], box[1], box[2], box[3], box[4], box[5]);
+        if (hasCustom) {
+            if (custom.friction >= 0.0f)
+                info.shape.friction = custom.friction;
+            info.shape.randomOffset = custom.randomOffset;
+            for (const auto& [condition, offset] : custom.randomOffsetPermutations)
+                if (EvaluateBlockCondition(condition, id))
+                    info.shape.randomOffset = offset;
+        }
+        if (!chosen && id != 0 && info.shape.Empty() && info.shape.fluid == 0 &&
+            !info.shape.climbable && !info.shape.web) {
+            std::vector<Box> boxes;
+            if (VoxelShapeRegistry::Instance().Find(BlockPalette::Instance().Name(id), boxes) && !boxes.empty()) {
+                info.shape.boxes = std::move(boxes);
+                replacedGeometry = true;
             }
         }
-        Info info = ClassifyVanilla(id, blocks);
-        if (id == 0 || !info.shape.Empty() || info.shape.fluid != 0 || info.shape.climbable || info.shape.web)
-            return info;
-        std::vector<Box> custom;
-        if (VoxelShapeRegistry::Instance().Find(BlockPalette::Instance().Name(id), custom) && !custom.empty()) {
-            for (const Box& b : custom)
-                Add(info.shape, b.x0, b.y0, b.z0, b.x1, b.y1, b.z1);
-            info.full = info.shape.count == 1 && info.shape.boxes[0].x0 <= 0 && info.shape.boxes[0].y0 <= 0 &&
-                        info.shape.boxes[0].z0 <= 0 && info.shape.boxes[0].x1 >= 1 && info.shape.boxes[0].y1 >= 1 && info.shape.boxes[0].z1 >= 1;
-        }
+        if (replacedGeometry)
+            info.full = info.shape.boxes.size() == 1 && info.shape.boxes[0].x0 <= 0 &&
+                        info.shape.boxes[0].y0 <= 0 && info.shape.boxes[0].z0 <= 0 &&
+                        info.shape.boxes[0].x1 >= 1 && info.shape.boxes[0].y1 >= 1 &&
+                        info.shape.boxes[0].z1 >= 1;
         return info;
     }
 
@@ -444,7 +463,6 @@ namespace perlin {
         }
         if (n == "honey_block") {
             Add(s, 0.0625, 0, 0.0625, 0.9375, 0.9375, 0.9375);
-            s.speedFactor = 0.4f;
             return info;
         }
         if (n == "chest" || n == "trapped_chest" || n == "ender_chest") {
@@ -499,16 +517,22 @@ namespace perlin {
         entityBoxes = gEntityBoxes;
     }
 
+    bool LevelCollision::CollisionChunkReady(int x, int z) const {
+        return level.HasChunk(x, z);
+    }
+
+    physics::bds::TerrainHeightLimits LevelCollision::CollisionHeightLimits() const {
+        return {Chunk::MIN_Y, Chunk::MIN_Y + Chunk::HEIGHT};
+    }
+
     physics::BlockShape LevelCollision::Query(int x, int y, int z) const {
         BlockShape s = QueryMain(x, y, z);
         if (entityBoxes && !entityBoxes->empty()) {
             for (const physics::Box& b : *entityBoxes) {
                 if (b.x1 <= x || b.x0 >= x + 1 || b.y1 <= y || b.y0 >= y + 1 || b.z1 <= z || b.z0 >= z + 1)
                     continue;
-                if (s.count >= physics::kMaxShapeBoxes)
-                    break;
-                s.boxes[s.count++] = {std::max<double>(b.x0, x) - x, std::max<double>(b.y0, y) - y, std::max<double>(b.z0, z) - z,
-                                      std::min<double>(b.x1, x + 1) - x, std::min<double>(b.y1, y + 1) - y, std::min<double>(b.z1, z + 1) - z};
+                s.boxes.push_back({std::max<double>(b.x0, x) - x, std::max<double>(b.y0, y) - y, std::max<double>(b.z0, z) - z,
+                                   std::min<double>(b.x1, x + 1) - x, std::min<double>(b.y1, y + 1) - y, std::min<double>(b.z1, z + 1) - z});
             }
         }
         if (s.fluid == 0 && y >= Chunk::MIN_Y && y < Chunk::MIN_Y + Chunk::HEIGHT) {
@@ -558,6 +582,7 @@ namespace perlin {
 
         BlockShape s;
         s.friction = info.shape.friction;
+        s.randomOffset = info.shape.randomOffset;
         double lo, hi, height;
         double armLo, armHi;
         switch (info.kind) {

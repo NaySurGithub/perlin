@@ -1062,16 +1062,19 @@ namespace perlin {
             if (runtimeId != 0 && p.runtimeEntityId == runtimeId) {
                 std::lock_guard lk(attrMutex);
                 for (const MetadataDictionaryEntry& m : p.metadata) {
+                    int64_t integer = 0;
+                    if (m.key == MetadataDictionaryEntryKey::Flags || m.key == MetadataDictionaryEntryKey::FlagsExtended) {
+                        if (MetaInt(m, integer)) {
+                            const size_t word = m.key == MetadataDictionaryEntryKey::Flags ? 0 : 1;
+                            ownFlagWords[word] = static_cast<uint64_t>(integer);
+                            ownFlagWordsKnown[word] = true;
+                        }
+                        continue;
+                    }
                     double n = 0;
                     if (!MetaNumber(m, n))
                         continue;
-                    int64_t bits = 0;
-                    const bool exact = MetaInt(m, bits);
-                    if (m.key == MetadataDictionaryEntryKey::Flags)
-                        ownFlagWords[0] = exact ? static_cast<uint64_t>(bits) : static_cast<uint64_t>(static_cast<int64_t>(n));
-                    else if (m.key == MetadataDictionaryEntryKey::FlagsExtended)
-                        ownFlagWords[1] = exact ? static_cast<uint64_t>(bits) : static_cast<uint64_t>(static_cast<int64_t>(n));
-                    else if (m.key == MetadataDictionaryEntryKey::PlayerFlags)
+                    if (m.key == MetadataDictionaryEntryKey::PlayerFlags)
                         ownPlayerFlags = static_cast<int64_t>(n);
                     else if (m.key == MetadataDictionaryEntryKey::Scale)
                         ownScale = static_cast<float>(n);
@@ -1184,8 +1187,6 @@ namespace perlin {
                     ownAttributes[a.name] = a.current;
             }
             for (const PlayerAttributesEntry& a : p.attributes) {
-                if (a.name == "minecraft:movement" && a.current > 0.0f && a.current < 5.0f)
-                    movementSpeed = a.current;
                 if (a.name == "minecraft:health") {
                     const bool recent = std::chrono::steady_clock::now() - lastHurtAt < std::chrono::milliseconds(250);
                     if (lastHealth >= 0.0f && a.current < lastHealth - 0.01f && a.current > 0.0f && !recent)

@@ -1,10 +1,13 @@
 #pragma once
+#include <cstdint>
 #include <string>
 
 namespace perlin::blockuse {
     enum class Use { Nothing, Interact, Place };
 
     bool IsReplaceable(const std::string& blockName);
+    bool IsReplaceableCell(bool loaded, uint16_t blockId, const std::string& blockName);
+    bool IsUpperSlabPlacement(int face, float clickY);
     bool IsInteractive(const std::string& blockName);
 
     struct Result {

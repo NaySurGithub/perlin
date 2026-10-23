@@ -187,7 +187,16 @@ namespace perlin {
         };
         uint64_t LastAuthTick() const { return authTick; }
         bool TakeServerMotion(ServerMotion& out);
-        float MovementSpeedAttribute() const { return movementSpeed; }
+        float MovementSpeedAttribute() const {
+            std::lock_guard lock(attrMutex);
+            const auto it = ownAttributes.find("minecraft:movement");
+            return it == ownAttributes.end() ? 0.1f : it->second;
+        }
+        float UnderwaterMovementSpeedAttribute() const {
+            std::lock_guard lock(attrMutex);
+            const auto it = ownAttributes.find("minecraft:underwater_movement");
+            return it == ownAttributes.end() ? 0.02f : it->second;
+        }
         void ArmPredictionSync() { if (predictionSyncCountdown < 0) predictionSyncCountdown = 200; }
         bool SendPredictionSync();
         bool Initialized() const { return initializedSent; }
@@ -419,6 +428,17 @@ void RequestRespawn();
             std::lock_guard<std::mutex> lk(attrMutex);
             return ((ownFlagWords[0] >> 32) & 1ull) != 0;
         }
+        bool PushTowardsClosestSpace() const {
+            std::lock_guard<std::mutex> lk(attrMutex);
+            return (ownFlagWords[1] & proto::FlagsMetadataFlags2::PushTowardsClosestSpace) != 0;
+        }
+        std::array<uint64_t, 2> OwnActorFlags() const {
+            std::lock_guard lock(attrMutex);
+            auto flags = ownFlagWords;
+            if (!ownFlagWordsKnown[0])
+                flags[0] |= proto::FlagsMetadataFlags1::AffectedByGravity;
+            return flags;
+        }
         bool Spectator() const { return gameType == 6 || gameType == 3 || gameType == 4 || noClip; }
         bool NoClip() const { return noClip || gameType == 6; }
         int GameType() const { return gameType; }
@@ -534,11 +554,13 @@ void RequestRespawn();
             return locatorWaypoints;
         }
         InventoryView GetInventory() const;
+        int WaterWalkSpeedEnchant() const;
         TitleText GetTitleText() const;
         bool SelectHotbarSlot(int slot);
         bool SendSwingArm(const char* source = "build");
 
         bool PredictPlace(int x, int y, int z, int32_t heldRuntimeId);
+        bool PredictBridgePlace(int x, int y, int z, int32_t heldRuntimeId, int face, const float click[3]);
         bool SendUseItemOnBlock(int bx, int by, int bz, int face, const float click[3], const float eye[3], int use, const int dest[3]);
         bool SendUseItemInAir(const float eye[3]);
         bool SendReleaseItem(const float eye[3]);
@@ -555,6 +577,8 @@ void RequestRespawn();
         bool DropInventorySlot(int slot, bool whole);
         struct EffectState { int id = 0; int amplifier = 0; int ticks = 0; bool ambient = false; bool particles = true; };
         std::vector<EffectState> GetEffects() const;
+        struct ServerMovementEffect { uint32_t type = 0, duration = 0; uint64_t tick = 0; };
+        std::vector<ServerMovementEffect> TakeMovementEffects();
         bool WorkbenchOpen() const { std::lock_guard lock(statusMutex); return workbenchOpen; }
         bool TakeWorkbenchOpened();
         bool TakeHorseOpened();
@@ -609,6 +633,7 @@ void RequestRespawn();
         static const char* PacketName(uint32_t id);
 
     private:
+        bool PredictPlaceState(int x, int y, int z, int32_t runtimeId, bool resolvedSlab);
         void HandleBatch(const std::vector<uint8_t>& msg);
         void OnGamePacket(uint32_t id, const std::vector<uint8_t>& body);
         void RegisterPacketHandlers();
@@ -866,10 +891,10 @@ void RequestRespawn();
         bool pendingTeleportAck = false;
         std::deque<BlockActionData> pendingBlockActions;
         ServerMotion serverMotion;
-        float movementSpeed = 0.1f;
         mutable std::mutex attrMutex;
         std::map<std::string, float> ownAttributes;
         std::array<uint64_t, 2> ownFlagWords{};
+        std::array<bool, 2> ownFlagWordsKnown{};
         int64_t ownPlayerFlags = 0;
         float ownScale = 1.0f, ownWidth = 0.6f, ownHeight = 1.8f;
         int predictionSyncCountdown = -1;
@@ -981,6 +1006,7 @@ void RequestRespawn();
         bool SendCloseNow();
         struct ActiveEffect { int id = 0; int amplifier = 0; std::chrono::steady_clock::time_point expires{}; bool infinite = false, ambient = false, particles = true; };
         std::vector<ActiveEffect> activeEffects;
+        std::vector<ServerMovementEffect> pendingMovementEffects;
         bool inventoryOpen = false, serverClosedInventory = false, workbenchOpen = false, workbenchJustOpened = false;
         bool horseJustOpened = false;
         int inventoryWindow = 0;

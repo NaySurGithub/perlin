@@ -128,6 +128,7 @@ namespace perlin {
         std::lock_guard lock(statusMutex);
         vitals = Vitals{};
         activeEffects.clear();
+        pendingMovementEffects.clear();
         inventory = InventoryView{};
         for (ItemV4& raw : inventoryRaw)
             raw = ItemV4{};
@@ -150,6 +151,25 @@ namespace perlin {
     BedrockSession::InventoryView BedrockSession::GetInventory() const {
         std::lock_guard lock(statusMutex);
         return inventory;
+    }
+
+    std::vector<BedrockSession::ServerMovementEffect> BedrockSession::TakeMovementEffects() {
+        std::lock_guard lock(statusMutex);
+        std::vector<ServerMovementEffect> effects;
+        effects.swap(pendingMovementEffects);
+        return effects;
+    }
+
+    int BedrockSession::WaterWalkSpeedEnchant() const {
+        std::lock_guard lock(statusMutex);
+        int level = 0;
+        // BDS 0x140DF7F90 takes the maximum enchantment 7 level over the
+        // armor container. The numerical callback clamps it to its limit.
+        for (const auto& item : inventory.armor)
+            for (const auto& [id, enchantLevel] : item.enchants)
+                if (id == 7)
+                    level = std::max(level, enchantLevel);
+        return level;
     }
 
     BedrockSession::TitleText BedrockSession::GetTitleText() const {
@@ -674,6 +694,17 @@ namespace perlin {
                     vitals.xpProgress = std::clamp(a.current, 0.0f, 1.0f);
                 }
             }
+        });
+
+        On<MovementEffectPacket>([this](const MovementEffectPacket& p) {
+            if (runtimeId == 0 || p.runtimeId != runtimeId)
+                return;
+            // Audited BDS MovementEffectType: GLIDE_BOOST=0, DOLPHIN_BOOST=1.
+            const auto type = static_cast<uint32_t>(p.effectType);
+            if (type > 1)
+                return;
+            std::lock_guard lock(statusMutex);
+            pendingMovementEffects.push_back({type, p.effectDuration, p.tick});
         });
 
         On<MobEffectPacket>([this](const MobEffectPacket& p) {

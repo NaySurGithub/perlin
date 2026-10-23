@@ -17,6 +17,8 @@ namespace perlin {
         LevelCollision(const Level& level, const BlockLibrary* blocks);
 
         physics::BlockShape Query(int x, int y, int z) const override;
+        bool CollisionChunkReady(int x, int z) const override;
+        physics::bds::TerrainHeightLimits CollisionHeightLimits() const override;
         static const physics::BlockShape& ShapeOf(uint16_t id);
         bool Selection(int x, int y, int z, std::vector<physics::Box>& out) const;
 
@@ -26,6 +28,8 @@ namespace perlin {
             bool ready = false;
             Kind kind = Kind::Plain;
             bool full = false;
+            uint64_t definitionRevision = 0;
+            uint64_t voxelRevision = 0;
             physics::BlockShape shape;
         };
 
