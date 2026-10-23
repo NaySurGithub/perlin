@@ -24,6 +24,14 @@ namespace perlin::blockuse {
                                        "soul_fire", "structure_void", "crimson_roots", "warped_roots", "nether_sprouts", "hanging_roots"});
     }
 
+    bool IsReplaceableCell(bool loaded, uint16_t id, const std::string& name) {
+        return loaded && (id == 0 || (!name.empty() && IsReplaceable(name)));
+    }
+
+    bool IsUpperSlabPlacement(int face, float clickY) {
+        return face == 0 || (face >= 2 && face <= 5 && clickY > 0.5f);
+    }
+
     bool IsInteractive(const std::string& name) {
         const std::string_view v = Bare(name);
         if (v == "iron_door" || v == "iron_trapdoor")

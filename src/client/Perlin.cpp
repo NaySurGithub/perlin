@@ -36,6 +36,7 @@
 #include "client/player/BlockCollision.hpp"
 #include "client/player/BlockDestroy.hpp"
 #include "client/player/BlockUse.hpp"
+#include "client/player/Bridging.hpp"
 #include "client/ui/DeathScreen.hpp"
 #include "client/ui/BedScreen.hpp"
 #include "client/ui/InventoryScreen.hpp"
@@ -183,54 +184,9 @@ namespace perlin {
         struct BreakState { bool breaking = false; int x = 0, y = 0, z = 0, face = 1; float progress = 0.0f; };
         BreakState gBreak;
 
-        // Bedrock-style bridging: with the crosshair on empty air (nothing to place against) and a block in hand,
-        // place against the side of the block we're standing on, toward the air cell the crosshair points at.
-        std::optional<AimHit> BridgeTarget(Level& level, const physics::State& st, const glm::dvec3& eye, const glm::dvec3& dir,
-                                           const std::function<bool(int, int, int)>& solid) {
-            if (dir.y > -0.15)
-                return std::nullopt;
-            const int sx = static_cast<int>(std::floor(st.x));
-            const int sz = static_cast<int>(std::floor(st.z));
-            const int sy = static_cast<int>(std::floor(st.y - 0.01)) - 1;
-            if (!solid(sx, sy, sz))
-                return std::nullopt;
-            static const int kOff[4][3] = {{0, 0, -1}, {0, 0, 1}, {-1, 0, 0}, {1, 0, 0}};
-            static const int kFace[4] = {2, 3, 4, 5};
-            int best = -1;
-            double bestScore = 1e9;
-            for (int i = 0; i < 4; i++) {
-                const int tx = sx + kOff[i][0], ty = sy, tz = sz + kOff[i][2];
-                if (solid(tx, ty, tz))
-                    continue;
-                bool loaded = false;
-                (void)level.GetBlock(tx, ty, tz, loaded);
-                if (!loaded)
-                    continue;
-                // Distance from the look ray to the middle of the target cell; the ray must be heading at it.
-                const glm::dvec3 c{tx + 0.5, ty + 0.5, tz + 0.5};
-                const glm::dvec3 v = c - eye;
-                const double along = glm::dot(v, dir);
-                if (along <= 0.0 || along > 6.0)
-                    continue;
-                const double perp = glm::length(v - dir * along);
-                if (perp > 0.9)
-                    continue;
-                // Prefer the cell the player is actually facing horizontally.
-                if (perp < bestScore) {
-                    bestScore = perp;
-                    best = i;
-                }
-            }
-            if (best < 0)
-                return std::nullopt;
-            AimHit h;
-            h.kind = AimHit::Kind::Block;
-            h.bx = sx; h.by = sy; h.bz = sz;
-            h.face = kFace[best];
-            h.point = {sx + 0.5 + kOff[best][0] * 0.5, sy + 0.5, sz + 0.5 + kOff[best][2] * 0.5};
-            h.distance = glm::length(h.point - eye);
-            return h;
-        }
+        std::optional<bridging::Target> gBridgeTarget;
+        std::vector<std::pair<glm::dvec3, glm::dvec3>> gBridgeOutline;
+        bridging::PlacementRepeat gPlacementRepeat;
 
         // Puts a sleeping player on the bed next to them: feet toward the foot end, head on the pillow, lying on the bed top.
         void ApplyBedPose(Level& level, entity::Entity& e) {
@@ -6886,6 +6842,8 @@ namespace perlin {
 
             if (inputManager.Pressed(Action::ToggleHud))
                 options.showHud = !options.showHud;
+            gBridgeTarget.reset();
+            gBridgeOutline.clear();
             if ((live || preview) && input.Captured() && !replayCtl.Playing()) {
                 int newSlot = -1;
                 for (int i = 0; i < 9; i++)
@@ -7026,10 +6984,10 @@ namespace perlin {
                     std::cout << "[aim] kind " << static_cast<int>(gAim.kind) << " block " << gAim.bx << "," << gAim.by << "," << gAim.bz
                               << " face " << gAim.face << " dist " << gAim.distance << std::endl;
                 const float eyeF[3] = {camera.x, camera.y, camera.z};
-                auto clickOf = [&](float out[3]) {
-                    out[0] = static_cast<float>(gAim.point.x - gAim.bx);
-                    out[1] = static_cast<float>(gAim.point.y - gAim.by);
-                    out[2] = static_cast<float>(gAim.point.z - gAim.bz);
+                const auto clickOf = [](const AimHit& aim, float out[3]) {
+                    out[0] = static_cast<float>(aim.point.x - aim.bx);
+                    out[1] = static_cast<float>(aim.point.y - aim.by);
+                    out[2] = static_cast<float>(aim.point.z - aim.bz);
                 };
                 if (live && live->TakeBlockNamesLearned()) {
                     MesherInvalidateCaches();
@@ -7057,6 +7015,8 @@ namespace perlin {
                 };
 
                 if (spectator) {
+                    gPlacementRepeat.Reset();
+                    if (live) live->EndItemUseOn();
                     stopBreaking();
                 } else {
                     const bool attackHeld = inputManager.IsDown(Action::Attack);
@@ -7194,66 +7154,108 @@ namespace perlin {
                         breakDelayTicks--;
                     }
 
-                    // Bedrock bridging: aim at nothing while holding a block => aim at the side of the block underfoot.
-                    const bool bridgeWanted = options.bedrockBridging && live && gAim.kind == AimHit::Kind::None && !held.Empty() &&
-                                              held.blockRuntimeId != 0 && !player.Flying() &&
-                                              inputManager.IsDown(Action::Use);
-                    const AimHit savedAim = gAim;
-                    if (bridgeWanted) {
-                        Level& bl = live->NetLevel();
-                        const auto solidAt = [&](int x, int y, int z) {
+                    // Keep the attack/pick ray unchanged. Reacharound placement has
+                    // its own target and cannot turn an air attack into mining.
+                    AimHit useAim = gAim;
+                    std::vector<physics::Box> heldShape;
+                    if (options.bedrockBridging && live && levelRenderer &&
+                        gAim.kind == AimHit::Kind::None && !held.Empty() && held.blockRuntimeId != 0) {
+                        Level& level = live->NetLevel();
+                        const LevelCollision collision(level, &levelRenderer->Blocks());
+                        auto& palette = BlockPalette::Instance();
+                        const auto& shape = LevelCollision::ShapeOf(palette.InternRuntime(static_cast<int32_t>(held.blockRuntimeId)));
+                        heldShape.assign(shape.boxes, shape.boxes + shape.count);
+                        bridging::Request request;
+                        request.eye = {camera.x, camera.y, camera.z};
+                        request.direction = glm::dvec3(camera.Direction());
+                        request.body = physics::BoundingBox(player.State(), player.Sneaking());
+                        request.sneaking = player.Sneaking();
+                        request.placedShape = heldShape;
+                        request.horizontalSlab = held.name.find("slab") != std::string::npos && heldShape.size() == 1 &&
+                            std::abs(heldShape[0].y1 - heldShape[0].y0 - 0.5) < 1e-5;
+                        gBridgeTarget = bridging::FindTarget(request, [&](glm::ivec3 position) {
+                            bridging::Cell cell;
                             bool loaded = false;
-                            const uint16_t id = bl.GetBlock(x, y, z, loaded);
-                            if (!loaded || id == 0)
-                                return false;
-                            const std::string& nm = BlockPalette::Instance().Name(id);
-                            return nm != "minecraft:air" && nm.find("water") == std::string::npos && nm.find("lava") == std::string::npos;
-                        };
-                        if (auto b = BridgeTarget(bl, player.State(), {camera.x, camera.y, camera.z}, glm::dvec3(camera.Direction()), solidAt))
-                            gAim = *b;
+                            const uint16_t id = level.GetBlock(position.x, position.y, position.z, loaded);
+                            const std::string& name = palette.Name(id);
+                            cell.loaded = loaded;
+                            cell.replaceable = blockuse::IsReplaceableCell(loaded, id, name);
+                            cell.interactive = blockuse::IsInteractive(name);
+                            if (loaded && !cell.replaceable) {
+                                const auto blockShape = collision.Query(position.x, position.y, position.z);
+                                cell.collision.assign(blockShape.boxes, blockShape.boxes + blockShape.count);
+                            }
+                            return cell;
+                        });
+                        if (gBridgeTarget) {
+                            const auto& target = *gBridgeTarget;
+                            useAim.kind = AimHit::Kind::Block;
+                            useAim.bx = target.anchor.x; useAim.by = target.anchor.y; useAim.bz = target.anchor.z;
+                            useAim.face = target.face;
+                            useAim.point = target.point;
+                            useAim.distance = target.distance;
+                            const glm::dvec3 origin(target.destination);
+                            for (const auto& box : target.placedShape)
+                                gBridgeOutline.emplace_back(origin + glm::dvec3(box.x0, box.y0, box.z0),
+                                                            origin + glm::dvec3(box.x1, box.y1, box.z1));
+                        }
                     }
                     const bool ammoBlocked = !HasAmmo(hudState, live, held.name);
                     const bool useHeld = inputManager.IsDown(Action::Use) && !ammoBlocked;
                     const bool usePressed = inputManager.Pressed(Action::Use) && !ammoBlocked;
+                    const bool holdsItem = !held.Empty();
+                    const bool holdsBlock = holdsItem && held.blockRuntimeId != 0;
+                    blockuse::Use use = blockuse::Use::Nothing;
+                    int dest[3] = {0, 0, 0};
+                    if (useAim.kind == AimHit::Kind::Block && (live || previewLevel)) {
+                        Level& lv = live ? live->NetLevel() : *previewLevel;
+                        const auto nameAt = [&](int x, int y, int z) {
+                            bool loaded = false;
+                            const uint16_t id = lv.GetBlock(x, y, z, loaded);
+                            return loaded ? BlockPalette::Instance().Name(id) : std::string();
+                        };
+                        int clicked[3] = {useAim.bx, useAim.by, useAim.bz};
+                        static const int kOff[6][3] = {{0, -1, 0}, {0, 1, 0}, {0, 0, -1}, {0, 0, 1}, {-1, 0, 0}, {1, 0, 0}};
+                        const int f = std::clamp(useAim.face, 0, 5);
+                        const blockuse::Result r = blockuse::Classify(
+                            nameAt(clicked[0], clicked[1], clicked[2]),
+                            nameAt(clicked[0] + kOff[f][0], clicked[1] + kOff[f][1], clicked[2] + kOff[f][2]), clicked, useAim.face,
+                            holdsItem, holdsBlock, player.Sneaking());
+                        use = r.use;
+                        std::copy(r.dest, r.dest + 3, dest);
+                    }
+                    if (gBridgeTarget && (use != blockuse::Use::Place ||
+                            glm::ivec3(dest[0], dest[1], dest[2]) != gBridgeTarget->destination)) {
+                        // The anchor/destination can change while the network
+                        // thread updates the level. Discard the stale plan.
+                        gBridgeTarget.reset();
+                        gBridgeOutline.clear();
+                        useAim = gAim;
+                        use = blockuse::Use::Nothing;
+                    }
+                    if (!useHeld || !holdsBlock) gPlacementRepeat.Reset();
+                    const glm::ivec3 destination{dest[0], dest[1], dest[2]};
+                    const uint64_t useTime = MsNow();
                     static auto lastUseSent = Clock::time_point{};
                     const bool tooSoon = Clock::now() - lastUseSent < std::chrono::milliseconds(60);
-                    // A fresh click must never be swallowed by the repeat throttle, or the single use packet that
-                    // starts eating can get lost and the food just doesn't start.
-                    if (usePressed || (useHeld && useClock >= 0.2 && !tooSoon)) {
+                    const bool repeatReady = options.bedrockBridging && use == blockuse::Use::Place && holdsBlock
+                        ? gPlacementRepeat.Ready(useTime, destination, held.blockRuntimeId, false)
+                        : useClock >= 0.2 && !tooSoon;
+                    // Fresh clicks also start item use immediately, including food.
+                    if (usePressed || (useHeld && repeatReady)) {
                         lastUseSent = Clock::now();
                         useClock = 0;
-                        const bool holdsItem = !held.Empty();
-                        const bool holdsBlock = holdsItem && held.blockRuntimeId != 0;
-                        blockuse::Use use = blockuse::Use::Nothing;
-                        int dest[3] = {0, 0, 0};
-                        if (gAim.kind == AimHit::Kind::Block && (live || previewLevel)) {
-                            Level& lv = live ? live->NetLevel() : *previewLevel;
-                            const auto nameAt = [&](int x, int y, int z) {
-                                bool loaded = false;
-                                const uint16_t id = lv.GetBlock(x, y, z, loaded);
-                                return loaded ? BlockPalette::Instance().Name(id) : std::string();
-                            };
-                            int clicked[3] = {gAim.bx, gAim.by, gAim.bz};
-                            static const int kOff[6][3] = {{0, -1, 0}, {0, 1, 0}, {0, 0, -1}, {0, 0, 1}, {-1, 0, 0}, {1, 0, 0}};
-                            const int f = std::clamp(gAim.face, 0, 5);
-                            const blockuse::Result r = blockuse::Classify(
-                                nameAt(clicked[0], clicked[1], clicked[2]),
-                                nameAt(clicked[0] + kOff[f][0], clicked[1] + kOff[f][1], clicked[2] + kOff[f][2]), clicked, gAim.face,
-                                holdsItem, holdsBlock, player.Sneaking());
-                            use = r.use;
-                            std::copy(r.dest, r.dest + 3, dest);
-                        }
                         bool interactedEntity = false;
-                        if (usePressed && live && gAim.kind == AimHit::Kind::Entity) {
+                        if (usePressed && live && useAim.kind == AimHit::Kind::Entity) {
                             entity::Entity target;
-                            if (live->Entities().Find(gAim.entity, target) && IsInteractable(target.type)) {
+                            if (live->Entities().Find(useAim.entity, target) && IsInteractable(target.type)) {
                                 const glm::vec3 offset = EntityClickOffset({camera.x, camera.y, camera.z}, glm::dvec3(camera.Direction()), target.pos,
-                                                                           (gAim.boxHi.x - gAim.boxLo.x) * 0.5, gAim.boxHi.y - gAim.boxLo.y,
-                                                                           (gAim.boxLo + gAim.boxHi) * 0.5);
+                                                                           (useAim.boxHi.x - useAim.boxLo.x) * 0.5, useAim.boxHi.y - useAim.boxLo.y,
+                                                                           (useAim.boxLo + useAim.boxHi) * 0.5);
                                 float click[3] = {offset.x, offset.y, offset.z};
                                 { handRenderer.Swing(options.hand); gSelfSwing++; }
                                 live->SendSwingArm("interact");
-                                live->SendInteractEntity(gAim.entity, eyeF, click);
+                                live->SendInteractEntity(useAim.entity, eyeF, click);
                                 interactedEntity = true;
                             }
                         }
@@ -7262,19 +7264,28 @@ namespace perlin {
                         // failed block click first (which happens when standing still and looking at the ground)
                         // made eating start only some of the time.
                         const bool consumableInAir = holdsItem && !holdsBlock && use == blockuse::Use::Nothing && HandRenderer::IsFood(held.name);
-                        if (gAim.kind == AimHit::Kind::Block && allowed && !consumableInAir) {
-                            if (use != blockuse::Use::Nothing && usePressed)
-                                { handRenderer.Swing(options.hand); gSelfSwing++; }
+                        if (useAim.kind == AimHit::Kind::Block && allowed && !consumableInAir) {
+                            bool sent = !live;
                             if (live) {
                                 float click[3];
-                                clickOf(click);
-                                if (use != blockuse::Use::Nothing && usePressed)
-                                    live->SendSwingArm(use == blockuse::Use::Place ? "build" : "interact");
-                                live->SendUseItemOnBlock(gAim.bx, gAim.by, gAim.bz, gAim.face, click, eyeF, static_cast<int>(use), dest);
+                                clickOf(useAim, click);
+                                sent = live->SendUseItemOnBlock(useAim.bx, useAim.by, useAim.bz, useAim.face, click, eyeF, static_cast<int>(use), dest);
                             }
-                            if (use == blockuse::Use::Place && holdsBlock) {
-                                sounds.PlayBlockEvent(held.name, "place", glm::dvec3(dest[0] + 0.5, dest[1] + 0.5, dest[2] + 0.5));
-                                if (live && !player.Flying()) {
+                            if (use == blockuse::Use::Place && holdsBlock)
+                                gPlacementRepeat.Record(useTime, destination, held.blockRuntimeId);
+                            if (sent && use != blockuse::Use::Nothing && (usePressed || use == blockuse::Use::Place)) {
+                                handRenderer.Swing(options.hand);
+                                gSelfSwing++;
+                                if (live) live->SendSwingArm(use == blockuse::Use::Place ? "build" : "interact");
+                            }
+                            if (sent && use == blockuse::Use::Place && holdsBlock) {
+                                if (live && gBridgeTarget) {
+                                    // The solver checked the held geometry against the actual
+                                    // body. Extra airborne padding prevents timely jump bridging.
+                                    float click[3];
+                                    clickOf(useAim, click);
+                                    live->PredictBridgePlace(dest[0], dest[1], dest[2], static_cast<int32_t>(held.blockRuntimeId), useAim.face, click);
+                                } else if (live && !player.Flying()) {
                                     const physics::State& pst = player.State();
                                     // While airborne the server checks the placement against where we'll be a moment from now and
                                     // delays/rejects it, so predicting it here showed a block in mid-air for a split second. Widen
@@ -7290,6 +7301,7 @@ namespace perlin {
                                 } else if (live) {
                                     live->PredictPlace(dest[0], dest[1], dest[2], static_cast<int32_t>(held.blockRuntimeId));
                                 }
+                                sounds.PlayBlockEvent(held.name, "place", glm::dvec3(dest[0] + 0.5, dest[1] + 0.5, dest[2] + 0.5));
                             }
                         }
                         if (usePressed && live && holdsItem && use == blockuse::Use::Nothing && !interactedEntity) {
@@ -7297,7 +7309,6 @@ namespace perlin {
                             usingItem = true;
                         }
                     }
-                    gAim = savedAim;
                     if (!useHeld && live)
                         live->EndItemUseOn();
                     if (usingItem && !useHeld) {
@@ -7314,6 +7325,8 @@ namespace perlin {
                 }
             } else {
                 gAim = AimHit{};
+                gPlacementRepeat.Reset();
+                if (live) live->EndItemUseOn();
                 // Input is no longer captured (menu, chat, disconnect...): finish any in-progress break properly so
                 // the server and our crack overlay don't keep a half-broken block around.
                 if (gBreak.breaking) {
@@ -8184,6 +8197,11 @@ namespace perlin {
                     ein.outlineLo = gAim.boxLo;
                     ein.outlineHi = gAim.boxHi;
                     ein.outlineShape = gAim.shape;
+                } else if (gBridgeTarget && options.showHud && !gBridgeOutline.empty()) {
+                    ein.outline = true;
+                    ein.outlineLo = gBridgeOutline.front().first;
+                    ein.outlineHi = gBridgeOutline.front().second;
+                    ein.outlineShape = gBridgeOutline;
                 }
                 const auto crackAt = [&](int x, int y, int z, int stage) {
                     entity::EntityRenderer::FrameIn::Crack crack{x, y, z, stage, {}};
