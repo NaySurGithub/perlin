@@ -835,3 +835,15 @@ A separate direct execution of the sprint-jump block at `0x140EAFD9C` with yaw
 confirms a specific reference incompatibility with BDS, but does not justify
 replacing the full legacy scenario with Perlin-generated expectations. Full
 native scenario generation remains required to resolve its gate honestly.
+
+
+## CI platform findings
+
+The GitHub jobs for head `61ac44f` (run `39937551824`) independently report the
+same 152 legacy trace discrepancies on Linux x86-64 and macOS ARM64; all other
+52-target suite entries pass there. Windows compilation exposed a missing
+standard `<bit>` include in BdsCollisionCache.hpp. The header now includes its
+bit-cast dependency explicitly; local rebuild and the three affected cache
+self-tests pass. A new Windows CI result is still required to verify that fix.
+The later entity-inside additions have separate local ARM64/x86-64 evidence and
+must also complete current-head CI before platform validation is claimed.

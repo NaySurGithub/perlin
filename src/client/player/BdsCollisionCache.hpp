@@ -3,6 +3,7 @@
 #include "client/player/BdsSupport.hpp"
 #include "client/player/BdsCacheDifference.hpp"
 
+#include <bit>
 #include <vector>
 
 namespace perlin::physics::bds {
