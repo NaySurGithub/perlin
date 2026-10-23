@@ -1008,8 +1008,7 @@
           "laying_egg",
           "rider_can_pick",
           "transition_sitting",
-          "eating",
-          "laying_down"
+          "eating"
         ]
       }
     ],
@@ -1019,6 +1018,7 @@
         "type": "zigzag64",
         "big": true,
         "flags": [
+          "laying_down",
           "sneezing",
           "trusting",
           "rolling",

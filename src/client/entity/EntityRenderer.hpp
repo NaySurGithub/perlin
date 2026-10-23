@@ -128,7 +128,6 @@ namespace perlin::entity {
         const int* dollClip = nullptr;
         uint32_t TextureFor(const Entity& e, const std::string& key);
         void Track(const Entity& e, View& v, const FrameIn& in);
-        void TickPlayerBody(View& v, float dt, float prevYaw);
         void DrawShadow(const glm::dvec3& pos, float radius, float strength, const FrameIn& in);
         uint32_t shadowTexture = 0;
         struct Tag {
@@ -151,6 +150,7 @@ namespace perlin::entity {
         RenderContext* renderer = nullptr;
         EntityAssets assets;
         std::unordered_map<uint64_t, std::unique_ptr<View>> views;
+        std::unique_ptr<View> firstPersonView, dollView;
         std::unordered_map<std::string, uint32_t> textures;
         std::unordered_map<uint64_t, uint32_t> skinTextures, capeTextures, capeModelTextures;
         std::unordered_map<uint64_t, std::unique_ptr<attachable::GeometryLibrary>> skinGeometry;
