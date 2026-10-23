@@ -138,6 +138,7 @@ namespace perlin::entity {
         std::string tag;
         glm::mat4 armR{1.0f}, armL{1.0f};
         bool hasArmR = false, hasArmL = false;
+        bool nativePose = false;
         bool bodyInit = false, mobBody = false;
         java::BodyRotation body;
         CapeChain cape;
@@ -537,9 +538,10 @@ namespace perlin::entity {
                               in.capePhysics > 0 ? std::clamp(v.groundSpeed / 3.0f, 0.0f, 1.0f) * (std::fabs(v.verticalSpeed) < 2.0f ? 1.0f : 0.0f) : 0.0f, dt);
         }
 
-        if (e.Has(flag::UsingItem) && !v.wasUsing)
+        const bool usingItem = e.Has(flag::UsingItem) || e.Blocking();
+        if (usingItem && !v.wasUsing)
             v.usingSince = in.time;
-        v.wasUsing = e.Has(flag::UsingItem);
+        v.wasUsing = usingItem;
         bool swingStarted = false;
         if (e.swingSerial != v.swingSerial) {
             v.swingSerial = e.swingSerial;
@@ -567,7 +569,7 @@ namespace perlin::entity {
         ease(v.standAmount, e.Has(flag::Rearing), 0.5f);
         ease(v.sitAmount, e.Has(flag::Sitting), 0.3f);
         if (!e.isPlayer) ease(v.swimAmount, e.Has(flag::Swimming), 0.4f);
-        ease(v.lieAmount, e.Has(flag::LayingDown), 0.4f);
+        ease(v.lieAmount, e.LayingDown(), 0.4f);
         v.glideTime = e.Has(flag::Gliding) ? v.glideTime + dt : 0.0f;
         ease(v.swellAmount, e.Has(flag::Ignited), 1.5f);
     }
@@ -744,9 +746,9 @@ namespace perlin::entity {
                 host.blocking = fp->blocking;
                 host.offArmHeight = fp->offArmHeight;
             } else {
-                host.using_ = e.Has(flag::UsingItem);
+                host.using_ = e.Has(flag::UsingItem) || e.Blocking();
                 host.usedTicks = host.using_ ? static_cast<float>((v.now - v.usingSince) * 20.0) : 0.0f;
-                host.blocking = host.using_ && (usedItem == "minecraft:shield" || e.offHand == "minecraft:shield");
+                host.blocking = e.Blocking() || (host.using_ && (usedItem == "minecraft:shield" || e.offHand == "minecraft:shield"));
             }
         }
         host.timeOfDay = std::fmod(in.worldTicks, 24000.0) / 24000.0;
@@ -783,8 +785,8 @@ namespace perlin::entity {
             s->Eval(v.scope);
         if (e.isPlayer) {
             vars["swim_amount"] = Value::Num(v.swimAmount);
-            vars["is_holding_right"] = Value::Num(e.mainHand.empty() ? 0.0 : 1.0);
-            vars["is_holding_left"] = Value::Num(e.offHand.empty() ? 0.0 : 1.0);
+            vars["is_holding_right"] = Value::Num(e.RightHand().empty() ? 0.0 : 1.0);
+            vars["is_holding_left"] = Value::Num(e.LeftHand().empty() ? 0.0 : 1.0);
             vars["is_holding_spyglass"] = Value::Num(e.Has(flag::UsingItem) && e.mainHand == "minecraft:spyglass" ? 1.0 : 0.0);
             vars["is_tooting_goat_horn"] = Value::Num(e.Has(flag::UsingItem) && e.mainHand == "minecraft:goat_horn" ? 1.0 : 0.0);
             vars["is_using_brush"] = Value::Num(e.Has(flag::UsingItem) && e.mainHand == "minecraft:brush" ? 1.0 : 0.0);
@@ -883,11 +885,16 @@ namespace perlin::entity {
                 return A::Item;
             };
             const bool offhandUse = host.blocking && e.mainHand != "minecraft:shield" && e.offHand == "minecraft:shield";
-            state.right = arm(e.mainHand, host.using_ && !offhandUse);
-            state.left = arm(e.offHand, host.using_ && offhandUse);
+            state.mainLeft = e.mainLeft;
+            state.attackLeft = e.mainLeft != e.swingOffHand;
+            state.useLeft = e.mainLeft != offhandUse;
+            state.right = arm(e.RightHand(), host.using_ && !state.useLeft);
+            state.left = arm(e.LeftHand(), host.using_ && state.useLeft);
+            state.swinging = v.attackTime > 0;
             javaPose = java::AnimatePlayer(state);
             javaPlayer = java::ApplyPlayerPose(javaPose, bindGeometry, pose);
         }
+        v.nativePose = javaPlayer;
         if (e.isPlayer && e.isSelf) {
             const SkinParts& parts = in.ownParts;
             const auto hide = [&](bool shown, const char* bone) {
@@ -1145,9 +1152,9 @@ namespace perlin::entity {
             };
             v.attachedItem[0] = v.attachedItem[1] = false;
             if (v.hasItemR)
-                bind(e.mainHand, v.itemR, false);
+                bind(e.RightHand(), v.itemR, false);
             if (v.hasItemL)
-                bind(e.offHand, v.itemL, true);
+                bind(e.LeftHand(), v.itemL, true);
         }
         if (itemRenderer && !e.Has(flag::Invisible) && !layers.empty() && !v.fp) {
             static const int kOrder[4] = {0, 1, 2, 3};
@@ -1249,29 +1256,44 @@ namespace perlin::entity {
         const bool mirrored = !fpModel && !billboard;
         const float rotation = (fpModel || billboard) ? 180.0f : -v.yaw;
         const glm::mat4 mirrorZ = mirrored ? glm::scale(glm::mat4(1.0f), glm::vec3(1.0f, 1.0f, -1.0f)) : glm::mat4(1.0f);
-        const glm::mat3 rot = glm::mat3(glm::rotate(glm::mat4(1.0f), rotation * kDeg, glm::vec3(0, 1, 0)) * mirrorZ);
+        const glm::mat3 baseRotation = glm::mat3(glm::rotate(glm::mat4(1.0f), rotation * kDeg, glm::vec3(0, 1, 0)) * mirrorZ);
         glm::mat4 model = glm::translate(glm::mat4(1.0f), glm::vec3(v.pos));
-        model = glm::rotate(model, rotation * kDeg, glm::vec3(0, 1, 0)) * mirrorZ;
-        if (v.deathTime > 0.0f) {
-            const float t = v.deathTime * 20.0f;
-            const float f = std::min(std::sqrt(std::max(0.0f, (t - 1.0f) / 20.0f * 1.6f)), 1.0f);
-            model = glm::translate(model, glm::vec3(0, 0.0f, 0));
-            model = glm::rotate(model, f * 90.0f * kDeg, glm::vec3(0, 0, 1));
-        }
-        if (e.sleeping && e.isPlayer)
-            model = glm::rotate(model, -90.0f * kDeg, glm::vec3(1, 0, 0));  // lying on the back, head toward the pillow
-        if (v.glideTime > 0.0f && e.isPlayer) {
-            const float t = std::min(v.glideTime * 20.0f, 10.0f);
-            const float amount = std::clamp(t * t / 100.0f, 0.0f, 1.0f);
-            model = glm::rotate(model, -amount * (90.0f + v.pitch) * kDeg, glm::vec3(1, 0, 0));
-        }
-        if (e.isPlayer && !v.fp && v.swimAmount > 0.0f && v.glideTime <= 0 && !e.sleeping && !PERLIN_ENV("PERLIN_NO_JAVA_ANIMATIONS")) {
-            // Java AvatarRenderer rotates about the feet, then moves the swimmer
-            // into the horizontal collision box. Crawling keeps the head level.
-            const float pitch = e.crawling ? 0.0f : v.pitch;
-            model = glm::rotate(model, -v.swimAmount * (90.0f + pitch) * kDeg, glm::vec3(1, 0, 0));
-            if (e.Has(flag::Swimming))
-                model = glm::translate(model, glm::vec3(0.0f, -v.swimAmount, 0.3f * v.swimAmount));
+        if (v.nativePose && !v.fp) {
+            java::RootState state;
+            state.bodyYaw = v.yaw;
+            state.pitch = v.pitch;
+            state.age = static_cast<float>(in.time - v.born) * 20;
+            state.deathTicks = v.deathTime > 0 ? std::max(1.0f, v.deathTime * 20) : 0;
+            state.swim = v.swimAmount;
+            state.glideTicks = v.glideTime * 20;
+            state.gliding = e.Has(flag::Gliding);
+            state.spin = e.Has(flag::SpinAttack);
+            state.sleeping = e.sleeping;
+            state.bedDirection = e.bedDirection;
+            state.visuallySwimming = e.Has(flag::Swimming);
+            state.inWater = state.visuallySwimming && !e.crawling;
+            const std::string& name = e.name.empty() ? e.nameTag : e.name;
+            state.upsideDown = name == "Dinnerbone" || name == "Grumm";
+            if (state.gliding) {
+                const glm::vec3 velocity = glm::vec3(v.pos - v.lastPos) / std::max(v.dt * 20, 1e-6f);
+                state.flightYaw = java::FlightYaw(v.headYaw, v.pitch, velocity);
+                state.flyingYaw = true;
+            }
+            model *= java::PlayerRootTransform(state, scale);
+        } else {
+            model = glm::rotate(model, rotation * kDeg, glm::vec3(0, 1, 0)) * mirrorZ;
+            if (v.deathTime > 0.0f) {
+                const float t = v.deathTime * 20.0f;
+                const float f = std::min(std::sqrt(std::max(0.0f, (t - 1.0f) / 20.0f * 1.6f)), 1.0f);
+                model = glm::rotate(model, f * 90.0f * kDeg, glm::vec3(0, 0, 1));
+            }
+            if (e.sleeping && e.isPlayer)
+                model = glm::rotate(model, -90.0f * kDeg, glm::vec3(1, 0, 0));
+            if (v.glideTime > 0.0f && e.isPlayer) {
+                const float t = std::min(v.glideTime * 20.0f, 10.0f);
+                const float amount = std::clamp(t * t / 100.0f, 0.0f, 1.0f);
+                model = glm::rotate(model, -amount * (90.0f + v.pitch) * kDeg, glm::vec3(1, 0, 0));
+            }
         }
         if (e.isSelf && (in.ownPose.x != 0.0f || in.ownPose.y != 0.0f || in.ownPose.z != 0.0f)) {
             model = glm::translate(model, glm::vec3(0.0f, 0.9f, 0.0f));
@@ -1287,6 +1309,7 @@ namespace perlin::entity {
             model = glm::translate(model, glm::vec3(0.0f, -12.0f / 16.0f * scale, 0.0f));
         }
         model = glm::scale(model, glm::vec3(scale / 16.0f));
+        const glm::mat3 normalRotation = fpModel ? baseRotation : glm::mat3(model);
         glm::vec3 light(1.0f);
         if (in.light)
             light = in.light(v.pos + glm::dvec3(0.0, 1.0, 0.0));
@@ -1296,7 +1319,10 @@ namespace perlin::entity {
                 light = fp->light;
         }
         if (dollModel) {
-            model = *dollModel * glm::rotate(glm::mat4(1.0f), rotation * kDeg, glm::vec3(0, 1, 0)) * mirrorZ * glm::scale(glm::mat4(1.0f), glm::vec3(scale / 16.0f));
+            if (v.nativePose)
+                model = *dollModel * glm::translate(glm::mat4(1), -glm::vec3(v.pos)) * model;
+            else
+                model = *dollModel * glm::rotate(glm::mat4(1.0f), rotation * kDeg, glm::vec3(0, 1, 0)) * mirrorZ * glm::scale(glm::mat4(1.0f), glm::vec3(scale / 16.0f));
             light = glm::vec3(1.0f);
         }
         const float hurt = v.hurtTimer > 0.0f ? std::min(1.0f, v.hurtTimer / 0.5f) : 0.0f;
@@ -1353,7 +1379,7 @@ namespace perlin::entity {
             const bool fullbright = layer.material.emissive == 2;
             const glm::vec3 tint(layer.tint[0], layer.tint[1], layer.tint[2]);
             for (const attachable::Quad& q : layer.quads) {
-                const glm::vec3 n = rot * q.n;
+                const glm::vec3 n = glm::normalize(normalRotation * q.n);
                 const float lit = std::min(1.0f, (std::max(0.0f, glm::dot(n, l0)) + std::max(0.0f, glm::dot(n, l1))) * 0.6f + 0.4f);
                 const uint32_t color = fullbright ? PackColor(tint, layer.tint[3]) : PackColor(light * lit * tint, layer.tint[3]);
                 const uint32_t base = static_cast<uint32_t>(vertices.size());
@@ -1424,9 +1450,9 @@ namespace perlin::entity {
             itemRenderer->SetWorldShadowOnly(shadowOnlyPass);
             itemRenderer->SetDollClip(dollModel ? dollClip : nullptr);
             if (v.hasArmR && !v.attachedItem[0])
-                held(e.mainHand, v.armR, false);
+                held(e.RightHand(), v.armR, false);
             if (v.hasArmL && !v.attachedItem[1])
-                held(e.offHand, v.armL, true);
+                held(e.LeftHand(), v.armL, true);
             itemRenderer->SetDollClip(nullptr);
             itemRenderer->SetWorldShadowOnly(false);
         }

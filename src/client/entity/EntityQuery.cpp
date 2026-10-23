@@ -51,6 +51,8 @@ namespace perlin::entity {
         const auto yes = [&](bool b) { return num(b ? 1.0 : 0.0); };
         const auto has = [&](uint64_t f) { return yes(e.Has(f)); };
 
+        if (name == "is_laying_down") return yes(e.LayingDown());
+        if (name == "is_blocking") return yes(e.Blocking());
         static const struct { const char* name; uint64_t bit; } kFlags[] = {
             {"is_baby", flag::Baby}, {"is_sneaking", flag::Sneaking}, {"is_sprinting", flag::Sprinting},
             {"is_swimming", flag::Swimming}, {"is_gliding", flag::Gliding}, {"is_riding", flag::Riding},
@@ -65,7 +67,7 @@ namespace perlin::entity {
             {"is_silent", flag::Silent}, {"is_fire_immune", flag::FireImmune}, {"is_dancing", flag::Dancing},
             {"is_enchanted", flag::Enchanted}, {"is_transforming", flag::Transforming}, {"is_bribed", flag::Bribed},
             {"is_pregnant", flag::Pregnant}, {"is_laying_egg", flag::LayingEgg}, {"is_eating", flag::Eating},
-            {"is_laying_down", flag::LayingDown}, {"has_collision", flag::HasCollision}, {"has_gravity", flag::Gravity},
+            {"has_collision", flag::HasCollision}, {"has_gravity", flag::Gravity},
             {"is_lingering", 0}, {"is_rearing", flag::Rearing},
         };
         static const std::unordered_map<std::string, uint64_t> kFlagMap = [] {

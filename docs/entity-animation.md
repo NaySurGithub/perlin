@@ -7,15 +7,15 @@ The relevant classes are `LivingEntity`, `WalkAnimationState`,
 `JavaAnimation.hpp/.cpp` implement the player torso movement direction, backward
 walking, 50-degree head/body limit, attack turn, walking phase and speed, idle
 arm bob, crouching, riding, attack shoulder offsets, swimming cycle, and common
-held-item arm poses. Mobs with head/body geometry use the separate mob rotation
+held-item arm poses, including dominant-arm and active-arm priority rules. Mobs with head/body geometry use the separate mob rotation
 controller (75-degree head limit, ten-tick idle delay and ten-tick realignment).
 Their species-specific animation controllers remain resource driven.
 
 Motion is sampled at 20 Hz along the interpolated frame trajectory. Rendering
 interpolates the last two simulation poses. Catch-up frames sample each crossed
 tick rather than applying the entire frame's movement once; teleports reset
-walking, torso interpolation and cape state. Velocity queries use elapsed time. World, first-person and inventory doll views
-maintain separate animation state.
+walking, torso interpolation and cape state. Velocity queries use elapsed time.
+World, first-person and inventory doll views maintain separate animation state.
 Riding, sleeping and death stop the walking cycle.
 
 Java's player model parts are independent. Bedrock arms and heads often inherit
@@ -31,8 +31,8 @@ resource-driven player pose for comparison.
 Validation:
 
 ```
-cmake --build build --target Perlin entity_animation_selftest
-ctest --test-dir build -R '^(entity_animation_selftest|attachable_selftest)$' --output-on-failure
+cmake --build build --target Perlin entity_animation_selftest entity_state_selftest packet_selftest
+ctest --test-dir build -R '^(entity_animation_selftest|entity_state_selftest|packet_selftest|attachable_selftest)$' --output-on-failure
 ```
 
 The animation self-test checks 10, 15, 20, 30, 60, 144 and 240 FPS trajectories,
@@ -40,13 +40,50 @@ angle wrapping, idle and backward movement, mob idle alignment, walk damping,
 riding and attack angles, swimming phases, and actual bone world matrices with
 compound crouch/attack/swim poses and attached sleeves.
 
+The test also compares against 400 poses produced by the original Java
+`HumanoidModel.setupAnim` and 120 matrices produced by the original
+`AvatarRenderer.setupRotations`. The fixtures cover both dominant arms, both
+swing arms, all ten common arm poses, item priority, crossbow charge durations,
+compound attack/swim/crouch states, swimming transitions, gliding, spin attacks,
+sleep directions, death and upside-down rotation. These are executed model
+outputs rather than a second implementation of the animation formulas.
+
+To regenerate the fixtures with a legally obtained client JAR and JDK 26+:
+
+```
+python3 tools/gen_java_animation_reference.py --jar /path/to/minecraft-26.3-client.jar --java-home /path/to/jdk
+```
+
+The driver boots Minecraft's registries headlessly; it does not launch the game
+or open a window. The renderer constructor requires a graphics context, so the
+root-transform driver allocates its receiver without invoking that constructor,
+then calls the original transformation method. The local cache contains the
+client libraries; fixture generation verifies the client and library checksums.
+Only numerical outputs and the driver are committed.
+
+Entity-state tests round-trip actual metadata packets with simultaneous high
+and low flags, test the protocol flag-word split, and verify crawling, sleeping,
+shield blocking, dominant arm and swing-hand state. The checked-in protocol
+schema supplies the authoritative flag positions. In particular, laying down
+starts the extended word at bit 64; sleeping is extended bit 12, and swimming is
+bit 57. Flag words are decoded as integers, without floating-point conversion.
+
+The root adapter accounts for the Java/Bedrock axis and model-origin differences
+before applying scale. Full-body lighting normals follow the resulting pose.
+The inventory doll uses the same root transform in its own view state.
+
 Offline visual checks can use `PERLIN_PREVIEW_ENTITIES=player:cape,player:alex`,
 `PERLIN_PREVIEW_ENTITY_WALK=1`, `PERLIN_PREVIEW_TURN=1`,
 `PERLIN_PREVIEW_SNEAK=1`, `PERLIN_PREVIEW_SWIM=1`,
-`PERLIN_PREVIEW_ARMOR=diamond` or `PERLIN_PREVIEW_ATTACK=0.3` with the usual
+`PERLIN_PREVIEW_ARMOR=diamond`, `PERLIN_PREVIEW_USING=1`,
+`PERLIN_PREVIEW_LEFT_HANDED=1`, `PERLIN_PREVIEW_OFFHAND=minecraft:shield`,
+`PERLIN_PREVIEW_BLOCKING=1` or `PERLIN_PREVIEW_ATTACK=0.3` with the usual
 `PERLIN_PREVIEW=1`, `PERLIN_PREVIEW_SHOT` and `--offline` flags.
 
-Bedrock does not expose every Java animation input. Offhand attack identity,
-charged crossbow item components and the newer spear swing descriptions are
-not yet represented in Perlin's entity state. Those cannot be reproduced
-exactly from head/body rotations and the current generic swing event alone.
+Remaining fidelity work includes charged crossbow item components, the newer
+spear swing descriptions, and a broader live-server/state-transition audit.
+Swing-hand and dominant-arm state can now represent both sides; remote generic
+swing packets still select the main hand unless a source supplies an explicit
+hand. Mob locomotion remains species-specific and resource driven. Passing the
+humanoid and root fixtures does not by itself prove every creature animation or
+every live interaction is correct.

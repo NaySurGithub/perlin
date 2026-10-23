@@ -32,10 +32,10 @@ namespace perlin::entity {
             Resting = 1ull << 23, Sitting = 1ull << 24, Angry = 1ull << 25, Interested = 1ull << 26, Charged = 1ull << 27,
             Tamed = 1ull << 28, Orphaned = 1ull << 29, Leashed = 1ull << 30, Sheared = 1ull << 31, Gliding = 1ull << 32,
             Elder = 1ull << 33, Moving = 1ull << 34, Breathing = 1ull << 35, Chested = 1ull << 36, Stackable = 1ull << 37,
-            Rearing = 1ull << 39, Idling = 1ull << 41, Silent = 1ull << 17, HasCollision = 1ull << 47, Gravity = 1ull << 48,
-            FireImmune = 1ull << 49, Dancing = 1ull << 50, Enchanted = 1ull << 51, Transforming = 1ull << 54,
-            SpinAttack = 1ull << 55, Swimming = 1ull << 56, Bribed = 1ull << 57, Pregnant = 1ull << 58, LayingEgg = 1ull << 59,
-            Eating = 1ull << 62, LayingDown = 1ull << 63, Sleeping = 0,
+            Rearing = 1ull << 39, Idling = 1ull << 41, Silent = 1ull << 17, HasCollision = 1ull << 48, Gravity = 1ull << 49,
+            FireImmune = 1ull << 50, Dancing = 1ull << 51, Enchanted = 1ull << 52, Transforming = 1ull << 55,
+            SpinAttack = 1ull << 56, Swimming = 1ull << 57, Bribed = 1ull << 58, Pregnant = 1ull << 59, LayingEgg = 1ull << 60,
+            Eating = 1ull << 63,
         };
     }
 
@@ -50,7 +50,7 @@ namespace perlin::entity {
         glm::dvec3 pos{0.0};
         float yaw = 0, pitch = 0, headYaw = 0;
         bool onGround = true;
-        uint64_t flags = 0;
+        uint64_t flags = 0, flagsExtended = 0;
         bool crawling = false;
         float scale = 1.0f;
         int variant = 0, markVariant = 0, color = 0;
@@ -75,13 +75,19 @@ namespace perlin::entity {
         int64_t targetUid = 0;
         int64_t ownerUid = 0;
         int64_t vehicleUid = 0;
+        int bedDirection = -1;
         std::string mainHand, offHand;
+        bool mainLeft = false, swingOffHand = false;
         std::string armor[4];
         std::shared_ptr<const SkinData> skin;
         std::map<std::string, float> props;
         std::map<std::string, std::string> propText;
         struct Attribute { float min = 0, value = 0, max = 0; };
         std::map<std::string, Attribute> attributes;
+        const std::string& RightHand() const { return mainLeft ? offHand : mainHand; }
+        const std::string& LeftHand() const { return mainLeft ? mainHand : offHand; }
+        bool LayingDown() const { return (flagsExtended & 1ull) != 0; }
+        bool Blocking() const { return (flagsExtended & (1ull << 8)) != 0; }
         bool Has(uint64_t f) const { return (flags & f) != 0 || (crawling && (f & flag::Swimming) != 0); }
     };
 
@@ -105,6 +111,7 @@ namespace perlin::entity {
         void MoveDelta(uint64_t rid, const double* x, const double* y, const double* z, const float* pitch, const float* yaw,
                        const float* headYaw, bool onGround);
         void SetFlags(uint64_t rid, uint64_t flags);
+        void SetFlagsExtended(uint64_t rid, uint64_t flags);
         void SetCrawling(uint64_t rid, bool crawling);
         void SetScale(uint64_t rid, float scale);
         void SetNameTag(uint64_t rid, const std::string& nameTag);
@@ -119,7 +126,8 @@ namespace perlin::entity {
         void SetVehicle(int64_t riderUid, int64_t vehicleUid);
         void Hurt(uint64_t rid);
         void Die(uint64_t rid);
-        void Swing(uint64_t rid);
+        void Swing(uint64_t rid, bool offHand = false);
+        void SetMainLeft(uint64_t rid, bool left);
         void SetProperty(uint64_t rid, const std::string& key, float value);
         void SetPropertyText(uint64_t rid, const std::string& key, const std::string& text);
         void SetSkin(const std::string& uuid, std::shared_ptr<const SkinData> skin);

@@ -180,6 +180,9 @@ namespace perlin::entity {
         body;                                                                                                          \
     }
     PERLIN_ENTITY_SET(SetFlags(uint64_t rid, uint64_t flags), e.flags = flags)
+    PERLIN_ENTITY_SET(SetFlagsExtended(uint64_t rid, uint64_t flags),
+                      e.flagsExtended = flags; e.crawling = (flags & (1ull << 50)) != 0;
+                      e.sleepExt = (flags & (1ull << 12)) != 0; e.sleeping = e.sleepExt || e.sleepPlayer)
     PERLIN_ENTITY_SET(SetCrawling(uint64_t rid, bool crawling), e.crawling = crawling)
     PERLIN_ENTITY_SET(SetScale(uint64_t rid, float scale), e.scale = scale)
     PERLIN_ENTITY_SET(SetNameTag(uint64_t rid, const std::string& nameTag), e.nameTag = nameTag)
@@ -195,7 +198,8 @@ namespace perlin::entity {
     PERLIN_ENTITY_SET(SetOffHand(uint64_t rid, const std::string& item), e.offHand = item)
     PERLIN_ENTITY_SET(SetArmor(uint64_t rid, int slot, const std::string& item), if (slot >= 0 && slot < 4) e.armor[slot] = item)
     PERLIN_ENTITY_SET(Hurt(uint64_t rid), e.hurtSerial++)
-    PERLIN_ENTITY_SET(Swing(uint64_t rid), e.swingSerial++)
+    PERLIN_ENTITY_SET(Swing(uint64_t rid, bool offHand), e.swingSerial++; e.swingOffHand = offHand)
+    PERLIN_ENTITY_SET(SetMainLeft(uint64_t rid, bool left), e.mainLeft = left)
     PERLIN_ENTITY_SET(SetProperty(uint64_t rid, const std::string& key, float value), e.props[key] = value)
     PERLIN_ENTITY_SET(SetPropertyText(uint64_t rid, const std::string& key, const std::string& text), e.propText[key] = text)
 #undef PERLIN_ENTITY_SET

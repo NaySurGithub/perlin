@@ -254,6 +254,7 @@ namespace perlin {
                         bestD = d;
                         e.pos = {cx - kStep[dir][0] * 1.3, y + 0.5625, cz - kStep[dir][1] * 1.3};
                         e.yaw = static_cast<float>(dir * 90 + 180);
+                        e.bedDirection = dir;
                         e.headYaw = e.yaw;
                         e.pitch = 0.0f;
                     }
@@ -6390,6 +6391,9 @@ namespace perlin {
                 previewEntities.SetOwner(rid, 1000);
             if (const char* held = PERLIN_ENV("PERLIN_PREVIEW_HELD"))
                 previewEntities.SetHeld(rid, held);
+            if (const char* off = PERLIN_ENV("PERLIN_PREVIEW_OFFHAND"))
+                previewEntities.SetOffHand(rid, off);
+            previewEntities.SetMainLeft(rid, PERLIN_ENV("PERLIN_PREVIEW_LEFT_HANDED") != nullptr);
             if (const char* armor = PERLIN_ENV("PERLIN_PREVIEW_ARMOR")) {
                 static const char* parts[4] = {"helmet", "chestplate", "leggings", "boots"};
                 for (int i = 0; i < 4; i++)
@@ -6405,6 +6409,13 @@ namespace perlin {
                 previewEntities.SetFlags(rid, entity::flag::Gliding);
                 previewEntities.SetArmor(rid, 1, "minecraft:elytra");
             }
+            if (PERLIN_ENV("PERLIN_PREVIEW_USING")) {
+                entity::Entity preview;
+                if (previewEntities.Find(rid, preview))
+                    previewEntities.SetFlags(rid, preview.flags | entity::flag::UsingItem);
+            }
+            if (PERLIN_ENV("PERLIN_PREVIEW_BLOCKING"))
+                previewEntities.SetFlagsExtended(rid, 1ull << 8);
             if (PERLIN_ENV("PERLIN_PREVIEW_DEAD"))
                 previewEntities.Die(rid);
             if (PERLIN_ENV("PERLIN_PREVIEW_ENTITY_WALK"))
@@ -7950,6 +7961,7 @@ namespace perlin {
                     }
                     self.moveSerial = 1;
                     self.swingSerial = gSelfSwing;
+                    self.mainLeft = options.hand.leftHanded;
                     // Drive the same red hurt flash other mobs get; the own player isn't in the tracker so its
                     // hurt events never reached the renderer before.
                     self.hurtSerial = live ? live->HurtCount() : 0;
@@ -8426,6 +8438,8 @@ namespace perlin {
                     fpSelf->offHand = options.hand.showOffhand ? rs.off : std::string();
                     if (options.hand.leftHanded)
                         std::swap(fpSelf->mainHand, fpSelf->offHand);
+                    // The legacy first-person resource rig consumes physical slots.
+                    fpSelf->mainLeft = false;
                     entity::EntityRenderer::FrameIn fin;
                     fin.time = std::chrono::duration<double>(frameStart - startedAt).count();
                     fin.dt = dt;
