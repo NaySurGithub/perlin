@@ -39,6 +39,11 @@ namespace perlin {
         double gameTicks = 0.0;
     };
 
+    struct NativeHandleInfo {
+        std::string api, adapter;
+        uint64_t window = 0, display = 0, device = 0;
+    };
+
     struct UiVertex {
         float x, y, z;
         uint32_t abgr;
@@ -169,6 +174,7 @@ namespace perlin {
         // Replay export: render the game into an offscreen target that is captured instead of the window, so
         // UiLayer::Export (the progress panel) can stay on screen without ending up in the video. False = unsupported.
         virtual bool SetExportTarget(bool) { return false; }
+        virtual bool QueryNativeHandles(NativeHandleInfo&) const { return false; }
         virtual void RequestFrameCapture(CaptureSink) {}
 
         virtual void UploadCrosshair(const Texture& icons) = 0;

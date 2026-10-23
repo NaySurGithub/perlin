@@ -2,9 +2,12 @@
 
 #include "client/ui/Json.hpp"
 
+#include "util/ZipFile.hpp"
+
 #include <miniz.h>
 
 #include <algorithm>
+#include <cstdio>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
@@ -18,16 +21,26 @@ namespace perlin {
             return s;
         }
 
+        // Text files saved by Windows editors often start with a UTF-8 byte order mark, which the JSON reader rejects.
+        void StripBom(std::string& text) {
+            if (text.size() >= 3 && static_cast<unsigned char>(text[0]) == 0xEF && static_cast<unsigned char>(text[1]) == 0xBB &&
+                static_cast<unsigned char>(text[2]) == 0xBF)
+                text.erase(0, 3);
+        }
+
         struct Source {
             bool zip = false;
             fs::path folder;
             mz_zip_archive archive{};
+            FILE* file = nullptr;
             bool open = false;
             std::string prefix;
 
             ~Source() {
                 if (open)
                     mz_zip_reader_end(&archive);
+                if (file)
+                    std::fclose(file);
             }
 
             bool Read(const std::string& rel, std::string& out) {
@@ -36,6 +49,7 @@ namespace perlin {
                     if (!in)
                         return false;
                     out.assign(std::istreambuf_iterator<char>(in), {});
+                    StripBom(out);
                     return true;
                 }
                 const int index = mz_zip_reader_locate_file(&archive, (prefix + rel).c_str(), nullptr, 0);
@@ -47,9 +61,48 @@ namespace perlin {
                     return false;
                 out.assign(static_cast<const char*>(data), size);
                 mz_free(data);
+                StripBom(out);
                 return true;
             }
         };
+
+        // pack.mcmeta descriptions are plain text or a text component ({"text": "...", "color": "gold", "extra": [...]}, or a
+        // list of them). Flattened to text with section-sign formatting codes so the UI can colour it.
+        void Flatten(const ui::Json& node, std::string& out, const std::string& inheritedCode) {
+            static const std::pair<const char*, char> kColors[] = {
+                {"black", '0'}, {"dark_blue", '1'}, {"dark_green", '2'}, {"dark_aqua", '3'}, {"dark_red", '4'}, {"dark_purple", '5'},
+                {"gold", '6'}, {"gray", '7'}, {"dark_gray", '8'}, {"blue", '9'}, {"green", 'a'}, {"aqua", 'b'}, {"red", 'c'},
+                {"light_purple", 'd'}, {"yellow", 'e'}, {"white", 'f'}};
+            if (node.IsString()) {
+                out += node.string;
+                return;
+            }
+            if (node.IsArray()) {
+                for (const ui::Json& item : node.array)
+                    Flatten(item, out, inheritedCode);
+                return;
+            }
+            if (!node.IsObject())
+                return;
+            std::string code = inheritedCode;
+            if (const ui::Json* color = node.Find("color"))
+                for (const auto& [name, letter] : kColors)
+                    if (color->StringOr("") == name)
+                        code = std::string("\xC2\xA7") + letter;
+            std::string styles;
+            for (const auto& [key, letter] : {std::pair<const char*, char>{"bold", 'l'}, {"italic", 'o'}, {"obfuscated", 'k'}})
+                if (const ui::Json* flag = node.Find(key); flag && flag->type == ui::Json::Type::Bool && flag->boolean)
+                    styles += std::string("\xC2\xA7") + letter;
+            const bool formatted = !code.empty() || !styles.empty();
+            if (formatted)
+                out += code + styles;
+            if (const ui::Json* text = node.Find("text"))
+                out += text->StringOr("");
+            if (const ui::Json* extra = node.Find("extra"))
+                Flatten(*extra, out, code);
+            if (formatted)
+                out += "\xC2\xA7r";
+        }
 
         std::string TrimExt(std::string name) {
             const size_t dot = name.rfind('.');
@@ -66,25 +119,32 @@ namespace perlin {
         if (fs::is_directory(p, ec)) {
             src.folder = p;
         } else {
-            if (!mz_zip_reader_init_file(&src.archive, path.c_str(), 0))
+            if (!OpenZipReader(src.archive, p, src.file))
                 return meta;
             src.zip = true;
             src.open = true;
+            // The pack's root is the folder holding its manifest.json / pack.mcmeta / pack.json (the shallowest one if there are
+            // several), which may be inside a wrapper folder.
             const mz_uint count = mz_zip_reader_get_num_files(&src.archive);
+            size_t bestDepth = std::string::npos;
             for (mz_uint i = 0; i < count; i++) {
                 mz_zip_archive_file_stat st;
                 if (!mz_zip_reader_file_stat(&src.archive, i, &st))
                     continue;
-                const std::string file = Lower(st.m_filename);
-                const size_t slash = file.find('/');
-                if (file == "manifest.json" || file == "pack_icon.png" || file == "pack.png" || file == "pack.mcmeta")
-                    break;
-                if (slash != std::string::npos && (file.compare(slash + 1, std::string::npos, "manifest.json") == 0 ||
-                                                   file.compare(slash + 1, std::string::npos, "pack_icon.png") == 0 ||
-                                                   file.compare(slash + 1, std::string::npos, "pack.png") == 0 ||
-                                                   file.compare(slash + 1, std::string::npos, "pack.mcmeta") == 0)) {
-                    src.prefix = std::string(st.m_filename).substr(0, slash + 1);
-                    break;
+                std::string file = st.m_filename;
+                std::replace(file.begin(), file.end(), '\\', '/');
+                const std::string lower = Lower(file);
+                for (const char* marker : {"manifest.json", "pack.mcmeta", "pack.json"}) {
+                    const std::string m = marker;
+                    if (lower.size() < m.size() || lower.compare(lower.size() - m.size(), m.size(), m) != 0)
+                        continue;
+                    if (lower.size() > m.size() && lower[lower.size() - m.size() - 1] != '/')
+                        continue;
+                    const size_t depth = static_cast<size_t>(std::count(lower.begin(), lower.end(), '/'));
+                    if (depth < bestDepth && depth <= 2) {
+                        bestDepth = depth;
+                        src.prefix = file.substr(0, file.size() - m.size());
+                    }
                 }
             }
         }
@@ -119,7 +179,7 @@ namespace perlin {
             if (ui::Json::Parse(text, json, error))
                 if (const ui::Json* pack = json.Find("pack"))
                     if (const ui::Json* d = pack->Find("description"))
-                        meta.description = d->StringOr("");
+                        Flatten(*d, meta.description, "");
         }
         if (meta.name.empty() || meta.name.find("pack.name") != std::string::npos)
             meta.name = TrimExt(p.filename().string());

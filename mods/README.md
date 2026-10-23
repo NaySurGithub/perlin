@@ -54,6 +54,43 @@ The SDK leans on the compiler instead of strings:
 * **Chrono timers.** `ctx.after(2s, fn)`, `ctx.every(20_ticks, fn)` return a `TimerId`.
 * **Flags and sets.** `Permissions` is `meta::Flags<Permission>`; entity flags are a `meta::IndexSet<EntityFlag>`. `std::format("{}", abi::Screen::Mods)` prints `Mods`.
 
+## Class-style plugins
+
+The manifest (name, description, permissions, settings) stays in `name.json`, exactly as above; the class is only the code.
+
+```cpp
+#include <perlin/plugin.hpp>
+#include <mod_settings.hpp>
+
+struct Hello : perlin::Plugin {
+    void registerCommands(perlin::PluginCtx& ctx) override {   // called first; parameter types are the command grammar
+        ctx.command<"greet">("Say hello", this, &Hello::greet);
+    }
+    void onEnable(perlin::PluginCtx& ctx) override {
+        ctx.bind<"wave">("Wave", perlin::Key::R, this, &Hello::wave);
+        ctx.on_change(settings::shout, [this] { /* ... */ });
+    }
+    void onDisable(perlin::PluginCtx&) override {}
+    void onChatReceived(const perlin::abi::EventChat& chat);   // any onXxx for an event is subscribed automatically
+    void greet(std::string who, std::optional<int> times);
+    void wave();
+};
+PERLIN_REGISTER(Hello)
+```
+
+`PluginCtx` forwards everything on `Context` (`on`, `after`, `every`, `command`, `bind`, `hud`, `on_change`, `on_press`, `config`, `print`, `raw()`); `command`, `bind` and `hud` also take an object and a member function. Event methods are `onTick`, `onFrame`, `onChatReceived`, `onChatSending`, `onConnected`, `onDisconnected`, `onKey`, `onDamage`, `onDeath`, `onRespawned`, `onDimensionChanged`, `onScreenChanged`, `onSlotChanged`, `onEntityAdded`, `onEntityRemoved`, `onSound`, `onPacket`, `onTitle`, `onSettingChanged`, `onLook`, `onMouseMove`, `onMouseButton`, `onMouseWheel`, `onKeyRaw`, `onTextInput`; each takes the payload or nothing, and may return `Flow`. `mods/waila` and `mods/barrel_roll` are written this way; the classic `PERLIN_PLUGIN(ctx)` style keeps working.
+
+## Bringing your own renderer (`perlin/gfx.hpp`, `perlin/input.hpp`)
+
+Enough is exposed to hook up Dear ImGui or any other immediate-mode library:
+
+* `gfx::Texture::create(w, h, rgba)` / `update` for atlases, `gfx::display()` for the framebuffer size and mouse.
+* `gfx::submit(layer, z, vertices, indices, commands)` takes ImGui's own arrays: 20-byte vertices (`ImDrawVert`), 16- or 32-bit indices, and commands with a clip rectangle, a texture id and index/vertex offsets. It is drawn every frame on top of everything with straight alpha until replaced. `gfx::DrawList` is a small builder for hand-made lists.
+* `input::grab(mouse, keyboard)` (needs `control`) delivers `MouseMove`, `MouseButton`, `MouseWheel`, `KeyRaw` and `TextInput` events and frees the cursor. Pressing Escape three times quickly always releases every grab.
+* `gfx::native_handles()` (needs the **`native`** permission) returns the graphics API, adapter, window, display and device handles as plain integers. A WebAssembly module cannot dereference host pointers, so these are for identification and for a future native bridge; rendering goes through `gfx::submit`.
+
+`examples/sketchpad` is a complete small example. Not tested inside the game yet.
+
 ## Everything is exposed
 
 The wire format is derived from the member list of each struct (`abi.hpp`), so adding a field to a struct the host already sends, such as an entity's attributes, exposes it to every plugin and every language with no wrapper to write. `tools/check_api.py` (run by CTest as `mod_api_check`) fails when an operation is declared without a host or without an SDK wrapper, or an event is never delivered. Every enumeration in `perlin::abi` prints by name with `std::format` without being listed anywhere. `perlin/json.hpp` is a small JSON reader for the text the game hands over (block entity tags, option dumps, HTTP bodies): `json::parse(text)` then `tag["Items"][0]["Name"].string()`; missing keys read as null, so chains never fail.
@@ -154,7 +191,7 @@ The C++ SDK is a convenience. A plugin is any WebAssembly module (core wasm, no 
   "version": "1.0.0",
   "author": "You",
   "website": "https://example.com",
-  "permissions": ["network", "files", "packets", "control"]
+  "permissions": ["network", "files", "packets", "control", "native"]
 }
 ```
 
@@ -171,11 +208,12 @@ The API exposes everything the game knows and can do. Only the dangerous operati
 | `network` | HTTPS requests, `act::open_url`, downloads |
 | `files` | `fs::copy`, `fs::move` and (with `network`) `net::download` between the mod's own folder and the game's screenshot, resource-pack and shader-pack folders; never overwrites a game file |
 | `packets` | sending raw protocol packets (any id), dropping incoming or outgoing packets by id, injecting packets as if the server had sent them |
+| `native` | `gfx::native_handles()`: the window and graphics-device handles |
 | `storage` | always granted; reads and writes under `<data dir>/mods/<name>.data/` only |
 
 An operation without its permission returns `Error::denied()` instead of running.
 
-**Approval.** A mod that asks for `network`, `files`, `control` or `packets` is never enabled just because it was dropped into the folder. It shows as *Needs approval* in the Mods screen, with a plain-language list of what it asks to do, and starts only after you press **Allow & Enable**. The approval covers exactly the permissions it asked for; a later update that asks for more switches it off again until you approve it. Mods that only use the always-allowed operations start right away.
+**Approval.** A mod that asks for `network`, `files`, `control`, `packets` or `native` is never enabled just because it was dropped into the folder. It shows as *Needs approval* in the Mods screen, with a plain-language list of what it asks to do, and starts only after you press **Allow & Enable**. The approval covers exactly the permissions it asked for; a later update that asks for more switches it off again until you approve it. Mods that only use the always-allowed operations start right away.
 
 ## Sandbox
 

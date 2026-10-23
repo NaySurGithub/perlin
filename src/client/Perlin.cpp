@@ -47,6 +47,7 @@
 #include "network/LanDiscovery.hpp"
 #include "network/RakNet.hpp"
 #include "network/Realms.hpp"
+#include "network/Featured.hpp"
 #include "client/ui/TitleScreen.hpp"
 #include "client/ui/TitlePanorama.hpp"
 #include "client/ui/UiLayout.hpp"
@@ -71,6 +72,7 @@
 #include "world/level/block/BlockPalette.hpp"
 #include "client/ui/UiAssets.hpp"
 #include "util/Paths.hpp"
+#include "util/Utf8.hpp"
 #include "client/platform/web/WebLoop.hpp"
 #include "network/NetherNet.hpp"
 
@@ -254,7 +256,6 @@ namespace perlin {
                         bestD = d;
                         e.pos = {cx - kStep[dir][0] * 1.3, y + 0.5625, cz - kStep[dir][1] * 1.3};
                         e.yaw = static_cast<float>(dir * 90 + 180);
-                        e.bedDirection = dir;
                         e.headYaw = e.yaw;
                         e.pitch = 0.0f;
                     }
@@ -2566,7 +2567,7 @@ namespace perlin {
                     const std::string& name = packPending[i];
                     const PackMeta& m = packMeta(dir, name);
                     ui::PackEntry e;
-                    e.name = m.name.empty() ? name : m.name;
+                    e.name = EnsureUtf8(m.name.empty() ? name : m.name);
                     e.desc = m.description;
                     e.icon = packIcon(dir, name, m, "textures/blocks/stone");
                     e.canUnselect = true;
@@ -2586,7 +2587,7 @@ namespace perlin {
                         continue;
                     const PackMeta& m = packMeta(dir, name);
                     ui::PackEntry e;
-                    e.name = m.name.empty() ? name : m.name;
+                    e.name = EnsureUtf8(m.name.empty() ? name : m.name);
                     e.desc = m.description;
                     e.icon = packIcon(dir, name, m, "textures/blocks/stone");
                     e.canSelect = true;
@@ -2893,6 +2894,7 @@ namespace perlin {
                     add(abi::Permission::Files, "copy, move and download files");
                     add(abi::Permission::Control, "act for you (chat, commands, movement, options)");
                     add(abi::Permission::Packets, "send raw game packets");
+                    add(abi::Permission::Native, "read the game window and graphics-device handles");
                     body += "\n\n" + std::string(info.needsApproval ? "This mod asks to: " : "Allowed to: ") + asks + ".";
                     if (info.needsApproval)
                         body += " It stays off until you press Allow & Enable.";
@@ -4585,6 +4587,10 @@ namespace perlin {
             }).detach();
             return;
         }
+        if (tab == T::Saved) {
+            RefreshFeatured(false);
+            return;
+        }
         if (tab != T::Realms && tab != T::Friends)
             return;
         const bool forRealms = tab == T::Realms;
@@ -4669,6 +4675,59 @@ namespace perlin {
             message = !ok ? error : (target.empty() ? (forRealms ? "You have no Realms yet" : "Your friends list is empty") : std::string());
             tabDirty = true;
             busy = false;
+        }).detach();
+    }
+
+    // Featured servers: the catalog the game's own Servers screen shows. Needs a Microsoft account; without one the
+    // dropdown just isn't there. Refetched at most every 10 minutes unless the Refresh button asks.
+    void Perlin::RefreshFeatured(bool force) {
+        if (!(accounts.Active() && accounts.Active()->microsoft)) {
+            std::lock_guard lock(tabMutex);
+            tabFeatured.clear();
+            return;
+        }
+        if (!force && featuredAt != Clock::time_point{} && Clock::now() - featuredAt < std::chrono::minutes(10))
+            return;
+        if (featuredBusy.exchange(true))
+            return;
+        const std::string authPath = ActiveAuthPath();
+        std::thread([this, authPath] {
+            xbox::Account acct(authPath);
+            std::string error;
+            std::vector<featured::Server> list;
+            const bool ok = acct.SignInSaved(error) && featured::List(acct, list, error);
+            if (!ok)
+                std::cout << "[featured] " << error << std::endl;
+            std::vector<ui::ServerEntry> rows;
+            for (const featured::Server& f : list) {
+                ui::ServerEntry e;
+                e.kind = ui::ServerEntry::Kind::Lan;
+                e.name = f.name;
+                e.address = f.host + ":" + std::to_string(f.port);
+                e.right = f.ranked ? "Featured" : "Creator";
+                e.pingable = true;
+                e.motd = f.description;
+                e.note = e.address + (f.ranked ? "" : "  -  Creator");
+                const std::string key = "fs:" + e.address;
+                if (!f.logoUrl.empty() && !ui::UiAssets::Instance().HasHead(key)) {
+                    const http::Response pic = http::GetUrl(f.logoUrl, {}, 8);
+                    Texture t;
+                    if (pic.status == 200 && LoadTextureMemory(reinterpret_cast<const unsigned char*>(pic.body.data()), pic.body.size(), t))
+                        ui::UiAssets::Instance().SetHead(key, std::move(t));
+                }
+                if (ui::UiAssets::Instance().HasHead(key))
+                    e.icon = key;
+                rows.push_back(std::move(e));
+            }
+            {
+                std::lock_guard lock(tabMutex);
+                if (ok) {
+                    tabFeatured = std::move(rows);
+                    featuredAt = Clock::now();
+                    featuredPing = true;
+                }
+            }
+            featuredBusy = false;
         }).detach();
     }
 
@@ -5129,7 +5188,7 @@ namespace perlin {
                 title.tab = ui::ServerTab::Saved;
                 for (size_t i = 0; i < title.servers.size(); i++)
                     if (title.servers[i].address == options.server)
-                        title.selected = static_cast<int>(i);
+                        title.selected = static_cast<int>(i) + title.savedOffset;
             }
             if (titleReturnToReplays) {
                 titleReturnToReplays = false;
@@ -5180,11 +5239,11 @@ namespace perlin {
                 return;
             }
             const ui::ServerEntry entry{title.name.empty() ? "Minecraft Server" : title.name, title.address};
-            if (title.adding || title.selected < 0 || title.selected >= static_cast<int>(title.servers.size())) {
+            if (title.adding || title.SavedIndex() < 0) {
                 title.servers.push_back(entry);
-                title.selected = static_cast<int>(title.servers.size()) - 1;
+                title.selected = static_cast<int>(title.servers.size()) - 1 + title.savedOffset;
             } else {
-                title.servers[static_cast<size_t>(title.selected)] = entry;
+                title.servers[static_cast<size_t>(title.SavedIndex())] = entry;
             }
             SaveServers(title.servers);
             title.page = ui::TitlePage::Servers;
@@ -5249,7 +5308,7 @@ namespace perlin {
                 title.name = "Minecraft Server";
                 title.address.clear();
             } else {
-                const ui::ServerEntry& s = title.servers[static_cast<size_t>(title.selected)];
+                const ui::ServerEntry& s = title.servers[static_cast<size_t>(std::max(0, title.SavedIndex()))];
                 title.name = s.name;
                 title.address = s.address;
             }
@@ -5369,6 +5428,8 @@ namespace perlin {
             for (const ui::ServerEntry& e : title.servers)
                 addresses.push_back(e.address);
             PingServers(addresses);
+            if (!PERLIN_ENV("PERLIN_PREVIEW"))
+                RefreshFeatured(false);
         }
         titleLastPage = title.page;
         {
@@ -5377,6 +5438,7 @@ namespace perlin {
             {
                 std::lock_guard lock(tabMutex);
                 joinedFriend = std::move(friendLeaseReady);
+                title.featured = tabFeatured;
                 if (tabDirty) {
                     title.lan = tabLan;
                     title.realms = tabRealms;
@@ -5437,6 +5499,50 @@ namespace perlin {
                 e.pingMs = r.pingMs;
             }
         }
+        if (featuredPing.exchange(false)) {
+            std::vector<std::string> addresses;
+            {
+                std::lock_guard lock(pingMutex);
+                for (const ui::ServerEntry& e : title.featured) {
+                    pingResults.erase(e.address);
+                    addresses.push_back(e.address);
+                }
+            }
+            if (!addresses.empty())
+                PingServers(addresses);
+        }
+        {
+            std::lock_guard lock(pingMutex);
+            for (ui::ServerEntry& e : title.featured) {
+                const auto it = pingResults.find(e.address);
+                const ui::ServerEntry blank{};
+                const ui::ServerEntry& r = it == pingResults.end() ? blank : it->second;
+                e.status = r.status;
+                e.version = r.version;
+                e.players = r.players;
+                e.maxPlayers = r.maxPlayers;
+                e.pingMs = r.pingMs;
+            }
+        }
+        {
+            title.savedView.clear();
+            if (!title.featured.empty()) {
+                ui::ServerEntry head;
+                head.kind = ui::ServerEntry::Kind::Header;
+                head.name = "Featured Servers [" + std::to_string(title.featured.size()) + "]";
+                head.realmId = 3;
+                title.savedView.push_back(head);
+                if (title.friendsOpen[3])
+                    title.savedView.insert(title.savedView.end(), title.featured.begin(), title.featured.end());
+            }
+            const int offset = static_cast<int>(title.savedView.size());
+            if (offset != title.savedOffset) {
+                if (title.tab == ui::ServerTab::Saved && title.selected >= title.savedOffset)
+                    title.selected += offset - title.savedOffset;
+                title.savedOffset = offset;
+            }
+            title.savedView.insert(title.savedView.end(), title.servers.begin(), title.servers.end());
+        }
         title.nativePanorama = panoramaReady;
         if (!logoBedrock && now >= logoRetryAt) {
             logoRetryAt = now + std::chrono::seconds(2);
@@ -5481,7 +5587,7 @@ namespace perlin {
             signature += "|" + title.joinMessage + "|" + title.name + "|" + title.address + "|" + (title.caret ? "c" : "n") + (title.adding ? "a" : "e");
         else if (title.page == ui::TitlePage::Servers) {
             signature += "|t" + std::to_string(static_cast<int>(title.tab)) + "|" + title.tabMessage + "|" + title.joinMessage;
-            signature += "|" + std::to_string(title.Shown().size()) + (title.friendsOpen[0] ? "H" : "h") + (title.friendsOpen[1] ? "O" : "o") + (title.friendsOpen[2] ? "F" : "f");
+            signature += "|" + std::to_string(title.Shown().size()) + (title.friendsOpen[0] ? "H" : "h") + (title.friendsOpen[1] ? "O" : "o") + (title.friendsOpen[2] ? "F" : "f") + (title.friendsOpen[3] ? "S" : "s");
             for (const ui::ServerEntry& s : title.Shown())
                 signature += "|" + s.name + "|" + s.address + "|" + std::to_string(static_cast<int>(s.status)) + s.motd + "|" + std::to_string(s.players) + "/" +
                              std::to_string(s.maxPlayers) + "|" + std::to_string(s.pingMs) + s.right + s.note + (s.offline ? "o" : "") +
@@ -5565,8 +5671,8 @@ namespace perlin {
             } else if (hover == ui::kServerEdit) {
                 edit(false);
             } else if (hover == ui::kServerDelete) {
-                if (title.tab == ui::ServerTab::Saved && title.selected >= 0 && title.selected < static_cast<int>(title.servers.size())) {
-                    title.servers.erase(title.servers.begin() + title.selected);
+                if (title.SavedIndex() >= 0) {
+                    title.servers.erase(title.servers.begin() + title.SavedIndex());
                     title.selected = -1;
                     SaveServers(title.servers);
                 }
@@ -5580,6 +5686,7 @@ namespace perlin {
                 SetJoinMessage({});
                 RefreshTab(title.tab);
             } else if (hover == ui::kServerRefresh) {
+                RefreshFeatured(true);
                 LoadServers(title.servers, options.server);
                 title.selected = -1;
                 std::vector<std::string> addresses;
@@ -5602,7 +5709,7 @@ namespace perlin {
             } else if (const int row = rowOf(ui::kServerRowPrefix); row >= 0) {
                 const std::vector<ui::ServerEntry>& shown = title.Shown();
                 if (row < static_cast<int>(shown.size()) && shown[static_cast<size_t>(row)].kind == ui::ServerEntry::Kind::Header) {
-                    title.friendsOpen[std::clamp<long long>(shown[static_cast<size_t>(row)].realmId, 0, 2)] ^= true;
+                    title.friendsOpen[std::clamp<long long>(shown[static_cast<size_t>(row)].realmId, 0, 3)] ^= true;
                     title.selected = -1;
                 } else {
                     if (row == titleClickRow && now - titleClickAt < std::chrono::milliseconds(400))
@@ -5713,8 +5820,9 @@ namespace perlin {
                 loadingStartAt = now;
             const int chunks = session->ChunksReceived();
             const bool assets = levelRenderer && levelRenderer->Blocks().Complete();
-            const bool meshed = levelRenderer && levelRenderer->PendingMeshes() == 0 && levelRenderer->MeshesInFlight() == 0;
-            const bool enough = chunks >= 9 && assets && meshed;
+            // Don't wait for the mesh queue to drain: chunks keep streaming in, so it can stay busy for many
+            // seconds and the screen would sit at 98% while you're already standing in the world.
+            const bool enough = chunks >= 9 && assets;
             if (enough) {
                 if (!loadingReadyArmed) {
                     loadingReadyArmed = true;
@@ -5723,8 +5831,8 @@ namespace perlin {
             } else {
                 loadingReadyArmed = false;
             }
-            const bool timeout = now - loadingStartAt > std::chrono::seconds(12);
-            if ((loadingReadyArmed && now - loadingReadyAt > std::chrono::milliseconds(250)) || timeout) {
+            const bool timeout = now - loadingStartAt > std::chrono::seconds(5);
+            if (loadingReadyArmed || timeout) {
                 loadingDone = true;
                 show = false;
             } else {
@@ -6382,18 +6490,10 @@ namespace perlin {
                 const uint64_t flags = variant.find("baby") != std::string::npos ? entity::flag::Baby : 0;
                 previewEntities.AddEntity(rid, static_cast<int64_t>(rid), "minecraft:" + type, p, PERLIN_ENV("PERLIN_PREVIEW_ENTITY_PITCH") ? static_cast<float>(std::atof(PERLIN_ENV("PERLIN_PREVIEW_ENTITY_PITCH"))) : 0.0f, yaw, yaw, flags, 1.0f, 0, 0, 0);
             }
-            if (PERLIN_ENV("PERLIN_PREVIEW_HEAD_YAW") || PERLIN_ENV("PERLIN_PREVIEW_ENTITY_PITCH")) {
-                const float head = yaw + (PERLIN_ENV("PERLIN_PREVIEW_HEAD_YAW") ? static_cast<float>(std::atof(PERLIN_ENV("PERLIN_PREVIEW_HEAD_YAW"))) : 0.0f);
-                const float pitch = PERLIN_ENV("PERLIN_PREVIEW_ENTITY_PITCH") ? static_cast<float>(std::atof(PERLIN_ENV("PERLIN_PREVIEW_ENTITY_PITCH"))) : 0.0f;
-                previewEntities.Move(rid, type == "player" ? p + glm::dvec3(0, entity::kPlayerEye, 0) : p, pitch, yaw, head, true);
-            }
             if (type == "fishing_hook")
                 previewEntities.SetOwner(rid, 1000);
             if (const char* held = PERLIN_ENV("PERLIN_PREVIEW_HELD"))
                 previewEntities.SetHeld(rid, held);
-            if (const char* off = PERLIN_ENV("PERLIN_PREVIEW_OFFHAND"))
-                previewEntities.SetOffHand(rid, off);
-            previewEntities.SetMainLeft(rid, PERLIN_ENV("PERLIN_PREVIEW_LEFT_HANDED") != nullptr);
             if (const char* armor = PERLIN_ENV("PERLIN_PREVIEW_ARMOR")) {
                 static const char* parts[4] = {"helmet", "chestplate", "leggings", "boots"};
                 for (int i = 0; i < 4; i++)
@@ -6409,13 +6509,6 @@ namespace perlin {
                 previewEntities.SetFlags(rid, entity::flag::Gliding);
                 previewEntities.SetArmor(rid, 1, "minecraft:elytra");
             }
-            if (PERLIN_ENV("PERLIN_PREVIEW_USING")) {
-                entity::Entity preview;
-                if (previewEntities.Find(rid, preview))
-                    previewEntities.SetFlags(rid, preview.flags | entity::flag::UsingItem);
-            }
-            if (PERLIN_ENV("PERLIN_PREVIEW_BLOCKING"))
-                previewEntities.SetFlagsExtended(rid, 1ull << 8);
             if (PERLIN_ENV("PERLIN_PREVIEW_DEAD"))
                 previewEntities.Die(rid);
             if (PERLIN_ENV("PERLIN_PREVIEW_ENTITY_WALK"))
@@ -6974,8 +7067,13 @@ namespace perlin {
                         if (live) {
                             live->SendSwingArm(gAim.kind == AimHit::Kind::Block ? "mine" : "attack");
                             if (gAim.kind == AimHit::Kind::Entity) {
-                                float click[3] = {static_cast<float>(gAim.point.x), static_cast<float>(gAim.point.y),
-                                                  static_cast<float>(gAim.point.z)};
+                                // The click position is where the ray meets the target's hitbox, relative to the target's base
+                                // coordinate, not a world position.
+                                const glm::dvec3 feet((gAim.boxLo.x + gAim.boxHi.x) * 0.5, gAim.boxLo.y, (gAim.boxLo.z + gAim.boxHi.z) * 0.5);
+                                const glm::vec3 offset = EntityClickOffset({camera.x, camera.y, camera.z}, glm::dvec3(camera.Direction()), feet,
+                                                                           (gAim.boxHi.x - gAim.boxLo.x) * 0.5, gAim.boxHi.y - gAim.boxLo.y,
+                                                                           (gAim.boxLo + gAim.boxHi) * 0.5);
+                                float click[3] = {offset.x, offset.y, offset.z};
                                 live->SendAttackEntity(gAim.entity, eyeF, click);
                             }
                         }
@@ -7149,8 +7247,10 @@ namespace perlin {
                         if (usePressed && live && gAim.kind == AimHit::Kind::Entity) {
                             entity::Entity target;
                             if (live->Entities().Find(gAim.entity, target) && IsInteractable(target.type)) {
-                                float click[3] = {static_cast<float>(gAim.point.x - target.pos.x), static_cast<float>(gAim.point.y - target.pos.y),
-                                                  static_cast<float>(gAim.point.z - target.pos.z)};
+                                const glm::vec3 offset = EntityClickOffset({camera.x, camera.y, camera.z}, glm::dvec3(camera.Direction()), target.pos,
+                                                                           (gAim.boxHi.x - gAim.boxLo.x) * 0.5, gAim.boxHi.y - gAim.boxLo.y,
+                                                                           (gAim.boxLo + gAim.boxHi) * 0.5);
+                                float click[3] = {offset.x, offset.y, offset.z};
                                 { handRenderer.Swing(options.hand); gSelfSwing++; }
                                 live->SendSwingArm("interact");
                                 live->SendInteractEntity(gAim.entity, eyeF, click);
@@ -7925,19 +8025,16 @@ namespace perlin {
                     for (entity::Entity& e : entities)
                         if (e.sleeping && e.isPlayer)
                             ApplyBedPose(live->NetLevel(), e);
-                if (!live && (!previewWalk.empty() || PERLIN_ENV("PERLIN_PREVIEW_TURN"))) {
+                if (!live && !previewWalk.empty()) {
                     static std::unordered_map<uint64_t, glm::dvec3> base;
                     static const auto t0 = std::chrono::steady_clock::now();
                     const double t = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
                     for (entity::Entity& pe : entities)
-                        if (std::find(previewWalk.begin(), previewWalk.end(), pe.runtimeId) != previewWalk.end() || PERLIN_ENV("PERLIN_PREVIEW_TURN")) {
+                        if (std::find(previewWalk.begin(), previewWalk.end(), pe.runtimeId) != previewWalk.end()) {
                             const glm::dvec3 b = base.emplace(pe.runtimeId, pe.pos).first->second;
                             const double yawRad = glm::radians(static_cast<double>(pe.yaw));
-                            if (std::find(previewWalk.begin(), previewWalk.end(), pe.runtimeId) != previewWalk.end())
-                                pe.pos = b + glm::dvec3(-std::sin(yawRad), 0.0, std::cos(yawRad)) * std::sin(t * 1.5) * 1.5;
-                            if (PERLIN_ENV("PERLIN_PREVIEW_TURN"))
-                                pe.headYaw = pe.yaw + static_cast<float>(std::sin(t * 1.5) * 100.0);
-                            previewEntities.Move(pe.runtimeId, pe.isPlayer ? pe.pos + glm::dvec3(0, entity::kPlayerEye, 0) : pe.pos, pe.pitch, pe.yaw, pe.headYaw, true);
+                            pe.pos = b + glm::dvec3(-std::sin(yawRad), 0.0, std::cos(yawRad)) * std::sin(t * 1.5) * 1.5;
+                            previewEntities.Move(pe.runtimeId, pe.pos, pe.pitch, pe.yaw, pe.headYaw, true);
                         }
                 }
                 const bool firstPerson = camera.mode == PerspectiveMode::FirstPerson;
@@ -7961,7 +8058,6 @@ namespace perlin {
                     }
                     self.moveSerial = 1;
                     self.swingSerial = gSelfSwing;
-                    self.mainLeft = options.hand.leftHanded;
                     // Drive the same red hurt flash other mobs get; the own player isn't in the tracker so its
                     // hurt events never reached the renderer before.
                     self.hurtSerial = live ? live->HurtCount() : 0;
@@ -8438,8 +8534,6 @@ namespace perlin {
                     fpSelf->offHand = options.hand.showOffhand ? rs.off : std::string();
                     if (options.hand.leftHanded)
                         std::swap(fpSelf->mainHand, fpSelf->offHand);
-                    // The legacy first-person resource rig consumes physical slots.
-                    fpSelf->mainLeft = false;
                     entity::EntityRenderer::FrameIn fin;
                     fin.time = std::chrono::duration<double>(frameStart - startedAt).count();
                     fin.dt = dt;
@@ -8532,6 +8626,7 @@ namespace perlin {
                         uiClickWasDown = pressed;
                     }
                     hud->Render();
+                    DrawModGfx(fbW, fbH);
                     const bool creativeUi = hudState.mode == ui::GameMode::Creative || PERLIN_ENV("PERLIN_PREVIEW_CREATIVE");
                     if (invShown && dollSelf && !invWorkbench && !invHorse && (!creativeUi || creativeDollVisible)) {
                         const int scale = hud->OverlayScale();

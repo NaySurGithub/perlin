@@ -75,7 +75,30 @@ jobs:
 
       - name: Install macOS packages
         if: runner.os == 'macOS'
-        run: brew install ninja openssl@3
+        run: |
+          brew install ninja
+          # Homebrew's fmt is a dynamic library that would get picked up by a dependency's find_package/pkg-config and then
+          # be missing on other Macs (libfmt.12.dylib). Remove it so everything is built from the pinned sources instead.
+          brew uninstall --ignore-dependencies fmt || true
+
+      - name: Cache OpenSSL (macOS)
+        if: runner.os == 'macOS'
+        id: openssl-mac-cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}/ossl-mac
+          key: openssl-mac12-${{ matrix.name }}-${{ env.OPENSSL_VERSION }}-v1
+
+      - name: Build OpenSSL for macOS 12 (static)
+        if: runner.os == 'macOS' && steps.openssl-mac-cache.outputs.cache-hit != 'true'
+        run: |
+          export MACOSX_DEPLOYMENT_TARGET=12.0
+          git clone --depth 1 -b "$OPENSSL_VERSION" https://github.com/openssl/openssl openssl-src
+          cd openssl-src
+          if [ "$(uname -m)" = arm64 ]; then T=darwin64-arm64-cc; else T=darwin64-x86_64-cc; fi
+          ./Configure "$T" no-shared no-tests -mmacosx-version-min=12.0 --prefix="$GITHUB_WORKSPACE/ossl-mac" --openssldir="$GITHUB_WORKSPACE/ossl-mac/ssl"
+          make -j"$(sysctl -n hw.ncpu)" build_libs
+          make install_dev
 
       - name: Cache OpenSSL (Windows)
         if: runner.os == 'Windows'
@@ -148,6 +171,7 @@ jobs:
           cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DPERLIN_BUILD_TESTS=ON
           -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
           -DCMAKE_OSX_DEPLOYMENT_TARGET=12.0
+          ${{ runner.os == 'macOS' && format('-DOPENSSL_ROOT_DIR={0}/ossl-mac -DCMAKE_DISABLE_FIND_PACKAGE_fmt=ON', github.workspace) || '' }}
 
       - name: Build
         run: cmake --build build --config Release --parallel
@@ -157,6 +181,13 @@ jobs:
 
       - name: Package
         run: cmake --install build --config Release --prefix dist
+
+      - name: Check macOS binary only needs system libraries
+        if: runner.os == 'macOS'
+        run: |
+          bin=$(find dist -type f -perm +111 -name 'Perlin*' | head -1)
+          echo "$bin"; otool -L "$bin"; otool -l "$bin" | grep -A3 LC_BUILD_VERSION
+          if otool -L "$bin" | tail -n +2 | grep -Ev '^\s+(/usr/lib/|/System/Library/)' ; then echo "::error::links a non-system dylib"; exit 1; fi
 
       - name: Save dependency cache
         if: always() && steps.cpm-cache.outputs.cache-hit != 'true'

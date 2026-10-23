@@ -1,4 +1,4 @@
-#include <perlin/perlin.hpp>
+#include <perlin/plugin.hpp>
 
 #include <mod_settings.hpp>
 
@@ -151,18 +151,22 @@ namespace {
     };
 }
 
-PERLIN_PLUGIN(ctx) {
-    static Overlay overlay;
+struct Waila : Plugin {
+    void onEnable(PluginCtx& ctx) override {
+        ctx.hud<"waila">(this, &Waila::draw);
+        ctx.bind<"toggle">("Toggle WAILA", Key::F8, this, &Waila::toggle);
+        ctx.on_press(settings::reset_position, [] {
+            (void)settings::anchor_x.set(0.5);
+            (void)settings::anchor_y.set(0.0);
+        });
+        ctx.on_change(settings::theme, [this](settings::Theme) { overlay.signature.clear(); });
+        ctx.on_change(settings::show_icon, [this](bool) { overlay.signature.clear(); });
+    }
 
-    ctx.hud<"waila">([](ui::Canvas& g) { overlay.frame(g); });
+    void draw(ui::Canvas& g) { overlay.frame(g); }
+    void toggle() { (void)settings::display_tooltip.set(!settings::display_tooltip); }
 
-    ctx.bind<"toggle">("Toggle WAILA", Key::F8, [] { (void)settings::display_tooltip.set(!settings::display_tooltip); });
-
-    ctx.on_press(settings::reset_position, [] {
-        (void)settings::anchor_x.set(0.5);
-        (void)settings::anchor_y.set(0.0);
-    });
-
-    ctx.on_change(settings::theme, [](settings::Theme) { overlay.signature.clear(); });
-    ctx.on_change(settings::show_icon, [](bool) { overlay.signature.clear(); });
-}
+private:
+    Overlay overlay;
+};
+PERLIN_REGISTER(Waila)

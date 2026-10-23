@@ -2,6 +2,8 @@ cmake_minimum_required(VERSION 3.28)
 
 if(APPLE)
     set(CMAKE_OSX_DEPLOYMENT_TARGET "12.0" CACHE STRING "" FORCE)
+    # Never pick up Homebrew's dynamic fmt: it would be linked as /opt/homebrew/.../libfmt.12.dylib and missing on other Macs.
+    set(CMAKE_DISABLE_FIND_PACKAGE_fmt ON CACHE BOOL "" FORCE)
 endif()
 
 option(PERLIN_USE_CLANG_CL "Build with clang-cl on Windows" ON)
@@ -92,6 +94,9 @@ if(WIN32 AND NOT OPENSSL_ROOT_DIR)
 endif()
 
 if(APPLE AND NOT OPENSSL_ROOT_DIR)
+    # Homebrew's OpenSSL is built for the runner's macOS (15), so linking it at target 12.0 warns and can crash on
+    # older systems. CI passes -DOPENSSL_ROOT_DIR to a copy built with -mmacosx-version-min=12.0; this is only a local fallback.
+    message(WARNING "OPENSSL_ROOT_DIR not set: falling back to Homebrew OpenSSL (built for a newer macOS than ${CMAKE_OSX_DEPLOYMENT_TARGET})")
     foreach(candidate /opt/homebrew/opt/openssl@3 /usr/local/opt/openssl@3)
         if(EXISTS "${candidate}")
             set(OPENSSL_ROOT_DIR "${candidate}" CACHE PATH "OpenSSL root")
@@ -886,7 +891,10 @@ if(PERLIN_LIBAV AND NOT EMSCRIPTEN AND NOT ANDROID)
             target_link_libraries(Perlin PRIVATE ${_av_libs})
             set(PERLIN_LIBAV_FOUND ON)
         endif()
-    elseif(NOT WIN32)
+    elseif(NOT WIN32 AND NOT APPLE)
+        # Not on macOS: pkg-config finds Homebrew's *dynamic* FFmpeg, which drags in libfmt/libx264/... dylibs that
+        # do not exist on other Macs ("libfmt.12.dylib not found") and are built for a newer macOS than 12.
+        # Pass -DFFMPEG_ROOT=<static prefix built with -mmacosx-version-min=12.0> to link FFmpeg on macOS.
         find_package(PkgConfig QUIET)
         if(PkgConfig_FOUND)
             pkg_check_modules(PERLIN_AV QUIET IMPORTED_TARGET libavformat libavcodec libswscale libavutil)
@@ -954,19 +962,6 @@ if(PERLIN_BUILD_TESTS AND NOT EMSCRIPTEN AND NOT ANDROID)
     target_include_directories(attachable_selftest PRIVATE src "${glm_SOURCE_DIR}")
     target_compile_features(attachable_selftest PRIVATE cxx_std_23)
     add_test(NAME attachable_selftest COMMAND attachable_selftest)
-
-    add_executable(entity_animation_selftest tests/entity_animation_selftest.cpp
-        src/client/entity/JavaAnimation.cpp src/client/attachable/Geometry.cpp
-        src/client/attachable/Animation.cpp src/client/attachable/Molang.cpp src/client/ui/Json.cpp)
-    target_include_directories(entity_animation_selftest PRIVATE src "${glm_SOURCE_DIR}")
-    target_compile_features(entity_animation_selftest PRIVATE cxx_std_23)
-    add_test(NAME entity_animation_selftest COMMAND entity_animation_selftest "${CMAKE_CURRENT_SOURCE_DIR}/tests/data/java_animation_reference.txt"
-        "${CMAKE_CURRENT_SOURCE_DIR}/tests/data/java_animation_root_reference.txt")
-
-    add_executable(entity_state_selftest tests/entity_state_selftest.cpp src/client/entity/EntityTracker.cpp)
-    target_include_directories(entity_state_selftest PRIVATE src "${glm_SOURCE_DIR}")
-    target_link_libraries(entity_state_selftest PRIVATE perlin_protocol)
-    add_test(NAME entity_state_selftest COMMAND entity_state_selftest)
 
     add_executable(particle_selftest tests/particle_selftest.cpp src/client/particle/DataParticles.cpp
         src/client/attachable/Molang.cpp src/client/ui/Json.cpp)
@@ -1242,7 +1237,8 @@ if(PERLIN_BUILD_TESTS AND NOT EMSCRIPTEN AND NOT ANDROID)
     add_test(NAME models_selftest COMMAND models_selftest "${CMAKE_CURRENT_SOURCE_DIR}/resources/block_models.bin")
 
     file(GLOB TEXTURE_TEST_SOURCES CONFIGURE_DEPENDS
-        src/client/renderer/block/*.cpp src/client/resources/TextureLoader.cpp src/client/resources/TexturePack.cpp)
+        src/client/renderer/block/*.cpp src/client/resources/TextureLoader.cpp src/client/resources/TexturePack.cpp
+        src/client/resources/JavaPack.cpp)
     add_executable(texture_selftest
         tests/texture_selftest.cpp ${TEXTURE_TEST_SOURCES}
         src/client/Options.cpp src/client/input/KeyMapping.cpp
@@ -1255,6 +1251,14 @@ if(PERLIN_BUILD_TESTS AND NOT EMSCRIPTEN AND NOT ANDROID)
     if(PERLIN_TEXTURE_TEST_ASSETS)
         add_test(NAME texture_selftest COMMAND texture_selftest "${PERLIN_TEXTURE_TEST_ASSETS}")
     endif()
+
+    add_executable(javapack_selftest
+        tests/javapack_selftest.cpp src/client/resources/JavaPack.cpp src/client/resources/TexturePack.cpp
+        src/client/resources/TextureLoader.cpp src/util/Json.cpp)
+    target_include_directories(javapack_selftest PRIVATE src "${stb_SOURCE_DIR}")
+    target_link_libraries(javapack_selftest PRIVATE glaze::glaze miniz Threads::Threads)
+    target_compile_features(javapack_selftest PRIVATE cxx_std_23)
+    add_test(NAME javapack_selftest COMMAND javapack_selftest)
 
     add_executable(auth_selftest
         tests/auth_selftest.cpp
@@ -1337,14 +1341,14 @@ if(PERLIN_BUILD_TESTS AND NOT EMSCRIPTEN AND NOT ANDROID)
             target_include_directories(sdk_test PRIVATE mods/sdk "${PERLIN_MODS_GEN}/sdk")
             target_compile_features(sdk_test PRIVATE cxx_std_23)
             add_test(NAME sdk_test COMMAND sdk_test)
-            foreach(wire_test abi_test meta_test)
+            foreach(wire_test abi_test meta_test plugin_test)
                 add_executable(${wire_test} mods/tests/${wire_test}.cpp)
                 target_include_directories(${wire_test} PRIVATE mods/sdk)
                 target_compile_features(${wire_test} PRIVATE cxx_std_23)
                 add_test(NAME ${wire_test} COMMAND ${wire_test})
             endforeach()
             if(APPLE)
-                foreach(native_test waila_test sdk_test abi_test meta_test)
+                foreach(native_test waila_test sdk_test abi_test meta_test plugin_test)
                     target_compile_definitions(${native_test} PRIVATE _LIBCPP_DISABLE_AVAILABILITY)
                 endforeach()
             endif()

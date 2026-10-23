@@ -328,6 +328,9 @@ namespace perlin {
                       << (autoType ? gpuChoice.reason : std::string("chosen in settings")) << ")" << std::endl;
         }
         init.fallback = true;
+        nativeWindow = static_cast<uint64_t>(reinterpret_cast<uintptr_t>(native.window));
+        nativeDisplay = static_cast<uint64_t>(reinterpret_cast<uintptr_t>(native.display));
+        adapterName = gpuChoice.adapterName;
         init.swapChain.nwh = native.window;
         init.swapChain.ndt = native.display;
         if (native.wayland)
@@ -1857,6 +1860,18 @@ namespace perlin {
         if (offscreen)
             target = fg.finalFb;
         bgfx::requestScreenShot(target, "perlin:capture");
+    }
+
+    bool RenderContext_bgfx::QueryNativeHandles(NativeHandleInfo& out) const {
+        if (!initialized)
+            return false;
+        out.api = rendererName;
+        out.adapter = adapterName;
+        out.window = nativeWindow;
+        out.display = nativeDisplay;
+        if (const bgfx::InternalData* data = bgfx::getInternalData())
+            out.device = static_cast<uint64_t>(reinterpret_cast<uintptr_t>(data->context));
+        return true;
     }
 
     bool RenderContext_bgfx::SetExportTarget(bool on) {

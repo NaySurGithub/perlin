@@ -6,7 +6,6 @@
 #include "client/i18n/Lang.hpp"
 #include "client/player/VoxelShapes.hpp"
 #include "network/ClientIdentity.hpp"
-#include "network/EntityMetadata.hpp"
 #include "network/PacketDump.hpp"
 #include "world/level/block/BlockPalette.hpp"
 
@@ -53,6 +52,23 @@ namespace perlin {
             return false;
         }
 
+        // Integer metadata read without going through a double: the actor flags are a 64-bit mask and anything above bit 53
+        // (swimming, eating, laying down...) rounds off other bits when squeezed into a double, which turned random flags on.
+        bool MetaInt(const MetadataDictionaryEntry& m, int64_t& out) {
+            const auto take = [&](const auto& v) { out = static_cast<int64_t>(v); return true; };
+            if (const auto* v = std::get_if<1>(&m.value)) return take(*v);
+            if (const auto* v = std::get_if<2>(&m.value)) return take(*v);
+            if (const auto* v = std::get_if<3>(&m.value)) return take(*v);
+            if (const auto* inner = std::get_if<4>(&m.value)) {
+                if (const auto* v = std::get_if<1>(inner)) return take(*v);
+                if (const auto* v = std::get_if<2>(inner)) return take(*v);
+                if (const auto* v = std::get_if<3>(inner)) return take(*v);
+                if (const auto* v = std::get_if<4>(inner)) return take(*v);
+                if (const auto* v = std::get_if<8>(inner)) return take(*v);
+            }
+            return false;
+        }
+
         void ApplyMetadata(entity::EntityTracker& tracker, uint64_t rid, const std::vector<MetadataDictionaryEntry>& metadata) {
             int variant = -1, mark = -1, color = -1;
             for (const MetadataDictionaryEntry& m : metadata) {
@@ -62,18 +78,22 @@ namespace perlin {
                             tracker.SetNameTag(rid, *str);
                     continue;
                 }
-                int64_t integer = 0;
-                if (m.key == MetadataDictionaryEntryKey::Flags || m.key == MetadataDictionaryEntryKey::FlagsExtended) {
-                    if (net::MetadataInteger(m, integer)) {
-                        if (m.key == MetadataDictionaryEntryKey::Flags) tracker.SetFlags(rid, static_cast<uint64_t>(integer));
-                        else tracker.SetFlagsExtended(rid, static_cast<uint64_t>(integer));
-                    }
-                    continue;
-                }
                 double n = 0;
                 if (!MetaNumber(m, n))
                     continue;
                 switch (m.key) {
+                case MetadataDictionaryEntryKey::Flags: {
+                    int64_t bits = 0;
+                    tracker.SetFlags(rid, MetaInt(m, bits) ? static_cast<uint64_t>(bits) : static_cast<uint64_t>(static_cast<int64_t>(n)));
+                    break;
+                }
+                case MetadataDictionaryEntryKey::FlagsExtended: {
+                    int64_t bits = 0;
+                    const uint64_t ext = MetaInt(m, bits) ? static_cast<uint64_t>(bits) : static_cast<uint64_t>(static_cast<int64_t>(n));
+                    tracker.SetCrawling(rid, ((ext >> 50) & 1ull) != 0);
+                    tracker.SetSleeping(rid, ((ext >> 11) & 1ull) != 0);
+                    break;
+                }
                 case MetadataDictionaryEntryKey::PlayerFlags: tracker.SetSleeping(rid, (static_cast<int64_t>(n) & 2) != 0, true); break;
                 case MetadataDictionaryEntryKey::Scale: tracker.SetScale(rid, static_cast<float>(n)); break;
                 case MetadataDictionaryEntryKey::Variant: variant = static_cast<int>(n); break;
@@ -102,9 +122,9 @@ namespace perlin {
 
         uint64_t MetaFlags(const std::vector<MetadataDictionaryEntry>& metadata) {
             for (const MetadataDictionaryEntry& m : metadata) {
-                int64_t n = 0;
-                if (m.key == MetadataDictionaryEntryKey::Flags && net::MetadataInteger(m, n))
-                    return static_cast<uint64_t>(n);
+                int64_t bits = 0;
+                if (m.key == MetadataDictionaryEntryKey::Flags && MetaInt(m, bits))
+                    return static_cast<uint64_t>(bits);
             }
             return 0;
         }
@@ -1044,7 +1064,7 @@ namespace perlin {
                 for (const MetadataDictionaryEntry& m : p.metadata) {
                     int64_t integer = 0;
                     if (m.key == MetadataDictionaryEntryKey::Flags || m.key == MetadataDictionaryEntryKey::FlagsExtended) {
-                        if (net::MetadataInteger(m, integer)) {
+                        if (MetaInt(m, integer)) {
                             const size_t word = m.key == MetadataDictionaryEntryKey::Flags ? 0 : 1;
                             ownFlagWords[word] = static_cast<uint64_t>(integer);
                             ownFlagWordsKnown[word] = true;

@@ -47,6 +47,23 @@ namespace perlin::mods {
         uint64_t serial = 0;
     };
 
+    // Raw draw list submitted with Op::GfxSubmit (validated when it arrives, drawn every frame until replaced).
+    struct GfxLayer {
+        std::string plugin, name;
+        int z = 0;
+        std::shared_ptr<const std::vector<uint8_t>> data;
+        uint64_t serial = 0;
+    };
+    // A texture a plugin uploaded; the renderer keeps the GPU copy in step with `version`.
+    struct GfxTexture {
+        std::string plugin;
+        uint32_t id = 0;
+        int width = 0, height = 0;
+        bool linear = true;
+        uint64_t version = 0;
+        std::shared_ptr<const std::vector<uint8_t>> rgba;
+    };
+
     struct CallContext {
         std::string plugin;
         uint32_t permissions = 0;
@@ -85,6 +102,13 @@ namespace perlin::mods {
         void SetKeyBinding(const std::string& plugin, const std::string& id, const std::string& binding);
         std::vector<UiLayer> Layers() const;
         uint64_t LayerVersion() const { return layerVersion.load(); }
+        std::vector<GfxLayer> GfxLayers() const;
+        std::vector<GfxTexture> GfxTextures() const;
+        // Plugins that asked to own the mouse / keyboard (Op::InputGrab); events go to them and not to the game.
+        bool GrabsMouse() const { return grabMouse.load(); }
+        bool GrabsKeyboard() const { return grabKeyboard.load(); }
+        std::vector<std::string> GrabbingPlugins() const;
+        void ReleaseGrabs();
         uint64_t CommandVersion() const { return commandVersion.load(); }
         bool HasPlugins() const;
 
@@ -119,6 +143,7 @@ namespace perlin::mods {
         void Retire(Plugin& mod);
         std::string KeysFile(const Plugin& mod) const;
         void RegisterCore();
+        void RegisterGfxOps();
         void LoadKeys(Plugin& mod);
         void SaveKeys(const Plugin& mod) const;
         Plugin* Find(const std::string& name) const;
@@ -144,6 +169,8 @@ namespace perlin::mods {
         std::vector<std::string> reloadNames;
         std::atomic<bool> autoReload{true};
         std::atomic<uint64_t> layerVersion{1};
+        std::atomic<bool> grabMouse{false}, grabKeyboard{false};
+        void RefreshGrabs();
         std::atomic<uint64_t> commandVersion{1};
         std::atomic<uint64_t> tickCounter{0};
         std::chrono::steady_clock::time_point lastScan{};

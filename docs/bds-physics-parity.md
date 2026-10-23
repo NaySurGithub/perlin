@@ -282,7 +282,9 @@ outputs in these sequences. Perlin preserves its previous tick rotation in
 State for rewind/replay; equality to BDS's full ActorRotationComponent history
 producer is not established by supplying the same synthetic history to both.
 
-The full local macOS arm64 build succeeds, including Perlin and trace_diff.
+The full local macOS arm64 build succeeds, including Perlin and trace_diff,
+after integrating upstream `main` at `084a657`. The metadata merge keeps
+integer flag parsing and known-word tracking with the upstream helper API.
 The latest full CTest run passes 50 of 51 tests; the sole failing test is the
 legacy trace disagreement described below, now including the web scenario. The pure direction/glide
 suite also agrees under `-O3 -ffp-contract=fast`, and when relaxed math options

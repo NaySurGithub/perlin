@@ -114,11 +114,11 @@ namespace perlin {
         int upscaleCustom = 70;
         int upscaleTargetFps = 0;
         std::string frameGen = "off";
-        bool skins3d = true;
+        bool skins3d = false;
         bool bedrockBridging = true;
         bool enableLods = false;
         std::string renderer = "auto";
-        std::string capePhysics = "noshoulder";
+        std::string capePhysics = "off";
         SkinParts skinParts;
         std::map<std::string, bool> skinSlim;
         std::map<std::string, double> shaderSettings;

@@ -1,3 +1,4 @@
+#include "client/ui/FormatCodes.hpp"
 #include "client/ui/PauseScreen.hpp"
 
 #include "client/ui/RmlEmit.hpp"
@@ -85,6 +86,11 @@ div, mcimg { display: block; position: absolute; }
         std::string Text(float x, float y, float w, const std::string& text, const char* cls, const char* color = nullptr, bool center = false) {
             return "<div class=\"t " + std::string(cls) + (center ? " c" : "") + "\" style=\"left: " + N(x) + "px; top: " + N(y) + "px; width: " + N(w) + "px;" +
                    (color ? std::string(" color: ") + color + ";" : std::string()) + " overflow: hidden;\">" + EscapeRml(text) + "</div>\n";
+        }
+
+        // Pack names and descriptions carry Minecraft formatting codes (section sign + colour letter).
+        std::string FormattedText(float x, float y, float w, const std::string& text) {
+            return "<div class=\"t\" style=\"left: " + N(x) + "px; top: " + N(y) + "px; width: " + N(w) + "px; overflow: hidden;\">" + FormatCodesToRml(text) + "</div>\n";
         }
 
         std::string Img(const std::string& src, float x, float y, float s) {
@@ -203,8 +209,8 @@ div, mcimg { display: block; position: absolute; }
                 d += "<div id=\"" + std::string(1, prefix) + "p" + std::to_string(i) + "\" class=\"prow\" style=\"left: 2px; top: " + N(y) + "px; width: " +
                      N(l.panelW - 4.0f - (maxScroll > 0 ? 6.0f : 0.0f)) + "px;\"></div>\n";
                 d += Img(e.icon, 4, y + 1, 32);
-                d += Text(40, y + 2, textW, e.name, "");
-                d += "<div class=\"wrap\" style=\"left: 40px; top: " + N(y + 13) + "px; width: " + N(textW) + "px; height: 18px; z-index: 2;\">" + EscapeRml(e.desc) + "</div>\n";
+                d += FormattedText(40, y + 2, textW, e.name);
+                d += "<div class=\"wrap\" style=\"left: 40px; top: " + N(y + 13) + "px; width: " + N(textW) + "px; height: 18px; z-index: 2;\">" + FormatCodesToRml(e.desc) + "</div>\n";
                 const std::string id = std::string(1, prefix) + std::to_string(i);
                 if (e.canSelect) {
                     d += "<div id=\"" + id + "i\" class=\"ico\" style=\"left: 4px; top: " + N(y + 1) + "px;\"><div class=\"ov\"></div>" + chevron('>', 11, 7, "ch") + "</div>\n";
@@ -352,10 +358,10 @@ div, mcimg { display: block; position: absolute; }
                      N(y + 1) + "px; width: " + N(rowW - 2) + "px; height: 32px; background-color: #000000;\"></div>\n";
             d += "<div id=\"md" + std::to_string(i) + "\" class=\"prow\" style=\"left: 1px; top: " + N(y) + "px; width: " + N(rowW) + "px;\"></div>\n";
             d += Img(e.icon, 4, y + 1, 32);
-            d += Text(40, y + 2, rowW - 40.0f - (e.badge.empty() ? 0.0f : BadgeWidth(e.badge) + 6.0f), e.name, "");
+            d += FormattedText(40, y + 2, rowW - 40.0f - (e.badge.empty() ? 0.0f : BadgeWidth(e.badge) + 6.0f), e.name);
             if (!e.badge.empty())
                 d += Badge(40.0f + std::min(static_cast<float>(e.name.size()) * 6.0f + 6.0f, rowW - 40.0f - BadgeWidth(e.badge)), y + 2, e.badge, e.badgeColor);
-            d += "<div class=\"wrap\" style=\"left: 40px; top: " + N(y + 13) + "px; width: " + N(rowW - 44.0f) + "px; height: 18px; z-index: 2;\">" + EscapeRml(e.desc) + "</div>\n";
+            d += "<div class=\"wrap\" style=\"left: 40px; top: " + N(y + 13) + "px; width: " + N(rowW - 44.0f) + "px; height: 18px; z-index: 2;\">" + FormatCodesToRml(e.desc) + "</div>\n";
         }
         d += Bar(l.leftW - 6.0f, 0, listH, static_cast<float>(rows.size()) * l.rowH + 4.0f, scroll, l.maxScroll);
         d += "</div>\n";

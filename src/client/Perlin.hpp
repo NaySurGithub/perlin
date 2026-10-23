@@ -205,7 +205,10 @@ namespace perlin {
         std::chrono::steady_clock::time_point realmAddedAt{};
         void SetJoinMessage(const std::string& text);
         std::mutex tabMutex;
-        std::vector<ui::ServerEntry> tabLan, tabRealms, tabFriends;
+        std::vector<ui::ServerEntry> tabLan, tabRealms, tabFriends, tabFeatured;
+        std::atomic<bool> featuredBusy{false}, featuredPing{false};
+        std::chrono::steady_clock::time_point featuredAt{};
+        void RefreshFeatured(bool force);
         std::string tabLanMsg, tabRealmsMsg, tabFriendsMsg, tabJoinMsg, realmJoinAddress;
         bool tabDirty = false, realmJoinReady = false;
         std::atomic<bool> lanBusy{false}, realmsBusy{false}, friendsBusy{false}, realmJoinBusy{false};
@@ -331,6 +334,18 @@ namespace perlin {
         std::map<std::string, bool> modKeyDown;
         std::atomic<bool> modWantPackets{false};
         bool modWasConnected = false, modWasDead = false;
+        bool modGrabMouseWas = false, modGrabKeyboardWas = false;
+        std::atomic<int> modFbW{0}, modFbH{0};
+        std::mutex modNativeMutex;
+        abi::NativeHandles modNative;
+        bool modNativeReady = false;
+        struct ModGfxTexture {
+            uint32_t gpu = 0;
+            uint64_t version = 0;
+        };
+        std::unordered_map<std::string, ModGfxTexture> modGfxTextures; // "plugin/id"
+        void PumpModInput(mods::ModManager& mm);
+        void DrawModGfx(int fbW, int fbH);
         int modLastDim = 0, modLastSlot = -1;
         uint32_t modLastHurt = 0, modTitleSerial = 0;
         abi::Screen modLastScreen = abi::Screen::None;

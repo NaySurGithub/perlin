@@ -9,7 +9,7 @@
 
 namespace perlin {
     namespace {
-        constexpr int kOptionsVersion = 4;
+        constexpr int kOptionsVersion = 5;
     }
     namespace stored {
         struct Stored {
@@ -62,7 +62,7 @@ namespace perlin {
             bool hotReload = true;
             bool betterGrass = false;
             bool enableLods = false;
-            bool skins3d = true;
+            bool skins3d = false;
             std::string upscaler = "off";
             std::string upscaleQuality = "quality";
             int upscaleSharpness = 50;
@@ -76,7 +76,7 @@ namespace perlin {
             bool shadowEntities = true;
             float bloom = 0.5f;
             std::string renderer = "auto";
-            std::string capePhysics = "noshoulder";
+            std::string capePhysics = "off";
             bool bedrockBridging = true;
             bool webTuned = false;
             std::map<std::string, std::string> padKeys;
@@ -266,7 +266,7 @@ namespace perlin {
         o.sound = stored.sound;
         o.menuBlur = std::clamp(stored.menuBlur, 0, 10);
         o.renderer = stored.renderer == "d3d11" || stored.renderer == "vulkan" || stored.renderer == "opengl" || stored.renderer == "metal" ? stored.renderer : std::string("auto");
-        o.capePhysics = stored.capePhysics == "off" || stored.capePhysics == "shoulder" ? stored.capePhysics : std::string("noshoulder");
+        o.capePhysics = stored.capePhysics == "off" || stored.capePhysics == "shoulder" ? stored.capePhysics : std::string("off");
         o.sprintMode = stored.sprintMode == "toggle" ? "toggle" : "hold";
         o.sneakMode = stored.sneakMode == "toggle" ? "toggle" : "hold";
         o.dynamicLights = stored.dynamicLights == "fast" || stored.dynamicLights == "fancy" ? stored.dynamicLights : "off";
@@ -287,6 +287,8 @@ namespace perlin {
             o.maxFps = Options().maxFps;
             o.damageTint = Options().damageTint;
             o.betterGrass = Options().betterGrass;
+            o.skins3d = Options().skins3d;
+            o.capePhysics = Options().capePhysics;
         }
 
         for (size_t i = 0; i < kActionCount; i++) {

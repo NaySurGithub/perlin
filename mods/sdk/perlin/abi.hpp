@@ -95,6 +95,17 @@ namespace perlin::abi {
         UiClear = 0x0901,
         UiMeasure = 0x0902,
 
+        GfxTextureCreate = 0x0910,
+        GfxTextureUpdate = 0x0911,
+        GfxTextureDestroy = 0x0912,
+        GfxSubmit = 0x0913,
+        GfxClear = 0x0914,
+        GfxDisplay = 0x0915,
+
+        InputGrab = 0x0920,
+
+        NativeInfo = 0x0930,
+
         StorageRead = 0x0A00,
         StorageWrite = 0x0A01,
         StorageList = 0x0A02,
@@ -165,6 +176,11 @@ namespace perlin::abi {
         Title = 22,
         SettingChanged = 23,
         Look = 24,
+        MouseMove = 25,
+        MouseButton = 26,
+        MouseWheel = 27,
+        KeyRaw = 28,
+        TextInput = 29,
     };
 
     enum class Status : int32_t {
@@ -184,6 +200,7 @@ namespace perlin::abi {
         Control = 1u << 2,
         Storage = 1u << 3,
         Files = 1u << 4,
+        Native = 1u << 5,
     };
 
     enum class Draw : uint8_t {
@@ -1028,6 +1045,70 @@ namespace perlin::abi {
         std::string id, value;
         SettingKind kind = SettingKind::Toggle;
     };
+    // Raw input, delivered only to plugins that hold a grab (see input::grab). Coordinates are framebuffer pixels,
+    // the same space the vertices of a gfx draw list use.
+    struct EventMouseMove {
+        float x = 0, y = 0;
+    };
+    struct EventMouseButton {
+        int32_t button = 0; // 0 left, 1 right, 2 middle
+        bool down = false;
+        float x = 0, y = 0;
+    };
+    struct EventMouseWheel {
+        float dx = 0, dy = 0;
+    };
+    struct EventKeyRaw {
+        int32_t key = 0; // virtual-key codes (perlin::Key plus Escape/Backspace, see input.hpp)
+        bool down = false, repeat = false, ctrl = false, shift = false, alt = false;
+    };
+
+    // ---- raw graphics ---------------------------------------------------------------------------------------------
+    // A draw list is the same shape Dear ImGui produces: one vertex array, one index array and a list of commands that
+    // each draw a slice of the indices with one texture and one clip rectangle. Vertex layout and colour packing
+    // (0xAABBGGRR) match ImDrawVert / ImU32, so a Dear ImGui backend is a straight copy.
+    struct GfxVertex {
+        float x = 0, y = 0, u = 0, v = 0;
+        uint32_t color = 0xFFFFFFFFu;
+    };
+    static_assert(sizeof(GfxVertex) == 20);
+    struct GfxCmd {
+        float clip[4] = {0, 0, 0, 0}; // x0, y0, x1, y1 in framebuffer pixels
+        uint32_t texture = 0;         // 0 = solid white; otherwise an id from GfxTextureCreate
+        uint32_t indexOffset = 0, indexCount = 0, vertexOffset = 0;
+    };
+    static_assert(sizeof(GfxCmd) == 32);
+    struct GfxHeader {
+        uint32_t vertexCount = 0, indexCount = 0, commandCount = 0;
+        uint32_t flags = 0; // bit 0: indices are 32-bit instead of 16-bit
+    };
+    inline constexpr uint32_t kGfxIndex32 = 1;
+    inline constexpr uint32_t kGfxMaxBytes = 8u << 20;
+    inline constexpr uint32_t kGfxMaxVertices = 1u << 20;
+    inline constexpr uint32_t kGfxMaxLayers = 8;
+    inline constexpr uint32_t kGfxMaxTextures = 64;
+    inline constexpr uint32_t kGfxMaxTextureSide = 4096;
+    inline constexpr uint64_t kGfxMaxTextureBytes = 128ull << 20;
+
+    // Operating-system and graphics-API handles of the running game (needs the `native` permission). They are plain
+    // integers: a sandboxed WebAssembly plugin cannot dereference them, so they are for identifying the setup, for
+    // handing to other host calls, and for tools that attach to the same process.
+    struct NativeHandles {
+        std::string api;     // "Direct3D11", "Vulkan", "OpenGL", "Metal"
+        std::string adapter; // GPU name
+        uint64_t window = 0;  // HWND / NSWindow / X11 Window / wl_surface
+        uint64_t display = 0; // X11 Display / wl_display, 0 elsewhere
+        uint64_t device = 0;  // ID3D11Device* / VkDevice / GL context / MTLDevice, as given by the renderer
+    };
+
+    struct GfxDisplayInfo {
+        int32_t width = 0, height = 0; // framebuffer pixels
+        int32_t guiScale = 1;
+        float mouseX = 0, mouseY = 0;
+        bool mouseFree = false; // false while the game owns the cursor (mouse look)
+        bool inGame = false;
+    };
+
     using EventPayloads = std::tuple<EventNothing,
                                      EventNothing,
                                      EventTick,
@@ -1051,7 +1132,12 @@ namespace perlin::abi {
                                      EventPacket,
                                      EventTitle,
                                      EventSettingChanged,
-                                     EventLook>;
+                                     EventLook,
+                                     EventMouseMove,
+                                     EventMouseButton,
+                                     EventMouseWheel,
+                                     EventKeyRaw,
+                                     EventText>;
     static_assert(std::tuple_size_v<EventPayloads> == meta::enum_count<Event>, "every Event needs a payload type");
 
     template <Event E>

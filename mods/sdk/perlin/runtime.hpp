@@ -19,6 +19,8 @@
 #include "perlin/abi.hpp"
 #include "perlin/act.hpp"
 #include "perlin/game.hpp"
+#include "perlin/gfx.hpp"
+#include "perlin/input.hpp"
 #include "perlin/io.hpp"
 #include "perlin/rpc.hpp"
 #include "perlin/settings.hpp"
@@ -70,6 +72,11 @@ namespace perlin {
         PERLIN_EVENT_TAG(Title);
         PERLIN_EVENT_TAG(SettingChanged);
         PERLIN_EVENT_TAG(Look);
+        PERLIN_EVENT_TAG(MouseMove);
+        PERLIN_EVENT_TAG(MouseButton);
+        PERLIN_EVENT_TAG(MouseWheel);
+        PERLIN_EVENT_TAG(KeyRaw);
+        PERLIN_EVENT_TAG(TextInput);
 #undef PERLIN_EVENT_TAG
     }
 
@@ -84,7 +91,7 @@ namespace perlin {
         A = 'A', B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V, W, X, Y, Z,
         Num0 = '0', Num1, Num2, Num3, Num4, Num5, Num6, Num7, Num8, Num9,
         F1 = 0x70, F2, F3, F4, F5, F6, F7, F8, F9, F10, F11, F12,
-        Space = 0x20, Tab = 0x09, Enter = 0x0D, Shift = 0x10, Control = 0x11, Alt = 0x12,
+        Space = 0x20, Tab = 0x09, Enter = 0x0D, Escape = 0x1B, Backspace = 0x08, Shift = 0x10, Control = 0x11, Alt = 0x12,
         Left = 0x25, Up, Right, Down, Home = 0x24, End = 0x23, PageUp = 0x21, PageDown = 0x22, Delete = 0x2E,
         MouseMiddle = 1000, MouseLeft, MouseRight,
     };

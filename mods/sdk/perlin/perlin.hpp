@@ -4,6 +4,8 @@
 #include "perlin/act.hpp"
 #include "perlin/adv.hpp"
 #include "perlin/game.hpp"
+#include "perlin/gfx.hpp"
+#include "perlin/input.hpp"
 #include "perlin/io.hpp"
 #include "perlin/json.hpp"
 #include "perlin/rpc.hpp"

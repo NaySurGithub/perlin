@@ -20,6 +20,7 @@ namespace perlin::ui {
         bool offline = false;
         long long realmId = 0;
         std::string xuid;
+        bool pingable = false;  // rows of other kinds (Featured Servers) that still get a ping bar
     };
 
     enum class ServerTab : uint8_t { Saved, Lan, Realms, Friends };
@@ -51,7 +52,8 @@ namespace perlin::ui {
         std::vector<ServerEntry> servers;
         ServerTab tab = ServerTab::Lan;
         std::vector<ServerEntry> lan, realms, friends;
-        bool friendsOpen[3] = {true, true, false};
+        bool friendsOpen[4] = {true, true, false, false};  // 3 = Featured Servers (Servers tab)
+        std::vector<ServerEntry> featured, savedView;
         std::string tabMessage;
         std::string joinMessage;
         std::vector<ServerEntry>& Shown() {
@@ -59,11 +61,16 @@ namespace perlin::ui {
                 case ServerTab::Lan: return lan;
                 case ServerTab::Realms: return realms;
                 case ServerTab::Friends: return friends;
-                default: return servers;
+                default: return savedView.empty() ? servers : savedView;
             }
         }
         const std::vector<ServerEntry>& Shown() const { return const_cast<TitleModel*>(this)->Shown(); }
         int selected = -1;
+        int savedOffset = 0;  // rows shown above the saved servers (the Featured Servers group)
+        int SavedIndex() const {
+            const int i = selected - savedOffset;
+            return tab == ServerTab::Saved && selected >= 0 && i >= 0 && i < static_cast<int>(servers.size()) ? i : -1;
+        }
         int scroll = 0;
         bool adding = false;
         std::string name;
