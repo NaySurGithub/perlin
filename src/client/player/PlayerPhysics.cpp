@@ -14,6 +14,7 @@
 #include "client/player/BdsSneak.hpp"
 #include "client/player/BdsInsideQuery.hpp"
 #include "client/player/BdsJumpRequests.hpp"
+#include "client/player/BdsHoney.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -720,11 +721,12 @@ namespace perlin::physics {
         s.jumpDelay = bds::TickJumpDelay(s.jumpDelay);
     }
 
-    static void UpdateBlockSlowdown(State& s, const Input& in, const World& world) {
+    static void UpdateBlockContacts(State& s, const Input& in, const World& world, bool wasInWater) {
         const bool crouched = (in.sneak || in.forceCrouch) && !in.flying;
         {
             const Box inside = BoundingBox(s, crouched);
             bool web = false;
+            std::vector<bds::BlockPosition> honey;
             // InsideBlockComponent alternate bounds and expansion producers
             // remain separate; use this actor's ordinary shape and zero expansion.
             bds::CollectInsideCells(CollisionBox(inside), 0.0f, true,
@@ -732,7 +734,18 @@ namespace perlin::physics {
                                    [&](int32_t x, int32_t y, int32_t z) {
                 const auto shape = world.Query(x, y, z);
                 web |= shape.web;
+                if (shape.honey)
+                    honey.push_back({x, y, z});
             });
+            if (!wasInWater && !honey.empty()) {
+                const auto velocity = bds::HoneyContacts(
+                    {static_cast<float>(s.x), static_cast<float>(s.y), static_cast<float>(s.z)},
+                    {static_cast<float>(s.vx), static_cast<float>(s.vy), static_cast<float>(s.vz)},
+                    static_cast<float>(kWidth), honey, s.fallDistance);
+                s.vx = velocity.x;
+                s.vy = velocity.y;
+                s.vz = velocity.z;
+            }
             if (web) {
                 bds::Float3 multiplier{s.stuckX, s.stuckY, s.stuckZ};
                 std::optional<bool> firstApplication;
@@ -755,7 +768,10 @@ namespace perlin::physics {
         StepMovement(s, in, attr, world);
         // EntityInside, player immunity, adjustFallDistance and applied-record
         // cleanup are registered in this order by 0x1402D48A0.
-        UpdateBlockSlowdown(s, in, world);
+        // WasInWaterFlag is produced by native fluid-state processing. Use
+        // the sensed water state here; complete native producer timing remains
+        // part of the fluid-system port.
+        UpdateBlockContacts(s, in, world, s.inWater);
         // MovementEffectsTick is registered in the post-player-movement phase,
         // 0x1402D5190. Flying and no-clip paths must also advance effect state.
         bds::TickMovementEffects(s.movementEffects);

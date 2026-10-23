@@ -5,6 +5,9 @@
 #include "client/player/BdsFloat.hpp"
 
 namespace perlin::physics::bds {
+    inline constexpr uint64_t ReducedJumpSurfaceProperty = uint64_t{1} << 43;
+    inline constexpr uint64_t ProbeBelowForJumpProperty = uint64_t{1} << 8;
+
     struct TriggerJumpRequest {
         bool reducedSurface = false;
         BlockPosition position{};
@@ -44,11 +47,11 @@ namespace perlin::physics::bds {
                                FloorBlockCoordinate(input.position.z)};
         const auto properties = query(position);
         TriggerJumpRequest trigger;
-        if (properties & (uint64_t{1} << 43)) {
+        if (properties & ReducedJumpSurfaceProperty) {
             trigger = {true, position};
-        } else if (static_cast<float>(position[1]) >= input.bodyMinimumY || (properties & 0x100)) {
+        } else if (static_cast<float>(position[1]) >= input.bodyMinimumY || (properties & ProbeBelowForJumpProperty)) {
             position[1] = std::bit_cast<int32_t>(static_cast<uint32_t>(position[1]) - 1);
-            if (query(position) & (uint64_t{1} << 43))
+            if (query(position) & ReducedJumpSurfaceProperty)
                 trigger = {true, position};
         }
         const float multiplier = trigger.reducedSurface ? 0.6f : 1.0f;

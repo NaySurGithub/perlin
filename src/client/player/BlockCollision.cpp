@@ -277,6 +277,13 @@ namespace perlin {
                 if (EvaluateBlockCondition(condition, id))
                     chosen = &set;
         Info info = chosen ? Info{} : ClassifyVanilla(id, blocks);
+        // BDS honey-block registration 0x140584982 -> 0x1406B78D0 sets
+        // BlockLegacy property 43, independently of supplied collision boxes.
+        const std::string blockName = BlockPalette::Instance().Name(id);
+        if (blockName == "minecraft:honey_block" || blockName == "honey_block") {
+            info.shape.jumpProperties |= physics::bds::ReducedJumpSurfaceProperty;
+            info.shape.honey = true;
+        }
         bool replacedGeometry = chosen != nullptr;
         if (chosen)
             for (const CollisionBox& box : chosen->boxes)
@@ -456,7 +463,6 @@ namespace perlin {
         }
         if (n == "honey_block") {
             Add(s, 0.0625, 0, 0.0625, 0.9375, 0.9375, 0.9375);
-            s.speedFactor = 0.4f;
             return info;
         }
         if (n == "chest" || n == "trapped_chest" || n == "ender_chest") {

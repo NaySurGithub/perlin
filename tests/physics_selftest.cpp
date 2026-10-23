@@ -42,6 +42,54 @@ static BlockShape Slab(double h) {
 int main() {
     Attributes attr;
 
+    // Honey contact is applied after motion and before accumulated slowdown.
+    // The side contact resets fall distance and clamps downward velocity.
+    {
+        TestWorld honey;
+        bool wet = false;
+        bool secondContact = false;
+        honey.fn = [&](int x, int y, int z) {
+            BlockShape shape;
+            shape.honey = (x == 0 || (secondContact && x == 1)) && y == 0 && z == 0;
+            if (wet && shape.honey) {
+                shape.fluid = 1;
+                shape.fluidLevel = 1;
+            }
+            return shape;
+        };
+        Input input;
+        input.gravity.hasGravity = false;
+        State state;
+        state.x = 1.25;
+        state.y = 1;
+        state.z = 0.5;
+        state.vy = -0.5;
+        state.fallDistance = 10;
+        Step(state, input, attr, honey);
+        CHECK(state.vy == static_cast<double>(-0.12f) && state.fallDistance == 0);
+        state = {};
+        wet = true;
+        state.x = 1.25;
+        state.y = 0.5;
+        state.z = 0.5;
+        state.vy = -0.5;
+        Step(state, input, attr, honey);
+        CHECK(state.inWater && state.vy < -0.12f);
+        wet = false;
+        state = {};
+        state.x = state.z = 0.5;
+        state.vx = 0.1f;
+        Step(state, input, attr, honey);
+        CHECK(Near(state.vx, 0.0364, 1e-8));
+        secondContact = true;
+        state = {};
+        state.x = 0.95;
+        state.z = 0.5;
+        state.vx = 0.1f;
+        Step(state, input, attr, honey);
+        CHECK(Near(state.vx, 0.01456, 1e-8));
+    }
+
     // Optional jump-height presence is distinct from a supplied zero. Surface
     // properties here are raw native masks, independent of block-name mapping.
     {

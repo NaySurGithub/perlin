@@ -47,6 +47,7 @@ namespace perlin::physics {
         uint8_t fluidDepth = 255;
         bool climbable = false;
         bool web = false;
+        bool honey = false;
         float speedFactor = 1.0f;
         bool Empty() const { return boxes.empty(); }
     };

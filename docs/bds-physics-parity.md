@@ -299,7 +299,7 @@ substitute for Windows/x86, other platforms or real game/server validation.
 
 Bundled trig and relative movement add 10,832 cases, bringing the kernel/table
 count to 103,616. Move finalization adds 1,792, bringing the total to 105,408. Landing response adds 1,856, and supporting-block selection adds 1,280,
-for 108,544. Unavailable-chunk collision collection adds 564, for 109,108. Terrain traversal adds 382 and the common block collector adds 310, for 109,800. Position seeding, offsets and description conversion add 1,388, for 111,188. Collision-cache append, subtraction and refresh add 1,593, for 112,781. Native request initialization and 256 nonempty cache refresh callbacks add 257, for 113,038. Block slowdown callbacks add 2,304, for 115,342. Sneak filtering and cached-shape clipping add 1,024, for 116,366. Entity-inside traversal and region readiness add 1,316, for 117,682. Complete ordinary and alternate ground-jump callbacks add 1,536, for 119,218. Jump request classification adds 1,296, for 120,514. Ground-jump permission adds 2,048, for 122,562, plus the separately reported 288 chained glide ticks. The
+for 108,544. Unavailable-chunk collision collection adds 564, for 109,108. Terrain traversal adds 382 and the common block collector adds 310, for 109,800. Position seeding, offsets and description conversion add 1,388, for 111,188. Collision-cache append, subtraction and refresh add 1,593, for 112,781. Native request initialization and 256 nonempty cache refresh callbacks add 257, for 113,038. Block slowdown callbacks add 2,304, for 115,342. Sneak filtering and cached-shape clipping add 1,024, for 116,366. Entity-inside traversal and region readiness add 1,316, for 117,682. Complete ordinary and alternate ground-jump callbacks add 1,536, for 119,218. Jump request classification adds 1,296, for 120,514. Ground-jump permission adds 2,048, for 122,562. Honey contacts add 640, for 123,202, plus the separately reported 288 chained glide ticks. The
 trig inputs include all exponent classes, mantissa boundaries, both signs,
 small/large reduction thresholds, infinities, quiet/signaling NaN payloads and
 seeded random float bit patterns. Both BDS SSE2 and SSE4 implementations agree
@@ -1005,3 +1005,54 @@ ctest --test-dir build -R '^(bds_jump_predicate_selftest|physics_selftest)$' --o
 The full local application builds and CTest reports 55/56 passing targets.
 The same 152 legacy trace differences remain; no fixture expectations,
 exclusions or tolerances were changed during these jump additions.
+
+
+## Honey identity, reduced jumps and contact movement
+
+Native initializer `0x1400DEBE0` constructs `minecraft:honey_block` at
+`0x1471572A8` (the name object's hash is at `0x1471572A0`). Registration at
+`0x140584982` passes that name to factory `0x1406B78D0`. Its constructor block
+sets vtable `0x1467C8540` and ORs BlockLegacy properties with `0x80000080000`,
+which includes the reduced-jump bit 43. This confirms the surface identity.
+Perlin now supplies that jump property for honey, including when collision boxes
+come from a custom definition. Other sources of the jump-probe bit 8 remain
+unmapped; the complete BlockLegacy property producer is not ported.
+
+Entity-inside classification `0x140B55B90` recognizes honey's name hash
+`0x2C975E4949D832F7` and accumulates ordered position/block records. Its movement
+callback is `0x140B58CF0`, reached through view `0x140B64A70`. The view requires
+honey contacts, AABBShape, StateVector and FallDistance, and excludes
+WasInWaterFlagComponent `0x4086B5E6`. Each contact multiplies both horizontal
+velocity lanes by `0.4f`, clamps vertical velocity to at least `-0.12f`, and may
+clear fall distance when below the honey top and outside its side threshold.
+The threshold is `bodyWidth*0.5f+0.43125f`; the top is block Y plus `0.9375f`.
+Multiple contacts attenuate repeatedly, in their original order.
+
+`BdsHoney.hpp` ports that complete callback. The 640 finite native executions
+have no runtime hooks and verify all three velocity lanes and fall-distance
+bits, with zero through four contacts, negative positions, boundary comparisons,
+existing upward/downward/signed-zero speeds, thin/negative widths and repeated
+contacts. Optimized ARM64 and x86-64/Rosetta ports match; regeneration is
+byte-identical. Exceptional/non-finite input behavior is outside this fixture.
+
+Step applies honey movement after its motion and before accumulated slowdown,
+matching their relative order in `0x140B56930`. Runtime regressions cover side
+fall reset, vertical clamp, water exclusion, and one versus two horizontal
+attenuations. Honey's previous fallback speedFactor multiplier is removed to
+avoid applying that attenuation twice. Name-based classification preserves the
+honey identity independently of custom geometry selection.
+
+WasInWaterFlag is produced by fluid-state processing, including `0x140E0E820`;
+its name alone does not prove it means the prior tick's water boolean. The
+current adapter uses Step's sensed water state. Native fluid classification,
+passenger exclusions and exact producer timing remain under audit. Ordinary
+player width supplies the dimension input; native custom actor-dimension
+production, full generic-contact predicates, honey sound/particle events, and
+all cross-mode/multi-tick integration still need porting.
+
+```sh
+build/bds-oracle-venv/bin/python tools/bds_reference/honey.py \
+  --export build/bds-reference.json --out build/bds-honey-regenerated.txt
+cmp build/bds-honey-regenerated.txt tests/data/bds_honey.txt
+ctest --test-dir build -R '^(bds_honey_selftest|physics_selftest)$' --output-on-failure
+```
