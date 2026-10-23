@@ -299,7 +299,7 @@ substitute for Windows/x86, other platforms or real game/server validation.
 
 Bundled trig and relative movement add 10,832 cases, bringing the kernel/table
 count to 103,616. Move finalization adds 1,792, bringing the total to 105,408. Landing response adds 1,856, and supporting-block selection adds 1,280,
-for 108,544. Unavailable-chunk collision collection adds 564, for 109,108. Terrain traversal adds 382 and the common block collector adds 310, for 109,800. Position seeding, offsets and description conversion add 1,388, for 111,188. Collision-cache append, subtraction and refresh add 1,593, for 112,781. Native request initialization and 256 nonempty cache refresh callbacks add 257, for 113,038. Block slowdown callbacks add 2,304, for 115,342. Sneak filtering and cached-shape clipping add 1,024, for 116,366. Entity-inside traversal and region readiness add 1,316, for 117,682. Complete ordinary and alternate ground-jump callbacks add 1,536, for 119,218, plus the separately reported 288 chained glide ticks. The
+for 108,544. Unavailable-chunk collision collection adds 564, for 109,108. Terrain traversal adds 382 and the common block collector adds 310, for 109,800. Position seeding, offsets and description conversion add 1,388, for 111,188. Collision-cache append, subtraction and refresh add 1,593, for 112,781. Native request initialization and 256 nonempty cache refresh callbacks add 257, for 113,038. Block slowdown callbacks add 2,304, for 115,342. Sneak filtering and cached-shape clipping add 1,024, for 116,366. Entity-inside traversal and region readiness add 1,316, for 117,682. Complete ordinary and alternate ground-jump callbacks add 1,536, for 119,218. Jump request classification adds 1,296, for 120,514, plus the separately reported 288 chained glide ticks. The
 trig inputs include all exponent classes, mantissa boundaries, both signs,
 small/large reduction thresholds, infinities, quiet/signaling NaN payloads and
 seeded random float bit patterns. Both BDS SSE2 and SSE4 implementations agree
@@ -909,3 +909,53 @@ Run `39938936441` on head `3c1959a` confirms Windows compiles and runs its suite
 The missing-header compile failure is resolved. Local tests after the jump port
 report 53/54 passing targets; the sole failing target and its 152 mismatches are
 unchanged. No expectations or tolerances were changed.
+
+
+## Jump request classification and cleanup ordering
+
+`BdsJumpRequests.hpp` ports JumpFromGroundFilterSystem callback `0x140EAF890`.
+Its wrapper `0x140EB4AB0` proves the tested optional memberships are
+LocalPlayerComponent `0x63A37B09`, LavaSlimeFlagComponent `0x5F10CF3F`, and
+SquidFlagComponent `0x881BF973`. Classification prioritizes local player, then
+lava slime, then squid, with OtherJumpRequest as the fallback. It creates only
+the selected request and only if that entity is absent from the destination.
+Component payload bytes are not consulted. `BdsEntityMembership.hpp` preserves
+18-bit sparse-page indexing, generation comparison, null/missing pages, and the
+reserved packed-index rejection.
+
+The 1,296 independent native executions cover the Cartesian product of six
+membership layouts for all three classification views and the destination:
+absent packed entry, valid entry, stale generation, out-of-range page, null page,
+and reserved packed index. Inputs vary entity indices across page boundaries
+and four generations. Tests compare the chosen pool query, insertion count and
+inserted entity. Only pool acquisition and insertion services are synthetic;
+all native membership and priority branches execute unchanged. Optimized ARM64
+and x86-64/Rosetta ports match; fixtures regenerate byte-identically.
+
+Registration `0x1402CBA10` orders JumpFromGroundFilterSystem, its
+RemoveFromAllEntitiesSystem<JumpFromGroundRequestComponent>, JumpFromGroundSystem,
+then cleanup of LocalPlayer/LavaSlime/Squid/Other jump requests. The latter
+factory `0x140EB98A0` resolves through vtable `0x1466D1AF8` to `0x140EC9960` and
+`0x140EC2130`, which clear all four destination pools. TriggerJumpRequest is a
+separate component and is not included in that cleanup. ResetNoJumpDelaySystem's
+view `0x140EC1BE0` requires MobJump, InterpolateMovementNeeded, and MobFlag while
+excluding MobIsJumping and Passenger; its callback `0x140EB15A0` zeros MobJump's
+integer at offset 16. Those facts establish part of the lifecycle but do not
+prove the complete producer and consumer schedule.
+
+The classifier is available as a portable ECS adapter with independent tests.
+Perlin's player-only Step still uses its existing jump eligibility. Replacing
+that eligibility before reconstructing request producers and the local-player
+predicate would conflate classification with permission to jump. Therefore
+these tests do not claim runtime entity scheduling, vehicle jump behavior, or
+all request lifetimes are complete.
+
+```sh
+build/bds-oracle-venv/bin/python tools/bds_reference/jump_filter.py \
+  --export build/bds-reference.json --out build/bds-jump-filter-regenerated.txt
+cmp build/bds-jump-filter-regenerated.txt tests/data/bds_jump_requests.txt
+ctest --test-dir build -R '^bds_jump_requests_selftest$' --output-on-failure
+```
+
+The full application build passes after this addition. Local CTest is 54/55;
+the sole failure remains the same 152 legacy trace checks in four scenarios.
