@@ -1,6 +1,7 @@
 #include "client/entity/EntityRenderer.hpp"
 #include "client/entity/CapeGeometry.inc"
 #include "client/entity/CapePhysics.hpp"
+#include "client/entity/JavaAnimation.hpp"
 
 #include <cstdio>
 #include "util/Env.hpp"
@@ -25,60 +26,6 @@
 
 namespace perlin::entity {
     namespace {
-        void ApplyJavaCrouch(attachable::Pose& pose, const attachable::Geometry* g) {
-            static const float zs = PERLIN_ENV("PERLIN_ZSIGN") ? static_cast<float>(std::atof(PERLIN_ENV("PERLIN_ZSIGN"))) : -1.0f;
-            const auto find = [&](const char* name) -> const attachable::Bone* {
-                if (g)
-                    for (const auto& b : g->bones)
-                        if (b.name == name)
-                            return &b;
-                return nullptr;
-            };
-            const auto pivotOf = [&](const char* name, glm::vec3 fallback) {
-                const auto* b = find(name);
-                return b ? b->pivot : fallback;
-            };
-            const auto restOf = [&](const char* name) {
-                const auto* b = find(name);
-                return b ? b->rotation : glm::vec3(0.0f);
-            };
-            const auto local = [&](const char* name, const glm::vec3& c, const glm::vec3& rot, const glm::vec3& pos) {
-                return glm::translate(glm::mat4(1.0f), pos) * glm::translate(glm::mat4(1.0f), c) * attachable::EulerZYX(restOf(name) + rot) *
-                       glm::translate(glm::mat4(1.0f), -c);
-            };
-            auto& body = pose["body"];
-            const glm::vec3 bodyPivot = pivotOf("body", {0.0f, 24.0f, 0.0f});
-            const glm::mat4 oldBody = local("body", bodyPivot, body.rotation, body.position);
-            body.rotation.x += 28.64789f;
-            body.position.y -= 3.2f;
-            const glm::mat4 newBody = local("body", bodyPivot, body.rotation, body.position);
-            const glm::mat4 invNew = glm::inverse(newBody);
-            const auto refit = [&](const char* name, glm::vec3 fallbackPivot, float down, float extraX) {
-                auto& x = pose[name];
-                const glm::vec3 c = pivotOf(name, fallbackPivot);
-                glm::vec3 rot = x.rotation;
-                rot.x += extraX;
-                const glm::mat4 desired = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, -down, 0.0f)) * oldBody * local(name, c, rot, x.position);
-                const glm::mat4 fit = invNew * desired;
-                const float b = std::asin(std::clamp(-fit[0][2], -1.0f, 1.0f));
-                const float cc = std::atan2(fit[1][2], fit[2][2]);
-                const float a = std::atan2(fit[0][1], fit[0][0]);
-                const glm::vec3 euler(-glm::degrees(cc), -glm::degrees(b), glm::degrees(a) / zs);
-                x.rotation = euler - restOf(name);
-                const glm::mat3 r(glm::rotate(glm::mat4(1.0f), glm::radians(zs * euler.z), glm::vec3(0, 0, 1)) *
-                                  glm::rotate(glm::mat4(1.0f), glm::radians(-euler.y), glm::vec3(0, 1, 0)) *
-                                  glm::rotate(glm::mat4(1.0f), glm::radians(-euler.x), glm::vec3(1, 0, 0)));
-                const glm::vec3 t(fit[3]);
-                x.position = t - c + r * c;
-            };
-            refit("head", {0.0f, 24.0f, 0.0f}, 4.2f, 0.0f);
-            refit("leftarm", {5.0f, 22.0f, 0.0f}, 3.2f, 22.91831f);
-            refit("rightarm", {-5.0f, 22.0f, 0.0f}, 3.2f, 22.91831f);
-            pose["leftleg"].position.z += 4.0f;
-            pose["rightleg"].position.z += 4.0f;
-            pose["root"].position.y -= 2.0f;
-        }
-
         void StyleFromMaterial(UiDraw& draw, const char* name) {
             const std::string_view materialName(name);
             if (materialName.starts_with("particles_")) draw.material = DrawMaterial::Particle;
@@ -150,7 +97,7 @@ namespace perlin::entity {
         std::deque<Sample> samples;
         double interval = 0.05, jitter = 0.0, delay = 0.1;
         double lastArrival = 0;
-        float yaw = 0, headYaw = 0, pitch = 0;
+        float yaw = 0, headYaw = 0, pitch = 0, facingYaw = 0;
         uint32_t moveSerial = 0, hurtSerial = 0, swingSerial = 0;
         float limbSwing = 0, limbAmount = 0;
         float groundSpeed = 0, verticalSpeed = 0;
@@ -158,7 +105,8 @@ namespace perlin::entity {
         glm::dvec3 cloak{0.0}, cloakPrev{0.0}, tickPos{0.0}, tickPosPrev{0.0};
         bool limbInit = false;
         double limbAcc = 0;
-        float limbSpd = 0, limbSpdPrev = 0, limbPos = 0, limbPosPrev = 0;
+        java::WalkAnimation walk;
+        java::PoseBlend swim;
         float bob = 0, bobPrev = 0, walkDist = 0, walkDistPrev = 0, capeX = 6.0f, capeZ = 0.0f;
         glm::mat4 itemR{1.0f}, itemL{1.0f};
         bool hasItemR = false, hasItemL = false;
@@ -190,10 +138,8 @@ namespace perlin::entity {
         std::string tag;
         glm::mat4 armR{1.0f}, armL{1.0f};
         bool hasArmR = false, hasArmL = false;
-        bool bodyInit = false;
-        float body = 0, bodyPrev = 0;
-        double bodyTickAcc = 0;
-        glm::dvec3 bodyTickPos{0.0};
+        bool bodyInit = false, mobBody = false;
+        java::BodyRotation body;
         CapeChain cape;
     };
 
@@ -298,6 +244,8 @@ namespace perlin::entity {
         capeModelTextures.clear();
         pendingMeshes.clear();
         views.clear();
+        firstPersonView.reset();
+        dollView.reset();
         skinGeometry.clear();
         voxelGeometry.clear();
     }
@@ -378,40 +326,27 @@ namespace perlin::entity {
         return 0;
     }
 
-    void EntityRenderer::TickPlayerBody(View& v, float dt, float prevYaw) {
-        const float look = v.headYaw;
-        if (!v.bodyInit) {
-            v.bodyInit = true;
-            v.body = v.bodyPrev = look;
-            v.bodyTickPos = v.pos;
-        }
-        const double xd = v.pos.x - v.bodyTickPos.x, zd = v.pos.z - v.bodyTickPos.z;
-        v.bodyTickPos = v.pos;
-        const float speed = static_cast<float>(std::sqrt(xd * xd + zd * zd)) / std::max(dt, 0.001f);
-        v.bodyTickAcc += (speed - static_cast<float>(v.bodyTickAcc)) * std::min(1.0f, dt * 12.0f);
-        const bool moving = v.bodyTickAcc > 0.35 || v.attackTime > 0.0f;
-        const float tau = moving ? 0.06f : 0.11f;
-        const float cap = moving ? 20.0f : 40.0f;
-        float diff = WrapDegrees(look - v.body);
-        v.body += diff * (1.0f - std::exp(-dt / tau));
-        diff = WrapDegrees(look - v.body);
-        if (std::fabs(diff) > cap)
-            v.body += diff - (diff > 0.0f ? cap : -cap);
-        v.body = WrapDegrees(v.body);
-        v.yaw = v.body;
-        v.yawSpeed = WrapDegrees(v.yaw - prevYaw) / std::max(dt, 0.001f);
-    }
-
     void EntityRenderer::Track(const Entity& e, View& v, const FrameIn& in) {
-        const float dt = std::clamp(in.dt, 0.001f, 0.25f);
+        const float dt = std::clamp(in.dt, 0.000001f, 0.25f);
         v.dt = dt;
         v.now = in.time;
         if (!v.init) {
             v.init = true;
             v.pos = v.lastPos = e.pos;
-            v.yaw = e.yaw;
+            v.yaw = v.facingYaw = e.yaw;
             v.headYaw = e.headYaw;
             v.pitch = e.pitch;
+            if (!e.isPlayer && !e.isItem && e.type != "minecraft:armor_stand")
+                if (const auto* def = assets.Entity(e.type))
+                    for (const auto& [key, id] : def->geometries)
+                        if (const auto* geometry = assets.geometries.Find(id)) {
+                            bool head = false, body = false;
+                            for (const auto& bone : geometry->bones) {
+                                head |= bone.name == "head";
+                                body |= bone.name == "body";
+                            }
+                            v.mobBody |= head && body;
+                        }
             v.born = in.time;
             v.moveSerial = e.moveSerial;
             v.hurtSerial = e.hurtSerial;
@@ -422,6 +357,8 @@ namespace perlin::entity {
         const double follow = e.isSelf ? 1.0 : 1.0 - std::exp(-static_cast<double>(dt) / 0.06);
         v.lastPos = v.pos;
         const float prevYaw = v.yaw;
+        const float prevHead = v.headYaw, prevFacing = v.facingYaw;
+        v.yaw = v.facingYaw;
         glm::dvec3 d = e.pos - v.pos;
         if (buffered) {
             if (v.samples.empty() || v.samples.back().pos != e.pos || v.samples.back().yaw != e.yaw ||
@@ -434,6 +371,10 @@ namespace perlin::entity {
                     v.headYaw = e.headYaw;
                     v.pitch = e.pitch;
                     v.lastArrival = 0;
+                    v.limbInit = v.bodyInit = false;
+                    v.walk.Reset();
+                    v.limbAcc = 0;
+                    v.cape.Reset();
                 }
                 if (v.lastArrival > 0) {
                     const double gap = std::clamp(in.time - v.lastArrival, 0.005, 0.5);
@@ -493,9 +434,21 @@ namespace perlin::entity {
             v.yawSpeed = 0.0f;
         }
 
-        if (e.isPlayer && !v.fp)
-            TickPlayerBody(v, dt, prevYaw);
+        v.facingYaw = v.yaw;
+        const bool rotateBody = !v.fp && (e.isPlayer || v.mobBody) && !e.isItem && !projectile;
+        if (!v.bodyInit) {
+            v.bodyInit = true;
+            v.body.Reset(e.isPlayer ? v.headYaw : v.facingYaw);
+        }
 
+        if (glm::length(v.pos - v.lastPos) > 8.0) {
+            v.lastPos = v.pos;
+            v.limbInit = false;
+            v.walk.Reset();
+            v.limbAcc = 0;
+            v.body.Reset(e.isPlayer ? v.headYaw : v.facingYaw);
+            v.cape.Reset();
+        }
         const glm::dvec3 step = v.pos - v.lastPos;
         const float horizontal = static_cast<float>(std::sqrt(step.x * step.x + step.z * step.z));
         v.groundSpeed = horizontal / dt;
@@ -512,21 +465,24 @@ namespace perlin::entity {
                 v.limbAcc -= 0.05;
                 ticks++;
                 v.tickPosPrev = v.tickPos;
-                v.tickPos = v.pos;
+                const double fraction = java::TickFraction(v.limbAcc, dt);
+                v.tickPos = v.lastPos + step * fraction;
                 const glm::dvec3 moved = v.tickPos - v.tickPosPrev;
                 const float dist = static_cast<float>(std::sqrt(moved.x * moved.x + moved.z * moved.z));
-                if (dist > 8.0f) {
-                    v.tickPosPrev = v.tickPos;
-                    v.limbSpd = v.limbSpdPrev = 0.0f;
-                    v.cloak = v.cloakPrev = v.tickPos;
-                    v.cape.Reset();
-                    continue;
+                const float facing = java::Turn(prevFacing, v.facingYaw, static_cast<float>(fraction));
+                const float head = java::Turn(prevHead, v.headYaw, static_cast<float>(fraction));
+                if (rotateBody) {
+                    if (e.Has(flag::Riding)) {
+                        v.body.previous = v.body.current;
+                        v.body.current = java::Turn(v.body.current, facing, 0.3f);
+                    } else if (e.isPlayer)
+                        v.body.PlayerTick(moved.x, moved.z, head, v.attackTime > 0 || e.swingSerial != v.swingSerial);
+                    else
+                        v.body.MobTick(moved.x, moved.z, facing, head);
                 }
-                v.limbSpdPrev = v.limbSpd;
-                v.limbPosPrev = v.limbPos;
-                v.limbSpd += (std::min(dist * 4.0f, 1.0f) - v.limbSpd) * 0.4f;
-                v.limbPos += v.limbSpd;
-                const bool onGround = std::fabs(moved.y) < 0.02;
+                v.walk.Tick(dist, e.Has(flag::Riding) || e.dying || e.sleeping);
+                if (e.isPlayer) v.swim.Tick(e.Has(flag::Swimming));
+                const bool onGround = e.onGround;
                 v.bobPrev = v.bob;
                 v.bob += ((onGround ? std::min(0.1f, dist) : 0.0f) - v.bob) * 0.4f;
                 v.walkDistPrev = v.walkDist;
@@ -541,7 +497,7 @@ namespace perlin::entity {
                     CapeTick ct;
                     ct.cloakX = static_cast<float>(v.cloak.x - v.tickPos.x);
                     ct.cloakZ = static_cast<float>(v.cloak.z - v.tickPos.z);
-                    ct.bodyYaw = v.yaw;
+                    ct.bodyYaw = rotateBody ? v.body.current : v.yaw;
                     ct.yaw = v.headYaw;
                     ct.moveX = static_cast<float>(moved.x);
                     ct.moveY = static_cast<float>(moved.y);
@@ -550,18 +506,15 @@ namespace perlin::entity {
                     v.cape.Tick(ct);
                 }
             }
-            if (ticks > 1 || v.limbAcc > 0.25) {
-                v.limbPosPrev = v.limbPos;
-                v.limbSpdPrev = v.limbSpd;
-                v.cloakPrev = v.cloak;
-                v.tickPosPrev = v.tickPos;
-                v.bobPrev = v.bob;
-                v.walkDistPrev = v.walkDist;
-            }
-            v.limbAcc = std::min(v.limbAcc, 0.05);
             const float p = static_cast<float>(v.limbAcc / 0.05);
-            v.limbAmount = v.limbSpdPrev + (v.limbSpd - v.limbSpdPrev) * p;
-            v.limbSwing = v.limbPosPrev + (v.limbPos - v.limbPosPrev) * p;
+            if (e.isPlayer) v.swimAmount = v.swim.Sample(p);
+            v.limbAmount = v.walk.Speed(p);
+            v.limbSwing = v.walk.Position(p, e.Has(flag::Baby));
+            if (rotateBody) {
+                v.yaw = v.body.Sample(p);
+                v.yawSpeed = java::Wrap(v.yaw - prevYaw) / dt;
+
+            }
             v.capeFlap = std::clamp(v.groundSpeed / 7.0f, 0.0f, 1.0f) * 0.25f;
 
             const double pd = static_cast<double>(p);
@@ -587,18 +540,15 @@ namespace perlin::entity {
         if (e.Has(flag::UsingItem) && !v.wasUsing)
             v.usingSince = in.time;
         v.wasUsing = e.Has(flag::UsingItem);
+        bool swingStarted = false;
         if (e.swingSerial != v.swingSerial) {
             v.swingSerial = e.swingSerial;
-            if (v.attackTime <= 0.0f || v.attackTime >= 0.5f)
-                v.attackTime = 0.0001f;
+            swingStarted = v.attackTime <= 0.0f || v.attackTime >= 0.5f;
         }
-        if (static const char* forced = PERLIN_ENV("PERLIN_PREVIEW_ATTACK"); forced && e.isSelf)
+        if (static const char* forced = PERLIN_ENV("PERLIN_PREVIEW_ATTACK"); forced && e.isPlayer && (e.isSelf || PERLIN_ENV("PERLIN_PREVIEW")))
             v.attackTime = static_cast<float>(std::atof(forced));
-        else if (v.attackTime > 0)
-            {
-            const float seconds = std::max(1.0f, e.isSelf ? in.ownSwingTicks : 6.0f) / 20.0f;
-            v.attackTime = v.attackTime + dt / seconds >= 1.0f ? 0.0f : v.attackTime + dt / seconds;
-        }
+        else
+            v.attackTime = java::AdvanceAttack(v.attackTime, dt, std::max(1.0f, e.isSelf ? in.ownSwingTicks : 6.0f) / 20.0f, swingStarted);
         if (e.hurtSerial != v.hurtSerial) {
             v.hurtSerial = e.hurtSerial;
             v.hurtTimer = 0.5f;
@@ -616,7 +566,7 @@ namespace perlin::entity {
         };
         ease(v.standAmount, e.Has(flag::Rearing), 0.5f);
         ease(v.sitAmount, e.Has(flag::Sitting), 0.3f);
-        ease(v.swimAmount, e.Has(flag::Swimming), 0.4f);
+        if (!e.isPlayer) ease(v.swimAmount, e.Has(flag::Swimming), 0.4f);
         ease(v.lieAmount, e.Has(flag::LayingDown), 0.4f);
         v.glideTime = e.Has(flag::Gliding) ? v.glideTime + dt : 0.0f;
         ease(v.swellAmount, e.Has(flag::Ignited), 1.5f);
@@ -762,12 +712,12 @@ namespace perlin::entity {
         host.verticalSpeed = v.verticalSpeed;
         host.capeFlap = v.capeFlap;
         host.bodyYaw = v.yaw;
-        host.headYaw = v.headYaw;
+        host.headYaw = !e.isPlayer && v.mobBody ? v.yaw + std::clamp(java::Wrap(v.headYaw - v.yaw), -75.0f, 75.0f) : v.headYaw;
         host.pitch = v.pitch;
         host.life = static_cast<float>(in.time - v.born);
-        host.dx = static_cast<float>(v.pos.x - v.lastPos.x) * 20.0f;
-        host.dy = static_cast<float>(v.pos.y - v.lastPos.y) * 20.0f;
-        host.dz = static_cast<float>(v.pos.z - v.lastPos.z) * 20.0f;
+        host.dx = static_cast<float>(v.pos.x - v.lastPos.x) / v.dt;
+        host.dy = static_cast<float>(v.pos.y - v.lastPos.y) / v.dt;
+        host.dz = static_cast<float>(v.pos.z - v.lastPos.z) / v.dt;
         host.yawSpeed = v.yawSpeed;
         host.standAmount = v.standAmount;
         host.sitAmount = v.sitAmount;
@@ -840,6 +790,25 @@ namespace perlin::entity {
             vars["is_using_brush"] = Value::Num(e.Has(flag::UsingItem) && e.mainHand == "minecraft:brush" ? 1.0 : 0.0);
         }
 
+        const attachable::GeometryLibrary* library = &assets.geometries;
+        std::string playerGeometry;
+        if (e.isPlayer && e.skin) {
+            const SkinData& s = *e.skin;
+            if (!s.geometryJson.empty()) {
+                auto& g = skinGeometry[s.serial];
+                if (!g) {
+                    g = std::make_unique<attachable::GeometryLibrary>();
+                    g->Load(s.geometryJson);
+                }
+                if (g->Size() > 0) {
+                    library = g.get();
+                    playerGeometry = s.geometryName;
+                }
+            }
+            if (playerGeometry.empty() && s.slim)
+                playerGeometry = "geometry.humanoid.customSlim";
+        }
+
         const attachable::Geometry* bindGeometry = nullptr;
         for (const auto& rcRef : def->renderControllers) {
             if (rcRef.condition && !rcRef.condition->Eval(v.scope).Truthy())
@@ -857,6 +826,9 @@ namespace perlin::entity {
             if (bindGeometry)
                 break;
         }
+        if (e.isPlayer && !playerGeometry.empty())
+            if (const auto* player = library->Find(playerGeometry))
+                bindGeometry = player;
         Pose pose;
         host.bonePivot = [bindGeometry](const std::string& bone, int axis, double& out) {
             if (!bindGeometry || axis < 0 || axis > 2)
@@ -876,15 +848,46 @@ namespace perlin::entity {
             for (const auto& [bn, xf] : pose)
                 std::cout << "[pose] " << e.type << " " << bn << " rot " << xf.rotation.x << "," << xf.rotation.y << "," << xf.rotation.z
                           << " pos " << xf.position.x << "," << xf.position.y << "," << xf.position.z << std::endl;
-        if (e.isPlayer && e.Has(flag::Riding) && v.swimAmount < 0.01f && v.lieAmount < 0.01f) {
-            // Seated pose on a mount (same angles as Java's riding pose): legs forward and splayed, arms held out.
-            pose["rightleg"].rotation = {-81.0f, -18.0f, -4.5f};
-            pose["leftleg"].rotation = {-81.0f, 18.0f, 4.5f};
-            pose["rightarm"].rotation.x += -36.0f;
-            pose["leftarm"].rotation.x += -36.0f;
+        java::PlayerPose javaPose;
+        bool javaPlayer = false;
+        if (e.isPlayer && !v.fp && !PERLIN_ENV("PERLIN_NO_JAVA_ANIMATIONS")) {
+            java::PlayerState state;
+            state.headYaw = java::Wrap(v.headYaw - v.yaw);
+            state.pitch = v.pitch;
+            state.walk = v.limbSwing;
+            state.speed = v.limbAmount;
+            state.age = host.life * 20.0f;
+            state.attack = v.attackTime;
+            state.swim = v.swimAmount;
+            state.crouching = e.Has(flag::Sneaking) && !e.Has(flag::Swimming) && !e.Has(flag::Riding);
+            state.riding = e.Has(flag::Riding);
+            state.gliding = v.glideTime > 0;
+            if (state.gliding) {
+                const float velocity = glm::length(glm::vec3(host.dx, host.dy, host.dz)) / 20.0f;
+                state.speedScale = std::pow(velocity * velocity / 0.2f, 3.0f);
+            }
+            state.usingItem = host.using_;
+            state.useTicks = host.usedTicks;
+            const auto arm = [&](const std::string& item, bool active) {
+                using A = java::ArmPose;
+                if (item.empty() || item == "minecraft:air") return A::Empty;
+                if (active) {
+                    if (item == "minecraft:shield") return A::Block;
+                    if (item == "minecraft:bow") return A::Bow;
+                    if (item == "minecraft:crossbow") return A::CrossbowCharge;
+                    if (item == "minecraft:trident") return A::Trident;
+                    if (item == "minecraft:spyglass") return A::Spyglass;
+                    if (item == "minecraft:goat_horn") return A::Horn;
+                    if (item == "minecraft:brush") return A::Brush;
+                }
+                return A::Item;
+            };
+            const bool offhandUse = host.blocking && e.mainHand != "minecraft:shield" && e.offHand == "minecraft:shield";
+            state.right = arm(e.mainHand, host.using_ && !offhandUse);
+            state.left = arm(e.offHand, host.using_ && offhandUse);
+            javaPose = java::AnimatePlayer(state);
+            javaPlayer = java::ApplyPlayerPose(javaPose, bindGeometry, pose);
         }
-        if (e.isPlayer && !v.fp && e.Has(flag::Sneaking) && v.swimAmount < 0.01f && v.lieAmount < 0.01f && !e.Has(flag::Riding))
-            ApplyJavaCrouch(pose, bindGeometry);
         if (e.isPlayer && e.isSelf) {
             const SkinParts& parts = in.ownParts;
             const auto hide = [&](bool shown, const char* bone) {
@@ -932,25 +935,6 @@ namespace perlin::entity {
         if (e.scale > 0.0f && !e.isPlayer)
             scale *= e.scale;
         outScale = scale;
-
-        const attachable::GeometryLibrary* library = &assets.geometries;
-        std::string playerGeometry;
-        if (e.isPlayer && e.skin) {
-            const SkinData& s = *e.skin;
-            if (!s.geometryJson.empty()) {
-                auto& g = skinGeometry[s.serial];
-                if (!g) {
-                    g = std::make_unique<attachable::GeometryLibrary>();
-                    g->Load(s.geometryJson);
-                }
-                if (g->Size() > 0) {
-                    library = g.get();
-                    playerGeometry = s.geometryName;
-                }
-            }
-            if (playerGeometry.empty() && s.slim)
-                playerGeometry = "geometry.humanoid.customSlim";
-        }
 
         const auto addLayer = [&](const std::string& controllerId, bool allowCapeOnly) {
             (void)allowCapeOnly;
@@ -1191,8 +1175,13 @@ namespace perlin::entity {
                     }
                     continue;
                 }
-                attachable::Pose elytraPose;
+                attachable::Pose armorPose, elytraPose;
                 const attachable::Pose* meshPose = &pose;
+                if (javaPlayer && item != "minecraft:elytra") {
+                    armorPose = pose;
+                    java::ApplyPlayerPose(javaPose, geometry, armorPose);
+                    meshPose = &armorPose;
+                }
                 if (item == "minecraft:elytra") {
                     elytraPose = pose;
                     elytraPose["body"].scale *= 1.067f;
@@ -1275,6 +1264,14 @@ namespace perlin::entity {
             const float t = std::min(v.glideTime * 20.0f, 10.0f);
             const float amount = std::clamp(t * t / 100.0f, 0.0f, 1.0f);
             model = glm::rotate(model, -amount * (90.0f + v.pitch) * kDeg, glm::vec3(1, 0, 0));
+        }
+        if (e.isPlayer && !v.fp && v.swimAmount > 0.0f && v.glideTime <= 0 && !e.sleeping && !PERLIN_ENV("PERLIN_NO_JAVA_ANIMATIONS")) {
+            // Java AvatarRenderer rotates about the feet, then moves the swimmer
+            // into the horizontal collision box. Crawling keeps the head level.
+            const float pitch = e.crawling ? 0.0f : v.pitch;
+            model = glm::rotate(model, -v.swimAmount * (90.0f + pitch) * kDeg, glm::vec3(1, 0, 0));
+            if (e.Has(flag::Swimming))
+                model = glm::translate(model, glm::vec3(0.0f, -v.swimAmount, 0.3f * v.swimAmount));
         }
         if (e.isSelf && (in.ownPose.x != 0.0f || in.ownPose.y != 0.0f || in.ownPose.z != 0.0f)) {
             model = glm::translate(model, glm::vec3(0.0f, 0.9f, 0.0f));
@@ -1442,7 +1439,7 @@ namespace perlin::entity {
         if (root.empty())
             return;
         assets.Configure(root);
-        auto& slot = views[e.runtimeId];
+        auto& slot = firstPersonView;
         if (!slot)
             slot = std::make_unique<View>();
         View& v = *slot;
@@ -1491,7 +1488,7 @@ namespace perlin::entity {
         if (root.empty())
             return;
         assets.Configure(root);
-        auto& slot = views[e.runtimeId];
+        auto& slot = dollView;
         if (!slot)
             slot = std::make_unique<View>();
         View& v = *slot;

@@ -1,0 +1,89 @@
+#pragma once
+#include "client/attachable/Geometry.hpp"
+#include <algorithm>
+#include <cmath>
+
+namespace perlin::entity::java {
+// Behavioral reference: Minecraft Java 26.3 LivingEntity, WalkAnimationState,
+// BodyRotationControl and HumanoidModel. Angles here are degrees except Part::rotation.
+inline float Wrap(float a) { return a - std::floor((a + 180.0f) / 360.0f) * 360.0f; }
+inline float Turn(float a, float b, float t) { return a + Wrap(b - a) * t; }
+struct BodyRotation {
+    float previous = 0, current = 0, stableHead = 0;
+    int stableTicks = 0;
+    void Reset(float yaw) { previous = current = stableHead = yaw; stableTicks = 0; }
+    void PlayerTick(double dx, double dz, float facing, bool swinging) {
+        previous = current;
+        float target = current;
+        if (dx * dx + dz * dz > 0.0025000002) {
+            float direction = static_cast<float>(std::atan2(dz, dx) * 57.295779513 - 90.0);
+            const float difference = std::abs(Wrap(facing - direction));
+            target = difference > 95.0f ? direction - 180.0f : direction;
+        }
+        if (swinging) target = facing;
+        current = Turn(current, target, 0.3f);
+        const float difference = Wrap(facing - current);
+        current += difference - std::clamp(difference, -50.0f, 50.0f);
+        previous = current - Wrap(current - previous);
+    }
+    void MobTick(double dx, double dz, float facing, float head, float limit = 75.0f) {
+        previous = current;
+        if (dx * dx + dz * dz > 2.500000277905201e-7) {
+            current = facing;
+            stableHead = head;
+            stableTicks = 0;
+        } else {
+            if (std::abs(Wrap(head - stableHead)) > 15.0f) {
+                stableTicks = 0;
+                stableHead = head;
+            } else if ((stableTicks = std::min(stableTicks + 1, 20)) > 10) {
+                limit *= 1.0f - std::clamp((stableTicks - 10) / 10.0f, 0.0f, 1.0f);
+            }
+            current = head - std::clamp(Wrap(head - current), -limit, limit);
+        }
+        previous = current - Wrap(current - previous);
+    }
+    float Sample(float partial) const { return Turn(previous, current, partial); }
+};
+struct WalkAnimation {
+    float previousSpeed = 0, speed = 0, position = 0;
+    void Reset() { previousSpeed = speed = position = 0; }
+    void Tick(float distance, bool stopped) {
+        if (stopped) { Reset(); return; }
+        previousSpeed = speed;
+        speed += (std::min(distance * 4.0f, 1.0f) - speed) * 0.4f;
+        position += speed;
+    }
+    float Speed(float p) const { return previousSpeed + (speed - previousSpeed) * p; }
+    float Position(float p, bool baby = false) const { return (position - speed * (1.0f - p)) * (baby ? 3.0f : 1.0f); }
+};
+// Sample every crossed 20 Hz tick along the frame trajectory, including catch-up frames.
+inline double TickFraction(double remainder, double dt) { return std::clamp(1.0 - remainder / dt, 0.0, 1.0); }
+struct PoseBlend {
+    float previous = 0, current = 0;
+    void Tick(bool active, float step = 0.09f) {
+        previous = current;
+        current = std::clamp(current + (active ? step : -step), 0.0f, 1.0f);
+    }
+    float Sample(float partial) const { return previous + (current - previous) * partial; }
+};
+inline float AdvanceAttack(float progress, float dt, float duration, bool started) {
+    if (started) return 0.0001f;
+    if (progress <= 0) return 0;
+    progress += dt / std::max(duration, 0.05f);
+    return progress >= 1 ? 0 : progress;
+}
+struct Part { glm::vec3 rotation{0}, offset{0}; };
+struct PlayerPose { Part head, body, rightArm, leftArm, rightLeg, leftLeg; };
+enum class ArmPose { Empty, Item, Block, Bow, Trident, CrossbowCharge, CrossbowHold, Spyglass, Horn, Brush };
+struct PlayerState {
+    float headYaw = 0, pitch = 0, walk = 0, speed = 0, age = 0, attack = 0, swim = 0, speedScale = 1;
+    float useTicks = 0;
+    bool crouching = false, riding = false, gliding = false, usingItem = false;
+    ArmPose right = ArmPose::Empty, left = ArmPose::Empty;
+};
+PlayerPose AnimatePlayer(const PlayerState& state);
+// Convert independent Java model parts into the supplied Bedrock bone hierarchy.
+// Children (sleeves, armor, held-item anchors) then inherit exactly once.
+bool ApplyPlayerPose(const PlayerPose& player, const attachable::Geometry* geometry, attachable::Pose& pose);
+}
