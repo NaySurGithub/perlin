@@ -56,6 +56,7 @@ namespace perlin::physics {
         virtual bool CollisionChunkReady(int x, int z) const { return true; }
         virtual bool CollisionColumnPresent(int x, int z) const { return CollisionChunkReady(x >> 4, z >> 4); }
         virtual bds::TerrainHeightLimits CollisionHeightLimits() const { return {}; }
+        virtual bool InsideRegionReady(const bds::CollisionBox& bounds) const;
     };
 
     struct Attributes {

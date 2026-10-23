@@ -47,6 +47,7 @@ Decompiler argument names and inferred types are not treated as semantic names.
 | Collision-cache append, subtraction and refresh | Converter `0x140F90C90`, difference helper `0x140F924E0`, complete callback `0x140F90EA0` | 512 append, 569 subtraction, 512 empty-world refresh and 256 nonempty refresh executions, plus native constructor defaults, agree bit-for-bit on ARM64 and x86-64/Rosetta. Covers append retention, null block metadata, incoming preservation flags, split/merge arithmetic and ordered incremental queries. Step uses the cache model within one request; native cross-phase request lifetime and nonempty full-world callback interactions remain unverified. |
 | Block slowdown application, accumulation and player immunity | Apply vtable `0x1466C66A0` → wrapper `0x140C2FD00` → loop `0x140C1EC20` → callback `0x140C1EF20`; accumulator `0x140B58EA0`, applied-record constructor `0x140B80D80`, fall-distance callback `0x140C1EF10`, player callback `0x140C1EE80` | 1,024 apply, 768 accumulation, 256 fall-distance and 256 player-immunity executions agree exactly. Apply is additionally checked by original native x86-64 execution. Step consumes stored multipliers before collision, clears velocity there, retains later restitution, and uses verified web accumulation/fall reset after all movement modes. EntityInside traversal, other block producers, mob exemptions and full scheduler integration remain under audit. |
 | Sneak eligibility and cached-shape edge clipping | Factory `0x140E7B1D0` → vtable `0x1466D1058` → run `0x140E8DED0` → loop `0x140E817E0` → wrapper `0x140E81520` → kernel `0x140E76C70`; filter `0x140E76AD0` | 1,024 complete executions with synthetic sparse-pool state and supplied cached shapes, without runtime hooks, match bit-for-bit on ARM64 and x86-64. Step clips after cache collection with the verified max-step/float arithmetic and only clears near-zero velocity lanes. The optional view is MoveInputComponent and actor flag bit 6 is TEMPTED; full input producers and ECS/scheduler integration remain under audit. |
+| Entity-inside cell traversal and region readiness | EntityInside callback `0x140B58960` → query `0x1410EE9B0`; LocalConstBlockSource vtable `0x1467AF088`, slot 14 → `0x143E8D580` | 804 traversal and 512 readiness executions agree bit-for-bit on ARM64 and x86-64. Step uses native cell-range rounding, complete visit order and chunk readiness before contact accumulation. Non-default component bounds/expansion producers, block-specific predicates and full EntityInside ECS lifetime remain under audit. |
 
 ## Required remaining coverage
 
@@ -135,6 +136,8 @@ build/bds-oracle-venv/bin/python tools/bds_reference/cache_refresh_records.py \
   --export build/bds-reference.json --out tests/data/bds_cache_refresh_records.txt
 build/bds-oracle-venv/bin/python tools/bds_reference/sneak.py \
   --export build/bds-reference.json --out tests/data/bds_sneak.txt
+build/bds-oracle-venv/bin/python tools/bds_reference/inside_query.py \
+  --export build/bds-reference.json --out tests/data/bds_inside_query.txt
 build/bds-oracle-venv/bin/python tools/bds_reference/support.py \
   --export build/bds-reference.json --out tests/data/bds_support.txt
 build/bds-oracle-venv/bin/python tools/bds_reference/landing.py \
@@ -157,8 +160,8 @@ build/bds-oracle-venv/bin/python tools/bds_reference/relative_movement.py \
 build/bds-oracle-venv/bin/python tools/bds_reference/trig_constants.py \
   --export build/bds-reference.json --out build/bds-trig-tables.hpp
 cmp src/client/player/BdsTrigTables.hpp build/bds-trig-tables.hpp
-cmake --build build --target bds_numeric_selftest bds_collision_selftest bds_vertical_selftest bds_water_drag_selftest bds_movement_effects_selftest bds_gliding_selftest bds_gliding_trace_selftest bds_trig_selftest bds_finalization_selftest bds_landing_selftest bds_support_selftest bds_world_collision_selftest bds_terrain_query_selftest bds_block_geometry_selftest voxel_shapes_selftest bds_block_offset_selftest block_offset_definition_selftest bds_collision_cache_selftest bds_cache_difference_selftest bds_cache_refresh_selftest bds_cache_refresh_records_selftest bds_block_slowdown_selftest bds_sneak_selftest physics_selftest bedsim_trace_selftest
-ctest --test-dir build -R '^(bds_numeric_selftest|bds_collision_selftest|bds_vertical_selftest|bds_water_drag_selftest|bds_movement_effects_selftest|bds_gliding_selftest|bds_gliding_trace_selftest|bds_trig_selftest|bds_finalization_selftest|bds_landing_selftest|bds_support_selftest|bds_world_collision_selftest|bds_terrain_query_selftest|bds_block_geometry_selftest|voxel_shapes_selftest|bds_block_offset_selftest|block_offset_definition_selftest|bds_collision_cache_selftest|bds_cache_difference_selftest|bds_cache_refresh_selftest|bds_cache_refresh_records_selftest|bds_block_slowdown_selftest|bds_sneak_selftest|physics_selftest|bedsim_trace_selftest)$' --output-on-failure
+cmake --build build --target bds_numeric_selftest bds_collision_selftest bds_vertical_selftest bds_water_drag_selftest bds_movement_effects_selftest bds_gliding_selftest bds_gliding_trace_selftest bds_trig_selftest bds_finalization_selftest bds_landing_selftest bds_support_selftest bds_world_collision_selftest bds_terrain_query_selftest bds_block_geometry_selftest voxel_shapes_selftest bds_block_offset_selftest block_offset_definition_selftest bds_collision_cache_selftest bds_cache_difference_selftest bds_cache_refresh_selftest bds_cache_refresh_records_selftest bds_block_slowdown_selftest bds_sneak_selftest bds_inside_query_selftest physics_selftest bedsim_trace_selftest
+ctest --test-dir build -R '^(bds_numeric_selftest|bds_collision_selftest|bds_vertical_selftest|bds_water_drag_selftest|bds_movement_effects_selftest|bds_gliding_selftest|bds_gliding_trace_selftest|bds_trig_selftest|bds_finalization_selftest|bds_landing_selftest|bds_support_selftest|bds_world_collision_selftest|bds_terrain_query_selftest|bds_block_geometry_selftest|voxel_shapes_selftest|bds_block_offset_selftest|block_offset_definition_selftest|bds_collision_cache_selftest|bds_cache_difference_selftest|bds_cache_refresh_selftest|bds_cache_refresh_records_selftest|bds_block_slowdown_selftest|bds_sneak_selftest|bds_inside_query_selftest|physics_selftest|bedsim_trace_selftest)$' --output-on-failure
 ```
 
 The oracle executes x86-64 code using the Windows ABI, MXCSR `0x1f80`, and bounded
@@ -288,7 +291,7 @@ producer is not established by supplying the same synthetic history to both.
 The full local macOS arm64 build succeeds, including Perlin and trace_diff,
 after integrating upstream `main` at `084a657`. The metadata merge keeps
 integer flag parsing and known-word tracking with the upstream helper API.
-The latest full CTest run passes 51 of 52 tests; the sole failing test is the
+The latest full CTest run passes 52 of 53 tests; the sole failing test is the
 legacy trace disagreement described below; the new web disagreements are resolved. The pure direction/glide
 suite also agrees under `-O3 -ffp-contract=fast`, and when relaxed math options
 are followed by the physics source's strict overrides. These checks do not
@@ -296,7 +299,7 @@ substitute for Windows/x86, other platforms or real game/server validation.
 
 Bundled trig and relative movement add 10,832 cases, bringing the kernel/table
 count to 103,616. Move finalization adds 1,792, bringing the total to 105,408. Landing response adds 1,856, and supporting-block selection adds 1,280,
-for 108,544. Unavailable-chunk collision collection adds 564, for 109,108. Terrain traversal adds 382 and the common block collector adds 310, for 109,800. Position seeding, offsets and description conversion add 1,388, for 111,188. Collision-cache append, subtraction and refresh add 1,593, for 112,781. Native request initialization and 256 nonempty cache refresh callbacks add 257, for 113,038. Block slowdown callbacks add 2,304, for 115,342. Sneak filtering and cached-shape clipping add 1,024, for 116,366, plus the separately reported 288 chained glide ticks. The
+for 108,544. Unavailable-chunk collision collection adds 564, for 109,108. Terrain traversal adds 382 and the common block collector adds 310, for 109,800. Position seeding, offsets and description conversion add 1,388, for 111,188. Collision-cache append, subtraction and refresh add 1,593, for 112,781. Native request initialization and 256 nonempty cache refresh callbacks add 257, for 113,038. Block slowdown callbacks add 2,304, for 115,342. Sneak filtering and cached-shape clipping add 1,024, for 116,366. Entity-inside traversal and region readiness add 1,316, for 117,682, plus the separately reported 288 chained glide ticks. The
 trig inputs include all exponent classes, mantissa boundaries, both signs,
 small/large reduction thresholds, infinities, quiet/signaling NaN payloads and
 seeded random float bit patterns. Both BDS SSE2 and SSE4 implementations agree
@@ -748,8 +751,9 @@ are initialized by the original constructor with insertion/storage hooks. The
 full 2,304-case portable suite matches optimized ARM64 and x86-64 builds, and
 fixture regeneration produces identical bytes.
 
-Runtime contact scanning still uses Perlin's existing inset/cell traversal and
-web identity. Native EntityInside shape predicates, dimension/world access,
+Runtime contact scanning now uses the separately verified native inset/cell
+traversal and region readiness. It retains Perlin's web identity. Native
+EntityInside block-specific shape predicates, dimension/world access,
 other slowdown sources (including berry bushes), spider/wither immunity and
 resistant-mob feature gating remain unported. The verified callbacks do not
 establish whole-tick or complete web physics parity.
@@ -787,3 +791,47 @@ request/velocity values, and stale generations. Both optimized ARM64 and
 x86-64/Rosetta portable builds agree exactly; regeneration is byte-identical.
 These are bounded finite cases, not a claim about arbitrary non-finite inputs,
 complete ECS selection or full-tick sneaking equivalence.
+
+
+## Entity-inside traversal and region readiness
+
+The caller `0x140B58960` chooses ordinary AABBShape bounds unless the optional
+InsideBlockComponent override flag at byte 48 is set. Expansion is read at byte
+52. Native constructor `0x140B80B90`, reached by getter `0x140B6D380`, zeros the
+entire 64-byte component, including override and expansion. Step uses ordinary
+bounds and zero expansion; non-default producers remain unported.
+
+The complete query `0x1410EE9B0` first rejects an absent callback, then subtracts
+expansion and adds `0.001f` to minima, adds expansion and subtracts `0.001f` from
+maxima, with separate float rounding. Its CVTTSS2SI/CMOVBE floor correction has
+specific NaN and negative-overflow behavior; it differs from the world-source
+floor helper and is ported separately. The resulting integer endpoints are
+converted back to float for one region readiness call with its boolean argument
+false. If ready, every X/Y/Z cell is acquired and passed to the visitor, with Z
+fastest; the function returns true even when an inverted cell range visits none.
+Step no longer stops scanning when the first web cell is found.
+
+LocalConstBlockSource vtable `0x1467AF088` slot 14 targets `0x143E8D580`.
+It computes the wrapped X/Z chunk-count product, visits X fastest, stops at the
+first absent chunk, and optionally rejects chunk byte 5352 only when requested.
+The entity-inside caller passes false, so that extra byte is ignored there.
+A zero product returns true without reading chunks. World maps this readiness
+service to its current chunk availability adapter; real chunk-source lifetime
+and other world predicates remain separate.
+
+804 complete query executions cover callback/readiness absence, float boundary
+coordinates, expansion, inverted/thin bounds, large positions and rejected
+exceptional-coordinate queries. 512 complete readiness executions cover chunk
+order, missing chunks, byte-5352 gating, early termination and empty ranges.
+Only world readiness/acquisition/visitor services are synthetic; arithmetic,
+iteration and decisions execute native instructions. Both optimized ARM64 and
+x86-64/Rosetta ports match all fields. Fixtures regenerate byte-identically.
+A Step regression verifies that an unavailable region does not accumulate web
+slowdown. These tests do not establish arbitrary block-specific contact behavior.
+
+A separate direct execution of the sprint-jump block at `0x140EAFD9C` with yaw
+270 and zero initial horizontal velocity returns X `0x3E4CCCCC` and Z
+`0xB7A081B4`. The legacy effects scenario expects zero Z at that heading. This
+confirms a specific reference incompatibility with BDS, but does not justify
+replacing the full legacy scenario with Perlin-generated expectations. Full
+native scenario generation remains required to resolve its gate honestly.

@@ -12,6 +12,7 @@
 #include "client/player/BdsCollisionCache.hpp"
 #include "client/player/BdsBlockSlowdown.hpp"
 #include "client/player/BdsSneak.hpp"
+#include "client/player/BdsInsideQuery.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -422,6 +423,12 @@ namespace perlin::physics {
                static_cast<float>(z1) > static_cast<float>(o.z0) && static_cast<float>(z0) < static_cast<float>(o.z1);
     }
 
+    bool World::InsideRegionReady(const bds::CollisionBox& bounds) const {
+        return bds::InsideRegionReady(bounds, false, [&](int32_t x, int32_t z) {
+            return bds::ChunkCollisionState{CollisionChunkReady(x, z)};
+        });
+    }
+
     MoveVector ProcessMoveInput(float forward, float strafe, bool sneaking, bool inWater) {
         const float lengthSq = forward * forward + strafe * strafe;
         if (lengthSq > 1.0f) {
@@ -704,14 +711,15 @@ namespace perlin::physics {
         const bool crouched = (in.sneak || in.forceCrouch) && !in.flying;
         {
             const Box inside = BoundingBox(s, crouched);
-            const int x0 = static_cast<int>(std::floor(static_cast<float>(inside.x0) + 0.001f)), x1 = static_cast<int>(std::floor(static_cast<float>(inside.x1) - 0.001f));
-            const int y0 = static_cast<int>(std::floor(static_cast<float>(inside.y0) + 0.001f)), y1 = static_cast<int>(std::floor(static_cast<float>(inside.y1) - 0.001f));
-            const int z0 = static_cast<int>(std::floor(static_cast<float>(inside.z0) + 0.001f)), z1 = static_cast<int>(std::floor(static_cast<float>(inside.z1) - 0.001f));
             bool web = false;
-            for (int cx = x0; cx <= x1 && !web; cx++)
-                for (int cy = y0; cy <= y1 && !web; cy++)
-                    for (int cz = z0; cz <= z1 && !web; cz++)
-                        web = world.Query(cx, cy, cz).web;
+            // InsideBlockComponent alternate bounds and expansion producers
+            // remain separate; use this actor's ordinary shape and zero expansion.
+            bds::CollectInsideCells(CollisionBox(inside), 0.0f, true,
+                                   [&](const bds::CollisionBox& region) { return world.InsideRegionReady(region); },
+                                   [&](int32_t x, int32_t y, int32_t z) {
+                const auto shape = world.Query(x, y, z);
+                web |= shape.web;
+            });
             if (web) {
                 bds::Float3 multiplier{s.stuckX, s.stuckY, s.stuckZ};
                 std::optional<bool> firstApplication;

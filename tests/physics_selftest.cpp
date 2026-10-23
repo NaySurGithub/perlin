@@ -102,6 +102,12 @@ int main() {
         state = {};
         Step(state, input, attr, web);
         CHECK(state.stuckX == 0 && state.stuckY == 0 && state.stuckZ == 0);
+        web.ready = [](int, int) { return false; };
+        state = {};
+        input.flying = false;
+        input.creativeFlight = false;
+        Step(state, input, attr, web);
+        CHECK(state.stuckX == 0 && state.stuckY == 0 && state.stuckZ == 0);
     }
 
     // Independent values from the executed BDS vertical-motion fixture. These
