@@ -1239,6 +1239,12 @@ if(PERLIN_BUILD_TESTS AND NOT EMSCRIPTEN AND NOT ANDROID)
     add_test(NAME bds_honey_selftest COMMAND bds_honey_selftest
         "${CMAKE_CURRENT_SOURCE_DIR}/tests/data/bds_honey.txt")
 
+    add_executable(bds_sprint_trace_selftest tests/bds_sprint_trace_selftest.cpp)
+    target_include_directories(bds_sprint_trace_selftest PRIVATE src)
+    target_compile_features(bds_sprint_trace_selftest PRIVATE cxx_std_23)
+    add_test(NAME bds_sprint_trace_selftest COMMAND bds_sprint_trace_selftest
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/data/bedsim_sprint_jumps.txt")
+
     add_executable(bedsim_trace_selftest
         tests/bedsim_trace_selftest.cpp
         src/client/player/PlayerPhysics.cpp)

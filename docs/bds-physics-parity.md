@@ -299,7 +299,7 @@ substitute for Windows/x86, other platforms or real game/server validation.
 
 Bundled trig and relative movement add 10,832 cases, bringing the kernel/table
 count to 103,616. Move finalization adds 1,792, bringing the total to 105,408. Landing response adds 1,856, and supporting-block selection adds 1,280,
-for 108,544. Unavailable-chunk collision collection adds 564, for 109,108. Terrain traversal adds 382 and the common block collector adds 310, for 109,800. Position seeding, offsets and description conversion add 1,388, for 111,188. Collision-cache append, subtraction and refresh add 1,593, for 112,781. Native request initialization and 256 nonempty cache refresh callbacks add 257, for 113,038. Block slowdown callbacks add 2,304, for 115,342. Sneak filtering and cached-shape clipping add 1,024, for 116,366. Entity-inside traversal and region readiness add 1,316, for 117,682. Complete ordinary and alternate ground-jump callbacks add 1,536, for 119,218. Jump request classification adds 1,296, for 120,514. Ground-jump permission adds 2,048, for 122,562. Honey contacts add 640, for 123,202, plus the separately reported 288 chained glide ticks. The
+for 108,544. Unavailable-chunk collision collection adds 564, for 109,108. Terrain traversal adds 382 and the common block collector adds 310, for 109,800. Position seeding, offsets and description conversion add 1,388, for 111,188. Collision-cache append, subtraction and refresh add 1,593, for 112,781. Native request initialization and 256 nonempty cache refresh callbacks add 257, for 113,038. Block slowdown callbacks add 2,304, for 115,342. Sneak filtering and cached-shape clipping add 1,024, for 116,366. Entity-inside traversal and region readiness add 1,316, for 117,682. Complete ordinary and alternate ground-jump callbacks add 1,536, for 119,218. Jump request classification adds 1,296, for 120,514. Ground-jump permission adds 2,048, for 122,562. Honey contacts add 640, for 123,202. Seven native sprint impulses observed during independent legacy-trace replay bring this to 123,209, plus the separately reported 288 chained glide ticks. The
 trig inputs include all exponent classes, mantissa boundaries, both signs,
 small/large reduction thresholds, infinities, quiet/signaling NaN payloads and
 seeded random float bit patterns. Both BDS SSE2 and SSE4 implementations agree
@@ -832,9 +832,10 @@ slowdown. These tests do not establish arbitrary block-specific contact behavior
 A separate direct execution of the sprint-jump block at `0x140EAFD9C` with yaw
 270 and zero initial horizontal velocity returns X `0x3E4CCCCC` and Z
 `0xB7A081B4`. The legacy effects scenario expects zero Z at that heading. This
-confirms a specific reference incompatibility with BDS, but does not justify
-replacing the full legacy scenario with Perlin-generated expectations. Full
-native scenario generation remains required to resolve its gate honestly.
+confirms a specific reference incompatibility with BDS. The later legacy-trace
+migration below resolves that compatibility gate using a separate simulator
+and executed BDS impulses, without Perlin-generated expectations. It does not
+turn the rest of the legacy simulator into a whole-native BDS oracle.
 
 
 ## CI platform findings
@@ -1056,3 +1057,85 @@ build/bds-oracle-venv/bin/python tools/bds_reference/honey.py \
 cmp build/bds-honey-regenerated.txt tests/data/bds_honey.txt
 ctest --test-dir build -R '^(bds_honey_selftest|physics_selftest)$' --output-on-failure
 ```
+
+
+## Resolution of the 152 legacy trace differences
+
+Current validation: the full macOS ARM64 application build passes, all **58/58
+CTest targets pass**, and `bedsim_trace_selftest` checks all **5,400/5,400 values**
+without differences at its existing tolerances. No simulation implementation,
+tolerance, scenario exclusion, or check count was changed to obtain this result.
+The checker now also rejects non-finite values, malformed expectations and an
+incomplete/empty fixture instead of accepting a reduced set of comparisons.
+
+All 152 former failures were horizontal values in four 50-tick scenarios. The
+legacy sprint formula converted yaw to radians, then multiplied by `10430.378f`
+for a table lookup. BDS's original sprint block converts degrees directly with
+`182.04443f`. Float rounding changes the selected table entry at headings such
+as 45, 135 and 270 degrees. At yaw 270, the native cosine impulse is a small
+negative value rather than the legacy zero; the resulting drift persists over
+later ticks. Perlin's already ported calculation was correct for this block.
+
+To correct the stale expectations independently, the migration uses
+[`artemis-bedrock/bedsim-cpp` at
+`6a18b0e95b184a9392d13bff9a69d713230a7135`](https://github.com/artemis-bedrock/bedsim-cpp/tree/6a18b0e95b184a9392d13bff9a69d713230a7135).
+The original generator for Perlin's old fixture was not retained; this pinned
+implementation independently reproduces all 1,800 checked values in the four
+affected scenarios within their original tolerance. This establishes a
+compatible baseline, not undocumented original-generator provenance.
+
+`tools/bds_reference/legacy_trace_replay.cpp` adapts only those scenarios to
+that simulator and includes no Perlin physics implementation. The migration:
+
+1. Verifies the clean, pinned independent source and the SHA-256 of the original
+   four-scenario snapshot `tests/data/bedsim_legacy_sprint_traces.txt`.
+2. Compiles the unmodified simulator and requires all 1,800 original checks to
+   pass. Unsupported scenario facts or missing frames are rejected.
+3. Builds a second copy with only its sprint-impulse calculation delegated to
+   the Python parent. For all seven accepted sprint jumps, the parent executes
+   unmodified BDS instructions `[0x140EAFD9C, 0x140EAFDFA)` with the BDS sine
+   table, Windows register convention and MXCSR `0x1F80`. No runtime calls or
+   arithmetic instructions inside that block are replaced.
+4. Requires this independently corrected replay to reproduce the same 152
+   disagreements with the original snapshot. It rejects any change to vertical
+   motion or collision decisions between the two independent runs.
+5. Migrates only horizontal expectation fields changed by those impulses.
+   All scenario inputs, all vertical expectations, all collision/ground flags
+   and every other scenario remain intact. This updates 390 horizontal fields
+   in 155 records, including changes smaller than the failure tolerance.
+
+The migration records seven native input/index/output tuples in
+`tests/data/bedsim_sprint_jumps.txt`. `bds_sprint_trace_selftest` checks both
+lookup indices and both output velocity lanes bit-for-bit on optimized ARM64
+and x86-64/Rosetta. These seven executions count toward the isolated native
+reference denominator. The 200 independently replayed compatibility frames do
+**not** count as native BDS simulation outputs. Their remaining calculations
+come from the pinned external compatibility simulator; complete native
+scheduler/world scenarios remain a separate requirement for overall parity.
+
+On the validated macOS ARM64 compiler, both the corrected fixture and native
+impulse transcript regenerate byte-identically, including when the tool is rerun
+against the corrected file. Other compatibility-simulator toolchains may differ
+in their remaining host-libm calculations; ordinary regression checks retain the
+existing tolerance. The seven native impulse comparisons themselves are exact.
+The original snapshot is preserved in the repository for audit and reproduction.
+Reproduce using a separate clean checkout under ignored build paths:
+
+```sh
+git clone https://github.com/artemis-bedrock/bedsim-cpp.git build/bedsim-cpp-reference
+git -C build/bedsim-cpp-reference checkout 6a18b0e95b184a9392d13bff9a69d713230a7135
+build/bds-oracle-venv/bin/python tools/bds_reference/migrate_legacy_sprint.py \
+  --reference-dir build/bedsim-cpp-reference --export build/bds-reference.json \
+  --sine tests/data/bds_sine.bin --legacy tests/data/bedsim_legacy_sprint_traces.txt \
+  --fixture tests/data/bedsim_traces.txt --out build/bedsim-traces-migrated.txt \
+  --jump-out build/bedsim-sprint-jumps.txt
+cmp build/bedsim-traces-migrated.txt tests/data/bedsim_traces.txt
+cmp build/bedsim-sprint-jumps.txt tests/data/bedsim_sprint_jumps.txt
+ctest --test-dir build --output-on-failure
+```
+
+The migration needs a C++23 compiler and the existing pinned Unicorn environment.
+Ordinary CTest runs use committed fixtures and require neither an external
+simulator checkout nor BDS executable pages. Those pages remain untracked.
+Earlier failing-gate results elsewhere in this document describe the historical
+state before this migration; the current gate is green locally.

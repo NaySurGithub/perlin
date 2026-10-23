@@ -130,10 +130,13 @@ int main(int argc, char** argv) {
         } else if (tag == "E") {
             double px, py, pz, vx, vy, vz;
             int og, cx, cy, cz;
-            in >> px >> py >> pz >> vx >> vy >> vz >> og >> cx >> cy >> cz;
+            if (!(in >> px >> py >> pz >> vx >> vy >> vz >> og >> cx >> cy >> cz)) {
+                std::fprintf(stderr, "Malformed trace expectation in %s step %d\n", scenario.c_str(), stepIndex);
+                return 1;
+            }
             auto bad = [&](const char* what, double got, double want, double eps) {
                 checked++;
-                if (std::fabs(got - want) > eps) {
+                if (!std::isfinite(got) || !std::isfinite(want) || std::fabs(got - want) > eps) {
                     failed++;
                     scenarioBad = true;
                     if (!reported || verbose) {
@@ -164,6 +167,10 @@ int main(int argc, char** argv) {
     }
     if (scenarioBad)
         scenariosFailed++;
+    if (!file.eof() || checked != 5400) {
+        std::fprintf(stderr, "Invalid or incomplete legacy trace fixture: %d checks (expected 5400)\n", checked);
+        return 1;
+    }
     std::printf("bedsim traces: %d checks, %d failed, %d scenarios with failures\n", checked, failed, scenariosFailed);
     return failed == 0 ? 0 : 1;
 }
