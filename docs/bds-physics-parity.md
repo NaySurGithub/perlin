@@ -46,7 +46,7 @@ Decompiler argument names and inferred types are not treated as semantic names.
 | Relative movement and bundled trig | DefaultMoveSystems registration `0x140B52880`; Ground/Air vtables `0x1466C47A8` / `0x1466C47E0`; callback `0x140B52740` → helper `0x140B52390` → kernel `0x1432674C0`; sincos wrapper `0x146251E30`, dispatch `0x146251E10`, vector sine `0x146251EA0` / `0x1462527E0`, rare helper `0x146253D80` | Full three-lane arithmetic and bundled trig ported, including large finite range reduction, tiny arguments and exceptional-value output bits. 7,248 trig and 3,584 relative-movement cases match, with both CPU dispatch variants. Independently cross-checked by executing the original BDS routines as native x86-64 code under Rosetta; this caught an emulator NaN-propagation discrepancy. Integrated into Step in place of host sin/cos. Full input/travel selection and other floating-point kernels remain under audit. |
 | Collision-cache append, subtraction and refresh | Converter `0x140F90C90`, difference helper `0x140F924E0`, complete callback `0x140F90EA0` | 512 append, 569 subtraction, 512 empty-world refresh and 256 nonempty refresh executions, plus native constructor defaults, agree bit-for-bit on ARM64 and x86-64/Rosetta. Covers append retention, null block metadata, incoming preservation flags, split/merge arithmetic and ordered incremental queries. Step uses the cache model within one request; native cross-phase request lifetime and nonempty full-world callback interactions remain unverified. |
 | Block slowdown application, accumulation and player immunity | Apply vtable `0x1466C66A0` → wrapper `0x140C2FD00` → loop `0x140C1EC20` → callback `0x140C1EF20`; accumulator `0x140B58EA0`, applied-record constructor `0x140B80D80`, fall-distance callback `0x140C1EF10`, player callback `0x140C1EE80` | 1,024 apply, 768 accumulation, 256 fall-distance and 256 player-immunity executions agree exactly. Apply is additionally checked by original native x86-64 execution. Step consumes stored multipliers before collision, clears velocity there, retains later restitution, and uses verified web accumulation/fall reset after all movement modes. EntityInside traversal, other block producers, mob exemptions and full scheduler integration remain under audit. |
-| Sneak eligibility and cached-shape edge clipping | Factory `0x140E7B1D0` → vtable `0x1466D1058` → run `0x140E8DED0` → loop `0x140E817E0` → wrapper `0x140E81520` → kernel `0x140E76C70`; filter `0x140E76AD0` | 1,024 complete executions with synthetic sparse-pool state and supplied cached shapes, without runtime hooks, match bit-for-bit on ARM64 and x86-64. Step clips after cache collection with the verified max-step/float arithmetic and only clears near-zero velocity lanes. Optional control-component semantics, actor flag bit 6 and complete ECS/scheduler integration remain under audit. |
+| Sneak eligibility and cached-shape edge clipping | Factory `0x140E7B1D0` → vtable `0x1466D1058` → run `0x140E8DED0` → loop `0x140E817E0` → wrapper `0x140E81520` → kernel `0x140E76C70`; filter `0x140E76AD0` | 1,024 complete executions with synthetic sparse-pool state and supplied cached shapes, without runtime hooks, match bit-for-bit on ARM64 and x86-64. Step clips after cache collection with the verified max-step/float arithmetic and only clears near-zero velocity lanes. The optional view is MoveInputComponent and actor flag bit 6 is TEMPTED; full input producers and ECS/scheduler integration remain under audit. |
 
 ## Required remaining coverage
 
@@ -761,8 +761,12 @@ The native filter `0x140E76AD0` checks two sparse-pool memberships/generations.
 When the optional 100-byte control component is present, its first byte bit 0
 supplies the crouch condition; otherwise ActorDataFlag bit 1 does. Ground
 membership is required. It writes MoveRequest byte 85 before rejecting actor
-flag bit 6. The optional component's full identity/producer and bit 6's meaning
-remain unconfirmed; Step still supplies its existing local sneak/ground gate.
+flag bit 6. Wrapper `0x140E8D2F0` identifies the optional view as MoveInputComponent
+(hash `0x468BCD2E`) and the other view as OnGroundFlagComponent
+(`0xC3E299A3`). The native enum-name table `0x146AFBD80` identifies actor
+flag bit 6 as TEMPTED. Step supplies its local sneak/ground state and now
+records the low actor-flag byte from own-player metadata in replayable Input.
+The full MoveInput producer and scheduler remain under audit.
 The native filter itself is tested for absent, valid and stale memberships.
 
 The complete kernel in `0x140E76C70` uses cached shapes collected before this

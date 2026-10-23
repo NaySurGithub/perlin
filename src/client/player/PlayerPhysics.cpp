@@ -628,8 +628,10 @@ namespace perlin::physics {
 
         Vec3 req = ApplyStoredBlockSlowdown(s, {s.vx, s.vy, s.vz});
         const Box box = BoundingBox(s, crouched);
+        bool requestSneakFlag = false;
+        const bool clipSneak = bds::ShouldClipSneak(in.actorMovementFlags, sneaking, grounded, requestSneakFlag);
         const Motion m = ResolveMotion(world, box, req, {s.vx, s.vy, s.vz}, grounded, scratch, bds::RecoveryLimits(s.recovery),
-                                       attr.maxAutoStep, in.flying, s.canAlwaysAutoStep, sneaking && grounded);
+                                       attr.maxAutoStep, in.flying, s.canAlwaysAutoStep, clipSneak);
         bds::UpdateRecovery(s.recovery, m.penetration >= 1.0e-6f, in.pushTowardsClosestSpace);
         Vec3 v = FinalizeMotion(s, m, m.velocity);
         if (m.stepped)

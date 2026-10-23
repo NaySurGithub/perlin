@@ -553,6 +553,14 @@ int main() {
             Step(s, in, attr, edge);
         CHECK(Near(s.y, 0.0, 1e-6));
         CHECK(s.z < 1.31);
+        // ActorDataFlag 6 (TEMPTED) bypasses the native sneak edge filter.
+        s = {};
+        s.x = s.z = 0.5;
+        s.onGround = true;
+        in.actorMovementFlags = 0x40;
+        for (int i = 0; i < 60; ++i)
+            Step(s, in, attr, edge);
+        CHECK(s.z > 1.31 && s.y < 0);
     }
 
     {

@@ -92,6 +92,7 @@ namespace perlin::physics {
         bool crawl = false;
         bool forceCrouch = false;
         bool pushTowardsClosestSpace = false;
+        uint8_t actorMovementFlags = 0;
         bds::GravityFlags gravity;
         std::vector<bds::MovementEffect> movementEffects;
     };
