@@ -488,7 +488,7 @@ namespace perlin {
         for (int dir = 0; dir < 6; dir++) {
             const int axis = dir < 2 ? 1 : (dir < 4 ? 2 : 0);
             const bool high = dir & 1;
-            for (int b = 0; b < s.count; b++) {
+            for (int b = 0; b < s.boxes.size(); b++) {
                 const physics::Box& bx = s.boxes[b];
                 const double lo[3] = {bx.x0, bx.y0, bx.z0}, hi[3] = {bx.x1, bx.y1, bx.z1};
                 if (high ? hi[axis] < 1.0 - eps : lo[axis] > eps)
@@ -547,7 +547,7 @@ namespace perlin {
         {
             const physics::BlockShape& shape = LevelCollision::ShapeOf(id);
             bool full = false;
-            for (int b = 0; b < shape.count && !full; b++) {
+            for (int b = 0; b < shape.boxes.size() && !full; b++) {
                 const physics::Box& bx = shape.boxes[b];
                 full = bx.x0 <= 1e-6 && bx.y0 <= 1e-6 && bx.z0 <= 1e-6 && bx.x1 >= 1.0 - 1e-6 && bx.y1 >= 1.0 - 1e-6 &&
                        bx.z1 >= 1.0 - 1e-6;

@@ -8120,7 +8120,7 @@ namespace perlin {
                                                                    if (id == 0)
                                                                        return false;
                                                                    const physics::BlockShape& sh = LevelCollision::ShapeOf(id);
-                                                                   return sh.count == 1 && sh.boxes[0].x0 <= 0.001 && sh.boxes[0].y0 <= 0.001 &&
+                                                                   return sh.boxes.size() == 1 && sh.boxes[0].x0 <= 0.001 && sh.boxes[0].y0 <= 0.001 &&
                                                                           sh.boxes[0].z0 <= 0.001 && sh.boxes[0].x1 >= 0.999 &&
                                                                           sh.boxes[0].y1 >= 0.999 && sh.boxes[0].z1 >= 0.999;
                                                                });
@@ -8236,7 +8236,7 @@ namespace perlin {
                         int8_t& s = solidById[id];
                         if (s < 0) {
                             const physics::BlockShape& sh = LevelCollision::ShapeOf(id);
-                            s = (sh.count == 1 && sh.boxes[0].x0 <= 0.001 && sh.boxes[0].y0 <= 0.001 && sh.boxes[0].z0 <= 0.001 &&
+                            s = (sh.boxes.size() == 1 && sh.boxes[0].x0 <= 0.001 && sh.boxes[0].y0 <= 0.001 && sh.boxes[0].z0 <= 0.001 &&
                                  sh.boxes[0].x1 >= 0.999 && sh.boxes[0].y1 >= 0.999 && sh.boxes[0].z1 >= 0.999)
                                     ? 1
                                     : 0;
@@ -8251,7 +8251,7 @@ namespace perlin {
                         const auto itemSolid = [&](int x, int y, int z) {
                             bool loaded = false;
                             const uint16_t id = entityLevel.GetBlock(x, y, z, loaded);
-                            return !loaded || (id != 0 && LevelCollision::ShapeOf(id).count > 0);
+                            return !loaded || (id != 0 && !LevelCollision::ShapeOf(id).Empty());
                         };
                         while (itemAcc >= 0.05) {
                             itemAcc -= 0.05;

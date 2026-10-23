@@ -1,5 +1,14 @@
 #pragma once
 #include <cstdint>
+#include "client/player/BdsCollision.hpp"
+#include "client/player/BdsVerticalMotion.hpp"
+#include "client/player/BdsMovementEffects.hpp"
+#include "client/player/BdsRotation.hpp"
+#include "client/player/BdsLanding.hpp"
+#include "client/player/BdsWorldCollision.hpp"
+#include "client/player/BdsBlockOffset.hpp"
+
+#include <vector>
 
 namespace perlin::physics {
     constexpr double kTickSeconds = 0.05;
@@ -26,11 +35,9 @@ namespace perlin::physics {
         bool Intersects(const Box& o) const;
     };
 
-    constexpr int kMaxShapeBoxes = 8;
-
     struct BlockShape {
-        int count = 0;
-        Box boxes[kMaxShapeBoxes];
+        std::vector<Box> boxes;
+        std::optional<bds::BlockRandomOffset> randomOffset;
         float friction = 0.6f;
         uint8_t surface = 0;
         uint8_t fluid = 0;
@@ -39,13 +46,16 @@ namespace perlin::physics {
         bool climbable = false;
         bool web = false;
         float speedFactor = 1.0f;
-        bool Empty() const { return count == 0; }
+        bool Empty() const { return boxes.empty(); }
     };
 
     class World {
     public:
         virtual ~World() = default;
         virtual BlockShape Query(int x, int y, int z) const = 0;
+        virtual bool CollisionChunkReady(int x, int z) const { return true; }
+        virtual bool CollisionColumnPresent(int x, int z) const { return CollisionChunkReady(x >> 4, z >> 4); }
+        virtual bds::TerrainHeightLimits CollisionHeightLimits() const { return {}; }
     };
 
     struct Attributes {
@@ -56,6 +66,11 @@ namespace perlin::physics {
         int jumpBoost = 0;
         int levitation = 0;
         bool slowFalling = false;
+        float maxAutoStep = static_cast<float>(kStepHeight);
+        int waterWalkSpeedEnchant = 0;
+        std::optional<float> waterDrag;
+        std::optional<float> underwaterSpeed = 0.02f;
+        bool dolphin = false;
     };
 
     struct Input {
@@ -73,9 +88,12 @@ namespace perlin::physics {
         bool headInWater = false;
         float lookY = 0;
         bool gliding = false;
-        float javaPitch = 0;
+        float pitch = 0;
         bool crawl = false;
         bool forceCrouch = false;
+        bool pushTowardsClosestSpace = false;
+        bds::GravityFlags gravity;
+        std::vector<bds::MovementEffect> movementEffects;
     };
 
     struct State {
@@ -85,12 +103,21 @@ namespace perlin::physics {
         bool onGround = false;
         bool horizontalCollision = false;
         bool verticalCollision = false;
+        bool collision = false;
+        bool collidableMobNear = false;
         bool inWater = false;
         bool inLava = false;
         bool onClimbable = false;
         bool crawling = false;
         int jumpDelay = 0;
         float stuckX = 0, stuckY = 0, stuckZ = 0;
+        float fallDistance = 0;
+        bds::MovementEffects movementEffects;
+        bds::Rotation previousRotation;
+        std::optional<bds::Float3> restitution;
+
+        bds::RecoveryState recovery;
+        bool canAlwaysAutoStep = false;
 
         Box box;
         bool hasBox = false;

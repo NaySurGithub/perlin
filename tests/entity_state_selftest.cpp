@@ -24,6 +24,7 @@ int main() {
     static_assert(FlagsMetadataFlags2::Sleeping == (1ull << 12));
     static_assert(FlagsMetadataFlags2::Blocking == (1ull << 8));
     static_assert(FlagsMetadataFlags2::Crawling == (1ull << 50));
+    static_assert(FlagsMetadataFlags2::PushTowardsClosestSpace == (1ull << 45));
     SetEntityDataPacket sent;
     sent.runtimeEntityId = 17;
     const uint64_t flags = FlagsMetadataFlags1::Eating | FlagsMetadataFlags1::Swimming |

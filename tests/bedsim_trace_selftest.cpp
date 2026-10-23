@@ -42,8 +42,8 @@ namespace {
             s.web = (f.flags & 8) != 0;
             const Box cell{double(x), double(y), double(z), x + 1.0, y + 1.0, z + 1.0};
             for (const Box& b : boxes)
-                if (b.Intersects(cell) && s.count < kMaxShapeBoxes)
-                    s.boxes[s.count++] = b.Offset(-x, -y, -z);
+                if (b.Intersects(cell))
+                    s.boxes.push_back(b.Offset(-x, -y, -z));
             return s;
         }
     };

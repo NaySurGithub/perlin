@@ -6,6 +6,7 @@
 #include "network/PlayerConstants.hpp"
 
 #include <algorithm>
+#include <bit>
 #include <cmath>
 #include <iostream>
 
@@ -255,7 +256,7 @@ namespace perlin {
         in.gliding = gliding;
         in.crawl = crawling;
         in.forceCrouch = forcedSneak;
-        in.javaPitch = -camera.pitch;
+        in.pitch = BedrockPitch(camera.pitch);
         in.swimming = swimming && !gliding;
         in.headInWater = headUnderwater;
         in.lookY = std::sin(glm::radians(camera.pitch));
@@ -270,11 +271,19 @@ namespace perlin {
         in.flyDown = flying && sneakKey;
         in.noClip = flying && (session.NoClip() || session.Spectator());
         in.creativeFlight = session.GameType() == 1;
+        const auto actorFlags = session.OwnActorFlags();
+        in.pushTowardsClosestSpace = (actorFlags[1] & proto::FlagsMetadataFlags2::PushTowardsClosestSpace) != 0;
+        in.gravity.hasGravity = (actorFlags[0] & proto::FlagsMetadataFlags1::AffectedByGravity) != 0;
+        in.gravity.inScaffolding = (actorFlags[1] & proto::FlagsMetadataFlags2::InScaffolding) != 0;
+        in.gravity.overScaffolding = (actorFlags[1] & proto::FlagsMetadataFlags2::OverScaffolding) != 0;
+        in.gravity.descendThroughBlock = (actorFlags[1] & proto::FlagsMetadataFlags2::FallThroughScaffolding) != 0;
 
         physics::Attributes attributes;
         attributes.speed = session.MovementSpeedAttribute();
         attributes.flySpeed = session.FlySpeed();
         attributes.verticalFlySpeed = session.VFlySpeed();
+        attributes.waterWalkSpeedEnchant = session.WaterWalkSpeedEnchant();
+        attributes.underwaterSpeed = session.UnderwaterMovementSpeedAttribute();
         for (const auto& effect : session.GetEffects()) {
             if (effect.id == 8)
                 attributes.jumpBoost = effect.amplifier + 1;
@@ -283,6 +292,11 @@ namespace perlin {
             else if (effect.id == 27)
                 attributes.slowFalling = true;
         }
+
+        if (column && !asleep)
+            for (const auto& effect : session.TakeMovementEffects())
+                in.movementEffects.push_back({effect.tick, std::bit_cast<int32_t>(effect.duration),
+                                              static_cast<int32_t>(effect.type)});
 
         state.yaw = BedrockYaw(camera.yaw);
         Record rec;

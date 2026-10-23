@@ -1044,8 +1044,11 @@ namespace perlin {
                 for (const MetadataDictionaryEntry& m : p.metadata) {
                     int64_t integer = 0;
                     if (m.key == MetadataDictionaryEntryKey::Flags || m.key == MetadataDictionaryEntryKey::FlagsExtended) {
-                        if (net::MetadataInteger(m, integer))
-                            ownFlagWords[m.key == MetadataDictionaryEntryKey::Flags ? 0 : 1] = static_cast<uint64_t>(integer);
+                        if (net::MetadataInteger(m, integer)) {
+                            const size_t word = m.key == MetadataDictionaryEntryKey::Flags ? 0 : 1;
+                            ownFlagWords[word] = static_cast<uint64_t>(integer);
+                            ownFlagWordsKnown[word] = true;
+                        }
                         continue;
                     }
                     double n = 0;
@@ -1164,8 +1167,6 @@ namespace perlin {
                     ownAttributes[a.name] = a.current;
             }
             for (const PlayerAttributesEntry& a : p.attributes) {
-                if (a.name == "minecraft:movement" && a.current > 0.0f && a.current < 5.0f)
-                    movementSpeed = a.current;
                 if (a.name == "minecraft:health") {
                     const bool recent = std::chrono::steady_clock::now() - lastHurtAt < std::chrono::milliseconds(250);
                     if (lastHealth >= 0.0f && a.current < lastHealth - 0.01f && a.current > 0.0f && !recent)

@@ -467,6 +467,17 @@ namespace perlin {
         state = State::Connecting;
 
         {
+            std::lock_guard lk(attrMutex);
+            ownFlagWords = {};
+            ownFlagWordsKnown = {};
+            ownAttributes.clear();
+        }
+        {
+            std::lock_guard lk(statusMutex);
+            pendingMovementEffects.clear();
+        }
+
+        {
             std::lock_guard<std::mutex> lk(txMutex);
             cipher.reset();
             net.reset();

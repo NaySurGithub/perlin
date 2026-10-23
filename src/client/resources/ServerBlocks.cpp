@@ -34,11 +34,13 @@ namespace perlin {
         pending.clear();
         all.clear();
         collisions.clear();
+        collisionRevision.fetch_add(1, std::memory_order_release);
     }
 
     void ServerBlocks::SetCollision(const std::string& name, CustomBlockCollision collision) {
         std::lock_guard lock(mutex);
         collisions[name] = std::move(collision);
+        collisionRevision.fetch_add(1, std::memory_order_release);
     }
 
     bool ServerBlocks::Collision(const std::string& name, CustomBlockCollision& out) const {
