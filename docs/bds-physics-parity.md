@@ -299,7 +299,7 @@ substitute for Windows/x86, other platforms or real game/server validation.
 
 Bundled trig and relative movement add 10,832 cases, bringing the kernel/table
 count to 103,616. Move finalization adds 1,792, bringing the total to 105,408. Landing response adds 1,856, and supporting-block selection adds 1,280,
-for 108,544. Unavailable-chunk collision collection adds 564, for 109,108. Terrain traversal adds 382 and the common block collector adds 310, for 109,800. Position seeding, offsets and description conversion add 1,388, for 111,188. Collision-cache append, subtraction and refresh add 1,593, for 112,781. Native request initialization and 256 nonempty cache refresh callbacks add 257, for 113,038. Block slowdown callbacks add 2,304, for 115,342. Sneak filtering and cached-shape clipping add 1,024, for 116,366. Entity-inside traversal and region readiness add 1,316, for 117,682. Complete ordinary and alternate ground-jump callbacks add 1,536, for 119,218. Jump request classification adds 1,296, for 120,514, plus the separately reported 288 chained glide ticks. The
+for 108,544. Unavailable-chunk collision collection adds 564, for 109,108. Terrain traversal adds 382 and the common block collector adds 310, for 109,800. Position seeding, offsets and description conversion add 1,388, for 111,188. Collision-cache append, subtraction and refresh add 1,593, for 112,781. Native request initialization and 256 nonempty cache refresh callbacks add 257, for 113,038. Block slowdown callbacks add 2,304, for 115,342. Sneak filtering and cached-shape clipping add 1,024, for 116,366. Entity-inside traversal and region readiness add 1,316, for 117,682. Complete ordinary and alternate ground-jump callbacks add 1,536, for 119,218. Jump request classification adds 1,296, for 120,514. Ground-jump permission adds 2,048, for 122,562, plus the separately reported 288 chained glide ticks. The
 trig inputs include all exponent classes, mantissa boundaries, both signs,
 small/large reduction thresholds, infinities, quiet/signaling NaN payloads and
 seeded random float bit patterns. Both BDS SSE2 and SSE4 implementations agree
@@ -959,3 +959,49 @@ ctest --test-dir build -R '^bds_jump_requests_selftest$' --output-on-failure
 
 The full application build passes after this addition. Local CTest is 54/55;
 the sole failure remains the same 152 legacy trace checks in four scenarios.
+
+
+## Ground-jump permission predicate
+
+The local-player callback `0x140EB0340` checks `0x140DEFBF0` before invoking
+ordinary jump calculation. ActorDataFlag bits 69 (IN_SCAFFOLDING), 70
+(OVER_SCAFFOLDING), and 71 (DESCEND_THROUGH_BLOCK) suppress jumping when either
+scaffolding flag and descent are both set. The native enum table at
+`0x146AFBD80` proves these identities. Step now applies this gate from its
+existing GravityFlags. An integration regression covers suppression and descent
+away from scaffolding; this does not prove the input producers of those flags.
+
+The predicate separately rejects a powder-snow support block unless the actor
+has CanStandOnSnowFlagComponent `0xA0CA7F35` or HasLightweightFamilyFlagComponent
+`0x9EB7A38D`. The membership services resolve through vtable `0x1466C73F8` slots
+5/6 to `0x140C6D940` / `0x140C6D8B0`. Native initializer `0x1400E3CB0` stores
+`minecraft:powder_snow` into the hash/string object at `0x14715EAE0`; this
+establishes the compared block identity without guessing from behavior.
+
+The 2,048 reference cases execute permission branches in the original BDS
+predicate with supplied supporting-block selection, block identity, and ECS
+membership services. They exhaust the low eight bits of the upper actor-flag
+word and both values of snow/standing/lightweight membership. Tests check the
+permission result and lazy membership-query order: standing is queried only for
+snow; lightweight only when standing was false. All checked outputs match in
+optimized ARM64 and x86-64/Rosetta builds, and regeneration is byte-identical.
+
+The synthetic support selector replaces `0x143262B80` for this predicate test.
+It does not prove that selector or its world helper `0x143E943A0` is equivalent.
+Those routines choose a support shape from an expanded query with world,
+block-specific and actor collision services; their complete integration remains
+unfinished. The portable full predicate is available, but Step currently
+integrates only the proven scaffolding flag gate. Powder-snow selection,
+standing/lightweight producers, leather-equipment transitions and the broader
+local-player request schedule remain required work.
+
+```sh
+build/bds-oracle-venv/bin/python tools/bds_reference/jump_predicate.py \
+  --export build/bds-reference.json --out build/bds-jump-predicate-regenerated.txt
+cmp build/bds-jump-predicate-regenerated.txt tests/data/bds_jump_predicate.txt
+ctest --test-dir build -R '^(bds_jump_predicate_selftest|physics_selftest)$' --output-on-failure
+```
+
+The full local application builds and CTest reports 55/56 passing targets.
+The same 152 legacy trace differences remain; no fixture expectations,
+exclusions or tolerances were changed during these jump additions.

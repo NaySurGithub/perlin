@@ -13,6 +13,7 @@
 #include "client/player/BdsBlockSlowdown.hpp"
 #include "client/player/BdsSneak.hpp"
 #include "client/player/BdsInsideQuery.hpp"
+#include "client/player/BdsJumpRequests.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -611,7 +612,9 @@ namespace perlin::physics {
         }
 
         const bool climbJump = in.jump && s.onClimbable;
-        const bool jumpInitiated = in.jump && !glide && !climbJump && s.onGround && s.jumpDelay == 0 && !water && !lava;
+        const bool jumpInitiated = in.jump && !glide && !climbJump && s.onGround && s.jumpDelay == 0 && !water && !lava &&
+            bds::ScaffoldingAllowsJump(in.gravity.inScaffolding, in.gravity.overScaffolding,
+                                      in.gravity.descendThroughBlock);
         if (jumpInitiated) {
             bds::JumpParameters jump;
             jump.bodyMinimumY = static_cast<float>(BoundingBox(s, crouched).y0);

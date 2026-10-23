@@ -74,6 +74,17 @@ int main() {
         state.onGround = true;
         Step(state, input, custom, empty);
         CHECK(state.y == static_cast<double>(0.125f * 0.6f));
+        state = {};
+        state.onGround = true;
+        input.gravity.overScaffolding = true;
+        input.gravity.descendThroughBlock = true;
+        Step(state, input, custom, empty);
+        CHECK(state.y == 0 && state.jumpDelay == 0);
+        state = {};
+        state.onGround = true;
+        input.gravity.overScaffolding = false;
+        Step(state, input, custom, empty);
+        CHECK(state.y == static_cast<double>(0.125f * 0.6f));
     }
 
     // Slowdown activation is per-lane nonzero, including subnormals. It

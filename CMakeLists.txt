@@ -1227,6 +1227,12 @@ if(PERLIN_BUILD_TESTS AND NOT EMSCRIPTEN AND NOT ANDROID)
     add_test(NAME bds_jump_requests_selftest COMMAND bds_jump_requests_selftest
         "${CMAKE_CURRENT_SOURCE_DIR}/tests/data/bds_jump_requests.txt")
 
+    add_executable(bds_jump_predicate_selftest tests/bds_jump_predicate_selftest.cpp)
+    target_include_directories(bds_jump_predicate_selftest PRIVATE src)
+    target_compile_features(bds_jump_predicate_selftest PRIVATE cxx_std_23)
+    add_test(NAME bds_jump_predicate_selftest COMMAND bds_jump_predicate_selftest
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/data/bds_jump_predicate.txt")
+
     add_executable(bedsim_trace_selftest
         tests/bedsim_trace_selftest.cpp
         src/client/player/PlayerPhysics.cpp)
