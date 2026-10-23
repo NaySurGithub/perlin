@@ -1203,6 +1203,12 @@ if(PERLIN_BUILD_TESTS AND NOT EMSCRIPTEN AND NOT ANDROID)
     add_test(NAME bds_block_slowdown_selftest COMMAND bds_block_slowdown_selftest
         "${CMAKE_CURRENT_SOURCE_DIR}/tests/data/bds_block_slowdown.txt")
 
+    add_executable(bds_sneak_selftest tests/bds_sneak_selftest.cpp)
+    target_include_directories(bds_sneak_selftest PRIVATE src)
+    target_compile_features(bds_sneak_selftest PRIVATE cxx_std_23)
+    add_test(NAME bds_sneak_selftest COMMAND bds_sneak_selftest
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/data/bds_sneak.txt")
+
     add_executable(bedsim_trace_selftest
         tests/bedsim_trace_selftest.cpp
         src/client/player/PlayerPhysics.cpp)

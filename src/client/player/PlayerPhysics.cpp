@@ -11,6 +11,7 @@
 #include "client/player/BdsBlockGeometry.hpp"
 #include "client/player/BdsCollisionCache.hpp"
 #include "client/player/BdsBlockSlowdown.hpp"
+#include "client/player/BdsSneak.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -97,6 +98,7 @@ namespace perlin::physics {
             Box box;
             Vec3 resolved;
             bds::Float3 requested;
+            Vec3 velocity;
             bool cx = false, cy = false, cz = false;
             bool stepped = false;
             uint8_t supportingSurface = 0;
@@ -104,9 +106,9 @@ namespace perlin::physics {
             float penetration = 0;
         };
 
-        Motion ResolveMotion(const World& world, const Box& start, const Vec3& velocity, bool wasOnGround,
+        Motion ResolveMotion(const World& world, const Box& start, const Vec3& velocity, Vec3 storedVelocity, bool wasOnGround,
                              std::vector<Box>& scratch, bds::CollisionVector recoveryLimits, float stepHeight,
-                             bool flyingAbility, bool& oneShotStep) {
+                             bool flyingAbility, bool& oneShotStep, bool sneakEdge = false) {
             Motion result;
             const auto search =
                 bds::SearchMovement(CollisionBox(start),
@@ -133,7 +135,16 @@ namespace perlin::physics {
                 return records;
             });
             const auto& shapes = cache.shapes;
-            const auto& requested = search.movement;
+            auto requested = search.movement;
+            if (sneakEdge) {
+                const auto clipped = bds::ClipSneakMovement(
+                    CollisionBox(start), stepHeight, requested,
+                    {static_cast<float>(storedVelocity.x), static_cast<float>(storedVelocity.y),
+                     static_cast<float>(storedVelocity.z)}, shapes);
+                requested = clipped.movement;
+                storedVelocity = {clipped.velocity[0], clipped.velocity[1], clipped.velocity[2]};
+            }
+            result.velocity = storedVelocity;
             result.requested = {requested[0], requested[1], requested[2]};
             const std::array<bds::CollisionVector, 3> moves{
                 {{0, requested[1], 0}, {requested[0], 0, 0}, {0, 0, requested[2]}}};
@@ -196,39 +207,6 @@ namespace perlin::physics {
                 state.restitution.reset();
             }
             return {motion.x, motion.y, motion.z};
-        }
-
-        double ReduceTowardZero(double value, double offset) {
-            if (std::fabs(value) <= offset)
-                return 0.0;
-            return F(static_cast<float>(value) - (value < 0 ? -1.0f : 1.0f) * static_cast<float>(offset));
-        }
-
-        Vec3 ClipSneakEdge(const World& world, const State& s, bool sneaking, Vec3 v,
-                           std::vector<Box>& scratch) {
-            constexpr double kOffset = static_cast<double>(0.05f);
-            const Box full = BoundingBox(s, sneaking);
-            const Box player{
-                F(static_cast<float>(full.x0) + 0.025f), full.y0, F(static_cast<float>(full.z0) + 0.025f),
-                F(static_cast<float>(full.x1) - 0.025f), full.y1, F(static_cast<float>(full.z1) - 0.025f)};
-            const double drop = -kStepHeight * 1.01;
-            Vec3 clipped = v;
-            for (const int axis : {0, 2}) {
-                while (clipped[axis] != 0.0) {
-                    Vec3 probe{0, drop, 0};
-                    probe[axis] = clipped[axis];
-                    if (!NoCollision(world, player.Offset(probe.x, probe.y, probe.z), scratch))
-                        break;
-                    clipped[axis] = ReduceTowardZero(clipped[axis], kOffset);
-                }
-            }
-            while (clipped.x != 0.0 || clipped.z != 0.0) {
-                if (!NoCollision(world, player.Offset(clipped.x, drop, clipped.z), scratch))
-                    break;
-                clipped.x = ReduceTowardZero(clipped.x, kOffset);
-                clipped.z = ReduceTowardZero(clipped.z, kOffset);
-            }
-            return clipped;
         }
 
         struct CellRange {
@@ -566,10 +544,10 @@ namespace perlin::physics {
             const double groundFriction = grounded ? blockFriction : 1.0;
             const Box box = BoundingBox(s, false);
             const Motion m =
-                ResolveMotion(world, box, req, grounded, scratch, bds::RecoveryLimits(s.recovery),
+                ResolveMotion(world, box, req, {s.vx, s.vy, s.vz}, grounded, scratch, bds::RecoveryLimits(s.recovery),
                               attr.maxAutoStep, in.flying, s.canAlwaysAutoStep);
             bds::UpdateRecovery(s.recovery, m.penetration >= 1.0e-6f, in.pushTowardsClosestSpace);
-            auto finalized = FinalizeMotion(s, m, {s.vx, s.vy, s.vz});
+            auto finalized = FinalizeMotion(s, m, m.velocity);
             if (m.stepped)
                 finalized.y = 0;
             finalized = LandingResponse(s, finalized, m.supportingSurface, m.cy, in.sneak);
@@ -649,26 +627,11 @@ namespace perlin::physics {
             s.vy = F(static_cast<float>(s.vy) - 0.04f);
 
         Vec3 req = ApplyStoredBlockSlowdown(s, {s.vx, s.vy, s.vz});
-        Vec3 edgeVel = req;
-        bool hasEdge = false;
-        if (sneaking && grounded) {
-            const Vec3 clipped = ClipSneakEdge(world, s, true, req, scratch);
-            for (const int axis : {0, 2})
-                if (std::fabs(static_cast<float>(clipped[axis])) <= kFloatEps)
-                    edgeVel[axis] = 0;
-            hasEdge = true;
-            req = clipped;
-        }
         const Box box = BoundingBox(s, crouched);
-        const Motion m = ResolveMotion(world, box, req, grounded, scratch, bds::RecoveryLimits(s.recovery),
-                                       attr.maxAutoStep, in.flying, s.canAlwaysAutoStep);
+        const Motion m = ResolveMotion(world, box, req, {s.vx, s.vy, s.vz}, grounded, scratch, bds::RecoveryLimits(s.recovery),
+                                       attr.maxAutoStep, in.flying, s.canAlwaysAutoStep, sneaking && grounded);
         bds::UpdateRecovery(s.recovery, m.penetration >= 1.0e-6f, in.pushTowardsClosestSpace);
-        Vec3 v{s.vx, s.vy, s.vz};
-        if (hasEdge) {
-            v.x = edgeVel.x;
-            v.z = edgeVel.z;
-        }
-        v = FinalizeMotion(s, m, v);
+        Vec3 v = FinalizeMotion(s, m, m.velocity);
         if (m.stepped)
             v.y = 0;
         v = LandingResponse(s, v, m.supportingSurface, m.cy, sneaking);

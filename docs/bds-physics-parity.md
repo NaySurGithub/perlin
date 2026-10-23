@@ -46,6 +46,7 @@ Decompiler argument names and inferred types are not treated as semantic names.
 | Relative movement and bundled trig | DefaultMoveSystems registration `0x140B52880`; Ground/Air vtables `0x1466C47A8` / `0x1466C47E0`; callback `0x140B52740` → helper `0x140B52390` → kernel `0x1432674C0`; sincos wrapper `0x146251E30`, dispatch `0x146251E10`, vector sine `0x146251EA0` / `0x1462527E0`, rare helper `0x146253D80` | Full three-lane arithmetic and bundled trig ported, including large finite range reduction, tiny arguments and exceptional-value output bits. 7,248 trig and 3,584 relative-movement cases match, with both CPU dispatch variants. Independently cross-checked by executing the original BDS routines as native x86-64 code under Rosetta; this caught an emulator NaN-propagation discrepancy. Integrated into Step in place of host sin/cos. Full input/travel selection and other floating-point kernels remain under audit. |
 | Collision-cache append, subtraction and refresh | Converter `0x140F90C90`, difference helper `0x140F924E0`, complete callback `0x140F90EA0` | 512 append, 569 subtraction, 512 empty-world refresh and 256 nonempty refresh executions, plus native constructor defaults, agree bit-for-bit on ARM64 and x86-64/Rosetta. Covers append retention, null block metadata, incoming preservation flags, split/merge arithmetic and ordered incremental queries. Step uses the cache model within one request; native cross-phase request lifetime and nonempty full-world callback interactions remain unverified. |
 | Block slowdown application, accumulation and player immunity | Apply vtable `0x1466C66A0` → wrapper `0x140C2FD00` → loop `0x140C1EC20` → callback `0x140C1EF20`; accumulator `0x140B58EA0`, applied-record constructor `0x140B80D80`, fall-distance callback `0x140C1EF10`, player callback `0x140C1EE80` | 1,024 apply, 768 accumulation, 256 fall-distance and 256 player-immunity executions agree exactly. Apply is additionally checked by original native x86-64 execution. Step consumes stored multipliers before collision, clears velocity there, retains later restitution, and uses verified web accumulation/fall reset after all movement modes. EntityInside traversal, other block producers, mob exemptions and full scheduler integration remain under audit. |
+| Sneak eligibility and cached-shape edge clipping | Factory `0x140E7B1D0` → vtable `0x1466D1058` → run `0x140E8DED0` → loop `0x140E817E0` → wrapper `0x140E81520` → kernel `0x140E76C70`; filter `0x140E76AD0` | 1,024 complete executions with synthetic sparse-pool state and supplied cached shapes, without runtime hooks, match bit-for-bit on ARM64 and x86-64. Step clips after cache collection with the verified max-step/float arithmetic and only clears near-zero velocity lanes. Optional control-component semantics, actor flag bit 6 and complete ECS/scheduler integration remain under audit. |
 
 ## Required remaining coverage
 
@@ -132,6 +133,8 @@ build/bds-oracle-venv/bin/python tools/bds_reference/cache_refresh.py \
   --export build/bds-reference.json --out tests/data/bds_cache_refresh.txt
 build/bds-oracle-venv/bin/python tools/bds_reference/cache_refresh_records.py \
   --export build/bds-reference.json --out tests/data/bds_cache_refresh_records.txt
+build/bds-oracle-venv/bin/python tools/bds_reference/sneak.py \
+  --export build/bds-reference.json --out tests/data/bds_sneak.txt
 build/bds-oracle-venv/bin/python tools/bds_reference/support.py \
   --export build/bds-reference.json --out tests/data/bds_support.txt
 build/bds-oracle-venv/bin/python tools/bds_reference/landing.py \
@@ -154,8 +157,8 @@ build/bds-oracle-venv/bin/python tools/bds_reference/relative_movement.py \
 build/bds-oracle-venv/bin/python tools/bds_reference/trig_constants.py \
   --export build/bds-reference.json --out build/bds-trig-tables.hpp
 cmp src/client/player/BdsTrigTables.hpp build/bds-trig-tables.hpp
-cmake --build build --target bds_numeric_selftest bds_collision_selftest bds_vertical_selftest bds_water_drag_selftest bds_movement_effects_selftest bds_gliding_selftest bds_gliding_trace_selftest bds_trig_selftest bds_finalization_selftest bds_landing_selftest bds_support_selftest bds_world_collision_selftest bds_terrain_query_selftest bds_block_geometry_selftest voxel_shapes_selftest bds_block_offset_selftest block_offset_definition_selftest bds_collision_cache_selftest bds_cache_difference_selftest bds_cache_refresh_selftest bds_cache_refresh_records_selftest bds_block_slowdown_selftest physics_selftest bedsim_trace_selftest
-ctest --test-dir build -R '^(bds_numeric_selftest|bds_collision_selftest|bds_vertical_selftest|bds_water_drag_selftest|bds_movement_effects_selftest|bds_gliding_selftest|bds_gliding_trace_selftest|bds_trig_selftest|bds_finalization_selftest|bds_landing_selftest|bds_support_selftest|bds_world_collision_selftest|bds_terrain_query_selftest|bds_block_geometry_selftest|voxel_shapes_selftest|bds_block_offset_selftest|block_offset_definition_selftest|bds_collision_cache_selftest|bds_cache_difference_selftest|bds_cache_refresh_selftest|bds_cache_refresh_records_selftest|bds_block_slowdown_selftest|physics_selftest|bedsim_trace_selftest)$' --output-on-failure
+cmake --build build --target bds_numeric_selftest bds_collision_selftest bds_vertical_selftest bds_water_drag_selftest bds_movement_effects_selftest bds_gliding_selftest bds_gliding_trace_selftest bds_trig_selftest bds_finalization_selftest bds_landing_selftest bds_support_selftest bds_world_collision_selftest bds_terrain_query_selftest bds_block_geometry_selftest voxel_shapes_selftest bds_block_offset_selftest block_offset_definition_selftest bds_collision_cache_selftest bds_cache_difference_selftest bds_cache_refresh_selftest bds_cache_refresh_records_selftest bds_block_slowdown_selftest bds_sneak_selftest physics_selftest bedsim_trace_selftest
+ctest --test-dir build -R '^(bds_numeric_selftest|bds_collision_selftest|bds_vertical_selftest|bds_water_drag_selftest|bds_movement_effects_selftest|bds_gliding_selftest|bds_gliding_trace_selftest|bds_trig_selftest|bds_finalization_selftest|bds_landing_selftest|bds_support_selftest|bds_world_collision_selftest|bds_terrain_query_selftest|bds_block_geometry_selftest|voxel_shapes_selftest|bds_block_offset_selftest|block_offset_definition_selftest|bds_collision_cache_selftest|bds_cache_difference_selftest|bds_cache_refresh_selftest|bds_cache_refresh_records_selftest|bds_block_slowdown_selftest|bds_sneak_selftest|physics_selftest|bedsim_trace_selftest)$' --output-on-failure
 ```
 
 The oracle executes x86-64 code using the Windows ABI, MXCSR `0x1f80`, and bounded
@@ -285,15 +288,15 @@ producer is not established by supplying the same synthetic history to both.
 The full local macOS arm64 build succeeds, including Perlin and trace_diff,
 after integrating upstream `main` at `084a657`. The metadata merge keeps
 integer flag parsing and known-word tracking with the upstream helper API.
-The latest full CTest run passes 50 of 51 tests; the sole failing test is the
-legacy trace disagreement described below, now including the web scenario. The pure direction/glide
+The latest full CTest run passes 51 of 52 tests; the sole failing test is the
+legacy trace disagreement described below; the new web disagreements are resolved. The pure direction/glide
 suite also agrees under `-O3 -ffp-contract=fast`, and when relaxed math options
 are followed by the physics source's strict overrides. These checks do not
 substitute for Windows/x86, other platforms or real game/server validation.
 
 Bundled trig and relative movement add 10,832 cases, bringing the kernel/table
 count to 103,616. Move finalization adds 1,792, bringing the total to 105,408. Landing response adds 1,856, and supporting-block selection adds 1,280,
-for 108,544. Unavailable-chunk collision collection adds 564, for 109,108. Terrain traversal adds 382 and the common block collector adds 310, for 109,800. Position seeding, offsets and description conversion add 1,388, for 111,188. Collision-cache append, subtraction and refresh add 1,593, for 112,781. Native request initialization and 256 nonempty cache refresh callbacks add 257, for 113,038. Block slowdown callbacks add 2,304, for 115,342, plus the separately reported 288 chained glide ticks. The
+for 108,544. Unavailable-chunk collision collection adds 564, for 109,108. Terrain traversal adds 382 and the common block collector adds 310, for 109,800. Position seeding, offsets and description conversion add 1,388, for 111,188. Collision-cache append, subtraction and refresh add 1,593, for 112,781. Native request initialization and 256 nonempty cache refresh callbacks add 257, for 113,038. Block slowdown callbacks add 2,304, for 115,342. Sneak filtering and cached-shape clipping add 1,024, for 116,366, plus the separately reported 288 chained glide ticks. The
 trig inputs include all exponent classes, mantissa boundaries, both signs,
 small/large reduction thresholds, infinities, quiet/signaling NaN payloads and
 seeded random float bit patterns. Both BDS SSE2 and SSE4 implementations agree
@@ -636,11 +639,13 @@ the requested full equivalence.
 established, it has named scenario exclusions, and it does not check every
 parsed field. Before slowdown integration, 152 of its 5,400 checks disagreed
 across four scenarios (`gen:terrain1_1`, `gen:floors1_0`, `gen:ladder1_0`,
-`gen:effects1_0`). The slowdown changes add 96 disagreements in `gen:web1_1`,
-for 248 failed checks across five scenarios. Its first new discrepancy is
-step 2 horizontal velocity (`0.004013101` versus expected zero). Full contact
-selection/timing and flight integration still need an independent BDS scenario
-oracle; passing isolated callbacks does not resolve this disagreement. Keep all failures
+`gen:effects1_0`). The first slowdown integration added 96 disagreements in `gen:web1_1`,
+for 248 failed checks across five scenarios. Tracing the native sneak callback
+then exposed an old adapter error: it copied the clipped request into stored
+velocity, undoing the earlier slowdown clear. Using the native clear-only
+callback behavior resolves all 96 web differences; the latest result is again
+152 failed checks across the original four scenarios. Full contact selection,
+timing and integration still require independent BDS scenario evidence. Keep all failures
 visible until the original scenarios have an independently established BDS
 oracle. Do not loosen their tolerances, silently regenerate expectations from
 Perlin, or count their results as BDS accuracy.
@@ -748,3 +753,33 @@ web identity. Native EntityInside shape predicates, dimension/world access,
 other slowdown sources (including berry bushes), spider/wither immunity and
 resistant-mob feature gating remain unported. The verified callbacks do not
 establish whole-tick or complete web physics parity.
+
+
+## Sneak movement and cached-shape clipping
+
+The native filter `0x140E76AD0` checks two sparse-pool memberships/generations.
+When the optional 100-byte control component is present, its first byte bit 0
+supplies the crouch condition; otherwise ActorDataFlag bit 1 does. Ground
+membership is required. It writes MoveRequest byte 85 before rejecting actor
+flag bit 6. The optional component's full identity/producer and bit 6's meaning
+remain unconfirmed; Step still supplies its existing local sneak/ground gate.
+The native filter itself is tested for absent, valid and stale memberships.
+
+The complete kernel in `0x140E76C70` uses cached shapes collected before this
+system, not fresh world probes for each iteration. It insets X/Z by `0.025f`,
+collapses inverted inset axes to the original center, uses max-step times
+`1.01f` as the vertical probe drop, and reduces X, then Z, then both lanes
+in `0.05f` steps with native rounding and clamp order. Only horizontal velocity
+lanes whose final request is within `FLT_EPSILON` of zero are cleared. It never
+copies the clipped request into StateVector velocity. Y movement/velocity remain
+unchanged. Step now follows this cache/clip/resolve order and retains a separate
+stored velocity throughout, fixing the slowdown/sneak interaction.
+
+The 1,024 reference cases execute the full kernel and filter without runtime
+hooks, using synthetic sparse pools and provided shape arrays. They include
+nonzero positions, thin/inverted body bounds, multiple support shapes, zero and
+negative max-step values, signed-zero and epsilon boundaries, independent
+request/velocity values, and stale generations. Both optimized ARM64 and
+x86-64/Rosetta portable builds agree exactly; regeneration is byte-identical.
+These are bounded finite cases, not a claim about arbitrary non-finite inputs,
+complete ECS selection or full-tick sneaking equivalence.

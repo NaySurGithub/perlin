@@ -75,6 +75,23 @@ int main() {
         Step(state, input, attr, web);
         CHECK(state.stuckX == 0.25f && state.stuckY == 0.05f && state.stuckZ == 0.25f);
         CHECK(state.fallDistance == 0);
+        TestWorld supportedWeb;
+        supportedWeb.fn = [](int, int y, int) {
+            if (y < 0)
+                return Full();
+            BlockShape shape;
+            shape.web = true;
+            return shape;
+        };
+        state = {};
+        state.onGround = true;
+        state.vx = 1;
+        state.stuckX = state.stuckZ = 0.25f;
+        state.stuckY = 0.05f;
+        input.sneak = true;
+        Step(state, input, attr, supportedWeb);
+        CHECK(state.x > 0.2 && state.vx == 0);
+        input.sneak = false;
         // Contact processing also runs after flying movement, while flying
         // with instabuild removes the multiplier in immunePlayer.
         input.flying = true;
