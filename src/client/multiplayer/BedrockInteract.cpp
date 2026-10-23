@@ -1,12 +1,14 @@
 #include "client/multiplayer/BedrockSession.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <iterator>
 #include <cstdlib>
 #include <iostream>
 #include <mutex>
 #include <vector>
 #include "world/level/block/BlockPalette.hpp"
+#include "client/player/BlockUse.hpp"
 
 namespace perlin {
     using namespace proto;
@@ -16,6 +18,7 @@ namespace perlin {
     }
 
     bool BedrockSession::SendUseItemOnBlock(int bx, int by, int bz, int face, const float click[3], const float eye[3], int use, const int dest[3]) {
+        if (face < 0 || face > 5) return false;
         InventoryTransactionPacket p;
         p.transaction.transactionType = TransactionTransactionType::ItemUse;
         TransactionUseItem u;
@@ -24,6 +27,17 @@ namespace perlin {
             std::lock_guard lock(statusMutex);
             selected = std::clamp(inventory.selected, 0, 8);
             u.heldItem = inventoryRaw[selected];
+        }
+        if (use == 2 && (u.heldItem.count == 0 || u.heldItem.blockRuntimeId == 0)) return false;
+        if (use == 2) {
+            static constexpr int offsets[6][3] = {{0, -1, 0}, {0, 1, 0}, {0, 0, -1}, {0, 0, 1}, {-1, 0, 0}, {1, 0, 0}};
+            const bool same = dest[0] == bx && dest[1] == by && dest[2] == bz;
+            if (!same && (int64_t(dest[0]) != int64_t(bx) + offsets[face][0] ||
+                          int64_t(dest[1]) != int64_t(by) + offsets[face][1] ||
+                          int64_t(dest[2]) != int64_t(bz) + offsets[face][2])) return false;
+            bool loaded = false;
+            const auto id = netLevel.GetBlock(dest[0], dest[1], dest[2], loaded);
+            if (!blockuse::IsReplaceableCell(loaded, id, BlockPalette::Instance().Name(id))) return false;
         }
         u.actionType = TransactionUseItemActionType::ClickBlock;
         u.triggerType = TransactionUseItemTriggerType::PlayerInput;
@@ -36,6 +50,7 @@ namespace perlin {
         {
             bool loaded = false;
             const uint16_t clicked = netLevel.GetBlock(bx, by, bz, loaded);
+            if (use == 2 && !loaded) return false;
             u.blockRuntimeId = loaded ? static_cast<uint32_t>(BlockPalette::Instance().RuntimeId(clicked)) : 0;
         }
         haveLoggedInteraction = true;
@@ -43,10 +58,6 @@ namespace perlin {
                   << " held " << u.heldItem.networkId << " x" << static_cast<int>(u.heldItem.count) << " block " << u.heldItem.blockRuntimeId
                   << " use " << (use == 2 ? "place" : use == 1 ? "interact" : "nothing") << " dest (" << dest[0] << "," << dest[1] << "," << dest[2]
                   << ")" << std::endl;
-        if (use == 2) {
-            std::lock_guard lock(placeMutex);
-            pendingPlace = {dest[0], dest[1], dest[2], std::chrono::steady_clock::now(), true, static_cast<int32_t>(u.heldItem.blockRuntimeId)};
-        }
         if (use != 0 && !itemUseOnActive.exchange(true)) {
             PlayerActionPacket start;
             start.runtimeEntityId = runtimeId;
@@ -54,14 +65,25 @@ namespace perlin {
             start.position = {bx, by, bz};
             start.resultPosition = {dest[0], dest[1], dest[2]};
             start.face = face;
-            Send(start);
+            if (!Send(start)) {
+                itemUseOnActive = false;
+                return false;
+            }
+            std::copy(dest, dest + 3, itemUseDest);
+        }
+        u.clientPrediction = use != 0 ? TransactionUseItemClientPrediction::Success : TransactionUseItemClientPrediction::Failure;
+        p.transaction.transactionData = u;
+        if (!Send(p)) return false;
+        if (use != 0) {
             itemUseDest[0] = dest[0];
             itemUseDest[1] = dest[1];
             itemUseDest[2] = dest[2];
         }
-        u.clientPrediction = use != 0 ? TransactionUseItemClientPrediction::Success : TransactionUseItemClientPrediction::Failure;
-        p.transaction.transactionData = u;
-        return Send(p);
+        if (use == 2) {
+            std::lock_guard lock(placeMutex);
+            pendingPlace = {dest[0], dest[1], dest[2], std::chrono::steady_clock::now(), true, static_cast<int32_t>(u.heldItem.blockRuntimeId)};
+        }
+        return true;
     }
 
     bool BedrockSession::SendUseItemInAir(const float eye[3]) {
@@ -233,6 +255,38 @@ namespace perlin {
 
 namespace perlin {
     bool BedrockSession::PredictPlace(int x, int y, int z, int32_t heldRuntimeId) {
+        return PredictPlaceState(x, y, z, heldRuntimeId, false);
+    }
+
+    bool BedrockSession::PredictBridgePlace(int x, int y, int z, int32_t heldRuntimeId, int face, const float click[3]) {
+        auto& palette = BlockPalette::Instance();
+        const uint16_t held = palette.InternRuntime(heldRuntimeId);
+        const std::string name = palette.Name(held);
+        if (!name.starts_with("minecraft:") || !name.ends_with("_slab") || name.find("double") != std::string::npos)
+            return PredictPlace(x, y, z, heldRuntimeId);
+        if (face < 0 || face > 5 || !std::isfinite(click[1])) return false;
+        const bool upper = blockuse::IsUpperSlabPlacement(face, click[1]);
+        auto states = palette.States(held);
+        bool resolved = false;
+        for (auto& [key, value] : states) {
+            const auto bare = key.starts_with("minecraft:") ? key.substr(10) : key;
+            if (bare == "top_slot_bit" && value.kind != BlockPalette::StateValue::String) {
+                value.i = upper ? 1 : 0;
+                resolved = true;
+            } else if (bare == "vertical_half" && value.kind == BlockPalette::StateValue::String) {
+                value.s = upper ? "top" : "bottom";
+                resolved = true;
+            }
+        }
+        if (!resolved) return false; // Wait for the server if this state's producer is unknown.
+        std::sort(states.begin(), states.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
+        const uint16_t placed = palette.Intern(BlockPalette::HashState(name, states));
+        const int32_t runtime = palette.RuntimeId(placed);
+        if (palette.Name(placed) != name || palette.InternRuntime(runtime) != placed) return false;
+        return PredictPlaceState(x, y, z, runtime, true);
+    }
+
+    bool BedrockSession::PredictPlaceState(int x, int y, int z, int32_t heldRuntimeId, bool resolvedSlab) {
         if (heldRuntimeId == 0)
             return false;
         BlockPalette& pal = BlockPalette::Instance();
@@ -248,20 +302,23 @@ namespace perlin {
                                                  "glazed_terracotta", "log", "wood", "stem", "hyphae", "pillar", "sapling", "flower", "tallgrass",
                                                  "double_plant", "leaves", "cake", "comparator", "repeater", "tripwire", "pressure_plate", "sea_pickle",
                                                  "turtle_egg", "snow_layer", "pointed_dripstone", "amethyst_cluster", "bud", "coral", "kelp", "seagrass"};
-        for (const char* skip : kSkipNames)
-            if (name.find(skip) != std::string::npos)
-                return false;
+        if (!resolvedSlab)
+            for (const char* skip : kSkipNames)
+                if (name.find(skip) != std::string::npos)
+                    return false;
         static const char* const kSkipStates[] = {"facing_direction", "direction", "cardinal_direction", "vertical_half", "upside_down_bit",
                                                   "top_slot_bit", "pillar_axis", "attached_bit", "hanging", "open_bit", "powered_bit"};
         for (const auto& [key, value] : pal.States(local)) {
             (void)value;
+            if (resolvedSlab && (key.find("top_slot_bit") != std::string::npos || key.find("vertical_half") != std::string::npos)) continue;
             for (const char* skip : kSkipStates)
                 if (key.find(skip) != std::string::npos)
                     return false;
         }
         bool loaded = false;
         const uint16_t previous = netLevel.GetBlock(x, y, z, loaded);
-        if (!loaded)
+        const std::string& previousName = pal.Name(previous);
+        if (!blockuse::IsReplaceableCell(loaded, previous, previousName))
             return false;
         netLevel.SetBlock(x, y, z, local);
         std::lock_guard lock(predictMutex);

@@ -840,6 +840,14 @@ if(PERLIN_FAST_MATH)
     message(STATUS "Perlin: fast math is ON")
 endif()
 
+# Bridging rejects malformed/non-finite coordinates before converting to cells.
+# Preserve those guards when the application enables relaxed floating point.
+if(MSVC AND NOT PERLIN_CLANG_CL_BUILD)
+    set_source_files_properties(src/client/player/Bridging.cpp PROPERTIES COMPILE_OPTIONS "/fp:strict")
+else()
+    set_source_files_properties(src/client/player/Bridging.cpp PROPERTIES COMPILE_OPTIONS "-fno-fast-math;-ffp-contract=off")
+endif()
+
 include(CheckIPOSupported)
 if(EMSCRIPTEN OR ANDROID)
     set(PERLIN_IPO OFF)
@@ -1041,6 +1049,14 @@ if(PERLIN_BUILD_TESTS AND NOT EMSCRIPTEN AND NOT ANDROID)
         src/client/renderer/SkyGeometry.cpp)
     target_include_directories(input_selftest PRIVATE src "${glm_SOURCE_DIR}")
     add_test(NAME input_selftest COMMAND input_selftest)
+
+    add_executable(bridging_selftest
+        tests/bridging_selftest.cpp
+        src/client/player/Bridging.cpp
+        src/client/player/BlockUse.cpp)
+    target_include_directories(bridging_selftest PRIVATE src "${glm_SOURCE_DIR}")
+    target_compile_features(bridging_selftest PRIVATE cxx_std_23)
+    add_test(NAME bridging_selftest COMMAND bridging_selftest)
 
     add_executable(physics_selftest
         tests/physics_selftest.cpp

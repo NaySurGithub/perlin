@@ -539,6 +539,7 @@ void RequestRespawn();
         bool SendSwingArm(const char* source = "build");
 
         bool PredictPlace(int x, int y, int z, int32_t heldRuntimeId);
+        bool PredictBridgePlace(int x, int y, int z, int32_t heldRuntimeId, int face, const float click[3]);
         bool SendUseItemOnBlock(int bx, int by, int bz, int face, const float click[3], const float eye[3], int use, const int dest[3]);
         bool SendUseItemInAir(const float eye[3]);
         bool SendReleaseItem(const float eye[3]);
@@ -609,6 +610,7 @@ void RequestRespawn();
         static const char* PacketName(uint32_t id);
 
     private:
+        bool PredictPlaceState(int x, int y, int z, int32_t runtimeId, bool resolvedSlab);
         void HandleBatch(const std::vector<uint8_t>& msg);
         void OnGamePacket(uint32_t id, const std::vector<uint8_t>& body);
         void RegisterPacketHandlers();
