@@ -92,7 +92,7 @@ jobs:
           git clone --depth 1 -b "$OPENSSL_VERSION" https://github.com/openssl/openssl openssl-src
           cd openssl-src
           if [ "$(uname -m)" = arm64 ]; then T=darwin64-arm64-cc; else T=darwin64-x86_64-cc; fi
-          ./Configure "$T" no-shared no-tests no-docs -mmacosx-version-min=12.0 --prefix="$GITHUB_WORKSPACE/ossl-mac" --openssldir="$GITHUB_WORKSPACE/ossl-mac/ssl"
+          ./Configure "$T" no-shared no-tests -mmacosx-version-min=12.0 --prefix="$GITHUB_WORKSPACE/ossl-mac" --openssldir="$GITHUB_WORKSPACE/ossl-mac/ssl"
           make -j"$(sysctl -n hw.ncpu)" build_libs
           make install_dev
 
