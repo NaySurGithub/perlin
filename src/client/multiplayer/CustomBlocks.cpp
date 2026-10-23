@@ -2,6 +2,7 @@
 
 #include "client/multiplayer/NbtJson.hpp"
 #include "client/resources/ServerBlocks.hpp"
+#include "client/resources/BlockOffsetDefinition.hpp"
 #include "world/level/block/BlockPalette.hpp"
 #include "world/level/lighting/LightRegistry.hpp"
 #include "world/level/chunk/ChunkCodec.hpp"
@@ -311,6 +312,7 @@ namespace perlin {
             int emission = -1, dampening = -1;
             if (const ui::Json* components = nbt.Find("components"); components && components->IsObject()) {
                 collision.base = ParseCollision(components->Find("minecraft:collision_box"));
+                collision.randomOffset = ParseBlockOffsetDefinition(components->Find("minecraft:random_offset"));
                 if (const ui::Json* f = components->Find("minecraft:friction")) {
                     const ui::Json* v = f->IsObject() ? f->Find("value") : f;
                     if (v && v->IsNumber())
@@ -346,8 +348,11 @@ namespace perlin {
                     CollisionSet set = ParseCollision(comps->Find("minecraft:collision_box"));
                     if (set.defined)
                         collision.permutations.emplace_back(cond->string, std::move(set));
+                    if (auto offset = ParseBlockOffsetDefinition(comps->Find("minecraft:random_offset")))
+                        collision.randomOffsetPermutations.emplace_back(cond->string, *offset);
                 }
-            if (collision.base.defined || !collision.permutations.empty() || collision.friction >= 0.0f)
+            if (collision.base.defined || !collision.permutations.empty() || collision.friction >= 0.0f ||
+                collision.randomOffset || !collision.randomOffsetPermutations.empty())
                 ServerBlocks::Instance().SetCollision(entry.name, std::move(collision));
             if (emission >= 0 || dampening >= 0)
                 LightRegistry::Instance().SetCustom(entry.name, emission, dampening);

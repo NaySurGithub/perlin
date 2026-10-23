@@ -50,8 +50,8 @@ struct TraceWorld : World {
         s.speedFactor = static_cast<float>(f.hs);
         const Box cell{double(x), double(y), double(z), x + 1.0, y + 1.0, z + 1.0};
         for (const Box& b : boxes)
-            if (b.Intersects(cell) && s.count < kMaxShapeBoxes)
-                s.boxes[s.count++] = b.Offset(-x, -y, -z);
+            if (b.Intersects(cell))
+                s.boxes.push_back(b.Offset(-x, -y, -z));
         return s;
     }
 };
@@ -259,7 +259,7 @@ int main(int argc, char** argv) {
             input.gliding = gliding != 0;
             input.swimming = swimming != 0 && !input.gliding;
             input.headInWater = headInWater != 0;
-            input.javaPitch = static_cast<float>(pitch);
+            input.pitch = static_cast<float>(pitch);
             input.lookY = std::sin(static_cast<float>(-pitch) * 3.14159265f / 180.0f);
             if (input.flying)
                 input.sneak = false;

@@ -57,13 +57,6 @@ namespace perlin {
                         out.push_back({shape.xCoordinates[x], shape.yCoordinates[y], shape.zCoordinates[z], shape.xCoordinates[x1 + 1],
                                        shape.yCoordinates[y1 + 1], shape.zCoordinates[z1 + 1]});
                     }
-            while (out.size() > static_cast<size_t>(physics::kMaxShapeBoxes)) {
-                physics::Box merged = out.back();
-                out.pop_back();
-                physics::Box& last = out.back();
-                last = {std::min(last.x0, merged.x0), std::min(last.y0, merged.y0), std::min(last.z0, merged.z0),
-                        std::max(last.x1, merged.x1), std::max(last.y1, merged.y1), std::max(last.z1, merged.z1)};
-            }
             return out;
         }
     }
@@ -81,12 +74,14 @@ namespace perlin {
             gShapes.push_back(Bake(s));
         for (const proto::VoxelShapeNameEntry& n : packet.nameMap)
             gNames[n.name] = n.id;
+        revision.fetch_add(1, std::memory_order_release);
     }
 
     void VoxelShapeRegistry::Clear() {
         std::lock_guard lock(gMutex);
         gShapes.clear();
         gNames.clear();
+        revision.fetch_add(1, std::memory_order_release);
     }
 
     bool VoxelShapeRegistry::Find(const std::string& blockName, std::vector<physics::Box>& out) const {

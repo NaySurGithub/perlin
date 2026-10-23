@@ -482,7 +482,7 @@ namespace perlin {
         auto accept = [this]<class... T>() { (On<T>([](const T&) {}), ...); };
         accept.template operator()<AnimateEntityPacket, BlockEventPacket,
                 EmotePacket, HurtArmorPacket, PlayerArmorDamagePacket, LevelEventGenericPacket,
-                MovementEffectPacket, PlayerLocationPacket, ServerPostMovePacket, SetLastHurtByPacket, ShowCreditsPacket,
+                PlayerLocationPacket, ServerPostMovePacket, SetLastHurtByPacket, ShowCreditsPacket,
                 SimulationTypePacket, SpawnExperienceOrbPacket, UpdateBlockPropertiesPacket, UpdateEquipmentPacket,
                 ClientboundControlsSchemePacket, ClientboundTextureShiftPacket,
                 ClientboundUpdateSoundDataPacket, SetDefaultGameTypePacket, UpdateAdventureSettingsPacket,

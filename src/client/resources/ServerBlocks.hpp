@@ -1,5 +1,7 @@
 #pragma once
+#include "client/player/BdsBlockOffset.hpp"
 #include <array>
+#include <atomic>
 #include <map>
 #include <mutex>
 #include <string>
@@ -18,6 +20,8 @@ namespace perlin {
         CollisionSet base;
         std::vector<std::pair<std::string, CollisionSet>> permutations;
         float friction = -1.0f;
+        std::optional<physics::bds::BlockRandomOffset> randomOffset;
+        std::vector<std::pair<std::string, physics::bds::BlockRandomOffset>> randomOffsetPermutations;
     };
 
     struct CustomBlockDef {
@@ -45,6 +49,7 @@ namespace perlin {
 
         void SetCollision(const std::string& name, CustomBlockCollision collision);
         bool Collision(const std::string& name, CustomBlockCollision& out) const;
+        uint64_t CollisionRevision() const { return collisionRevision.load(std::memory_order_acquire); }
 
         void SetItem(CustomItemDef item);
         bool Item(const std::string& name, CustomItemDef& out) const;
@@ -55,6 +60,7 @@ namespace perlin {
         std::vector<CustomBlockDef> pending;
         std::vector<CustomBlockDef> all;
         std::unordered_map<std::string, CustomBlockCollision> collisions;
+        std::atomic<uint64_t> collisionRevision{0};
         std::unordered_map<std::string, CustomItemDef> items;
     };
 }

@@ -799,6 +799,20 @@ if(PERLIN_DEBUG_OPT)
     endif()
 endif()
 
+# The BDS reference uses separate scalar SSE operations. Contracting multiply
+# and add changes physics branch decisions, including auto-step acceptance.
+# Keep these rules even when PERLIN_FAST_MATH relaxes rendering calculations.
+foreach(PERLIN_PHYSICS_SOURCE IN ITEMS
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/client/player/PlayerPhysics.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/client/resources/BlockOffsetDefinition.cpp")
+    if(MSVC)
+        set_property(SOURCE "${PERLIN_PHYSICS_SOURCE}" APPEND PROPERTY COMPILE_OPTIONS /fp:strict)
+    else()
+        set_property(SOURCE "${PERLIN_PHYSICS_SOURCE}" APPEND PROPERTY COMPILE_OPTIONS
+            -fno-fast-math -ffp-contract=off)
+    endif()
+endforeach()
+
 if(MSVC)
     target_compile_options(Perlin PRIVATE /W4 /permissive- /EHsc /Zc:__cplusplus)
     if(PERLIN_CLANG_CL_BUILD)
@@ -1048,6 +1062,200 @@ if(PERLIN_BUILD_TESTS AND NOT EMSCRIPTEN AND NOT ANDROID)
     target_include_directories(physics_selftest PRIVATE src)
     target_compile_features(physics_selftest PRIVATE cxx_std_23)
     add_test(NAME physics_selftest COMMAND physics_selftest)
+
+    add_executable(bds_numeric_selftest tests/bds_numeric_selftest.cpp)
+    target_include_directories(bds_numeric_selftest PRIVATE src)
+    target_compile_features(bds_numeric_selftest PRIVATE cxx_std_23)
+    add_test(NAME bds_numeric_selftest COMMAND bds_numeric_selftest
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/data/bds_numeric.txt"
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/data/bds_sine.bin")
+
+    add_executable(bds_collision_selftest tests/bds_collision_selftest.cpp)
+    target_include_directories(bds_collision_selftest PRIVATE src)
+    target_compile_features(bds_collision_selftest PRIVATE cxx_std_23)
+    add_test(NAME bds_collision_selftest COMMAND bds_collision_selftest
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/data/bds_collision.txt"
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/data/bds_step.txt"
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/data/bds_broadphase.txt")
+
+    add_executable(bds_vertical_selftest tests/bds_vertical_selftest.cpp)
+    target_include_directories(bds_vertical_selftest PRIVATE src)
+    target_compile_features(bds_vertical_selftest PRIVATE cxx_std_23)
+    add_test(NAME bds_vertical_selftest COMMAND bds_vertical_selftest
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/data/bds_vertical.txt")
+
+    add_executable(bds_water_drag_selftest tests/bds_water_drag_selftest.cpp)
+    target_include_directories(bds_water_drag_selftest PRIVATE src)
+    target_compile_features(bds_water_drag_selftest PRIVATE cxx_std_23)
+    add_test(NAME bds_water_drag_selftest COMMAND bds_water_drag_selftest
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/data/bds_water_drag.txt"
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/data/bds_water_acceleration.txt")
+
+    add_executable(bds_movement_effects_selftest tests/bds_movement_effects_selftest.cpp)
+    target_include_directories(bds_movement_effects_selftest PRIVATE src)
+    target_compile_features(bds_movement_effects_selftest PRIVATE cxx_std_23)
+    add_test(NAME bds_movement_effects_selftest COMMAND bds_movement_effects_selftest
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/data/bds_movement_effects.txt")
+
+    add_executable(bds_gliding_selftest tests/bds_gliding_selftest.cpp)
+    target_include_directories(bds_gliding_selftest PRIVATE src)
+    target_compile_features(bds_gliding_selftest PRIVATE cxx_std_23)
+    add_test(NAME bds_gliding_selftest COMMAND bds_gliding_selftest
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/data/bds_rotation.txt"
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/data/bds_gliding.txt")
+
+    add_executable(bds_gliding_trace_selftest tests/bds_gliding_trace_selftest.cpp
+        src/client/player/PlayerPhysics.cpp)
+    target_include_directories(bds_gliding_trace_selftest PRIVATE src)
+    target_compile_features(bds_gliding_trace_selftest PRIVATE cxx_std_23)
+    add_test(NAME bds_gliding_trace_selftest COMMAND bds_gliding_trace_selftest
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/data/bds_gliding_sequence.txt")
+
+    add_executable(bds_trig_selftest tests/bds_trig_selftest.cpp)
+    target_include_directories(bds_trig_selftest PRIVATE src)
+    target_compile_features(bds_trig_selftest PRIVATE cxx_std_23)
+    add_test(NAME bds_trig_selftest COMMAND bds_trig_selftest
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/data/bds_trig.txt"
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/data/bds_relative_movement.txt")
+
+    add_executable(bds_finalization_selftest tests/bds_finalization_selftest.cpp)
+    target_include_directories(bds_finalization_selftest PRIVATE src)
+    target_compile_features(bds_finalization_selftest PRIVATE cxx_std_23)
+    add_test(NAME bds_finalization_selftest COMMAND bds_finalization_selftest
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/data/bds_finalization.txt")
+
+    add_executable(bds_landing_selftest tests/bds_landing_selftest.cpp)
+    target_include_directories(bds_landing_selftest PRIVATE src)
+    target_compile_features(bds_landing_selftest PRIVATE cxx_std_23)
+    add_test(NAME bds_landing_selftest COMMAND bds_landing_selftest
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/data/bds_landing.txt")
+
+    add_executable(bds_support_selftest tests/bds_support_selftest.cpp)
+    target_include_directories(bds_support_selftest PRIVATE src)
+    target_compile_features(bds_support_selftest PRIVATE cxx_std_23)
+    add_test(NAME bds_support_selftest COMMAND bds_support_selftest
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/data/bds_support.txt")
+
+    add_executable(bds_world_collision_selftest tests/bds_world_collision_selftest.cpp)
+    target_include_directories(bds_world_collision_selftest PRIVATE src)
+    target_compile_features(bds_world_collision_selftest PRIVATE cxx_std_23)
+    add_test(NAME bds_world_collision_selftest COMMAND bds_world_collision_selftest
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/data/bds_unavailable_chunks.txt")
+
+    add_executable(bds_terrain_query_selftest tests/bds_terrain_query_selftest.cpp)
+    target_include_directories(bds_terrain_query_selftest PRIVATE src)
+    target_compile_features(bds_terrain_query_selftest PRIVATE cxx_std_23)
+    add_test(NAME bds_terrain_query_selftest COMMAND bds_terrain_query_selftest
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/data/bds_terrain_query.txt")
+
+    add_executable(bds_block_geometry_selftest tests/bds_block_geometry_selftest.cpp)
+    target_include_directories(bds_block_geometry_selftest PRIVATE src)
+    target_compile_features(bds_block_geometry_selftest PRIVATE cxx_std_23)
+    add_test(NAME bds_block_geometry_selftest COMMAND bds_block_geometry_selftest
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/data/bds_block_geometry.txt")
+
+    add_executable(voxel_shapes_selftest tests/voxel_shapes_selftest.cpp src/client/player/VoxelShapes.cpp)
+    target_include_directories(voxel_shapes_selftest PRIVATE src)
+    target_link_libraries(voxel_shapes_selftest PRIVATE perlin_protocol)
+    add_test(NAME voxel_shapes_selftest COMMAND voxel_shapes_selftest)
+
+    add_executable(bds_block_offset_selftest tests/bds_block_offset_selftest.cpp)
+    target_include_directories(bds_block_offset_selftest PRIVATE src)
+    target_compile_features(bds_block_offset_selftest PRIVATE cxx_std_23)
+    add_test(NAME bds_block_offset_selftest COMMAND bds_block_offset_selftest
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/data/bds_block_offset.txt")
+
+    add_executable(block_offset_definition_selftest tests/block_offset_definition_selftest.cpp
+        src/client/resources/BlockOffsetDefinition.cpp src/client/resources/ServerBlocks.cpp
+        src/client/ui/Json.cpp)
+    target_include_directories(block_offset_definition_selftest PRIVATE src)
+    target_compile_features(block_offset_definition_selftest PRIVATE cxx_std_23)
+    add_test(NAME block_offset_definition_selftest COMMAND block_offset_definition_selftest
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/data/bds_block_offset.txt")
+
+    add_executable(bds_collision_cache_selftest tests/bds_collision_cache_selftest.cpp)
+    target_include_directories(bds_collision_cache_selftest PRIVATE src)
+    target_compile_features(bds_collision_cache_selftest PRIVATE cxx_std_23)
+    add_test(NAME bds_collision_cache_selftest COMMAND bds_collision_cache_selftest
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/data/bds_collision_cache.txt")
+
+    add_executable(bds_cache_difference_selftest tests/bds_cache_difference_selftest.cpp)
+    target_include_directories(bds_cache_difference_selftest PRIVATE src)
+    target_compile_features(bds_cache_difference_selftest PRIVATE cxx_std_23)
+    add_test(NAME bds_cache_difference_selftest COMMAND bds_cache_difference_selftest
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/data/bds_cache_difference.txt")
+
+    add_executable(bds_cache_refresh_selftest tests/bds_cache_refresh_selftest.cpp)
+    target_include_directories(bds_cache_refresh_selftest PRIVATE src)
+    target_compile_features(bds_cache_refresh_selftest PRIVATE cxx_std_23)
+    add_test(NAME bds_cache_refresh_selftest COMMAND bds_cache_refresh_selftest
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/data/bds_cache_refresh.txt")
+
+    add_executable(bds_cache_refresh_records_selftest tests/bds_cache_refresh_records_selftest.cpp)
+    target_include_directories(bds_cache_refresh_records_selftest PRIVATE src)
+    target_compile_features(bds_cache_refresh_records_selftest PRIVATE cxx_std_23)
+    add_test(NAME bds_cache_refresh_records_selftest COMMAND bds_cache_refresh_records_selftest
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/data/bds_cache_refresh_records.txt")
+
+    add_executable(bds_block_slowdown_selftest tests/bds_block_slowdown_selftest.cpp)
+    target_include_directories(bds_block_slowdown_selftest PRIVATE src)
+    target_compile_features(bds_block_slowdown_selftest PRIVATE cxx_std_23)
+    add_test(NAME bds_block_slowdown_selftest COMMAND bds_block_slowdown_selftest
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/data/bds_block_slowdown.txt")
+
+    add_executable(bds_sneak_selftest tests/bds_sneak_selftest.cpp)
+    target_include_directories(bds_sneak_selftest PRIVATE src)
+    target_compile_features(bds_sneak_selftest PRIVATE cxx_std_23)
+    add_test(NAME bds_sneak_selftest COMMAND bds_sneak_selftest
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/data/bds_sneak.txt")
+
+    add_executable(bds_inside_query_selftest tests/bds_inside_query_selftest.cpp)
+    target_include_directories(bds_inside_query_selftest PRIVATE src)
+    target_compile_features(bds_inside_query_selftest PRIVATE cxx_std_23)
+    add_test(NAME bds_inside_query_selftest COMMAND bds_inside_query_selftest
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/data/bds_inside_query.txt")
+
+    add_executable(bds_jump_selftest tests/bds_jump_selftest.cpp)
+    target_include_directories(bds_jump_selftest PRIVATE src)
+    target_compile_features(bds_jump_selftest PRIVATE cxx_std_23)
+    add_test(NAME bds_jump_selftest COMMAND bds_jump_selftest
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/data/bds_jump.txt")
+
+    add_executable(bds_jump_requests_selftest tests/bds_jump_requests_selftest.cpp)
+    target_include_directories(bds_jump_requests_selftest PRIVATE src)
+    target_compile_features(bds_jump_requests_selftest PRIVATE cxx_std_23)
+    add_test(NAME bds_jump_requests_selftest COMMAND bds_jump_requests_selftest
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/data/bds_jump_requests.txt")
+
+    add_executable(bds_jump_predicate_selftest tests/bds_jump_predicate_selftest.cpp)
+    target_include_directories(bds_jump_predicate_selftest PRIVATE src)
+    target_compile_features(bds_jump_predicate_selftest PRIVATE cxx_std_23)
+    add_test(NAME bds_jump_predicate_selftest COMMAND bds_jump_predicate_selftest
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/data/bds_jump_predicate.txt")
+
+    add_executable(bds_honey_selftest tests/bds_honey_selftest.cpp)
+    target_include_directories(bds_honey_selftest PRIVATE src)
+    target_compile_features(bds_honey_selftest PRIVATE cxx_std_23)
+    add_test(NAME bds_honey_selftest COMMAND bds_honey_selftest
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/data/bds_honey.txt")
+
+    add_executable(bds_sprint_trace_selftest tests/bds_sprint_trace_selftest.cpp)
+    target_include_directories(bds_sprint_trace_selftest PRIVATE src)
+    target_compile_features(bds_sprint_trace_selftest PRIVATE cxx_std_23)
+    add_test(NAME bds_sprint_trace_selftest COMMAND bds_sprint_trace_selftest
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/data/bedsim_sprint_jumps.txt")
+
+    add_executable(bds_fluid_state_selftest tests/bds_fluid_state_selftest.cpp)
+    target_include_directories(bds_fluid_state_selftest PRIVATE src)
+    target_compile_features(bds_fluid_state_selftest PRIVATE cxx_std_23)
+    add_test(NAME bds_fluid_state_selftest COMMAND bds_fluid_state_selftest
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/data/bds_fluid_state.txt")
+
+    add_executable(bds_liquid_cells_selftest tests/bds_liquid_cells_selftest.cpp)
+    target_include_directories(bds_liquid_cells_selftest PRIVATE src)
+    target_compile_features(bds_liquid_cells_selftest PRIVATE cxx_std_23)
+    add_test(NAME bds_liquid_cells_selftest COMMAND bds_liquid_cells_selftest
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/data/bds_liquid_cells.txt")
 
     add_executable(bedsim_trace_selftest
         tests/bedsim_trace_selftest.cpp
