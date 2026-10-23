@@ -20,6 +20,7 @@ namespace perlin::ui {
         bool offline = false;
         long long realmId = 0;
         std::string xuid;
+        bool pingable = false;  // rows of other kinds (Featured Servers) that still get a ping bar
     };
 
     enum class ServerTab : uint8_t { Saved, Lan, Realms, Friends };

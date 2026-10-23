@@ -1,3 +1,4 @@
+#include "client/resources/TexturePack.hpp"
 #include "util/Resources.hpp"
 #include "client/resources/TextureLoader.hpp"
 #include "client/ui/Glint.hpp"
@@ -122,8 +123,16 @@ namespace perlin::ui {
                 t.pixels = f.Atlas();
             } else if (source.rfind("mcres:", 0) == 0) {
                 std::string bytes;
-                if (!resources::Read(source.substr(6), bytes) ||
-                    !LoadTextureMemory(reinterpret_cast<const unsigned char*>(bytes.data()), bytes.size(), t))
+                std::string stem = source.substr(6);
+                bool fromPack = false;
+                if (TexturePack::Instance().Active() && stem.rfind("ui_menu_btn", 0) == 0) {
+                    // Buttons come from the resource pack's own button sprites when it has them.
+                    if (stem.size() > 4 && stem.compare(stem.size() - 4, 4, ".png") == 0)
+                        stem.resize(stem.size() - 4);
+                    fromPack = TexturePack::Instance().Load("textures/ui/screen_" + stem.substr(3) + ".png", t) && t.width > 0;
+                }
+                if (!fromPack && (!resources::Read(source.substr(6), bytes) ||
+                    !LoadTextureMemory(reinterpret_cast<const unsigned char*>(bytes.data()), bytes.size(), t)))
                     return 0;
             } else if (source.rfind("mcurl:", 0) == 0) {
                 std::string bytes;

@@ -206,7 +206,7 @@ namespace perlin {
         void SetJoinMessage(const std::string& text);
         std::mutex tabMutex;
         std::vector<ui::ServerEntry> tabLan, tabRealms, tabFriends, tabFeatured;
-        std::atomic<bool> featuredBusy{false};
+        std::atomic<bool> featuredBusy{false}, featuredPing{false};
         std::chrono::steady_clock::time_point featuredAt{};
         void RefreshFeatured(bool force);
         std::string tabLanMsg, tabRealmsMsg, tabFriendsMsg, tabJoinMsg, realmJoinAddress;

@@ -4705,8 +4705,9 @@ namespace perlin {
                 e.name = f.name;
                 e.address = f.host + ":" + std::to_string(f.port);
                 e.right = f.ranked ? "Featured" : "Creator";
+                e.pingable = true;
                 e.motd = f.description;
-                e.note = e.address;
+                e.note = e.address + (f.ranked ? "" : "  -  Creator");
                 const std::string key = "fs:" + e.address;
                 if (!f.logoUrl.empty() && !ui::UiAssets::Instance().HasHead(key)) {
                     const http::Response pic = http::GetUrl(f.logoUrl, {}, 8);
@@ -4723,6 +4724,7 @@ namespace perlin {
                 if (ok) {
                     tabFeatured = std::move(rows);
                     featuredAt = Clock::now();
+                    featuredPing = true;
                 }
             }
             featuredBusy = false;
@@ -5491,6 +5493,31 @@ namespace perlin {
                 const ui::ServerEntry& r = it == pingResults.end() ? blank : it->second;
                 e.status = r.status;
                 e.motd = r.motd;
+                e.version = r.version;
+                e.players = r.players;
+                e.maxPlayers = r.maxPlayers;
+                e.pingMs = r.pingMs;
+            }
+        }
+        if (featuredPing.exchange(false)) {
+            std::vector<std::string> addresses;
+            {
+                std::lock_guard lock(pingMutex);
+                for (const ui::ServerEntry& e : title.featured) {
+                    pingResults.erase(e.address);
+                    addresses.push_back(e.address);
+                }
+            }
+            if (!addresses.empty())
+                PingServers(addresses);
+        }
+        {
+            std::lock_guard lock(pingMutex);
+            for (ui::ServerEntry& e : title.featured) {
+                const auto it = pingResults.find(e.address);
+                const ui::ServerEntry blank{};
+                const ui::ServerEntry& r = it == pingResults.end() ? blank : it->second;
+                e.status = r.status;
                 e.version = r.version;
                 e.players = r.players;
                 e.maxPlayers = r.maxPlayers;

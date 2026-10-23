@@ -241,6 +241,39 @@ namespace perlin::javapack {
                 AddSheet(out, "textures/gui/widgets.png", start ? 0 : 181, 0, 1, 22);
                 return true;
             }
+            // Server list ping bars: icons.png holds five levels (best first) at y=176, 8px apart, an "unreachable" one at 216,
+            // and the "pinging" sweep in the second column.
+            if (StartsWith(name, "ping_anim_") && name.size() == 11 && name[10] >= '0' && name[10] <= '4') {
+                AddSheet(out, "textures/gui/icons.png", 10, 176 + 8 * (name[10] - '0'), 10, 8);
+                return true;
+            }
+            if (StartsWith(name, "ping_") && name.size() == 6 && name[5] >= '0' && name[5] <= '5') {
+                const int level = name[5] - '0';
+                AddSheet(out, "textures/gui/icons.png", 0, 176 + 8 * level, 10, 8);
+                return true;
+            }
+            // Whole screens and widgets the client draws from its own images: the inventory family and the menu buttons.
+            if (StartsWith(name, "screen_")) {
+                const std::string n = name.substr(7);
+                if (n == "inventory") AddSheet(out, "textures/gui/container/inventory.png", 0, 0, 176, 166);
+                else if (n == "crafting_table") AddSheet(out, "textures/gui/container/crafting_table.png", 0, 0, 176, 166);
+                else if (n == "horse") AddSheet(out, "textures/gui/container/horse.png", 0, 0, 176, 166);
+                else if (n == "menu_btn") {
+                    Add(out, "textures/gui/sprites/widget/button.png");
+                    AddSheet(out, "textures/gui/widgets.png", 0, 66, 200, 20);
+                } else if (n == "menu_btn_hi") {
+                    Add(out, "textures/gui/sprites/widget/button_highlighted.png");
+                    AddSheet(out, "textures/gui/widgets.png", 0, 86, 200, 20);
+                } else if (n == "menu_btn_off") {
+                    Add(out, "textures/gui/sprites/widget/button_disabled.png");
+                    AddSheet(out, "textures/gui/widgets.png", 0, 46, 200, 20);
+                } else if (n == "inv_effect_background") {
+                    Add(out, "textures/gui/sprites/container/inventory/effect_background.png");
+                    AddSheet(out, "textures/gui/container/inventory.png", 0, 166, 140, 32);
+                } else
+                    return false;
+                return true;
+            }
             for (const HudSprite& s : kHud) {
                 if (name != s.name)
                     continue;

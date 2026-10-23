@@ -3,6 +3,7 @@
 #include "client/ui/RmlEmit.hpp"
 
 #include <algorithm>
+#include "client/resources/TexturePack.hpp"
 #include <cctype>
 #include <string>
 #include <utility>
@@ -31,6 +32,9 @@ mcimg { display: block; position: absolute; }
 .dim { color: #a0a0a0; }
 .ctr { text-align: center; }
 .row { z-index: 3; }
+.row:hover { z-index: 6; }
+.pg .pt { display: none; }
+.pg:hover .pt { display: block; }
 .row .go { display: none; }
 .row:hover .go { display: block; }
 .field { height: 20px; z-index: 5; }
@@ -84,6 +88,53 @@ mcimg { display: block; position: absolute; }
             d += "<mcimg src=\"mcres:ui_menu_btn.png\" nine=\"3 3 3 3\" style=\"left:0px;top:0px;width:20px;height:20px;\"></mcimg>";
             d += "<mcimg class=\"h\" src=\"mcres:ui_menu_btn_hi.png\" nine=\"3 3 3 3\" style=\"left:0px;top:0px;width:20px;height:20px;\"></mcimg>";
             d += "<mcimg src=\"" + EscapeRml(icon) + "\" style=\"left:4px;top:4px;width:12px;height:12px;\"></mcimg></div>\n";
+            return d;
+        }
+
+        // The signal bars of the server list. Drawn from the resource pack's sprites when it has them (Java icons.png),
+        // otherwise as plain bars. Hovering shows the latency in a tooltip.
+        std::string PingBars(int x, int y, ServerEntry::Status status, int pingMs, int spinner) {
+            using St = ServerEntry::Status;
+            const bool pinging = status == St::Pinging || status == St::Unknown;
+            int level = 0;  // lit bars, 0..5
+            const char* color = "#55ff55";
+            std::string tip;
+            if (pinging) {
+                level = 1 + spinner % 5;
+                color = "#808080";
+                tip = "Pinging...";
+            } else if (status == St::Offline) {
+                color = "#ff5555";
+                tip = "No connection";
+            } else {
+                level = pingMs < 150 ? 5 : pingMs < 300 ? 4 : pingMs < 600 ? 3 : pingMs < 1000 ? 2 : 1;
+                color = level >= 4 ? "#55ff55" : (level == 3 ? "#ffff55" : "#ff5555");
+                tip = N(pingMs) + "ms";
+            }
+            std::string d = "<div class=\"pg\" style=\"left:" + N(x) + "px;top:" + N(y) + "px;width:10px;height:8px;\">";
+            std::string sprite;
+            if (TexturePack::Instance().Active()) {
+                const std::string name = pinging ? "textures/ui/ping_anim_" + N(5 - level) : "textures/ui/ping_" + N(status == St::Offline ? 5 : 5 - level);
+                if (TexturePack::Instance().Has(name + ".png"))
+                    sprite = name;
+            }
+            if (!sprite.empty()) {
+                d += "<mcimg src=\"" + sprite + "\" style=\"left:0px;top:0px;width:10px;height:8px;\"></mcimg>";
+            } else {
+                static const int kHeights[5] = {2, 3, 5, 6, 8};
+                for (int i = 0; i < 5; i++) {
+                    const bool lit = i < level;
+                    d += "<div style=\"left:" + N(i * 2) + "px;top:" + N(8 - kHeights[i]) + "px;width:2px;height:" + N(kHeights[i]) + "px;background-color:" +
+                         (lit ? color : "#303030") + ";\"></div>";
+                }
+                if (status == St::Offline)
+                    d += "<div class=\"txt red\" style=\"left:3px;top:0px;width:6px;height:9px;\">x</div>";
+            }
+            const int tw = static_cast<int>(tip.size()) * 5 + 8;
+            d += "<div class=\"pt\" style=\"left:" + N(10 - tw) + "px;top:11px;width:" + N(tw) + "px;height:13px;z-index:60;\">"
+                 "<div style=\"left:0px;top:0px;width:" + N(tw) + "px;height:13px;background-color:#2d0a63;\"></div>"
+                 "<div style=\"left:1px;top:1px;width:" + N(tw - 2) + "px;height:11px;background-color:#100010;\"></div>"
+                 "<div class=\"txt\" style=\"left:4px;top:2px;width:" + N(tw - 6) + "px;height:9px;\">" + EscapeRml(tip) + "</div></div></div>\n";
             return d;
         }
 
@@ -354,33 +405,27 @@ mcimg { display: block; position: absolute; }
                     d += "<mcimg src=\"mchead:" + EscapeRml(s.icon) + "\" style=\"left:0px;top:0px;width:32px;height:32px;" + (s.offline ? "opacity:0.5;" : "") + "\"></mcimg>\n";
                 if (Joinable(s))
                 d += "<div id=\"" + std::string(kServerJoinPrefix) + N(i) + "\" class=\"go\" style=\"left:0px;top:0px;width:32px;height:32px;\"><mcimg src=\"mcres:ui_menu_join_hi.png\" style=\"left:0px;top:0px;width:32px;height:32px;\"></mcimg></div>\n";
-                d += RowText(35, 1, kRowW - 110, s.name.empty() ? "Minecraft Server" : s.name);
+                d += RowText(35, 1, kRowW - 140, s.name.empty() ? "Minecraft Server" : s.name);
                 std::string right, rightCls = "gray";
                 using St = ServerEntry::Status;
                 if (s.kind != ServerEntry::Kind::Server) {
-                    d += "<div class=\"txt " + std::string(s.offline ? "dark" : "green") + "\" style=\"left:" + N(kRowW - 105) + "px;top:1px;width:100px;height:9px;text-align:right;\">" +
-                         EscapeRml(s.right) + "</div>\n";
+                    const int labelRight = s.pingable ? 22 : 5;
+                    d += "<div class=\"txt " + std::string(s.offline ? "dark" : "green") + "\" style=\"left:" + N(kRowW - labelRight - 100) + "px;top:1px;width:100px;height:9px;text-align:right;\">" +
+                         EscapeRml(s.pingable && s.status == ServerEntry::Status::Online ? N(s.players) + "/" + N(s.maxPlayers) : s.right) + "</div>\n";
+                    if (s.pingable)
+                        d += PingBars(kRowW - 15, 1, s.status, s.pingMs, m.spinner);
                     d += RowText(35, 12, kRowW - 40, s.motd.empty() ? " " : s.motd, s.offline ? "dark" : "gray");
                     d += RowText(35, 23, kRowW - 40, s.note, "dark");
                     d += "</div>\n";
                     continue;
                 }
-                if (s.status == St::Pinging || s.status == St::Unknown) {
-                    static const char* const kDots[] = {"Pinging", "Pinging.", "Pinging..", "Pinging..."};
-                    right = kDots[m.spinner & 3];
-                    rightCls = "dark";
-                } else if (s.status == St::Online) {
-                    right = N(s.players) + "/" + N(s.maxPlayers) + "  ";
-                } else {
-                    right = "No connection";
-                    rightCls = "red";
-                }
-                d += "<div class=\"txt " + rightCls + "\" style=\"left:" + N(kRowW - 105) + "px;top:1px;width:" + N(s.status == St::Online ? 72 : 100) +
-                     "px;height:9px;text-align:right;\">" + EscapeRml(right) + "</div>\n";
                 if (s.status == St::Online) {
-                    const char* latencyCls = s.pingMs < 150 ? "green" : (s.pingMs < 300 ? "yellow" : "red");
-                    d += "<div class=\"txt " + std::string(latencyCls) + "\" style=\"left:" + N(kRowW - 33) + "px;top:1px;width:30px;height:9px;text-align:right;\">" +
-                         N(s.pingMs) + "ms</div>\n";
+                    right = N(s.players) + "/" + N(s.maxPlayers);
+                }
+                if (s.status == St::Online)
+                    d += "<div class=\"txt gray\" style=\"left:" + N(kRowW - 122) + "px;top:1px;width:100px;height:9px;text-align:right;\">" + EscapeRml(right) + "</div>\n";
+                d += PingBars(kRowW - 15, 1, s.status, s.pingMs, m.spinner);
+                if (s.status == St::Online) {
                     d += RowText(35, 12, kRowW - 40, s.motd.empty() ? "A Minecraft Server" : s.motd, "gray");
                     d += RowText(35, 23, kRowW - 40, s.address + (s.version.empty() ? "" : "  -  " + s.version), "dark");
                 } else if (s.status == St::Offline) {

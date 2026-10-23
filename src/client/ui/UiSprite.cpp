@@ -1,6 +1,7 @@
 #include "client/ui/UiSprite.hpp"
 
 #include "client/resources/TextureLoader.hpp"
+#include "client/resources/TexturePack.hpp"
 #include "util/Resources.hpp"
 
 #include <algorithm>
@@ -11,6 +12,17 @@
 
 namespace perlin::ui {
     namespace {
+        // The resource-pack counterpart of one of the client's own images ("ui_inventory.png" -> textures/ui/screen_inventory).
+        // Only Java packs are matched: they restyle the same inventory layout the client draws.
+        bool PackReplacement(const std::string& resource, Texture& out) {
+            if (!TexturePack::Instance().Active() || resource.rfind("ui_", 0) != 0 || resource.size() < 8)
+                return false;
+            std::string stem = resource.substr(3);
+            if (stem.size() > 4 && stem.compare(stem.size() - 4, 4, ".png") == 0)
+                stem.resize(stem.size() - 4);
+            return TexturePack::Instance().Load("textures/ui/screen_" + stem + ".png", out);
+        }
+
         struct Decoded {
             bool ok = false;
             int width = 0, height = 0;
@@ -20,7 +32,12 @@ namespace perlin::ui {
         const Decoded& Load(const std::string& resource) {
             static std::map<std::string, Decoded> cache;
             static std::mutex mutex;
+            static uint64_t generation = ~0ull;
             std::lock_guard lock(mutex);
+            if (generation != TexturePack::Instance().Generation()) {
+                generation = TexturePack::Instance().Generation();
+                cache.clear();
+            }
             auto it = cache.find(resource);
             if (it != cache.end())
                 return it->second;
@@ -33,6 +50,36 @@ namespace perlin::ui {
                 d.width = tex.width;
                 d.height = tex.height;
                 d.rgba.assign(tex.pixels.begin(), tex.pixels.end());
+                // A resource pack that restyles this screen supplies the same picture at its own resolution; bring it to the
+                // size the layout was built for so every offset in the layout still lines up.
+                Texture pack;
+                if (PackReplacement(resource, pack) && pack.width > 0 && pack.height > 0) {
+                    std::vector<uint8_t> scaled(static_cast<size_t>(d.width) * static_cast<size_t>(d.height) * 4);
+                    for (int y = 0; y < d.height; y++)
+                        for (int x = 0; x < d.width; x++) {
+                            const int x0 = x * pack.width / d.width, x1 = std::max(x0 + 1, (x + 1) * pack.width / d.width);
+                            const int y0 = y * pack.height / d.height, y1 = std::max(y0 + 1, (y + 1) * pack.height / d.height);
+                            double r = 0, g = 0, b = 0, a = 0;
+                            int n = 0;
+                            for (int yy = y0; yy < y1 && yy < pack.height; yy++)
+                                for (int xx = x0; xx < x1 && xx < pack.width; xx++) {
+                                    const uint8_t* p = &pack.pixels[(static_cast<size_t>(yy) * static_cast<size_t>(pack.width) + static_cast<size_t>(xx)) * 4];
+                                    r += p[0] * p[3];
+                                    g += p[1] * p[3];
+                                    b += p[2] * p[3];
+                                    a += p[3];
+                                    n++;
+                                }
+                            uint8_t* o = &scaled[(static_cast<size_t>(y) * static_cast<size_t>(d.width) + static_cast<size_t>(x)) * 4];
+                            if (a > 0 && n > 0) {
+                                o[0] = static_cast<uint8_t>(r / a + 0.5);
+                                o[1] = static_cast<uint8_t>(g / a + 0.5);
+                                o[2] = static_cast<uint8_t>(b / a + 0.5);
+                                o[3] = static_cast<uint8_t>(a / n + 0.5);
+                            }
+                        }
+                    d.rgba = std::move(scaled);
+                }
             }
             return cache.emplace(resource, std::move(d)).first->second;
         }
@@ -41,7 +88,7 @@ namespace perlin::ui {
     std::string SpriteRml(const std::string& resource, int srcX, int srcY, int width, int height, int dstX, int dstY) {
         static std::map<std::string, std::string> cache;
         static std::mutex mutex;
-        const std::string key = resource + ":" + std::to_string(srcX) + "," + std::to_string(srcY) + "," + std::to_string(width) + "," +
+        const std::string key = std::to_string(TexturePack::Instance().Generation()) + "/" + resource + ":" + std::to_string(srcX) + "," + std::to_string(srcY) + "," + std::to_string(width) + "," +
                                 std::to_string(height) + "@" + std::to_string(dstX) + "," + std::to_string(dstY);
         {
             std::lock_guard lock(mutex);
