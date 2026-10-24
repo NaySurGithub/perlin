@@ -22,6 +22,7 @@ namespace perlin {
         uint64_t tick = 0, authTick = 0, corrections = 0, applied = 0;
         bool connected = false, initialized = false, onGround = false;
         bool sprinting = false, sneaking = false, swimming = false, flying = false;
+        bool cursorCaptured = false, textInput = false;
         std::array<double, 3> position{}, velocity{};
         float yaw = 0, pitch = 0;
         int connectionState = 0;
@@ -33,6 +34,9 @@ namespace perlin {
         std::array<int, 3> probePosition{};
         std::string probeName;
         std::vector<std::array<double, 6>> probeCollision;
+        float movementSpeed = 0;
+        bool serverSprinting = false;
+        std::string movementAttributeJson;
     };
 
     // Opt-in developer interface. HTTP threads queue requests; only the game

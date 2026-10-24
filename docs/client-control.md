@@ -16,6 +16,17 @@ Set `PERLIN_DATA_DIR` to a separate data directory to isolate test settings,
 accounts, logs and replay files from your usual client profile. Vanilla assets
 must be available there (asset directories can be symlinked).
 
+Open `http://127.0.0.1:19180/` for the live rendered view, keyboard movement,
+mouse look, state telemetry and server command entry. The page controls the
+native hidden client; its connection to BDS still uses RakNet. Keyboard holds
+expire after six simulation ticks unless refreshed, and losing tab focus releases
+input. HTTP requests remain available for precise automated tests.
+
+The state endpoint includes `movementSpeed`, `serverSprinting`, and
+`movementAttributeJson` (the complete received movement attribute, including
+modifiers) for diagnosing speed transitions. These describe received server
+state, which can lag the locally predicted input.
+
 ## Requests
 
 ```sh
@@ -50,6 +61,12 @@ curl http://127.0.0.1:19180/trace -o movement.ndjson
 This includes movement, jump, sneak, sprint, use, attack, inventory and hotbar
 actions. Requests also support `chat` (`text`), `key` (`key`, `down`), `mouse`
 (`x`, `y`, `button`, `down`) and `shutdown`.
+
+For menus and native text fields, `pointer` (`x`, `y`) moves the cursor without
+changing button state, `scroll` (`y`) sends a wheel delta, and `character` (`key`)
+sends a Unicode scalar value to the normal text input handler. Raw `key` requests
+use Perlin's native key codes; these are distinct from Unicode character values.
+`state.cursorCaptured` and `state.textInput` expose the current input mode.
 
 Commands return `202` and a monotonically increasing `id`. They are applied on
 the game thread; wait until `/state.applied` reaches that ID. `commandError`

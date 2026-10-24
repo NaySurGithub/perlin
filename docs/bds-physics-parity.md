@@ -7,13 +7,74 @@ numeric tests below are a small part of that requirement.
 
 ## Authoritative reference
 
-All new behavioral evidence comes from the IDA MCP instance containing
+The numeric evidence ledger below uses the IDA MCP instance containing
 **Windows Server 1.26.10**, image base `0x140000000`.
 IDA's stored original-input SHA-256 is
 `f35469677a9d0db236e8559e9e72c4d6532230edf54497e88677eceff4cde539`.
 The database is mostly stripped. System-name string references, registration
 factories, vtables, ECS iteration wrappers, and callbacks establish provenance.
 Decompiler argument names and inferred types are not treated as semantic names.
+
+## Live server checks, 2026-10-24
+
+The hidden native client also runs against **Windows BDS 1.26.52.3** under
+Wine 11 over localhost RakNet. Movement strictness remains enabled and the
+server's default correction threshold remains unchanged. A game-time query
+advanced 77 server ticks over approximately four seconds, checking that Wine's
+clock was progressing normally before interpreting movement results.
+
+The movement attribute packet during sprint contains current speed `0.13` and
+modifier `d208fc00-42aa-4aad-9276-d5446530de43`, named `Sprinting speed boost`,
+amount `0.3`, operation/operand `2/2`. Perlin previously multiplied this current
+value by another 1.3 in ground travel. The session now replaces only that known
+modifier with the locally predicted sprint state, and travel consumes the
+resolved attribute once. This also preserves other received movement modifiers
+and supplies the resolved value to water acceleration and FOV prediction.
+
+A separate **Minecraft 26.52 native client** IDA database supplies supporting
+producer evidence; these addresses are not Windows BDS addresses:
+
+- Sprint action body `0x10678e628` calls toggle `0x106783b50`, which changes
+  actor sprint flag bit 3 and queues an attribute add/remove request.
+- Modifier initialization `0x10aca67fc` identifies the UUID above and float 0.3.
+- Attribute registry `0x105f49030` maps MovementAttributes slot 0 to
+  `minecraft:movement`; updater `0x107034a50` copies the current attribute.
+- PlayerResetMovementSpeed traversal `0x10612e098` copies that optional value
+  into MovementSpeed, or zero when absent, without an extra sprint multiplier.
+- Player air-speed traversal `0x1070f1f14` separately selects float 0.02 or
+  float 0.026 from the actor sprint flag.
+
+The same live 40-tick sprint changed from **eight movement corrections to zero**.
+The subsequent matrix produced zero movement corrections in all 12 cases:
+forward/back/left/right walking, diagonal walking, sprinting, sneaking, standing
+jump, walking jump, sprint-jump, sneak-jump, and rotated diagonal walking.
+Four raw corrections occurred during teleport setup and remain counted and
+reported separately. This is bounded runtime evidence, not overall BDS parity
+or proof that all network correction behavior is correct. All 62 CTest tests
+pass after supplying resolved attributes in the legacy trace adapter and the
+sprint-distance fixture; expected distances and assertion tolerances are unchanged.
+
+Five additional cases with Speed I, Slowness I, and combined Speed II/Slowness I
+also produced zero movement corrections, including walking and sprinting. This
+checks that removing the known sprint contribution does not discard the other
+received modifiers. A fresh platform at y=160–162 changed from loaded air to
+stone with collision at all 11 probes spanning positive/negative chunk borders.
+
+The localhost browser view has also been exercised against the actual hidden
+renderer: a quick E tap opens inventory, a pointer click opens the recipe panel,
+native text input receives an unsent draft, Escape restores logical capture,
+and the command form receives a real server game-time reply. These interface
+checks do not substitute for broader physics coverage.
+
+The terrain handler also accepts first block updates in an unallocated section
+of an existing loaded chunk, allowing Level to allocate the section. Previously
+the section-presence guard silently discarded those updates, leaving holes in
+the client's collision terrain. Unloaded chunks are still rejected.
+
+See [local client control](client-control.md) for the hidden launch, live browser
+view, tick-bounded input, block probes and raw correction telemetry. Broader
+terrain, fluid, effect, mode, entity and authority-transition coverage remains
+required below.
 
 ## Evidence and implementation ledger
 

@@ -120,6 +120,9 @@ int main(int argc, char** argv) {
             input = Input{};
             input.jump = jump != 0;
             input.sprint = sprint != 0;
+            // This legacy fixture records base speed and sprint intent separately.
+            // Supply the resolved attribute consumed by the native travel stage.
+            attr.speed = 0.1f * (input.sprint ? 1.3f : 1.0f);
             input.sneak = sneak != 0;
             const MoveVector mv = ProcessMoveInput(static_cast<float>(fwd), static_cast<float>(-strafe), input.sneak,
                                                    state.inWater);

@@ -548,11 +548,13 @@ int main() {
                 Input in;
                 in.forward = 1;
                 in.sprint = true;
+                Attributes sprintAttributes = attr;
+                sprintAttributes.speed *= 1.3f;
                 bool inside = false;
                 for (int i = 0; i < 160; i++) {
                     if (i % 17 == 5)
                         in.jump = !in.jump;
-                    Step(s, in, attr, wall);
+                    Step(s, in, sprintAttributes, wall);
                     const Box b = BoundingBox(s, false);
                     TestWorld& w = wall;
                     for (int x = wx - 1; x <= wx + 1; x++)
@@ -604,11 +606,13 @@ int main() {
         CHECK(Near(s.z - z0, 4.317, 0.02));
         State t;
         in.sprint = true;
+        Attributes sprintAttributes = attr;
+        sprintAttributes.speed *= 1.3f; // resolved by the sprint attribute producer
         for (int i = 0; i < 60; i++)
-            Step(t, in, attr, flat);
+            Step(t, in, sprintAttributes, flat);
         const double t0 = t.z;
         for (int i = 0; i < 20; i++)
-            Step(t, in, attr, flat);
+            Step(t, in, sprintAttributes, flat);
         CHECK(Near(t.z - t0, 5.612, 0.03));
     }
 
@@ -672,8 +676,10 @@ int main() {
         Input in;
         in.forward = 1;
         in.sprint = true;
+        Attributes sprintAttributes = attr;
+        sprintAttributes.speed *= 1.3f;
         for (int i = 0; i < 60; i++)
-            Step(s, in, attr, wall);
+            Step(s, in, sprintAttributes, wall);
         CHECK(s.z <= 3.0 - 0.3 + 1e-6);
         CHECK(s.z > 2.6);
         CHECK(s.horizontalCollision);

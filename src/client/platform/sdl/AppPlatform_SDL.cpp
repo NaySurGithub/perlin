@@ -443,6 +443,8 @@ bool AppPlatform_SDL::Initialize() {
         return false;
     if (touchMode)
         game->GetInput().SetCaptured(true);
+    if (args.hidden && args.controlPort)
+        SetCursorCaptured(true);
 #ifndef __EMSCRIPTEN__
     if (!args.hidden) SDL_RaiseWindow(window);
     if (!args.hidden && (SDL_GetWindowFlags(window) & SDL_WINDOW_INPUT_FOCUS))
@@ -453,7 +455,8 @@ bool AppPlatform_SDL::Initialize() {
 
 void AppPlatform_SDL::SetCursorCaptured(bool captured) {
     if (args.hidden) {
-        if (game) game->GetInput().SetCaptured(captured && args.controlPort != 0);
+        cursorCaptured = captured && args.controlPort != 0;
+        if (game) game->GetInput().SetCaptured(cursorCaptured);
         return;
     }
     if (touchMode) {
@@ -836,7 +839,7 @@ void AppPlatform_SDL::PumpFrame() {
         }
     }
 
-    if (cursorCaptured && !(SDL_GetWindowFlags(window) & SDL_WINDOW_INPUT_FOCUS))
+    if (!args.hidden && cursorCaptured && !(SDL_GetWindowFlags(window) & SDL_WINDOW_INPUT_FOCUS))
         SetCursorCaptured(false);
 }
 

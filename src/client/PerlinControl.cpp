@@ -31,6 +31,12 @@ namespace perlin {
                 camera.pitch = std::clamp(c.pitch, -89.0f, 89.0f);
             } else if (c.op == "key") {
                 if (c.down) input.OnKeyDown(c.key); else input.OnKeyUp(c.key);
+            } else if (c.op == "character") {
+                input.OnChar(c.key);
+            } else if (c.op == "pointer") {
+                input.OnMouseMove(c.x, c.y);
+            } else if (c.op == "scroll") {
+                input.OnMouseWheel(c.y);
             } else if (c.op == "mouse") {
                 input.OnMouseMove(c.x, c.y);
                 if (c.down) input.OnMouseDown(c.button); else input.OnMouseUp(c.button);
@@ -54,6 +60,7 @@ namespace perlin {
         auto& out = controlState;
         const auto& s = player.State();
         out.tick = player.TickCount();
+        out.cursorCaptured = input.Captured(); out.textInput = input.TextMode();
         out.position = {s.x, s.y, s.z}; out.velocity = {s.vx, s.vy, s.vz};
         out.onGround = s.onGround;
         out.sprinting = player.Sprinting(); out.sneaking = player.Sneaking();
@@ -66,6 +73,10 @@ namespace perlin {
         out.corrections = session ? session->CorrectionCount() : 0;
         out.error = session ? session->LastError() : std::string();
         if (session) {
+            out.movementSpeed = session->MovementSpeedAttribute();
+            out.serverSprinting = session->ServerSprinting();
+            const auto attribute = session->MovementAttribute();
+            out.movementAttributeJson = attribute ? json::Write(*attribute) : std::string();
             const auto result = session->LastCommandResult();
             out.commandReplies = result.received;
             out.lastCommandSuccess = result.success;

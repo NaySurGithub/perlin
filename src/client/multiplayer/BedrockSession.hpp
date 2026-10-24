@@ -202,6 +202,28 @@ namespace perlin {
             const auto it = ownAttributes.find("minecraft:movement");
             return it == ownAttributes.end() ? 0.1f : it->second;
         }
+        float PredictedMovementSpeed(bool sprinting) const {
+            std::lock_guard lock(attrMutex);
+            const auto it = ownAttributes.find("minecraft:movement");
+            float speed = it == ownAttributes.end() ? 0.1f : it->second;
+            // The wire current value already includes this native modifier.
+            // Replace only its contribution with the locally predicted sprint
+            // state; potion, equipment and custom movement modifiers stay intact.
+            if (movementAttribute)
+                for (const auto& modifier : movementAttribute->modifiers)
+                    if (modifier.id == "d208fc00-42aa-4aad-9276-d5446530de43" &&
+                        modifier.operation == 2 && modifier.operand == 2 && modifier.amount > -1.0f)
+                        speed /= 1.0f + modifier.amount;
+            return speed * (sprinting ? 1.3f : 1.0f);
+        }
+        std::optional<proto::PlayerAttributesEntry> MovementAttribute() const {
+            std::lock_guard lock(attrMutex);
+            return movementAttribute;
+        }
+        bool ServerSprinting() const {
+            std::lock_guard lock(attrMutex);
+            return (ownFlagWords[0] & proto::FlagsMetadataFlags1::Sprinting) != 0;
+        }
         float UnderwaterMovementSpeedAttribute() const {
             std::lock_guard lock(attrMutex);
             const auto it = ownAttributes.find("minecraft:underwater_movement");
@@ -905,6 +927,7 @@ void RequestRespawn();
         std::map<std::string, float> ownAttributes;
         std::array<uint64_t, 2> ownFlagWords{};
         std::array<bool, 2> ownFlagWordsKnown{};
+        std::optional<proto::PlayerAttributesEntry> movementAttribute;
         int64_t ownPlayerFlags = 0;
         float ownScale = 1.0f, ownWidth = 0.6f, ownHeight = 1.8f;
         int predictionSyncCountdown = -1;

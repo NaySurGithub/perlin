@@ -278,7 +278,12 @@ int main(int argc, char** argv) {
                 if (prev.hasBox)
                     state.box = prev.box;
             }
-            Step(state, input, attr, world);
+            Attributes resolvedAttributes = attr;
+            // --use-speed consumes a trace's resolved movement attribute.
+            // The legacy default instead supplies base 0.1 plus sprint intent.
+            if (!opt.useSpeed)
+                resolvedAttributes.speed *= input.sprint ? 1.3f : 1.0f;
+            Step(state, input, resolvedAttributes, world);
         } else if (tag == "E") {
             if (skipping || !rep)
                 continue;

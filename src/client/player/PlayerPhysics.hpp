@@ -63,6 +63,8 @@ namespace perlin::physics {
     };
 
     struct Attributes {
+        // Resolved movement attribute, including the predicted sprint modifier.
+        // Native PlayerResetMovementSpeed copies this value without another boost.
         float speed = 0.1f;
         float flySpeed = 0.05f;
         float verticalFlySpeed = 1.0f;

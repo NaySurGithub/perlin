@@ -2,6 +2,7 @@
 
 #if !defined(__EMSCRIPTEN__) && !defined(__ANDROID__)
 #include "client/input/KeyMapping.hpp"
+#include "client/ClientControlPage.hpp"
 #include "util/Json.hpp"
 #include <httplib.h>
 #include <stb_image_write.h>
@@ -43,6 +44,9 @@ namespace perlin {
             res.set_header("Cache-Control", "no-store");
             return httplib::Server::HandlerResponse::Unhandled;
         });
+        p.server.Get("/", [](const auto&, auto& res) {
+            res.set_content(std::string(kClientControlPage), "text/html; charset=utf-8");
+        });
         p.server.Get("/state", [&p](const auto&, auto& res) {
             std::lock_guard lock(p.mutex);
             res.set_content(p.state, "application/json");
@@ -65,11 +69,15 @@ namespace perlin {
             if (!command) { res.status = 400; return; }
             auto& c = *command;
             bool valid = c.op == "input" || c.op == "look" || c.op == "command" || c.op == "chat" ||
-                         c.op == "key" || c.op == "mouse" || c.op == "release" || c.op == "shutdown" || c.op == "probe";
+                         c.op == "key" || c.op == "character" || c.op == "pointer" || c.op == "scroll" ||
+                         c.op == "mouse" || c.op == "release" || c.op == "shutdown" || c.op == "probe";
+            const bool validKey = c.op == "character"
+                ? c.key > 0 && c.key <= 0x10ffff && !(c.key >= 0xd800 && c.key <= 0xdfff)
+                : c.key >= 0 && c.key < 256;
             valid &= c.ticks >= 0 && c.ticks <= 72000 && std::isfinite(c.yaw) && std::isfinite(c.pitch) &&
                      std::abs(c.yaw) <= 36000 && std::abs(c.pitch) <= 90 &&
                      std::isfinite(c.x) && std::isfinite(c.y) && std::isfinite(c.z) &&
-                     std::abs(c.x) <= 30000000 && std::abs(c.y) <= 100000 && std::abs(c.z) <= 30000000 && c.key >= 0 && c.key < 256 &&
+                     std::abs(c.x) <= 30000000 && std::abs(c.y) <= 100000 && std::abs(c.z) <= 30000000 && validKey &&
                      c.button >= 0 && c.button < 8 && c.text.size() <= 8192;
             for (const auto& name : c.actions) {
                 bool found = false;

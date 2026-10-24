@@ -64,6 +64,14 @@ int main() {
     result = client.Post("/command", {{"Origin", "https://unrelated.example"}}, R"({"op":"shutdown"})", "application/json");
     CHECK(result && result->status == 403);
     CHECK(server.TakeCommands().empty());
+    result = client.Post("/command", R"({"op":"character","key":128578})", "application/json");
+    CHECK(result && result->status == 202);
+    commands = server.TakeCommands();
+    CHECK(commands.size() == 1 && commands[0].key == 128578);
+    result = client.Post("/command", R"({"op":"character","key":55296})", "application/json");
+    CHECK(result && result->status == 400); // UTF-16 surrogates are not Unicode scalar values
+    result = client.Post("/command", R"({"op":"key","key":128578})", "application/json");
+    CHECK(result && result->status == 400);
     ControlSnapshot snapshot;
     snapshot.tick = 41; snapshot.corrections = 3; snapshot.position = {1, 2, 3};
     server.Publish(snapshot);

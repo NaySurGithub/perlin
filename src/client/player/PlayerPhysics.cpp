@@ -569,11 +569,10 @@ namespace perlin::physics {
         } else if (lava) {
             relSpeed = 0.02;
         } else if (grounded) {
-            const float speed = attr.speed * (in.sprint ? 1.3f : 1.0f);
             float accFriction = blockFriction;
             if (under.surface == 4)
                 accFriction *= 1.225f;
-            relSpeed = bds::GroundAcceleration(speed, accFriction);
+            relSpeed = bds::GroundAcceleration(attr.speed, accFriction);
         } else {
             relSpeed = in.sprint ? 0.026 : 0.02;
         }

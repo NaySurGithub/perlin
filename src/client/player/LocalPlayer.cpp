@@ -280,7 +280,7 @@ namespace perlin {
         in.gravity.descendThroughBlock = (actorFlags[1] & proto::FlagsMetadataFlags2::FallThroughScaffolding) != 0;
 
         physics::Attributes attributes;
-        attributes.speed = session.MovementSpeedAttribute();
+        attributes.speed = session.PredictedMovementSpeed(sprinting);
         attributes.flySpeed = session.FlySpeed();
         attributes.verticalFlySpeed = session.VFlySpeed();
         attributes.waterWalkSpeedEnchant = session.WaterWalkSpeedEnchant();
@@ -578,7 +578,7 @@ namespace perlin {
             float target = 1.0f;
             if (flying)
                 target *= 1.1f;
-            const float speed = session.MovementSpeedAttribute() * (sprinting ? 1.3f : 1.0f);
+            const float speed = session.PredictedMovementSpeed(sprinting);
             target *= (speed / 0.1f + 1.0f) / 2.0f;
             target = std::clamp(target, 0.1f, 1.5f);
             const float keep = std::pow(0.5f, dt * 20.0f);

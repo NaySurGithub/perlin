@@ -811,7 +811,11 @@ namespace perlin {
                 const int32_t y = static_cast<int32_t>(b.position.y);
                 if (y < -64 || y >= 320 || std::abs(b.position.x) > 30000000 || std::abs(b.position.z) > 30000000)
                     return false;
-                return netLevel.HasSectionAt(b.position.x, y, b.position.z);
+                // An existing column can legitimately receive its first block
+                // in an empty, unallocated section (for example a new bridge).
+                // SetBlock/SetLiquid allocate that section; requiring it to
+                // exist here silently discarded the server's terrain updates.
+                return netLevel.HasChunk(b.position.x >> 4, b.position.z >> 4);
             };
             static int logged = 0;
             if (logged < 100) {
@@ -1185,8 +1189,10 @@ namespace perlin {
             }
             {
                 std::lock_guard lk(attrMutex);
-                for (const PlayerAttributesEntry& a : p.attributes)
+                for (const PlayerAttributesEntry& a : p.attributes) {
                     ownAttributes[a.name] = a.current;
+                    if (a.name == "minecraft:movement") movementAttribute = a;
+                }
             }
             for (const PlayerAttributesEntry& a : p.attributes) {
                 if (a.name == "minecraft:health") {

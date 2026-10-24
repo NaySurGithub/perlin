@@ -144,6 +144,10 @@ set_target_properties(wasm3_core PROPERTIES POSITION_INDEPENDENT_CODE ON C_STAND
 set(PERLIN_WASM_ENGINE wasm3_core)
 else()
 CPMAddPackage(NAME wasmedge GITHUB_REPOSITORY WasmEdge/WasmEdge GIT_TAG 0.18.0 DOWNLOAD_ONLY YES)
+# libdatachannel temporarily enables this cache option later in configuration.
+# An interrupted configure must not turn WasmEdge's hidden internal targets into
+# shared libraries on the next run.
+set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
 set(WASMEDGE_BUILD_SHARED_LIB OFF CACHE BOOL "" FORCE)
 set(WASMEDGE_BUILD_STATIC_LIB OFF CACHE BOOL "" FORCE)
 set(WASMEDGE_BUILD_TOOLS OFF CACHE BOOL "" FORCE)
