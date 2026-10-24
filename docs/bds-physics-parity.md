@@ -1908,3 +1908,61 @@ that decode order varies and the affected input can already have been sent;
 it does not establish socket arrival time, the authoritative world-change
 tick or a complete native replay policy. No inferred block timestamp or
 correction suppression was added. All 62 local CTest suites pass.
+
+### Replay boundaries and bed controls (2026-10-25)
+
+Native `ReplayStateValidateFrameSupportSystem` wrapper `0x106166268` reaches
+callback `0x106166CE0`. It invalidates/clears history for passenger membership,
+sleeping membership and a changed previously-known dimension, and always updates
+the previous-dimension value. It also tests raw optional movement-attribute
+fields (float +32/presence byte +36) and InsideGenericBlock data (+56); those
+complete producers remain unmapped and are not approximated by block names.
+Native invalidation also clears queued correction state; Perlin's complete
+equivalent queue/component lifetimes remain unported.
+
+Perlin now clears history before effect/server-motion replay on a sleeping or
+changed-dimension boundary, and does not save sleeping, mount-locked or first
+changed-dimension movement records. The existing mounted-history clearing is
+retained. Control telemetry now reports sleeping, dimension and retained
+prediction-history size. This integrates the known boundaries, not the whole
+native frame-support predicate or exact scheduler ordering.
+
+A real BDS bed interaction retained 23 history records after entry in the
+baseline and later reached the 200-record cap while asleep. The candidate
+retains **zero** through sleep, a two-second weaving effect and its expiry.
+BDS sent the effect removal exactly 40 ticks after addition during sleep.
+The stable sleep/effect window reports zero corrections, but entry and exit
+still each produce one correction. Bed pose/AABB and transition prediction
+remain unresolved; this is not a zero-correction complete bed route.
+
+The same test exposed keyboard Escape failing to leave bed: text mode routes
+it to the typed-key queue while the bed screen checked only gameplay Pause.
+The screen now handles typed Escape, and the hidden control's ordinary key
+down/up path successfully wakes the player. Retained history then resumes
+growing (19 records at the wake observation, 59 after settling). Raw server
+correction counts are unchanged.
+
+### Dimension packet position convention (2026-10-25)
+
+The dimension round trip exposed an independent 1.62-block placement error.
+Native packet handler `0x1044C49B4` delegates to LocalPlayer `0x104D0AFB4`, which
+copies the received target vector unchanged into its dimension-change request.
+Unlike MovePlayer, ChangeDimension's target must not have eye height subtracted.
+Perlin now preserves that target Y.
+
+For explicit BDS command transitions to Nether Y=130 and back to the supported
+Overworld platform at Y=225, the old conversion produced **2/1** corrections.
+The corrected conversion reports **2/0**: the Overworld return is clean and the
+Nether actor-position offset is fixed, but the Nether leg still has a
+one-step zero-velocity/falling mismatch followed by a roof-landing mismatch.
+Both endpoints are grounded (Nether Y=128, Overworld Y=225), connected,
+initialized and alive. The first observed new-dimension history counts are
+already repopulated after several ticks; polling does not prove the exact
+first-frame gate ordering.
+
+Current dimension acknowledgement uses nine seen columns or a four-second
+timeout, whereas movement tests ColumnSettled at the actor's column. Native
+loading/readiness and unavailable-terrain scheduling need further tracing;
+no arbitrary delay or inferred correction timestamp was added to force a pass.
+All 62 local CTest suites pass. The two Nether transition corrections, bed
+entry/exit corrections and support-removal synchronization remain visible.

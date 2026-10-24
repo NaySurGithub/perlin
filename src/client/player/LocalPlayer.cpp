@@ -253,6 +253,16 @@ namespace perlin {
         // While mounted our own body stays on the seat, but the keys still have to reach the server: it steers the
         // saddled horse/pig/strider/boat from the rider's move input and look direction.
         const bool asleep = session.Sleeping();
+        const int dimension = session.DimensionId();
+        const bool dimensionChanged = replayDimension && *replayDimension != dimension;
+        replayDimension = dimension;
+        // Native ReplayStateValidateFrameSupportSystem 0x106166CE0 clears
+        // history for sleeping/passenger actors and a dimension transition.
+        // Its additional raw movement-attribute and InsideGenericBlock
+        // predicates still need their complete component producers.
+        const bool savePrediction = !asleep && !rideLock && !dimensionChanged;
+        if (!savePrediction)
+            history.clear();
         const float forwardKeys = asleep ? 0.0f : input.Axis(Action::Forward, Action::Back);
         const float strafeKeys = asleep ? 0.0f : input.Axis(Action::Right, Action::Left);
         const float forward = forwardKeys;
@@ -560,7 +570,8 @@ namespace perlin {
             rec.tick = session.LastAuthTick();
             rec.after = state;
             if (tickObserver) tickObserver(rec.tick, state, rec.input);
-            history.push_back(rec);
+            if (savePrediction)
+                history.push_back(rec);
             while (history.size() > 200)
                 history.pop_front();
         }
@@ -633,6 +644,10 @@ namespace perlin {
         } else {
             sprintLatch = false;
         }
+        // Do not replay an old-world or sleeping history before Tick has
+        // applied the native frame-support boundary for this update.
+        if (session.Sleeping() || (replayDimension && *replayDimension != session.DimensionId()))
+            history.clear();
         if (rideLock) {
             session.TakeEffectUpdates();
             BedrockSession::ServerMotion ignored;

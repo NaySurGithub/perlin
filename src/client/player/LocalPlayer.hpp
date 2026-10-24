@@ -10,6 +10,7 @@
 #include <deque>
 #include <vector>
 #include <mutex>
+#include <optional>
 
 namespace perlin {
     class LocalPlayer {
@@ -22,6 +23,7 @@ namespace perlin {
         const WalkBob& Bob() const { return walkBob; }
         float PartialTick() const { return static_cast<float>(std::clamp(accumulator / physics::kTickSeconds, 0.0, 1.0)); }
         uint64_t TickCount() const { return tickCounter; }
+        size_t PredictionHistorySize() const { return history.size(); }
         using TickObserver = std::function<void(uint64_t, const physics::State&, const physics::Input&)>;
         void ObserveTicks(TickObserver observer) { tickObserver = std::move(observer); }
         bool Sneaking() const { return sneaking; }
@@ -79,6 +81,7 @@ namespace perlin {
             physics::State after;
         };
         std::deque<Record> history;
+        std::optional<int> replayDimension;
         double smoothOffset[3] = {0, 0, 0};
 
         const BlockLibrary* blocksPtr = nullptr;

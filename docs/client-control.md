@@ -30,6 +30,9 @@ state, which can lag the locally predicted input.
 age by movement ticks from the packet stamp (or receipt tick for unstamped
 packets); only duration -1 is infinite. Full native effect scheduling outside
 ordinary player movement remains unverified.
+`sleeping`, `dimension` and `predictionHistorySize` expose sleep state, the
+received dimension ID and the actual retained movement-record count for replay
+lifecycle checks. History size is not a physics-accuracy score.
 
 ## Requests
 

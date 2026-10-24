@@ -25,6 +25,9 @@ namespace perlin {
         bool cursorCaptured = false, textInput = false;
         bool inWater = false, inLava = false, onClimbable = false;
         bool vitalsKnown = false, dead = false;
+        bool sleeping = false;
+        int dimension = 0;
+        uint64_t predictionHistorySize = 0;
         float health = 20, hunger = 20;
         float swimAmount = 0;
         int air = 300;

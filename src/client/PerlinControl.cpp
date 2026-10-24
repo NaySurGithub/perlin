@@ -77,6 +77,9 @@ namespace perlin {
         out.connectionState = session ? static_cast<int>(session->GetState()) : 0;
         out.connected = session && session->GetState() == BedrockSession::State::InGame;
         out.initialized = session && session->Initialized();
+        out.sleeping = session && session->Sleeping();
+        out.dimension = session ? session->DimensionId() : 0;
+        out.predictionHistorySize = player.PredictionHistorySize();
         out.authTick = session ? session->LastAuthTick() : 0;
         out.corrections = session ? session->CorrectionCount() : 0;
         out.error = session ? session->LastError() : std::string();

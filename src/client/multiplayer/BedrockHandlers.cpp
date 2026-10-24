@@ -547,7 +547,10 @@ namespace perlin {
             dimensionId = p.dimension;
             ResetWorldForDimension();
             if (SaneWorldPos(p.position.x, p.position.y, p.position.z)) {
-                pose = {p.position.x, p.position.y - kPlayerEyeHeight, p.position.z, pose.yaw, pose.pitch,
+                // ChangeDimension carries the target actor position, unlike
+                // MovePlayer's eye position. Native LocalPlayer 0x104D0AFB4
+                // copies this vector unchanged into its dimension request.
+                pose = {p.position.x, p.position.y, p.position.z, pose.yaw, pose.pitch,
                         pose.headYaw, false, true};
                 haveLastAuthPos = false;
                 serverMotion.poseChanged = true;

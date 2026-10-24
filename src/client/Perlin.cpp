@@ -1083,6 +1083,11 @@ namespace perlin {
         hud.UpdateOverlay(fbW, fbH, options.guiScale);
         const bool down = input.IsMouseDown(0);
         bool leave = inputManager.Pressed(Action::Pause);
+        // The bed overlay enables text mode, so keyboard Escape arrives in
+        // the typed queue rather than the gameplay action dispatcher.
+        for (const auto& t : inputManager.TakeTyped())
+            if (!t.character && t.key == Key::Escape)
+                leave = true;
         if (!down && bedLeftDown && hud.Overlay().OverlayHover() == ui::kBedLeaveId)
             leave = true;
         bedLeftDown = down;
