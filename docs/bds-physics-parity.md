@@ -1787,3 +1787,51 @@ approximately 0.0245 blocks while the player was still in the web stripe.
 The repeat later walked past the fixture and fell, so it is not accepted as an
 end-to-end route. This timing evidence does not by itself distinguish native
 phase ordering from a missing historical effect update/replay.
+
+### Timestamped status-effect replay (2026-10-25)
+
+Further native inspection found the missing history path. The legacy client
+packet handler `0x1044BCD94` sends nonzero-stamped effect packets through
+`History::MobEffectsReplay` (vtable `0x110CCF100`). Insertion `0x105F67914`
+clamps stamps older than retained history and marks the following snapshot
+dirty. Helper `0x105F674FC` inserts the correction into that following snapshot;
+the replay callback `0x103D0E860` changes the effects component and associated
+attributes. Immediate non-history application uses `0x106FC24C0`.
+
+Perlin now retains received effect updates separately from its presentation
+cache. Jump boost, levitation, slow falling and weaving update saved movement
+attributes for records **after** the packet stamp, then replay from the earliest
+changed record. Zero-stamped packets continue through the current cache.
+Recorded non-simulated ticks retain their zero-velocity behavior during both
+effect replay and server-motion replay. Session/player resets clear pending
+effect updates, and mount-locked movement discards them with movement history.
+
+An initial candidate included the stamped record itself and produced two errors
+with the opposite sign; that candidate was rejected. With the following-record
+boundary, three repeated web removal/re-addition routes report **0/0/0**
+corrections, including packets received after their stamped tick. All starts
+and endpoints stayed within the loaded dirt-supported runway, connected,
+initialized and alive. Jump-boost and levitation addition/removal routes also
+report zero corrections. The first slow-falling matrix route landed during
+setup and is excluded as airborne-effect evidence.
+
+A replacement slow-falling removal route starts grounded on a static ledge at
+feet Y=275. The recorded pre-removal position is Y=273.0302 and the received
+removal state is Y=267.9827; it lands at Y=225 with **zero corrections**. Forward
+input expires after 40 simulation ticks, keeping the entire fall over the
+cleared runway. An earlier unlimited-input attempt reached beyond that lane
+and is excluded as a full-route result. The accepted explicit-transition set
+therefore contains six zero-correction routes: three weaving repeats, jump
+boost, levitation and airborne slow-falling removal. Matrix traces confirm
+positive vertical motion for jump boost and levitation, rather than effect
+presence telemetry alone.
+Natural weaving expiry was rerun after the replay change and also reports zero
+corrections. The packet log shows addition at tick 395134 with duration 40 and
+removal at tick 395174. Control-endpoint observation times are not exact effect
+transition ticks and should not be used to infer duration from polling alone.
+
+This ports the movement attributes currently consumed by Perlin, not the entire
+native effects component or all attribute producers. Wall-clock effect expiry,
+future-stamped updates, effect changes across older world mutations, input/mode
+regeneration during replay and full native snapshot/request lifetimes still
+require investigation. These results do not establish complete BDS parity.

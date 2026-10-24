@@ -65,11 +65,13 @@ namespace perlin {
         std::vector<ModCommand> modQueue;
         void ApplyModCommands();
         void ApplyServerMotion(BedrockSession& session, Camera& camera);
+        void ApplyEffectUpdates(BedrockSession& session);
         void Tick(BedrockSession& session, const InputManager& input, const Camera& camera,
                   const physics::World& world);
 
         struct Record {
             uint64_t tick = 0;
+            bool simulated = false;
             physics::Input input;
             physics::Attributes attributes;
             float yaw = 0;

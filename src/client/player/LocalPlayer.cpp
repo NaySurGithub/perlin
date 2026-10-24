@@ -69,6 +69,72 @@ namespace perlin {
         }
     }
 
+    void LocalPlayer::ApplyEffectUpdates(BedrockSession& session) {
+        const auto updates = session.TakeEffectUpdates();
+        size_t first = history.size();
+        // Native LegacyClientNetworkHandler 0x1044BCD94 routes stamped
+        // MobEffect packets through History::MobEffectsReplay. Its history
+        // insertion 0x105F67914 clamps old stamps to the oldest snapshot and
+        // marks the following snapshot dirty when the effect state changes.
+        for (const auto& update : updates) {
+            if (update.tick == 0 || history.empty())
+                continue;
+            const uint64_t boundary = std::max(update.tick, history.front().tick);
+            for (size_t i = 0; i < history.size(); ++i) {
+                Record& record = history[i];
+                // The stamp names the preceding history boundary; native
+                // insertion stores this correction in the following snapshot.
+                if (record.tick <= boundary)
+                    continue;
+                auto& a = record.attributes;
+                bool changed = false;
+                switch (update.id) {
+                case 8: {
+                    const int value = update.active ? update.amplifier + 1 : 0;
+                    changed = a.jumpBoost != value;
+                    a.jumpBoost = value;
+                    break;
+                }
+                case 24: {
+                    const int value = update.active ? update.amplifier + 1 : 0;
+                    changed = a.levitation != value;
+                    a.levitation = value;
+                    break;
+                }
+                case 27:
+                    changed = a.slowFalling != update.active;
+                    a.slowFalling = update.active;
+                    break;
+                case 33:
+                    changed = a.weaving != update.active;
+                    a.weaving = update.active;
+                    break;
+                default: break;
+                }
+                if (changed)
+                    first = std::min(first, i);
+            }
+        }
+        if (first == history.size())
+            return;
+        physics::State replay = history[first].before;
+        LevelCollision world(session.NetLevel(), blocksPtr);
+        for (size_t i = first; i < history.size(); ++i) {
+            Record& record = history[i];
+            record.before = replay;
+            replay.yaw = record.yaw;
+            if (record.simulated)
+                physics::Step(replay, record.input, record.attributes, world);
+            else
+                replay.vx = replay.vy = replay.vz = 0;
+            record.after = replay;
+        }
+        state = replay;
+        previous = history.back().before;
+        session.SetPose(static_cast<float>(state.x), static_cast<float>(state.y),
+                        static_cast<float>(state.z), state.yaw, session.GetPose().pitch);
+    }
+
     void LocalPlayer::ApplyServerMotion(BedrockSession& session, Camera& camera) {
         BedrockSession::ServerMotion motion;
         if (!session.TakeServerMotion(motion))
@@ -118,7 +184,10 @@ namespace perlin {
                         Record& q = history[i];
                         q.before = s;
                         s.yaw = q.yaw;
-                        physics::Step(s, q.input, q.attributes, world);
+                        if (q.simulated)
+                            physics::Step(s, q.input, q.attributes, world);
+                        else
+                            s.vx = s.vy = s.vz = 0;
                         q.after = s;
                     }
                     state = s;
@@ -360,6 +429,7 @@ namespace perlin {
         rec.attributes = attributes;
         rec.yaw = state.yaw;
         rec.before = state;
+        rec.simulated = column && !asleep;
         if (column && !asleep) {
             physics::Step(state, in, attributes, world);
         } else {
@@ -561,10 +631,12 @@ namespace perlin {
             sprintLatch = false;
         }
         if (rideLock) {
+            session.TakeEffectUpdates();
             BedrockSession::ServerMotion ignored;
             while (session.TakeServerMotion(ignored)) {}
             history.clear();
         } else {
+            ApplyEffectUpdates(session);
             ApplyServerMotion(session, camera);
         }
         ApplyModCommands();

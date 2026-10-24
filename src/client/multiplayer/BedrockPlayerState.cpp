@@ -128,6 +128,7 @@ namespace perlin {
         std::lock_guard lock(statusMutex);
         vitals = Vitals{};
         activeEffects.clear();
+        pendingEffectUpdates.clear();
         pendingMovementEffects.clear();
         inventory = InventoryView{};
         for (ItemV4& raw : inventoryRaw)
@@ -158,6 +159,13 @@ namespace perlin {
         std::vector<ServerMovementEffect> effects;
         effects.swap(pendingMovementEffects);
         return effects;
+    }
+
+    std::vector<BedrockSession::EffectUpdate> BedrockSession::TakeEffectUpdates() {
+        std::lock_guard lock(statusMutex);
+        std::vector<EffectUpdate> updates;
+        updates.swap(pendingEffectUpdates);
+        return updates;
     }
 
     int BedrockSession::WaterWalkSpeedEnchant() const {
@@ -717,6 +725,7 @@ namespace perlin {
                           << " afterAuthTick=" << LastAuthTick() << std::endl;
             const bool on = p.eventId != MobEffectPacketEventId::Remove;
             std::lock_guard lock(statusMutex);
+            pendingEffectUpdates.push_back({p.tick, p.effectId, p.amplifier, on});
             activeEffects.erase(std::remove_if(activeEffects.begin(), activeEffects.end(), [&](const ActiveEffect& e) { return e.id == p.effectId; }), activeEffects.end());
             if (on) {
                 ActiveEffect e;

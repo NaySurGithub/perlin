@@ -617,6 +617,8 @@ void RequestRespawn();
         bool DropInventorySlot(int slot, bool whole);
         struct EffectState { int id = 0; int amplifier = 0; int ticks = 0; bool ambient = false; bool particles = true; };
         std::vector<EffectState> GetEffects() const;
+        struct EffectUpdate { uint64_t tick = 0; int id = 0, amplifier = 0; bool active = false; };
+        std::vector<EffectUpdate> TakeEffectUpdates();
         struct ServerMovementEffect { uint32_t type = 0, duration = 0; uint64_t tick = 0; };
         std::vector<ServerMovementEffect> TakeMovementEffects();
         bool WorkbenchOpen() const { std::lock_guard lock(statusMutex); return workbenchOpen; }
@@ -1049,6 +1051,7 @@ void RequestRespawn();
         bool SendCloseNow();
         struct ActiveEffect { int id = 0; int amplifier = 0; std::chrono::steady_clock::time_point expires{}; bool infinite = false, ambient = false, particles = true; };
         std::vector<ActiveEffect> activeEffects;
+        std::vector<EffectUpdate> pendingEffectUpdates;
         std::vector<ServerMovementEffect> pendingMovementEffects;
         bool inventoryOpen = false, serverClosedInventory = false, workbenchOpen = false, workbenchJustOpened = false;
         bool horseJustOpened = false;
