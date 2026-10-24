@@ -1,4 +1,5 @@
 #include "client/ui/TitleScreen.hpp"
+#include "client/ui/UiAssets.hpp"
 
 #include "client/ui/RmlEmit.hpp"
 
@@ -113,8 +114,14 @@ mcimg { display: block; position: absolute; }
             }
             std::string d = "<div class=\"pg\" style=\"left:" + N(x) + "px;top:" + N(y) + "px;width:10px;height:8px;\">";
             std::string sprite;
-            if (TexturePack::Instance().Active()) {
-                const std::string name = pinging ? "textures/ui/ping_anim_" + N(5 - level) : "textures/ui/ping_" + N(status == St::Offline ? 5 : 5 - level);
+            if (!pinging) {
+                // The game's own signal icons: green when fast, yellow when middling, red when slow or unreachable.
+                sprite = status == St::Offline || level <= 2 ? "textures/ui/Ping_Red" : (level == 3 ? "textures/ui/Ping_Yellow" : "textures/ui/Ping_Green");
+                int iw = 0, ih = 0;
+                if (!UiAssets::Instance().ImageSize(sprite, iw, ih))
+                    sprite.clear();  // not in this resource pack: draw plain bars
+            } else if (TexturePack::Instance().Active()) {
+                const std::string name = "textures/ui/ping_anim_" + N(5 - level);
                 if (TexturePack::Instance().Has(name + ".png"))
                     sprite = name;
             }
@@ -387,6 +394,14 @@ mcimg { display: block; position: absolute; }
             int y = listTop + 4;
             for (int i = m.scroll; i < static_cast<int>(list.size()) && i < m.scroll + rows; i++, y += kRowH) {
                 const ServerEntry& s = list[static_cast<size_t>(i)];
+                if (m.tab == ServerTab::Saved && m.friendsOpen[3] && m.savedOffset > 1 && i == m.savedOffset && i > m.scroll) {
+                    // Space between the open Featured Servers group and the player's own servers, so they do not read as one list.
+                    constexpr int kGroupGap = 12;
+                    if (y + kGroupGap + kRowH - 4 > listBottom)
+                        break;
+                    d += "<div style=\"left:" + N(rowX) + "px;top:" + N(y + kGroupGap / 2 - 1) + "px;width:" + N(kRowW) + "px;height:1px;background-color:#3a3a3a;z-index:2;\"></div>\n";
+                    y += kGroupGap;
+                }
                 if (i == m.selected) {
                     d += "<div style=\"left:" + N(rowX - 2) + "px;top:" + N(y - 2) + "px;width:" + N(kRowW + 4) + "px;height:" + N(kRowH + 0) + "px;background-color:#ffffff;z-index:2;\"></div>\n";
                     d += "<div style=\"left:" + N(rowX - 1) + "px;top:" + N(y - 1) + "px;width:" + N(kRowW + 2) + "px;height:" + N(kRowH - 2) + "px;background-color:#000000;z-index:2;\"></div>\n";

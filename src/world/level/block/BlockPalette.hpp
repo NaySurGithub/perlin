@@ -46,6 +46,10 @@ namespace perlin {
             std::vector<int32_t> hashes;
         };
         void InsertCustomRuns(std::vector<CustomRun> runs);
+        // Checks the id the server uses for air against our table and, if that only fits with
+        // the custom blocks laid out the other way, switches to it. Returns true once verified.
+        bool CalibrateSequence(int32_t serverAirId);
+        bool SequenceVerified() const { std::lock_guard<std::mutex> lk(mutex); return layoutVerified; }
         uint16_t InternRuntime(int32_t runtimeId);
         int32_t RuntimeId(uint16_t local) const;
         bool LearnName(int32_t networkId, const std::string& name);
@@ -87,6 +91,10 @@ namespace perlin {
         std::unordered_set<int32_t> reservedHashes;
         std::vector<uint64_t> baseKeys, sequenceKeys;
         std::vector<int32_t> netByLocal;
+        std::vector<CustomRun> customRuns;
+        bool layoutVerified = false;
+        bool layoutAppended = false;
+        void BuildLayoutLocked(bool appended);
         std::atomic<size_t> count{1};
     };
 

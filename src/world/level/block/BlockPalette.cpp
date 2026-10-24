@@ -286,6 +286,9 @@ namespace perlin {
             return;
         sequence = baseSequence;
         sequenceKeys = baseKeys;
+        customRuns.clear();
+        layoutVerified = false;
+        layoutAppended = false;
         sequenceIndex.clear();
         for (size_t i = 0; i < sequence.size(); i++)
             sequenceIndex.emplace(sequence[i], static_cast<int32_t>(i));
@@ -301,43 +304,94 @@ namespace perlin {
                 vanilla.insert(it->second);
         runs.erase(std::remove_if(runs.begin(), runs.end(), [&](const CustomRun& r) { return vanilla.count(r.name) > 0; }),
                    runs.end());
-        if (runs.empty())
-            return;
-        struct Keyed {
-            uint64_t key;
-            const CustomRun* run;
-        };
-        std::vector<Keyed> order;
-        for (const CustomRun& r : runs)
-            order.push_back({NameSortKey(r.name), &r});
-        std::stable_sort(order.begin(), order.end(), [](const Keyed& a, const Keyed& b) {
-            return a.key != b.key ? a.key < b.key : a.run->name < b.run->name;
-        });
-        std::vector<int32_t> merged;
-        std::vector<uint64_t> mergedKeys;
-        merged.reserve(baseSequence.size() + 256);
-        size_t next = 0;
-        for (size_t i = 0; i < baseSequence.size(); i++) {
-            while (next < order.size() && order[next].key < baseKeys[i]) {
-                for (int32_t h : order[next].run->hashes) {
-                    merged.push_back(h);
-                    mergedKeys.push_back(order[next].key);
+        customRuns = std::move(runs);
+        layoutVerified = false;
+        BuildLayoutLocked(false);
+    }
+
+    // Rebuilds `sequence` from the vanilla table plus the server's custom blocks.
+    // appended=false puts each custom block at the position its name hash sorts to;
+    // appended=true leaves every vanilla id where the bundled table has it and
+    // puts the custom ones after the last vanilla id.
+    void BlockPalette::BuildLayoutLocked(bool appended) {
+        sequence = baseSequence;
+        sequenceKeys = baseKeys;
+        layoutAppended = appended;
+        if (!customRuns.empty()) {
+            struct Keyed {
+                uint64_t key;
+                const CustomRun* run;
+            };
+            std::vector<Keyed> order;
+            for (const CustomRun& r : customRuns)
+                order.push_back({NameSortKey(r.name), &r});
+            if (appended) {
+                for (const Keyed& k : order)
+                    for (int32_t h : k.run->hashes) {
+                        sequence.push_back(h);
+                        sequenceKeys.push_back(k.key);
+                    }
+            } else {
+                std::stable_sort(order.begin(), order.end(), [](const Keyed& a, const Keyed& b) {
+                    return a.key != b.key ? a.key < b.key : a.run->name < b.run->name;
+                });
+                std::vector<int32_t> merged;
+                std::vector<uint64_t> mergedKeys;
+                merged.reserve(baseSequence.size() + 256);
+                size_t next = 0;
+                for (size_t i = 0; i < baseSequence.size(); i++) {
+                    while (next < order.size() && order[next].key < baseKeys[i]) {
+                        for (int32_t h : order[next].run->hashes) {
+                            merged.push_back(h);
+                            mergedKeys.push_back(order[next].key);
+                        }
+                        next++;
+                    }
+                    merged.push_back(baseSequence[i]);
+                    mergedKeys.push_back(baseKeys[i]);
                 }
-                next++;
+                for (; next < order.size(); next++)
+                    for (int32_t h : order[next].run->hashes) {
+                        merged.push_back(h);
+                        mergedKeys.push_back(order[next].key);
+                    }
+                sequence = std::move(merged);
+                sequenceKeys = std::move(mergedKeys);
             }
-            merged.push_back(baseSequence[i]);
-            mergedKeys.push_back(baseKeys[i]);
         }
-        for (; next < order.size(); next++)
-            for (int32_t h : order[next].run->hashes) {
-                merged.push_back(h);
-                mergedKeys.push_back(order[next].key);
-            }
-        sequence = std::move(merged);
-        sequenceKeys = std::move(mergedKeys);
         sequenceIndex.clear();
         for (size_t i = 0; i < sequence.size(); i++)
             sequenceIndex.emplace(sequence[i], static_cast<int32_t>(i));
+        if (sequential.load(std::memory_order_acquire)) {
+            const auto it = sequenceIndex.find(AirHash());
+            sequentialAir.store(it == sequenceIndex.end() ? -1 : it->second, std::memory_order_release);
+        }
+    }
+
+    bool BlockPalette::CalibrateSequence(int32_t serverAirId) {
+        std::lock_guard<std::mutex> lk(mutex);
+        if (layoutVerified || baseSequence.empty() || serverAirId < 0)
+            return layoutVerified;
+        const auto airIs = [&] {
+            return static_cast<size_t>(serverAirId) < sequence.size() && sequence[static_cast<size_t>(serverAirId)] == AirHash();
+        };
+        if (airIs()) {
+            layoutVerified = true;
+            return true;
+        }
+        if (!customRuns.empty()) {
+            const bool original = layoutAppended;
+            BuildLayoutLocked(!original);
+            if (airIs()) {
+                layoutVerified = true;
+                std::cout << "[blocks] server block ids do not sort custom blocks among the vanilla ones; "
+                          << (layoutAppended ? "appending" : "sorting") << " " << customRuns.size()
+                          << " custom blocks instead (air=" << serverAirId << ")" << std::endl;
+                return true;
+            }
+            BuildLayoutLocked(original);
+        }
+        return false;
     }
 
     void BlockPalette::AppendSequence(int32_t hash) {

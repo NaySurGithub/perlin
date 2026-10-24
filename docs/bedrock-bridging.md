@@ -2,7 +2,8 @@
 
 With **Bedrock Bridging** enabled in gameplay settings, hold a block, look
 forward and down into the empty space beside your footing, and press or hold
-**Use Item / Place Block**. The placement outline shows the destination. Walk,
+**Use Item / Place Block**. The outline highlights the existing support block
+you are placing against, using its normal selection shape. Walk,
 sprint, crouch or jump along the bridge while holding use to keep extending it.
 The same Action::Use path serves mouse, controller and touch bindings.
 
@@ -46,7 +47,8 @@ That helper is removed.
   They do not inherit the old extra 0.6-block airborne padding that prevented
   timely jump bridging. Ordinary placement keeps its previous prediction policy.
 - Slab side clicks select upper/lower geometry using the transmitted float click
-  height. The outline and overlap check use that geometry. Vanilla slab
+  height. The overlap check uses that placement geometry; the outline uses the
+  existing support's selection geometry, including its slab half. Vanilla slab
   prediction resolves `top_slot_bit` or `vertical_half`, preserves other block
   states, and verifies the resulting runtime-ID mapping. Unknown permutations
   wait for the server. Other stateful blocks retain the existing prediction
@@ -71,7 +73,7 @@ Six 160-tick routes cover full blocks and both slab halves, walking and jumping,
 fixed look pitch, continuous use, prediction becoming the next support, and
 multiple chunk borders. All **2,217 checks pass** on optimized ARM64 and
 x86-64/Rosetta builds and under AddressSanitizer/UndefinedBehaviorSanitizer.
-The full local application builds and **30/30 CTest targets pass**.
+The full local application builds and **61/61 CTest targets pass**.
 
 ```sh
 cmake --build build -j 8
@@ -89,3 +91,6 @@ rows. Check all four directions and chunk borders. Release use or open a menu
 and verify placement stops. Toggle Bedrock Bridging off and verify that empty-air
 targets no longer receive an outline or reacharound placement. Check that a
 server-denied placement is corrected through the existing prediction expiry.
+
+Outline screenshots cover full blocks and both slab halves. These are
+offline renderer captures, not multiplayer placement tests.

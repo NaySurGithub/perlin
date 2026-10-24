@@ -397,6 +397,8 @@ namespace perlin {
             if (!p.blockProperties.empty()) {
                 const size_t n = RegisterCustomBlocks(p.blockProperties);
                 std::cout << "[blocks] server defines " << p.blockProperties.size() << " custom blocks (" << n << " states)" << std::endl;
+            } else {
+                BlockPalette::Instance().TruncateSequence();
             }
             const float x = p.playerPosition.x, y = p.playerPosition.y, z = p.playerPosition.z;
             runtimeId = p.runtimeEntityId;
