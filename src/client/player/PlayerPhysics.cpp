@@ -452,6 +452,11 @@ namespace perlin::physics {
                 static_cast<double>(x + half), static_cast<double>(y + h), static_cast<double>(z + half)};
     }
 
+    bool TouchingWater(const State& s, const World& world) {
+        const auto env = Scan(world, BoundingBox(s, s.collisionHeight == static_cast<float>(kSneakHeight)));
+        return bds::SelectFluidMaterial(env.water, env.lava) == 5;
+    }
+
     bool PoseFits(const State& s, const World& world, double height) {
         thread_local std::vector<Box> scratch;
         // PlayerBoundingBoxStateUpdateSystem probes the current shape with a
@@ -618,8 +623,10 @@ namespace perlin::physics {
         if (water && in.swimming && !in.jump) {
             const float look = in.lookY;
             const float gain = look < -0.2f ? 0.085f : 0.06f;
-            if (look <= 0.0f || in.jump || in.headInWater)
+            if (look <= 0.0f || in.headInWater)
                 s.vy = F(static_cast<float>(s.vy) + (look - static_cast<float>(s.vy)) * gain);
+            else
+                s.vy = 0;
         }
 
         const bool glide = in.gliding && !water && !lava;

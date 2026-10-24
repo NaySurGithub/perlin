@@ -173,6 +173,7 @@ namespace perlin {
                            const physics::World& world) {
         previous = state;
         const physics::State before = state;
+        const bool currentWater = physics::TouchingWater(state, world);
         const bool itemSlow = this->itemSlow && input.IsDown(Action::Use)
                            && (!itemSlowUntil || tickCounter < itemSlowUntil);
 
@@ -197,9 +198,9 @@ namespace perlin {
         const bool stopSprintIntent = forward <= 0.0f || sneakKey || itemSlow || state.horizontalCollision || tooHungryToSprint;
         // SprintTrigger consumes the previous swimming flag before SwimTrigger
         // changes the pose. A swimmer in water retains sprint for this tick.
-        if (stopSprintIntent && !(swimming && state.inWater))
+        if ((stopSprintIntent && !(swimming && currentWater)) || (swimming && !currentWater))
             sprinting = false;
-        else if (!stopSprintIntent && sprintKey)
+        else if (!stopSprintIntent && sprintKey && (sprinting || state.onGround || currentWater || flying))
             sprinting = true;
 
         const bool wasSneaking = sneaking;
@@ -240,7 +241,17 @@ namespace perlin {
         for (const auto& effect : session.GetEffects())
             if (effect.id == 24)
                 levitating = true;
-        const bool wantsSwimming = sprinting && !stopSprintIntent && !flying && (swimming ? state.inWater : headInWaterBeforePose);
+        const auto swimBox = physics::BoundingBox(state, wasSneaking);
+        const auto aboveSwimBox = world.Query(
+            static_cast<int>(std::floor(static_cast<float>((swimBox.x0 + swimBox.x1) * 0.5))),
+            static_cast<int>(std::floor(static_cast<float>((swimBox.y0 + swimBox.y1) * 0.5))) + 1,
+            static_cast<int>(std::floor(static_cast<float>((swimBox.z0 + swimBox.z1) * 0.5))));
+        // SwimTrigger requires cover above the bounding-box centre when
+        // entering a swim while looking upward (native lookY >= .15).
+        const bool canStartSwimUp = std::sin(glm::radians(camera.pitch)) < 0.15f || !aboveSwimBox.isAir
+                                || aboveSwimBox.fluid != 0 || !aboveSwimBox.Empty();
+        const bool wantsSwimming = sprinting && !stopSprintIntent && !flying
+                                && (swimming ? currentWater : headInWaterBeforePose && canStartSwimUp);
         // SwimTriggerSystem only requests a stop when the standing-shape probe
         // succeeds. Keep the low pose under a ceiling even after releasing input.
         const bool canStopSwimming = !swimming || physics::PoseFits(state, world, physics::kStandHeight);
@@ -282,7 +293,7 @@ namespace perlin {
         in.headInWater = headInWaterAt(static_cast<float>((swimming || crawling || gliding) ? physics::kCrawlEye
                                                          : sneaking ? physics::kSneakEye : physics::kStandEye));
         in.lookY = std::sin(glm::radians(camera.pitch));
-        const physics::MoveVector move = physics::ProcessMoveInput(forward, strafe, sneaking, state.inWater,
+        const physics::MoveVector move = physics::ProcessMoveInput(forward, strafe, sneaking, currentWater,
                                                                   itemSlow ? 0.35f : 1.0f);
         in.forward = move.forward;
         in.strafe = move.strafe;
@@ -397,10 +408,10 @@ namespace perlin {
             f.push_back(Flag::SneakReleasedRaw);
         sneakHeld = sneakKey;
 
-        if (sprintKey || sprinting) {
+        if (sprintKey)
             f.push_back(Flag::SprintDown);
+        if (sprinting)
             f.push_back(Flag::Sprinting);
-        }
         if (sprinting && !wasSprinting)
             f.push_back(Flag::StartSprinting);
         if (!sprinting && wasSprinting)

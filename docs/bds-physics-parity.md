@@ -141,6 +141,46 @@ of an existing loaded chunk, allowing Level to allocate the section. Previously
 the section-presence guard silently discarded those updates, leaving holes in
 the client's collision terrain. Unloaded chunks are still rejected.
 
+### Swimming pitch and air transitions
+
+Extending the matrix to ±30° and ±60° pitch exposed one correction looking
+upward at 30° and three at 60°. Downward swimming, diagonal swimming and
+swim-jumping beneath the frozen pool's ceiling produced zero movement
+corrections. The investigation found three missing producer/consumer details:
+
+- SwimControl `0x106785410` explicitly writes vertical velocity zero when
+  positive look fails its liquid predicate; it does not retain prior momentum.
+- Sprint intent reads water membership at the current collision position before
+  resolving movement. Perlin had reused the preceding tick's cached flag.
+  A fresh query now controls sprint retention, entry eligibility and sneak input.
+- SwimTrigger `0x106785794` requires a non-air cell above the bounding-box centre
+  when starting a swim with upward look >=0.15. The world adapter now preserves
+  air material identity, including for noncolliding blocks.
+
+Raw SprintDown and predicted Sprinting are separate auth-input flags. Sending
+both whenever the key was held told the server to sprint while local intent
+correctly rejected a new sprint in air. They are now emitted independently.
+Grounded, water and flight membership permit starting sprint; an already active
+sprint can continue in air.
+
+The supporting coordinate helper `0x10711790c` takes offset-type enum **7**,
+not a seven-block ray distance. Helper `0x10711762c` resolves that offset;
+player updater `0x10abd19cc` writes its height-dependent value. Native head-water
+producer `0x107015a44` uses that position and liquid-height helper `0x10a16970c`.
+The height helper confirms source height 1.0 and the existing depth/9 reduction.
+Perlin's complete offset-component lifecycle and all probe consumers remain
+unreconstructed; the above fixes do not establish whole-system parity.
+
+After these changes, all six extended water cases produced zero movement
+corrections: upward/downward 30° and 60°, diagonal swimming, and jumping/swimming
+under the ice ceiling. Eating with sprint held and a complete food-use lifetime
+also retained zero corrections after separating the packet flags. Teleport setup
+is counted separately. Sprinting, walking jump, sprint-jump and sneak-jump were
+rerun on the dry platform and each also produced zero movement corrections.
+Teleport setup
+corrections remain present in the raw logs. All 62 CTest suites pass, including
+the new failed-liquid-predicate and current-pose water-query regressions.
+
 See [local client control](client-control.md) for the hidden launch, live browser
 view, tick-bounded input, block probes and raw correction telemetry. Broader
 terrain, fluid, effect, mode, entity and authority-transition coverage remains

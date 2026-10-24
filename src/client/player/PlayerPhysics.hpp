@@ -49,6 +49,7 @@ namespace perlin::physics {
         bool web = false;
         bool honey = false;
         float speedFactor = 1.0f;
+        bool isAir = true;
         bool Empty() const { return boxes.empty(); }
     };
 
@@ -141,6 +142,7 @@ namespace perlin::physics {
 
     Box BoundingBox(const State& state, bool sneaking);
     bool PoseFits(const State& state, const World& world, double height);
+    bool TouchingWater(const State& state, const World& world);
 
     struct MoveVector {
         float forward = 0, strafe = 0;

@@ -57,6 +57,7 @@ int main() {
         s.collisionHeight = static_cast<float>(kCrawlHeight);
         Step(s, Input{}, attr, surface);
         CHECK(s.inWater && !s.swimming);
+        CHECK(!TouchingWater(s, surface)); // current-pose intent must not reuse the cached flag
         Step(s, Input{}, attr, surface);
         CHECK(!s.inWater);
     }
@@ -813,6 +814,21 @@ int main() {
         swimming.swimming = true;
         Step(state, swimming, attr, water);
         CHECK(state.vy == 0);
+
+        // SwimControl's failed positive-look liquid predicate explicitly
+        // clears upward velocity; retaining it launches the actor at a surface.
+        State surfaceControl;
+        surfaceControl.swimming = true;
+        surfaceControl.collisionHeight = static_cast<float>(kCrawlHeight);
+        surfaceControl.swimAmount = 1;
+        surfaceControl.vy = 0.13f;
+        Input positiveLook = swimming;
+        positiveLook.lookY = 0.5f;
+        Step(surfaceControl, positiveLook, attr, water);
+        CHECK(surfaceControl.vy == 0 && surfaceControl.y == 0);
+        positiveLook.headInWater = true;
+        Step(surfaceControl, positiveLook, attr, water);
+        CHECK(surfaceControl.vy > 0 && surfaceControl.y > 0);
 
         // The native swim-control view excludes jumping actors. Pitch must not
         // steer a liquid jump's vertical impulse, including across repeated ticks.

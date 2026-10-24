@@ -317,6 +317,7 @@ namespace perlin {
         BlockShape& s = info.shape;
         if (id == 0)
             return info;
+        s.isAir = false;
 
         std::string n = BlockPalette::Instance().Name(id);
         if (n.empty()) {
