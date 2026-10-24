@@ -1877,3 +1877,34 @@ Complete native InterpolateMovementNeeded production, sleeping/unloaded actors,
 skip-duration producers, non-player lifetimes, historical world state and
 remove-request ordering remain unverified. This does not establish whole-engine
 parity or resolve the previously recorded support-removal packet timing issue.
+
+### Subchunk layer order and correction receipt (2026-10-25)
+
+Both held-platform removal routes still report **1/1** corrections on the
+tick-lifetime build. Native subchunk handling is dispatcher `0x106851A34` →
+client handler `0x103E67ACC` → block-source callback `0x103E7D27C` → update
+helper `0x1044BBFFC`. The callback applies the extra/liquid vector before the
+primary block vector. Perlin's handler now follows that order. Complete native
+block-source notifications, property overrides, transition actor handling and
+chunk/deferred-update lifetimes are not thereby reconstructed.
+
+The packet and per-block records carry no movement tick. Their entity identity
+and transition fields must not be repurposed as timestamps. Native handler
+`0x103E44250` routes updates through block-source/chunk availability handling;
+this is distinct from timestamped MobEffectsReplay.
+
+Opt-in `PERLIN_BLOCK_DEBUG` now records correction receipt with the last sent
+auth tick, and keeps block packet logging enabled beyond the ordinary sample
+caps. Previously only the later replay mismatch had an uncapped log, which
+could not establish packet decode order.
+
+The instrumented layer-order build still reports **1/1** corrections. In the
+first route, removal is decoded after auth tick 414578, then correction for
+414578 is decoded. In the second route, correction for 414798 is decoded before
+the removal packet, also after sending 414798. Both errors are one downward
+movement step (about 0.0784 blocks). A separate setup teleport correction is
+outside the movement window and remains in the raw count. This establishes
+that decode order varies and the affected input can already have been sent;
+it does not establish socket arrival time, the authoritative world-change
+tick or a complete native replay policy. No inferred block timestamp or
+correction suppression was added. All 62 local CTest suites pass.

@@ -791,11 +791,14 @@ namespace perlin {
             lastBlockPos[2] = p.position.z;
             haveBlockPos = true;
             static int blockLogs = 0;
-            if (blockLogs < 400 && (PERLIN_ENV("PERLIN_BLOCK_DEBUG") || blockLogs++ < 400))
+            if (blockLogs < 400 || PERLIN_ENV("PERLIN_BLOCK_DEBUG")) {
+                if (blockLogs < 400)
+                    ++blockLogs;
                 std::cout << "[block] update_block (" << p.position.x << "," << p.position.y << "," << p.position.z << ") layer " << p.layer
                           << " id " << static_cast<int32_t>(p.blockRuntimeId) << " "
                           << BlockPalette::Instance().Name(BlockPalette::Instance().InternRuntime(static_cast<int32_t>(p.blockRuntimeId)))
                           << " afterAuthTick=" << LastAuthTick() << std::endl;
+            }
             NoteUnknownBlock(static_cast<int32_t>(p.blockRuntimeId));
             if (p.layer == 0)
                 ConfirmPlace(p.position.x, static_cast<int32_t>(p.position.y), p.position.z, static_cast<int32_t>(p.blockRuntimeId));
@@ -819,8 +822,9 @@ namespace perlin {
                 return netLevel.HasChunk(b.position.x >> 4, b.position.z >> 4);
             };
             static int logged = 0;
-            if (logged < 100) {
-                logged++;
+            if (logged < 100 || PERLIN_ENV("PERLIN_BLOCK_DEBUG")) {
+                if (logged < 100)
+                    ++logged;
                 int ok = 0;
                 for (const BlockUpdate& b : p.blocks) ok += sane(b) ? 1 : 0;
                 std::cout << "[block] update_subchunk_blocks at (" << p.x << "," << p.y << "," << p.z << ") " << p.blocks.size()
@@ -830,6 +834,12 @@ namespace perlin {
                               << p.blocks[0].position.z << ") rid " << p.blocks[0].runtimeId;
                 std::cout << " afterAuthTick=" << LastAuthTick() << std::endl;
             }
+            // Native ClientNetworkHandler lambda 0x103E7D27C applies the
+            // extra (liquid) layer before the primary block layer.
+            for (const BlockUpdate& b : p.extra)
+                if (sane(b))
+                    netLevel.SetLiquid(b.position.x, static_cast<int32_t>(b.position.y), b.position.z,
+                                       BlockPalette::Instance().InternRuntime(static_cast<int32_t>(b.runtimeId)));
             for (const BlockUpdate& b : p.blocks) {
                 if (!sane(b))
                     continue;
@@ -838,10 +848,6 @@ namespace perlin {
                 netLevel.SetBlock(b.position.x, static_cast<int32_t>(b.position.y), b.position.z,
                                   BlockPalette::Instance().InternRuntime(static_cast<int32_t>(b.runtimeId)));
             }
-            for (const BlockUpdate& b : p.extra)
-                if (sane(b))
-                    netLevel.SetLiquid(b.position.x, static_cast<int32_t>(b.position.y), b.position.z,
-                                       BlockPalette::Instance().InternRuntime(static_cast<int32_t>(b.runtimeId)));
         });
 
         On<UpdateBlockSyncedPacket>([this](const UpdateBlockSyncedPacket& p) {
@@ -933,6 +939,9 @@ namespace perlin {
                 std::cout << "[move] server correction #" << correctionsReceived << " tick=" << p.tick << " pos=("
                           << p.position.x << "," << p.position.y << "," << p.position.z << ") delta=("
                           << p.delta.x << "," << p.delta.y << "," << p.delta.z << ")" << std::endl;
+            if (PERLIN_ENV("PERLIN_BLOCK_DEBUG"))
+                std::cout << "[move] correction_received #" << correctionsReceived
+                          << " tick=" << p.tick << " afterAuthTick=" << LastAuthTick() << std::endl;
             serverMotion.poseChanged = true;
             serverMotion.correction = true;
             serverMotion.tick = p.tick;
