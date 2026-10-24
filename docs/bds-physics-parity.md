@@ -298,6 +298,35 @@ and material flags that the current geometry-based world adapter does not yet
 fully represent; passing a shallow full-block stream does not prove those
 predicates.
 
+### Ladder collision follow-up
+
+The first ladder matrix exposed 14 movement corrections while climbing forward,
+nine while jumping over the top, and 13 while entering from the side. Perlin
+classified ladders alongside passable vines before consulting its physics
+registry, discarding the ladder collision shape. BDS stopped the actor at
+z=-8.5125 against the south-facing ladder; Perlin reached the backing wall at
+z=-8.7. The difference is the ladder's 3/16-block thickness.
+
+The existing registry already contains oriented ladder boxes for facing states
+2–5: the high-Z, low-Z, high-X and low-X plates respectively. Removing the
+early ladder override restores those shapes and the stored climbable flag.
+The hidden client's probes confirmed the decoded planes for the other three
+directions as well: [0,0,0.8125,1,1,1], [0.8125,0,0,1,1,1] and
+[0,0,0,0.1875,1,1].
+
+All seven original cases then produced zero movement corrections: idle descent,
+forward climbing, sneak descent, jumping, jumping over the top, sideways exit,
+and side entry. Three additional facing-direction ascent cases also produced
+zero corrections. All ten accepted cases retained full health; teleport setup
+corrections remain in the raw logs. All 62 CTest suites pass.
+
+Supporting native 26.52 anchors for the remaining climbing audit are
+AutoClimb callback `0x1070b3c34` and LadderResetFallDamage callback
+`0x10606b6c0`. They distinguish Wallclimbing (bit 18), CanClimb (bit 19),
+block climbability and powder-snow-related memberships. Perlin's complete
+eligibility producers, native ladder fall-distance-reset predicate and timing,
+scaffolding behavior and associated component lifetimes remain unproven.
+
 See [local client control](client-control.md) for the hidden launch, live browser
 view, tick-bounded input, block probes and raw correction telemetry. Broader
 terrain, fluid, effect, mode, entity and authority-transition coverage remains

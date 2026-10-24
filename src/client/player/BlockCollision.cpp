@@ -347,7 +347,9 @@ namespace perlin {
             s.web = true;
             return info;
         }
-        if (n == "ladder" || n == "vine" || n == "scaffolding_none" || n == "twisting_vines" || n == "weeping_vines" ||
+        // Ladders have oriented 3/16-block collision boxes in the registry.
+        // Keep them on that path instead of treating them as passable vines.
+        if (n == "vine" || n == "scaffolding_none" || n == "twisting_vines" || n == "weeping_vines" ||
             n == "cave_vines" || n == "cave_vines_body_with_berries" || n == "cave_vines_head_with_berries") {
             s.climbable = true;
             return info;
