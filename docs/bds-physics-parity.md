@@ -477,7 +477,7 @@ build/bds-oracle-venv/bin/python tools/bds_reference/relative_movement.py \
   --native-pages build/bds-native-pages.bin --out tests/data/bds_relative_movement.txt
 build/bds-oracle-venv/bin/python tools/bds_reference/trig_constants.py \
   --export build/bds-reference.json --out build/bds-trig-tables.hpp
-cmp src/client/player/BdsTrigTables.hpp build/bds-trig-tables.hpp
+cmp src/client/player/PerlinTrigTables.hpp build/bds-trig-tables.hpp
 cmake --build build --target bds_numeric_selftest bds_collision_selftest bds_vertical_selftest bds_water_drag_selftest bds_movement_effects_selftest bds_gliding_selftest bds_gliding_trace_selftest bds_trig_selftest bds_finalization_selftest bds_landing_selftest bds_support_selftest bds_world_collision_selftest bds_terrain_query_selftest bds_block_geometry_selftest voxel_shapes_selftest bds_block_offset_selftest block_offset_definition_selftest bds_collision_cache_selftest bds_cache_difference_selftest bds_cache_refresh_selftest bds_cache_refresh_records_selftest bds_block_slowdown_selftest bds_sneak_selftest bds_inside_query_selftest physics_selftest bedsim_trace_selftest
 ctest --test-dir build -R '^(bds_numeric_selftest|bds_collision_selftest|bds_vertical_selftest|bds_water_drag_selftest|bds_movement_effects_selftest|bds_gliding_selftest|bds_gliding_trace_selftest|bds_trig_selftest|bds_finalization_selftest|bds_landing_selftest|bds_support_selftest|bds_world_collision_selftest|bds_terrain_query_selftest|bds_block_geometry_selftest|voxel_shapes_selftest|bds_block_offset_selftest|block_offset_definition_selftest|bds_collision_cache_selftest|bds_cache_difference_selftest|bds_cache_refresh_selftest|bds_cache_refresh_records_selftest|bds_block_slowdown_selftest|bds_sneak_selftest|bds_inside_query_selftest|physics_selftest|bedsim_trace_selftest)$' --output-on-failure
 ```
@@ -1161,7 +1161,7 @@ turn the rest of the legacy simulator into a whole-native BDS oracle.
 The GitHub jobs for head `61ac44f` (run `39937551824`) independently report the
 same 152 legacy trace discrepancies on Linux x86-64 and macOS ARM64; all other
 52-target suite entries pass there. Windows compilation exposed a missing
-standard `<bit>` include in BdsCollisionCache.hpp. The header now includes its
+standard `<bit>` include in PerlinCollisionCache.hpp. The header now includes its
 bit-cast dependency explicitly; local rebuild and the three affected cache
 self-tests pass. A new Windows CI result is still required to verify that fix.
 The later entity-inside additions have separate local ARM64/x86-64 evidence and
@@ -1170,7 +1170,7 @@ must also complete current-head CI before platform validation is claimed.
 
 ## Complete ground-jump callbacks
 
-`BdsJump.hpp` ports the full ordinary callback `0x140EAFAF0` and alternate
+`PerlinJump.hpp` ports the full ordinary callback `0x140EAFAF0` and alternate
 callback `0x140EAFFD0`, beyond the previously tested sprint impulse. The
 reference executes their original instructions and the native event constructor
 `0x140EC4780`. Synthetic services supply world blocks, the optional height
@@ -1232,13 +1232,13 @@ unchanged. No expectations or tolerances were changed.
 
 ## Jump request classification and cleanup ordering
 
-`BdsJumpRequests.hpp` ports JumpFromGroundFilterSystem callback `0x140EAF890`.
+`PerlinJumpRequests.hpp` ports JumpFromGroundFilterSystem callback `0x140EAF890`.
 Its wrapper `0x140EB4AB0` proves the tested optional memberships are
 LocalPlayerComponent `0x63A37B09`, LavaSlimeFlagComponent `0x5F10CF3F`, and
 SquidFlagComponent `0x881BF973`. Classification prioritizes local player, then
 lava slime, then squid, with OtherJumpRequest as the fallback. It creates only
 the selected request and only if that entity is absent from the destination.
-Component payload bytes are not consulted. `BdsEntityMembership.hpp` preserves
+Component payload bytes are not consulted. `PerlinEntityMembership.hpp` preserves
 18-bit sparse-page indexing, generation comparison, null/missing pages, and the
 reserved packed-index rejection.
 
@@ -1347,7 +1347,7 @@ clear fall distance when below the honey top and outside its side threshold.
 The threshold is `bodyWidth*0.5f+0.43125f`; the top is block Y plus `0.9375f`.
 Multiple contacts attenuate repeatedly, in their original order.
 
-`BdsHoney.hpp` ports that complete callback. The 640 finite native executions
+`PerlinHoney.hpp` ports that complete callback. The 640 finite native executions
 have no runtime hooks and verify all three velocity lanes and fall-distance
 bits, with zero through four contacts, negative positions, boundary comparisons,
 existing upward/downward/signed-zero speeds, thin/negative widths and repeated
@@ -1468,7 +1468,7 @@ The first three lead to callbacks `0x140FC98E0`, `0x140E0E6F0` and
 `0x140E0E820`. Registration order alone does not establish all native execution
 or deferred component-mutation timing.
 
-`BdsFluidState.hpp` ports these verified behaviors:
+`PerlinFluidState.hpp` ports these verified behaviors:
 
 - Water and lava contract the supplied body using native float arithmetic,
   respectively by `(0.001, 0.401, 0.001)` and `(0.1, 0.4, 0.1)`. Crossed

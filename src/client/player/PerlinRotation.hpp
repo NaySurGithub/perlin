@@ -1,6 +1,6 @@
 #pragma once
 
-#include "client/player/BdsSineTable.hpp"
+#include "client/player/PerlinSineTable.hpp"
 
 #include <cmath>
 

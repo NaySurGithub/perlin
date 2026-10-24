@@ -1,7 +1,7 @@
 #pragma once
 
-#include "client/player/BdsCollision.hpp"
-#include "client/player/BdsSupport.hpp"
+#include "client/player/PerlinCollision.hpp"
+#include "client/player/PerlinSupport.hpp"
 
 #include <cstdint>
 #include <optional>

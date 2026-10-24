@@ -1,8 +1,8 @@
 #pragma once
 
-#include "client/player/BdsInsideQuery.hpp"
-#include "client/player/BdsSineTable.hpp"
-#include "client/player/BdsFloat.hpp"
+#include "client/player/PerlinInsideQuery.hpp"
+#include "client/player/PerlinSineTable.hpp"
+#include "client/player/PerlinFloat.hpp"
 
 namespace perlin::physics::bds {
     inline constexpr uint64_t ReducedJumpSurfaceProperty = uint64_t{1} << 43;

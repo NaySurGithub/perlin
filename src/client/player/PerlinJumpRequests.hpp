@@ -1,6 +1,6 @@
 #pragma once
 
-#include "client/player/BdsEntityMembership.hpp"
+#include "client/player/PerlinEntityMembership.hpp"
 
 namespace perlin::physics::bds {
     // ActorDataFlag bits 69/70/71: IN_SCAFFOLDING, OVER_SCAFFOLDING,

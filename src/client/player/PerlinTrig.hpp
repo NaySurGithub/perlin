@@ -1,7 +1,7 @@
 #pragma once
 
-#include "client/player/BdsPhysicsNumerics.hpp"
-#include "client/player/BdsTrigTables.hpp"
+#include "client/player/PerlinPhysicsNumerics.hpp"
+#include "client/player/PerlinTrigTables.hpp"
 
 #include <bit>
 #include <cstdint>

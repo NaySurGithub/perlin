@@ -1,6 +1,6 @@
 #pragma once
 
-#include "client/player/BdsTrig.hpp"
+#include "client/player/PerlinTrig.hpp"
 
 #include <array>
 #include <bit>

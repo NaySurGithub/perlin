@@ -1,7 +1,7 @@
 #pragma once
 
-#include "client/player/BdsTrig.hpp"
-#include "client/player/BdsFloat.hpp"
+#include "client/player/PerlinTrig.hpp"
+#include "client/player/PerlinFloat.hpp"
 
 #include <algorithm>
 #include <cmath>

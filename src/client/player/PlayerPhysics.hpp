@@ -1,13 +1,13 @@
 #pragma once
 #include <cstdint>
-#include "client/player/BdsCollision.hpp"
-#include "client/player/BdsVerticalMotion.hpp"
-#include "client/player/BdsMovementEffects.hpp"
-#include "client/player/BdsRotation.hpp"
-#include "client/player/BdsLanding.hpp"
-#include "client/player/BdsWorldCollision.hpp"
-#include "client/player/BdsBlockOffset.hpp"
-#include "client/player/BdsJump.hpp"
+#include "client/player/PerlinCollision.hpp"
+#include "client/player/PerlinVerticalMotion.hpp"
+#include "client/player/PerlinMovementEffects.hpp"
+#include "client/player/PerlinRotation.hpp"
+#include "client/player/PerlinLanding.hpp"
+#include "client/player/PerlinWorldCollision.hpp"
+#include "client/player/PerlinBlockOffset.hpp"
+#include "client/player/PerlinJump.hpp"
 
 #include <vector>
 
