@@ -1568,3 +1568,26 @@ ActorGameType, world game type, head-water transitions and WasInLava, and can
 replace or erase the pending splash request and create PostSplashGameEventRequest.
 That callback and its lifetime interactions are not yet ported. These explicit
 remaining paths prevent a claim of complete 1:1 physics.
+
+### Scaffolding runtime follow-up (2026-10-24)
+
+The actor metadata layout now places `laying_down` at absolute bit 64 and
+scaffolding flags at 69/70/71. The vendor schema had 65 entries in the first
+64-bit word; the protocol override corrects the boundary without modifying that
+vendor input. The native Mac 26.52 scaffolding collision provider
+`0x10B47CBAC` admits a full cube only from above, with strict horizontal overlap,
+stability other than 7, and no fall-through request.
+
+Six live scenarios against Windows BDS 1.26.52.3 over RakNet improved from
+0/21/10/14/13/5 corrections to 0/0/1/0/1/1 (idle, ascent, descent, standing on top,
+descent from top, jumping entry). These bounded counts exclude setup teleports;
+the raw correction counter is retained. Three transition corrections remain.
+Received actor metadata is still used for scaffold movement state; the local
+world-state producer and its ordering have not been reconstructed.
+
+The native Mac MobJump callback `0x10607861C` also accepts
+`InAscendableBlock` (absolute bit 99), independently of `InScaffolding`, when
+fall-through is clear. That branch sets vertical speed to 0.15 and jump delay to
+10 before the ordinary ground-jump path. The corresponding input and regression
+coverage are now included. This does not establish that the three live
+transition corrections are resolved.

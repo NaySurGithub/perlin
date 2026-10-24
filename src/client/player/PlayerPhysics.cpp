@@ -624,7 +624,8 @@ namespace perlin::physics {
 
         const bool jumpBlockedBySwim = (s.swimAmount > 0.0f && s.swimAmount < 1.0f)
                                     || (in.swimming && !in.headInWater);
-        const bool scaffoldJump = in.jump && !jumpBlockedBySwim && gravity.inScaffolding &&
+        const bool scaffoldJump = in.jump && !jumpBlockedBySwim &&
+                                  (gravity.inScaffolding || in.inAscendableBlock) &&
                                   !gravity.descendThroughBlock;
         if (scaffoldJump) {
             // MobJump callback 0x10607861C returns before ordinary ground jump.

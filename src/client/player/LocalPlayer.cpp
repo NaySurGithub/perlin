@@ -313,6 +313,7 @@ namespace perlin {
         in.gravity.overScaffolding = (actorFlags[1] & proto::FlagsMetadataFlags2::OverScaffolding) != 0;
         in.gravity.descendThroughBlock = (actorFlags[1] & proto::FlagsMetadataFlags2::FallThroughScaffolding) != 0;
         in.overDescendableBlock = (actorFlags[1] & proto::FlagsMetadataFlags2::OverDescendableBlock) != 0;
+        in.inAscendableBlock = (actorFlags[1] & proto::FlagsMetadataFlags2::InAscendableBlock) != 0;
 
         physics::Attributes attributes;
         attributes.speed = session.PredictedMovementSpeed(sprinting);

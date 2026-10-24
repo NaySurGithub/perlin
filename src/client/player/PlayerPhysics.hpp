@@ -102,6 +102,7 @@ namespace perlin::physics {
         bool crawl = false;
         bool forceCrouch = false;
         bool overDescendableBlock = false;
+        bool inAscendableBlock = false;
         bool pushTowardsClosestSpace = false;
         uint8_t actorMovementFlags = 0;
         bds::GravityFlags gravity;

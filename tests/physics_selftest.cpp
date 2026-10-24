@@ -76,6 +76,22 @@ int main() {
         for (int i = 0; i < 10; ++i) Step(s, up, attr, scaffold);
         CHECK(Near(s.y, 1.5, 1e-6));
         CHECK(Near(s.vy, 0.0686, 1e-7) && s.jumpDelay == 9);
+        // MobJump accepts the ascendable-block flag independently of the
+        // scaffolding flag, including before an ordinary grounded jump.
+        s = State{};
+        s.x = s.z = 0.5;
+        s.onGround = true;
+        up.gravity.inScaffolding = false;
+        up.inAscendableBlock = true;
+        Step(s, up, attr, scaffold);
+        CHECK(Near(s.y, 0.15, 1e-7));
+        CHECK(Near(s.vy, 0.0686, 1e-7));
+        s = State{};
+        s.x = s.z = 0.5;
+        s.y = 2;
+        up.gravity.descendThroughBlock = true;
+        Step(s, up, attr, scaffold);
+        CHECK(s.vy < 0 && s.y == 2);
         const bds::CollisionBox body{0.2f, 4, 0.2f, 0.8f, 5.8f, 0.8f};
         CHECK(bds::ScaffoldingSupports(body, {0, 3, 0}, 0, false));
         CHECK(!bds::ScaffoldingSupports(body, {0, 3, 0}, 7, false));
