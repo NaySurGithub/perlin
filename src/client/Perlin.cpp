@@ -7194,10 +7194,15 @@ namespace perlin {
                             useAim.face = target.face;
                             useAim.point = target.point;
                             useAim.distance = target.distance;
-                            const glm::dvec3 origin(target.destination);
-                            for (const auto& box : target.placedShape)
-                                gBridgeOutline.emplace_back(origin + glm::dvec3(box.x0, box.y0, box.z0),
-                                                            origin + glm::dvec3(box.x1, box.y1, box.z1));
+                            // Highlight the existing support with the same selection
+                            // geometry as an ordinary ray hit, including partial blocks.
+                            std::vector<physics::Box> supportShape;
+                            if (collision.Selection(target.anchor.x, target.anchor.y, target.anchor.z, supportShape)) {
+                                const glm::dvec3 origin(target.anchor);
+                                for (const auto& box : supportShape)
+                                    gBridgeOutline.emplace_back(origin + glm::dvec3(box.x0, box.y0, box.z0),
+                                                                origin + glm::dvec3(box.x1, box.y1, box.z1));
+                            }
                         }
                     }
                     const bool ammoBlocked = !HasAmmo(hudState, live, held.name);
