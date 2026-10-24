@@ -8,6 +8,7 @@
 #include "client/player/PerlinWorldCollision.hpp"
 #include "client/player/PerlinBlockOffset.hpp"
 #include "client/player/PerlinJump.hpp"
+#include "client/player/PerlinScaffolding.hpp"
 
 #include <vector>
 
@@ -61,6 +62,7 @@ namespace perlin::physics {
     public:
         virtual ~World() = default;
         virtual BlockShape Query(int x, int y, int z) const = 0;
+        virtual bds::ScaffoldingCell ClimberCell(int x, int y, int z) const;
         virtual bool CollisionChunkReady(int x, int z) const { return true; }
         virtual bool CollisionColumnPresent(int x, int z) const { return CollisionChunkReady(x >> 4, z >> 4); }
         virtual bds::TerrainHeightLimits CollisionHeightLimits() const { return {}; }

@@ -195,6 +195,20 @@ namespace perlin {
         }
     }
 
+    physics::bds::ScaffoldingCell LevelCollision::ClimberCell(int x, int y, int z) const {
+        using Cell = physics::bds::ScaffoldingCell;
+        bool loaded = false;
+        const auto id = level.GetBlock(x, y, z, loaded);
+        if (!loaded || id == 0) return Cell::Air;
+        const auto name = BlockPalette::Instance().Name(id);
+        if (name == "minecraft:scaffolding" || name == "scaffolding") return Cell::Scaffold;
+        if (name == "minecraft:powder_snow" || name == "powder_snow") return Cell::PowderSnow;
+        if (name == "minecraft:air" || name == "air") return Cell::Air;
+        if (name == "minecraft:water" || name == "water" ||
+            name == "minecraft:flowing_water" || name == "flowing_water") return Cell::Water;
+        return Cell::Other;
+    }
+
     bool LevelCollision::Selection(int x, int y, int z, std::vector<physics::Box>& out) const {
         out.clear();
         bool loaded = false;

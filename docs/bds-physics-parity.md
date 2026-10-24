@@ -1641,3 +1641,39 @@ leather boots, removing received-metadata lag from ascent/descent transitions.
 Native non-player standability, additional equipment/custom capability producers,
 all input modes, freezing/equipment immunity and complete scheduling remain
 outside this verification. These passing routes are not an overall parity claim.
+
+### Resolved-movement fall distance (2026-10-24)
+
+The native CheckFallDamageSystem wrapper `0x1066C1ED0` reads resolved Y at
+MoveRequestComponent offset 64; FinalizeMove callback `0x106748CC0` independently
+confirms requested versus resolved vectors at offsets 48 and 60. The scalar
+update in Actor::_checkFallDamage `0x10A48CEEC` clears a disabled component,
+clears preceding water distance for ordinary players, then subtracts negative
+resolved Y while airborne. Landing or nonnegative travel writes positive zero.
+Landing events, damage, actor exemptions and their request lifetimes remain
+separate from this scalar port.
+
+Perlin now applies that scalar after move finalization. The later
+BlockClimberSystem callback clears the component for its scaffold contacts,
+unless its first eligible lower block is powder snow. The horizontal query is
+shared with input prediction, with a production adapter that distinguishes real
+water blocks from aquatic plants and bubble columns. Unit coverage includes
+mixed scaffold/powder first-hit order, lava decay followed by movement, water
+reset followed by movement, and the post-move glide value. The chained glide
+fixture retains its original exact callback checks and additionally verifies
+the integrated fall distance; its fixture format is unchanged.
+
+A harness audit found that earlier teleport-based fall measurements could start
+partway through descent. Those windows cover only their recorded segment, not
+the complete drop. Two replacement static-ledge scenarios capture a grounded
+start at feet Y=265 and Y=285 before walking off. Both report zero corrections,
+reach recorded fall distances above 26 and 46 respectively, and each trace
+contains a grounded landing at feet Y=236.9 on the reduced powder shape.
+
+Two additional scenarios remove the supporting platform after the measurement
+begins. Each improved from two corrections to one: the powder-impact mismatch
+is resolved, but the server can remove support before the client receives its
+block update. That remaining correction is retained and unresolved. These
+results do not establish zero corrections across world mutations or full native
+fall-distance scheduling, landing/damage requests, ladder reset ordering,
+vehicles, teleports or network replay.

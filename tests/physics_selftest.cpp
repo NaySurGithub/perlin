@@ -1,6 +1,7 @@
 #include "client/player/PlayerPhysics.hpp"
 #include "client/player/PerlinScaffolding.hpp"
 #include "client/player/PerlinPowderSnow.hpp"
+#include "client/player/PerlinFallDistance.hpp"
 
 #include <cmath>
 #include <bit>
@@ -167,10 +168,29 @@ int main() {
         CHECK(snowContacts.ascendable && snowContacts.descendable && !snowContacts.inside && !snowContacts.over);
         snowContacts = bds::SenseScaffolding({0, 1, 0, 1, 2.8f, 1}, snowCells, false);
         CHECK(!snowContacts.ascendable && !snowContacts.descendable);
+        for (bool powderFirst : {false, true}) {
+            const auto mixed = bds::SenseScaffolding({0, 1, 0, 1, 2.8f, 1},
+                [&](int32_t, int32_t y, int32_t z) {
+                    using Cell = bds::ScaffoldingCell;
+                    if (y != 0) return Cell::Other;
+                    return (z == 0) == powderFirst ? Cell::PowderSnow : Cell::Scaffold;
+                }, true);
+            CHECK(mixed.over && mixed.descendable && mixed.overPowderSnow == powderFirst);
+        }
     }
 
-    // Lava halves the existing fall-distance component every sensing tick;
-    // leaving lava preserves the last value rather than clearing it.
+    {
+        CHECK(bds::FallDistanceAfterMove(3, -0.25f, false, false) == 3.25f);
+        CHECK(bds::FallDistanceAfterMove(3, -0.25f, true, false) == 0);
+        CHECK(bds::FallDistanceAfterMove(3, 0.25f, false, false) == 0);
+        CHECK(bds::FallDistanceAfterMove(3, 0, false, false) == 0);
+        CHECK(bds::FallDistanceAfterMove(3, -0.25f, false, true) == 0.25f);
+        CHECK(bds::FallDistanceAfterMove(3, -0.25f, false, false, true) == 0);
+        CHECK(bds::FallDistanceAfterMove(3, -0.25f, false, true, false, true) == 3.25f);
+    }
+
+    // Lava sensing halves the component before the move's downward travel
+    // is accumulated. Leaving lava stops that decay.
     {
         TestWorld lava;
         uint8_t fluid = 2;
@@ -182,13 +202,15 @@ int main() {
         };
         State s;
         s.fallDistance = 12;
+        s.y = 10;
+        s.vy = -0.2;
         Step(s, Input{}, attr, lava);
-        CHECK(s.inLava && !s.inWater && s.fallDistance == 6);
+        CHECK(s.inLava && !s.inWater && std::bit_cast<uint32_t>(s.fallDistance) == 0x40c66666);
         Step(s, Input{}, attr, lava);
-        CHECK(s.fallDistance == 3);
+        CHECK(std::bit_cast<uint32_t>(s.fallDistance) == 0x404e147a);
         fluid = 0;
         Step(s, Input{}, attr, lava);
-        CHECK(!s.inLava && s.fallDistance == 3);
+        CHECK(!s.inLava && std::bit_cast<uint32_t>(s.fallDistance) == 0x40533332);
     }
 
     // A ledge-clearance probe still overlaps water at its lower face. Shrinking
@@ -358,7 +380,9 @@ int main() {
         state.waterSplashRequest = 7;
         state.fallDistance = 4;
         Step(state, Input{}, attr, world);
-        CHECK(state.inWater && state.fallDistance == 0 && state.waterSplashRequest == 7);
+        // Water sensing clears the preceding distance; CheckFallDamage then
+        // records this move's -0.005 displacement before the next sensing tick.
+        CHECK(state.inWater && state.fallDistance == 0.005f && state.waterSplashRequest == 7);
         fluid = 2;
         Step(state, Input{}, attr, world);
         CHECK(!state.inWater && state.inLava && state.waterSplashRequest == 7);
@@ -671,7 +695,9 @@ int main() {
         CHECK(std::bit_cast<uint32_t>(static_cast<float>(state.vx)) == 0x339e264e);
         CHECK(std::bit_cast<uint32_t>(static_cast<float>(state.vy)) == 0xbc1081c7);
         CHECK(std::bit_cast<uint32_t>(static_cast<float>(state.vz)) == 0x3f57a6ee);
-        CHECK(state.fallDistance == 1);
+        // The glide callback sets 1; the later fall check adds the resolved
+        // downward displacement from the independent G velocity fixture.
+        CHECK(std::bit_cast<uint32_t>(state.fallDistance) == 0x3f812104);
         CHECK(state.movementEffects[0].type == -1);
         gliding.movementEffects.clear();
         gliding.pitch = -30;

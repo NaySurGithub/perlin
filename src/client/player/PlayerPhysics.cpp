@@ -9,6 +9,7 @@
 #include "client/player/PerlinSupport.hpp"
 #include "client/player/PerlinScaffolding.hpp"
 #include "client/player/PerlinPowderSnow.hpp"
+#include "client/player/PerlinFallDistance.hpp"
 #include "client/player/PerlinWorldCollision.hpp"
 #include "client/player/PerlinBlockGeometry.hpp"
 #include "client/player/PerlinCollisionCache.hpp"
@@ -24,6 +25,14 @@
 #include <vector>
 
 namespace perlin::physics {
+    bds::ScaffoldingCell World::ClimberCell(int x, int y, int z) const {
+        using Cell = bds::ScaffoldingCell;
+        const auto shape = Query(x, y, z);
+        if (shape.scaffoldingStability >= 0) return Cell::Scaffold;
+        if (shape.powderSnow) return Cell::PowderSnow;
+        if (shape.fluid == 1) return Cell::Water;
+        return shape.isAir && shape.Empty() ? Cell::Air : Cell::Other;
+    }
     namespace {
         constexpr float kFloatEps = 1.1920929e-7f;
         constexpr double kClimbSpeed = 0.2;
@@ -204,6 +213,8 @@ namespace perlin::physics {
             state.horizontalCollision = result.flags.horizontalCollision;
             state.verticalCollision = result.flags.verticalCollision;
             state.onGround = result.flags.onGround;
+            state.fallDistance = bds::FallDistanceAfterMove(state.fallDistance,
+                static_cast<float>(motion.resolved.y), state.onGround, state.inWater);
             state.collision = result.flags.collision;
             state.collidableMobNear = result.flags.collidableMobNear;
             return {result.velocity.x, result.velocity.y, result.velocity.z};
@@ -850,6 +861,12 @@ namespace perlin::physics {
         for (const auto& effect : in.movementEffects)
             bds::ApplyMovementEffect(s.movementEffects, effect);
         StepMovement(s, in, attr, world);
+        const auto climber = bds::SenseScaffolding(CollisionBox(BoundingBox(s, in.sneak)),
+            [&](int32_t x, int32_t y, int32_t z) { return world.ClimberCell(x, y, z); }, in.canStandOnPowderSnow);
+        // BlockClimberSystem follows CheckFallDamage. Its selected lower
+        // ascendable block suppresses the reset when that block is powder snow.
+        if (!climber.overPowderSnow && (climber.inside || climber.over || climber.ascendable || climber.descendable))
+            s.fallDistance = 0;
         // EntityInside, player immunity, adjustFallDistance and applied-record
         // cleanup are registered in this order by 0x1402D48A0.
         // WasInWaterFlag has passed through the native water-state callback.

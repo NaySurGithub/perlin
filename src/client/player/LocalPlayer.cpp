@@ -322,17 +322,7 @@ namespace perlin {
                 static_cast<float>(contactBox.z0), static_cast<float>(contactBox.x1),
                 static_cast<float>(contactBox.y1), static_cast<float>(contactBox.z1)},
             [&](int32_t x, int32_t y, int32_t z) {
-                using Cell = physics::bds::ScaffoldingCell;
-                bool loaded = false;
-                const auto id = session.NetLevel().GetBlock(x, y, z, loaded);
-                if (!loaded || id == 0) return Cell::Air;
-                const auto name = BlockPalette::Instance().Name(id);
-                if (name == "minecraft:scaffolding" || name == "scaffolding") return Cell::Scaffold;
-                if (name == "minecraft:powder_snow" || name == "powder_snow") return Cell::PowderSnow;
-                if (name == "minecraft:air" || name == "air") return Cell::Air;
-                if (name == "minecraft:water" || name == "water" ||
-                    name == "minecraft:flowing_water" || name == "flowing_water") return Cell::Water;
-                return Cell::Other;
+                return world.ClimberCell(x, y, z);
             }, in.canStandOnPowderSnow);
         in.gravity.inScaffolding = scaffold.inside;
         in.gravity.overScaffolding = scaffold.over;
