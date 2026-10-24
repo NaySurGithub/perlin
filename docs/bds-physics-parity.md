@@ -1694,6 +1694,36 @@ server movement settings are unchanged.
 The native ladder fall reset callback `0x10606B6C0` has also been inspected. It
 checks wall-climbing/can-climb actor flags, the feet-position block's climbable
 property, and powder-snow standability memberships. Its registration uses the
-InterpolateMovementNeeded component. Its precise phase relative to the new
-post-move fall check still needs reconstruction before integration; a guessed
-per-tick reset would not establish native scheduling parity.
+InterpolateMovementNeeded component. Its complete scheduling relative to the
+post-move fall check remains unproven; the player integration below does not
+establish native scheduler parity.
+
+### Climbing fall-reset predicate (2026-10-25)
+
+`0x10606B6C0` preserves an already-zero component (including negative zero),
+clears distance for wall climbing independently of ordinary climbing capability,
+and otherwise requires CAN_CLIMB plus a climbable feet block or powder snow with
+standability membership. Perlin now supplies actor flag bits 18/19 and the
+resolved vanilla leather-boots capability to that predicate before player
+travel. The current move can then contribute downward distance to the later
+fall check. The native InterpolateMovementNeeded producer, full multi-request
+ordering and non-player component lifetimes still require reconstruction; this
+pre-travel placement is bounded player integration, not proof of exact native
+phase ordering.
+
+Two live ladder-to-powder descents already reported zero corrections before
+this change, while Perlin incorrectly retained **5.3120313** fall distance at
+sample points still on the ladder. The candidate keeps the component at **0.2**
+after a downward move and both scenarios remain at zero corrections. The native
+reset condition is source-backed; the sampled post-move value is Perlin
+telemetry, not a direct read of the BDS component. Unit checks cover capability
+gating, powder standability, negative-zero preservation and repeated descent.
+
+Validation for this change: all 62 local CTest suites pass. Two chained
+ladder-to-powder descents, seven ordinary ladder routes, three boots/powder
+routes with the upper ladder still present, and three restored powder-only
+boots routes all report zero corrections (15 bounded scenarios). The mixed
+fixture's ascent reached the upper ladder, so it is recorded as an additional
+interaction rather than substituted for the original powder-only regression.
+Clients remained connected, initialized and alive. This does not resolve the
+previously recorded support-removal synchronization correction.

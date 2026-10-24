@@ -107,6 +107,7 @@ namespace perlin::physics {
         bool overDescendableBlock = false;
         bool inAscendableBlock = false;
         bool canStandOnPowderSnow = false;
+        bool canClimb = true, wallClimbing = false;
         bool pushTowardsClosestSpace = false;
         uint8_t actorMovementFlags = 0;
         bds::GravityFlags gravity;

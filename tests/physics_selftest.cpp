@@ -187,6 +187,29 @@ int main() {
         CHECK(bds::FallDistanceAfterMove(3, -0.25f, false, true) == 0.25f);
         CHECK(bds::FallDistanceAfterMove(3, -0.25f, false, false, true) == 0);
         CHECK(bds::FallDistanceAfterMove(3, -0.25f, false, true, false, true) == 3.25f);
+        float distance = 7;
+        bds::ResetClimbingFallDistance(distance, true, false, false, false, false);
+        CHECK(distance == 0); // Wall climbing bypasses the ordinary capability gate.
+        distance = 7;
+        bds::ResetClimbingFallDistance(distance, false, false, true, false, false);
+        CHECK(distance == 7); // A ladder alone does not grant climbing capability.
+        bds::ResetClimbingFallDistance(distance, false, true, false, true, false);
+        CHECK(distance == 7); // Unsupported powder snow is not a climbing reset.
+        bds::ResetClimbingFallDistance(distance, false, true, false, true, true);
+        CHECK(distance == 0);
+        float negativeZero = -0.0f;
+        bds::ResetClimbingFallDistance(negativeZero, true, true, true, false, false);
+        CHECK(std::bit_cast<uint32_t>(negativeZero) == 0x80000000);
+        TestWorld ladder;
+        ladder.fn = [](int, int, int) { BlockShape shape; shape.climbable = true; return shape; };
+        State falling;
+        falling.y = 30;
+        falling.vy = -0.2;
+        falling.fallDistance = 7;
+        Step(falling, Input{}, attr, ladder);
+        CHECK(falling.fallDistance == 0.2f);
+        Step(falling, Input{}, attr, ladder);
+        CHECK(falling.fallDistance == 0.2f);
     }
 
     // Lava sensing halves the component before the move's downward travel

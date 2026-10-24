@@ -542,6 +542,8 @@ namespace perlin::physics {
         const BlockShape feet = world.Query(static_cast<int>(std::floor(s.x)), static_cast<int>(std::floor(s.y)),
                                             static_cast<int>(std::floor(s.z)));
         s.onClimbable = feet.climbable;
+        bds::ResetClimbingFallDistance(s.fallDistance, in.wallClimbing, in.canClimb,
+                                      feet.climbable, feet.powderSnow, in.canStandOnPowderSnow);
 
         BlockShape frictionStorage;
         const BlockShape& under = Below(world, s, frictionStorage);

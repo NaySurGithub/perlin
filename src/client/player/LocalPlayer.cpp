@@ -307,6 +307,8 @@ namespace perlin {
         in.noClip = flying && (session.NoClip() || session.Spectator());
         in.creativeFlight = session.GameType() == 1;
         const auto actorFlags = session.OwnActorFlags();
+        in.canClimb = (actorFlags[0] & proto::FlagsMetadataFlags1::CanClimb) != 0;
+        in.wallClimbing = (actorFlags[0] & proto::FlagsMetadataFlags1::Wallclimbing) != 0;
         in.actorMovementFlags = static_cast<uint8_t>(actorFlags[0]);
         in.pushTowardsClosestSpace = (actorFlags[1] & proto::FlagsMetadataFlags2::PushTowardsClosestSpace) != 0;
         in.gravity.hasGravity = (actorFlags[0] & proto::FlagsMetadataFlags1::AffectedByGravity) != 0;
