@@ -345,6 +345,8 @@ namespace perlin {
                 attributes.levitation = effect.amplifier + 1;
             else if (effect.id == 27)
                 attributes.slowFalling = true;
+            else if (effect.id == 33)
+                attributes.weaving = true;
         }
 
         if (column && !asleep)

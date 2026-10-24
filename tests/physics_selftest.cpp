@@ -147,6 +147,36 @@ int main() {
         s.onGround = true;
         Step(s, Input{}, attr, berries);
         CHECK(s.stuckX == 0.25f && s.stuckY == 0.05f && s.stuckZ == 0.25f);
+        Attributes woven = attr;
+        woven.weaving = true;
+        s = State{};
+        s.onGround = true;
+        Step(s, Input{}, woven, berries);
+        CHECK(s.stuckX == 0.25f && s.stuckY == 0.05f && s.stuckZ == 0.25f);
+        berries.fn = [](int, int y, int) {
+            if (y < 0) return Full();
+            BlockShape shape;
+            shape.web = y == 0;
+            return shape;
+        };
+        s = State{};
+        s.onGround = true;
+        Step(s, Input{}, woven, berries);
+        CHECK(s.stuckX == 0.5f && s.stuckY == 0.25f && s.stuckZ == 0.5f);
+        // Removing the effect changes the next contact record. This move
+        // still consumes the multiplier stored by the preceding tick.
+        woven.weaving = false;
+        s.vz = 1;
+        Step(s, Input{}, woven, berries);
+        CHECK(s.z == 0.5 && s.stuckX == 0.25f && s.stuckY == 0.05f);
+        s.vz = 1;
+        Step(s, Input{}, woven, berries);
+        CHECK(s.z == 0.75);
+        woven.weaving = true;
+        Input flight;
+        flight.flying = flight.creativeFlight = true;
+        Step(s, flight, woven, berries);
+        CHECK(s.stuckX == 0 && s.stuckY == 0 && s.stuckZ == 0);
     }
 
     // Powder contact scales the following movement tick. Jump permission

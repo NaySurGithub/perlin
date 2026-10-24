@@ -80,7 +80,10 @@ namespace perlin {
         out.authTick = session ? session->LastAuthTick() : 0;
         out.corrections = session ? session->CorrectionCount() : 0;
         out.error = session ? session->LastError() : std::string();
+        out.effectIds.clear();
         if (session) {
+            for (const auto& effect : session->GetEffects())
+                out.effectIds.push_back(effect.id);
             const auto vitals = session->GetVitals();
             out.vitalsKnown = vitals.known;
             out.health = vitals.health; out.hunger = vitals.hunger; out.air = vitals.air;

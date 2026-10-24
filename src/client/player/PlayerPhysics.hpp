@@ -80,6 +80,7 @@ namespace perlin::physics {
         int jumpBoost = 0;
         int levitation = 0;
         bool slowFalling = false;
+        bool weaving = false;
         float maxAutoStep = static_cast<float>(kStepHeight);
         int waterWalkSpeedEnchant = 0;
         std::optional<float> waterDrag;

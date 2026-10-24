@@ -710,6 +710,11 @@ namespace perlin {
         On<MobEffectPacket>([this](const MobEffectPacket& p) {
             if (runtimeId != 0 && p.runtimeEntityId != runtimeId)
                 return;
+            if (PERLIN_ENV("PERLIN_BLOCK_DEBUG"))
+                std::cout << "[effect] id=" << p.effectId
+                          << " event=" << static_cast<int>(p.eventId)
+                          << " duration=" << p.duration << " serverTick=" << p.tick
+                          << " afterAuthTick=" << LastAuthTick() << std::endl;
             const bool on = p.eventId != MobEffectPacketEventId::Remove;
             std::lock_guard lock(statusMutex);
             activeEffects.erase(std::remove_if(activeEffects.begin(), activeEffects.end(), [&](const ActiveEffect& e) { return e.id == p.effectId; }), activeEffects.end());

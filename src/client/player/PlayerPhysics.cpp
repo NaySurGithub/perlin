@@ -806,7 +806,7 @@ namespace perlin::physics {
         s.jumpDelay = bds::TickJumpDelay(s.jumpDelay);
     }
 
-    static void UpdateBlockContacts(State& s, const Input& in, const World& world, bool wasInWater) {
+    static void UpdateBlockContacts(State& s, const Input& in, const Attributes& attr, const World& world, bool wasInWater) {
         const bool crouched = (in.sneak || in.forceCrouch) && !in.flying;
         {
             const Box inside = BoundingBox(s, crouched);
@@ -854,6 +854,11 @@ namespace perlin::physics {
                 // immunePlayer: MovementAbilities value bits 0 (flying) and
                 // 2 (instabuild); it also removes the first-application record.
                 bds::ApplyPlayerSlowdownImmunity(multiplier, firstApplication, in.flying, in.creativeFlight);
+                // Native weavingMob system 0x1066B6B14 replaces the vector
+                // for effect 33, excluding powder/berry contact. Its Include
+                // requires the applied record retained after player immunity.
+                if (firstApplication && attr.weaving && web && !powderSnow && !berryBush)
+                    multiplier = {0.5f, 0.25f, 0.5f};
                 if (firstApplication)
                     bds::AdjustSlowdownFallDistance(*firstApplication, s.fallDistance);
                 s.stuckX = multiplier.x;
@@ -877,7 +882,7 @@ namespace perlin::physics {
         // cleanup are registered in this order by 0x1402D48A0.
         // WasInWaterFlag has passed through the native water-state callback.
         // World material sensing and complete native phase timing remain open.
-        UpdateBlockContacts(s, in, world, s.inWater);
+        UpdateBlockContacts(s, in, attr, world, s.inWater);
         // MovementEffectsTick is registered in the post-player-movement phase,
         // 0x1402D5190. Flying and no-clip paths must also advance effect state.
         bds::TickMovementEffects(s.movementEffects);

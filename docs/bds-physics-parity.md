@@ -1749,8 +1749,8 @@ bush damage-event behavior and health prediction are not established by them.
 
 Unit coverage checks contact across multiple cells, the scaled grounded jump,
 and minimum accumulation when a body touches both web and bushes. Native
-block-pattern slowdown-immunity lists, non-player category exemptions, weaving
-interaction and complete ECS lifetimes remain to be reconstructed.
+block-pattern slowdown-immunity lists, non-player category exemptions and
+complete ECS lifetimes remain to be reconstructed.
 
 Two live web/berry boundary routes (walking and jumping) also report zero
 corrections. The accepted runs assert feet X=304.0, spanning the web column at
@@ -1761,3 +1761,29 @@ consistent with the stronger web accumulator. All 11 accepted live scenarios
 kept the client connected, initialized and alive; all 62 local CTest suites pass.
 This does not resolve the previously recorded world-update synchronization cases
 or prove complete native block-effect and actor-lifetime parity.
+
+### Weaving and webs (2026-10-25)
+
+The macOS 26.52 weaving system `0x1066B6B14` checks effect slot 33 and replaces
+the slowdown vector with **(0.5, 0.25, 0.5)**, without reading the amplifier.
+Its query requires web contact and the applied slowdown record, excludes
+powder-snow and berry contact, and therefore does not restore records removed
+by player flying/instabuild immunity. Perlin now implements this contact rule.
+The placement in the post-move contact path remains provisional: complete
+native phase ordering and effect request lifetimes are not established.
+
+Live pure-web walking/jumping improved from **11/11** corrections to **0/0**.
+Web/berry walking and web/powder walking/jumping also report zero, with explicit
+boundary positions and loaded-block probes. A two-second natural-expiry run
+reports zero. Explicit removal and re-addition during movement produced **two
+corrections**, each differing by approximately 0.0245 blocks (one movement tick's
+multiplier difference). This transition mismatch remains unresolved. The
+received effect cache currently ignores the packet tick and expires by wall
+clock; optional `PERLIN_BLOCK_DEBUG` logging records effect packet ticks beside
+the last sent movement tick to investigate timing without suppressing corrections.
+An instrumented repeat received both explicit transition packets after sending
+movement tick `packet.tick + 1`; each subsequent correction again measured
+approximately 0.0245 blocks while the player was still in the web stripe.
+The repeat later walked past the fixture and fell, so it is not accepted as an
+end-to-end route. This timing evidence does not by itself distinguish native
+phase ordering from a missing historical effect update/replay.

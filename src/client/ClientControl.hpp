@@ -40,6 +40,7 @@ namespace perlin {
         std::string probeName;
         std::vector<std::array<double, 6>> probeCollision;
         float movementSpeed = 0;
+        std::vector<int> effectIds;
         bool serverSprinting = false;
         bool serverSwimming = false;
         std::array<std::string, 2> actorFlagWords;
