@@ -6,7 +6,7 @@
 #include <bit>
 
 namespace perlin::physics::bds {
-    enum class ScaffoldingCell { Other, Scaffold, Air, Water };
+    enum class ScaffoldingCell { Other, Scaffold, Air, Water, PowderSnow };
     struct ScaffoldingContacts {
         bool inside = false, over = false;
         bool ascendable = false, descendable = false;
@@ -14,10 +14,9 @@ namespace perlin::physics::bds {
 
     // BlockClimberSystem 0x1066AEDBC, footprint readers 0x1066AF32C and
     // 0x1066AF5DC. Both horizontal endpoints are included, without epsilon.
-    // This is the player scaffolding branch; powder-snow capabilities are
-    // resolved separately by the caller.
+    // The caller supplies the player's resolved powder-snow capability.
     template<class Read>
-    ScaffoldingContacts SenseScaffolding(const CollisionBox& body, Read&& read) {
+    ScaffoldingContacts SenseScaffolding(const CollisionBox& body, Read&& read, bool canStandOnSnow = false) {
         ScaffoldingContacts result;
         const int32_t minX = FloorBlockCoordinate(std::min(body[0], body[3]));
         const int32_t maxX = FloorBlockCoordinate(std::max(body[0], body[3]));
@@ -26,11 +25,14 @@ namespace perlin::physics::bds {
         const auto sample = [&](int32_t y, bool& contact, bool& ascendable) {
             for (int32_t x = minX;; x = detail::IncrementInsideCoordinate(x)) {
                 for (int32_t z = minZ;; z = detail::IncrementInsideCoordinate(z)) {
-                    if (read(x, y, z) == ScaffoldingCell::Scaffold) {
+                    const auto cell = read(x, y, z);
+                    if (cell == ScaffoldingCell::Scaffold) {
                         contact = true;
                         const auto below = read(x, std::bit_cast<int32_t>(static_cast<uint32_t>(y) - 1u), z);
                         ascendable |= below != ScaffoldingCell::Air && below != ScaffoldingCell::Water;
                     }
+                    if (cell == ScaffoldingCell::PowderSnow && canStandOnSnow)
+                        ascendable = true;
                     if (z == maxZ) break;
                 }
                 if (x == maxX) break;

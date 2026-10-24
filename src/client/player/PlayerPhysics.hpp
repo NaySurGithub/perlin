@@ -48,6 +48,7 @@ namespace perlin::physics {
         uint8_t fluidDepth = 255;
         bool climbable = false;
         bool web = false;
+        bool powderSnow = false;
         bool honey = false;
         float speedFactor = 1.0f;
         bool isAir = true;
@@ -103,6 +104,7 @@ namespace perlin::physics {
         bool forceCrouch = false;
         bool overDescendableBlock = false;
         bool inAscendableBlock = false;
+        bool canStandOnPowderSnow = false;
         bool pushTowardsClosestSpace = false;
         uint8_t actorMovementFlags = 0;
         bds::GravityFlags gravity;

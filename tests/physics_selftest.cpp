@@ -1,5 +1,6 @@
 #include "client/player/PlayerPhysics.hpp"
 #include "client/player/PerlinScaffolding.hpp"
+#include "client/player/PerlinPowderSnow.hpp"
 
 #include <cmath>
 #include <bit>
@@ -114,6 +115,58 @@ int main() {
             return y == 2 ? bds::ScaffoldingCell::Scaffold : bds::ScaffoldingCell::Water;
         });
         CHECK(contact.inside && !contact.ascendable && !contact.descendable);
+    }
+
+    // Powder contact scales the following movement tick. Jump permission
+    // uses the stone support beneath the actor, not its powder-filled feet.
+    {
+        TestWorld powder;
+        powder.fn = [](int, int y, int) {
+            if (y < 0) return Full();
+            BlockShape shape;
+            shape.powderSnow = y < 4;
+            return shape;
+        };
+        State s;
+        s.x = s.z = 0.5;
+        s.onGround = true;
+        Input jump;
+        Step(s, jump, attr, powder);
+        CHECK(s.stuckX == 0.9f && s.stuckY == 1.5f && s.stuckZ == 0.9f);
+        jump.jump = true;
+        Step(s, jump, attr, powder);
+        CHECK(Near(s.y, 0.63, 1e-7));
+        CHECK(Near(s.vy, -0.0784, 1e-7));
+        s = State{};
+        s.x = s.z = 0.5;
+        jump.flying = true;
+        jump.creativeFlight = true;
+        Step(s, jump, attr, powder);
+        CHECK(s.stuckX == 0 && s.stuckY == 0 && s.stuckZ == 0);
+        s = State{};
+        s.x = s.z = 0.5;
+        s.y = 4;
+        s.vy = -0.1;
+        Input boots;
+        boots.canStandOnPowderSnow = true;
+        Step(s, boots, attr, powder);
+        CHECK(s.y == 4 && s.onGround);
+        s = State{};
+        s.x = s.z = 0.5;
+        s.y = 4;
+        s.vy = -0.3;
+        s.fallDistance = 3;
+        Step(s, Input{}, attr, powder);
+        CHECK(Near(s.y, 3.9, 1e-6) && s.onGround);
+        CHECK(bds::PowderSnowSupportHeight(4, 4, true, 3, true) == 0);
+        CHECK(bds::PowderSnowSupportHeight(3.9f, 4, false, 3, true) == 0);
+        CHECK(bds::PowderSnowSupportHeight(4, 4, false, 2.5f, false) == 0);
+        CHECK(bds::PowderSnowSupportHeight(4, 4, false, std::numeric_limits<float>::quiet_NaN(), false) == 0.9f);
+        const auto snowCells = [](int32_t, int32_t, int32_t) { return bds::ScaffoldingCell::PowderSnow; };
+        auto snowContacts = bds::SenseScaffolding({0, 1, 0, 1, 2.8f, 1}, snowCells, true);
+        CHECK(snowContacts.ascendable && snowContacts.descendable && !snowContacts.inside && !snowContacts.over);
+        snowContacts = bds::SenseScaffolding({0, 1, 0, 1, 2.8f, 1}, snowCells, false);
+        CHECK(!snowContacts.ascendable && !snowContacts.descendable);
     }
 
     // Lava halves the existing fall-distance component every sensing tick;

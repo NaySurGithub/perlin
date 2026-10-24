@@ -1608,3 +1608,36 @@ exclusion. Powder-snow capability state still comes from server metadata; its
 equipment predicates and the complete native system ordering remain unfinished.
 These six passing routes do not establish parity for every scaffold placement,
 capability, input mode, or cross-system interaction.
+
+### Powder-snow contact and support follow-up (2026-10-24)
+
+Four unequipped live routes (idle inside, repeated jump, falling into the stack,
+and jumping entry) initially reported **0/10/12/14** corrections. Wiring the
+native contact multiplier and selecting jump permission from the supporting
+block reduced these to **0/0/0/0**. In particular, a player standing on stone
+inside powder snow can jump: the stored vertical multiplier scales the ordinary
+0.42 displacement to 0.63. Testing the feet block instead incorrectly suppresses
+that jump.
+
+The native powder contact callback `0x106743CD0` accumulates **(0.9, 1.5, 0.9)**
+by component minimum, not by multiplying for every touched block. Existing
+player slowdown immunity requires flying and instabuild together. Perlin now
+retains powder-snow identity independently of its empty static collision shape,
+so server voxel geometry cannot replace the actor-dependent collision rule.
+
+The native collision provider `0x10B464E74` first requires feet at or above the
+full block top (float epsilon) and no fall-through request. The player branch
+then admits a full cube when capable of standing on snow, or a 0.9-high cube for
+fall distance above 2.5. The reduced shape's admission still uses the full top.
+`PerlinPowderSnow.hpp` implements this predicate, with regression checks for
+capability, fall-through, falling shape, threshold and unordered comparisons.
+The falling shape is tested with an explicitly supplied fall-distance component;
+the complete native fall-distance accumulation/reset producers remain unported.
+
+Three leather-boots routes (standing on top, ascent through the stack, descent)
+initially reported **14/13/1** corrections and now report **0/0/0**. The local
+BlockClimber footprint query includes powder snow when the vanilla player has
+leather boots, removing received-metadata lag from ascent/descent transitions.
+Native non-player standability, additional equipment/custom capability producers,
+all input modes, freezing/equipment immunity and complete scheduling remain
+outside this verification. These passing routes are not an overall parity claim.

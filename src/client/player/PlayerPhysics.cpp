@@ -8,6 +8,7 @@
 #include "client/player/PerlinMoveFinalization.hpp"
 #include "client/player/PerlinSupport.hpp"
 #include "client/player/PerlinScaffolding.hpp"
+#include "client/player/PerlinPowderSnow.hpp"
 #include "client/player/PerlinWorldCollision.hpp"
 #include "client/player/PerlinBlockGeometry.hpp"
 #include "client/player/PerlinCollisionCache.hpp"
@@ -48,7 +49,7 @@ namespace perlin::physics {
 
         void Gather(const World& world, const Box& region, std::vector<Box>& out,
                     std::vector<ShapeMetadata>* metadata = nullptr, const Box* actorBox = nullptr,
-                    bool fallThrough = false) {
+                    bool fallThrough = false, float fallDistance = 0, bool canStandOnSnow = false) {
             out.clear();
             if (metadata)
                 metadata->clear();
@@ -69,6 +70,12 @@ namespace perlin::physics {
                     bds::ScaffoldingSupports(CollisionBox(*actorBox), position,
                                              shape.scaffoldingStability, fallThrough)) {
                     shape.boxes.push_back({0, 0, 0, 1, 1, 1});
+                }
+                if (shape.powderSnow && actorBox) {
+                    const float height = bds::PowderSnowSupportHeight(static_cast<float>(actorBox->y0),
+                        static_cast<float>(y) + 1.0f, fallThrough, fallDistance, canStandOnSnow);
+                    if (height > 0)
+                        shape.boxes.push_back({0, 0, 0, 1, height, 1});
                 }
                 const auto offset = shape.randomOffset ? bds::GenerateBlockOffset(*shape.randomOffset, position)
                                                        : bds::Float3{};
@@ -119,7 +126,8 @@ namespace perlin::physics {
 
         Motion ResolveMotion(const World& world, const Box& start, const Vec3& velocity, Vec3 storedVelocity, bool wasOnGround,
                              std::vector<Box>& scratch, bds::CollisionVector recoveryLimits, float stepHeight,
-                             bool flyingAbility, bool& oneShotStep, bool sneakEdge = false, bool fallThrough = false) {
+                             bool flyingAbility, bool& oneShotStep, bool sneakEdge = false, bool fallThrough = false,
+                             float fallDistance = 0, bool canStandOnSnow = false) {
             Motion result;
             const auto search =
                 bds::SearchMovement(CollisionBox(start),
@@ -132,7 +140,7 @@ namespace perlin::physics {
             bds::CollisionCache cache;
             bds::RefreshCollisionCache(cache, search.region, [&](const bds::CollisionBox& region) {
                 std::vector<ShapeMetadata> incoming;
-                Gather(world, PhysicsBox(region), scratch, &incoming, &start, fallThrough);
+                Gather(world, PhysicsBox(region), scratch, &incoming, &start, fallThrough, fallDistance, canStandOnSnow);
                 const size_t base = metadata.size();
                 metadata.insert(metadata.end(), incoming.begin(), incoming.end());
                 std::vector<bds::CollisionRecord> records;
@@ -579,7 +587,8 @@ namespace perlin::physics {
             const Box box = BoundingBox(s, false);
             const Motion m =
                 ResolveMotion(world, box, req, {s.vx, s.vy, s.vz}, grounded, scratch, bds::RecoveryLimits(s.recovery),
-                              attr.maxAutoStep, in.flying, s.canAlwaysAutoStep);
+                              attr.maxAutoStep, in.flying, s.canAlwaysAutoStep, false,
+                              in.gravity.descendThroughBlock, s.fallDistance, in.canStandOnPowderSnow);
             bds::UpdateRecovery(s.recovery, m.penetration >= 1.0e-6f, in.pushTowardsClosestSpace);
             auto finalized = FinalizeMotion(s, m, m.velocity);
             if (m.stepped)
@@ -669,8 +678,10 @@ namespace perlin::physics {
 
         const bool climbJump = in.jump && !jumpBlockedBySwim && s.onClimbable;
         const bool jumpInitiated = in.jump && !scaffoldJump && !jumpBlockedBySwim && !glide && !climbJump && s.onGround && s.jumpDelay == 0 && !water && !lava &&
-            bds::ScaffoldingAllowsJump(gravity.inScaffolding, gravity.overScaffolding,
-                                      gravity.descendThroughBlock);
+            bds::GroundJumpAllowed((gravity.inScaffolding ? 0x20ull : 0ull) |
+                                   (gravity.overScaffolding ? 0x40ull : 0ull) |
+                                   (gravity.descendThroughBlock ? 0x80ull : 0ull), under.powderSnow,
+                                   [&] { return in.canStandOnPowderSnow; }, [] { return false; });
         if (jumpInitiated) {
             bds::JumpParameters jump;
             jump.bodyMinimumY = static_cast<float>(BoundingBox(s, crouched).y0);
@@ -708,7 +719,7 @@ namespace perlin::physics {
         const bool clipSneak = bds::ShouldClipSneak(in.actorMovementFlags, sneaking, grounded, requestSneakFlag);
         const Motion m = ResolveMotion(world, box, req, {s.vx, s.vy, s.vz}, grounded, scratch, bds::RecoveryLimits(s.recovery),
                                        attr.maxAutoStep, in.flying, s.canAlwaysAutoStep, clipSneak,
-                                       gravity.descendThroughBlock);
+                                       gravity.descendThroughBlock, s.fallDistance, in.canStandOnPowderSnow);
         bds::UpdateRecovery(s.recovery, m.penetration >= 1.0e-6f, in.pushTowardsClosestSpace);
         Vec3 v = FinalizeMotion(s, m, m.velocity);
         if (m.stepped)
@@ -786,7 +797,7 @@ namespace perlin::physics {
         const bool crouched = (in.sneak || in.forceCrouch) && !in.flying;
         {
             const Box inside = BoundingBox(s, crouched);
-            bool web = false;
+            bool web = false, powderSnow = false;
             std::vector<bds::BlockPosition> honey;
             // InsideBlockComponent alternate bounds and expansion producers
             // remain separate; use this actor's ordinary shape and zero expansion.
@@ -795,6 +806,7 @@ namespace perlin::physics {
                                    [&](int32_t x, int32_t y, int32_t z) {
                 const auto shape = world.Query(x, y, z);
                 web |= shape.web;
+                powderSnow |= shape.powderSnow;
                 if (shape.bubbleColumn && !in.flying) {
                     const auto above = world.Query(x, y + 1, z);
                     const bool surface = above.isAir && !above.fluid && above.Empty();
@@ -813,10 +825,15 @@ namespace perlin::physics {
                 s.vy = velocity.y;
                 s.vz = velocity.z;
             }
-            if (web) {
+            if (web || powderSnow) {
                 bds::Float3 multiplier{s.stuckX, s.stuckY, s.stuckZ};
                 std::optional<bool> firstApplication;
-                bds::AccumulateBlockSlowdown(multiplier, {0.25f, 0.05f, 0.25f}, firstApplication);
+                if (web)
+                    bds::AccumulateBlockSlowdown(multiplier, {0.25f, 0.05f, 0.25f}, firstApplication);
+                // EntityInside powder-snow callback 0x106743CD0. Contacts
+                // accumulate by minimum, rather than multiplying per block.
+                if (powderSnow)
+                    bds::AccumulateBlockSlowdown(multiplier, {0.9f, 1.5f, 0.9f}, firstApplication);
                 // immunePlayer: MovementAbilities value bits 0 (flying) and
                 // 2 (instabuild); it also removes the first-application record.
                 bds::ApplyPlayerSlowdownImmunity(multiplier, firstApplication, in.flying, in.creativeFlight);

@@ -313,8 +313,9 @@ namespace perlin {
         in.gravity.inScaffolding = (actorFlags[1] & proto::FlagsMetadataFlags2::InScaffolding) != 0;
         in.gravity.overScaffolding = (actorFlags[1] & proto::FlagsMetadataFlags2::OverScaffolding) != 0;
         in.gravity.descendThroughBlock = (actorFlags[1] & proto::FlagsMetadataFlags2::FallThroughScaffolding) != 0;
-        in.overDescendableBlock = (actorFlags[1] & proto::FlagsMetadataFlags2::OverDescendableBlock) != 0;
-        in.inAscendableBlock = (actorFlags[1] & proto::FlagsMetadataFlags2::InAscendableBlock) != 0;
+        const auto boots = session.GetInventory().armor[3];
+        in.canStandOnPowderSnow = !boots.Empty() &&
+            (boots.name == "minecraft:leather_boots" || boots.name == "leather_boots");
         const auto contactBox = physics::BoundingBox(state, wasSneaking);
         const auto scaffold = physics::bds::SenseScaffolding(
             physics::bds::CollisionBox{static_cast<float>(contactBox.x0), static_cast<float>(contactBox.y0),
@@ -327,19 +328,16 @@ namespace perlin {
                 if (!loaded || id == 0) return Cell::Air;
                 const auto name = BlockPalette::Instance().Name(id);
                 if (name == "minecraft:scaffolding" || name == "scaffolding") return Cell::Scaffold;
+                if (name == "minecraft:powder_snow" || name == "powder_snow") return Cell::PowderSnow;
                 if (name == "minecraft:air" || name == "air") return Cell::Air;
                 if (name == "minecraft:water" || name == "water" ||
                     name == "minecraft:flowing_water" || name == "flowing_water") return Cell::Water;
                 return Cell::Other;
-            });
-        // Retain non-scaffolding capability metadata (e.g. powder snow) while
-        // replacing scaffold state with the native local footprint query.
-        if (in.gravity.inScaffolding) in.inAscendableBlock = false;
-        if (in.gravity.overScaffolding) in.overDescendableBlock = false;
+            }, in.canStandOnPowderSnow);
         in.gravity.inScaffolding = scaffold.inside;
         in.gravity.overScaffolding = scaffold.over;
-        in.inAscendableBlock |= scaffold.ascendable;
-        in.overDescendableBlock |= scaffold.descendable;
+        in.inAscendableBlock = scaffold.ascendable;
+        in.overDescendableBlock = scaffold.descendable;
         in.gravity.descendThroughBlock = in.sneak && in.overDescendableBlock;
 
         physics::Attributes attributes;
