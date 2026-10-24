@@ -42,6 +42,34 @@ static BlockShape Slab(double h) {
 int main() {
     Attributes attr;
 
+    // A ledge-clearance probe still overlaps water at its lower face. Shrinking
+    // it like ordinary immersion sensing incorrectly grants a step-out boost.
+    {
+        TestWorld ledge;
+        ledge.fn = [](int, int y, int z) {
+            if (z == 1 && y == 0) return Slab(0.6);
+            BlockShape shape;
+            if (y == 0) { shape.fluid = 1; shape.fluidLevel = 1; }
+            return shape;
+        };
+        State s;
+        s.x = 0.5;
+        s.z = 0.69;
+        s.y = 0.1;
+        s.vz = 0.1;
+        Step(s, Input{}, attr, ledge);
+        CHECK(s.inWater && s.horizontalCollision);
+        CHECK(Near(s.vy, -0.005, 1e-7));
+        s = State{};
+        s.x = 0.5;
+        s.z = 0.69;
+        s.y = 0.5;
+        s.vz = 0.1;
+        Step(s, Input{}, attr, ledge);
+        CHECK(s.inWater && s.horizontalCollision);
+        CHECK(s.vy == static_cast<double>(0.3f)); // full probe now clears the water
+    }
+
     // Bubble actions run once per contacted cell after water drag/gravity.
     // A standing actor spans two cells at integral feet and three between them.
     {
@@ -93,6 +121,31 @@ int main() {
         CHECK(Near(s.vy, 0.115, 1e-7));
         CHECK(!PoseFits(s, column, kStandHeight));
         CHECK(PoseFits(s, column, kSneakHeight));
+
+        column.fn = [](int, int y, int) {
+            BlockShape shape;
+            if (y < 11) {
+                shape.fluid = 1;
+                shape.fluidLevel = 1;
+                shape.bubbleColumn = 1;
+            }
+            return shape;
+        };
+        s = State{};
+        s.x = s.z = 0.5;
+        s.y = 10;
+        Step(s, Input{}, attr, column);
+        CHECK(Near(s.vy, 0.095, 1e-7));
+        float fall = 10;
+        CHECK(bds::BubbleColumnVelocity(1.79f, false, fall, true) == 1.8f && fall == 0);
+        CHECK(bds::BubbleColumnVelocity(-0.89f, true, fall, true) == -0.9f);
+        s = State{};
+        s.x = s.z = 0.5;
+        s.y = 10;
+        Input flying;
+        flying.flying = true;
+        Step(s, flying, attr, column);
+        CHECK(s.vy == 0);
     }
 
     // Expanding the swim pose at a fluid surface must not change the fluid

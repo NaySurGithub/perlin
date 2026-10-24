@@ -722,10 +722,15 @@ namespace perlin::physics {
         }
 
         if ((water || lava) && (m.cx || m.cz)) {
-            const double startY = box.y0;
-            const Box probe = BoundingBox(s, false).Offset(v.x, (startY - s.y) + 0.6 + v.y, v.z);
-            if (NoCollision(world, probe, scratch) && !Scan(world, probe).water && !Scan(world, probe).lava)
-                v.y = 0.3;
+            // ClimbOutOfLiquidSystem 26.52 callback 0x1070B4B48 probes
+            // the full translated actor bounds, not the contracted immersion box.
+            const float dy = ((static_cast<float>(box.y0) - static_cast<float>(s.y)) + 0.6f)
+                             + static_cast<float>(v.y);
+            const Box probe = BoundingBox(s, crouched).Offset(static_cast<float>(v.x), dy,
+                                                              static_cast<float>(v.z));
+            if (!TouchesFluid(world, probe, 1) && !TouchesFluid(world, probe, 2) &&
+                NoCollision(world, probe, scratch))
+                v.y = 0.3f;
         }
         if (s.onGround && !sneaking && static_cast<float>(v.y) < 0.1f) {
             const BlockShape stand = world.Query(static_cast<int>(std::floor(s.x)),
@@ -764,8 +769,12 @@ namespace perlin::physics {
                                    [&](int32_t x, int32_t y, int32_t z) {
                 const auto shape = world.Query(x, y, z);
                 web |= shape.web;
-                if (shape.bubbleColumn)
-                    s.vy = bds::BubbleColumnVelocity(static_cast<float>(s.vy), shape.bubbleColumn < 0, s.fallDistance);
+                if (shape.bubbleColumn && !in.flying) {
+                    const auto above = world.Query(x, y + 1, z);
+                    const bool surface = above.isAir && !above.fluid && above.Empty();
+                    s.vy = bds::BubbleColumnVelocity(static_cast<float>(s.vy), shape.bubbleColumn < 0,
+                                                     s.fallDistance, surface);
+                }
                 if (shape.honey)
                     honey.push_back({x, y, z});
             });

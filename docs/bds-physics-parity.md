@@ -222,12 +222,44 @@ and 0.634639 blocks respectively, including the common 20-tick release window;
 sprint held while eating traveled 0.634624 blocks. These are measured scenario
 distances, not a replacement for the native modifier and input-order evidence.
 
-An adjacent native action visitor `0x10674cb7c` uses a separate +0.1/1.8 upward
-and -0.03/-0.9 downward branch. Gather callback `0x106755fe4` selects action
-type 0 via `0x106744130` when the block above has legacy ID zero, and type 1
-via `0x106744288` otherwise, with an additional contact predicate on the latter
-path. This surface action and its complete admission predicate are not yet
-ported or covered by the enclosed-column checks above.
+### Open bubble-column surface follow-up
+
+Removing the column roof exposed 17 idle-lift corrections and 18 corrections
+with jump held. Native action visitor `0x10674cb7c` uses a separate +0.1/1.8
+upward and -0.03/-0.9 downward branch. Gather callback `0x106755fe4` selects
+action type 0 via `0x106744130` when the block above has legacy ID zero, and
+type 1 via `0x106744288` otherwise. The latter requires
+`ActorMovementTickNeededComponent` (FNV-1a 2484423886), obtained by adapter
+`0x10675b8e4`. Force application `0x106744a60` dispatches through
+`0x110e67620` and skips actors whose MovementAbilities flying bit is set.
+`0x106744af0` subsequently dispatches surface particles through a different
+table (`0x110e67630`); the particle action is not the force producer.
+
+Perlin now selects the surface force from the actual block above each contact
+and skips bubble forces while flying. Unit tests cover the surface action,
+its separate caps and the flight exclusion. The complete native request storage
+and scheduler lifetime remain open; the local adapter executes these actions
+within its existing player movement tick.
+
+The surface-action patch removed the idle-lift and jump corrections. Downward
+entry, falling into the downward surface, and sneaking also produced zero.
+Swimming toward the wall still produced three corrections, exposing a separate
+clearance-probe issue. Native ClimbOutOfLiquidSystem callback `0x1070b4b48`
+first checks the full translated actor AABB for liquid, then queries collision
+shapes; it writes vertical velocity 0.3 only if both checks are clear. Perlin
+used contracted immersion bounds for the liquid check, permitting a step-out
+boost while the full probe still touched water. The adapter now uses the full
+probe and the current crouch pose, with float translation arithmetic. A local
+slab-at-waterline regression distinguishes these queries and rejects the
+incorrect boost. All 62 CTest suites pass with this correction.
+
+The final live matrix produced zero movement corrections in all six cases:
+idle surface lift, surface jumping, downward entry, falling into the downward
+surface, sneaking, and swimming toward the wall. The wall case changed from
+three corrections to zero after correcting the clearance query. Teleport setup
+corrections remain in the raw counter and are excluded only from the bounded
+movement windows. These checks do not prove every fluid transition or actor
+interaction.
 
 See [local client control](client-control.md) for the hidden launch, live browser
 view, tick-bounded input, block probes and raw correction telemetry. Broader

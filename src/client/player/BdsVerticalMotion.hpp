@@ -81,11 +81,12 @@ namespace perlin::physics::bds {
 
     // Native 26.52 EntityInside action visitors 0x10674CBE8 / 0x10674D054.
     // Each contacted bubble block contributes one action after movement.
-    inline float BubbleColumnVelocity(float velocity, bool dragDown, float& fallDistance) {
+    inline float BubbleColumnVelocity(float velocity, bool dragDown, float& fallDistance, bool surface = false) {
         fallDistance = 0;
-        const float next = detail::Round(velocity + (dragDown ? -0.03f : 0.06f));
+        // Surface action 0x10674CB7C has separate acceleration and caps.
+        const float next = detail::Round(velocity + (dragDown ? -0.03f : surface ? 0.1f : 0.06f));
         if (dragDown)
-            return next < -0.3f ? -0.3f : next;
-        return next > 0.7f ? 0.7f : next;
+            return next < (surface ? -0.9f : -0.3f) ? (surface ? -0.9f : -0.3f) : next;
+        return next > (surface ? 1.8f : 0.7f) ? (surface ? 1.8f : 0.7f) : next;
     }
 }
