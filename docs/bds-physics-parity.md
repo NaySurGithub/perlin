@@ -1677,3 +1677,23 @@ block update. That remaining correction is retained and unresolved. These
 results do not establish zero corrections across world mutations or full native
 fall-distance scheduling, landing/damage requests, ladder reset ordering,
 vehicles, teleports or network replay.
+
+### Platform-removal packet-order investigation (2026-10-24)
+
+An instrumented repeat of the two held-platform drops reported **1/0** movement
+corrections, showing that the earlier **1/1** result is timing-dependent. In the
+failing repeat, the movement correction was applied before the corresponding
+UpdateSubchunkBlocks removal packet was decoded. The decoded packet applies its
+blocks directly to the collision Level; there is no render-mesh staging delay.
+No per-frame receive-budget limit was reached anywhere in that run. This rules
+out that time limit as the observed cause in this repeat, but does not identify
+socket arrival time or prove all transport scheduling correct. The synchronized
+world-update/replay behavior remains unresolved; the correction counter and
+server movement settings are unchanged.
+
+The native ladder fall reset callback `0x10606B6C0` has also been inspected. It
+checks wall-climbing/can-climb actor flags, the feet-position block's climbable
+property, and powder-snow standability memberships. Its registration uses the
+InterpolateMovementNeeded component. Its precise phase relative to the new
+post-move fall check still needs reconstruction before integration; a guessed
+per-tick reset would not establish native scheduling parity.

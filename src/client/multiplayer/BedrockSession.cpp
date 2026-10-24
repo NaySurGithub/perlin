@@ -1,4 +1,5 @@
 #include "util/Paths.hpp"
+#include "util/Env.hpp"
 #include "client/multiplayer/BedrockSession.hpp"
 #include "util/SimClock.hpp"
 #include "util/SystemInfo.hpp"
@@ -777,8 +778,12 @@ namespace perlin {
             HandleBatch(msg);
             if (state == State::Failed)
                 return;
-            if ((++handled & 3) == 0 && std::chrono::steady_clock::now() - receiveStart > std::chrono::microseconds(handled > 400 ? 9000 : 4000))
+            if ((++handled & 3) == 0 && std::chrono::steady_clock::now() - receiveStart > std::chrono::microseconds(handled > 400 ? 9000 : 4000)) {
+                if (PERLIN_ENV("PERLIN_BLOCK_DEBUG"))
+                    std::cout << "[net] receive budget reached batches=" << handled
+                              << " afterAuthTick=" << LastAuthTick() << std::endl;
                 break;
+            }
         }
     }
 

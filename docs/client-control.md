@@ -111,3 +111,11 @@ The HTTP/input self-test covers action expiry and repeat presses, server input
 locks, blocked input, command validation and origin checks, returned state,
 trace delivery, and JPEG colour conversion. Live checks also exercise GPU frame
 readback from the hidden Metal renderer and shutdown with a pending capture.
+
+For block-update timing investigations, block packet diagnostics include
+`afterAuthTick`, the last player input tick sent before that packet is decoded.
+This is a client application timestamp, not the packet's server mutation tick or
+socket arrival time. With `PERLIN_BLOCK_DEBUG=1`, the session also logs when its
+per-frame receive time budget is reached. A correction decoded before a block
+update and no budget-limit log are evidence of late world-state information;
+they do not justify changing movement thresholds or suppressing correction counts.

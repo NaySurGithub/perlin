@@ -794,7 +794,8 @@ namespace perlin {
             if (blockLogs < 400 && (PERLIN_ENV("PERLIN_BLOCK_DEBUG") || blockLogs++ < 400))
                 std::cout << "[block] update_block (" << p.position.x << "," << p.position.y << "," << p.position.z << ") layer " << p.layer
                           << " id " << static_cast<int32_t>(p.blockRuntimeId) << " "
-                          << BlockPalette::Instance().Name(BlockPalette::Instance().InternRuntime(static_cast<int32_t>(p.blockRuntimeId))) << std::endl;
+                          << BlockPalette::Instance().Name(BlockPalette::Instance().InternRuntime(static_cast<int32_t>(p.blockRuntimeId)))
+                          << " afterAuthTick=" << LastAuthTick() << std::endl;
             NoteUnknownBlock(static_cast<int32_t>(p.blockRuntimeId));
             if (p.layer == 0)
                 ConfirmPlace(p.position.x, static_cast<int32_t>(p.position.y), p.position.z, static_cast<int32_t>(p.blockRuntimeId));
@@ -827,7 +828,7 @@ namespace perlin {
                 if (!p.blocks.empty())
                     std::cout << "; first (" << p.blocks[0].position.x << "," << static_cast<int32_t>(p.blocks[0].position.y) << ","
                               << p.blocks[0].position.z << ") rid " << p.blocks[0].runtimeId;
-                std::cout << std::endl;
+                std::cout << " afterAuthTick=" << LastAuthTick() << std::endl;
             }
             for (const BlockUpdate& b : p.blocks) {
                 if (!sane(b))
