@@ -7,6 +7,7 @@
 #include "client/player/PerlinRelativeMovement.hpp"
 #include "client/player/PerlinMoveFinalization.hpp"
 #include "client/player/PerlinSupport.hpp"
+#include "client/player/PerlinScaffolding.hpp"
 #include "client/player/PerlinWorldCollision.hpp"
 #include "client/player/PerlinBlockGeometry.hpp"
 #include "client/player/PerlinCollisionCache.hpp"
@@ -46,7 +47,8 @@ namespace perlin::physics {
         bds::CollisionBox CollisionBox(const Box& box);
 
         void Gather(const World& world, const Box& region, std::vector<Box>& out,
-                    std::vector<ShapeMetadata>* metadata = nullptr) {
+                    std::vector<ShapeMetadata>* metadata = nullptr, const Box* actorBox = nullptr,
+                    bool fallThrough = false) {
             out.clear();
             if (metadata)
                 metadata->clear();
@@ -61,8 +63,13 @@ namespace perlin::physics {
             bds::CollectTerrainCells(nativeRegion, world.CollisionHeightLimits(),
                                     [&](int32_t x, int32_t z) { return world.CollisionColumnPresent(x, z); },
                                     [&](int32_t x, int32_t y, int32_t z) {
-                const BlockShape shape = world.Query(x, y, z);
+                BlockShape shape = world.Query(x, y, z);
                 const bds::BlockPosition position{x, y, z};
+                if (shape.scaffoldingStability >= 0 && actorBox &&
+                    bds::ScaffoldingSupports(CollisionBox(*actorBox), position,
+                                             shape.scaffoldingStability, fallThrough)) {
+                    shape.boxes.push_back({0, 0, 0, 1, 1, 1});
+                }
                 const auto offset = shape.randomOffset ? bds::GenerateBlockOffset(*shape.randomOffset, position)
                                                        : bds::Float3{};
                 const auto origin = bds::BlockCollisionOrigin(offset, position);
@@ -112,7 +119,7 @@ namespace perlin::physics {
 
         Motion ResolveMotion(const World& world, const Box& start, const Vec3& velocity, Vec3 storedVelocity, bool wasOnGround,
                              std::vector<Box>& scratch, bds::CollisionVector recoveryLimits, float stepHeight,
-                             bool flyingAbility, bool& oneShotStep, bool sneakEdge = false) {
+                             bool flyingAbility, bool& oneShotStep, bool sneakEdge = false, bool fallThrough = false) {
             Motion result;
             const auto search =
                 bds::SearchMovement(CollisionBox(start),
@@ -125,7 +132,7 @@ namespace perlin::physics {
             bds::CollisionCache cache;
             bds::RefreshCollisionCache(cache, search.region, [&](const bds::CollisionBox& region) {
                 std::vector<ShapeMetadata> incoming;
-                Gather(world, PhysicsBox(region), scratch, &incoming);
+                Gather(world, PhysicsBox(region), scratch, &incoming, &start, fallThrough);
                 const size_t base = metadata.size();
                 metadata.insert(metadata.end(), incoming.begin(), incoming.end());
                 std::vector<bds::CollisionRecord> records;
@@ -590,6 +597,15 @@ namespace perlin::physics {
         }
 
         const bool water = s.inWater, lava = s.inLava;
+        auto gravity = in.gravity;
+        // Keyboard/mouse ScaffoldingActionSystem (0x106176C40, input mode 1)
+        // predicts the fall-through flag and downward impulse before movement.
+        if (in.overDescendableBlock)
+            gravity.descendThroughBlock = in.sneak;
+        if (gravity.descendThroughBlock && in.overDescendableBlock) {
+            s.vy = -0.15f;
+            s.fallDistance = 0;
+        }
         const float friction = grounded ? 0.91f * blockFriction : 0.91f;
         double relSpeed;
         if (water) {
@@ -608,6 +624,13 @@ namespace perlin::physics {
 
         const bool jumpBlockedBySwim = (s.swimAmount > 0.0f && s.swimAmount < 1.0f)
                                     || (in.swimming && !in.headInWater);
+        const bool scaffoldJump = in.jump && !jumpBlockedBySwim && gravity.inScaffolding &&
+                                  !gravity.descendThroughBlock;
+        if (scaffoldJump) {
+            // MobJump callback 0x10607861C returns before ordinary ground jump.
+            s.vy = 0.15f;
+            s.jumpDelay = 10;
+        }
         if (in.jump && (water || lava)) {
             // MobJumpSystem suppresses the liquid impulse during the swim
             // transition and while a swimming actor's head is above water.
@@ -644,9 +667,9 @@ namespace perlin::physics {
         }
 
         const bool climbJump = in.jump && !jumpBlockedBySwim && s.onClimbable;
-        const bool jumpInitiated = in.jump && !jumpBlockedBySwim && !glide && !climbJump && s.onGround && s.jumpDelay == 0 && !water && !lava &&
-            bds::ScaffoldingAllowsJump(in.gravity.inScaffolding, in.gravity.overScaffolding,
-                                      in.gravity.descendThroughBlock);
+        const bool jumpInitiated = in.jump && !scaffoldJump && !jumpBlockedBySwim && !glide && !climbJump && s.onGround && s.jumpDelay == 0 && !water && !lava &&
+            bds::ScaffoldingAllowsJump(gravity.inScaffolding, gravity.overScaffolding,
+                                      gravity.descendThroughBlock);
         if (jumpInitiated) {
             bds::JumpParameters jump;
             jump.bodyMinimumY = static_cast<float>(BoundingBox(s, crouched).y0);
@@ -683,7 +706,8 @@ namespace perlin::physics {
         bool requestSneakFlag = false;
         const bool clipSneak = bds::ShouldClipSneak(in.actorMovementFlags, sneaking, grounded, requestSneakFlag);
         const Motion m = ResolveMotion(world, box, req, {s.vx, s.vy, s.vz}, grounded, scratch, bds::RecoveryLimits(s.recovery),
-                                       attr.maxAutoStep, in.flying, s.canAlwaysAutoStep, clipSneak);
+                                       attr.maxAutoStep, in.flying, s.canAlwaysAutoStep, clipSneak,
+                                       gravity.descendThroughBlock);
         bds::UpdateRecovery(s.recovery, m.penetration >= 1.0e-6f, in.pushTowardsClosestSpace);
         Vec3 v = FinalizeMotion(s, m, m.velocity);
         if (m.stepped)
@@ -716,7 +740,7 @@ namespace perlin::physics {
             else
                 v.y = F(static_cast<float>(v.y) - 0.02f);
         } else if (!glide) {
-            v.y = bds::PostGroundVertical(static_cast<float>(v.y), s.fallDistance, in.gravity,
+            v.y = bds::PostGroundVertical(static_cast<float>(v.y), s.fallDistance, gravity,
                                          attr.levitation, attr.slowFalling, autoClimb);
             v.x = DampHorizontal(v.x, friction);
             v.z = DampHorizontal(v.z, friction);

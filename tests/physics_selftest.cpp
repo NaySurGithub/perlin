@@ -1,4 +1,5 @@
 #include "client/player/PlayerPhysics.hpp"
+#include "client/player/PerlinScaffolding.hpp"
 
 #include <cmath>
 #include <bit>
@@ -41,6 +42,47 @@ static BlockShape Slab(double h) {
 
 int main() {
     Attributes attr;
+
+    // Native scaffolding collision is admitted only from above, and the jump
+    // and keyboard descent actions replace vertical speed before movement.
+    {
+        TestWorld scaffold;
+        scaffold.fn = [](int, int y, int) {
+            if (y < 0) return Full();
+            BlockShape shape;
+            if (y < 4) shape.scaffoldingStability = 0;
+            return shape;
+        };
+        State s;
+        s.x = s.z = 0.5;
+        s.y = 4;
+        s.vy = -0.1;
+        Step(s, Input{}, attr, scaffold);
+        CHECK(s.y == 4 && s.onGround);
+        Input down;
+        down.sneak = true;
+        down.overDescendableBlock = true;
+        down.gravity.overScaffolding = true;
+        s.fallDistance = 20;
+        Step(s, down, attr, scaffold);
+        CHECK(Near(s.y, 3.85, 1e-6));
+        CHECK(Near(s.vy, -0.147, 1e-7) && s.fallDistance == 0);
+        s = State{};
+        s.x = s.z = 0.5;
+        s.onGround = true;
+        Input up;
+        up.jump = true;
+        up.gravity.inScaffolding = true;
+        for (int i = 0; i < 10; ++i) Step(s, up, attr, scaffold);
+        CHECK(Near(s.y, 1.5, 1e-6));
+        CHECK(Near(s.vy, 0.0686, 1e-7) && s.jumpDelay == 9);
+        const bds::CollisionBox body{0.2f, 4, 0.2f, 0.8f, 5.8f, 0.8f};
+        CHECK(bds::ScaffoldingSupports(body, {0, 3, 0}, 0, false));
+        CHECK(!bds::ScaffoldingSupports(body, {0, 3, 0}, 7, false));
+        CHECK(!bds::ScaffoldingSupports(body, {0, 3, 0}, 0, true));
+        CHECK(!bds::ScaffoldingSupports(body, {1, 3, 0}, 0, false));
+        CHECK(!bds::ScaffoldingSupports(body, {0, 4, 0}, 0, false));
+    }
 
     // Lava halves the existing fall-distance component every sensing tick;
     // leaving lava preserves the last value rather than clearing it.

@@ -42,6 +42,9 @@ namespace perlin {
         float movementSpeed = 0;
         bool serverSprinting = false;
         bool serverSwimming = false;
+        std::array<std::string, 2> actorFlagWords;
+        bool inScaffolding = false, overScaffolding = false, descendThroughBlock = false;
+        float fallDistance = 0;
         std::array<float, 2> serverSize{0.6f, 1.8f};
         std::string movementAttributeJson;
     };

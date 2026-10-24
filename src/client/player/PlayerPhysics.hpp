@@ -52,6 +52,7 @@ namespace perlin::physics {
         float speedFactor = 1.0f;
         bool isAir = true;
         int8_t bubbleColumn = 0; // +1 upward, -1 downward
+        int8_t scaffoldingStability = -1; // -1: other block; 7: unstable scaffolding
         bool Empty() const { return boxes.empty(); }
     };
 
@@ -100,6 +101,7 @@ namespace perlin::physics {
         float pitch = 0;
         bool crawl = false;
         bool forceCrouch = false;
+        bool overDescendableBlock = false;
         bool pushTowardsClosestSpace = false;
         uint8_t actorMovementFlags = 0;
         bds::GravityFlags gravity;

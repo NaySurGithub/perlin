@@ -65,6 +65,7 @@ namespace perlin {
         out.cursorCaptured = input.Captured(); out.textInput = input.TextMode();
         out.inWater = s.inWater; out.inLava = s.inLava; out.onClimbable = s.onClimbable;
         out.swimAmount = s.swimAmount;
+        out.fallDistance = s.fallDistance;
         out.position = {s.x, s.y, s.z}; out.velocity = {s.vx, s.vy, s.vz};
         out.onGround = s.onGround;
         out.sprinting = player.Sprinting(); out.sneaking = player.Sneaking();
@@ -84,6 +85,11 @@ namespace perlin {
             out.movementSpeed = session->MovementSpeedAttribute();
             out.serverSprinting = session->ServerSprinting();
             out.serverSwimming = session->ServerSwimming();
+            const auto flags = session->OwnActorFlags();
+            out.actorFlagWords = {std::to_string(flags[0]), std::to_string(flags[1])};
+            out.inScaffolding = (flags[1] & proto::FlagsMetadataFlags2::InScaffolding) != 0;
+            out.overScaffolding = (flags[1] & proto::FlagsMetadataFlags2::OverScaffolding) != 0;
+            out.descendThroughBlock = (flags[1] & proto::FlagsMetadataFlags2::FallThroughScaffolding) != 0;
             out.serverSize = session->ActorSize();
             const auto attribute = session->MovementAttribute();
             out.movementAttributeJson = attribute ? json::Write(*attribute) : std::string();
