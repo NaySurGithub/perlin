@@ -11,6 +11,8 @@ namespace perlin {
         std::array<double, 3> position, velocity;
         float forward, strafe;
         bool jump, sneak, sprint, onGround, inWater, horizontalCollision, verticalCollision;
+        bool swimming, headInWater;
+        float swimAmount;
     };
     void Perlin::PollControl() {
         if (!control) return;
@@ -62,6 +64,7 @@ namespace perlin {
         out.tick = player.TickCount();
         out.cursorCaptured = input.Captured(); out.textInput = input.TextMode();
         out.inWater = s.inWater; out.inLava = s.inLava; out.onClimbable = s.onClimbable;
+        out.swimAmount = s.swimAmount;
         out.position = {s.x, s.y, s.z}; out.velocity = {s.vx, s.vy, s.vz};
         out.onGround = s.onGround;
         out.sprinting = player.Sprinting(); out.sneaking = player.Sneaking();
@@ -80,6 +83,8 @@ namespace perlin {
             out.dead = session->DeathPending() || (vitals.known && vitals.health <= 0);
             out.movementSpeed = session->MovementSpeedAttribute();
             out.serverSprinting = session->ServerSprinting();
+            out.serverSwimming = session->ServerSwimming();
+            out.serverSize = session->ActorSize();
             const auto attribute = session->MovementAttribute();
             out.movementAttributeJson = attribute ? json::Write(*attribute) : std::string();
             const auto result = session->LastCommandResult();
@@ -109,6 +114,6 @@ namespace perlin {
         if (!control) return;
         control->Trace(json::Write(ControlTickRecord{tick, {s.x, s.y, s.z}, {s.vx, s.vy, s.vz},
             in.forward, in.strafe, in.jump, in.sneak, in.sprint, s.onGround, s.inWater,
-            s.horizontalCollision, s.verticalCollision}));
+            s.horizontalCollision, s.verticalCollision, in.swimming, in.headInWater, s.swimAmount}));
     }
 }

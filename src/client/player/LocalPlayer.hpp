@@ -27,7 +27,6 @@ namespace perlin {
         bool Sneaking() const { return sneaking; }
         bool Sprinting() const { return sprinting; }
         void SetSwimming(bool value) { swimming = value; }
-        void SetHeadUnderwater(bool value) { headUnderwater = value; }
         bool InWater() const { return state.inWater; }
         bool Swimming() const { return swimming; }
         void SetToggleModes(bool sprint, bool sneak) { sprintToggle = sprint; sneakToggle = sneak; }
@@ -37,7 +36,11 @@ namespace perlin {
         bool Gliding() const { return gliding; }
         bool Crawling() const { return crawling; }
         void SetElytra(bool value) { hasElytra = value; }
-        void SetItemSlow(bool slow) { itemSlow = slow; }
+        void SetItemSlow(bool slow, uint32_t duration = 0) {
+            if (slow && !itemSlow) itemSlowUntil = duration ? tickCounter + duration : 0;
+            if (!slow || !duration) itemSlowUntil = 0;
+            itemSlow = slow;
+        }
         void SetRidePosition(bool riding, double x, double y, double z) { rideLock = riding; rideX = x; rideY = y; rideZ = z; }
 
         void ModMotion(bool add, double x, double y, double z, bool ax, bool ay, bool az);
@@ -92,7 +95,6 @@ namespace perlin {
         bool sprinting = false;
         bool tooHungryToSprint = false;
         bool swimming = false;
-        bool headUnderwater = false;
         bool sentSwimming = false;
         bool sprintToggle = false, sneakToggle = false, sprintLatch = false, sneakLatch = false;
         bool gliding = false;
@@ -114,6 +116,7 @@ namespace perlin {
         std::chrono::steady_clock::time_point glideChangedAt{};
         bool rideLock = false;
         bool itemSlow = false;
+        uint64_t itemSlowUntil = 0;
         double rideX = 0, rideY = 0, rideZ = 0;
         float eyeOffset = static_cast<float>(physics::kStandEye);
         std::chrono::steady_clock::time_point lastJumpPress{};

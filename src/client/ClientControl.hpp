@@ -26,6 +26,7 @@ namespace perlin {
         bool inWater = false, inLava = false, onClimbable = false;
         bool vitalsKnown = false, dead = false;
         float health = 20, hunger = 20;
+        float swimAmount = 0;
         int air = 300;
         std::array<double, 3> position{}, velocity{};
         float yaw = 0, pitch = 0;
@@ -40,6 +41,8 @@ namespace perlin {
         std::vector<std::array<double, 6>> probeCollision;
         float movementSpeed = 0;
         bool serverSprinting = false;
+        bool serverSwimming = false;
+        std::array<float, 2> serverSize{0.6f, 1.8f};
         std::string movementAttributeJson;
     };
 

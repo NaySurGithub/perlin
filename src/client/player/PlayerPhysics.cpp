@@ -306,8 +306,8 @@ namespace perlin::physics {
             else out[0] = out[1] = out[2] = 0;
         }
 
-        void ApplyCurrent(State& s, const World& w, bool sneaking) {
-            const auto bounds = bds::MakeLiquidQueryBounds(CollisionBox(BoundingBox(s, sneaking)));
+        void ApplyCurrent(State& s, const World& w, const Box& sensingBox) {
+            const auto bounds = bds::MakeLiquidQueryBounds(CollisionBox(sensingBox));
             for (int mat = 2; mat >= 1; mat--) {
                 const auto& box = mat == 1 ? bounds.water : bounds.lava;
                 const float lx = box[0], ly = box[1], lz = box[2], hx = box[3], hy = box[4], hz = box[5];
@@ -415,7 +415,7 @@ namespace perlin::physics {
         });
     }
 
-    MoveVector ProcessMoveInput(float forward, float strafe, bool sneaking, bool inWater) {
+    MoveVector ProcessMoveInput(float forward, float strafe, bool sneaking, bool inWater, float itemUseModifier) {
         const float lengthSq = forward * forward + strafe * strafe;
         if (lengthSq > 1.0f) {
             const float length = std::sqrt(lengthSq);
@@ -426,7 +426,10 @@ namespace perlin::physics {
             forward *= 0.3f;
             strafe *= 0.3f;
         }
-        return {forward, strafe};
+        // ItemUseSlowdownSystem::applyItemUseSlowdown (26.52 native
+        // 0x10605E790) squares the modifier after resolving directional input.
+        const float useScale = itemUseModifier * itemUseModifier;
+        return {forward * useScale, strafe * useScale};
     }
 
     namespace {
@@ -438,7 +441,7 @@ namespace perlin::physics {
     Box BoundingBox(const State& s, bool sneaking) {
         const float half = static_cast<float>(kWidth) * 0.5f;
         const float x = static_cast<float>(s.x), y = static_cast<float>(s.y), z = static_cast<float>(s.z);
-        const float h = static_cast<float>(s.crawling ? kCrawlHeight : sneaking ? kSneakHeight : kStandHeight);
+        const float h = static_cast<float>((s.crawling || s.swimming) ? kCrawlHeight : sneaking ? kSneakHeight : kStandHeight);
         if (s.hasBox && BoxCentre(s.box.x0, s.box.x1) == F(s.x) && BoxCentre(s.box.z0, s.box.z1) == F(s.z) &&
             static_cast<float>(s.box.y0) == y) {
             Box b = s.box;
@@ -451,17 +454,37 @@ namespace perlin::physics {
 
     bool PoseFits(const State& s, const World& world, double height) {
         thread_local std::vector<Box> scratch;
-        const double half = kWidth * 0.5;
-        const Box box{s.x - half + 0.0001, s.y + 0.0001, s.z - half + 0.0001, s.x + half - 0.0001, s.y + height - 0.0001, s.z + half - 0.0001};
+        // PlayerBoundingBoxStateUpdateSystem probes the current shape with a
+        // replacement height and a float 0.01 contraction on every face.
+        auto bounds = CollisionBox(BoundingBox(s, false));
+        bounds[4] = bounds[1] + static_cast<float>(height);
+        for (int axis = 0; axis < 3; ++axis) {
+            bounds[axis] += 0.01f;
+            bounds[axis + 3] -= 0.01f;
+            if (bounds[axis] > bounds[axis + 3])
+                bounds[axis] = bounds[axis + 3] = (bounds[axis] + bounds[axis + 3]) * 0.5f;
+        }
+        const Box box{bounds[0], bounds[1], bounds[2], bounds[3], bounds[4], bounds[5]};
         return NoCollision(world, box, scratch);
     }
 
     static void StepMovement(State& s, const Input& in, const Attributes& attr, const World& world) {
         thread_local std::vector<Box> scratch;
         const float swimSpeedMultiplier = bds::SwimSpeedMultiplier(in.swimming, s.movementEffects);
+        // Fluid sensing consumes the preceding collision pose. Expanding from
+        // the swimming shape changes its contracted lower bound, so sensing
+        // after the expansion drops water one tick early at the surface.
+        const Box fluidSensingBox = BoundingBox(s, s.collisionHeight == static_cast<float>(kSneakHeight));
         s.crawling = in.crawl && !in.flying;
+        s.swimming = in.swimming && !in.flying;
         const bool sneaking = in.sneak && !in.flying;
         const bool crouched = (in.sneak || in.forceCrouch) && !in.flying;
+        const float collisionHeight = static_cast<float>((s.crawling || s.swimming) ? kCrawlHeight
+                                                        : crouched ? kSneakHeight : kStandHeight);
+        if (s.collisionHeight != collisionHeight) {
+            s.collisionHeight = collisionHeight;
+            s.hasBox = false;
+        }
 
         s.x = F(s.x); s.y = F(s.y); s.z = F(s.z);
         s.vx = F(s.vx); s.vy = F(s.vy); s.vz = F(s.vz);
@@ -469,14 +492,14 @@ namespace perlin::physics {
             s.vx = s.vy = s.vz = 0;
 
         if (!in.flying)
-            ApplyCurrent(s, world, crouched);
+            ApplyCurrent(s, world, fluidSensingBox);
 
         const bool prevHorizontal = s.horizontalCollision;
         const bool grounded = s.onGround;
         if (!in.jump)
             s.jumpDelay = 0;
 
-        const Environment env = Scan(world, BoundingBox(s, crouched));
+        const Environment env = Scan(world, fluidSensingBox);
         // Scan remains the world adapter. Feed its selected material through
         // the native state callbacks, including water entry and fall reset.
         // This player path has no Passenger/FallingBlock component.
@@ -577,10 +600,22 @@ namespace perlin::physics {
             relSpeed = in.sprint ? 0.026 : 0.02;
         }
 
-        if (in.jump && (water || lava))
-            s.vy = F(static_cast<float>(s.vy) + 0.04f);
+        const bool jumpBlockedBySwim = (s.swimAmount > 0.0f && s.swimAmount < 1.0f)
+                                    || (in.swimming && !in.headInWater);
+        if (in.jump && (water || lava)) {
+            // MobJumpSystem suppresses the liquid impulse during the swim
+            // transition and while a swimming actor's head is above water.
+            if (jumpBlockedBySwim) {
+                if (water) s.vy = 0;
+            } else {
+                s.vy = F(static_cast<float>(s.vy) + 0.04f);
+            }
+        }
 
-        if (water && in.swimming) {
+        // Native SwimControlSystem's view excludes MobIsJumpingFlagComponent.
+        // A liquid jump keeps its upward impulse instead of blending it toward
+        // the pitch direction in this stage.
+        if (water && in.swimming && !in.jump) {
             const float look = in.lookY;
             const float gain = look < -0.2f ? 0.085f : 0.06f;
             if (look <= 0.0f || in.jump || in.headInWater)
@@ -600,8 +635,8 @@ namespace perlin::physics {
             MoveRelative(s, strafe, forward, relSpeed);
         }
 
-        const bool climbJump = in.jump && s.onClimbable;
-        const bool jumpInitiated = in.jump && !glide && !climbJump && s.onGround && s.jumpDelay == 0 && !water && !lava &&
+        const bool climbJump = in.jump && !jumpBlockedBySwim && s.onClimbable;
+        const bool jumpInitiated = in.jump && !jumpBlockedBySwim && !glide && !climbJump && s.onGround && s.jumpDelay == 0 && !water && !lava &&
             bds::ScaffoldingAllowsJump(in.gravity.inScaffolding, in.gravity.overScaffolding,
                                       in.gravity.descendThroughBlock);
         if (jumpInitiated) {
@@ -762,6 +797,8 @@ namespace perlin::physics {
         // MovementEffectsTick is registered in the post-player-movement phase,
         // 0x1402D5190. Flying and no-clip paths must also advance effect state.
         bds::TickMovementEffects(s.movementEffects);
+        s.swimAmount = in.swimming ? std::fmin(s.swimAmount + 0.1f, 1.0f)
+                                  : std::fmax(s.swimAmount - 0.1f, 0.0f);
         s.previousRotation = {in.pitch, s.yaw};
     }
 }

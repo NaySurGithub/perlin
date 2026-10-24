@@ -224,6 +224,14 @@ namespace perlin {
             std::lock_guard lock(attrMutex);
             return (ownFlagWords[0] & proto::FlagsMetadataFlags1::Sprinting) != 0;
         }
+        bool ServerSwimming() const {
+            std::lock_guard lock(attrMutex);
+            return (ownFlagWords[0] & proto::FlagsMetadataFlags1::Swimming) != 0;
+        }
+        std::array<float, 2> ActorSize() const {
+            std::lock_guard lock(attrMutex);
+            return {ownWidth * ownScale, ownHeight * ownScale};
+        }
         float UnderwaterMovementSpeedAttribute() const {
             std::lock_guard lock(attrMutex);
             const auto it = ownAttributes.find("minecraft:underwater_movement");

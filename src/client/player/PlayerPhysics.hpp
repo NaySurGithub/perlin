@@ -119,6 +119,9 @@ namespace perlin::physics {
         std::optional<uint32_t> waterSplashRequest;
         bool onClimbable = false;
         bool crawling = false;
+        bool swimming = false;
+        float collisionHeight = static_cast<float>(kStandHeight);
+        float swimAmount = 0;
         int jumpDelay = 0;
         float stuckX = 0, stuckY = 0, stuckZ = 0;
         float fallDistance = 0;
@@ -133,7 +136,7 @@ namespace perlin::physics {
         Box box;
         bool hasBox = false;
 
-        double Height(bool sneaking) const { return sneaking ? kSneakHeight : kStandHeight; }
+        double Height(bool sneaking) const { return (crawling || swimming) ? kCrawlHeight : sneaking ? kSneakHeight : kStandHeight; }
     };
 
     Box BoundingBox(const State& state, bool sneaking);
@@ -143,7 +146,8 @@ namespace perlin::physics {
         float forward = 0, strafe = 0;
     };
 
-    MoveVector ProcessMoveInput(float forward, float strafe, bool sneaking, bool inWater);
+    MoveVector ProcessMoveInput(float forward, float strafe, bool sneaking, bool inWater,
+                                float itemUseModifier = 1.0f);
 
     void Step(State& state, const Input& input, const Attributes& attributes, const World& world);
 }

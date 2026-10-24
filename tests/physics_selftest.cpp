@@ -42,6 +42,45 @@ static BlockShape Slab(double h) {
 int main() {
     Attributes attr;
 
+    // Expanding the swim pose at a fluid surface must not change the fluid
+    // query already produced for that tick. The next tick uses the new pose.
+    {
+        TestWorld surface;
+        surface.fn = [](int, int y, int) {
+            BlockShape b;
+            if (y == 0) { b.fluid = 1; b.fluidLevel = 1; }
+            return b;
+        };
+        State s;
+        s.y = 0.64;
+        s.swimming = true;
+        s.collisionHeight = static_cast<float>(kCrawlHeight);
+        Step(s, Input{}, attr, surface);
+        CHECK(s.inWater && !s.swimming);
+        Step(s, Input{}, attr, surface);
+        CHECK(!s.inWater);
+    }
+
+    // Native item-use strength is squared after direction normalization.
+    // Check actual travel speed as well as diagonal and sneak composition.
+    {
+        const auto axial = ProcessMoveInput(1, 0, false, false, 0.35f);
+        const auto diagonal = ProcessMoveInput(1, 1, false, false, 0.35f);
+        CHECK(Near(axial.forward, 0.1225, 1e-7));
+        CHECK(Near(std::hypot(diagonal.forward, diagonal.strafe), axial.forward, 1e-7));
+        CHECK(Near(ProcessMoveInput(1, 0, true, false, 0.35f).forward, 0.03675, 1e-7));
+        CHECK(Near(ProcessMoveInput(1, 0, true, true, 0.35f).forward, 0.1225, 1e-7));
+        TestWorld ground;
+        ground.fn = [](int, int y, int) { return y < 0 ? Full() : BlockShape{}; };
+        State s;
+        Input in;
+        in.forward = axial.forward;
+        for (int i = 0; i < 60; ++i) Step(s, in, attr, ground);
+        const double z = s.z;
+        for (int i = 0; i < 20; ++i) Step(s, in, attr, ground);
+        CHECK(Near(s.z - z, 4.317 * 0.1225, 0.003));
+    }
+
     // Native fluid-state callback integration: entry creates/overwrites the
     // pending splash payload, continued immersion preserves it, exit clears
     // the water flag, and each water update resets ordinary player fall distance.
@@ -774,6 +813,76 @@ int main() {
         swimming.swimming = true;
         Step(state, swimming, attr, water);
         CHECK(state.vy == 0);
+
+        // The native swim-control view excludes jumping actors. Pitch must not
+        // steer a liquid jump's vertical impulse, including across repeated ticks.
+        State lookingUp, lookingDown;
+        Input jumpUp = swimming, jumpDown = swimming;
+        jumpUp.jump = jumpDown.jump = true;
+        jumpUp.headInWater = jumpDown.headInWater = true;
+        jumpUp.lookY = 0.8f;
+        jumpDown.lookY = -0.8f;
+        for (int tick = 0; tick < 16; ++tick) {
+            Step(lookingUp, jumpUp, attr, water);
+            Step(lookingDown, jumpDown, attr, water);
+            CHECK(lookingUp.y == lookingDown.y && lookingUp.vy == lookingDown.vy);
+        }
+
+        // Live BDS swim-entry trace: the first liquid jump moves 0.035,
+        // transition ticks hold that height, and tick 14 reaches ~193.363.
+        State enteringSwim;
+        enteringSwim.y = 193;
+        enteringSwim.vy = -0.005f;
+        Input entry = jumpUp;
+        entry.lookY = 0;
+        for (int tick = 1; tick <= 14; ++tick) {
+            Step(enteringSwim, entry, attr, water);
+            if (tick == 2 || tick == 8) {
+                CHECK(Near(enteringSwim.y, 193.035, 0.0001));
+                CHECK(enteringSwim.vy == 0);
+            }
+        }
+        CHECK(Near(enteringSwim.y, 193.363, 0.001));
+        CHECK(Near(enteringSwim.vy, 0.094464, 0.0000001));
+
+        TestWorld surface;
+        surface.fn = [](int, int y, int) {
+            BlockShape shape;
+            if (y <= 0) { shape.fluid = 1; shape.fluidLevel = 1; }
+            return shape;
+        };
+        State headAboveWater;
+        headAboveWater.y = 0.65;
+        headAboveWater.vy = 0.13f;
+        headAboveWater.swimAmount = 1;
+        headAboveWater.swimming = true;
+        headAboveWater.collisionHeight = static_cast<float>(kCrawlHeight);
+        Input surfaceJump = entry;
+        surfaceJump.headInWater = false;
+        Step(headAboveWater, surfaceJump, attr, surface);
+        CHECK(headAboveWater.inWater && headAboveWater.vy == 0);
+        CHECK(Near(headAboveWater.y, 0.65, 0.000001));
+
+        // A swimming player can pass through a one-block-high submerged tunnel.
+        // The standing player must collide with the same ceiling edge.
+        TestWorld tunnel;
+        tunnel.fn = [](int, int y, int z) {
+            if (y < 0 || (z >= 2 && y == 1)) return Full();
+            BlockShape shape;
+            shape.fluid = 1; shape.fluidLevel = 1;
+            return shape;
+        };
+        State lowPose, standing;
+        lowPose.z = standing.z = 0.5;
+        Input lowInput, standInput;
+        lowInput.forward = standInput.forward = 1;
+        lowInput.swimming = true;
+        for (int tick = 0; tick < 40; ++tick) {
+            Step(lowPose, lowInput, attr, tunnel);
+            Step(standing, standInput, attr, tunnel);
+        }
+        CHECK(lowPose.z > 2.5);
+        CHECK(standing.z < 1.71 && standing.horizontalCollision);
 
         // Timed dolphin boosts enter through recorded input and persist in the
         // state used for prediction replay. A one-tick boost affects this move

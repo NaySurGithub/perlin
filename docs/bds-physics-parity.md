@@ -75,6 +75,67 @@ An earlier water run ended in drowning and is not used as a healthy swimming
 comparison. The control endpoint now exposes health, air and death state so
 scenario runners can detect that interruption explicitly.
 
+### Eating and swimming transition follow-up
+
+The native 26.52 ItemUseSlowdown producer `0x10605c660` selects a default
+modifier of `0.35`, with an optional `minecraft:use_modifiers` override.
+Apply callback `0x10605e790` squares that modifier before multiplying the
+resolved movement lanes and clears the gameplay sprint timer. Perlin used
+`0.2` before normalizing input, making diagonal eating faster than axial eating.
+The local input producer now normalizes first and applies `0.35 * 0.35`.
+Food start/release transactions precede movement. Slowdown lifetime now follows
+the player's simulation ticks independently of the hand animation: 32 ticks
+for ordinary food, 16 for dried kelp and 40 for honey bottles. The animation
+clock previously made ordinary-food completion one tick early in a hungry
+apple test even after the numeric strength was corrected.
+
+The initial golden-apple tests produced five movement corrections each while
+walking, moving diagonally and holding sprint. The corrected build produced
+zero in all six cases: baseline walking, eating while walking, diagonal eating,
+holding sprint while eating, sneak eating, and a 48-tick forward hold spanning
+consumption and return to ordinary walking. Additional hungry-apple, honey and
+dried-kelp completion cases each produced zero corrections with the simulation
+timer. The hungry-apple case restored hunger from 16 to 20 and dried kelp from
+5 to 6, confirming actual server consumption. Health remained 20. Custom item
+modifiers and the full set of item-use and inventory transitions remain unverified.
+
+A full-hunger apple check exposed another request-lifetime bug: the client
+rejected eating locally but still sent an in-air use transaction, which made
+the server apply slowdown. That transaction is now suppressed for ineligible
+food use. The same 40-tick hold then produced zero corrections and ordinary
+walking distance (approximately 8.634 blocks).
+
+Swimming now changes the actual collision height to 0.6 and invalidates its
+cached shape, uses a standing-clearance probe contracted by float 0.01, and
+keeps its low pose when standing would collide. Physics head sensing uses the
+simulation pose instead of the interpolated rendering camera. Swim-control's
+native view excludes jumping actors. MobJump suppresses impulses while swim
+amount is strictly between zero and one or a swimmer's head is above water;
+the swim amount advances by 0.1 in the post-movement stage. The supporting
+native callbacks are `0x10610532c`, `0x106785410`, `0x106785794`,
+`0x10607861c` and traversal `0x10671acac`.
+
+Sprint intent `0x10678c8e4` retains existing sprint while the preceding swimming
+flag and water membership are present. Applying that ordering removed the
+swim-release correction. On a roofed pool that prevents surface freezing,
+ordinary water jump and swimming release each have zero movement corrections;
+swimming plus jump initially retained one surface-exit correction. Fluid
+sensing now consumes the preceding collision pose, before the swimming shape
+expands to standing. This removes the premature water exit caused by the
+standing shape's higher contracted lower bound. All three protected-pool cases
+then produced zero movement corrections, with health 20 and air 300. A regression
+checks that the expansion changes the fluid query on the following tick.
+The older unroofed pool developed ice and is
+not interchangeable with this fixture. Full native system scheduling, fluid
+flow, custom item-use lifetimes and remaining interactions still need coverage.
+
+All 17 flat-ground/effect cases were rerun after the eating and swim-intent
+changes with zero movement corrections. Eight corrections occurred between
+cases during teleport setup and remain in the raw counter. All 62 CTest tests
+pass, including input-strength, diagonal, sneak composition, actual eating
+travel distance, swim-entry, surface and low-tunnel regressions. No correction
+thresholds, expected legacy distances or tolerances were relaxed.
+
 The terrain handler also accepts first block updates in an unallocated section
 of an existing loaded chunk, allowing Level to allocate the section. Previously
 the section-presence guard silently discarded those updates, leaving holes in

@@ -173,15 +173,16 @@ namespace perlin {
                            const physics::World& world) {
         previous = state;
         const physics::State before = state;
+        const bool itemSlow = this->itemSlow && input.IsDown(Action::Use)
+                           && (!itemSlowUntil || tickCounter < itemSlowUntil);
 
-        const float useScale = itemSlow ? 0.2f : 1.0f;
         // While mounted our own body stays on the seat, but the keys still have to reach the server: it steers the
         // saddled horse/pig/strider/boat from the rider's move input and look direction.
         const bool asleep = session.Sleeping();
         const float forwardKeys = asleep ? 0.0f : input.Axis(Action::Forward, Action::Back);
         const float strafeKeys = asleep ? 0.0f : input.Axis(Action::Right, Action::Left);
-        const float forward = forwardKeys * useScale;
-        const float strafe = strafeKeys * useScale;
+        const float forward = forwardKeys;
+        const float strafe = strafeKeys;
         const bool jump = !asleep && input.IsDown(Action::Jump);
         const bool sneakHeldKey = input.IsDown(Action::Sneak);
         const bool sneakKey = sneakToggle ? sneakLatch : sneakHeldKey;
@@ -193,12 +194,28 @@ namespace perlin {
         const bool wasSprinting = sprinting;
         const BedrockSession::Vitals vitals = session.GetVitals();
         tooHungryToSprint = vitals.known && vitals.hunger <= 6.0f;
-        if (forward <= 0.0f || sneakKey || itemSlow || state.horizontalCollision || tooHungryToSprint)
+        const bool stopSprintIntent = forward <= 0.0f || sneakKey || itemSlow || state.horizontalCollision || tooHungryToSprint;
+        // SprintTrigger consumes the previous swimming flag before SwimTrigger
+        // changes the pose. A swimmer in water retains sprint for this tick.
+        if (stopSprintIntent && !(swimming && state.inWater))
             sprinting = false;
-        else if (sprintKey)
+        else if (!stopSprintIntent && sprintKey)
             sprinting = true;
 
         const bool wasSneaking = sneaking;
+        const auto headInWaterAt = [&](float eyeHeight) {
+            const int x = static_cast<int>(std::floor(state.x)), z = static_cast<int>(std::floor(state.z));
+            const float eyeY = static_cast<float>(state.y) + eyeHeight;
+            const int y = static_cast<int>(std::floor(eyeY));
+            const auto cell = world.Query(x, y, z);
+            if (cell.fluid != 1) return false;
+            const float top = world.Query(x, y + 1, z).fluid == 1 ? 1.0f : cell.fluidLevel;
+            return eyeY < static_cast<float>(y) + top;
+        };
+        // Physics head sensing uses the current simulation pose, independently
+        // of the smoothed camera and render-frame interpolation.
+        const bool headInWaterBeforePose = headInWaterAt(static_cast<float>(
+            (swimming || crawling || gliding) ? physics::kCrawlEye : sneaking ? physics::kSneakEye : physics::kStandEye));
         bool forcedSneak = false;
         bool wantCrawl = false;
         if (!flying && !rideLock && !gliding && !swimming) {
@@ -223,7 +240,11 @@ namespace perlin {
         for (const auto& effect : session.GetEffects())
             if (effect.id == 24)
                 levitating = true;
-        swimming = sprinting && !flying && (swimming ? state.inWater : headUnderwater);
+        const bool wantsSwimming = sprinting && !stopSprintIntent && !flying && (swimming ? state.inWater : headInWaterBeforePose);
+        // SwimTriggerSystem only requests a stop when the standing-shape probe
+        // succeeds. Keep the low pose under a ceiling even after releasing input.
+        const bool canStopSwimming = !swimming || physics::PoseFits(state, world, physics::kStandHeight);
+        swimming = !flying && (wantsSwimming || (swimming && !canStopSwimming));
         if (gliding && (!hasElytra || state.onGround || state.inWater || flying || rideLock))
             gliding = false;
         else if (!gliding && hasElytra && jump && !jumpHeld && !state.onGround && !state.inWater && !state.inLava &&
@@ -258,9 +279,11 @@ namespace perlin {
         in.forceCrouch = forcedSneak;
         in.pitch = BedrockPitch(camera.pitch);
         in.swimming = swimming && !gliding;
-        in.headInWater = headUnderwater;
+        in.headInWater = headInWaterAt(static_cast<float>((swimming || crawling || gliding) ? physics::kCrawlEye
+                                                         : sneaking ? physics::kSneakEye : physics::kStandEye));
         in.lookY = std::sin(glm::radians(camera.pitch));
-        const physics::MoveVector move = physics::ProcessMoveInput(forward, strafe, sneaking, state.inWater);
+        const physics::MoveVector move = physics::ProcessMoveInput(forward, strafe, sneaking, state.inWater,
+                                                                  itemSlow ? 0.35f : 1.0f);
         in.forward = move.forward;
         in.strafe = move.strafe;
         in.jump = jump;
