@@ -18,6 +18,14 @@ namespace perlin {
         bool down = false;
     };
 
+    struct ControlActor {
+        // Strings preserve all 64 ID bits in browser/JavaScript consumers.
+        std::string runtimeId, uniqueId, vehicleUid, type;
+        std::array<double, 3> position{}, velocity{}, lastServerPosition{};
+        bool onGround = false, haveServerPosition = false;
+        uint32_t moveSerial = 0, hurtSerial = 0;
+    };
+
     struct ControlSnapshot {
         uint64_t tick = 0, authTick = 0, corrections = 0, applied = 0;
         bool connected = false, initialized = false, onGround = false;
@@ -52,6 +60,7 @@ namespace perlin {
         float fallDistance = 0;
         std::array<float, 2> serverSize{0.6f, 1.8f};
         std::string movementAttributeJson;
+        std::vector<ControlActor> actors;
     };
 
     // Opt-in developer interface. HTTP threads queue requests; only the game

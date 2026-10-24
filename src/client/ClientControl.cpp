@@ -30,6 +30,10 @@ namespace perlin {
     bool ClientControl::Start(int port) {
         if (port < 1024 || port > 65535 || impl->thread.joinable()) return false;
         auto& p = *impl;
+        // This opt-in localhost control server favors response time over socket
+        // reuse. Idle persistent requests can take hundreds of milliseconds on
+        // macOS; reconnecting keeps state/input polling responsive.
+        p.server.set_keep_alive_max_count(1);
         p.server.set_payload_max_length(65536);
         p.server.set_pre_routing_handler([port](const httplib::Request& req, httplib::Response& res) {
             const auto host = req.get_header_value("Host");

@@ -74,11 +74,22 @@ int main() {
     CHECK(result && result->status == 400);
     ControlSnapshot snapshot;
     snapshot.tick = 41; snapshot.corrections = 3; snapshot.position = {1, 2, 3};
+    ControlActor actor;
+    actor.runtimeId = "9007199254740993";
+    actor.uniqueId = "-9223372036854775807";
+    actor.vehicleUid = "9007199254740995";
+    actor.type = "minecraft:boat";
+    actor.position = {4, 5, 6};
+    snapshot.actors.push_back(actor);
     server.Publish(snapshot);
     result = client.Get("/state");
     CHECK(result && result->status == 200);
     auto state = result ? json::Read<ControlSnapshot>(result->body) : std::nullopt;
     CHECK(state && state->tick == 41 && state->corrections == 3 && state->position[2] == 3);
+    CHECK(state && state->actors.size() == 1 && state->actors[0].runtimeId == actor.runtimeId &&
+          state->actors[0].uniqueId == actor.uniqueId && state->actors[0].vehicleUid == actor.vehicleUid &&
+          state->actors[0].position[2] == 6);
+    CHECK(result && result->body.find("\"9007199254740993\"") != std::string::npos);
     const uint8_t bgra[16] = {0,0,255,255, 0,0,255,255, 0,0,255,255, 0,0,255,255};
     server.Frame(2, 2, 8, bgra, false);
     result = client.Get("/frame");

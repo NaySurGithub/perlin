@@ -2019,3 +2019,108 @@ already fallen while the server still reports the target Y and grounded state.
 Thus the locality check fixes premature terrain admission but does not finish
 dimension movement scheduling. Both runs end connected, initialized, alive
 and grounded at Nether Y=128 and Overworld Y=225. All 62 CTests pass (3.15s).
+
+### Authoritative grounded corrections and actor observations
+
+Replay previously ignored corrections whose squared position and velocity
+errors were each at most `1e-5`, and never compared the received grounded flag.
+It now applies every position, velocity or grounded difference. The unmatched
+history fallback also adopts the correction's grounded flag. A grounded-only
+correction changes subsequent jump eligibility even if the numeric vectors
+match; applying the packet is distinct from the visual smoothing policy.
+Raw correction counts and server thresholds remain unchanged. This does not
+supply missing jump-delay, world, pose or mode history producers.
+
+The control snapshot now includes tracked actors' exact string-encoded runtime,
+unique and vehicle IDs, position, motion, last server position, grounded state,
+and movement/hurt serials. These are received/tracked observations, not a new
+native actor simulation. The HTTP self-test round-trips IDs beyond JavaScript's
+safe-integer range and a mount link without losing precision.
+
+An initial 50-tick empty-lane/walk-into-cow comparison reports **0/0** corrections.
+Observed actor samples confirm proximity of approximately 0.410 blocks between
+centers and cow displacement from X=355.5 to approximately X=357.115. Both
+player routes end at X=361.292694 on the supported Y=225 platform, alive and
+connected. The cow received Slowness 256 and was command-verified at the fixture
+before contact; the tagged test cow was removed afterward. This verifies one
+player-to-cow contact route, not pushing the player, crowd behavior, knockback,
+vehicles or actor parity generally.
+
+Two more dimension round trips after the correction change still produce
+**0/0** and **1/0**. The repeat's initial falling mismatch remains; applying
+smaller/ground-only corrections is not represented as a fix for that scheduling
+error. All 62 CTests pass after the actor schema and exact-ID regression (3.20s).
+
+Further native-client lifetime anchors: `PlayerDimensionTransferManager`
+processing `0x10b3a63c8` iterates request components through `0x106705b68`.
+Callback `0x10b3a66e4` advances payload states 0 to 1 and optionally 2 through
+the transferer's virtual operations; successful completion causes the iterator
+to remove the request component. The client's `_tickReadyToContinueClient`
+`0x106738a28` writes the request's leading ready byte, whereas the server view
+excludes Passenger, Vehicle and DimensionTransition components. These are
+separate predicates and phases, not one column-ready boolean. LocalPlayer
+begin/end virtuals `0x104d04a98`/`0x104d04afc` call base
+`0x10abf6c4c`/`0x10abf6b68`; the latter removes BlockSourceComponent from its
+registry. Complete integration with movement/interpolation scheduling remains
+unported.
+
+### Stamped knockback motion replay
+
+A real `/damage ... entity_attack entity <tagged cow>` test applies one health
+point and an actual motion impulse in both horizontal directions. The initial
+receipt-only build produced **1/0** corrections and displacement of approximately
++/-2.069031 blocks. The protocol already decodes `SetEntityMotion.tick`, but
+Perlin discarded it, cleared history and applied the velocity at receipt.
+
+Native 26.52 client dispatcher `0x10684ad78` routes to legacy handler
+`0x1044bdcc8` (handler virtual 536). A nonzero stamp at packet offset 72 with
+history support creates `History::createPosDeltaReplay` through
+`0x103ce816c`, inserts it with `0x105f67914`, and marks history dirty. A zero
+stamp/no-history path instead calls actor virtual 184 directly. Replay body
+`0x103d10e14` writes StateVectorComponent's delta lanes at offsets 24..32;
+RTTI of the selected storage confirms that component identity.
+
+Stamped own-actor motion now follows the history boundary: it replaces velocity
+before the following movement record, clamps old stamps to the retained oldest
+snapshot boundary, and retains the impulse in that record for subsequent effect
+or server-correction replay. Future/current-boundary impulses wait for the
+following local auth tick. Zero-stamped packets retain direct application.
+Session reset clears queued incoming impulses, and mounted prediction discards
+them with its unsupported history. Teleport fallback also preserves the original
+incoming pose separately from any pose published during earlier history replay.
+The complete native unsupported-frame/transition/component predicates, ordering
+between multiple coalesced server-motion packets, and future impulses across
+teleports still require reconstruction.
+
+The first candidate run reports **0/0** with the same +/-2.069031 displacement;
+receipt stamps equal the last auth tick. A repeat reports **1/1**: impulses
+stamped 470742/470852 arrive after auth 470743/470853. Replaying those records
+makes their position/velocity agree with the already-received server correction,
+but cannot retract a correction already emitted by BDS. The raw counts remain
+visible. An additional setup teleport correction lies outside the measured
+attack windows. Damage, both directions of motion, alive/connected/initialized
+endpoints, and cleanup of only tagged test actors are verified. This is evidence
+for stamped motion replay, not zero flags or full knockback/actor parity.
+
+After shared replay refactoring, four effect-lifetime routes again report
+**0/0/0/0** corrections: one-second expiry, expiry across a 1.5-second client
+pause, three-second expiry, and infinite duration followed by explicit removal.
+The initial attempt missed the one-second active window because HTTP polling
+stalled; it is an invalid observation, not a passing route or physics failure.
+The rerun used closing HTTP connections and observed both active and expired
+states. All endpoints stayed alive, connected and on the validated web runway.
+
+The control server now closes each response connection. On this macOS setup,
+12 state requests with a 30ms interval previously included frequent 458-470ms
+idle-connection delays. TCP_NODELAY did not improve them and was removed. With
+server-side connection closing, the first request took 57ms and the remaining
+11 took approximately 0.8-1.3ms using the same Node fetch polling pattern.
+This measures HTTP response latency, not command-to-simulation or key-to-screen
+latency, and does not establish an under-10ms gameplay guarantee.
+
+The final build's knockback check again produces **0/0** for west/east impulses,
+with debug evidence of stamps 475631/475695 applied to following auth ticks
+475632/475696. A setup teleport correction between routes remains in the raw
+counter outside both attack windows. The preceding **1/1** late-delivery run
+remains part of the evidence and is not superseded by this clean run. The final
+Release build and all 62 CTests pass (3.15s).

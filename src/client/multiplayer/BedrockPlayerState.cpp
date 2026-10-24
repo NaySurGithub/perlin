@@ -129,6 +129,7 @@ namespace perlin {
         vitals = Vitals{};
         activeEffects.clear();
         pendingEffectUpdates.clear();
+        pendingMotionUpdates.clear();
         pendingMovementEffects.clear();
         inventory = InventoryView{};
         for (ItemV4& raw : inventoryRaw)
@@ -165,6 +166,13 @@ namespace perlin {
         std::lock_guard lock(statusMutex);
         std::vector<EffectUpdate> updates;
         updates.swap(pendingEffectUpdates);
+        return updates;
+    }
+
+    std::vector<BedrockSession::MotionUpdate> BedrockSession::TakeMotionUpdates() {
+        std::lock_guard lock(statusMutex);
+        std::vector<MotionUpdate> updates;
+        updates.swap(pendingMotionUpdates);
         return updates;
     }
 

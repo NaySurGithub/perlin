@@ -6,6 +6,7 @@
 #include "protocol/Packets.hpp"
 #include "world/level/block/BlockPalette.hpp"
 #include "network/PlayerConstants.hpp"
+#include "util/Env.hpp"
 
 #include <algorithm>
 #include <bit>
@@ -33,6 +34,14 @@ namespace perlin {
 
         float BedrockPitch(float cameraPitch) {
             return -cameraPitch;
+        }
+
+        void ApplyMotion(physics::State& state, const std::optional<std::array<double, 3>>& motion) {
+            if (!motion)
+                return;
+            state.vx = (*motion)[0];
+            state.vy = (*motion)[1];
+            state.vz = (*motion)[2];
         }
 
         namespace Flag {
@@ -118,7 +127,35 @@ namespace perlin {
                     first = std::min(first, i);
             }
         }
-        if (first == history.size())
+        ReplayFrom(session, first);
+    }
+
+    void LocalPlayer::ApplyMotionUpdates(BedrockSession& session) {
+        size_t first = history.size();
+        for (const auto& update : session.TakeMotionUpdates()) {
+            bool inserted = false;
+            if (!history.empty()) {
+                const uint64_t boundary = std::max(update.tick, history.front().tick);
+                for (size_t i = 0; i < history.size(); ++i) {
+                    if (history[i].tick <= boundary)
+                        continue;
+                    history[i].motion = update.velocity;
+                    first = std::min(first, i);
+                    inserted = true;
+                    if (PERLIN_ENV("PERLIN_BLOCK_DEBUG"))
+                        std::cout << "[move] motion_replay stamp=" << update.tick << " target=" << history[i].tick
+                                  << " records=" << history.size() - i << std::endl;
+                    break;
+                }
+            }
+            if (!inserted)
+                futureMotion.push_back(update);
+        }
+        ReplayFrom(session, first);
+    }
+
+    void LocalPlayer::ReplayFrom(BedrockSession& session, size_t first) {
+        if (first >= history.size())
             return;
         physics::State replay = history[first].before;
         LevelCollision world(session.NetLevel(), blocksPtr);
@@ -126,6 +163,7 @@ namespace perlin {
             Record& record = history[i];
             record.before = replay;
             replay.yaw = record.yaw;
+            ApplyMotion(replay, record.motion);
             if (record.simulated)
                 physics::Step(replay, record.input, record.attributes, world);
             else
@@ -138,7 +176,8 @@ namespace perlin {
                         static_cast<float>(state.z), state.yaw, session.GetPose().pitch);
     }
 
-    void LocalPlayer::ApplyServerMotion(BedrockSession& session, Camera& camera) {
+    void LocalPlayer::ApplyServerMotion(BedrockSession& session, Camera& camera,
+                                       const BedrockSession::PlayerPose& incomingPose) {
         BedrockSession::ServerMotion motion;
         if (!session.TakeServerMotion(motion))
             return;
@@ -155,7 +194,10 @@ namespace perlin {
                 const double ez = r.after.vz - motion.velocity[2];
                 const double posErr = dx * dx + dy * dy + dz * dz;
                 const double velErr = ex * ex + ey * ey + ez * ez;
-                if (posErr > 1e-5 || velErr > 1e-5) {
+                // Grounded state affects the following jump/travel tick even
+                // when position and velocity already match the server. Apply
+                // every authoritative difference, including sub-threshold ones.
+                if (posErr > 0.0 || velErr > 0.0 || r.after.onGround != motion.onGround) {
                     const physics::State shown = state;
                     if (correctionReplays < 40 || correctionReplays % 100 == 0) {
                         const Level& lv = session.NetLevel();
@@ -187,6 +229,7 @@ namespace perlin {
                         Record& q = history[i];
                         q.before = s;
                         s.yaw = q.yaw;
+                        ApplyMotion(s, q.motion);
                         if (q.simulated)
                             physics::Step(s, q.input, q.attributes, world);
                         else
@@ -217,18 +260,22 @@ namespace perlin {
             }
         }
         if (motion.poseChanged && !handled) {
-            const BedrockSession::PlayerPose pose = session.GetPose();
-            state.x = pose.x;
-            state.y = pose.y;
-            state.z = pose.z;
+            // History replay may already have published a predicted pose this
+            // frame. Keep the packet's authoritative position independent of it.
+            state.x = motion.correction ? motion.pos[0] : incomingPose.x;
+            state.y = motion.correction ? motion.pos[1] : incomingPose.y;
+            state.z = motion.correction ? motion.pos[2] : incomingPose.z;
             previous = state;
             accumulator = 0.0;
             history.clear();
             if (motion.teleport) {
+                futureMotion.clear();
                 state.vx = state.vy = state.vz = 0;
                 state.onGround = false;
                 smoothOffset[0] = smoothOffset[1] = smoothOffset[2] = 0;
             }
+            if (motion.correction)
+                state.onGround = motion.onGround;
         }
         if (motion.hasVelocity) {
             history.clear();
@@ -443,6 +490,18 @@ namespace perlin {
         rec.yaw = state.yaw;
         rec.before = state;
         rec.simulated = column && !asleep;
+        const uint64_t nextTick = session.LastAuthTick() + 1;
+        for (auto it = futureMotion.begin(); it != futureMotion.end();) {
+            if (it->tick < nextTick) {
+                rec.motion = it->velocity;
+                if (PERLIN_ENV("PERLIN_BLOCK_DEBUG"))
+                    std::cout << "[move] motion_apply stamp=" << it->tick << " target=" << nextTick << std::endl;
+                it = futureMotion.erase(it);
+            } else {
+                ++it;
+            }
+        }
+        ApplyMotion(state, rec.motion);
         if (column && !asleep) {
             physics::Step(state, in, attributes, world);
         } else {
@@ -650,12 +709,15 @@ namespace perlin {
             history.clear();
         if (rideLock) {
             session.TakeEffectUpdates();
+            session.TakeMotionUpdates();
+            futureMotion.clear();
             BedrockSession::ServerMotion ignored;
             while (session.TakeServerMotion(ignored)) {}
             history.clear();
         } else {
             ApplyEffectUpdates(session);
-            ApplyServerMotion(session, camera);
+            ApplyMotionUpdates(session);
+            ApplyServerMotion(session, camera, pose);
         }
         ApplyModCommands();
 

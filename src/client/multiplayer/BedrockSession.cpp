@@ -478,6 +478,7 @@ namespace perlin {
             std::lock_guard lk(statusMutex);
             pendingMovementEffects.clear();
             pendingEffectUpdates.clear();
+            pendingMotionUpdates.clear();
         }
 
         {

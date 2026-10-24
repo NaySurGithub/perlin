@@ -961,10 +961,18 @@ namespace perlin {
         On<SetEntityMotionPacket>([this](const SetEntityMotionPacket& p) {
             if (runtimeId == 0 || p.runtimeEntityId != runtimeId)
                 return;
-            serverMotion.hasVelocity = true;
-            serverMotion.velocity[0] = p.velocity.x;
-            serverMotion.velocity[1] = p.velocity.y;
-            serverMotion.velocity[2] = p.velocity.z;
+            if (p.tick != 0) {
+                std::lock_guard lock(statusMutex);
+                pendingMotionUpdates.push_back({p.tick, {p.velocity.x, p.velocity.y, p.velocity.z}});
+            } else {
+                serverMotion.hasVelocity = true;
+                serverMotion.velocity[0] = p.velocity.x;
+                serverMotion.velocity[1] = p.velocity.y;
+                serverMotion.velocity[2] = p.velocity.z;
+            }
+            if (PERLIN_ENV("PERLIN_BLOCK_DEBUG"))
+                std::cout << "[move] motion_received tick=" << p.tick << " afterAuthTick=" << LastAuthTick()
+                          << " velocity=(" << p.velocity.x << ',' << p.velocity.y << ',' << p.velocity.z << ')' << std::endl;
             NoteKnockback(p.velocity.x, p.velocity.z);
         });
 

@@ -88,7 +88,23 @@ namespace perlin {
         out.corrections = session ? session->CorrectionCount() : 0;
         out.error = session ? session->LastError() : std::string();
         out.effectIds.clear();
+        out.actors.clear();
         if (session) {
+            for (const auto& actor : session->Entities().Snapshot()) {
+                ControlActor sample;
+                sample.runtimeId = std::to_string(actor.runtimeId);
+                sample.uniqueId = std::to_string(actor.uniqueId);
+                sample.vehicleUid = std::to_string(actor.vehicleUid);
+                sample.type = actor.type;
+                sample.position = {actor.pos.x, actor.pos.y, actor.pos.z};
+                sample.velocity = {actor.vel.x, actor.vel.y, actor.vel.z};
+                sample.lastServerPosition = {actor.lastServerPos.x, actor.lastServerPos.y, actor.lastServerPos.z};
+                sample.onGround = actor.onGround;
+                sample.haveServerPosition = actor.haveServerPos;
+                sample.moveSerial = actor.moveSerial;
+                sample.hurtSerial = actor.hurtSerial;
+                out.actors.push_back(std::move(sample));
+            }
             for (const auto& effect : session->GetEffects())
                 out.effectIds.push_back(effect.id);
             const auto vitals = session->GetVitals();
