@@ -66,6 +66,15 @@ native text input receives an unsent draft, Escape restores logical capture,
 and the command form receives a real server game-time reply. These interface
 checks do not substitute for broader physics coverage.
 
+A subsequent still-water matrix with Water Breathing maintained health 20 and
+air 300 throughout. Idle, forward, backward, sideways and ordinary water-jump
+cases produced zero movement corrections. Sprint swimming produced one and
+swim-plus-jump produced eleven. These remain unresolved; native swim input,
+vertical control, surface behavior and transition ordering are under audit.
+An earlier water run ended in drowning and is not used as a healthy swimming
+comparison. The control endpoint now exposes health, air and death state so
+scenario runners can detect that interruption explicitly.
+
 The terrain handler also accepts first block updates in an unallocated section
 of an existing loaded chunk, allowing Level to allocate the section. Previously
 the section-presence guard silently discarded those updates, leaving holes in

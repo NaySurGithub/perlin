@@ -67,6 +67,9 @@ changing button state, `scroll` (`y`) sends a wheel delta, and `character` (`key
 sends a Unicode scalar value to the normal text input handler. Raw `key` requests
 use Perlin's native key codes; these are distinct from Unicode character values.
 `state.cursorCaptured` and `state.textInput` expose the current input mode.
+Fluid/contact flags and `health`, `hunger`, `air`, `vitalsKnown` and `dead` allow
+scenario runners to detect drowning or death rather than treating subsequent
+command failures as movement results.
 
 Commands return `202` and a monotonically increasing `id`. They are applied on
 the game thread; wait until `/state.applied` reaches that ID. `commandError`

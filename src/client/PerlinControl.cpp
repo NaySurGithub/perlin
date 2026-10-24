@@ -61,6 +61,7 @@ namespace perlin {
         const auto& s = player.State();
         out.tick = player.TickCount();
         out.cursorCaptured = input.Captured(); out.textInput = input.TextMode();
+        out.inWater = s.inWater; out.inLava = s.inLava; out.onClimbable = s.onClimbable;
         out.position = {s.x, s.y, s.z}; out.velocity = {s.vx, s.vy, s.vz};
         out.onGround = s.onGround;
         out.sprinting = player.Sprinting(); out.sneaking = player.Sneaking();
@@ -73,6 +74,10 @@ namespace perlin {
         out.corrections = session ? session->CorrectionCount() : 0;
         out.error = session ? session->LastError() : std::string();
         if (session) {
+            const auto vitals = session->GetVitals();
+            out.vitalsKnown = vitals.known;
+            out.health = vitals.health; out.hunger = vitals.hunger; out.air = vitals.air;
+            out.dead = session->DeathPending() || (vitals.known && vitals.health <= 0);
             out.movementSpeed = session->MovementSpeedAttribute();
             out.serverSprinting = session->ServerSprinting();
             const auto attribute = session->MovementAttribute();

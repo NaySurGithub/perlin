@@ -23,6 +23,10 @@ namespace perlin {
         bool connected = false, initialized = false, onGround = false;
         bool sprinting = false, sneaking = false, swimming = false, flying = false;
         bool cursorCaptured = false, textInput = false;
+        bool inWater = false, inLava = false, onClimbable = false;
+        bool vitalsKnown = false, dead = false;
+        float health = 20, hunger = 20;
+        int air = 300;
         std::array<double, 3> position{}, velocity{};
         float yaw = 0, pitch = 0;
         int connectionState = 0;
