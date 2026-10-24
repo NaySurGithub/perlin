@@ -431,6 +431,7 @@ namespace perlin {
         if (session.SendMoveInput(packet)) {
             rec.tick = session.LastAuthTick();
             rec.after = state;
+            if (tickObserver) tickObserver(rec.tick, state, rec.input);
             history.push_back(rec);
             while (history.size() > 200)
                 history.pop_front();
@@ -476,7 +477,7 @@ namespace perlin {
         }
     }
 
-    void LocalPlayer::Update(BedrockSession& session, const InputManager& input, Camera& camera,
+    void LocalPlayer::Update(BedrockSession& session, InputManager& input, Camera& camera,
                              const BlockLibrary& blocks, float dt) {
         BedrockSession::PlayerPose pose = session.GetPose();
         if (!pose.known)
@@ -569,6 +570,7 @@ namespace perlin {
                 accumulator = 0.0;
                 break;
             }
+            input.SetControlTick(tickCounter);
             Tick(session, input, camera, world);
         }
 

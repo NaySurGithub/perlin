@@ -344,6 +344,19 @@ namespace perlin {
         renderer = platform->CreateRenderContext();
         if (!renderer)
             return false;
+        if (args.controlPort) {
+            control = std::make_shared<ClientControl>();
+            if (!control->Start(args.controlPort)) {
+                std::cerr << "[control] could not bind localhost port " << args.controlPort << std::endl;
+                return false;
+            }
+            inputManager.SetControlActions({}, std::numeric_limits<uint64_t>::max());
+            if (args.hidden) input.SetCaptured(true);
+            player.ObserveTicks([this](auto tick, const auto& state, const auto& movement) {
+                TraceControlTick(tick, state, movement);
+            });
+            std::cout << "[control] http://127.0.0.1:" << args.controlPort << "/state" << std::endl;
+        }
 
         workers = std::make_unique<ThreadPool>(4);
         if (args.server.empty() && !PERLIN_ENV("PERLIN_PREVIEW"))
@@ -743,6 +756,7 @@ namespace perlin {
     }
 
     void Perlin::Shutdown() {
+        if (control) control->Stop();
         FinishReplayRecording("the game closed");
         renderRunning = false;
         if (renderThread.joinable())
@@ -6479,6 +6493,10 @@ namespace perlin {
             platform->isRunning = false;
             return;
         }
+        if (args.hidden) {
+            renderer->SetForcedSize(1280, 720);
+            renderer->SetExportTarget(true);
+        }
         renderReady = true;
         StartSampleProfiler();
         levelRenderer = std::make_unique<LevelRenderer>(*renderer, options);
@@ -6572,6 +6590,7 @@ namespace perlin {
                 dt = kDefaultFrameDelta;
 
             input.SetPadDeadzone(options.padDeadzone);
+            PollControl();
             inputManager.Poll();
             if (exportJob.active)
                 ExportPreFrame(frameStart, dt);
@@ -8749,6 +8768,7 @@ namespace perlin {
                 TakeScreenshot();
             if (exportJob.active)
                 ExportPostRender();
+            PublishControl();
             { ProfScope p(6); renderer->EndFrame(); }
             if (options.frameGen != "off" && !exportJob.active) {
                 const int total = options.frameGen == "4x" ? 4 : options.frameGen == "3x" ? 3 : 2;

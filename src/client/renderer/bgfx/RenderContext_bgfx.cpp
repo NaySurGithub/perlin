@@ -945,9 +945,21 @@ namespace perlin {
         bgfx::setVertexBuffer(0, screenBuffer);
         bgfx::setState(BGFX_STATE_WRITE_RGB);
         bgfx::submit(kViewGen, shaders.Program(ShaderProgram::FrameGen));
-        bgfx::frame();
+        FinishReadbacks(bgfx::frame());
         ReleaseFrameMeshes();
         return true;
+    }
+
+    void RenderContext_bgfx::FinishReadbacks(uint32_t submitted) {
+        while (!frameReadbacks.empty() && static_cast<int32_t>(submitted - frameReadbacks.front().ready) >= 0) {
+            auto readback = std::move(frameReadbacks.front());
+            frameReadbacks.pop_front();
+            bgfx::destroy(readback.texture);
+            for (size_t i = 0; i < readback.pixels.size(); i += 4)
+                std::swap(readback.pixels[i], readback.pixels[i + 2]);
+            readback.sink(readback.width, readback.height, readback.width * 4,
+                          readback.pixels.data(), bgfx::getCaps()->originBottomLeft);
+        }
     }
 
     bool RenderContext_bgfx::EnsureSceneCopy() {
@@ -1816,7 +1828,7 @@ namespace perlin {
         static double gpuSum = 0, cpuSum = 0, viewSum[16] = {};
         if (gpuTime && timedFrames == 0)
             bgfx::setDebug(BGFX_DEBUG_PROFILER);
-        bgfx::frame();
+        FinishReadbacks(bgfx::frame());
         ReleaseFrameMeshes();
         if (gpuTime) {
             const bgfx::Stats* stats = bgfx::getStats();
@@ -1850,6 +1862,32 @@ namespace perlin {
     void RenderContext_bgfx::RequestFrameCapture(CaptureSink sink) {
         if (!initialized || !sink)
             return;
+        if (PERLIN_ENV("PERLIN_CAPTURE_DEBUG"))
+            std::cout << "[capture] export=" << exportTarget << " target=" << fg.valid
+                      << " size=" << width << 'x' << height << std::endl;
+        // Metal's screenshot API only captures swapchains, not offscreen FBOs.
+        // Read the finished export texture asynchronously instead, retaining its
+        // destination buffer until bgfx's completion frame has passed.
+        if (exportTarget && fg.valid && bgfx::isValid(fg.finalColor) &&
+            bgfx::isTextureValid(0, false, 1, bgfx::TextureFormat::RGBA8, BGFX_TEXTURE_BLIT_DST | BGFX_TEXTURE_READ_BACK)) {
+            FrameReadback readback;
+            readback.width = static_cast<uint32_t>(width);
+            readback.height = static_cast<uint32_t>(height);
+            readback.texture = bgfx::createTexture2D(static_cast<uint16_t>(width), static_cast<uint16_t>(height),
+                false, 1, bgfx::TextureFormat::RGBA8, BGFX_TEXTURE_BLIT_DST | BGFX_TEXTURE_READ_BACK);
+            if (bgfx::isValid(readback.texture)) {
+                readback.sink = std::move(sink);
+                readback.pixels.resize(static_cast<size_t>(width) * height * 4);
+                frameReadbacks.push_back(std::move(readback));
+                auto& pending = frameReadbacks.back();
+                bgfx::TextureRegion dst, src;
+                dst.init(pending.texture);
+                src.init(fg.finalColor);
+                bgfx::blit(26, dst, src);
+                pending.ready = bgfx::read(dst, pending.pixels.data());
+                return;
+            }
+        }
         {
             std::lock_guard<std::mutex> lk(captureMutex);
             captureSinks.push_back(std::move(sink));
@@ -3441,6 +3479,7 @@ namespace perlin {
     void RenderContext_bgfx::Shutdown() {
         if (!initialized)
             return;
+        while (!frameReadbacks.empty()) EndFrame();
         gpuChunks.clear();
         lodChunks.clear();
         DestroyPages();

@@ -1359,7 +1359,18 @@ namespace perlin {
                 SendTickSync(p.timestamp);
         });
 
-        On<CommandOutputPacket>([](const CommandOutputPacket& p) {
+        On<CommandOutputPacket>([this](const CommandOutputPacket& p) {
+            {
+                std::lock_guard lock(commandResultMutex);
+                ++commandResult.received;
+                commandResult.success = p.successCount;
+                commandResult.output.clear();
+                for (const auto& message : p.output) {
+                    commandResult.output += message.messageId;
+                    for (const auto& parameter : message.parameters) commandResult.output += " " + parameter;
+                    commandResult.output += '\n';
+                }
+            }
             std::cout << "[bedrock] CommandOutput success=" << p.successCount << " msgs=" << p.output.size();
             for (size_t i = 0; i < p.output.size() && i < 4; i++) {
                 std::cout << " [" << p.output[i].messageId;

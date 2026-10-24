@@ -186,6 +186,16 @@ namespace perlin {
             double pos[3] = {0, 0, 0};
         };
         uint64_t LastAuthTick() const { return authTick; }
+        uint64_t CorrectionCount() const { return correctionsReceived.load(); }
+        struct CommandResult {
+            uint64_t received = 0;
+            int success = 0;
+            std::string output;
+        };
+        CommandResult LastCommandResult() const {
+            std::lock_guard lock(commandResultMutex);
+            return commandResult;
+        }
         bool TakeServerMotion(ServerMotion& out);
         float MovementSpeedAttribute() const {
             std::lock_guard lock(attrMutex);
@@ -907,7 +917,9 @@ void RequestRespawn();
         std::atomic<int> viewCenterChunk[2] = {0, 0};
         int viewRadiusChunks = 0;
         uint64_t movePacketsSent = 0;
-        uint64_t correctionsReceived = 0;
+        std::atomic<uint64_t> correctionsReceived{0};
+        mutable std::mutex commandResultMutex;
+        CommandResult commandResult;
         uint64_t statLevelChunks = 0, statRequestsSent = 0, statSubChunkReplies = 0, statSubChunksFailed = 0;
         std::atomic<uint64_t> statSubChunksApplied{0};
         std::chrono::steady_clock::time_point lastStatLog{};

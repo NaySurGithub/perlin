@@ -14,7 +14,7 @@
 namespace perlin {
     class LocalPlayer {
     public:
-        void Update(BedrockSession& session, const InputManager& input, Camera& camera,
+        void Update(BedrockSession& session, InputManager& input, Camera& camera,
                     const BlockLibrary& blocks, float dt);
 
         const physics::State& State() const { return state; }
@@ -22,6 +22,8 @@ namespace perlin {
         const WalkBob& Bob() const { return walkBob; }
         float PartialTick() const { return static_cast<float>(std::clamp(accumulator / physics::kTickSeconds, 0.0, 1.0)); }
         uint64_t TickCount() const { return tickCounter; }
+        using TickObserver = std::function<void(uint64_t, const physics::State&, const physics::Input&)>;
+        void ObserveTicks(TickObserver observer) { tickObserver = std::move(observer); }
         bool Sneaking() const { return sneaking; }
         bool Sprinting() const { return sprinting; }
         void SetSwimming(bool value) { swimming = value; }
@@ -82,6 +84,7 @@ namespace perlin {
         double accumulator = 0.0;
         WalkBob walkBob;
         uint64_t tickCounter = 0;
+        TickObserver tickObserver;
 
         float fovModifier = 1.0f;
         bool flying = false;

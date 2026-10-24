@@ -375,6 +375,14 @@ namespace perlin {
         std::string adapterName;
         std::mutex captureMutex;
         std::deque<CaptureSink> captureSinks;
+        struct FrameReadback {
+            CaptureSink sink;
+            bgfx::TextureHandle texture = BGFX_INVALID_HANDLE;
+            std::vector<uint8_t> pixels;
+            uint32_t width = 0, height = 0, ready = 0;
+        };
+        std::deque<FrameReadback> frameReadbacks;
+        void FinishReadbacks(uint32_t frame);
 
         std::unordered_map<const uint8_t*, std::vector<std::vector<uint8_t>>> animatedTiles;
         int atlasLayers = 0;

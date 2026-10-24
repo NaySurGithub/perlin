@@ -706,7 +706,8 @@ namespace perlin {
             if (columns >= 9 || std::chrono::steady_clock::now() - dimAckSince > std::chrono::seconds(4))
                 FinishDimensionChange();
         }
-        if (!replayMode && state == State::InGame && !transferring && !transferRequested && !diagLostLogged && lastPacketMs.load() != 0) {
+        if (!replayMode && state == State::InGame && !transferring && !transferRequested && !diagLostLogged &&
+            lastPacketMs.load() != 0 && net && !net->HasLivenessTimeout()) {
             const int64_t nowMs = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
             if (nowMs - lastPacketMs.load() > 30000) {
                 diagLostLogged = true;

@@ -1347,6 +1347,17 @@ if(PERLIN_BUILD_TESTS AND NOT EMSCRIPTEN AND NOT ANDROID)
     add_test(NAME auth_selftest COMMAND auth_selftest)
 
     add_executable(rak_selftest tests/rak_selftest.cpp src/network/RakNet.cpp)
+    add_executable(client_control_selftest tests/client_control_selftest.cpp
+        src/client/ClientControl.cpp src/client/input/Input.cpp src/client/input/InputManager.cpp
+        src/client/input/KeyMapping.cpp src/client/input/Keys.cpp src/client/Options.cpp src/util/Json.cpp src/util/Paths.cpp)
+    target_include_directories(client_control_selftest PRIVATE src "${httplib_SOURCE_DIR}" "${stb_SOURCE_DIR}"
+        "${concurrentqueue_SOURCE_DIR}" "${glm_SOURCE_DIR}")
+    target_link_libraries(client_control_selftest PRIVATE glaze::glaze Threads::Threads)
+    target_compile_features(client_control_selftest PRIVATE cxx_std_23)
+    if(WIN32)
+        target_link_libraries(client_control_selftest PRIVATE ws2_32 crypt32)
+    endif()
+    add_test(NAME client_control_selftest COMMAND client_control_selftest)
     target_include_directories(rak_selftest PRIVATE src "${concurrentqueue_SOURCE_DIR}")
     target_link_libraries(rak_selftest PRIVATE Threads::Threads)
     if(WIN32)
