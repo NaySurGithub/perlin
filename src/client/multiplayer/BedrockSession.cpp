@@ -701,12 +701,24 @@ namespace perlin {
         if (startGameSeen && !initializedSent)
             FinishLoadingIfReady();
         if (dimAckPending) {
-            size_t columns;
+            // Native PlayerDimensionTransferer queries the destination's
+            // surrounding terrain, not an arbitrary count of received columns.
+            // A seen column can still have outstanding subchunk requests.
+            const int minX = static_cast<int>(std::floor(pose.x - 16.0)) >> 4;
+            const int maxX = static_cast<int>(std::floor(pose.x + 16.0)) >> 4;
+            const int minZ = static_cast<int>(std::floor(pose.z - 16.0)) >> 4;
+            const int maxZ = static_cast<int>(std::floor(pose.z + 16.0)) >> 4;
+            bool ready = true;
             {
                 std::lock_guard<std::mutex> lk(reqMutex);
-                columns = seenColumns.size();
+                for (int cx = minX; cx <= maxX && ready; ++cx)
+                    for (int cz = minZ; cz <= maxZ; ++cz)
+                        if (!seenColumns.count({cx, cz}) || colPending.count({cx, cz})) {
+                            ready = false;
+                            break;
+                        }
             }
-            if (columns >= 9 || std::chrono::steady_clock::now() - dimAckSince > std::chrono::seconds(4))
+            if (ready || std::chrono::steady_clock::now() - dimAckSince > std::chrono::seconds(4))
                 FinishDimensionChange();
         }
         if (!replayMode && state == State::InGame && !transferring && !transferRequested && !diagLostLogged &&
@@ -1097,6 +1109,16 @@ namespace perlin {
         if (!dimAckPending.exchange(false))
             return;
         std::cout << "[bedrock] dimension " << dimensionId.load() << " loaded, acknowledging" << std::endl;
+        if (PERLIN_ENV("PERLIN_BLOCK_DEBUG")) {
+            const auto current = GetPose();
+            const bool settled = ColumnSettled(static_cast<int>(std::floor(current.x)) >> 4,
+                                               static_cast<int>(std::floor(current.z)) >> 4);
+            const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now() - dimAckSince).count();
+            std::cout << "[bedrock] dimension_ack afterAuthTick=" << LastAuthTick()
+                      << " elapsedMs=" << elapsed << " columnSettled=" << settled
+                      << " pos=(" << current.x << ',' << current.y << ',' << current.z << ')' << std::endl;
+        }
         SendPlayerAction(static_cast<uint32_t>(proto::Action::DimensionChangeAck), 0, 0, 0, 0);
         SendLoadingScreen(false, dimLoadingId);
     }

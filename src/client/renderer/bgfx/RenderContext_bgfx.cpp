@@ -279,6 +279,10 @@ namespace perlin {
         callback = std::make_unique<Callback>(this);
 
         bgfx::Init init;
+        // Keep old input from accumulating in the GPU queue. Zero selects
+        // bgfx's backend default, which may allow several frames in flight.
+        // Swap-chain resets inherit this value from the initialization state.
+        init.swapChain.maxFrameLatency = 1;
         std::string forced = Env("PERLIN_RENDERER");
         if (forced.empty())
             forced = options.renderer;

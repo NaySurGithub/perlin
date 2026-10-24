@@ -3,6 +3,7 @@
 #include "client/player/BlockCollision.hpp"
 #include "world/level/block/BlockPalette.hpp"
 #include "util/Json.hpp"
+#include <cmath>
 #include <limits>
 
 namespace perlin {
@@ -79,6 +80,9 @@ namespace perlin {
         out.initialized = session && session->Initialized();
         out.sleeping = session && session->Sleeping();
         out.dimension = session ? session->DimensionId() : 0;
+        out.dimensionChanging = session && session->DimensionChanging();
+        out.columnSettled = session && session->ColumnSettled(static_cast<int>(std::floor(s.x)) >> 4,
+                                                            static_cast<int>(std::floor(s.z)) >> 4);
         out.predictionHistorySize = player.PredictionHistorySize();
         out.authTick = session ? session->LastAuthTick() : 0;
         out.corrections = session ? session->CorrectionCount() : 0;

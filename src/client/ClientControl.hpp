@@ -26,6 +26,7 @@ namespace perlin {
         bool inWater = false, inLava = false, onClimbable = false;
         bool vitalsKnown = false, dead = false;
         bool sleeping = false;
+        bool dimensionChanging = false, columnSettled = false;
         int dimension = 0;
         uint64_t predictionHistorySize = 0;
         float health = 20, hunger = 20;

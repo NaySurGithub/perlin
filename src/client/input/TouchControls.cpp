@@ -88,6 +88,7 @@ namespace perlin {
         std::lock_guard lock(mutex);
         const bool relayout = s.hudScale != state.hudScale || s.scale != state.scale || (!editing && s.layout != state.layout);
         const bool startEditing = s.editing && !editing;
+        const bool stopEditing = !s.editing && editing;
         state = s;
         if (startEditing) {
             editing = true;
@@ -99,7 +100,10 @@ namespace perlin {
             editing = false;
             fingers.clear();
         }
-        if ((relayout || startEditing || !s.editing) && width > 0)
+        // Geometry only depends on viewport, scale and layout. Rebuilding it
+        // every gameplay frame needlessly holds the finger-event mutex.
+        // Leaving the editor must restore the saved layout even if unchanged.
+        if ((relayout || startEditing || stopEditing) && width > 0)
             BuildLayout();
     }
 

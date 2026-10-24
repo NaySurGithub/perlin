@@ -332,6 +332,7 @@ void RequestRespawn();
             return it == permByUid.end() ? -1 : it->second;
         }
         int DimensionId() const { return dimensionId; }
+        bool DimensionChanging() const { return dimAckPending.load(); }
         uint32_t HurtCount() const { return hurtCounter.load(); }
         struct HurtSource {
             bool known = false;

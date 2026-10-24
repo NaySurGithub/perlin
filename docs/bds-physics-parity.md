@@ -1966,3 +1966,56 @@ loading/readiness and unavailable-terrain scheduling need further tracing;
 no arbitrary delay or inferred correction timestamp was added to force a pass.
 All 62 local CTest suites pass. The two Nether transition corrections, bed
 entry/exit corrections and support-removal synchronization remain visible.
+
+### Dimension readiness diagnostics and input queue depth
+
+The control snapshot distinguishes `dimensionChanging` (the pending dimension
+acknowledgement) from `columnSettled` (the current actor column has been seen
+and has no pending subchunk slots). `initialized` remains the initial login
+state and must not be used as a terrain-readiness assertion on a dimension
+round trip. Opt-in block debugging records the acknowledgement's last auth
+tick, elapsed milliseconds, actor position and column readiness. These fields
+observe the existing scheduling; they do not alter acknowledgement timing or
+correction counters.
+
+Further supporting native-client evidence identifies the
+`PlayerDimensionTransferer` RTTI at `0x1110ec138`. Its readiness virtual body
+`0x10b3aa288` queries a box from floor(actor position minus 16) through
+floor(actor position plus 16), after replacing an out-of-range actor Y using
+the dimension's virtual 232 result. It calls dependency virtual 144 and
+returns the inverse of the result's first flag. Completion bodies
+`0x10b3aa3a8` and `0x10b3aa61c` construct PlayerAction 14. Mapping the queried
+result and the transfer state machine to Perlin is still required; the
+existing nine-column/four-second approximation is not an exact native port.
+These are native 26.52 client addresses, not Windows BDS addresses.
+
+For input responsiveness, bgfx now requests a maximum GPU frame latency of
+one instead of leaving the backend default queue depth. The bundled backend
+code consumes this value in Metal command-queue scheduling, Vulkan frames in
+flight and DXGI maximum frame latency. Swap-chain resets inherit it. Metal
+still requires at least two drawable surfaces; drawable count is distinct
+from queued command frames. Touch layout geometry is rebuilt only for a
+viewport, scale, layout or editor-mode change instead of every gameplay
+frame while holding the finger-event mutex. Neither change alters the 20 Hz
+physics clock, movement speed or replay records. This is not a measured
+sub-10ms end-to-end latency result. Tick consumption and delayed camera
+interpolation remain latency work, and refresh/presentation must be included
+in any key-to-screen measurement.
+
+The instrumented baseline repeats **2/0** corrections and records both
+acknowledgements with `columnSettled=0` (800ms entering the Nether and 1996ms
+returning). The normal completion guard now requires every column intersecting
+the destination's horizontal plus/minus-16-block area to be seen and have no
+pending subchunk slots. It preserves the existing four-second fallback.
+This removes the unrelated-nine-columns admission bug, but checking whole
+columns is not equivalent to the native vertical box predicate, and the
+fallback is still provisional. It must not be called exact scheduler parity.
+
+With this guard the first live round trip produced **0/0** corrections and
+acknowledgements with `columnSettled=1` at 1372/1652ms. A repeat produced
+**1/0**, also with settled acknowledgements at 769/1367ms. The remaining
+Nether correction is an initial 0.0784-block falling-step mismatch: Perlin has
+already fallen while the server still reports the target Y and grounded state.
+Thus the locality check fixes premature terrain admission but does not finish
+dimension movement scheduling. Both runs end connected, initialized, alive
+and grounded at Nether Y=128 and Overworld Y=225. All 62 CTests pass (3.15s).
