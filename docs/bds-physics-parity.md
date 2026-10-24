@@ -261,6 +261,43 @@ corrections remain in the raw counter and are excluded only from the bounded
 movement windows. These checks do not prove every fluid transition or actor
 interaction.
 
+### Lava travel and fall-distance follow-up
+
+The same strict Windows BDS 1.26.52.3 server produced zero movement corrections
+in eight source-lava scenarios: idle, forward, diagonal, sprint held, sneak,
+jump, forward jump, and falling into the pool. Four effect scenarios (Speed II,
+Slowness II, Levitation I and Slow Falling I) also produced zero corrections.
+The accepted effect sweep starts each setup on dry ground, restores health,
+then applies Fire Resistance before entering lava. An earlier sweep cleared
+protection while immersed and lost health; it is not the healthy comparison.
+All accepted cases retained health 20.
+
+Three ledge cases produced zero corrections: pushing against the lava-pool
+wall, jumping out, and jumping out with sprint held. The latter two actually
+left lava and reached the dry side; the sprint case continued beyond the test
+platform and fell, retaining zero movement corrections and full health. Five
+shallow flowing-lava cases on the rebuilt client also produced zero corrections:
+idle drift, with/against the current, sideways travel and jumping. The with-flow
+case left the stream onto dry ground. These are 20 bounded live scenarios,
+with setup teleports still retained in the raw counters. Nether-specific
+behavior, vertical falls, partial blocks and all entity interactions remain
+separate coverage requirements.
+
+Native 26.52 LavaResetFallDistanceSystem traversal `0x10607a698` consumes
+UpdateWaterStateRequest material 6 and multiplies FallDistance by 0.5 every tick.
+Perlin previously omitted this update. It now runs beside the existing
+water/lava state callbacks. A multi-tick integration test checks 12 → 6 → 3
+and retention on leaving lava. This ports that consumer, not the complete
+fall-distance accumulation/landing/request lifecycle. All 62 CTest suites pass.
+
+Supporting native anchors for further lava/flow reconstruction are
+LavaMoveSystem callback `0x10606dbc4`, LavaTravelSystem traversal
+`0x10607b014`, MobLavaGravity callback `0x1070b76b8`, and
+LiquidBlockBase::_getFlow `0x10b4321ec`. The latter includes per-face admission
+and material flags that the current geometry-based world adapter does not yet
+fully represent; passing a shallow full-block stream does not prove those
+predicates.
+
 See [local client control](client-control.md) for the hidden launch, live browser
 view, tick-bounded input, block probes and raw correction telemetry. Broader
 terrain, fluid, effect, mode, entity and authority-transition coverage remains

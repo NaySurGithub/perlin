@@ -88,6 +88,13 @@ namespace perlin::physics::bds {
     // and 0x140E0E820. This is the native material ID, not BlockShape::fluid.
     inline bool WasInLava(uint32_t material) { return material == 6; }
 
+    // Native 26.52 LavaResetFallDistanceSystem 0x10607A698 consumes the
+    // selected material request independently of WasInLavaFlag membership.
+    inline void UpdateLavaFallDistance(uint32_t material, float& fallDistance) {
+        if (material == 6)
+            fallDistance *= 0.5f;
+    }
+
     // Complete water-state callback after component lookup. Boat membership
     // belongs to the passenger's referenced entity and registry generation.
     // Lookup remains lazy: non-water requests never query optional components.

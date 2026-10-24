@@ -512,6 +512,7 @@ namespace perlin::physics {
         bds::UpdateWaterState(fluidMaterial, s.inWater, s.fallDistance,
             s.waterSplashRequest, [] { return false; }, [] { return false; });
         s.inLava = bds::WasInLava(fluidMaterial);
+        bds::UpdateLavaFallDistance(fluidMaterial, s.fallDistance);
         const BlockShape feet = world.Query(static_cast<int>(std::floor(s.x)), static_cast<int>(std::floor(s.y)),
                                             static_cast<int>(std::floor(s.z)));
         s.onClimbable = feet.climbable;

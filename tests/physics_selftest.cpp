@@ -42,6 +42,28 @@ static BlockShape Slab(double h) {
 int main() {
     Attributes attr;
 
+    // Lava halves the existing fall-distance component every sensing tick;
+    // leaving lava preserves the last value rather than clearing it.
+    {
+        TestWorld lava;
+        uint8_t fluid = 2;
+        lava.fn = [&](int, int, int) {
+            BlockShape shape;
+            shape.fluid = fluid;
+            shape.fluidLevel = 1;
+            return shape;
+        };
+        State s;
+        s.fallDistance = 12;
+        Step(s, Input{}, attr, lava);
+        CHECK(s.inLava && !s.inWater && s.fallDistance == 6);
+        Step(s, Input{}, attr, lava);
+        CHECK(s.fallDistance == 3);
+        fluid = 0;
+        Step(s, Input{}, attr, lava);
+        CHECK(!s.inLava && s.fallDistance == 3);
+    }
+
     // A ledge-clearance probe still overlaps water at its lower face. Shrinking
     // it like ordinary immersion sensing incorrectly grants a step-out boost.
     {
