@@ -13,6 +13,9 @@ namespace perlin {
         bool jump, sneak, sprint, onGround, inWater, horizontalCollision, verticalCollision;
         bool swimming, headInWater;
         float swimAmount;
+        bool inScaffolding, overScaffolding, descendThroughBlock;
+        bool inAscendableBlock, overDescendableBlock;
+        float fallDistance;
     };
     void Perlin::PollControl() {
         if (!control) return;
@@ -120,6 +123,8 @@ namespace perlin {
         if (!control) return;
         control->Trace(json::Write(ControlTickRecord{tick, {s.x, s.y, s.z}, {s.vx, s.vy, s.vz},
             in.forward, in.strafe, in.jump, in.sneak, in.sprint, s.onGround, s.inWater,
-            s.horizontalCollision, s.verticalCollision, in.swimming, in.headInWater, s.swimAmount}));
+            s.horizontalCollision, s.verticalCollision, in.swimming, in.headInWater, s.swimAmount,
+            in.gravity.inScaffolding, in.gravity.overScaffolding, in.gravity.descendThroughBlock,
+            in.inAscendableBlock, in.overDescendableBlock, s.fallDistance}));
     }
 }

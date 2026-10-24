@@ -1591,3 +1591,20 @@ fall-through is clear. That branch sets vertical speed to 0.15 and jump delay to
 10 before the ordinary ground-jump path. The corresponding input and regression
 coverage are now included. This does not establish that the three live
 transition corrections are resolved.
+
+The subsequent local sensing change resolves all three corrections on those
+same six scenarios: **0/0/0/0/0/0**. The native `BlockClimberSystem` callback
+`0x1066AEDBC` calls footprint readers `0x1066AF32C` and `0x1066AF5DC` at
+`floor(AABB.minY)` and `floor(float(AABB.minY - 1))`. Both horizontal integer
+endpoints participate, without the EntityInside epsilon. Scaffold membership
+matches the block identifier; the player ascendable branch additionally rejects
+scaffolding with air, water, or flowing water immediately beneath it.
+
+Perlin now predicts these scaffold contacts before recording and applying its
+movement input, including keyboard fall-through. Per-tick control traces include
+the contact flags used for prediction. Unit coverage exercises the lower-layer
+transition, inclusive horizontal boundary, top contact, and water-supported
+exclusion. Powder-snow capability state still comes from server metadata; its
+equipment predicates and the complete native system ordering remain unfinished.
+These six passing routes do not establish parity for every scaffold placement,
+capability, input mode, or cross-system interaction.

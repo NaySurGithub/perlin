@@ -98,6 +98,22 @@ int main() {
         CHECK(!bds::ScaffoldingSupports(body, {0, 3, 0}, 0, true));
         CHECK(!bds::ScaffoldingSupports(body, {1, 3, 0}, 0, false));
         CHECK(!bds::ScaffoldingSupports(body, {0, 4, 0}, 0, false));
+        const auto readScaffold = [](int32_t x, int32_t y, int32_t z) {
+            using Cell = bds::ScaffoldingCell;
+            if (x == 1 && z == 0 && y >= 1 && y <= 3) return Cell::Scaffold;
+            return y <= 0 ? Cell::Other : Cell::Air;
+        };
+        // The max horizontal endpoint participates even on a block boundary.
+        auto contact = bds::SenseScaffolding({0.4f, 1.9f, 0.2f, 1, 3.7f, 0.8f}, readScaffold);
+        CHECK(contact.inside && contact.ascendable && !contact.over && !contact.descendable);
+        contact = bds::SenseScaffolding({0.4f, 2, 0.2f, 1, 3.8f, 0.8f}, readScaffold);
+        CHECK(contact.inside && contact.over && contact.ascendable && contact.descendable);
+        contact = bds::SenseScaffolding({0.4f, 4, 0.2f, 1, 5.8f, 0.8f}, readScaffold);
+        CHECK(!contact.inside && contact.over && !contact.ascendable && contact.descendable);
+        contact = bds::SenseScaffolding({0.4f, 2, 0.2f, 1, 3.8f, 0.8f}, [](int32_t, int32_t y, int32_t) {
+            return y == 2 ? bds::ScaffoldingCell::Scaffold : bds::ScaffoldingCell::Water;
+        });
+        CHECK(contact.inside && !contact.ascendable && !contact.descendable);
     }
 
     // Lava halves the existing fall-distance component every sensing tick;

@@ -1,6 +1,7 @@
 #include "client/player/LocalPlayer.hpp"
 
 #include "client/player/BlockCollision.hpp"
+#include "client/player/PerlinScaffolding.hpp"
 #include "protocol/Packets.hpp"
 #include "world/level/block/BlockPalette.hpp"
 #include "network/PlayerConstants.hpp"
@@ -314,6 +315,32 @@ namespace perlin {
         in.gravity.descendThroughBlock = (actorFlags[1] & proto::FlagsMetadataFlags2::FallThroughScaffolding) != 0;
         in.overDescendableBlock = (actorFlags[1] & proto::FlagsMetadataFlags2::OverDescendableBlock) != 0;
         in.inAscendableBlock = (actorFlags[1] & proto::FlagsMetadataFlags2::InAscendableBlock) != 0;
+        const auto contactBox = physics::BoundingBox(state, wasSneaking);
+        const auto scaffold = physics::bds::SenseScaffolding(
+            physics::bds::CollisionBox{static_cast<float>(contactBox.x0), static_cast<float>(contactBox.y0),
+                static_cast<float>(contactBox.z0), static_cast<float>(contactBox.x1),
+                static_cast<float>(contactBox.y1), static_cast<float>(contactBox.z1)},
+            [&](int32_t x, int32_t y, int32_t z) {
+                using Cell = physics::bds::ScaffoldingCell;
+                bool loaded = false;
+                const auto id = session.NetLevel().GetBlock(x, y, z, loaded);
+                if (!loaded || id == 0) return Cell::Air;
+                const auto name = BlockPalette::Instance().Name(id);
+                if (name == "minecraft:scaffolding" || name == "scaffolding") return Cell::Scaffold;
+                if (name == "minecraft:air" || name == "air") return Cell::Air;
+                if (name == "minecraft:water" || name == "water" ||
+                    name == "minecraft:flowing_water" || name == "flowing_water") return Cell::Water;
+                return Cell::Other;
+            });
+        // Retain non-scaffolding capability metadata (e.g. powder snow) while
+        // replacing scaffold state with the native local footprint query.
+        if (in.gravity.inScaffolding) in.inAscendableBlock = false;
+        if (in.gravity.overScaffolding) in.overDescendableBlock = false;
+        in.gravity.inScaffolding = scaffold.inside;
+        in.gravity.overScaffolding = scaffold.over;
+        in.inAscendableBlock |= scaffold.ascendable;
+        in.overDescendableBlock |= scaffold.descendable;
+        in.gravity.descendThroughBlock = in.sneak && in.overDescendableBlock;
 
         physics::Attributes attributes;
         attributes.speed = session.PredictedMovementSpeed(sprinting);

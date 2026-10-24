@@ -96,7 +96,10 @@ a synthetic pass counter. Capture a baseline after spawning or teleporting and
 compare it after each movement scenario and a settling interval. A result is
 valid only if the client stayed connected and initialized and actually sent the
 requested movement. The trace records the resulting positions, velocities,
-inputs and collision flags for each sent tick.
+inputs and collision flags for each sent tick. It also includes the scaffolding,
+ascendable/descendable and fall-through input flags and local fall distance.
+These are the inputs used for that tick; `/state` actor flags are received
+metadata and can lag locally predicted contacts.
 
 Zero corrections on a test route does not establish complete native BDS parity.
 Keep the server's strict movement checks enabled and record which terrain,
