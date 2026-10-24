@@ -15,7 +15,8 @@ namespace perlin::physics {
     constexpr double kTickSeconds = 0.05;
     constexpr double kWidth = 0.6;
     constexpr double kStandHeight = 1.8;
-    constexpr double kSneakHeight = 1.5;
+    // Native 26.52 PlayerBoundingBoxStateUpdateSystem selects 0x3fbeb852.
+    constexpr double kSneakHeight = 1.49;
     constexpr double kCrawlHeight = 0.6;
     constexpr double kCrawlEye = 0.4;
     constexpr double kStandEye = 1.62;
@@ -50,6 +51,7 @@ namespace perlin::physics {
         bool honey = false;
         float speedFactor = 1.0f;
         bool isAir = true;
+        int8_t bubbleColumn = 0; // +1 upward, -1 downward
         bool Empty() const { return boxes.empty(); }
     };
 

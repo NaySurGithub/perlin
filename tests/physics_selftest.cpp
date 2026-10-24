@@ -42,6 +42,59 @@ static BlockShape Slab(double h) {
 int main() {
     Attributes attr;
 
+    // Bubble actions run once per contacted cell after water drag/gravity.
+    // A standing actor spans two cells at integral feet and three between them.
+    {
+        TestWorld column;
+        int8_t direction = 1;
+        column.fn = [&](int, int, int) {
+            BlockShape shape;
+            shape.fluid = 1;
+            shape.fluidLevel = 1;
+            shape.bubbleColumn = direction;
+            return shape;
+        };
+        State s;
+        s.x = s.z = 0.5;
+        s.y = 10;
+        s.fallDistance = 12;
+        Step(s, Input{}, attr, column);
+        CHECK(Near(s.vy, 0.115, 1e-7));
+        CHECK(s.fallDistance == 0);
+        s = State{};
+        s.x = s.z = 0.5;
+        s.y = 10.5;
+        Step(s, Input{}, attr, column);
+        CHECK(Near(s.vy, 0.175, 1e-7));
+        for (int i = 0; i < 80; ++i) Step(s, Input{}, attr, column);
+        CHECK(s.vy == static_cast<double>(0.7f));
+        direction = -1;
+        for (int i = 0; i < 80; ++i) Step(s, Input{}, attr, column);
+        CHECK(s.vy == static_cast<double>(-0.3f));
+        direction = 0;
+        Step(s, Input{}, attr, column);
+        CHECK(Near(s.vy, -0.245, 1e-7));
+
+        column.fn = [](int, int y, int) {
+            if (y >= 12) return Full();
+            BlockShape shape;
+            shape.fluid = 1;
+            shape.fluidLevel = 1;
+            shape.bubbleColumn = 1;
+            return shape;
+        };
+        s = State{};
+        s.x = s.z = 0.5;
+        s.y = 10;
+        Input crouch;
+        crouch.sneak = true;
+        for (int i = 0; i < 20; ++i) Step(s, crouch, attr, column);
+        CHECK(Near(s.y, 10.51, 2e-6));
+        CHECK(Near(s.vy, 0.115, 1e-7));
+        CHECK(!PoseFits(s, column, kStandHeight));
+        CHECK(PoseFits(s, column, kSneakHeight));
+    }
+
     // Expanding the swim pose at a fluid surface must not change the fluid
     // query already produced for that tick. The next tick uses the new pose.
     {

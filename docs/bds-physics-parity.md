@@ -177,9 +177,57 @@ under the ice ceiling. Eating with sprint held and a complete food-use lifetime
 also retained zero corrections after separating the packet flags. Teleport setup
 is counted separately. Sprinting, walking jump, sprint-jump and sneak-jump were
 rerun on the dry platform and each also produced zero movement corrections.
-Teleport setup
-corrections remain present in the raw logs. All 62 CTest suites pass, including
+Those setup corrections remain present in the raw logs. All 62 CTest suites pass, including
 the new failed-liquid-predicate and current-pose water-query regressions.
+
+### Flowing water and bubble-column contacts
+
+Five flowing-water cases (idle drift, moving with/against the current, sideways
+travel, and jumping) produced zero movement corrections on the strict localhost
+BDS server. This covers a shallow horizontal stream, not all flow producers.
+
+An enclosed soul-sand bubble column exposed eight corrections in a 40-tick
+baseline. Perlin decoded bubble columns as water but omitted their inside-block
+action. Native 26.52 client visitors `0x10674cbe8` and `0x10674d054` add 0.06 to
+vertical velocity, capped at 0.7, or subtract 0.03 for `drag_down`, capped at -0.3.
+Each contacted block queues an action and resets fall distance. Perlin now
+applies these actions in its existing post-movement inside-block traversal,
+after water drag and gravity. Tests cover two/three vertical contacts, terminal
+velocities, fall-distance reset, and leaving the column. These native addresses
+are supporting client evidence; the runtime checks use Windows BDS 1.26.52.3.
+
+The patched upward column and a downward column entered at mid-height both
+produced zero movement corrections. At the upward column's ceiling, the native
+and local vertical velocity is approximately 0.115, matching two contact actions
+after water gravity. Open-surface bubble behavior and complete native action
+request/component lifetimes remain unverified.
+
+The expanded matrix also found a crouching ceiling mismatch: Perlin stopped at
+feet y=243.50 while BDS held y=243.51, causing 15 corrections. Native
+PlayerBoundingBoxStateUpdateSystem traversal `0x106104994` selects float bits
+`0x3fbeb852` (1.49) for the ordinary reduced crouch height, or 1.8 for its
+alternate settings path, before passing that height to probe `0x10610532c`.
+The default local crouch height now uses 1.49 instead of 1.50; the alternate
+native setting and its configuration lifecycle remain unported.
+With the corrected height, the sneak ceiling case changed from 15 corrections
+to zero. The final five-case column matrix (upward, downward from mid-height,
+upward with jump, upward with sneak and release, and upward sprint-swimming)
+each produced zero movement corrections; setup teleports remain in the raw
+counter. All 62 CTest suites pass after the height change.
+
+The eating regression was rerun against this bubble-enabled build: walking,
+diagonal movement, sprint held while eating, and complete food use each had zero
+movement corrections. The 24-tick walking and diagonal cases traveled 0.634624
+and 0.634639 blocks respectively, including the common 20-tick release window;
+sprint held while eating traveled 0.634624 blocks. These are measured scenario
+distances, not a replacement for the native modifier and input-order evidence.
+
+An adjacent native action visitor `0x10674cb7c` uses a separate +0.1/1.8 upward
+and -0.03/-0.9 downward branch. Gather callback `0x106755fe4` selects action
+type 0 via `0x106744130` when the block above has legacy ID zero, and type 1
+via `0x106744288` otherwise, with an additional contact predicate on the latter
+path. This surface action and its complete admission predicate are not yet
+ported or covered by the enclosed-column checks above.
 
 See [local client control](client-control.md) for the hidden launch, live browser
 view, tick-bounded input, block probes and raw correction telemetry. Broader

@@ -78,4 +78,14 @@ namespace perlin::physics::bds {
             velocity = ApplyGravity(velocity, fallDistance, *gravity);
         return velocity;
     }
+
+    // Native 26.52 EntityInside action visitors 0x10674CBE8 / 0x10674D054.
+    // Each contacted bubble block contributes one action after movement.
+    inline float BubbleColumnVelocity(float velocity, bool dragDown, float& fallDistance) {
+        fallDistance = 0;
+        const float next = detail::Round(velocity + (dragDown ? -0.03f : 0.06f));
+        if (dragDown)
+            return next < -0.3f ? -0.3f : next;
+        return next > 0.7f ? 0.7f : next;
+    }
 }

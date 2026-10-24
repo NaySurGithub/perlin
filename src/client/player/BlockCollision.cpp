@@ -339,6 +339,8 @@ namespace perlin {
             n == "kelp_plant") {
             s.fluid = 1;
             s.fluidLevel = 8.0f / 9.0f;
+            if (n == "bubble_column")
+                s.bubbleColumn = State(id, "drag_down", 0) ? -1 : 1;
             return info;
         }
         if (n == "web" || n == "cobweb") {

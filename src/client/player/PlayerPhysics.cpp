@@ -764,6 +764,8 @@ namespace perlin::physics {
                                    [&](int32_t x, int32_t y, int32_t z) {
                 const auto shape = world.Query(x, y, z);
                 web |= shape.web;
+                if (shape.bubbleColumn)
+                    s.vy = bds::BubbleColumnVelocity(static_cast<float>(s.vy), shape.bubbleColumn < 0, s.fallDistance);
                 if (shape.honey)
                     honey.push_back({x, y, z});
             });
