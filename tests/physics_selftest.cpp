@@ -2,6 +2,7 @@
 #include "client/player/PerlinScaffolding.hpp"
 #include "client/player/PerlinPowderSnow.hpp"
 #include "client/player/PerlinFallDistance.hpp"
+#include "client/player/PerlinStatusEffect.hpp"
 
 #include <cmath>
 #include <bit>
@@ -43,6 +44,17 @@ static BlockShape Slab(double h) {
 }
 
 int main() {
+    // Received duration 40 at boundary 100 remains available to movement
+    // through tick 140; before tick 141 the cache observes boundary 140.
+    CHECK(bds::StatusEffectTicksAt(40, 100, 100) == 40);
+    CHECK(bds::StatusEffectTicksAt(40, 100, 139) == 1);
+    CHECK(bds::StatusEffectTicksAt(40, 100, 140) == 0);
+    CHECK(bds::StatusEffectTicksAt(40, 100, 150) == 0);
+    // Large finite durations must expire; the old wall-clock cache treated
+    // every duration >= 32767*20 as infinite.
+    CHECK(bds::StatusEffectTicksAt(32767 * 20, 100, 100 + 32767 * 20) == 0);
+    CHECK(bds::StatusEffectTicksAt(INT32_MAX, 0, UINT64_MAX) == 0);
+    CHECK(bds::StatusEffectTicksAt(-1, 100, UINT64_MAX) == -1);
     Attributes attr;
 
     // Native scaffolding collision is admitted only from above, and the jump

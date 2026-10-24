@@ -26,8 +26,10 @@ The state endpoint includes `movementSpeed`, `serverSprinting`, and
 `movementAttributeJson` (the complete received movement attribute, including
 modifiers) for diagnosing speed transitions. These describe received server
 state, which can lag the locally predicted input.
-`effectIds` lists active effects from the received effect cache. Its current
-expiry uses wall-clock duration; it does not establish native effect tick timing.
+`effectIds` lists active effects from the received effect cache. Finite durations
+age by movement ticks from the packet stamp (or receipt tick for unstamped
+packets); only duration -1 is infinite. Full native effect scheduling outside
+ordinary player movement remains unverified.
 
 ## Requests
 

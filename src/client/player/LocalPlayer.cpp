@@ -2,6 +2,7 @@
 
 #include "client/player/BlockCollision.hpp"
 #include "client/player/PerlinScaffolding.hpp"
+#include "client/player/PerlinStatusEffect.hpp"
 #include "protocol/Packets.hpp"
 #include "world/level/block/BlockPalette.hpp"
 #include "network/PlayerConstants.hpp"
@@ -86,28 +87,30 @@ namespace perlin {
                 // insertion stores this correction in the following snapshot.
                 if (record.tick <= boundary)
                     continue;
+                const bool active = update.active && physics::bds::StatusEffectTicksAt(
+                    update.duration, update.tick, record.tick - 1) != 0;
                 auto& a = record.attributes;
                 bool changed = false;
                 switch (update.id) {
                 case 8: {
-                    const int value = update.active ? update.amplifier + 1 : 0;
+                    const int value = active ? update.amplifier + 1 : 0;
                     changed = a.jumpBoost != value;
                     a.jumpBoost = value;
                     break;
                 }
                 case 24: {
-                    const int value = update.active ? update.amplifier + 1 : 0;
+                    const int value = active ? update.amplifier + 1 : 0;
                     changed = a.levitation != value;
                     a.levitation = value;
                     break;
                 }
                 case 27:
-                    changed = a.slowFalling != update.active;
-                    a.slowFalling = update.active;
+                    changed = a.slowFalling != active;
+                    a.slowFalling = active;
                     break;
                 case 33:
-                    changed = a.weaving != update.active;
-                    a.weaving = update.active;
+                    changed = a.weaving != active;
+                    a.weaving = active;
                     break;
                 default: break;
                 }

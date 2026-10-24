@@ -725,7 +725,7 @@ namespace perlin {
                           << " afterAuthTick=" << LastAuthTick() << std::endl;
             const bool on = p.eventId != MobEffectPacketEventId::Remove;
             std::lock_guard lock(statusMutex);
-            pendingEffectUpdates.push_back({p.tick, p.effectId, p.amplifier, on});
+            pendingEffectUpdates.push_back({p.tick, p.effectId, p.amplifier, on, p.duration});
             activeEffects.erase(std::remove_if(activeEffects.begin(), activeEffects.end(), [&](const ActiveEffect& e) { return e.id == p.effectId; }), activeEffects.end());
             if (on) {
                 ActiveEffect e;
@@ -733,8 +733,8 @@ namespace perlin {
                 e.amplifier = p.amplifier;
                 e.ambient = p.ambient;
                 e.particles = p.particles;
-                e.infinite = p.duration < 0 || p.duration >= 32767 * 20;
-                e.expires = std::chrono::steady_clock::now() + std::chrono::milliseconds(static_cast<int64_t>(std::max(0, p.duration)) * 50);
+                e.duration = p.duration;
+                e.appliedTick = p.tick != 0 ? p.tick : LastAuthTick();
                 activeEffects.push_back(e);
             }
             switch (p.effectId) {

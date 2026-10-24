@@ -1835,3 +1835,45 @@ native effects component or all attribute producers. Wall-clock effect expiry,
 future-stamped updates, effect changes across older world mutations, input/mode
 regeneration during replay and full native snapshot/request lifetimes still
 require investigation. These results do not establish complete BDS parity.
+
+### Status-effect duration clock (2026-10-25)
+
+Native `TickMobEffectsSystem` wrapper `0x1067B2158` calls `0x1067B2814` for
+entities with `InterpolateMovementNeededComponent`. Each present effect can
+run its callback, then normally decrements finite duration once and queues a
+remove request at zero. Duration **-1 alone** is infinite. A skip-duration byte
+at offset 37 clears itself instead of decrementing; ordinary packet replay
+initializes it to zero. Producers of that skip state and complete remove-request
+phase lifetimes remain open.
+
+The former received-effect cache expired by wall clock and treated durations
+at least `32767*20` as infinite. Perlin now derives remaining finite duration
+from movement ticks, anchored to a nonzero packet stamp or the receipt movement
+tick for unstamped packets. Queued history updates retain duration, limiting
+the effect's movement attributes to its stamped lifetime during replay. Unit
+coverage includes the finite endpoint, very large finite durations, large tick
+gaps and the exact infinite sentinel.
+
+The wall-clock baseline reports **0/1/0/0** corrections for one-second weaving
+expiry, expiry across a 1.5-second client process stall, three-second expiry,
+and an infinite effect followed by explicit removal. The failing stall route
+differs by approximately **0.245 blocks**. With tick-based duration all four
+report zero; three further stall repeats also report zero. The stall pauses
+only the verified Perlin process, resumes it in a finally block, and leaves BDS
+running. Raw correction counts and BDS strictness are unchanged.
+
+Three verified-air vertical routes also report zero: levitation expiry,
+levitation expiry across the stall, and airborne slow-falling expiry across the
+stall. The slow-falling route starts grounded on a static ledge at Y=275,
+receives the effect while falling near Y=256.09 and lands at Y=225. Forward
+input has a simulation-tick lease to keep the complete route inside the runway.
+All ten accepted lifetime routes end connected, initialized and alive; all 62
+local CTest suites pass. An earlier vertical fixture retained berry bushes and
+is not counted as plain-air validation; the accepted repeat clears the column
+and probes air before starting.
+
+The adapter's movement-tick clock is verified for these ordinary-player paths.
+Complete native InterpolateMovementNeeded production, sleeping/unloaded actors,
+skip-duration producers, non-player lifetimes, historical world state and
+remove-request ordering remain unverified. This does not establish whole-engine
+parity or resolve the previously recorded support-removal packet timing issue.
