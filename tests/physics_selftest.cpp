@@ -118,6 +118,37 @@ int main() {
         CHECK(contact.inside && !contact.ascendable && !contact.descendable);
     }
 
+    // A body spanning several bushes receives one accumulated multiplier,
+    // and an ordinary grounded jump is scaled on the following move.
+    {
+        TestWorld berries;
+        berries.fn = [](int, int y, int) {
+            if (y < 0) return Full();
+            BlockShape shape;
+            shape.berryBush = y == 0;
+            return shape;
+        };
+        State s;
+        s.onGround = true;
+        Step(s, Input{}, attr, berries);
+        CHECK(s.stuckX == 0.8f && s.stuckY == 0.75f && s.stuckZ == 0.8f);
+        Input jump;
+        jump.jump = true;
+        Step(s, jump, attr, berries);
+        CHECK(std::bit_cast<uint32_t>(static_cast<float>(s.y)) == 0x3ea147ae);
+        berries.fn = [](int x, int y, int) {
+            if (y < 0) return Full();
+            BlockShape shape;
+            shape.web = y == 0 && x < 0;
+            shape.berryBush = y == 0 && x >= 0;
+            return shape;
+        };
+        s = State{};
+        s.onGround = true;
+        Step(s, Input{}, attr, berries);
+        CHECK(s.stuckX == 0.25f && s.stuckY == 0.05f && s.stuckZ == 0.25f);
+    }
+
     // Powder contact scales the following movement tick. Jump permission
     // uses the stone support beneath the actor, not its powder-filled feet.
     {

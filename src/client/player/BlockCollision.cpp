@@ -311,7 +311,7 @@ namespace perlin {
                     info.shape.randomOffset = offset;
         }
         if (!chosen && id != 0 && info.shape.Empty() && info.shape.fluid == 0 &&
-            !info.shape.climbable && !info.shape.web && !info.shape.powderSnow && info.shape.scaffoldingStability < 0) {
+            !info.shape.climbable && !info.shape.web && !info.shape.powderSnow && !info.shape.berryBush && info.shape.scaffoldingStability < 0) {
             std::vector<Box> boxes;
             if (VoxelShapeRegistry::Instance().Find(BlockPalette::Instance().Name(id), boxes) && !boxes.empty()) {
                 info.shape.boxes = std::move(boxes);
@@ -359,6 +359,10 @@ namespace perlin {
         }
         if (n == "web" || n == "cobweb") {
             s.web = true;
+            return info;
+        }
+        if (n == "sweet_berry_bush") {
+            s.berryBush = true;
             return info;
         }
         if (n == "powder_snow") {

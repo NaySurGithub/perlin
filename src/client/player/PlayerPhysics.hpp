@@ -50,6 +50,7 @@ namespace perlin::physics {
         bool climbable = false;
         bool web = false;
         bool powderSnow = false;
+        bool berryBush = false;
         bool honey = false;
         float speedFactor = 1.0f;
         bool isAir = true;

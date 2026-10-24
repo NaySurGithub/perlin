@@ -810,7 +810,7 @@ namespace perlin::physics {
         const bool crouched = (in.sneak || in.forceCrouch) && !in.flying;
         {
             const Box inside = BoundingBox(s, crouched);
-            bool web = false, powderSnow = false;
+            bool web = false, powderSnow = false, berryBush = false;
             std::vector<bds::BlockPosition> honey;
             // InsideBlockComponent alternate bounds and expansion producers
             // remain separate; use this actor's ordinary shape and zero expansion.
@@ -820,6 +820,7 @@ namespace perlin::physics {
                 const auto shape = world.Query(x, y, z);
                 web |= shape.web;
                 powderSnow |= shape.powderSnow;
+                berryBush |= shape.berryBush;
                 if (shape.bubbleColumn && !in.flying) {
                     const auto above = world.Query(x, y + 1, z);
                     const bool surface = above.isAir && !above.fluid && above.Empty();
@@ -838,7 +839,7 @@ namespace perlin::physics {
                 s.vy = velocity.y;
                 s.vz = velocity.z;
             }
-            if (web || powderSnow) {
+            if (web || powderSnow || berryBush) {
                 bds::Float3 multiplier{s.stuckX, s.stuckY, s.stuckZ};
                 std::optional<bool> firstApplication;
                 if (web)
@@ -847,6 +848,9 @@ namespace perlin::physics {
                 // accumulate by minimum, rather than multiplying per block.
                 if (powderSnow)
                     bds::AccumulateBlockSlowdown(multiplier, {0.9f, 1.5f, 0.9f}, firstApplication);
+                // InsideSweetBerryBush slowdown callback 0x10604E17C.
+                if (berryBush)
+                    bds::AccumulateBlockSlowdown(multiplier, {0.8f, 0.75f, 0.8f}, firstApplication);
                 // immunePlayer: MovementAbilities value bits 0 (flying) and
                 // 2 (instabuild); it also removes the first-application record.
                 bds::ApplyPlayerSlowdownImmunity(multiplier, firstApplication, in.flying, in.creativeFlight);

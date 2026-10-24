@@ -1727,3 +1727,37 @@ fixture's ascent reached the upper ladder, so it is recorded as an additional
 interaction rather than substituted for the original powder-only regression.
 Clients remained connected, initialized and alive. This does not resolve the
 previously recorded support-removal synchronization correction.
+
+### Sweet berry bush slowdown (2026-10-25)
+
+The native ordinary-player berry contact path `0x10B904ED8` marks slowing
+contact independently of growth; growth >=1 additionally queues damage.
+InsideSweetBerryBush slowdown callback `0x10604E17C` accumulates **(0.8, 0.75,
+0.8)** by component minimum and retains the existing applied-record behavior.
+Its collision provider `0x10B905770` returns no fixed box. Perlin now preserves
+berry identity outside the static geometry fallback and feeds its contacts into
+the existing slowdown, player-ability immunity and fall-distance path.
+
+A first stone-supported fixture was discarded because it did not verify that
+bushes persisted. The accepted fixture uses dirt support and probes the loaded
+bush after settling. Its baseline counts for idle, walking, jumping and entry
+were **0/11/11/11**; the candidate reports **0/0/0/0**. Five additional routes
+(sprinting, diagonal movement, and fixtures initialized at growth 0, 1 and 2)
+also report zero corrections. The mature baseline fixture was initialized at
+growth 3. These are bounded ordinary-player checks with protective effects;
+bush damage-event behavior and health prediction are not established by them.
+
+Unit coverage checks contact across multiple cells, the scaled grounded jump,
+and minimum accumulation when a body touches both web and bushes. Native
+block-pattern slowdown-immunity lists, non-player category exemptions, weaving
+interaction and complete ECS lifetimes remain to be reconstructed.
+
+Two live web/berry boundary routes (walking and jumping) also report zero
+corrections. The accepted runs assert feet X=304.0, spanning the web column at
+X=303 and berry column at X=304. An earlier integer-coordinate teleport was
+centered by BDS at X=304.5 and discarded as a mixed-contact test. In the accepted
+walking run, travel was about 1.47 blocks versus about 4.70 in berries alone,
+consistent with the stronger web accumulator. All 11 accepted live scenarios
+kept the client connected, initialized and alive; all 62 local CTest suites pass.
+This does not resolve the previously recorded world-update synchronization cases
+or prove complete native block-effect and actor-lifetime parity.
