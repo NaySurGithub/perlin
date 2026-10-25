@@ -882,6 +882,7 @@ namespace perlin {
                 motion.poseChanged = true;
                 motion.teleport = true;
                 motion.hasRotation = true;
+                motion.filterTravel = p.mode == MovePlayerPacketMode::Teleport;
                 motion.tick = p.tick;
                 motion.onGround = p.onGround;
                 motion.yaw = p.yaw;

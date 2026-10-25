@@ -563,6 +563,8 @@ namespace perlin::physics {
         const double strafe = intent.movement.x;
 
         if (in.flying) {
+            if (s.hasTeleported)
+                return;
             const bool hovering = std::max(std::fabs(forward), std::fabs(strafe)) < 0.01f * 0.98f + 1e-9;
             const float hoverMod = hovering ? (in.creativeFlight ? 0.375f : 0.75f) : 1.0f;
             const bool hover = std::max(std::fabs(in.forward), std::fabs(in.strafe)) < 0.01f;
@@ -667,7 +669,7 @@ namespace perlin::physics {
         // Native SwimControlSystem's view excludes MobIsJumpingFlagComponent.
         // A liquid jump keeps its upward impulse instead of blending it toward
         // the pitch direction in this stage.
-        if (water && in.swimming && !in.jump) {
+        if (water && in.swimming && !in.jump && !s.hasTeleported) {
             const float look = in.lookY;
             const float gain = look < -0.2f ? 0.085f : 0.06f;
             if (look <= 0.0f || in.headInWater)
@@ -676,7 +678,7 @@ namespace perlin::physics {
                 s.vy = 0;
         }
 
-        const bool glide = in.gliding && !water && !lava;
+        const bool glide = in.gliding && !water && !lava && !s.hasTeleported;
         if (glide) {
             const bool boost = s.movementEffects[static_cast<int32_t>(bds::MovementEffectType::GlideBoost)].type != -1;
             const auto velocity = bds::GlideVelocity(
@@ -685,7 +687,7 @@ namespace perlin::physics {
             s.vx = velocity.x;
             s.vy = velocity.y;
             s.vz = velocity.z;
-        } else {
+        } else if (!s.hasTeleported) {
             MoveRelative(s, strafe, forward, relSpeed);
         }
 
@@ -715,6 +717,12 @@ namespace perlin::physics {
             s.previousJumpPosition = result.previousJumpPosition;
             s.jumpDelay = 10;
         }
+
+        // MobTravelTeleportedFilterSystem removes travel eligibility before
+        // travel flags/MoveRequest and gravity requests are produced. Sensing
+        // and pre-travel jump actions above remain separate from that filter.
+        if (s.hasTeleported)
+            return;
 
         if (s.onClimbable) {
             s.vy = std::max(s.vy, -kClimbSpeed);
@@ -889,5 +897,8 @@ namespace perlin::physics {
         s.swimAmount = in.swimming ? std::fmin(s.swimAmount + 0.1f, 1.0f)
                                   : std::fmax(s.swimAmount - 0.1f, 0.0f);
         s.previousRotation = {in.pitch, s.yaw};
+        // Native phase-9 cleanup requires ActorMovementTickNeeded; callers
+        // that cannot simulate must retain this flag until Step is eligible.
+        s.hasTeleported = false;
     }
 }

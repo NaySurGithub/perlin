@@ -176,6 +176,7 @@ namespace perlin {
         struct ServerMotion {
             bool poseChanged = false;
             bool teleport = false;
+            bool filterTravel = false;
             bool hasVelocity = false;
             bool hasRotation = false;
             float velocity[3] = {0, 0, 0};

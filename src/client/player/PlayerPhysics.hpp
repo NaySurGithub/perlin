@@ -148,6 +148,8 @@ namespace perlin::physics {
 
         Box box;
         bool hasBox = false;
+        // HasTeleportedFlagComponent survives until an eligible movement tick.
+        bool hasTeleported = false;
 
         double Height(bool sneaking) const { return (crawling || swimming) ? kCrawlHeight : sneaking ? kSneakHeight : kStandHeight; }
     };

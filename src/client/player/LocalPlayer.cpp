@@ -191,6 +191,11 @@ namespace perlin {
         }
         bool handled = false;
         if (motion.correction) {
+            // This authoritative snapshot is already past the forced-pose
+            // frame. A late teleport and its following correction can be
+            // decoded together; do not run that frame's filter a second time.
+            if (teleportMotionBoundary && motion.tick > *teleportMotionBoundary)
+                state.hasTeleported = false;
             while (!history.empty() && history.front().tick < motion.tick)
                 history.pop_front();
             if (!history.empty() && history.front().tick == motion.tick) {
@@ -279,6 +284,7 @@ namespace perlin {
             if (motion.teleport) {
                 teleportMotionBoundary = motion.tick ? motion.tick : session.LastAuthTick();
                 futureMotion.clear();
+                state.hasTeleported = motion.filterTravel;
                 state.vx = state.vy = state.vz = 0;
                 state.onGround = motion.onGround;
                 smoothOffset[0] = smoothOffset[1] = smoothOffset[2] = 0;

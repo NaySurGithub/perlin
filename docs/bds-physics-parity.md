@@ -2223,3 +2223,77 @@ Lava/Gliding/Flying flags. Gravity request producers consume those travel flags
 flag/request production, not merely suppress final position integration or skip
 all status/contact systems. This narrows the next implementation boundary while
 leaving exact registration dependencies and component producers to verify.
+
+### Teleport travel eligibility candidate (2026-10-25)
+
+Native generic teleport 0x10A48EBF8 clears delta unless explicitly retained,
+resets previous position, then creates HasTeleportedFlagComponent through
+storage accessor 0x102A6FF60. Player teleportTo 0x10ABF5854 (identified by its
+native diagnostic string) calls this path. Stamped MovePlayer mode-2 replay
+0x103CE5980 creates the same flag; Reset mode is distinct.
+
+The candidate carries that flag in physics State, so saved history and replay
+retain its lifetime. Dimension-change/MovePlayer Teleport events set it; Reset
+and the separate respawn event do not assume the same producer. An eligible
+Step filters relative travel, glide/flight integration, collision requests and
+travel gravity while retaining sensing, pre-travel jump actions and the existing
+post-movement contacts/effect expiry. Step clears the flag at tick end. A pending
+transfer/unavailable column does not call Step and therefore cannot consume it.
+This is a partial phase boundary within the current simulator, not a complete
+native ECS/request scheduler. The full fluid/jump/climb combinations need live
+validation, and their existing monolithic ordering is not declared reconstructed.
+
+A new physics regression verifies no travel/velocity on the filtered tick,
+continued movement-effect expiry, flag cleanup and resumed input/gravity on the
+next eligible tick. The live pre-change baseline adds ordinary air teleport,
+held-forward teleport and held-jump teleport, each producing one correction
+(1/1/1); the measured windows include their teleport commands.
+
+The first live filter candidate reports 0/0/2 for air/forward/jump teleports,
+against baseline 1/1/1. Its dimension run remains 1/0, with the Nether error now
+reversed (candidate one movement step behind the server). These failures are
+retained and are not passing evidence. Applying the flag to ChangeDimension
+was therefore removed: that packet's producer and transfer-time cleanup are
+not proved equivalent to stamped MovePlayer Teleport mode.
+
+The held-jump trace identifies double application after late delivery: teleport
+stamp 527711 and following correction 527712 are decoded together after auth
+527712. The correction already contains Y225/deltaY=0.42, but the candidate's
+pending teleport flag filtered travel again at 527713, leading to the second
+correction at 527719. The revised candidate consumes the pending flag when an
+authoritative correction is past its forced-pose boundary. Full stamped
+MovePlayer input insertion/replay remains unfinished; this fix prevents that
+specific duplicate lifetime, rather than claiming to reconstruct that pipeline.
+
+After the late-correction lifetime fix, ordinary air/forward/jump teleport runs
+report **0/0/1** and **0/1/1**. The earlier baseline is 1/1/1; the first candidate's
+0/0/2 remains recorded as a regression, not hidden. Jump still has an immediate
+late-arrival correction; the repeat's forward case also demonstrates delivery
+sensitivity. No general zero-teleport claim follows from these results.
+All six teleport/impulse routes remain **0/0/0/0/0/0**, with both later impulses
+still displacing +2.06903076171875 blocks. The subsequent dimension run reports
+0/0, but the earlier 1/0 runs and unported dimension producer/lifetime remain
+open. Evidence: `out/teleport-air-boundary-report.json`,
+`out/teleport-air-boundary-repeat-report.json`,
+`out/teleport-impulse-travel-filter-report.json`, and
+`out/teleport-travel-final-dimension-run.log`. All endpoints remain valid.
+The revised build passes all 62 CTests (8.16s).
+
+SwimControlSystemImpl's context at 0x10EA21E58 also requires MobTravelComponent
+(and separately excludes jumping). Its pitch control is now gated during the
+filtered travel tick. An additional water regression verifies fluid/pose sensing
+still runs while pitch control does not create velocity. A ground-jump regression
+verifies the independent jump action can create its delta without integrating
+position on the filtered tick, then resumes on the following tick.
+
+The final swim-predicate build passes all 62 CTests (13.95s). Three live
+teleports while actively swimming in the probed water fixture record **0/0/1**
+corrections for camera pitches 0/-30/+30. Each route verifies active swimming
+and water before the teleport, includes that teleport in the measured window,
+and ends alive/connected with a settled column. Upward swimming remains a
+failing combined interaction; this newly measured route has no matched
+pre-change baseline, so it is not labelled a resolved case or proven regression.
+Evidence: `out/teleport-swim-filter-report.json`,
+`out/teleport-swim-filter-trace.ndjson` and `out/teleport-filter-final-client.log`.
+The final implementation sets the travel flag only for MovePlayer Teleport mode;
+dimension arrival and Reset do not infer that same lifetime.

@@ -57,6 +57,63 @@ int main() {
     CHECK(bds::StatusEffectTicksAt(-1, 100, UINT64_MAX) == -1);
     Attributes attr;
 
+    // A teleport filters travel/request production, but post-movement effect
+    // lifetimes still advance. The next eligible tick resumes ordinary gravity.
+    {
+        TestWorld air;
+        air.fn = [](int, int, int) { return BlockShape{}; };
+        State s;
+        s.y = 20;
+        s.hasTeleported = true;
+        Input in;
+        in.forward = 1;
+        in.movementEffects.push_back({100, 2, 1});
+        Step(s, in, attr, air);
+        CHECK(s.x == 0 && s.y == 20 && s.z == 0);
+        CHECK(s.vx == 0 && s.vy == 0 && s.vz == 0);
+        CHECK(!s.hasTeleported);
+        CHECK(s.movementEffects[1].remaining == 1);
+        in.movementEffects.clear();
+        Step(s, in, attr, air);
+        CHECK(s.vy < 0 && s.vx * s.vx + s.vz * s.vz > 0);
+        CHECK(s.movementEffects[1].type == -1);
+    }
+    {
+        TestWorld ground;
+        ground.fn = [](int, int y, int) { return y < 0 ? Full() : BlockShape{}; };
+        State s;
+        s.onGround = true;
+        s.hasTeleported = true;
+        Input in;
+        in.jump = true;
+        Step(s, in, attr, ground);
+        CHECK(s.y == 0);
+        CHECK(Near(s.vy, 0.42f, 1e-7));
+        CHECK(!s.hasTeleported);
+        Step(s, in, attr, ground);
+        CHECK(s.y > 0 && s.vy > 0 && s.vy < 0.42f);
+    }
+
+    {
+        TestWorld water;
+        water.fn = [](int, int, int) {
+            BlockShape shape;
+            shape.fluid = 1;
+            shape.fluidLevel = 1;
+            return shape;
+        };
+        State s;
+        s.hasTeleported = true;
+        Input in;
+        in.swimming = true;
+        in.headInWater = true;
+        in.lookY = -1;
+        Step(s, in, attr, water);
+        CHECK(s.inWater && s.swimming);
+        CHECK(s.vy == 0 && s.y == 0);
+        CHECK(!s.hasTeleported);
+    }
+
     // Native scaffolding collision is admitted only from above, and the jump
     // and keyboard descent actions replace vertical speed before movement.
     {
