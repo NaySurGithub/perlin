@@ -63,7 +63,8 @@ namespace perlin {
         void BeginWorldItems();
         void DrawWorldItem(const ui::HudItem& item, const glm::dvec3& feet, float age, uint64_t seed, const glm::vec3& light);
 
-        void DrawHeldItem(const ui::HudItem& item, const glm::mat4& arm, bool left, const glm::vec3& light);
+        void DrawHeldItem(const ui::HudItem& item, const glm::mat4& arm, bool left, const glm::vec3& light,
+                          float bowUseTicks = -1.0f);
         void SetWorldShadowOnly(bool on) { worldShadowOnly = on; }
         void SetDollClip(const int* clip) { dollClip = clip; }
 

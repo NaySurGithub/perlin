@@ -1732,14 +1732,16 @@ namespace perlin {
                               << ") result=" << resultId << " payload=" << body.size() << "B"
                               << std::endl;
             }
-            CompleteRequest(std::make_tuple(pkt.dimension, cx, absY, cz),
-                            result == SubChunkEntryEntryResult::ChunkNotFound);
             if (result == SubChunkEntryEntryResult::SuccessAllAir) {
                 static const std::array<uint16_t, ChunkCodec::kCells> air{};
                 netLevel.SetSubChunk(cx, cz, absY, air.data());
+                CompleteRequest(std::make_tuple(pkt.dimension, cx, absY, cz), false);
                 continue;
             }
             if (result != SubChunkEntryEntryResult::Success) {
+                CompleteRequest(std::make_tuple(pkt.dimension, cx, absY, cz),
+                    result != SubChunkEntryEntryResult::YIndexOutOfBounds &&
+                    result != SubChunkEntryEntryResult::InvalidDimension);
                 static int logged = 0;
                 if (logged++ < 8)
                     std::cout << "[chunk] SubChunk (" << cx << "," << absY << "," << cz
@@ -1755,9 +1757,11 @@ namespace perlin {
             const char* why = nullptr;
             if (!ChunkCodec::ParseSubChunk(job.body->data(), job.body->size(), sc, used, &why)) {
                 LogHex("SubChunk payload", why ? why : "?", *job.body);
+                CompleteRequest(std::make_tuple(dimensionId.load(), job.cx, job.absY, job.cz), true);
                 return;
             }
-            ApplySubChunk(job.cx, job.cz, job.absY, sc);
+            const bool applied = ApplySubChunk(job.cx, job.cz, job.absY, sc);
+            CompleteRequest(std::make_tuple(dimensionId.load(), job.cx, job.absY, job.cz), !applied);
             if (used < job.body->size())
                 ParseBlockEntities(job.body->data() + used, job.body->size() - used, false);
         };
@@ -1957,8 +1961,13 @@ namespace perlin {
         {
             std::lock_guard<std::mutex> lk(reqMutex);
             inflight.erase(key);
-            if (retry && ++retries[key] <= 3) {
-                reqQueue.push(key);
+            if (retry) {
+                if (++retries[key] <= 3)
+                    reqQueue.push(key);
+                else
+                    // Back off using the same timeout clock, retaining the
+                    // unresolved slot. A failure is never an empty subchunk.
+                    inflight[key] = std::chrono::steady_clock::now();
                 return;
             }
             retries.erase(key);
@@ -2093,12 +2102,9 @@ namespace perlin {
                 }
                 auto key = it->first;
                 it = inflight.erase(it);
-                if (++retries[key] <= 3) {
-                    reqQueue.push(key);
-                } else {
-                    retries.erase(key);
-                    DropSlot(key, completed);
-                }
+                // Keep retrying missing data at the bounded five-second rate;
+                // abandoning the slot used to mark permanent voids complete.
+                reqQueue.push(key);
             }
         }
         FinishColumns(completed);

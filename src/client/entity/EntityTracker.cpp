@@ -195,6 +195,7 @@ namespace perlin::entity {
         body;                                                                                                          \
     }
     PERLIN_ENTITY_SET(SetFlags(uint64_t rid, uint64_t flags), e.flags = flags)
+    PERLIN_ENTITY_SET(SetFlagsExtended(uint64_t rid, uint64_t flags), e.flagsExtended = flags)
     PERLIN_ENTITY_SET(SetCrawling(uint64_t rid, bool crawling), e.crawling = crawling)
     PERLIN_ENTITY_SET(SetScale(uint64_t rid, float scale), e.scale = scale)
     PERLIN_ENTITY_SET(SetNameTag(uint64_t rid, const std::string& nameTag), e.nameTag = nameTag)
@@ -215,12 +216,18 @@ namespace perlin::entity {
     PERLIN_ENTITY_SET(SetPropertyText(uint64_t rid, const std::string& key, const std::string& text), e.propText[key] = text)
 #undef PERLIN_ENTITY_SET
 
-    void EntityTracker::SetSkin(const std::string& uuid, std::shared_ptr<const SkinData> skin) {
+    void EntityTracker::SetSkin(const std::string& uuid, std::shared_ptr<const SkinData> skin, bool listed) {
         std::lock_guard lock(mutex);
-        skins[uuid] = skin;
+        if (listed || skins.contains(uuid))
+            skins[uuid] = skin;
         for (auto& [rid, e] : entities)
             if (e.isPlayer && e.uuid == uuid)
                 e.skin = skin;
+    }
+
+    void EntityTracker::RemoveSkin(const std::string& uuid) {
+        std::lock_guard lock(mutex);
+        skins.erase(uuid);
     }
 
     bool EntityTracker::Find(uint64_t rid, Entity& out) const {

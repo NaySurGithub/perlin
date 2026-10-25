@@ -6450,6 +6450,11 @@ namespace perlin {
                 previewEntities.SetOwner(rid, 1000);
             if (const char* held = PERLIN_ENV("PERLIN_PREVIEW_HELD"))
                 previewEntities.SetHeld(rid, held);
+            if (variant == "aiming") {
+                previewEntities.SetHeld(rid, "minecraft:bow");
+                previewEntities.SetTarget(rid, -7);
+                previewEntities.SetFlagsExtended(rid, entity::flag::FacingTargetToRangeAttack);
+            }
             if (const char* armor = PERLIN_ENV("PERLIN_PREVIEW_ARMOR")) {
                 static const char* parts[4] = {"helmet", "chestplate", "leggings", "boots"};
                 for (int i = 0; i < 4; i++)
@@ -6512,6 +6517,8 @@ namespace perlin {
         PERLIN_WEB_PERSIST auto previewReadyAt = previous;
         PERLIN_WEB_PERSIST size_t previewLastMeshed = 0;
         if (preview) {
+            if (const char* show = PERLIN_ENV("PERLIN_PREVIEW_HUD"))
+                options.showHud = std::atoi(show) != 0;
             camera.x = 24.0f; camera.y = 74.0f; camera.z = -22.0f; camera.yaw = 100.0f; camera.pitch = -6.0f;
             if (const char* c = PERLIN_ENV("PERLIN_PREVIEW_CAM"))
                 std::sscanf(c, "%f,%f,%f,%f,%f", &camera.x, &camera.y, &camera.z, &camera.yaw, &camera.pitch);
@@ -6999,6 +7006,7 @@ namespace perlin {
                 int& bkx = gBreak.x; int& bky = gBreak.y; int& bkz = gBreak.z; int& bkFace = gBreak.face;
                 float& breakProgress = gBreak.progress;
                 static int breakDelayTicks = 0;
+                static uint64_t creativeBreakReadyAt = 0;
                 static int hitTicks = 0;
                 breakClock += dt;
                 useClock += dt;
@@ -7038,7 +7046,9 @@ namespace perlin {
                             }
                         }
                     }
-                    if (live && attackHeld && gAim.kind == AimHit::Kind::Block) {
+                    const bool creativeSword = creative && held.name.ends_with("_sword");
+                    if (live && attackHeld && !creativeSword &&
+                        (!creative || MsNow() >= creativeBreakReadyAt) && gAim.kind == AimHit::Kind::Block) {
                         const bool newTarget = !breaking || gAim.bx != bkx || gAim.by != bky || gAim.bz != bkz;
                         if (newTarget && breakDelayTicks > 0 && !breaking) {
                         } else if (newTarget) {
@@ -7056,6 +7066,7 @@ namespace perlin {
                                 live->NetLevel().SetBlock(fx, fy, fz, 0);
                                 sounds.PlayBlockEvent(fireName, "break", glm::dvec3(fx + 0.5, fy + 0.5, fz + 0.5));
                                 breakDelayTicks = 5;
+                                if (creative) creativeBreakReadyAt = MsNow() + 250;
                             } else {
                                 bkx = gAim.bx; bky = gAim.by; bkz = gAim.bz; bkFace = gAim.face;
                                 breaking = true;
@@ -7134,6 +7145,7 @@ namespace perlin {
                                 live->ClearCrack(bkx, bky, bkz);
                                 { handRenderer.Swing(options.hand); gSelfSwing++; }
                                 breakDelayTicks = 5;
+                                if (creative) creativeBreakReadyAt = MsNow() + 250;
                             } else {
                                 gLocalCrack = {breakProgress > 0.0f, bkx, bky, bkz, std::clamp(static_cast<int>(breakProgress * 10.0f), 0, 9), std::clamp(breakProgress, 0.0f, 1.0f)};
                             }

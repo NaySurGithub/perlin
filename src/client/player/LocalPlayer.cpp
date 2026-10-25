@@ -206,7 +206,10 @@ namespace perlin {
                 if (physics::PoseFits(state, world, physics::kSneakHeight))
                     forcedSneak = true;
                 else
-                    wantCrawl = true;
+                    // Ordinary wall/support overlap must not enter a new low
+                    // pose. Only retain an existing crawl until
+                    // there is enough room to stand again.
+                    wantCrawl = crawling || state.crawling;
             }
         }
         crawling = wantCrawl;
@@ -526,8 +529,8 @@ namespace perlin {
         }
         if (flyPending && (session.IsFlying() == flying || now - flyPendingAt > std::chrono::milliseconds(750)))
             flyPending = false;
-        if (session.IsFlying() != serverFlying) {
-            serverFlying = session.IsFlying();
+        serverFlying = session.IsFlying();
+        if (!flyPending && serverFlying != flying) {
             // While our own toggle is still unanswered, an incoming ability update may just be the answer to an
             // earlier toggle; don't let it undo what the player did since.
             if (!flyPending) {

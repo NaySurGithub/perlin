@@ -83,6 +83,9 @@ namespace perlin::attachable {
                    const BoneFilter& visible = nullptr, const glm::mat4* rootParent = nullptr, bool mirrorTextures = false);
 
     Geometry VoxelizeSkinLayers(const Geometry& source, const uint8_t* rgba, int width, int height);
+    // Keeps a sprite's transparent silhouette while giving its exposed edges depth.
+    std::vector<Quad> ExtrudeSprite(const Texture& atlas, int tileX, int tileY, int tileWidth, int tileHeight,
+                                   float width, float height, float depth);
 
     glm::mat4 EulerZYX(const glm::vec3& degrees);
 

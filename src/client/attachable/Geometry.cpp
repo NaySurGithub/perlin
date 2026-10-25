@@ -452,6 +452,44 @@ namespace perlin::attachable {
         return out;
     }
 
+    std::vector<Quad> ExtrudeSprite(const Texture& atlas, int tx, int ty, int tw, int th,
+                                   float width, float height, float depth) {
+        std::vector<Quad> out;
+        if (tw <= 0 || th <= 0 || tx < 0 || ty < 0 || tx + tw > atlas.width || ty + th > atlas.height ||
+            atlas.pixels.size() < static_cast<size_t>(atlas.width) * atlas.height * 4 || depth <= 0)
+            return out;
+        const float z = depth * 0.5f, x0 = -width * 0.5f, bottom = 0.4f;
+        const auto filled = [&](int x, int y) {
+            return x >= 0 && x < tw && y >= 0 && y < th &&
+                   atlas.pixels[(static_cast<size_t>(ty + y) * atlas.width + tx + x) * 4 + 3] >= 16;
+        };
+        const auto emit = [&](glm::vec3 a, glm::vec3 b, glm::vec3 c, glm::vec3 d, glm::vec3 normal,
+                              glm::vec2 uv0, glm::vec2 uv1, glm::vec2 uv2, glm::vec2 uv3) {
+            Quad q;
+            q.p[0] = a; q.p[1] = b; q.p[2] = c; q.p[3] = d;
+            q.uv[0] = uv0; q.uv[1] = uv1; q.uv[2] = uv2; q.uv[3] = uv3;
+            q.n = normal;
+            out.push_back(q);
+        };
+        for (int y = 0; y < th; ++y)
+            for (int x = 0; x < tw; ++x) {
+                if (!filled(x, y)) continue;
+                const float l = x0 + width * x / tw, r = x0 + width * (x + 1) / tw;
+                const float t = bottom + height * (th - y) / th, b = bottom + height * (th - y - 1) / th;
+                const glm::vec2 uv((tx + x + 0.5f) / atlas.width, (ty + y + 0.5f) / atlas.height);
+                const auto face = [&](glm::vec3 a, glm::vec3 b, glm::vec3 c, glm::vec3 d, glm::vec3 n) {
+                    emit(a, b, c, d, n, uv, uv, uv, uv);
+                };
+                face({l,b,z}, {r,b,z}, {r,t,z}, {l,t,z}, {0,0,1});
+                face({r,b,-z}, {l,b,-z}, {l,t,-z}, {r,t,-z}, {0,0,-1});
+                if (!filled(x - 1, y)) face({l,b,-z}, {l,b,z}, {l,t,z}, {l,t,-z}, {-1,0,0});
+                if (!filled(x + 1, y)) face({r,b,z}, {r,b,-z}, {r,t,-z}, {r,t,z}, {1,0,0});
+                if (!filled(x, y - 1)) face({l,t,z}, {r,t,z}, {r,t,-z}, {l,t,-z}, {0,1,0});
+                if (!filled(x, y + 1)) face({l,b,-z}, {r,b,-z}, {r,b,z}, {l,b,z}, {0,-1,0});
+            }
+        return out;
+    }
+
     void GeometryLibrary::Detach(const std::string& id, const std::vector<std::string>& bones) {
         const auto it = geometries.find(id);
         if (it == geometries.end())

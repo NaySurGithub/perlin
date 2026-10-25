@@ -4,6 +4,7 @@
 
 #include <cstdio>
 #include "util/Env.hpp"
+#include "util/Paths.hpp"
 #include "client/entity/EntityQuery.hpp"
 #include "client/hand/HandRenderer.hpp"
 #include "client/ui/ItemData.hpp"
@@ -300,6 +301,29 @@ namespace perlin::entity {
         views.clear();
         skinGeometry.clear();
         voxelGeometry.clear();
+        skinOwners.clear();
+        for (auto& geometry : orbGeometry) geometry.clear();
+    }
+
+    void EntityRenderer::PruneSkinCaches() {
+        for (auto it = skinOwners.begin(); it != skinOwners.end();) {
+            if (!it->second.expired()) {
+                ++it;
+                continue;
+            }
+            const uint64_t serial = it->first;
+            for (auto* cache : {&skinTextures, &capeTextures, &capeModelTextures}) {
+                const auto texture = cache->find(serial);
+                if (texture != cache->end()) {
+                    if (texture->second)
+                        renderer->UiDestroyTexture(texture->second);
+                    cache->erase(texture);
+                }
+            }
+            skinGeometry.erase(serial);
+            voxelGeometry.erase(serial);
+            it = skinOwners.erase(it);
+        }
     }
 
     void EntityRenderer::Shutdown() {
@@ -334,6 +358,7 @@ namespace perlin::entity {
     uint32_t EntityRenderer::TextureFor(const Entity& e, const std::string& key) {
         if (e.isPlayer && e.skin) {
             const SkinData& s = *e.skin;
+            skinOwners[s.serial] = e.skin;
             if (key == "default" && s.skinWidth > 0) {
                 auto& id = skinTextures[s.serial];
                 if (!id)
@@ -584,9 +609,10 @@ namespace perlin::entity {
                               in.capePhysics > 0 ? std::clamp(v.groundSpeed / 3.0f, 0.0f, 1.0f) * (std::fabs(v.verticalSpeed) < 2.0f ? 1.0f : 0.0f) : 0.0f, dt);
         }
 
-        if (e.Has(flag::UsingItem) && !v.wasUsing)
+        const bool usingItem = e.Has(flag::UsingItem) || e.AimingBow();
+        if (usingItem && !v.wasUsing)
             v.usingSince = in.time;
-        v.wasUsing = e.Has(flag::UsingItem);
+        v.wasUsing = usingItem;
         if (e.swingSerial != v.swingSerial) {
             v.swingSerial = e.swingSerial;
             if (v.attackTime <= 0.0f || v.attackTime >= 0.5f)
@@ -794,7 +820,7 @@ namespace perlin::entity {
                 host.blocking = fp->blocking;
                 host.offArmHeight = fp->offArmHeight;
             } else {
-                host.using_ = e.Has(flag::UsingItem);
+                host.using_ = e.Has(flag::UsingItem) || e.AimingBow();
                 host.usedTicks = host.using_ ? static_cast<float>((v.now - v.usingSince) * 20.0) : 0.0f;
                 host.blocking = host.using_ && (usedItem == "minecraft:shield" || e.offHand == "minecraft:shield");
             }
@@ -937,6 +963,7 @@ namespace perlin::entity {
         std::string playerGeometry;
         if (e.isPlayer && e.skin) {
             const SkinData& s = *e.skin;
+            skinOwners[s.serial] = e.skin;
             if (!s.geometryJson.empty()) {
                 auto& g = skinGeometry[s.serial];
                 if (!g) {
@@ -1422,7 +1449,8 @@ namespace perlin::entity {
                 item.name = name;
                 item.count = 1;
                 item.maxDamage = ui::MaxDurability(name);
-                itemRenderer->DrawHeldItem(item, model * arm, left, light);
+                const float bowTicks = !left && e.AimingBow() ? static_cast<float>((v.now - v.usingSince) * 20.0) : -1.0f;
+                itemRenderer->DrawHeldItem(item, model * arm, left, light, bowTicks);
             };
             itemRenderer->SetWorldShadowOnly(shadowOnlyPass);
             itemRenderer->SetDollClip(dollModel ? dollClip : nullptr);
@@ -1884,6 +1912,7 @@ namespace perlin::entity {
     void EntityRenderer::Render(const std::vector<Entity>& entities, const FrameIn& in) {
         if (!renderer)
             return;
+        PruneSkinCaches();
         for (uint32_t mesh : pendingMeshes)
             renderer->UiDestroyMesh(mesh);
         pendingMeshes.clear();
@@ -1976,21 +2005,15 @@ namespace perlin::entity {
                 Layer layer;
                 layer.texture = "textures/entity/experience_orb";
                 const int icon = std::clamp(e.variant, 0, 10);
-                const float u0 = static_cast<float>(icon % 4) * 0.25f, v0 = static_cast<float>(icon / 4) * 0.25f;
-                const float yawR = in.cameraYaw * kDeg, pitchR = in.cameraPitch * kDeg;
-                const glm::vec3 forward(-std::sin(yawR) * std::cos(pitchR), -std::sin(pitchR), std::cos(yawR) * std::cos(pitchR));
-                const glm::vec3 right(-std::cos(yawR), 0.0f, -std::sin(yawR));
-                const glm::vec3 up = glm::cross(right, forward);
-                const auto corner = [&](float x, float y) {
-                    return (right * x + up * y) * 0.3f * 16.0f + glm::vec3(0.0f, 0.1f * 16.0f, 0.0f);
-                };
-                attachable::Quad q;
-                q.p[0] = corner(-0.5f, -0.25f); q.uv[0] = {u0, v0 + 0.25f};
-                q.p[1] = corner(0.5f, -0.25f);  q.uv[1] = {u0 + 0.25f, v0 + 0.25f};
-                q.p[2] = corner(0.5f, 0.75f);   q.uv[2] = {u0 + 0.25f, v0};
-                q.p[3] = corner(-0.5f, 0.75f);  q.uv[3] = {u0, v0};
-                q.n = forward * -1.0f;
-                layer.quads.push_back(q);
+                auto& geometry = orbGeometry[icon];
+                if (geometry.empty()) {
+                    Texture atlas;
+                    if (ui::UiAssets::Instance().Image(layer.texture, atlas))
+                        geometry = attachable::ExtrudeSprite(atlas, (icon % 4) * atlas.width / 4,
+                            (icon / 4) * atlas.height / 4, atlas.width / 4, atlas.height / 4, 4.8f, 4.8f, 1.2f);
+                }
+                layer.quads = geometry;
+                facing.yaw = static_cast<float>(age * 2.0 + (e.runtimeId % 360) * 137.0);
                 const float t = static_cast<float>(age) * 0.5f;
                 layer.tint[0] = (std::sin(t) + 1.0f) * 0.5f;
                 layer.tint[1] = 1.0f;
@@ -2306,7 +2329,12 @@ namespace perlin::entity {
         if (it == textures.end()) {
             Texture t;
             uint32_t id = 0;
-            if (ui::UiAssets::Instance().Image(path, t) && t.width > 0)
+            bool loaded = ui::UiAssets::Instance().Image(path, t);
+            // Bed sheets are assembled from the extracted block textures into
+            // the client asset directory, outside the vanilla resource pack.
+            if (!loaded && path.starts_with("bed_") && path.find('/') == std::string::npos)
+                loaded = LoadTexture(paths::DataDir() + "/assets/" + path, t);
+            if (loaded && t.width > 0)
                 id = renderer->UiCreateTexture(t.width, t.height, t.pixels.data(), false);
             else if (!warned[path]) {
                 warned[path] = true;

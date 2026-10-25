@@ -1,5 +1,6 @@
 build/
 out/
+/tests/data/
 .cache/
 .cpm-cache/
 dist/

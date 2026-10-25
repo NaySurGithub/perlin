@@ -223,6 +223,8 @@ namespace perlin {
             }
             std::sort(st.begin(), st.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
             if (path == "block_states.json" && !sequenceFrozen) {
+                if (rec.size() > 3 && rec[size_t{3}].boolean(false))
+                    dataDrivenHashes.insert(hash);
                 const bool reserved = name == "cinnabar:reserved";
                 const uint64_t key = reserved ? (baseKeys.empty() ? 0 : baseKeys.back()) : NameSortKey(name);
                 sequenceIndex.emplace(hash, static_cast<int32_t>(sequence.size()));
@@ -254,6 +256,7 @@ namespace perlin {
             sequenceFrozen = true;
             vanillaSequence = sequence.size();
             sequenceKeys = baseKeys;
+            BuildLayoutLocked(false);
         }
         namesLoaded = namesLoaded || !nameByHash.empty();
         std::cout << "[blocks] server registry: " << added << " ids added, " << replaced << " renamed from " << path
@@ -289,9 +292,7 @@ namespace perlin {
         customRuns.clear();
         layoutVerified = false;
         layoutAppended = false;
-        sequenceIndex.clear();
-        for (size_t i = 0; i < sequence.size(); i++)
-            sequenceIndex.emplace(sequence[i], static_cast<int32_t>(i));
+        BuildLayoutLocked(false);
     }
 
     void BlockPalette::InsertCustomRuns(std::vector<CustomRun> runs) {
@@ -300,7 +301,7 @@ namespace perlin {
             return;
         std::unordered_set<std::string> vanilla;
         for (const int32_t h : baseSequence)
-            if (const auto it = nameByHash.find(h); it != nameByHash.end())
+            if (const auto it = nameByHash.find(h); it != nameByHash.end() && !dataDrivenHashes.contains(h))
                 vanilla.insert(it->second);
         runs.erase(std::remove_if(runs.begin(), runs.end(), [&](const CustomRun& r) { return vanilla.count(r.name) > 0; }),
                    runs.end());
@@ -314,8 +315,16 @@ namespace perlin {
     // appended=true leaves every vanilla id where the bundled table has it and
     // puts the custom ones after the last vanilla id.
     void BlockPalette::BuildLayoutLocked(bool appended) {
-        sequence = baseSequence;
-        sequenceKeys = baseKeys;
+        sequence.clear();
+        sequenceKeys.clear();
+        // Data-driven vanilla blocks only occupy network IDs when StartGame
+        // declares them. Keeping absent definitions shifts every later ID.
+        for (size_t i = 0; i < baseSequence.size(); ++i) {
+            if (dataDrivenHashes.contains(baseSequence[i]))
+                continue;
+            sequence.push_back(baseSequence[i]);
+            sequenceKeys.push_back(baseKeys[i]);
+        }
         layoutAppended = appended;
         if (!customRuns.empty()) {
             struct Keyed {
@@ -337,18 +346,18 @@ namespace perlin {
                 });
                 std::vector<int32_t> merged;
                 std::vector<uint64_t> mergedKeys;
-                merged.reserve(baseSequence.size() + 256);
+                merged.reserve(sequence.size() + 256);
                 size_t next = 0;
-                for (size_t i = 0; i < baseSequence.size(); i++) {
-                    while (next < order.size() && order[next].key < baseKeys[i]) {
+                for (size_t i = 0; i < sequence.size(); i++) {
+                    while (next < order.size() && order[next].key < sequenceKeys[i]) {
                         for (int32_t h : order[next].run->hashes) {
                             merged.push_back(h);
                             mergedKeys.push_back(order[next].key);
                         }
                         next++;
                     }
-                    merged.push_back(baseSequence[i]);
-                    mergedKeys.push_back(baseKeys[i]);
+                    merged.push_back(sequence[i]);
+                    mergedKeys.push_back(sequenceKeys[i]);
                 }
                 for (; next < order.size(); next++)
                     for (int32_t h : order[next].run->hashes) {

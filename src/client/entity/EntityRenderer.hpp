@@ -153,10 +153,13 @@ namespace perlin::entity {
         std::unordered_map<uint64_t, std::unique_ptr<View>> views;
         std::unordered_map<std::string, uint32_t> textures;
         std::unordered_map<uint64_t, uint32_t> skinTextures, capeTextures, capeModelTextures;
+        std::unordered_map<uint64_t, std::weak_ptr<const SkinData>> skinOwners;
+        void PruneSkinCaches();
         std::unordered_map<uint64_t, std::unique_ptr<attachable::GeometryLibrary>> skinGeometry;
         std::unordered_map<uint64_t, std::unique_ptr<attachable::Geometry>> voxelGeometry;
         attachable::GeometryLibrary capeGeometries;
         std::vector<uint32_t> pendingMeshes;
+        std::array<std::vector<attachable::Quad>, 11> orbGeometry;
         size_t drawn = 0, considered = 0, unrenderable = 0, culled = 0;
         struct Line {
             glm::dvec3 a, b;

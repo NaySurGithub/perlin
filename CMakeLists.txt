@@ -959,6 +959,25 @@ endif()
 option(PERLIN_BUILD_TESTS "Build unit tests" OFF)
 if(PERLIN_BUILD_TESTS AND NOT EMSCRIPTEN AND NOT ANDROID)
     enable_testing()
+    add_executable(skin_lifetime_selftest tests/skin_lifetime_selftest.cpp src/client/entity/EntityTracker.cpp)
+    target_include_directories(skin_lifetime_selftest PRIVATE src "${glm_SOURCE_DIR}")
+    target_compile_features(skin_lifetime_selftest PRIVATE cxx_std_23)
+    add_test(NAME skin_lifetime_selftest COMMAND skin_lifetime_selftest)
+    add_executable(block_palette_selftest tests/block_palette_selftest.cpp
+        src/world/level/block/BlockPalette.cpp src/util/Json.cpp)
+    target_include_directories(block_palette_selftest PRIVATE src)
+    target_link_libraries(block_palette_selftest PRIVATE glaze::glaze)
+    target_compile_features(block_palette_selftest PRIVATE cxx_std_23)
+    add_test(NAME block_palette_selftest COMMAND block_palette_selftest "${CMAKE_CURRENT_SOURCE_DIR}/resources/block_states.json")
+    add_executable(entity_render_selftest tests/entity_render_selftest.cpp
+        src/client/entity/EntityQuery.cpp src/client/entity/EntityTracker.cpp src/client/entity/BlockEntityView.cpp
+        src/client/multiplayer/BlockEntities.cpp src/client/attachable/Geometry.cpp
+        src/client/attachable/Animation.cpp src/client/attachable/Molang.cpp src/client/ui/Json.cpp
+        src/world/level/block/BlockPalette.cpp src/util/Json.cpp)
+    target_include_directories(entity_render_selftest PRIVATE src "${glm_SOURCE_DIR}")
+    target_link_libraries(entity_render_selftest PRIVATE glaze::glaze)
+    target_compile_features(entity_render_selftest PRIVATE cxx_std_23)
+    add_test(NAME entity_render_selftest COMMAND entity_render_selftest)
     add_executable(hud_dump tests/hud_dump.cpp src/client/ui/Json.cpp src/client/ui/UiExpr.cpp src/client/ui/JsonUi.cpp
         src/client/ui/UiLayout.cpp src/client/ui/McFont.cpp src/client/ui/RmlEmit.cpp src/client/ui/HudData.cpp
         src/client/ui/HudRenderers.cpp src/client/ui/EffectData.cpp src/client/i18n/Lang.cpp src/client/resources/ServerPackRegistry.cpp src/client/i18n/BuiltinEnglish.cpp src/util/Resources.cpp src/util/Paths.cpp)
