@@ -181,6 +181,7 @@ namespace perlin {
             float velocity[3] = {0, 0, 0};
             float yaw = 0, pitch = 0;
             bool correction = false;
+            bool stampedVelocity = false;
             uint64_t tick = 0;
             bool onGround = false;
             double pos[3] = {0, 0, 0};
@@ -621,7 +622,6 @@ void RequestRespawn();
         struct EffectUpdate { uint64_t tick = 0; int id = 0, amplifier = 0; bool active = false; int32_t duration = 0; };
         std::vector<EffectUpdate> TakeEffectUpdates();
         struct MotionUpdate { uint64_t tick = 0; std::array<double, 3> velocity{}; };
-        std::vector<MotionUpdate> TakeMotionUpdates();
         struct ServerMovementEffect { uint32_t type = 0, duration = 0; uint64_t tick = 0; };
         std::vector<ServerMovementEffect> TakeMovementEffects();
         bool WorkbenchOpen() const { std::lock_guard lock(statusMutex); return workbenchOpen; }
@@ -935,7 +935,10 @@ void RequestRespawn();
         bool haveLastAuthPos = false;
         bool pendingTeleportAck = false;
         std::deque<BlockActionData> pendingBlockActions;
-        ServerMotion serverMotion;
+        // Packet events are consumed in decode order; merging them loses
+        // teleport/correction boundaries and velocity updates from one frame.
+        std::deque<ServerMotion> serverMotions;
+        void QueueServerMotion(ServerMotion motion);
         mutable std::mutex attrMutex;
         std::map<std::string, float> ownAttributes;
         std::array<uint64_t, 2> ownFlagWords{};
@@ -1055,7 +1058,6 @@ void RequestRespawn();
         struct ActiveEffect { int id = 0; int amplifier = 0; int32_t duration = 0; uint64_t appliedTick = 0; bool ambient = false, particles = true; };
         std::vector<ActiveEffect> activeEffects;
         std::vector<EffectUpdate> pendingEffectUpdates;
-        std::vector<MotionUpdate> pendingMotionUpdates;
         std::vector<ServerMovementEffect> pendingMovementEffects;
         bool inventoryOpen = false, serverClosedInventory = false, workbenchOpen = false, workbenchJustOpened = false;
         bool horseJustOpened = false;

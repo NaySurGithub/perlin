@@ -470,10 +470,12 @@ namespace perlin {
         On<MotionPredictionHintsPacket>([this](const MotionPredictionHintsPacket& p) {
             if (runtimeId == 0 || p.entityRuntimeId != runtimeId)
                 return;
-            serverMotion.hasVelocity = true;
-            serverMotion.velocity[0] = p.velocity.x;
-            serverMotion.velocity[1] = p.velocity.y;
-            serverMotion.velocity[2] = p.velocity.z;
+            ServerMotion motion;
+            motion.hasVelocity = true;
+            motion.velocity[0] = p.velocity.x;
+            motion.velocity[1] = p.velocity.y;
+            motion.velocity[2] = p.velocity.z;
+            QueueServerMotion(motion);
             NoteKnockback(p.velocity.x, p.velocity.z);
         });
     }

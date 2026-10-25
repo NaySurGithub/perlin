@@ -2124,3 +2124,51 @@ with debug evidence of stamps 475631/475695 applied to following auth ticks
 counter outside both attack windows. The preceding **1/1** late-delivery run
 remains part of the evidence and is not superseded by this clean run. The final
 Release build and all 62 CTests pass (3.15s).
+
+### Ordered motion packets and forced-pose boundaries (2026-10-25)
+
+Incoming motion now uses an ordered queue of independent packet events. The
+previous mutable aggregate could overwrite multiple positions in one receive
+batch, retain correction/teleport flags from unrelated packets, and process all
+stamped impulses before the aggregate forced pose. Each position event captures
+its own authoritative coordinates before prediction can publish another pose.
+Forced MovePlayer events also retain their tick and on-ground bit.
+
+The initial plain FIFO implementation was insufficient: teleport-then-damage
+produced 1/0/1/0 corrections across four alternating command-order cases, against
+0/0/0/0 in the earlier aggregate implementation. The source impulse belonged to
+the frame replaced by the forced pose. The candidate now discards stamped
+impulses at or before that forced-pose boundary; later stamps still enter replay.
+The six-case live run reports 0/0/0/0/0/0, including two deliberately later
+impulses which each displaced the player +2.06903076171875 blocks. Teleports are
+inside the measured windows. Raw correction counters are not reset or filtered.
+
+Native Mac client reference: MovePlayer rewind handler 0x103CBB8CC routes
+stamped teleports through MovePlayerInput; replay apply 0x103CE5980 writes the
+position, clears StateVector delta, sets HasTeleportedFlagComponent and applies
+the packet ground bit through 0x103CE522C. These are client reference addresses,
+not Windows BDS addresses. Native MobTravelTeleportedFilterSystem subsequently
+removes MobTravelComponent for teleported actors. That full phase/lifetime
+pipeline, short-distance teleport replay and MotionPredictionHints' separate
+prediction-sample queue remain unported; the bounded passing cases do not prove
+those systems or complete teleport/knockback parity.
+
+A repeat after the kelp visual fixture was invalid: water altered the movement
+and the source cow disappeared before the final attack/cleanup. Its partial
+results are retained but are not a passing dry-ground regression run.
+
+After clearing the visual fixture and restoring the stone runway, the dry
+six-case repeat also reports **0/0/0/0/0/0**. Both later impulses again displace
++2.06903076171875 blocks, all endpoints remain alive/connected/settled and the
+source actor cleanup succeeds. Evidence: `out/teleport-impulse-boundary-dry-repeat-report.json`
+and `out/teleport-boundary-dry-repeat-run.log`. The rebuilt candidate also passes
+all 62 CTests (8.91s). These routes cover same-frame command ordering and later
+impulses; arbitrary delayed delivery, mounts and full native phase scheduling
+remain outside this result.
+
+The candidate's subsequent dimension round trip remains **1/0** corrections
+(Nether/Overworld), ending grounded at Y128/Y225 with history restored. The
+motion queue does not resolve the remaining destination initial-fall scheduling
+mismatch. Evidence: `out/motion-queue-dimension-run.log` and
+`out/dimension-history-fixed-report.json`; no zero-flags or full dimension
+parity claim is made.

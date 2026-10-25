@@ -130,27 +130,34 @@ namespace perlin {
         ReplayFrom(session, first);
     }
 
-    void LocalPlayer::ApplyMotionUpdates(BedrockSession& session) {
-        size_t first = history.size();
-        for (const auto& update : session.TakeMotionUpdates()) {
-            bool inserted = false;
-            if (!history.empty()) {
-                const uint64_t boundary = std::max(update.tick, history.front().tick);
-                for (size_t i = 0; i < history.size(); ++i) {
-                    if (history[i].tick <= boundary)
-                        continue;
-                    history[i].motion = update.velocity;
-                    first = std::min(first, i);
-                    inserted = true;
-                    if (PERLIN_ENV("PERLIN_BLOCK_DEBUG"))
-                        std::cout << "[move] motion_replay stamp=" << update.tick << " target=" << history[i].tick
-                                  << " records=" << history.size() - i << std::endl;
-                    break;
-                }
-            }
-            if (!inserted)
-                futureMotion.push_back(update);
+    void LocalPlayer::ApplyMotionUpdate(BedrockSession& session, const BedrockSession::MotionUpdate& update) {
+        // A forced pose replaces the old frame's position and delta. A stamped
+        // impulse from that frame must not resurrect motion after the reset,
+        // even when its packet was decoded after the teleport packet.
+        if (teleportMotionBoundary && update.tick <= *teleportMotionBoundary) {
+            if (PERLIN_ENV("PERLIN_BLOCK_DEBUG"))
+                std::cout << "[move] motion_before_teleport stamp=" << update.tick
+                          << " boundary=" << *teleportMotionBoundary << std::endl;
+            return;
         }
+        size_t first = history.size();
+        bool inserted = false;
+        if (!history.empty()) {
+            const uint64_t boundary = std::max(update.tick, history.front().tick);
+            for (size_t i = 0; i < history.size(); ++i) {
+                if (history[i].tick <= boundary)
+                    continue;
+                history[i].motion = update.velocity;
+                first = i;
+                inserted = true;
+                if (PERLIN_ENV("PERLIN_BLOCK_DEBUG"))
+                    std::cout << "[move] motion_replay stamp=" << update.tick << " target=" << history[i].tick
+                              << " records=" << history.size() - i << std::endl;
+                break;
+            }
+        }
+        if (!inserted)
+            futureMotion.push_back(update);
         ReplayFrom(session, first);
     }
 
@@ -177,10 +184,11 @@ namespace perlin {
     }
 
     void LocalPlayer::ApplyServerMotion(BedrockSession& session, Camera& camera,
-                                       const BedrockSession::PlayerPose& incomingPose) {
-        BedrockSession::ServerMotion motion;
-        if (!session.TakeServerMotion(motion))
+                                       BedrockSession::ServerMotion motion) {
+        if (motion.stampedVelocity) {
+            ApplyMotionUpdate(session, {motion.tick, {motion.velocity[0], motion.velocity[1], motion.velocity[2]}});
             return;
+        }
         bool handled = false;
         if (motion.correction) {
             while (!history.empty() && history.front().tick < motion.tick)
@@ -262,16 +270,17 @@ namespace perlin {
         if (motion.poseChanged && !handled) {
             // History replay may already have published a predicted pose this
             // frame. Keep the packet's authoritative position independent of it.
-            state.x = motion.correction ? motion.pos[0] : incomingPose.x;
-            state.y = motion.correction ? motion.pos[1] : incomingPose.y;
-            state.z = motion.correction ? motion.pos[2] : incomingPose.z;
+            state.x = motion.pos[0];
+            state.y = motion.pos[1];
+            state.z = motion.pos[2];
             previous = state;
             accumulator = 0.0;
             history.clear();
             if (motion.teleport) {
+                teleportMotionBoundary = motion.tick ? motion.tick : session.LastAuthTick();
                 futureMotion.clear();
                 state.vx = state.vy = state.vz = 0;
-                state.onGround = false;
+                state.onGround = motion.onGround;
                 smoothOffset[0] = smoothOffset[1] = smoothOffset[2] = 0;
             }
             if (motion.correction)
@@ -709,15 +718,15 @@ namespace perlin {
             history.clear();
         if (rideLock) {
             session.TakeEffectUpdates();
-            session.TakeMotionUpdates();
             futureMotion.clear();
             BedrockSession::ServerMotion ignored;
             while (session.TakeServerMotion(ignored)) {}
             history.clear();
         } else {
             ApplyEffectUpdates(session);
-            ApplyMotionUpdates(session);
-            ApplyServerMotion(session, camera, pose);
+            BedrockSession::ServerMotion motion;
+            while (session.TakeServerMotion(motion))
+                ApplyServerMotion(session, camera, motion);
         }
         ApplyModCommands();
 

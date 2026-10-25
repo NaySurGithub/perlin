@@ -478,7 +478,7 @@ namespace perlin {
             std::lock_guard lk(statusMutex);
             pendingMovementEffects.clear();
             pendingEffectUpdates.clear();
-            pendingMotionUpdates.clear();
+            serverMotions.clear();
         }
 
         {
@@ -1332,11 +1332,25 @@ namespace perlin {
         return true;
     }
 
+    void BedrockSession::QueueServerMotion(ServerMotion motion) {
+        if (motion.poseChanged) {
+            motion.pos[0] = pose.x;
+            motion.pos[1] = pose.y;
+            motion.pos[2] = pose.z;
+        }
+        serverMotions.push_back(motion);
+        if (PERLIN_ENV("PERLIN_BLOCK_DEBUG"))
+            std::cout << "[move] queued_motion depth=" << serverMotions.size()
+                      << " teleport=" << motion.teleport << " correction=" << motion.correction
+                      << " stamped=" << motion.stampedVelocity << " tick=" << motion.tick
+                      << " ground=" << motion.onGround << std::endl;
+    }
+
     bool BedrockSession::TakeServerMotion(ServerMotion& out) {
-        if (!serverMotion.poseChanged && !serverMotion.hasVelocity)
+        if (serverMotions.empty())
             return false;
-        out = serverMotion;
-        serverMotion = {};
+        out = serverMotions.front();
+        serverMotions.pop_front();
         return true;
     }
 

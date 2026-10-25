@@ -553,10 +553,11 @@ namespace perlin {
                 pose = {p.position.x, p.position.y, p.position.z, pose.yaw, pose.pitch,
                         pose.headYaw, false, true};
                 haveLastAuthPos = false;
-                serverMotion.poseChanged = true;
-                serverMotion.teleport = true;
-                serverMotion.hasVelocity = true;
-                serverMotion.velocity[0] = serverMotion.velocity[1] = serverMotion.velocity[2] = 0;
+                ServerMotion motion;
+                motion.poseChanged = true;
+                motion.teleport = true;
+                motion.hasVelocity = true;
+                QueueServerMotion(motion);
             }
             dimLoadingId = p.loadingScreenId;
             dimAckSince = std::chrono::steady_clock::now();
@@ -877,13 +878,16 @@ namespace perlin {
             const bool forced = p.mode == MovePlayerPacketMode::Teleport || p.mode == MovePlayerPacketMode::Reset;
             if (forced) {
                 pendingTeleportAck = true;
-                serverMotion.poseChanged = true;
-                serverMotion.teleport = true;
-                serverMotion.hasRotation = true;
-                serverMotion.yaw = p.yaw;
-                serverMotion.pitch = p.pitch;
-                serverMotion.hasVelocity = true;
-                serverMotion.velocity[0] = serverMotion.velocity[1] = serverMotion.velocity[2] = 0;
+                ServerMotion motion;
+                motion.poseChanged = true;
+                motion.teleport = true;
+                motion.hasRotation = true;
+                motion.tick = p.tick;
+                motion.onGround = p.onGround;
+                motion.yaw = p.yaw;
+                motion.pitch = p.pitch;
+                motion.hasVelocity = true;
+                QueueServerMotion(motion);
             }
         });
 
@@ -912,10 +916,11 @@ namespace perlin {
                         false,        true};
                 gotSpawn = true;
                 haveLastAuthPos = false;
-                serverMotion.poseChanged = true;
-                serverMotion.teleport = true;
-                serverMotion.hasVelocity = true;
-                serverMotion.velocity[0] = serverMotion.velocity[1] = serverMotion.velocity[2] = 0;
+                ServerMotion motion;
+                motion.poseChanged = true;
+                motion.teleport = true;
+                motion.hasVelocity = true;
+                QueueServerMotion(motion);
             }
             proto::PlayerActionPacket done;
             done.runtimeEntityId = runtimeId;
@@ -945,31 +950,29 @@ namespace perlin {
             if (PERLIN_ENV("PERLIN_BLOCK_DEBUG"))
                 std::cout << "[move] correction_received #" << correctionsReceived
                           << " tick=" << p.tick << " afterAuthTick=" << LastAuthTick() << std::endl;
-            serverMotion.poseChanged = true;
-            serverMotion.correction = true;
-            serverMotion.tick = p.tick;
-            serverMotion.onGround = p.onGround;
-            serverMotion.pos[0] = pose.x;
-            serverMotion.pos[1] = pose.y;
-            serverMotion.pos[2] = pose.z;
-            serverMotion.hasVelocity = true;
-            serverMotion.velocity[0] = p.delta.x;
-            serverMotion.velocity[1] = p.delta.y;
-            serverMotion.velocity[2] = p.delta.z;
+            ServerMotion motion;
+            motion.poseChanged = true;
+            motion.correction = true;
+            motion.tick = p.tick;
+            motion.onGround = p.onGround;
+            motion.hasVelocity = true;
+            motion.velocity[0] = p.delta.x;
+            motion.velocity[1] = p.delta.y;
+            motion.velocity[2] = p.delta.z;
+            QueueServerMotion(motion);
         });
 
         On<SetEntityMotionPacket>([this](const SetEntityMotionPacket& p) {
             if (runtimeId == 0 || p.runtimeEntityId != runtimeId)
                 return;
-            if (p.tick != 0) {
-                std::lock_guard lock(statusMutex);
-                pendingMotionUpdates.push_back({p.tick, {p.velocity.x, p.velocity.y, p.velocity.z}});
-            } else {
-                serverMotion.hasVelocity = true;
-                serverMotion.velocity[0] = p.velocity.x;
-                serverMotion.velocity[1] = p.velocity.y;
-                serverMotion.velocity[2] = p.velocity.z;
-            }
+            ServerMotion motion;
+            motion.hasVelocity = true;
+            motion.stampedVelocity = p.tick != 0;
+            motion.tick = p.tick;
+            motion.velocity[0] = p.velocity.x;
+            motion.velocity[1] = p.velocity.y;
+            motion.velocity[2] = p.velocity.z;
+            QueueServerMotion(motion);
             if (PERLIN_ENV("PERLIN_BLOCK_DEBUG"))
                 std::cout << "[move] motion_received tick=" << p.tick << " afterAuthTick=" << LastAuthTick()
                           << " velocity=(" << p.velocity.x << ',' << p.velocity.y << ',' << p.velocity.z << ')' << std::endl;

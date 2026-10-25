@@ -66,9 +66,9 @@ namespace perlin {
         std::mutex modMutex;
         std::vector<ModCommand> modQueue;
         void ApplyModCommands();
-        void ApplyServerMotion(BedrockSession& session, Camera& camera, const BedrockSession::PlayerPose& incomingPose);
+        void ApplyServerMotion(BedrockSession& session, Camera& camera, BedrockSession::ServerMotion motion);
         void ApplyEffectUpdates(BedrockSession& session);
-        void ApplyMotionUpdates(BedrockSession& session);
+        void ApplyMotionUpdate(BedrockSession& session, const BedrockSession::MotionUpdate& update);
         void ReplayFrom(BedrockSession& session, size_t first);
         void Tick(BedrockSession& session, const InputManager& input, const Camera& camera,
                   const physics::World& world);
@@ -85,6 +85,7 @@ namespace perlin {
         };
         std::deque<Record> history;
         std::deque<BedrockSession::MotionUpdate> futureMotion;
+        std::optional<uint64_t> teleportMotionBoundary;
         std::optional<int> replayDimension;
         double smoothOffset[3] = {0, 0, 0};
 
