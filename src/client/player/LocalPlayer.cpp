@@ -273,7 +273,8 @@ namespace perlin {
         in.flyUp = flying && jump;
         in.flyDown = flying && sneakKey;
         in.noClip = flying && (session.NoClip() || session.Spectator());
-        in.creativeFlight = session.GameType() == 1;
+        in.creativeFlight = session.GameType() == 1 ||
+            (session.GameType() == 5 && session.World().worldGameMode == 1);
         const auto actorFlags = session.OwnActorFlags();
         in.actorMovementFlags = static_cast<uint8_t>(actorFlags[0]);
         in.pushTowardsClosestSpace = (actorFlags[1] & proto::FlagsMetadataFlags2::PushTowardsClosestSpace) != 0;
@@ -286,6 +287,7 @@ namespace perlin {
         attributes.speed = session.MovementSpeedAttribute();
         attributes.flySpeed = session.FlySpeed();
         attributes.verticalFlySpeed = session.VFlySpeed();
+        attributes.airDrag = session.AirDragAttribute();
         attributes.waterWalkSpeedEnchant = session.WaterWalkSpeedEnchant();
         attributes.underwaterSpeed = session.UnderwaterMovementSpeedAttribute();
         for (const auto& effect : session.GetEffects()) {

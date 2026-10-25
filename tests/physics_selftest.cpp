@@ -832,6 +832,65 @@ int main() {
         CHECK(s.y > 21.5);
     }
 
+    {
+        struct NativeFlightCase {
+            float velocity, speed;
+            bool hover, creative, up, down, upSlow, downSlow;
+            uint32_t expected;
+        };
+        const NativeFlightCase cases[] = {
+#include "fixtures/flight-control-native.inc"
+        };
+        for (const auto& c : cases) {
+            const float actual = bds::FlyingControl(c.velocity, c.speed, c.hover, c.creative,
+                c.up, c.down, c.upSlow, c.downSlow);
+            CHECK(std::bit_cast<uint32_t>(actual) == c.expected);
+        }
+        struct NativeFlightFrictionCase {
+            float coefficient;
+            std::optional<float> override, airDrag;
+            float velocity;
+            uint32_t expected;
+        };
+        const NativeFlightFrictionCase frictionCases[] = {
+#include "fixtures/flight-friction-native.inc"
+        };
+        for (const auto& c : frictionCases) {
+            const float retention = bds::FlyingHorizontalRetention(c.coefficient, c.override, c.airDrag);
+            const float actual = bds::DampComponent(c.velocity, retention);
+            CHECK(std::bit_cast<uint32_t>(actual) == c.expected);
+        }
+        float fall = 9;
+        CHECK(bds::FlyingVerticalDrag(1, fall) == 0.6f && fall == 0);
+        CHECK(bds::FlyingVerticalDrag(1, fall, 0) == 1);
+        CHECK(bds::FlyingVerticalDrag(1, fall, 10) == 0);
+        CHECK(bds::FlyingVerticalDrag(1, fall, -1) == 1);
+
+        Input flight;
+        flight.flying = flight.noClip = flight.creativeFlight = true;
+        flight.forward = 1;
+        Attributes flightAttr;
+        flightAttr.airDrag = 0;
+        State original;
+        original.y = 20;
+        State replay = original;
+        for (int tick = 0; tick < 80; ++tick) {
+            flight.flyUp = tick < 20;
+            flight.flyDownSlow = tick >= 40 && tick < 60;
+            Step(original, flight, flightAttr, flat);
+            Step(replay, flight, flightAttr, flat);
+            CHECK(original.y == replay.y && original.vy == replay.vy);
+            CHECK(original.z == replay.z && original.vz == replay.vz);
+        }
+        // Zero ability values must stop acceleration rather than restore defaults.
+        flightAttr.flySpeed = flightAttr.verticalFlySpeed = 0;
+        original = {};
+        original.y = 20;
+        flight.flyUp = true;
+        Step(original, flight, flightAttr, flat);
+        CHECK(original.z == 0 && original.y == 20);
+    }
+
     if (failures == 0)
         std::printf("physics_selftest: all checks passed\n");
     return failures == 0 ? 0 : 1;
