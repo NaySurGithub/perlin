@@ -2297,3 +2297,36 @@ Evidence: `out/teleport-swim-filter-report.json`,
 `out/teleport-swim-filter-trace.ndjson` and `out/teleport-filter-final-client.log`.
 The final implementation sets the travel flag only for MovePlayer Teleport mode;
 dimension arrival and Reset do not infer that same lifetime.
+
+### Swim-control ordering before teleport filtering (2026-10-25)
+
+The previous swim eligibility change inferred execution order from the context's
+MobTravel read. Further native tracing disproves that inference. SwimControlSystem
+vtable 0x110E6A1D0 is registered by 0x102A048D0 at 0x102A076B8 in phase 6.
+The same registrar calls the travel registrar 0x1029F7F68 later at 0x102A08760;
+that registrar installs MobTravelTeleportedFilterSystem. Swim pitch control
+therefore runs before travel eligibility is removed, and its delta survives the
+filtered tick even though position integration does not.
+
+This explains the measured upward-swim error at 535052: client Y193.03/deltaY
+0.024 versus server Y193.058/deltaY0.0465574. With lookY approximately 0.5,
+the first filtered tick should retain approximately 0.03, then the following
+control update produces approximately 0.0582 before movement/water drag. Skipping
+that first update was incorrect. The candidate removes the premature swim guard
+and corrects the water regression to check the two-tick recurrence: with lookY=-1,
+filtered deltaY=-0.085 and no displacement, followed by Y=-0.162775 and deltaY
+approximately -0.13022. This replaces the erroneous zero-velocity test oracle.
+Old live report/trace are preserved as `out/teleport-swim-before-order-fix-*`.
+
+The corrected ordering builds and passes all 62 CTests (18.28s). Live runs at
+pitches 0/-30/+30 report **0/0/0**, repeated **0/0/0**; a further 0/-60/+60 run
+also reports **0/0/0**. Each measured window includes the teleport while actively
+swimming; all endpoints remain alive, connected and on settled terrain. The
+prior 0/0/1 upward failure is preserved for comparison. Evidence:
+`out/swim-order-first-report.json`, `out/swim-order-repeat-report.json`,
+`out/swim-order-steep-report.json`, their corresponding trace files, and
+`out/swim-before-teleport-client.log`. Setup teleports outside those measured
+windows still produce raw corrections (five by the final observation); no
+counter reset, filtering or tolerance change hides them. These nine passing
+cases establish the tested swim-before-filter ordering, not complete session
+zero flags, arbitrary delayed teleport replay or all movement-mode interactions.

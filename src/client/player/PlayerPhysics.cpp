@@ -669,7 +669,9 @@ namespace perlin::physics {
         // Native SwimControlSystem's view excludes MobIsJumpingFlagComponent.
         // A liquid jump keeps its upward impulse instead of blending it toward
         // the pitch direction in this stage.
-        if (water && in.swimming && !in.jump && !s.hasTeleported) {
+        // Phase 6 registers SwimControlSystem before the teleport travel
+        // filter. Its delta survives even when travel integration is filtered.
+        if (water && in.swimming && !in.jump) {
             const float look = in.lookY;
             const float gain = look < -0.2f ? 0.085f : 0.06f;
             if (look <= 0.0f || in.headInWater)

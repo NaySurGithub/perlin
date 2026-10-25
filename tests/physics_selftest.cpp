@@ -110,8 +110,11 @@ int main() {
         in.lookY = -1;
         Step(s, in, attr, water);
         CHECK(s.inWater && s.swimming);
-        CHECK(s.vy == 0 && s.y == 0);
+        CHECK(Near(s.vy, -0.085f, 1e-7) && s.y == 0);
         CHECK(!s.hasTeleported);
+        Step(s, in, attr, water);
+        CHECK(Near(s.y, -0.162775f, 1e-6));
+        CHECK(Near(s.vy, -0.13022f, 1e-6));
     }
 
     // Native scaffolding collision is admitted only from above, and the jump
