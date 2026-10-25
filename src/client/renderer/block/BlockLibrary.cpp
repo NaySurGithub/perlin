@@ -867,6 +867,12 @@ namespace perlin {
                 app.texTop = topName;
                 app.texSide = sideName;
                 app.texBottom = botName;
+                // Kelp's face names describe stem animation phases, not cube faces.
+                // Keep all four available to the connected-plant mesher.
+                if (bare == "kelp" && !hasOverride) {
+                    for (const char* texture : {"kelp_a", "kelp_b", "kelp_c", "kelp_d"})
+                        app.varTop.push_back(resolveTexture(texture, nullptr));
+                }
                 if (ov["tint_faces"].isArray()) {
                     auto has = [&](const char* f) {
                         for (const json::View e : ov["tint_faces"].items())
