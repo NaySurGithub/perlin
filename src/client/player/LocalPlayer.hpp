@@ -4,6 +4,7 @@
 #include "client/input/InputManager.hpp"
 #include "client/multiplayer/BedrockSession.hpp"
 #include "client/player/PlayerPhysics.hpp"
+#include "client/player/PlayerFov.hpp"
 #include "client/renderer/block/BlockLibrary.hpp"
 
 #include <chrono>
@@ -18,7 +19,7 @@ namespace perlin {
                     const BlockLibrary& blocks, float dt);
 
         const physics::State& State() const { return state; }
-        float FovModifier() const { return fovModifier; }
+        float FovModifier() const { return fov.Sample(PartialTick()); }
         const WalkBob& Bob() const { return walkBob; }
         float PartialTick() const { return static_cast<float>(std::clamp(accumulator / physics::kTickSeconds, 0.0, 1.0)); }
         uint64_t TickCount() const { return tickCounter; }
@@ -83,7 +84,7 @@ namespace perlin {
         WalkBob walkBob;
         uint64_t tickCounter = 0;
 
-        float fovModifier = 1.0f;
+        PlayerFov fov;
         bool flying = false;
         bool serverFlying = false;
         bool sprinting = false;

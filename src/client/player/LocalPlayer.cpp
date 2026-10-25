@@ -333,6 +333,13 @@ namespace perlin {
             flyPendingAt = std::chrono::steady_clock::now();
         }
 
+        int slownessAmplifier = -1;
+        for (const auto& effect : session.GetEffects())
+            if (effect.id == 2)
+                slownessAmplifier = effect.amplifier;
+        fov.Tick(MovementFovTarget(session.MovementSpeedAttribute(), session.WalkSpeed(),
+                                   flying, slownessAmplifier));
+
         BedrockSession::MoveInput packet;
         std::vector<uint32_t>& f = packet.flags;
         const bool goLeft = strafe < 0.0f, goRight = strafe > 0.0f;
@@ -573,17 +580,6 @@ namespace perlin {
                 break;
             }
             Tick(session, input, camera, world);
-        }
-
-        {
-            float target = 1.0f;
-            if (flying)
-                target *= 1.1f;
-            const float speed = session.MovementSpeedAttribute() * (sprinting ? 1.3f : 1.0f);
-            target *= (speed / 0.1f + 1.0f) / 2.0f;
-            target = std::clamp(target, 0.1f, 1.5f);
-            const float keep = std::pow(0.5f, dt * 20.0f);
-            fovModifier = target + (fovModifier - target) * keep;
         }
 
         const double t = std::clamp(accumulator / physics::kTickSeconds, 0.0, 1.0);

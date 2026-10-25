@@ -804,6 +804,7 @@ endif()
 # Keep these rules even when PERLIN_FAST_MATH relaxes rendering calculations.
 foreach(PERLIN_PHYSICS_SOURCE IN ITEMS
         "${CMAKE_CURRENT_SOURCE_DIR}/src/client/player/PlayerPhysics.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/client/player/PlayerFov.cpp"
         "${CMAKE_CURRENT_SOURCE_DIR}/src/client/resources/BlockOffsetDefinition.cpp")
     if(MSVC)
         set_property(SOURCE "${PERLIN_PHYSICS_SOURCE}" APPEND PROPERTY COMPILE_OPTIONS /fp:strict)
@@ -978,6 +979,10 @@ if(PERLIN_BUILD_TESTS AND NOT EMSCRIPTEN AND NOT ANDROID)
     target_link_libraries(entity_render_selftest PRIVATE glaze::glaze)
     target_compile_features(entity_render_selftest PRIVATE cxx_std_23)
     add_test(NAME entity_render_selftest COMMAND entity_render_selftest)
+    add_executable(player_fov_selftest tests/player_fov_selftest.cpp src/client/player/PlayerFov.cpp)
+    target_include_directories(player_fov_selftest PRIVATE src)
+    target_compile_features(player_fov_selftest PRIVATE cxx_std_23)
+    add_test(NAME player_fov_selftest COMMAND player_fov_selftest)
     add_executable(hud_dump tests/hud_dump.cpp src/client/ui/Json.cpp src/client/ui/UiExpr.cpp src/client/ui/JsonUi.cpp
         src/client/ui/UiLayout.cpp src/client/ui/McFont.cpp src/client/ui/RmlEmit.cpp src/client/ui/HudData.cpp
         src/client/ui/HudRenderers.cpp src/client/ui/EffectData.cpp src/client/i18n/Lang.cpp src/client/resources/ServerPackRegistry.cpp src/client/i18n/BuiltinEnglish.cpp src/util/Resources.cpp src/util/Paths.cpp)

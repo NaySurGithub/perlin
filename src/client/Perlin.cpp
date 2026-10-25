@@ -6674,11 +6674,9 @@ namespace perlin {
                 const float target = handRenderer.Scoping() && camera.mode == PerspectiveMode::FirstPerson ? 0.1f : 1.0f;
                 scopeFov += (target - scopeFov) * (1.0f - std::pow(0.5f, dt * 20.0f));
             }
-            camera.fov = zoom.Fov(options.fov * (options.fovEffects ? player.FovModifier() : 1.0f)) * scopeFov;
             if (sessionReady && session) {
                 CameraEffects& fx = session->Camera();
                 fx.Tick({glm::vec3(camera.x, camera.y, camera.z), camera.yaw - 90.0f, -camera.pitch});
-                camera.fov = fx.Fov(camera.fov);
                 if (fx.PoseActive()) {
                     const CameraPose pose = fx.Pose();
                     camera.x = pose.position.x;
@@ -6775,6 +6773,19 @@ namespace perlin {
                 if (!replayCtl.Playing())
                     player.Update(*live, inputManager, camera, levelRenderer->Blocks(), dt);
             }
+            // Sample after movement advances this frame's ticks and partial tick.
+            float movementFov = player.FovModifier();
+            if (preview && !live) {
+                if (const char* movement = PERLIN_ENV("PERLIN_PREVIEW_FOV_MOVEMENT")) {
+                    float speed = 0.1f, walk = 0.1f;
+                    int fly = 0, slowness = -1;
+                    if (std::sscanf(movement, "%f,%f,%d,%d", &speed, &walk, &fly, &slowness) >= 2)
+                        movementFov = MovementFovTarget(speed, walk, fly != 0, slowness);
+                }
+            }
+            camera.fov = zoom.Fov(options.fov * (options.fovEffects ? movementFov : 1.0f)) * scopeFov;
+            if (sessionReady && session)
+                camera.fov = session->Camera().Fov(camera.fov);
             if (const char* g = PERLIN_ENV("PERLIN_GLASS"))
                 options.glass = g;
             {
