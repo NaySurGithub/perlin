@@ -430,7 +430,9 @@ namespace perlin {
             m.modelKnown[id] = 1;
             const ModelEntry* geo = library->Geometry().Empty() ? nullptr : library->Geometry().Find(id);
             m.model[id] = geo ? geo
-                          : library->Models().Loaded()
+                          // The bundled single-block kelp model has no neighbour
+                          // context; the plant mesher selects connected stems.
+                          : !GeomFor(id).kelp && library->Models().Loaded()
                               ? library->Models().Find(BlockPalette::Instance().NetworkId(id))
                               : nullptr;
         }
