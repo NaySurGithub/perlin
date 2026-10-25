@@ -619,6 +619,19 @@ else()
     set_source_files_properties(${PERLIN_PROTOCOL_SOURCES} PROPERTIES COMPILE_OPTIONS "-w;$<$<CONFIG:Debug>:-O1>")
 endif()
 
+# Numerical table read from the running Windows 1.26.52.3 server. Generate a
+# host-endian-independent initializer; executable bytes are never embedded.
+set(PERLIN_CURRENT_SINE "${CMAKE_CURRENT_SOURCE_DIR}/src/client/player/data/perlin_sine_1_26_52.bin")
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${PERLIN_CURRENT_SINE}")
+file(READ "${PERLIN_CURRENT_SINE}" PERLIN_CURRENT_SINE_HEX HEX)
+string(LENGTH "${PERLIN_CURRENT_SINE_HEX}" PERLIN_CURRENT_SINE_LENGTH)
+if(NOT PERLIN_CURRENT_SINE_LENGTH EQUAL 524288)
+    message(FATAL_ERROR "Current sine table must contain 65,536 binary32 words")
+endif()
+string(REGEX REPLACE "(..)(..)(..)(..)" "0x\\4\\3\\2\\1u," PERLIN_CURRENT_SINE_WORDS "${PERLIN_CURRENT_SINE_HEX}")
+file(GENERATE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/generated/PerlinCurrentSineTable.inc"
+    CONTENT "${PERLIN_CURRENT_SINE_WORDS}\n")
+
 file(GLOB PERLIN_RESOURCE_FILES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/resources/*")
 set(PERLIN_EMBED_DIR "${CMAKE_CURRENT_BINARY_DIR}/embedded")
 file(MAKE_DIRECTORY "${PERLIN_EMBED_DIR}")
@@ -1440,3 +1453,12 @@ if(PERLIN_BUILD_TESTS AND NOT EMSCRIPTEN AND NOT ANDROID)
         endif()
     endif()
 endif()
+
+# The table is consumed by header-only physics kernels and their tests.
+# Keep this include path off external dependency targets.
+get_property(PERLIN_LOCAL_TARGETS DIRECTORY PROPERTY BUILDSYSTEM_TARGETS)
+foreach(PERLIN_LOCAL_TARGET IN LISTS PERLIN_LOCAL_TARGETS)
+    if(PERLIN_LOCAL_TARGET MATCHES "^(Perlin|trace_diff)$|selftest$")
+        target_include_directories(${PERLIN_LOCAL_TARGET} PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/generated")
+    endif()
+endforeach()

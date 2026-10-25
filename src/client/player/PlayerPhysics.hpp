@@ -71,6 +71,8 @@ namespace perlin::physics {
     };
 
     struct Attributes {
+        // Retain the 1.26.10 arithmetic only for its historical trace adapters.
+        bool currentMovementMath = true;
         // Resolved movement attribute, including the predicted sprint modifier.
         // Native PlayerResetMovementSpeed copies this value without another boost.
         float speed = 0.1f;

@@ -12,6 +12,9 @@
 #include <bit>
 #include <cmath>
 #include <iostream>
+#include <iomanip>
+#include <limits>
+#include <sstream>
 
 namespace perlin {
     namespace {
@@ -42,6 +45,18 @@ namespace perlin {
             state.vx = (*motion)[0];
             state.vy = (*motion)[1];
             state.vz = (*motion)[2];
+        }
+
+        void ApplyTeleport(physics::State& state, const std::optional<BedrockSession::ServerMotion>& teleport) {
+            if (!teleport)
+                return;
+            state.x = teleport->pos[0];
+            state.y = teleport->pos[1];
+            state.z = teleport->pos[2];
+            state.vx = state.vy = state.vz = 0;
+            state.onGround = teleport->onGround;
+            state.hasTeleported = teleport->filterTravel;
+            state.hasBox = false;
         }
 
         namespace Flag {
@@ -170,6 +185,7 @@ namespace perlin {
             Record& record = history[i];
             record.before = replay;
             replay.yaw = record.yaw;
+            ApplyTeleport(replay, record.teleport);
             ApplyMotion(replay, record.motion);
             if (record.simulated)
                 physics::Step(replay, record.input, record.attributes, world);
@@ -190,6 +206,39 @@ namespace perlin {
             return;
         }
         bool handled = false;
+        if (motion.teleport && motion.filterTravel && motion.tick != 0 && !history.empty() &&
+            motion.tick >= history.front().tick) {
+            const float dx = static_cast<float>(motion.pos[0]) - static_cast<float>(state.x);
+            const float dy = static_cast<float>(motion.pos[1]) - static_cast<float>(state.y);
+            const float dz = static_cast<float>(motion.pos[2]) - static_cast<float>(state.z);
+            // Native MovePlayer rewind 0x103CBB8CC retains short mode-2
+            // teleports as inputs; Reset, passengers and >=16 blocks reset.
+            if (std::sqrt(dx * dx + dy * dy + dz * dz) < 16.0f) {
+                teleportMotionBoundary = motion.tick;
+                std::erase_if(futureMotion, [&](const auto& v) { return v.tick <= motion.tick; });
+                size_t first = history.size();
+                for (size_t i = 0; i < history.size(); ++i) {
+                    if (history[i].tick <= motion.tick)
+                        continue;
+                    history[i].teleport = motion;
+                    // A delta stamped at the replaced boundary cannot revive
+                    // its old frame. Newer recorded deltas remain replayable.
+                    if (history[i].tick == motion.tick + 1)
+                        history[i].motion.reset();
+                    first = i;
+                    break;
+                }
+                if (first == history.size())
+                    futureTeleports.push_back(motion);
+                else
+                    ReplayFrom(session, first);
+                if (PERLIN_ENV("PERLIN_BLOCK_DEBUG"))
+                    std::cout << "[move] teleport_replay stamp=" << motion.tick << " records="
+                              << history.size() - first << " queued=" << (first == history.size()) << std::endl;
+                handled = true;
+                motion.hasVelocity = false;
+            }
+        }
         if (motion.correction) {
             // This authoritative snapshot is already past the forced-pose
             // frame. A late teleport and its following correction can be
@@ -212,12 +261,14 @@ namespace perlin {
                 // every authoritative difference, including sub-threshold ones.
                 if (posErr > 0.0 || velErr > 0.0 || r.after.onGround != motion.onGround) {
                     const physics::State shown = state;
-                    if (correctionReplays < 40 || correctionReplays % 100 == 0) {
+                    if (PERLIN_ENV("PERLIN_BLOCK_DEBUG") || correctionReplays < 40 || correctionReplays % 100 == 0) {
                         const Level& lv = session.NetLevel();
                         auto name = [&](int bx, int by, int bz) { return BlockPalette::Instance().Name(lv.GetBlock(bx, by, bz)); };
                         const int fx = static_cast<int>(std::floor(r.before.x)), fz = static_cast<int>(std::floor(r.before.z));
                         const int fy = static_cast<int>(std::floor(r.before.y - 0.001));
-                        std::cout << "[move] mismatch tick=" << motion.tick << " ours=(" << r.after.x << "," << r.after.y << ","
+                        std::ostringstream diagnostic;
+                        diagnostic << std::setprecision(std::numeric_limits<double>::max_digits10);
+                        diagnostic << "[move] mismatch tick=" << motion.tick << " ours=(" << r.after.x << "," << r.after.y << ","
                                   << r.after.z << ") server=(" << motion.pos[0] << "," << motion.pos[1] << ","
                                   << motion.pos[2] << ") vel ours=(" << r.after.vx << "," << r.after.vy << "," << r.after.vz
                                   << ") server=(" << motion.velocity[0] << "," << motion.velocity[1] << ","
@@ -227,7 +278,11 @@ namespace perlin {
                                   << " sneak=" << r.input.sneak << " feet=" << name(fx, fy + 1, fz) << " under="
                                   << name(fx, fy, fz) << " east=" << name(fx + 1, fy + 1, fz) << " west="
                                   << name(fx - 1, fy + 1, fz) << " north=" << name(fx, fy + 1, fz - 1)
-                                  << " south=" << name(fx, fy + 1, fz + 1) << std::endl;
+                                  << " south=" << name(fx, fy + 1, fz + 1)
+                                  << " before=(" << r.before.x << "," << r.before.y << "," << r.before.z
+                                  << ") beforeVel=(" << r.before.vx << "," << r.before.vy << "," << r.before.vz
+                                  << ") yaw=" << r.yaw << " speed=" << r.attributes.speed;
+                        std::cout << diagnostic.str() << std::endl;
                     }
                     r.after.x = motion.pos[0];
                     r.after.y = motion.pos[1];
@@ -242,6 +297,7 @@ namespace perlin {
                         Record& q = history[i];
                         q.before = s;
                         s.yaw = q.yaw;
+                        ApplyTeleport(s, q.teleport);
                         ApplyMotion(s, q.motion);
                         if (q.simulated)
                             physics::Step(s, q.input, q.attributes, world);
@@ -284,6 +340,7 @@ namespace perlin {
             if (motion.teleport) {
                 teleportMotionBoundary = motion.tick ? motion.tick : session.LastAuthTick();
                 futureMotion.clear();
+                futureTeleports.clear();
                 state.hasTeleported = motion.filterTravel;
                 state.vx = state.vy = state.vz = 0;
                 state.onGround = motion.onGround;
@@ -306,6 +363,19 @@ namespace perlin {
 
     void LocalPlayer::Tick(BedrockSession& session, const InputManager& input, const Camera& camera,
                            const physics::World& world) {
+        const uint64_t nextTick = session.LastAuthTick() + 1;
+        std::optional<BedrockSession::ServerMotion> tickTeleport;
+        for (auto it = futureTeleports.begin(); it != futureTeleports.end();) {
+            if (it->tick < nextTick) {
+                tickTeleport = *it;
+                it = futureTeleports.erase(it);
+            } else {
+                ++it;
+            }
+        }
+        // Current-boundary inputs precede pose/fluid/input-mode producers,
+        // rather than moving the body only after those queries used the old pose.
+        ApplyTeleport(state, tickTeleport);
         previous = state;
         const physics::State before = state;
         const bool currentWater = physics::TouchingWater(state, world);
@@ -398,7 +468,14 @@ namespace perlin {
             static_cast<int>(std::floor(static_cast<float>((swimBox.z0 + swimBox.z1) * 0.5))));
         // SwimTrigger requires cover above the bounding-box centre when
         // entering a swim while looking upward (native lookY >= .15).
-        const bool canStartSwimUp = std::sin(glm::radians(camera.pitch)) < 0.15f || !aboveSwimBox.isAir
+        // Integrated-server SwimControl 0x106785410 interpolates/wraps pitch
+        // and uses the current sine table, rather than a continuous host sine.
+        const float lookPitch = physics::bds::InterpolateAngle(state.previousRotation.pitch,
+                                                               BedrockPitch(camera.pitch), 1.0f);
+        const float lookCoordinate = physics::bds::detail::Round(
+            physics::bds::detail::Round(lookPitch * -0.017453292f) * 10430.378f);
+        const float lookY = physics::bds::CurrentSineEntry(physics::bds::SineIndex(lookCoordinate));
+        const bool canStartSwimUp = lookY < 0.15f || !aboveSwimBox.isAir
                                 || aboveSwimBox.fluid != 0 || !aboveSwimBox.Empty();
         const bool wantsSwimming = sprinting && !stopSprintIntent && !flying
                                 && (swimming ? currentWater : headInWaterBeforePose && canStartSwimUp);
@@ -442,7 +519,7 @@ namespace perlin {
         in.swimming = swimming && !gliding;
         in.headInWater = headInWaterAt(static_cast<float>((swimming || crawling || gliding) ? physics::kCrawlEye
                                                          : sneaking ? physics::kSneakEye : physics::kStandEye));
-        in.lookY = std::sin(glm::radians(camera.pitch));
+        in.lookY = lookY;
         const physics::MoveVector move = physics::ProcessMoveInput(forward, strafe, sneaking, currentWater,
                                                                   itemSlow ? 0.35f : 1.0f);
         in.forward = move.forward;
@@ -510,7 +587,7 @@ namespace perlin {
         rec.yaw = state.yaw;
         rec.before = state;
         rec.simulated = simulate;
-        const uint64_t nextTick = session.LastAuthTick() + 1;
+        rec.teleport = tickTeleport;
         for (auto it = futureMotion.begin(); it != futureMotion.end();) {
             if (it->tick < nextTick) {
                 rec.motion = it->velocity;
@@ -730,6 +807,7 @@ namespace perlin {
         if (rideLock) {
             session.TakeEffectUpdates();
             futureMotion.clear();
+            futureTeleports.clear();
             BedrockSession::ServerMotion ignored;
             while (session.TakeServerMotion(ignored)) {}
             history.clear();

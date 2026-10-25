@@ -71,6 +71,7 @@ int main(int argc, char** argv) {
     Input input;
     bool scenarioBad = false;
     Attributes attr;
+    attr.currentMovementMath = false; // Fixture migrated against Windows BDS 1.26.10.
     int stepIndex = 0;
     bool reported = false;
     std::string lastInput;

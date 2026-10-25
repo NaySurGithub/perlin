@@ -2330,3 +2330,110 @@ windows still produce raw corrections (five by the final observation); no
 counter reset, filtering or tolerance change hides them. These nine passing
 cases establish the tested swim-before-filter ordering, not complete session
 zero flags, arbitrary delayed teleport replay or all movement-mode interactions.
+
+### Stamped short-distance teleport replay candidate (2026-10-25)
+
+Native MovePlayer rewind handler 0x103CBB8CC checks stamp/history availability,
+uses a direct/reset path for Reset mode and passengers, and clears history when
+position distance is >=16 blocks. Mode-2 teleports below that distance construct
+MovePlayerInput (vtable 0x110CCDD68) and insert it through 0x103CBB1F4. Replay
+apply 0x103CE5980 writes position, clears StateVector delta, applies on-ground,
+creates HasTeleportedFlag and rebuilds the actor AABB. These remain native Mac
+client reference addresses, not Windows BDS addresses.
+
+The candidate stores a stamped teleport alongside each prediction record and
+reapplies it before that record's movement. Current/future boundaries queue until
+the following input record. Effects, motion and correction replay all retain
+the teleport event rather than clearing history on every receipt. Stamped deltas
+at the replaced frame are removed; newer queued deltas remain. Reset/long-distance/
+unavailable-history fallback and mounted history exclusion remain separate.
+The existing saved input/attribute stream is retained; complete regeneration of
+all native producers and world/block-update history remains unfinished.
+
+The first fresh pre-change live baseline ended during destination streaming and
+is invalid, not a passing route or terminal runtime failure. The existing client
+was verified alive/connected/healthy with the column subsequently settled, then
+the baseline was rerun without restarting either process.
+
+### Strict 1e-7 audit and current-version arithmetic (2026-10-25)
+
+The Windows BDS 1.26.52.3 lab was restarted with
+`player-position-acceptance-threshold=0.0000001`, preserving its other movement
+settings. This is the configured value; an independent readback of any internal
+clamping is not established. Raw correction counts include setup and teleports.
+The earlier default-threshold results do not establish parity at this threshold.
+
+Full-precision replay diagnostics exposed a version mismatch in ordinary travel.
+The current Windows relative-movement function `0x14845B3C0` calls the actual
+CRT `sinf` and `cosf` imports independently. The old 1.26.10 wrapper constructs
+cosine through a rounded `abs(angle)+pi/2` sine argument. At yaw -180 that old
+path yields cosine -0.99999994; current BDS yields -1. This changes velocity
+by one binary32 step and eventually produces position corrections. The current
+integrated-server reference `0x10706ADB8` uses Apple's `__sincosf_stret` with
+the same movement arithmetic and a separately evaluated cosine result.
+
+Gameplay now selects the current relative-movement path. Historical kernel
+fixtures remain unchanged and continue exercising the old bundled calculation.
+An additional ignored local 1,656-case fixture executes the unmodified current Windows kernel
+under Wine 11/Rosetta with its actual resolved CRT imports, original constants
+and supplied state. All output velocity bits agree on macOS ARM64. These finite
+cases do not establish all CRT exceptional inputs or native Windows/Linux libm
+agreement. The server executable SHA-256 is
+`19c88569af2e4b7d984e999055a31cbcb0799dacf8bbbf7371eda42f5772a443`.
+
+The first strict flat-ground rerun improves from 33 bounded corrections to nine:
+16 of 17 routes have zero; sprint-jump retains nine. Setup adds three more raw
+corrections. The food matrix improves from 11 to two bounded corrections, with
+six additional setup corrections. Honey and dried-kelp completion each retain
+one. These failures remain open; later food repeats sometimes have zero,
+showing that completion timing also needs investigation.
+
+Current ground-jump `0x14661F790`, matching integrated-server `0x1060774B8`,
+rounds degrees to radians before multiplying by 10430.378 for its table index.
+The older audited function used direct degrees-to-index conversion. Current
+initializer `0x14118BBF0` divides each table index by 10430.378 and calls CRT
+sinf; the old table multiplies by a rounded radians-per-entry constant and uses
+the bundled vector sine. There are 22,737 differing table words. The current
+numeric table was read from the running BDS process at `0x14CC495F8`, without
+changing its memory. Its 262,144-byte SHA-256 is
+`ad80e88d62b795fa32bdd8b44a8712737c2e74ff02378134ff585a489fd380fc`.
+Only these numerical values are committed; executable code and disposable
+reference drivers stay outside the source tree. CMake generates endian-neutral
+binary32 word initializers, avoiding host-libm differences in this fixed table.
+An additional ignored local 81-case reference executes the unmodified current sprint impulse
+instruction range `[0x14661F9A1,0x14661FA09)` with that actual table; a return
+outside the range transfers control to the driver. Both new local fixtures and all
+old trig fixtures match in the standalone ARM64 check (12,569 cases total).
+Historical compatibility trace adapters explicitly select their 1.26.10 math
+profile; their expectations and tolerances are unchanged.
+
+Integrated-server SwimControl `0x106785410` interpolates/wraps pitch and uses
+the current sine table after radians-to-index conversion. The client previously
+used a continuous host sine for its `lookY`; at pitched swimming this produces
+small persistent vertical errors visible at the strict threshold. The candidate
+now supplies the native table result to swim eligibility and control. Live
+validation of the combined sprint-jump/table/swim candidate is still pending.
+
+Fixture isolation also needed repair. Scripts originally used different player
+names; normalizing them to one controlled actor without clearing inventory let
+later `/give` commands put food in another slot. Such an eating label did not
+prove eating occurred. The rerun clears inventory between scripts, selects slot
+zero, preserves all original reports and verifies consumption where available.
+One combined item fixture still fails a `/fill ... outOfWorld` setup and must
+be repaired rather than counted as a physics pass.
+
+The native item lifetime is not uniformly a movement-tick clock:
+`ItemUseTickDurationMovementSystem` includes
+`ItemInUseTicksDuringMovementComponent`, while the ordinary ActorTick duration
+system excludes it. Integrated-server start-use `0x10ABFD4F0` creates that tag
+for the `minecraft:is_trident` item property (initializer `0x101CE7298`). The
+movement callback `0x10605F7A8` decrements positive remaining time at offset 8.
+Food uses the other lifetime path. Exact actor/movement tick alignment and use
+transactions remain required work; changing all durations by one is not a
+source-backed substitute for that scheduling.
+
+Physics work is paused at the user’s request. The 101-script strict rerun was
+stopped after 15 scripts on the relative-trig-only build; the combined current
+sine-table/jump/swim candidate has not completed live validation. Generated
+local test/reference files under tests/data are ignored; existing tracked
+fixtures remain in the repository. New reference drivers and reports stay local.

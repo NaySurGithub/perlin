@@ -385,8 +385,9 @@ namespace perlin::physics {
             }
         }
 
-        void MoveRelative(State& s, double strafeIn, double forwardIn, double speed) {
-            const auto velocity = bds::RelativeMovement(
+        void MoveRelative(State& s, double strafeIn, double forwardIn, double speed, bool currentMovementMath) {
+            const auto movement = currentMovementMath ? bds::CurrentRelativeMovement : bds::RelativeMovement;
+            const auto velocity = movement(
                 {static_cast<float>(s.vx), static_cast<float>(s.vy), static_cast<float>(s.vz)}, s.yaw,
                 {-static_cast<float>(strafeIn), 0.0f, static_cast<float>(forwardIn)}, static_cast<float>(speed));
             s.vx = velocity.x;
@@ -569,7 +570,8 @@ namespace perlin::physics {
             const float hoverMod = hovering ? (in.creativeFlight ? 0.375f : 0.75f) : 1.0f;
             const bool hover = std::max(std::fabs(in.forward), std::fabs(in.strafe)) < 0.01f;
             (void)hoverMod;
-            MoveRelative(s, strafe, forward, static_cast<double>(attr.flySpeed) * (in.sprint ? 2.0 : 1.0));
+            MoveRelative(s, strafe, forward, static_cast<double>(attr.flySpeed) * (in.sprint ? 2.0 : 1.0),
+                         attr.currentMovementMath);
             if (in.flyUp && in.flyDown) {
                 s.vy = 0;
             } else {
@@ -690,7 +692,7 @@ namespace perlin::physics {
             s.vy = velocity.y;
             s.vz = velocity.z;
         } else if (!s.hasTeleported) {
-            MoveRelative(s, strafe, forward, relSpeed);
+            MoveRelative(s, strafe, forward, relSpeed, attr.currentMovementMath);
         }
 
         const bool climbJump = in.jump && !jumpBlockedBySwim && s.onClimbable;
@@ -707,6 +709,7 @@ namespace perlin::physics {
             jump.previousJumpPosition = s.previousJumpPosition;
             jump.yaw = s.yaw;
             jump.sprinting = in.sprint;
+            jump.currentMovementMath = attr.currentMovementMath;
             jump.customHeight = attr.jumpHeight;
             if (attr.jumpBoost != 0)
                 jump.effectAmplifier = std::bit_cast<int32_t>(static_cast<uint32_t>(attr.jumpBoost) - 1);

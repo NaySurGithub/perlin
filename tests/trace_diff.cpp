@@ -161,6 +161,7 @@ int main(int argc, char** argv) {
     State state;
     TraceWorld world;
     Attributes attr;
+    attr.currentMovementMath = false; // Historical Windows BDS 1.26.10 trace profile.
     Input input;
     Expect prev{};
     bool havePrev = false;

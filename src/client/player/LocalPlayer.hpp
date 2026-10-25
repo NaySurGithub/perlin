@@ -82,9 +82,11 @@ namespace perlin {
             physics::State before;
             physics::State after;
             std::optional<std::array<double, 3>> motion;
+            std::optional<BedrockSession::ServerMotion> teleport;
         };
         std::deque<Record> history;
         std::deque<BedrockSession::MotionUpdate> futureMotion;
+        std::deque<BedrockSession::ServerMotion> futureTeleports;
         std::optional<uint64_t> teleportMotionBoundary;
         std::optional<int> replayDimension;
         double smoothOffset[3] = {0, 0, 0};

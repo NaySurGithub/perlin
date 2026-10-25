@@ -6,3 +6,6 @@ dist/
 .vs/
 .idea/
 CMakeUserPresets.json
+
+# Generated local test/reference data; existing tracked fixtures remain tracked.
+/tests/data/

@@ -48,4 +48,21 @@ namespace perlin::physics::bds {
         velocity.z = detail::Round(velocity.z + detail::Round(SineTable()[JumpCosIndex(yaw)] * 0.2f));
         return velocity;
     }
+
+    inline float CurrentSineEntry(uint16_t index) {
+        static constexpr std::array<uint32_t, 65536> words = {
+#include "PerlinCurrentSineTable.inc"
+        };
+        return std::bit_cast<float>(words[index]);
+    }
+
+    // 1.26.52.3 callback 0x14661F790 and integrated-server 0x1060774B8
+    // round radians before the table conversion. The current table initializer
+    // divides each index by 10430.378f and calls CRT sinf (0x14118BBF0).
+    inline Float3 CurrentSprintJump(Float3 velocity, float yaw) {
+        const float coordinate = detail::Round(detail::Round(yaw * 0.017453292f) * 10430.378f);
+        velocity.x = detail::Round(velocity.x - detail::Round(CurrentSineEntry(SineIndex(coordinate)) * 0.2f));
+        velocity.z = detail::Round(velocity.z + detail::Round(CurrentSineEntry(SineIndex(detail::Round(coordinate + 16384.0f))) * 0.2f));
+        return velocity;
+    }
 }
