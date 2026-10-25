@@ -316,7 +316,8 @@ namespace perlin {
         // history for sleeping/passenger actors and a dimension transition.
         // Its additional raw movement-attribute and InsideGenericBlock
         // predicates still need their complete component producers.
-        const bool savePrediction = !asleep && !rideLock && !dimensionChanged;
+        const bool dimensionChanging = session.DimensionChanging();
+        const bool savePrediction = !asleep && !rideLock && !dimensionChanged && !dimensionChanging;
         if (!savePrediction)
             history.clear();
         const float forwardKeys = asleep ? 0.0f : input.Axis(Action::Forward, Action::Back);
@@ -375,6 +376,10 @@ namespace perlin {
 
         const bool column = session.ColumnSettled(static_cast<int>(std::floor(state.x)) >> 4,
                                                   static_cast<int>(std::floor(state.z)) >> 4);
+        // A destination column can arrive before the transfer's surrounding
+        // terrain is ready. Do not advance destination physics while the
+        // dimension request still owns the loading/acknowledgement boundary.
+        const bool simulate = column && !asleep && !dimensionChanging;
 
         bool levitating = false;
         for (const auto& effect : session.GetEffects())
@@ -487,7 +492,7 @@ namespace perlin {
                 attributes.weaving = true;
         }
 
-        if (column && !asleep)
+        if (simulate)
             for (const auto& effect : session.TakeMovementEffects())
                 in.movementEffects.push_back({effect.tick, std::bit_cast<int32_t>(effect.duration),
                                               static_cast<int32_t>(effect.type)});
@@ -498,7 +503,7 @@ namespace perlin {
         rec.attributes = attributes;
         rec.yaw = state.yaw;
         rec.before = state;
-        rec.simulated = column && !asleep;
+        rec.simulated = simulate;
         const uint64_t nextTick = session.LastAuthTick() + 1;
         for (auto it = futureMotion.begin(); it != futureMotion.end();) {
             if (it->tick < nextTick) {
@@ -511,7 +516,7 @@ namespace perlin {
             }
         }
         ApplyMotion(state, rec.motion);
-        if (column && !asleep) {
+        if (simulate) {
             physics::Step(state, in, attributes, world);
         } else {
             state.vx = state.vy = state.vz = 0;

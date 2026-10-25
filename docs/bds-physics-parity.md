@@ -2172,3 +2172,54 @@ motion queue does not resolve the remaining destination initial-fall scheduling
 mismatch. Evidence: `out/motion-queue-dimension-run.log` and
 `out/dimension-history-fixed-report.json`; no zero-flags or full dimension
 parity claim is made.
+
+### Destination prediction eligibility investigation (2026-10-25)
+
+A stricter dimension harness now waits for dimensionChanging=false and a settled
+player column rather than treating Initialized as transfer completion. Baseline
+still reports 1/0 corrections. On Nether arrival it observes the requested
+position Y130 and zero delta while changing, but 36 prediction records and
+Y129.92160034179688/deltaY=-0.1552319973707199 by readiness. This exposes an
+eligibility gap: LocalPlayer allowed physics and history as soon as the local
+column settled, although the surrounding-terrain transfer was still pending.
+The candidate gates simulation, movement-effect consumption and saved prediction
+history on transfer completion as well as the existing column/sleep predicates.
+It adds no elapsed-time delay and changes no correction tolerance.
+
+Additional native Mac client tracing identifies InitialTickFilterSystem::tick
+RTTI 0x10E97F8C4, adapter 0x106039FA0 and per-entity callback 0x10602CF58.
+Its view includes InterpolateMovementNeeded and StateVector, excludes GlobalActor,
+and reads the dimension/block-source factory. The callback floors XYZ and queries
+block-source virtuals 136/16 before potentially removing ActorMovementTickNeeded,
+InterpolateMovementNeeded and VehicleInputIntent. The compared interned block
+identifier at 0x1116A0480 is not yet confidently named; this predicate is not
+ported as a guessed air/unknown-block test. The separate ticking-area callback
+0x10602D8EC consults CurrentTick and removes movement/interpolation eligibility
+when its live ticking-area check fails.
+
+HasTeleportedFlag cleanup is registered by 0x102A1729C with phase value 9,
+alongside TickEndResetSystem. It requires ActorMovementTickNeeded. This confirms
+conditional tick-end cleanup rather than an unconditional wall-clock lifetime;
+the complete native component lifecycle remains unfinished.
+
+The transfer-gated candidate builds and passes all 62 CTests (9.83s). Live
+Nether/Overworld remains **1/0** corrections. The improved harness samples 44/101
+pending-transfer snapshots respectively and verifies zero velocity and zero
+prediction history in all of them; readiness now has only one prediction record,
+rather than the baseline's 36/64. Nether readiness is Y130/deltaY=-0.0784. The
+remaining correction is at auth tick 520976, two ticks after acknowledgement
+520974: client Y129.9216/deltaY=-0.155232 versus server Y130/deltaY=-0.0784.
+This fixes prediction during transfer but does not fix post-ack travel phase
+ordering. Evidence is retained in `out/dimension-transfer-gate-report.json`,
+`out/dimension-transfer-gate-trace.ndjson` and `out/dimension-transfer-gate-client.log`.
+
+The travel registrar 0x1029F7F68 places MobTravelTeleportedFilterSystem in phase
+6 before NavigationTravelSystem, MobTravelUpdateSpeedsSystem, Water/Lava travel
+and TravelMoveRequestSystem. The travel-type producer's execution context
+(RTTI 0x10EA4EBE1) requires MobTravelComponent and creates the Air/Ground/Water/
+Lava/Gliding/Flying flags. Gravity request producers consume those travel flags
+(RTTI 0x10EA620EA onward); gravity application itself consumes ApplyGravity
+(0x10EA6399B). Consequently a future port must carry travel eligibility through
+flag/request production, not merely suppress final position integration or skip
+all status/contact systems. This narrows the next implementation boundary while
+leaving exact registration dependencies and component producers to verify.
