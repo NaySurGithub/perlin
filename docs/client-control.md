@@ -12,11 +12,25 @@ client renderer, network session, input handling and player physics still run.
 The interface is disabled unless `--control-port` is supplied. Browser origins
 other than this localhost endpoint are rejected; mutation requests require JSON.
 
+Each start generates a random token, printed on startup:
+
+```
+[control] http://127.0.0.1:19180/?token=<token> (send X-Perlin-Token: <token> with API requests)
+```
+
+Every route requires it in the `X-Perlin-Token` header and returns `401`
+otherwise. The page (`/`) also accepts it as a `token` query parameter so the
+printed URL can be opened directly; the page then sends the header itself.
+
+`SetControlActions` only takes over action state in `--hidden` mode. A visible
+window started with `--control-port` keeps its physical keyboard and mouse
+until the first `input` request arrives.
+
 Set `PERLIN_DATA_DIR` to a separate data directory to isolate test settings,
 accounts, logs and replay files from your usual client profile. Vanilla assets
 must be available there (asset directories can be symlinked).
 
-Open `http://127.0.0.1:19180/` for the live rendered view, keyboard movement,
+Open the printed `http://127.0.0.1:19180/?token=…` URL for the live rendered view, keyboard movement,
 mouse look, state telemetry and server command entry. The page controls the
 native hidden client; its connection to BDS still uses RakNet. Keyboard holds
 expire after six simulation ticks unless refreshed, and losing tab focus releases
@@ -37,31 +51,34 @@ lifecycle checks. History size is not a physics-accuracy score.
 ## Requests
 
 ```sh
+TOKEN=<token printed on startup>
+
 # Connection, pose, velocity, simulation tick, last applied command, corrections.
-curl http://127.0.0.1:19180/state
+curl -H "X-Perlin-Token: $TOKEN" http://127.0.0.1:19180/state
 
 # Hold forward and sprint for exactly 40 local simulation ticks (two seconds).
-curl -H 'Content-Type: application/json' http://127.0.0.1:19180/command \
+curl -H "X-Perlin-Token: $TOKEN" -H 'Content-Type: application/json' http://127.0.0.1:19180/command \
   -d '{"op":"input","actions":["forward","sprint"],"ticks":40}'
 
 # Look uses the same camera angles as the native client (degrees).
-curl -H 'Content-Type: application/json' http://127.0.0.1:19180/command \
+curl -H "X-Perlin-Token: $TOKEN" -H 'Content-Type: application/json' http://127.0.0.1:19180/command \
   -d '{"op":"look","yaw":90,"pitch":-20}'
 
 # Stop all held actions. Omitting ticks holds input until replaced/released.
-curl -H 'Content-Type: application/json' http://127.0.0.1:19180/command \
+curl -H "X-Perlin-Token: $TOKEN" -H 'Content-Type: application/json' http://127.0.0.1:19180/command \
   -d '{"op":"release"}'
 
 # Send a normal server command; server permissions remain authoritative.
-curl -H 'Content-Type: application/json' http://127.0.0.1:19180/command \
+curl -H "X-Perlin-Token: $TOKEN" -H 'Content-Type: application/json' http://127.0.0.1:19180/command \
   -d '{"op":"command","text":"/time set day"}'
 
 # Request a rendered frame. The first request returns 202 while capture runs;
-# repeat to receive JPEG bytes. Each request schedules an updated frame.
-curl http://127.0.0.1:19180/frame -o frame.jpg
+# repeat to receive JPEG bytes. Each request schedules an updated frame; JPEG
+# encoding runs off the render thread and keeps only the newest pending frame.
+curl -H "X-Perlin-Token: $TOKEN" http://127.0.0.1:19180/frame -o frame.jpg
 
 # The most recent 24,000 sent simulation ticks as newline-delimited JSON.
-curl http://127.0.0.1:19180/trace -o movement.ndjson
+curl -H "X-Perlin-Token: $TOKEN" http://127.0.0.1:19180/trace -o movement.ndjson
 ```
 
 `input` accepts the action IDs from `KeyMapping.cpp`, with or without `key.`.
@@ -80,8 +97,8 @@ command failures as movement results.
 
 Commands return `202` and a monotonically increasing `id`. They are applied on
 the game thread; wait until `/state.applied` reaches that ID. `commandError`
-reports a failed application. Bad requests return `400`, wrong content types
-`415`, and a full pending queue `429`. Raw key and mouse requests are useful for
+reports the last failed `command` or `chat` send; other requests leave it unchanged. Bad requests return `400`, wrong content types
+`415`, a missing or wrong token `401`, and a full pending queue `429`. Raw key and mouse requests are useful for
 menus; gameplay movement should use `input` so durations follow simulation ticks.
 
 For server commands, `commandReplies`, `lastCommandSuccess` and
@@ -115,7 +132,7 @@ hide corrections, disable authoritative movement or increase tolerances to make
 a test pass.
 
 The HTTP/input self-test covers action expiry and repeat presses, server input
-locks, blocked input, command validation and origin checks, returned state,
+locks, blocked input, token checks, command validation and origin checks, returned state,
 trace delivery, and JPEG colour conversion. Live checks also exercise GPU frame
 readback from the hidden Metal renderer and shutdown with a pending capture.
 

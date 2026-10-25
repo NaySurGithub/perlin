@@ -6,7 +6,9 @@
 #include <stb_image_write.h>
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
+#include <chrono>
 #include <cstdio>
+#include <thread>
 
 using namespace perlin;
 static int failures = 0;
@@ -51,7 +53,20 @@ int main() {
     httplib::Client client("127.0.0.1", port);
     client.set_connection_timeout(2);
     client.set_read_timeout(2);
-    auto result = client.Post("/command", R"({"op":"input","actions":["forward","jump"],"ticks":20})", "application/json");
+    const std::string token = server.Token();
+    CHECK(token.size() == 32);
+    auto result = client.Get("/state");
+    CHECK(result && result->status == 401);
+    result = client.Post("/command", {{"X-Perlin-Token", std::string(token.size(), '0')}}, R"({"op":"shutdown"})", "application/json");
+    CHECK(result && result->status == 401);
+    result = client.Get("/state?token=" + token);
+    CHECK(result && result->status == 401); // only the page accepts the query parameter
+    result = client.Get("/?token=" + token);
+    CHECK(result && result->status == 200 && result->body.find(token) != std::string::npos &&
+          result->body.find("__PERLIN_TOKEN__") == std::string::npos);
+    CHECK(server.TakeCommands().empty());
+    client.set_default_headers({{"X-Perlin-Token", token}});
+    result = client.Post("/command", R"({"op":"input","actions":["forward","jump"],"ticks":20})", "application/json");
     CHECK(result && result->status == 202);
     auto commands = server.TakeCommands();
     CHECK(commands.size() == 1 && commands[0].id == 1 && commands[0].ticks == 20);
@@ -92,7 +107,12 @@ int main() {
     CHECK(result && result->body.find("\"9007199254740993\"") != std::string::npos);
     const uint8_t bgra[16] = {0,0,255,255, 0,0,255,255, 0,0,255,255, 0,0,255,255};
     server.Frame(2, 2, 8, bgra, false);
-    result = client.Get("/frame");
+    // Encoding runs on a worker thread; wait for it to publish.
+    for (int i = 0; i < 200; ++i) {
+        result = client.Get("/frame");
+        if (!result || result->status != 202) break;
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
     CHECK(result && result->status == 200);
     int w = 0, h = 0, n = 0;
     auto* pixels = result ? stbi_load_from_memory(reinterpret_cast<const unsigned char*>(result->body.data()),

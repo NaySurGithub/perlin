@@ -38,8 +38,11 @@ namespace perlin {
         bool Gliding() const { return gliding; }
         bool Crawling() const { return crawling; }
         void SetElytra(bool value) { hasElytra = value; }
-        void SetItemSlow(bool slow, uint32_t duration = 0) {
-            if (slow && !itemSlow) itemSlowUntil = duration ? tickCounter + duration : 0;
+        // restart: a fresh use began this tick. A finite use that completes while
+        // still held starts the next one (eating several items in a row).
+        void SetItemSlow(bool slow, uint32_t duration = 0, bool restart = false) {
+            const bool completed = itemSlowUntil && tickCounter >= itemSlowUntil;
+            if (slow && (!itemSlow || restart || completed)) itemSlowUntil = duration ? tickCounter + duration : 0;
             if (!slow || !duration) itemSlowUntil = 0;
             itemSlow = slow;
         }

@@ -71,6 +71,8 @@ namespace perlin {
         ~ClientControl();
         bool Start(int port);
         void Stop();
+        // Random per-start secret; every request must send it as X-Perlin-Token.
+        const std::string& Token() const;
         std::vector<ControlCommand> TakeCommands();
         void Publish(const ControlSnapshot& state);
         bool TakeFrameRequest();

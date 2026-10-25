@@ -8,8 +8,11 @@
 #include <stb_image_write.h>
 #include <atomic>
 #include <cmath>
+#include <condition_variable>
+#include <cstdio>
 #include <deque>
 #include <mutex>
+#include <random>
 #include <thread>
 
 namespace perlin {
@@ -22,7 +25,35 @@ namespace perlin {
         std::string state = "{}", frame;
         uint64_t nextId = 0;
         std::atomic<bool> frameRequested{false};
+        std::string token;
+        // Latest-frame-wins JPEG encoding off the render thread.
+        std::thread encoder;
+        std::mutex encodeMutex;
+        std::condition_variable encodeReady;
+        std::vector<uint8_t> pendingRgb;
+        uint32_t pendingW = 0, pendingH = 0;
+        bool hasPending = false, stopEncoder = false;
     };
+
+    namespace {
+        std::string RandomToken() {
+            std::random_device device;
+            std::string token;
+            for (int i = 0; i < 4; ++i) {
+                char hex[9];
+                std::snprintf(hex, sizeof(hex), "%08x", static_cast<unsigned>(device()));
+                token += hex;
+            }
+            return token;
+        }
+
+        bool SameToken(const std::string& a, const std::string& b) {
+            if (a.size() != b.size()) return false;
+            unsigned char diff = 0;
+            for (size_t i = 0; i < a.size(); ++i) diff |= static_cast<unsigned char>(a[i] ^ b[i]);
+            return diff == 0;
+        }
+    }
 
     ClientControl::ClientControl() : impl(std::make_unique<Impl>()) {}
     ClientControl::~ClientControl() { Stop(); }
@@ -30,12 +61,13 @@ namespace perlin {
     bool ClientControl::Start(int port) {
         if (port < 1024 || port > 65535 || impl->thread.joinable()) return false;
         auto& p = *impl;
+        p.token = RandomToken();
         // This opt-in localhost control server favors response time over socket
         // reuse. Idle persistent requests can take hundreds of milliseconds on
         // macOS; reconnecting keeps state/input polling responsive.
         p.server.set_keep_alive_max_count(1);
         p.server.set_payload_max_length(65536);
-        p.server.set_pre_routing_handler([port](const httplib::Request& req, httplib::Response& res) {
+        p.server.set_pre_routing_handler([port, &p](const httplib::Request& req, httplib::Response& res) {
             const auto host = req.get_header_value("Host");
             const auto origin = req.get_header_value("Origin");
             const std::string local = "127.0.0.1:" + std::to_string(port);
@@ -45,11 +77,24 @@ namespace perlin {
                 res.status = 403;
                 return httplib::Server::HandlerResponse::Handled;
             }
+            // Every route needs the startup token. The page accepts it as a query
+            // parameter so the printed URL opens directly; it then sends the header.
+            const auto token = req.has_header("X-Perlin-Token") ? req.get_header_value("X-Perlin-Token")
+                : req.path == "/" ? req.get_param_value("token") : std::string();
+            if (!SameToken(token, p.token)) {
+                res.status = 401;
+                res.set_header("Cache-Control", "no-store");
+                return httplib::Server::HandlerResponse::Handled;
+            }
             res.set_header("Cache-Control", "no-store");
             return httplib::Server::HandlerResponse::Unhandled;
         });
-        p.server.Get("/", [](const auto&, auto& res) {
-            res.set_content(std::string(kClientControlPage), "text/html; charset=utf-8");
+        p.server.Get("/", [&p](const auto&, auto& res) {
+            std::string page(kClientControlPage);
+            const std::string_view marker = "__PERLIN_TOKEN__";
+            if (const auto at = page.find(marker); at != std::string::npos) page.replace(at, marker.size(), p.token);
+            res.set_header("Referrer-Policy", "no-referrer");
+            res.set_content(std::move(page), "text/html; charset=utf-8");
         });
         p.server.Get("/state", [&p](const auto&, auto& res) {
             std::lock_guard lock(p.mutex);
@@ -62,9 +107,13 @@ namespace perlin {
             res.set_content(p.frame, "image/jpeg");
         });
         p.server.Get("/trace", [&p](const auto&, auto& res) {
-            std::lock_guard lock(p.mutex);
+            std::deque<std::string> traces;
+            {
+                std::lock_guard lock(p.mutex);
+                traces = p.traces;
+            }
             std::string body;
-            for (const auto& line : p.traces) body += line + '\n';
+            for (const auto& line : traces) body += line + '\n';
             res.set_content(std::move(body), "application/x-ndjson");
         });
         p.server.Post("/command", [&p](const auto& req, auto& res) {
@@ -99,6 +148,27 @@ namespace perlin {
         });
         // Bind before starting the thread so startup failure is reported reliably.
         if (!p.server.bind_to_port("127.0.0.1", port)) return false;
+        p.stopEncoder = false;
+        p.encoder = std::thread([&p] {
+            std::unique_lock lock(p.encodeMutex);
+            for (;;) {
+                p.encodeReady.wait(lock, [&p] { return p.hasPending || p.stopEncoder; });
+                if (p.stopEncoder) return;
+                auto rgb = std::move(p.pendingRgb);
+                const auto w = p.pendingW, h = p.pendingH;
+                p.hasPending = false;
+                lock.unlock();
+                std::string jpeg;
+                const bool ok = stbi_write_jpg_to_func([](void* ctx, void* bytes, int n) {
+                    static_cast<std::string*>(ctx)->append(static_cast<char*>(bytes), n);
+                }, &jpeg, w, h, 3, rgb.data(), 85);
+                if (ok) {
+                    std::lock_guard frameLock(p.mutex);
+                    p.frame = std::move(jpeg);
+                }
+                lock.lock();
+            }
+        });
         p.thread = std::thread([&p] { p.server.listen_after_bind(); });
         return true;
     }
@@ -106,7 +176,15 @@ namespace perlin {
     void ClientControl::Stop() {
         impl->server.stop();
         if (impl->thread.joinable()) impl->thread.join();
+        {
+            std::lock_guard lock(impl->encodeMutex);
+            impl->stopEncoder = true;
+        }
+        impl->encodeReady.notify_all();
+        if (impl->encoder.joinable()) impl->encoder.join();
     }
+
+    const std::string& ClientControl::Token() const { return impl->token; }
 
     std::vector<ControlCommand> ClientControl::TakeCommands() {
         std::lock_guard lock(impl->mutex);
@@ -132,12 +210,15 @@ namespace perlin {
                 rgb[dst] = row[x * 4 + 2]; rgb[dst + 1] = row[x * 4 + 1]; rgb[dst + 2] = row[x * 4];
             }
         }
-        std::string jpeg;
-        if (!stbi_write_jpg_to_func([](void* ctx, void* bytes, int n) {
-                static_cast<std::string*>(ctx)->append(static_cast<char*>(bytes), n);
-            }, &jpeg, w, h, 3, rgb.data(), 85)) return;
-        std::lock_guard lock(impl->mutex);
-        impl->frame = std::move(jpeg);
+        // Only the copy happens on the render thread; a newer frame replaces one
+        // still waiting for the encoder.
+        {
+            std::lock_guard lock(impl->encodeMutex);
+            impl->pendingRgb = std::move(rgb);
+            impl->pendingW = w; impl->pendingH = h;
+            impl->hasPending = true;
+        }
+        impl->encodeReady.notify_one();
     }
 
     void ClientControl::Trace(const std::string& line) {
@@ -153,6 +234,7 @@ namespace perlin {
     ClientControl::~ClientControl() = default;
     bool ClientControl::Start(int) { return false; }
     void ClientControl::Stop() {}
+    const std::string& ClientControl::Token() const { static const std::string empty; return empty; }
     std::vector<ControlCommand> ClientControl::TakeCommands() { return {}; }
     void ClientControl::Publish(const ControlSnapshot&) {}
     bool ClientControl::TakeFrameRequest() { return false; }

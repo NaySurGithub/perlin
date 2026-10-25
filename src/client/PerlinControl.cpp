@@ -23,7 +23,7 @@ namespace perlin {
         input.pauseOnLostFocus = false;
         inputManager.SetControlTick(player.TickCount());
         for (const auto& c : control->TakeCommands()) {
-            controlState.commandError.clear();
+            if (c.op == "command" || c.op == "chat") controlState.commandError.clear();
             if (c.op == "input" || c.op == "release") {
                 std::bitset<kActionCount> actions;
                 if (c.op == "input")

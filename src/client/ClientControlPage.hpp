@@ -25,7 +25,8 @@ const bindings={KeyW:'forward',KeyS:'back',KeyA:'left',KeyD:'right',Space:'jump'
 for(let i=1;i<=9;i++)bindings['Digit'+i]='hotbar.'+i;
 const held=new Set();let state={},frameUrl,looking=false,yaw=0,pitch=0,lookingDirty=false,pointer;
 let requests=Promise.resolve();
-function send(command){const result=requests.then(async()=>{const r=await fetch('/command',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(command)});if(!r.ok)throw Error('Command rejected: '+r.status);return r.json()});requests=result.catch(()=>{});return result}
+const token='__PERLIN_TOKEN__',auth={'X-Perlin-Token':token};history.replaceState(null,'','/');
+function send(command){const result=requests.then(async()=>{const r=await fetch('/command',{method:'POST',headers:{...auth,'Content-Type':'application/json'},body:JSON.stringify(command)});if(!r.ok)throw Error('Command rejected: '+r.status);return r.json()});requests=result.catch(()=>{});return result}
 function failure(e){error.textContent=String(e)}
 async function release(){held.clear();looking=false;lookingDirty=false;await send({op:'release'})}
 function refreshInput(){return send({op:'input',actions:[...new Set([...held].map(k=>bindings[k]))],ticks:6})}
@@ -45,7 +46,7 @@ game.addEventListener('wheel',e=>{e.preventDefault();send({op:'scroll',y:-Math.s
 document.querySelector('#release').onclick=()=>release().catch(failure);
 document.querySelector('#commands').onsubmit=e=>{e.preventDefault();send({op:'command',text:document.querySelector('#command').value}).catch(failure)};
 async function poll(){try{
- state=await fetch('/state').then(r=>{if(!r.ok)throw Error('State: '+r.status);return r.json()});
+ state=await fetch('/state',{headers:auth}).then(r=>{if(!r.ok)throw Error('State: '+r.status);return r.json()});
  status.textContent=JSON.stringify(state,null,2);
  if(held.size)await refreshInput();
  else if(poll.wasHeld)await send({op:'release'});
@@ -53,7 +54,7 @@ async function poll(){try{
  if(lookingDirty){lookingDirty=false;await send({op:'look',yaw,pitch})}
  if(pointer){const p=pointer;pointer=undefined;await send({op:'pointer',...p})}
  }catch(e){failure(e)}setTimeout(poll,100)}
-async function frame(){try{const r=await fetch('/frame');if(r.ok&&r.status!==202){const next=URL.createObjectURL(await r.blob());game.src=next;game.alt='Hidden Perlin rendered frame';if(frameUrl)URL.revokeObjectURL(frameUrl);frameUrl=next}}catch(e){failure(e)}setTimeout(frame,250)}
+async function frame(){try{const r=await fetch('/frame',{headers:auth});if(r.ok&&r.status!==202){const next=URL.createObjectURL(await r.blob());game.src=next;game.alt='Hidden Perlin rendered frame';if(frameUrl)URL.revokeObjectURL(frameUrl);frameUrl=next}}catch(e){failure(e)}setTimeout(frame,250)}
 poll();frame();
 </script></html>)HTML";
 }

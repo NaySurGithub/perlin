@@ -349,12 +349,17 @@ namespace perlin {
                 std::cerr << "[control] could not bind localhost port " << args.controlPort << std::endl;
                 return false;
             }
-            inputManager.SetControlActions({}, std::numeric_limits<uint64_t>::max());
-            if (args.hidden) input.SetCaptured(true);
+            // Hidden clients have no physical input; only claim action state there
+            // so a visible window keeps responding to the local keyboard and mouse.
+            if (args.hidden) {
+                inputManager.SetControlActions({}, std::numeric_limits<uint64_t>::max());
+                input.SetCaptured(true);
+            }
             player.ObserveTicks([this](auto tick, const auto& state, const auto& movement) {
                 TraceControlTick(tick, state, movement);
             });
-            std::cout << "[control] http://127.0.0.1:" << args.controlPort << "/state" << std::endl;
+            std::cout << "[control] http://127.0.0.1:" << args.controlPort << "/?token=" << control->Token()
+                      << " (send X-Perlin-Token: " << control->Token() << " with API requests)" << std::endl;
         }
 
         workers = std::make_unique<ThreadPool>(4);
@@ -6800,7 +6805,19 @@ namespace perlin {
                                         name == "minecraft:chorus_fruit" || name == "minecraft:suspicious_stew";
                     const bool eating = hudState.Survival() && HandRenderer::IsFood(name) && (always || hudState.food < 20);
                     blockedFoodUse = HandRenderer::IsFood(name) && !eating;
-                    if (use && eating && inputManager.Pressed(Action::Use)) {
+                    // Aim for this frame resolves after movement; the previous frame's target
+                    // decides whether the click interacts instead. Blocks and entities that take
+                    // the click go through the normal use path, which never also starts eating.
+                    bool aimInteracts = false;
+                    if (gAim.kind == AimHit::Kind::Block) {
+                        bool loaded = false;
+                        const uint16_t id = live->NetLevel().GetBlock(gAim.bx, gAim.by, gAim.bz, loaded);
+                        aimInteracts = !loaded || (blockuse::IsInteractive(BlockPalette::Instance().Name(id)) && !player.Sneaking());
+                    } else if (gAim.kind == AimHit::Kind::Entity) {
+                        entity::Entity target;
+                        aimInteracts = !live->Entities().Find(gAim.entity, target) || IsInteractable(target.type);
+                    }
+                    if (use && eating && !aimInteracts && inputManager.Pressed(Action::Use)) {
                         const float eye[3] = {static_cast<float>(camera.x), static_cast<float>(camera.y), static_cast<float>(camera.z)};
                         earlyItemUse = live->SendUseItemInAir(eye);
                         usingItem = earlyItemUse;
@@ -6815,7 +6832,7 @@ namespace perlin {
                     const uint32_t useTicks = eating ? (name == "minecraft:dried_kelp" ? 16 :
                                                        name == "minecraft:honey_bottle" ? 40 : 32) : 0;
                     player.SetItemSlow(use && (eating || name == "minecraft:bow" || name == "minecraft:trident" ||
-                                              name == "minecraft:spyglass"), useTicks);
+                                              name == "minecraft:spyglass"), useTicks, inputManager.Pressed(Action::Use));
                 }
                 if (!replayCtl.Playing())
                     player.Update(*live, inputManager, camera, levelRenderer->Blocks(), dt);
