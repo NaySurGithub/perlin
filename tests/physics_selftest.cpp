@@ -42,6 +42,26 @@ static BlockShape Slab(double h) {
 int main() {
     Attributes attr;
 
+    // A shallow support/wall overlap within native pose-probe contraction
+    // must not force crouching; a real low ceiling must still reject standing.
+    {
+        TestWorld world;
+        world.fn = [](int x, int y, int z) { return x == 1 && y == 1 && z == 0 ? Full() : BlockShape{}; };
+        State state;
+        state.x = .705; state.y = 1; state.z = .5;
+        CHECK(PoseFits(state, world, kStandHeight));
+        state.x = .72;
+        CHECK(!PoseFits(state, world, kStandHeight));
+        world.fn = [](int, int y, int) { return y == 0 ? Slab(.25) : BlockShape{}; };
+        state.x = .5; state.y = .245;
+        CHECK(PoseFits(state, world, kStandHeight));
+        world.fn = [](int, int y, int) { return y == 2 ? Full() : BlockShape{}; };
+        state.y = .5;
+        CHECK(!PoseFits(state, world, kStandHeight));
+        CHECK(PoseFits(state, world, kSneakHeight));
+    }
+
+
     // Native fluid-state callback integration: entry creates/overwrites the
     // pending splash payload, continued immersion preserves it, exit clears
     // the water flag, and each water update resets ordinary player fall distance.

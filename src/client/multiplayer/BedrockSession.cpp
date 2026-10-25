@@ -22,6 +22,7 @@
 #include <miniz.h>
 
 #include <algorithm>
+#include <unordered_set>
 #include <chrono>
 #include <cctype>
 #include <cmath>
@@ -1529,20 +1530,24 @@ namespace perlin {
             const uint8_t* p = pkt.payload.data();
             size_t left = pkt.payload.size();
             std::vector<std::pair<int, SubChunkData>> parsed;
-            parsed.reserve(pkt.subChunkCount);
-            for (uint32_t i = 0; i < pkt.subChunkCount; i++) {
-                SubChunkData sc;
-                size_t used = 0;
-                const char* why = nullptr;
-                if (!ChunkCodec::ParseSubChunk(p, left, sc, used, &why)) {
-                    LogHex("inline sub-chunk", why ? why : "?", pkt.payload);
-                    break;
+            size_t used = 0;
+            const char* why = nullptr;
+            if (!ChunkCodec::ParseColumn(p, left, pkt.subChunkCount, dim.MinSubChunk(), dim.slots, parsed, used, &why)) {
+                LogHex("inline column", why ? why : "?", pkt.payload);
+                // A truncated column is unresolved, never an empty complete
+                // column. Retain request metadata and recover missing data.
+                {
+                    std::lock_guard<std::mutex> lk(reqMutex);
+                    ColumnInfo& c = columns[ChunkPos{pkt.x, pkt.z}];
+                    c.dim = pkt.dimension;
+                    c.firstSubY = dim.MinSubChunk();
+                    c.slots = dim.slots;
                 }
-                p += used;
-                left -= used;
-                const int absY = sc.hasYIndex ? sc.yIndex : dim.MinSubChunk() + (int)i;
-                parsed.emplace_back(absY, std::move(sc));
+                QueueSubChunkRequests(pkt.dimension, pkt.x, pkt.z, dim.MinSubChunk(), dim.slots);
+                return;
             }
+            p += used;
+            left -= used;
             BlockPalette& blockPalette = BlockPalette::Instance();
             if (blockPalette.Sequential() && !parsed.empty()) {
                 // The highest sub-chunk of a column is normally nothing but air, so a
@@ -2045,11 +2050,14 @@ namespace perlin {
         lodScanCentre[0] = cx;
         lodScanCentre[1] = cz;
         std::vector<ChunkPos> candidates, demote;
+        std::unordered_set<ChunkPos, ChunkPosHash> recoverable;
         {
             std::lock_guard<std::mutex> lk(reqMutex);
-            for (const auto& entry : columns)
+            for (const auto& entry : columns) {
+                recoverable.insert(entry.first);
                 if (std::max(std::abs(entry.first.x - cx), std::abs(entry.first.z - cz)) <= nearRadius)
                     candidates.push_back(entry.first);
+            }
         }
         {
             std::lock_guard<std::mutex> lk(netLevel.mutex);
@@ -2061,7 +2069,11 @@ namespace perlin {
                              candidates.end());
             for (const auto& entry : netLevel.chunks) {
                 const ChunkPos& p = entry.first;
-                if (!entry.second.lodOnly && std::max(std::abs(p.x - cx), std::abs(p.z - cz)) > nearRadius + 3)
+                // Only request-mode columns have metadata to fetch their
+                // subchunks again. Evicting inline columns here leaves holes
+                // inside the server's unchanged streaming radius.
+                if (!entry.second.lodOnly && recoverable.contains(p) &&
+                    std::max(std::abs(p.x - cx), std::abs(p.z - cz)) > nearRadius + 3)
                     demote.push_back(p);
             }
         }

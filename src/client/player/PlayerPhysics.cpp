@@ -451,8 +451,14 @@ namespace perlin::physics {
 
     bool PoseFits(const State& s, const World& world, double height) {
         thread_local std::vector<Box> scratch;
-        const double half = kWidth * 0.5;
-        const Box box{s.x - half + 0.0001, s.y + 0.0001, s.z - half + 0.0001, s.x + half - 0.0001, s.y + height - 0.0001, s.z + half - 0.0001};
+        const float half = static_cast<float>(kWidth) * 0.5f;
+        const float x = static_cast<float>(s.x), y = static_cast<float>(s.y), z = static_cast<float>(s.z);
+        // Native PlayerBoundingBoxStateUpdateSystem contracts each lane by
+        // 0.01f before testing standing/crouching clearance. Tiny wall/support
+        // overlaps must not force a lower pose.
+        constexpr float inset = 0.01f;
+        const Box box{F(F(x - half) + inset), F(y + inset), F(F(z - half) + inset),
+                      F(F(x + half) - inset), F(F(y + static_cast<float>(height)) - inset), F(F(z + half) - inset)};
         return NoCollision(world, box, scratch);
     }
 

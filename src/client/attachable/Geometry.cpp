@@ -108,12 +108,12 @@ namespace perlin::attachable {
         static const bool alt = PERLIN_ENV("PERLIN_EULER_ORDER") != nullptr;
         if (alt) {
             m = glm::rotate(m, glm::radians(-d.x), glm::vec3(1, 0, 0));
-            m = glm::rotate(m, glm::radians(-d.y), glm::vec3(0, 1, 0));
+            m = glm::rotate(m, glm::radians(d.y), glm::vec3(0, 1, 0));
             m = glm::rotate(m, glm::radians(d.z * zs), glm::vec3(0, 0, 1));
             return m;
         }
         m = glm::rotate(m, glm::radians(d.z * zs), glm::vec3(0, 0, 1));
-        m = glm::rotate(m, glm::radians(-d.y), glm::vec3(0, 1, 0));
+        m = glm::rotate(m, glm::radians(d.y), glm::vec3(0, 1, 0));
         m = glm::rotate(m, glm::radians(-d.x), glm::vec3(1, 0, 0));
         return m;
     }

@@ -42,6 +42,19 @@ struct TestHost : molang::Host {
 };
 
 int main(int argc, char** argv) {
+    // Vanilla humanoid bow pose: left arm Y=28.65 degrees brings its hand
+    // toward the bow/right hand, never farther out from the shoulder.
+    {
+        const glm::vec4 wrist(0, -10, 0, 1);
+        const auto left = perlin::attachable::EulerZYX({-90, 28.65f, 0}) * wrist;
+        const auto right = perlin::attachable::EulerZYX({-90, -5.73f, 0}) * wrist;
+        CHECK(left.x < -4 && left.z < -8);
+        CHECK(right.x > .9f && right.z < -9);
+        // Positive head yaw turns the forward model vector toward model -X.
+        const auto head = perlin::attachable::EulerZYX({0, 90, 0}) * glm::vec4(0, 0, -1, 0);
+        CHECK(head.x < -.99f);
+    }
+
     TestHost host;
     molang::Scope s;
     s.host = &host;

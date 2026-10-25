@@ -67,6 +67,7 @@
 #include "client/ui/DebugScreen.hpp"
 #include "client/ui/GuiScale.hpp"
 #include "client/input/TouchState.hpp"
+#include "client/input/TouchControls.hpp"
 #include "client/ui/ItemData.hpp"
 #include "client/ui/HudRenderers.hpp"
 #include "util/SystemInfo.hpp"
@@ -7082,7 +7083,9 @@ namespace perlin {
                                 bkx = gAim.bx; bky = gAim.by; bkz = gAim.bz; bkFace = gAim.face;
                                 breaking = true;
                                 breakProgress = 0.0f;
-                                breakClock = 0;
+                                // Creative is instant on the initial press;
+                                // held repeats still obey the shared cooldown.
+                                breakClock = creative ? 0.05 : 0.0;
                                 hitTicks = 0;
                                 live->SendPlayerAuthInputBlockAction(0  , bkx, bky, bkz, bkFace);
                             }
@@ -8220,7 +8223,12 @@ namespace perlin {
                     ein.hitboxes = showHitboxes;
                     ein.playerPos = glm::dvec3(camera.x, camera.y - 1.62, camera.z);
                 }
-                if (gAim.kind == AimHit::Kind::Block && options.showHud) {
+                if (preview && previewLevel && PERLIN_ENV("PERLIN_PREVIEW_AIM")) {
+                    gAim = Raycast(*previewLevel, &levelRenderer->Blocks(), {},
+                                   [](const entity::Entity&) { return glm::vec2(0.6f, 1.8f); },
+                                   {camera.x, camera.y, camera.z}, glm::dvec3(camera.Direction()), 5.7, 0.0);
+                }
+                if (gAim.kind == AimHit::Kind::Block && (options.showHud || (preview && PERLIN_ENV("PERLIN_PREVIEW_AIM")))) {
                     ein.outline = true;
                     ein.outlineLo = gAim.boxLo;
                     ein.outlineHi = gAim.boxHi;
@@ -8765,8 +8773,17 @@ namespace perlin {
                     touchEditing = false;
                     optionsSignature.clear();
                 }
-                if (touchEditing || (!deathShown && !pauseShown && !invShown && !disconnectShown && !loadingShown && !titleShown))
+                const bool previewTouch = preview && PERLIN_ENV("PERLIN_PREVIEW_TOUCH");
+                if (previewTouch) {
+                    // Exercise the shared overlay renderer on desktop platforms
+                    // whose native window backend has no touch input surface.
+                    static TouchControls previewControls;
+                    previewControls.SetViewport(width, height);
+                    previewControls.SetState(touchState);
+                    previewControls.Draw(*renderer, true);
+                } else if (touchEditing || (!deathShown && !pauseShown && !invShown && !disconnectShown && !loadingShown && !titleShown)) {
                     platform->DrawTouchOverlay(*renderer);
+                }
             }
             if (inputManager.Pressed(Action::Screenshot))
                 TakeScreenshot();

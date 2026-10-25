@@ -794,7 +794,7 @@ void AppPlatform_SDL::PumpFrame() {
 
     UpdateProgressWindow();
 
-    if (game && touchMode)
+    if (game)
         touch.Update(game->GetInput());
 
     if (game) {

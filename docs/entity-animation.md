@@ -28,6 +28,12 @@ resource animation paths. Custom geometries without the six humanoid parts
 retain their resource animations. `PERLIN_NO_JAVA_ANIMATIONS=1` selects the
 resource-driven player pose for comparison.
 
+Native Bedrock bone Y rotation maps directly to the model-space Y axis. The
+vanilla humanoid bow pose must rotate its left wrist inward toward the bow.
+The Java pose adapter preserves its existing world matrices through this
+conversion, including compound poses and singular head turns. The animation
+test is registered in CTest with both numerical JAR fixture files.
+
 Validation:
 
 ```
