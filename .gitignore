@@ -1,6 +1,6 @@
 build/
 out/
-/tests/data/
+/tests/data/perlin_current_*.txt
 .cache/
 .cpm-cache/
 dist/

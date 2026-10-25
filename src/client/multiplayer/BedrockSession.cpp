@@ -676,8 +676,18 @@ namespace perlin {
                 columns.erase(found);
             }
             seenColumns.erase({p.x, p.z});
-            colPending.erase({p.x, p.z});
+            ForgetColumnRequests(p.x, p.z);
         }
+    }
+
+    void BedrockSession::ForgetColumnRequests(int cx, int cz) {
+        const auto inColumn = [cx, cz](const std::tuple<int, int, int, int>& key) {
+            return std::get<1>(key) == cx && std::get<3>(key) == cz;
+        };
+        std::erase_if(inflight, [&](const auto& entry) { return inColumn(entry.first); });
+        std::erase_if(retries, [&](const auto& entry) { return inColumn(entry.first); });
+        std::erase_if(requestedSlots, inColumn);
+        colPending.erase({cx, cz});
     }
 
     void BedrockSession::Update() {
@@ -1966,15 +1976,12 @@ namespace perlin {
         {
             std::lock_guard<std::mutex> lk(reqMutex);
             inflight.erase(key);
-            if (retry) {
-                if (++retries[key] <= 3)
-                    reqQueue.push(key);
-                else
-                    // Back off using the same timeout clock, retaining the
-                    // unresolved slot. A failure is never an empty subchunk.
-                    inflight[key] = std::chrono::steady_clock::now();
+            if (retry && requestedSlots.count(key) && ++retries[key] <= kMaxSubChunkRetries) {
+                reqQueue.push(key);
                 return;
             }
+            // Past the cap (including ChunkNotFound) the slot is settled so
+            // the column can finish instead of being requested forever.
             retries.erase(key);
             DropSlot(key, completed);
         }
@@ -2088,6 +2095,13 @@ namespace perlin {
             netLevel.RemoveChunk(p.x, p.z);
             blockEntities.RemoveChunk(p.x, p.z);
         }
+        if (!demote.empty()) {
+            // Evicted columns must not keep timing out and re-requesting
+            // slots; promotion re-queues them from the column metadata.
+            std::lock_guard<std::mutex> lk(reqMutex);
+            for (const ChunkPos& p : demote)
+                ForgetColumnRequests(p.x, p.z);
+        }
         for (const auto& [pos, info] : promote) {
             if (info.slots <= 0)
                 continue;
@@ -2114,9 +2128,12 @@ namespace perlin {
                 }
                 auto key = it->first;
                 it = inflight.erase(it);
-                // Keep retrying missing data at the bounded five-second rate;
-                // abandoning the slot used to mark permanent voids complete.
-                reqQueue.push(key);
+                if (requestedSlots.count(key) && ++retries[key] <= kMaxSubChunkRetries) {
+                    reqQueue.push(key);
+                } else {
+                    retries.erase(key);
+                    DropSlot(key, completed);
+                }
             }
         }
         FinishColumns(completed);

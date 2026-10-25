@@ -538,16 +538,15 @@ namespace perlin {
         }
         if (flyPending && (session.IsFlying() == flying || now - flyPendingAt > std::chrono::milliseconds(750)))
             flyPending = false;
-        serverFlying = session.IsFlying();
-        if (!flyPending && serverFlying != flying) {
-            // While our own toggle is still unanswered, an incoming ability update may just be the answer to an
-            // earlier toggle; don't let it undo what the player did since.
-            if (!flyPending) {
-                if (serverFlying && session.MayFly() && !flying) {
-                    flying = true;
-                } else if (!serverFlying && flying && !spectator) {
-                    flying = false;
-                }
+        // Only follow the server when its flying state actually changes; servers that never echo abilities must
+        // not cancel a local toggle. While our own toggle is still unanswered, an incoming ability update may just
+        // be the answer to an earlier toggle; don't let it undo what the player did since.
+        if (!flyPending && session.IsFlying() != serverFlying) {
+            serverFlying = session.IsFlying();
+            if (serverFlying && session.MayFly() && !flying) {
+                flying = true;
+            } else if (!serverFlying && flying && !spectator) {
+                flying = false;
             }
         }
         if (session.MayFly() && !spectator && input.Pressed(Action::Jump)) {

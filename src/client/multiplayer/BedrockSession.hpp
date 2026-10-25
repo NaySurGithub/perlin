@@ -872,6 +872,9 @@ void RequestRespawn();
         int lodScanRadius = -1;
         std::map<std::tuple<int, int, int, int>, std::chrono::steady_clock::time_point> inflight;
         std::map<std::tuple<int, int, int, int>, int> retries;
+        static constexpr int kMaxSubChunkRetries = 3;
+        // Requires reqMutex. Drops every request-tracking entry for a column.
+        void ForgetColumnRequests(int cx, int cz);
         void CompleteRequest(const std::tuple<int, int, int, int>& key, bool retry);
         void DropSlot(const std::tuple<int, int, int, int>& key, std::vector<std::pair<int, int>>& completed);
         void FinishColumns(const std::vector<std::pair<int, int>>& columns);

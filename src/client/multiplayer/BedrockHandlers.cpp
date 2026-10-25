@@ -1337,9 +1337,11 @@ namespace perlin {
                 if (layer.allowed & (1u << 10)) fly = (layer.enabled & (1u << 10)) != 0;
                 if (layer.allowed & (1u << 9)) flying = (layer.enabled & (1u << 9)) != 0;
                 if (layer.allowed & (1u << 17)) clip = (layer.enabled & (1u << 17)) != 0;
-                if (layer.flySpeed > 0) flySpeed = layer.flySpeed;
-                if (layer.verticalFlySpeed > 0) vFlySpeed = layer.verticalFlySpeed;
-                if (layer.walkSpeed > 0) walkSpeed = layer.walkSpeed;
+                // Speeds are carried when their ability bit (FlySpeed 13, WalkSpeed 14, VerticalFlySpeed 19) is
+                // set in the layer; an explicit zero is a real value, not "absent".
+                if (layer.allowed & (1u << 13)) flySpeed = layer.flySpeed;
+                if (layer.allowed & (1u << 19)) vFlySpeed = layer.verticalFlySpeed;
+                if (layer.allowed & (1u << 14)) walkSpeed = layer.walkSpeed;
             }
             mayFly = fly;
             isFlying = flying;
