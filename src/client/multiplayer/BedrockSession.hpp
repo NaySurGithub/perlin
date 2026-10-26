@@ -176,21 +176,63 @@ namespace perlin {
         struct ServerMotion {
             bool poseChanged = false;
             bool teleport = false;
+            bool filterTravel = false;
             bool hasVelocity = false;
             bool hasRotation = false;
             float velocity[3] = {0, 0, 0};
             float yaw = 0, pitch = 0;
             bool correction = false;
+            bool stampedVelocity = false;
             uint64_t tick = 0;
             bool onGround = false;
             double pos[3] = {0, 0, 0};
         };
         uint64_t LastAuthTick() const { return authTick; }
+        uint64_t CorrectionCount() const { return correctionsReceived.load(); }
+        struct CommandResult {
+            uint64_t received = 0;
+            int success = 0;
+            std::string output;
+        };
+        CommandResult LastCommandResult() const {
+            std::lock_guard lock(commandResultMutex);
+            return commandResult;
+        }
         bool TakeServerMotion(ServerMotion& out);
         float MovementSpeedAttribute() const {
             std::lock_guard lock(attrMutex);
             const auto it = ownAttributes.find("minecraft:movement");
             return it == ownAttributes.end() ? 0.1f : it->second;
+        }
+        float PredictedMovementSpeed(bool sprinting) const {
+            std::lock_guard lock(attrMutex);
+            const auto it = ownAttributes.find("minecraft:movement");
+            float speed = it == ownAttributes.end() ? 0.1f : it->second;
+            // The wire current value already includes this native modifier.
+            // Replace only its contribution with the locally predicted sprint
+            // state; potion, equipment and custom movement modifiers stay intact.
+            if (movementAttribute)
+                for (const auto& modifier : movementAttribute->modifiers)
+                    if (modifier.id == "d208fc00-42aa-4aad-9276-d5446530de43" &&
+                        modifier.operation == 2 && modifier.operand == 2 && modifier.amount > -1.0f)
+                        speed /= 1.0f + modifier.amount;
+            return speed * (sprinting ? 1.3f : 1.0f);
+        }
+        std::optional<proto::PlayerAttributesEntry> MovementAttribute() const {
+            std::lock_guard lock(attrMutex);
+            return movementAttribute;
+        }
+        bool ServerSprinting() const {
+            std::lock_guard lock(attrMutex);
+            return (ownFlagWords[0] & proto::FlagsMetadataFlags1::Sprinting) != 0;
+        }
+        bool ServerSwimming() const {
+            std::lock_guard lock(attrMutex);
+            return (ownFlagWords[0] & proto::FlagsMetadataFlags1::Swimming) != 0;
+        }
+        std::array<float, 2> ActorSize() const {
+            std::lock_guard lock(attrMutex);
+            return {ownWidth * ownScale, ownHeight * ownScale};
         }
         float UnderwaterMovementSpeedAttribute() const {
             std::lock_guard lock(attrMutex);
@@ -292,6 +334,7 @@ void RequestRespawn();
             return it == permByUid.end() ? -1 : it->second;
         }
         int DimensionId() const { return dimensionId; }
+        bool DimensionChanging() const { return dimAckPending.load(); }
         uint32_t HurtCount() const { return hurtCounter.load(); }
         struct HurtSource {
             bool known = false;
@@ -422,7 +465,7 @@ void RequestRespawn();
         bool IsFlying() const { return isFlying; }
         // Entity flag 32 (gliding) as last reported by the server for the local player.
         // Actor flag 75 (sleeping) lives in the extended flag word.
-        bool Sleeping() const { std::lock_guard lock(attrMutex); return ((ownFlagWords[1] >> 11) & 1ull) != 0 || (ownPlayerFlags & 2) != 0; }
+        bool Sleeping() const { std::lock_guard lock(attrMutex); return (ownFlagWords[1] & proto::FlagsMetadataFlags2::Sleeping) != 0 || (ownPlayerFlags & 2) != 0; }
         bool SendStopSleeping() { return SendPlayerAction(6, 0, 0, 0, 0); }
         bool ServerGliding() const {
             std::lock_guard<std::mutex> lk(attrMutex);
@@ -577,6 +620,9 @@ void RequestRespawn();
         bool DropInventorySlot(int slot, bool whole);
         struct EffectState { int id = 0; int amplifier = 0; int ticks = 0; bool ambient = false; bool particles = true; };
         std::vector<EffectState> GetEffects() const;
+        struct EffectUpdate { uint64_t tick = 0; int id = 0, amplifier = 0; bool active = false; int32_t duration = 0; };
+        std::vector<EffectUpdate> TakeEffectUpdates();
+        struct MotionUpdate { uint64_t tick = 0; std::array<double, 3> velocity{}; };
         struct ServerMovementEffect { uint32_t type = 0, duration = 0; uint64_t tick = 0; };
         std::vector<ServerMovementEffect> TakeMovementEffects();
         bool WorkbenchOpen() const { std::lock_guard lock(statusMutex); return workbenchOpen; }
@@ -890,11 +936,15 @@ void RequestRespawn();
         bool haveLastAuthPos = false;
         bool pendingTeleportAck = false;
         std::deque<BlockActionData> pendingBlockActions;
-        ServerMotion serverMotion;
+        // Packet events are consumed in decode order; merging them loses
+        // teleport/correction boundaries and velocity updates from one frame.
+        std::deque<ServerMotion> serverMotions;
+        void QueueServerMotion(ServerMotion motion);
         mutable std::mutex attrMutex;
         std::map<std::string, float> ownAttributes;
         std::array<uint64_t, 2> ownFlagWords{};
         std::array<bool, 2> ownFlagWordsKnown{};
+        std::optional<proto::PlayerAttributesEntry> movementAttribute;
         int64_t ownPlayerFlags = 0;
         float ownScale = 1.0f, ownWidth = 0.6f, ownHeight = 1.8f;
         int predictionSyncCountdown = -1;
@@ -907,7 +957,9 @@ void RequestRespawn();
         std::atomic<int> viewCenterChunk[2] = {0, 0};
         int viewRadiusChunks = 0;
         uint64_t movePacketsSent = 0;
-        uint64_t correctionsReceived = 0;
+        std::atomic<uint64_t> correctionsReceived{0};
+        mutable std::mutex commandResultMutex;
+        CommandResult commandResult;
         uint64_t statLevelChunks = 0, statRequestsSent = 0, statSubChunkReplies = 0, statSubChunksFailed = 0;
         std::atomic<uint64_t> statSubChunksApplied{0};
         std::chrono::steady_clock::time_point lastStatLog{};
@@ -1004,8 +1056,9 @@ void RequestRespawn();
         proto::ItemV4& InvRawLocked(int addr);
         void InvEnqueue(std::function<bool(proto::ItemStackRequest&)> op);
         bool SendCloseNow();
-        struct ActiveEffect { int id = 0; int amplifier = 0; std::chrono::steady_clock::time_point expires{}; bool infinite = false, ambient = false, particles = true; };
+        struct ActiveEffect { int id = 0; int amplifier = 0; int32_t duration = 0; uint64_t appliedTick = 0; bool ambient = false, particles = true; };
         std::vector<ActiveEffect> activeEffects;
+        std::vector<EffectUpdate> pendingEffectUpdates;
         std::vector<ServerMovementEffect> pendingMovementEffects;
         bool inventoryOpen = false, serverClosedInventory = false, workbenchOpen = false, workbenchJustOpened = false;
         bool horseJustOpened = false;

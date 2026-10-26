@@ -178,7 +178,6 @@ namespace perlin {
     namespace {
         AimHit gAim;
         uint32_t gSelfSwing = 0;
-        bool gItemSlow = false;
         struct LocalCrack { bool active = false; int x = 0, y = 0, z = 0, stage = 0; float progress = 0.0f; };
         LocalCrack gLocalCrack;
         struct BreakState { bool breaking = false; int x = 0, y = 0, z = 0, face = 1; float progress = 0.0f; };
@@ -344,6 +343,24 @@ namespace perlin {
         renderer = platform->CreateRenderContext();
         if (!renderer)
             return false;
+        if (args.controlPort) {
+            control = std::make_shared<ClientControl>();
+            if (!control->Start(args.controlPort)) {
+                std::cerr << "[control] could not bind localhost port " << args.controlPort << std::endl;
+                return false;
+            }
+            // Hidden clients have no physical input; only claim action state there
+            // so a visible window keeps responding to the local keyboard and mouse.
+            if (args.hidden) {
+                inputManager.SetControlActions({}, std::numeric_limits<uint64_t>::max());
+                input.SetCaptured(true);
+            }
+            player.ObserveTicks([this](auto tick, const auto& state, const auto& movement) {
+                TraceControlTick(tick, state, movement);
+            });
+            std::cout << "[control] http://127.0.0.1:" << args.controlPort << "/?token=" << control->Token()
+                      << " (send X-Perlin-Token: " << control->Token() << " with API requests)" << std::endl;
+        }
 
         workers = std::make_unique<ThreadPool>(4);
         if (args.server.empty() && !PERLIN_ENV("PERLIN_PREVIEW"))
@@ -743,6 +760,7 @@ namespace perlin {
     }
 
     void Perlin::Shutdown() {
+        if (control) control->Stop();
         FinishReplayRecording("the game closed");
         renderRunning = false;
         if (renderThread.joinable())
@@ -1070,6 +1088,11 @@ namespace perlin {
         hud.UpdateOverlay(fbW, fbH, options.guiScale);
         const bool down = input.IsMouseDown(0);
         bool leave = inputManager.Pressed(Action::Pause);
+        // The bed overlay enables text mode, so keyboard Escape arrives in
+        // the typed queue rather than the gameplay action dispatcher.
+        for (const auto& t : inputManager.TakeTyped())
+            if (!t.character && t.key == Key::Escape)
+                leave = true;
         if (!down && bedLeftDown && hud.Overlay().OverlayHover() == ui::kBedLeaveId)
             leave = true;
         bedLeftDown = down;
@@ -6479,6 +6502,10 @@ namespace perlin {
             platform->isRunning = false;
             return;
         }
+        if (args.hidden) {
+            renderer->SetForcedSize(1280, 720);
+            renderer->SetExportTarget(true);
+        }
         renderReady = true;
         StartSampleProfiler();
         levelRenderer = std::make_unique<LevelRenderer>(*renderer, options);
@@ -6572,7 +6599,11 @@ namespace perlin {
                 dt = kDefaultFrameDelta;
 
             input.SetPadDeadzone(options.padDeadzone);
+            PollControl();
             inputManager.Poll();
+            static bool usingItem = false;
+            bool earlyItemUse = false;
+            bool blockedFoodUse = false;
             if (exportJob.active)
                 ExportPreFrame(frameStart, dt);
             if (replayCtl.Playing())
@@ -6764,7 +6795,45 @@ namespace perlin {
                 }
                 player.SetToggleModes(options.sprintMode == "toggle", options.sneakMode == "toggle");
                 hudState.moveStatus.clear();
-                player.SetItemSlow(gItemSlow);
+                {
+                    const auto& held = hudState.hotbar[std::clamp(hudState.selectedSlot, 0, 8)];
+                    const auto& name = held.name;
+                    const bool use = input.Captured() && inputManager.IsDown(Action::Use) && HasAmmo(hudState, live, name);
+                    const bool drink = name == "minecraft:potion" || name == "minecraft:milk_bucket" ||
+                                       name == "minecraft:honey_bottle" || name == "minecraft:ominous_bottle";
+                    const bool always = drink || name == "minecraft:golden_apple" || name == "minecraft:enchanted_golden_apple" ||
+                                        name == "minecraft:chorus_fruit" || name == "minecraft:suspicious_stew";
+                    const bool eating = hudState.Survival() && HandRenderer::IsFood(name) && (always || hudState.food < 20);
+                    blockedFoodUse = HandRenderer::IsFood(name) && !eating;
+                    // Aim for this frame resolves after movement; the previous frame's target
+                    // decides whether the click interacts instead. Blocks and entities that take
+                    // the click go through the normal use path, which never also starts eating.
+                    bool aimInteracts = false;
+                    if (gAim.kind == AimHit::Kind::Block) {
+                        bool loaded = false;
+                        const uint16_t id = live->NetLevel().GetBlock(gAim.bx, gAim.by, gAim.bz, loaded);
+                        aimInteracts = !loaded || (blockuse::IsInteractive(BlockPalette::Instance().Name(id)) && !player.Sneaking());
+                    } else if (gAim.kind == AimHit::Kind::Entity) {
+                        entity::Entity target;
+                        aimInteracts = !live->Entities().Find(gAim.entity, target) || IsInteractable(target.type);
+                    }
+                    if (use && eating && !aimInteracts && inputManager.Pressed(Action::Use)) {
+                        const float eye[3] = {static_cast<float>(camera.x), static_cast<float>(camera.y), static_cast<float>(camera.z)};
+                        earlyItemUse = live->SendUseItemInAir(eye);
+                        usingItem = earlyItemUse;
+                    }
+                    if (!use && usingItem) {
+                        const float eye[3] = {static_cast<float>(camera.x), static_cast<float>(camera.y), static_cast<float>(camera.z)};
+                        live->SendReleaseItem(eye);
+                        usingItem = false;
+                    }
+                    // Resolve use intent before movement; the render tick follows
+                    // player.Update and otherwise delays slowdown by one tick.
+                    const uint32_t useTicks = eating ? (name == "minecraft:dried_kelp" ? 16 :
+                                                       name == "minecraft:honey_bottle" ? 40 : 32) : 0;
+                    player.SetItemSlow(use && (eating || name == "minecraft:bow" || name == "minecraft:trident" ||
+                                              name == "minecraft:spyglass"), useTicks, inputManager.Pressed(Action::Use));
+                }
                 if (!replayCtl.Playing())
                     player.Update(*live, inputManager, camera, levelRenderer->Blocks(), dt);
             }
@@ -6994,7 +7063,6 @@ namespace perlin {
                     live->NetLevel().MarkAllDirty();
                 }
                 static double breakClock = 0, useClock = 0, swingClock = 0;
-                static bool usingItem = false;
                 bool& breaking = gBreak.breaking;
                 int& bkx = gBreak.x; int& bky = gBreak.y; int& bkz = gBreak.z; int& bkFace = gBreak.face;
                 float& breakProgress = gBreak.progress;
@@ -7309,7 +7377,7 @@ namespace perlin {
                                 sounds.PlayBlockEvent(held.name, "place", glm::dvec3(dest[0] + 0.5, dest[1] + 0.5, dest[2] + 0.5));
                             }
                         }
-                        if (usePressed && live && holdsItem && use == blockuse::Use::Nothing && !interactedEntity) {
+                        if (usePressed && !earlyItemUse && !blockedFoodUse && live && holdsItem && use == blockuse::Use::Nothing && !interactedEntity) {
                             live->SendUseItemInAir(eyeF);
                             usingItem = true;
                         }
@@ -7658,11 +7726,6 @@ namespace perlin {
                                             mn == "minecraft:chorus_fruit" || drink || mn == "minecraft:suspicious_stew";
                         handIn.eating = handIn.survival && handIn.useHeld && HandRenderer::IsFood(mn) &&
                                         (always || hudState.food < 20);
-                    }
-                    {
-                        const std::string& hn = handIn.main.name;
-                        gItemSlow = handIn.eating || (handIn.useHeld && (hn == "minecraft:bow" || hn == "minecraft:trident" ||
-                                                                          hn == "minecraft:spyglass"));
                     }
                     handRenderer.Tick(handIn, options.hand);
                     {
@@ -8091,7 +8154,6 @@ namespace perlin {
                     if (player.Sneaking() && !player.Crawling())
                         self.flags |= entity::flag::Sneaking;
                     self.crawling = player.Crawling();
-                    player.SetHeadUnderwater(live && headUnderwater);
                     player.SetElytra(hudState.armorItems[1].name == "minecraft:elytra" && hudState.armorItems[1].aux < 431);
                     if (player.Gliding())
                         self.flags |= entity::flag::Gliding;
@@ -8749,6 +8811,7 @@ namespace perlin {
                 TakeScreenshot();
             if (exportJob.active)
                 ExportPostRender();
+            PublishControl();
             { ProfScope p(6); renderer->EndFrame(); }
             if (options.frameGen != "off" && !exportJob.active) {
                 const int total = options.frameGen == "4x" ? 4 : options.frameGen == "3x" ? 3 : 2;

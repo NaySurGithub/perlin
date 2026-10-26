@@ -195,6 +195,20 @@ namespace perlin {
         }
     }
 
+    physics::bds::ScaffoldingCell LevelCollision::ClimberCell(int x, int y, int z) const {
+        using Cell = physics::bds::ScaffoldingCell;
+        bool loaded = false;
+        const auto id = level.GetBlock(x, y, z, loaded);
+        if (!loaded || id == 0) return Cell::Air;
+        const auto name = BlockPalette::Instance().Name(id);
+        if (name == "minecraft:scaffolding" || name == "scaffolding") return Cell::Scaffold;
+        if (name == "minecraft:powder_snow" || name == "powder_snow") return Cell::PowderSnow;
+        if (name == "minecraft:air" || name == "air") return Cell::Air;
+        if (name == "minecraft:water" || name == "water" ||
+            name == "minecraft:flowing_water" || name == "flowing_water") return Cell::Water;
+        return Cell::Other;
+    }
+
     bool LevelCollision::Selection(int x, int y, int z, std::vector<physics::Box>& out) const {
         out.clear();
         bool loaded = false;
@@ -297,7 +311,7 @@ namespace perlin {
                     info.shape.randomOffset = offset;
         }
         if (!chosen && id != 0 && info.shape.Empty() && info.shape.fluid == 0 &&
-            !info.shape.climbable && !info.shape.web) {
+            !info.shape.climbable && !info.shape.web && !info.shape.powderSnow && !info.shape.berryBush && info.shape.scaffoldingStability < 0) {
             std::vector<Box> boxes;
             if (VoxelShapeRegistry::Instance().Find(BlockPalette::Instance().Name(id), boxes) && !boxes.empty()) {
                 info.shape.boxes = std::move(boxes);
@@ -317,6 +331,7 @@ namespace perlin {
         BlockShape& s = info.shape;
         if (id == 0)
             return info;
+        s.isAir = false;
 
         std::string n = BlockPalette::Instance().Name(id);
         if (n.empty()) {
@@ -338,13 +353,29 @@ namespace perlin {
             n == "kelp_plant") {
             s.fluid = 1;
             s.fluidLevel = 8.0f / 9.0f;
+            if (n == "bubble_column")
+                s.bubbleColumn = State(id, "drag_down", 0) ? -1 : 1;
             return info;
         }
         if (n == "web" || n == "cobweb") {
             s.web = true;
             return info;
         }
-        if (n == "ladder" || n == "vine" || n == "scaffolding_none" || n == "twisting_vines" || n == "weeping_vines" ||
+        if (n == "sweet_berry_bush") {
+            s.berryBush = true;
+            return info;
+        }
+        if (n == "powder_snow") {
+            s.powderSnow = true;
+            return info;
+        }
+        if (n == "scaffolding") {
+            s.scaffoldingStability = static_cast<int8_t>(State(id, "stability", 0));
+            return info;
+        }
+        // Ladders have oriented 3/16-block collision boxes in the registry.
+        // Keep them on that path instead of treating them as passable vines.
+        if (n == "vine" || n == "scaffolding_none" || n == "twisting_vines" || n == "weeping_vines" ||
             n == "cave_vines" || n == "cave_vines_body_with_berries" || n == "cave_vines_head_with_berries") {
             s.climbable = true;
             return info;

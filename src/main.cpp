@@ -190,6 +190,18 @@ namespace {
                 args.login = true;
             else if (arg == "--offline")
                 args.offline = true;
+            else if (arg == "--hidden")
+                args.hidden = true;
+            else if (arg == "--control-port" && i + 1 < argc) {
+                const std::string port = argv[++i];
+                char* end = nullptr;
+                const long value = std::strtol(port.c_str(), &end, 10);
+                if (!end || *end || value < 1024 || value > 65535) {
+                    std::fprintf(stderr, "Invalid control port (expected 1024..65535)\n");
+                    std::exit(2);
+                }
+                args.controlPort = static_cast<int>(value);
+            }
             else if (arg == "--raknet")
                 args.transport = "raknet";
             else if (arg == "--nethernet")
@@ -212,6 +224,8 @@ namespace {
                     "  --slim               slim (Alex) arms for the skin\n"
                     "  --login              sign in with a Microsoft/Xbox account (remembered afterwards)\n"
                     "  --offline            skip the saved Microsoft login for this run\n"
+                    "  --hidden             run without showing or focusing the game window\n"
+                    "  --control-port <n>   enable localhost developer HTTP controls\n"
                     "  --logout             forget the saved Microsoft login\n"
                     "  --raknet             connect over RakNet (Lifeboat, The Hive, any public server)\n"
                     "  --nethernet          connect over NetherNet (BDS with the nethernet transport)\n"

@@ -1,5 +1,6 @@
 #include "util/Env.hpp"
 #include "client/multiplayer/BedrockSession.hpp"
+#include "client/player/PerlinStatusEffect.hpp"
 
 #include <algorithm>
 #include <iterator>
@@ -897,21 +898,15 @@ namespace perlin {
     std::vector<BedrockSession::EffectState> BedrockSession::GetEffects() const {
         std::lock_guard lock(statusMutex);
         std::vector<EffectState> out;
-        const auto now = std::chrono::steady_clock::now();
         for (const ActiveEffect& e : activeEffects) {
             EffectState s;
             s.id = e.id;
             s.amplifier = e.amplifier;
             s.ambient = e.ambient;
             s.particles = e.particles;
-            if (e.infinite) {
-                s.ticks = -1;
-            } else {
-                const auto left = std::chrono::duration_cast<std::chrono::milliseconds>(e.expires - now).count();
-                if (left <= 0)
-                    continue;
-                s.ticks = static_cast<int>(left / 50);
-            }
+            s.ticks = physics::bds::StatusEffectTicksAt(e.duration, e.appliedTick, LastAuthTick());
+            if (s.ticks == 0)
+                continue;
             out.push_back(s);
         }
         return out;

@@ -1,13 +1,14 @@
 #pragma once
 #include <cstdint>
-#include "client/player/BdsCollision.hpp"
-#include "client/player/BdsVerticalMotion.hpp"
-#include "client/player/BdsMovementEffects.hpp"
-#include "client/player/BdsRotation.hpp"
-#include "client/player/BdsLanding.hpp"
-#include "client/player/BdsWorldCollision.hpp"
-#include "client/player/BdsBlockOffset.hpp"
-#include "client/player/BdsJump.hpp"
+#include "client/player/PerlinCollision.hpp"
+#include "client/player/PerlinVerticalMotion.hpp"
+#include "client/player/PerlinMovementEffects.hpp"
+#include "client/player/PerlinRotation.hpp"
+#include "client/player/PerlinLanding.hpp"
+#include "client/player/PerlinWorldCollision.hpp"
+#include "client/player/PerlinBlockOffset.hpp"
+#include "client/player/PerlinJump.hpp"
+#include "client/player/PerlinScaffolding.hpp"
 
 #include <vector>
 
@@ -15,7 +16,8 @@ namespace perlin::physics {
     constexpr double kTickSeconds = 0.05;
     constexpr double kWidth = 0.6;
     constexpr double kStandHeight = 1.8;
-    constexpr double kSneakHeight = 1.5;
+    // Native 26.52 PlayerBoundingBoxStateUpdateSystem selects 0x3fbeb852.
+    constexpr double kSneakHeight = 1.49;
     constexpr double kCrawlHeight = 0.6;
     constexpr double kCrawlEye = 0.4;
     constexpr double kStandEye = 1.62;
@@ -47,8 +49,13 @@ namespace perlin::physics {
         uint8_t fluidDepth = 255;
         bool climbable = false;
         bool web = false;
+        bool powderSnow = false;
+        bool berryBush = false;
         bool honey = false;
         float speedFactor = 1.0f;
+        bool isAir = true;
+        int8_t bubbleColumn = 0; // +1 upward, -1 downward
+        int8_t scaffoldingStability = -1; // -1: other block; 7: unstable scaffolding
         bool Empty() const { return boxes.empty(); }
     };
 
@@ -56,6 +63,7 @@ namespace perlin::physics {
     public:
         virtual ~World() = default;
         virtual BlockShape Query(int x, int y, int z) const = 0;
+        virtual bds::ScaffoldingCell ClimberCell(int x, int y, int z) const;
         virtual bool CollisionChunkReady(int x, int z) const { return true; }
         virtual bool CollisionColumnPresent(int x, int z) const { return CollisionChunkReady(x >> 4, z >> 4); }
         virtual bds::TerrainHeightLimits CollisionHeightLimits() const { return {}; }
@@ -63,6 +71,10 @@ namespace perlin::physics {
     };
 
     struct Attributes {
+        // Retain the 1.26.10 arithmetic only for its historical trace adapters.
+        bool currentMovementMath = true;
+        // Resolved movement attribute, including the predicted sprint modifier.
+        // Native PlayerResetMovementSpeed copies this value without another boost.
         float speed = 0.1f;
         float flySpeed = 0.05f;
         float verticalFlySpeed = 1.0f;
@@ -70,6 +82,7 @@ namespace perlin::physics {
         int jumpBoost = 0;
         int levitation = 0;
         bool slowFalling = false;
+        bool weaving = false;
         float maxAutoStep = static_cast<float>(kStepHeight);
         int waterWalkSpeedEnchant = 0;
         std::optional<float> waterDrag;
@@ -95,6 +108,10 @@ namespace perlin::physics {
         float pitch = 0;
         bool crawl = false;
         bool forceCrouch = false;
+        bool overDescendableBlock = false;
+        bool inAscendableBlock = false;
+        bool canStandOnPowderSnow = false;
+        bool canClimb = true, wallClimbing = false;
         bool pushTowardsClosestSpace = false;
         uint8_t actorMovementFlags = 0;
         bds::GravityFlags gravity;
@@ -117,6 +134,9 @@ namespace perlin::physics {
         std::optional<uint32_t> waterSplashRequest;
         bool onClimbable = false;
         bool crawling = false;
+        bool swimming = false;
+        float collisionHeight = static_cast<float>(kStandHeight);
+        float swimAmount = 0;
         int jumpDelay = 0;
         float stuckX = 0, stuckY = 0, stuckZ = 0;
         float fallDistance = 0;
@@ -130,18 +150,22 @@ namespace perlin::physics {
 
         Box box;
         bool hasBox = false;
+        // HasTeleportedFlagComponent survives until an eligible movement tick.
+        bool hasTeleported = false;
 
-        double Height(bool sneaking) const { return sneaking ? kSneakHeight : kStandHeight; }
+        double Height(bool sneaking) const { return (crawling || swimming) ? kCrawlHeight : sneaking ? kSneakHeight : kStandHeight; }
     };
 
     Box BoundingBox(const State& state, bool sneaking);
     bool PoseFits(const State& state, const World& world, double height);
+    bool TouchingWater(const State& state, const World& world);
 
     struct MoveVector {
         float forward = 0, strafe = 0;
     };
 
-    MoveVector ProcessMoveInput(float forward, float strafe, bool sneaking, bool inWater);
+    MoveVector ProcessMoveInput(float forward, float strafe, bool sneaking, bool inWater,
+                                float itemUseModifier = 1.0f);
 
     void Step(State& state, const Input& input, const Attributes& attributes, const World& world);
 }

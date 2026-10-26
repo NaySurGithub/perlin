@@ -382,6 +382,7 @@ bool AppPlatform_SDL::Initialize() {
     SDL_SetNumberProperty(props, SDL_PROP_WINDOW_CREATE_WIDTH_NUMBER, 1280);
     SDL_SetNumberProperty(props, SDL_PROP_WINDOW_CREATE_HEIGHT_NUMBER, 720);
     SDL_SetBooleanProperty(props, SDL_PROP_WINDOW_CREATE_RESIZABLE_BOOLEAN, true);
+    SDL_SetBooleanProperty(props, SDL_PROP_WINDOW_CREATE_HIDDEN_BOOLEAN, args.hidden);
 #ifndef __EMSCRIPTEN__
     SDL_SetBooleanProperty(props, SDL_PROP_WINDOW_CREATE_HIGH_PIXEL_DENSITY_BOOLEAN, true);
 #endif
@@ -442,15 +443,22 @@ bool AppPlatform_SDL::Initialize() {
         return false;
     if (touchMode)
         game->GetInput().SetCaptured(true);
+    if (args.hidden && args.controlPort)
+        SetCursorCaptured(true);
 #ifndef __EMSCRIPTEN__
-    SDL_RaiseWindow(window);
-    if (SDL_GetWindowFlags(window) & SDL_WINDOW_INPUT_FOCUS)
+    if (!args.hidden) SDL_RaiseWindow(window);
+    if (!args.hidden && (SDL_GetWindowFlags(window) & SDL_WINDOW_INPUT_FOCUS))
         SetCursorCaptured(true);
 #endif
     return true;
 }
 
 void AppPlatform_SDL::SetCursorCaptured(bool captured) {
+    if (args.hidden) {
+        cursorCaptured = captured && args.controlPort != 0;
+        if (game) game->GetInput().SetCaptured(cursorCaptured);
+        return;
+    }
     if (touchMode) {
         if (game)
             game->GetInput().SetCaptured(true);
@@ -508,6 +516,7 @@ void AppPlatform_SDL::HandleEvent(const SDL_Event& e) {
     case SDL_EVENT_WINDOW_FOCUS_LOST:
     case SDL_EVENT_WINDOW_MINIMIZED:
     case SDL_EVENT_WINDOW_HIDDEN:
+        if (args.hidden) break;
         if (input && (input->pauseOnLostFocus || e.type != SDL_EVENT_WINDOW_FOCUS_LOST))
             input->ReleaseAll();
         SetCursorCaptured(false);
@@ -830,7 +839,7 @@ void AppPlatform_SDL::PumpFrame() {
         }
     }
 
-    if (cursorCaptured && !(SDL_GetWindowFlags(window) & SDL_WINDOW_INPUT_FOCUS))
+    if (!args.hidden && cursorCaptured && !(SDL_GetWindowFlags(window) & SDL_WINDOW_INPUT_FOCUS))
         SetCursorCaptured(false);
 }
 

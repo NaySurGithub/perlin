@@ -1,6 +1,6 @@
 #pragma once
 
-#include "client/player/BdsCollision.hpp"
+#include "client/player/PerlinCollision.hpp"
 
 namespace perlin::physics::bds {
     // Filter 0x140E76AD0. The optional control component takes precedence

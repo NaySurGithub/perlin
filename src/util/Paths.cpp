@@ -47,6 +47,8 @@ namespace perlin::paths {
     }
 
     std::string DataDir() {
+        if (const char* override = std::getenv("PERLIN_DATA_DIR"); override && *override)
+            return fs::path(override).generic_string();
 #if defined(__EMSCRIPTEN__)
         return "/perlin";
 #elif defined(__ANDROID__)

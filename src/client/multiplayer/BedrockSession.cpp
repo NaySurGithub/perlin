@@ -1,4 +1,5 @@
 #include "util/Paths.hpp"
+#include "util/Env.hpp"
 #include "client/multiplayer/BedrockSession.hpp"
 #include "util/SimClock.hpp"
 #include "util/SystemInfo.hpp"
@@ -471,10 +472,13 @@ namespace perlin {
             ownFlagWords = {};
             ownFlagWordsKnown = {};
             ownAttributes.clear();
+            movementAttribute.reset();
         }
         {
             std::lock_guard lk(statusMutex);
             pendingMovementEffects.clear();
+            pendingEffectUpdates.clear();
+            serverMotions.clear();
         }
 
         {
@@ -698,15 +702,28 @@ namespace perlin {
         if (startGameSeen && !initializedSent)
             FinishLoadingIfReady();
         if (dimAckPending) {
-            size_t columns;
+            // Native PlayerDimensionTransferer queries the destination's
+            // surrounding terrain, not an arbitrary count of received columns.
+            // A seen column can still have outstanding subchunk requests.
+            const int minX = static_cast<int>(std::floor(pose.x - 16.0)) >> 4;
+            const int maxX = static_cast<int>(std::floor(pose.x + 16.0)) >> 4;
+            const int minZ = static_cast<int>(std::floor(pose.z - 16.0)) >> 4;
+            const int maxZ = static_cast<int>(std::floor(pose.z + 16.0)) >> 4;
+            bool ready = true;
             {
                 std::lock_guard<std::mutex> lk(reqMutex);
-                columns = seenColumns.size();
+                for (int cx = minX; cx <= maxX && ready; ++cx)
+                    for (int cz = minZ; cz <= maxZ; ++cz)
+                        if (!seenColumns.count({cx, cz}) || colPending.count({cx, cz})) {
+                            ready = false;
+                            break;
+                        }
             }
-            if (columns >= 9 || std::chrono::steady_clock::now() - dimAckSince > std::chrono::seconds(4))
+            if (ready || std::chrono::steady_clock::now() - dimAckSince > std::chrono::seconds(4))
                 FinishDimensionChange();
         }
-        if (!replayMode && state == State::InGame && !transferring && !transferRequested && !diagLostLogged && lastPacketMs.load() != 0) {
+        if (!replayMode && state == State::InGame && !transferring && !transferRequested && !diagLostLogged &&
+            lastPacketMs.load() != 0 && net && !net->HasLivenessTimeout()) {
             const int64_t nowMs = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
             if (nowMs - lastPacketMs.load() > 30000) {
                 diagLostLogged = true;
@@ -775,8 +792,12 @@ namespace perlin {
             HandleBatch(msg);
             if (state == State::Failed)
                 return;
-            if ((++handled & 3) == 0 && std::chrono::steady_clock::now() - receiveStart > std::chrono::microseconds(handled > 400 ? 9000 : 4000))
+            if ((++handled & 3) == 0 && std::chrono::steady_clock::now() - receiveStart > std::chrono::microseconds(handled > 400 ? 9000 : 4000)) {
+                if (PERLIN_ENV("PERLIN_BLOCK_DEBUG"))
+                    std::cout << "[net] receive budget reached batches=" << handled
+                              << " afterAuthTick=" << LastAuthTick() << std::endl;
                 break;
+            }
         }
     }
 
@@ -1089,6 +1110,16 @@ namespace perlin {
         if (!dimAckPending.exchange(false))
             return;
         std::cout << "[bedrock] dimension " << dimensionId.load() << " loaded, acknowledging" << std::endl;
+        if (PERLIN_ENV("PERLIN_BLOCK_DEBUG")) {
+            const auto current = GetPose();
+            const bool settled = ColumnSettled(static_cast<int>(std::floor(current.x)) >> 4,
+                                               static_cast<int>(std::floor(current.z)) >> 4);
+            const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now() - dimAckSince).count();
+            std::cout << "[bedrock] dimension_ack afterAuthTick=" << LastAuthTick()
+                      << " elapsedMs=" << elapsed << " columnSettled=" << settled
+                      << " pos=(" << current.x << ',' << current.y << ',' << current.z << ')' << std::endl;
+        }
         SendPlayerAction(static_cast<uint32_t>(proto::Action::DimensionChangeAck), 0, 0, 0, 0);
         SendLoadingScreen(false, dimLoadingId);
     }
@@ -1301,11 +1332,25 @@ namespace perlin {
         return true;
     }
 
+    void BedrockSession::QueueServerMotion(ServerMotion motion) {
+        if (motion.poseChanged) {
+            motion.pos[0] = pose.x;
+            motion.pos[1] = pose.y;
+            motion.pos[2] = pose.z;
+        }
+        serverMotions.push_back(motion);
+        if (PERLIN_ENV("PERLIN_BLOCK_DEBUG"))
+            std::cout << "[move] queued_motion depth=" << serverMotions.size()
+                      << " teleport=" << motion.teleport << " correction=" << motion.correction
+                      << " stamped=" << motion.stampedVelocity << " tick=" << motion.tick
+                      << " ground=" << motion.onGround << std::endl;
+    }
+
     bool BedrockSession::TakeServerMotion(ServerMotion& out) {
-        if (!serverMotion.poseChanged && !serverMotion.hasVelocity)
+        if (serverMotions.empty())
             return false;
-        out = serverMotion;
-        serverMotion = {};
+        out = serverMotions.front();
+        serverMotions.pop_front();
         return true;
     }
 

@@ -22,6 +22,7 @@ int main(int argc, char** argv) {
         return 1;
     EmptyWorld world;
     State state;
+    float referenceGlideFall = 0, expectedIntegratedFall = 0;
     int scenarios = 0, ticks = 0, failures = 0;
     std::string line;
     while (std::getline(input, line)) {
@@ -50,6 +51,7 @@ int main(int argc, char** argv) {
             state.vy = f(2);
             state.vz = f(3);
             state.fallDistance = f(4);
+            referenceGlideFall = expectedIntegratedFall = f(4);
             state.previousRotation = {f(5), f(6)};
             ++scenarios;
             continue;
@@ -73,11 +75,22 @@ int main(int argc, char** argv) {
                 {uint64_t(words[5]) | (uint64_t(words[6]) << 32), std::bit_cast<int32_t>(words[4]), 0});
         Attributes attributes;
         attributes.slowFalling = words[0] != 0;
+        // This fixture chains GlideMove and effect cleanup, not the later
+        // CheckFallDamage callback. Retain its exact callback assertion and
+        // additionally check the integrated scalar after resolved movement.
+        if (static_cast<float>(state.vy) > -0.5f)
+            referenceGlideFall = expectedIntegratedFall = 1.0f;
+        check(std::bit_cast<uint32_t>(referenceGlideFall), 10);
+        expectedIntegratedFall = f(8) < 0 ? expectedIntegratedFall - f(8) : 0.0f;
         Step(state, controls, attributes, world);
         check(std::bit_cast<uint32_t>(static_cast<float>(state.vx)), 7);
         check(std::bit_cast<uint32_t>(static_cast<float>(state.vy)), 8);
         check(std::bit_cast<uint32_t>(static_cast<float>(state.vz)), 9);
-        check(std::bit_cast<uint32_t>(state.fallDistance), 10);
+        if (std::bit_cast<uint32_t>(state.fallDistance) != std::bit_cast<uint32_t>(expectedIntegratedFall)) {
+            if (failures < 20)
+                std::fprintf(stderr, "Tick %d: integrated fall-distance mismatch\n", ticks);
+            ++failures;
+        }
         const auto& effect = state.movementEffects[0];
         check(static_cast<uint32_t>(effect.tick), 11);
         check(static_cast<uint32_t>(effect.tick >> 32), 12);

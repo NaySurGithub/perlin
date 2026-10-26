@@ -1,6 +1,6 @@
 #pragma once
 
-#include "client/player/BdsWorldCollision.hpp"
+#include "client/player/PerlinWorldCollision.hpp"
 
 namespace perlin::physics::bds {
     namespace detail {

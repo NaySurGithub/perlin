@@ -35,6 +35,7 @@ namespace perlin {
         bool TryReceive(std::vector<uint8_t>& out) override;
 
         bool IsConnected() const override { return connected; }
+        bool HasLivenessTimeout() const override { return true; }
         std::string LastError() const override;
         const NetherNetServerInfo& Info() const override { return info; }
 

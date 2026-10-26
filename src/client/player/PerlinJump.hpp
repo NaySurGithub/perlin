@@ -1,8 +1,8 @@
 #pragma once
 
-#include "client/player/BdsInsideQuery.hpp"
-#include "client/player/BdsSineTable.hpp"
-#include "client/player/BdsFloat.hpp"
+#include "client/player/PerlinInsideQuery.hpp"
+#include "client/player/PerlinSineTable.hpp"
+#include "client/player/PerlinFloat.hpp"
 
 namespace perlin::physics::bds {
     inline constexpr uint64_t ReducedJumpSurfaceProperty = uint64_t{1} << 43;
@@ -23,6 +23,7 @@ namespace perlin::physics::bds {
         Float3 previousJumpPosition{};
         float yaw = 0;
         bool sprinting = false;
+        bool currentMovementMath = false;
         bool forceLowHeight = false;
         std::optional<float> customHeight;
         std::optional<int32_t> effectAmplifier;
@@ -73,7 +74,8 @@ namespace perlin::physics::bds {
         if (input.alternate || height > velocity.y)
             velocity.y = height;
         if (!input.alternate && input.sprinting)
-            velocity = ApplySprintJump(velocity, input.yaw);
+            velocity = input.currentMovementMath ? CurrentSprintJump(velocity, input.yaw)
+                                                 : ApplySprintJump(velocity, input.yaw);
         return {velocity, input.alternate ? input.previousJumpPosition : input.position,
                 input.existingTrigger.value_or(trigger)};
     }
