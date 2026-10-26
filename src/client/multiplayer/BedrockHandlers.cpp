@@ -555,13 +555,17 @@ namespace perlin {
             dimensionId = p.dimension;
             ResetWorldForDimension();
             if (SaneWorldPos(p.position.x, p.position.y, p.position.z)) {
-                pose = {p.position.x, p.position.y - kPlayerEyeHeight, p.position.z, pose.yaw, pose.pitch,
+                // ChangeDimension carries the target actor position, unlike
+                // MovePlayer's eye position. Native LocalPlayer 0x104D0AFB4
+                // copies this vector unchanged into its dimension request.
+                pose = {p.position.x, p.position.y, p.position.z, pose.yaw, pose.pitch,
                         pose.headYaw, false, true};
                 haveLastAuthPos = false;
-                serverMotion.poseChanged = true;
-                serverMotion.teleport = true;
-                serverMotion.hasVelocity = true;
-                serverMotion.velocity[0] = serverMotion.velocity[1] = serverMotion.velocity[2] = 0;
+                ServerMotion motion;
+                motion.poseChanged = true;
+                motion.teleport = true;
+                motion.hasVelocity = true;
+                QueueServerMotion(motion);
             }
             dimLoadingId = p.loadingScreenId;
             dimAckSince = std::chrono::steady_clock::now();
@@ -799,10 +803,14 @@ namespace perlin {
             lastBlockPos[2] = p.position.z;
             haveBlockPos = true;
             static int blockLogs = 0;
-            if (blockLogs < 400 && (PERLIN_ENV("PERLIN_BLOCK_DEBUG") || blockLogs++ < 400))
+            if (blockLogs < 400 || PERLIN_ENV("PERLIN_BLOCK_DEBUG")) {
+                if (blockLogs < 400)
+                    ++blockLogs;
                 std::cout << "[block] update_block (" << p.position.x << "," << p.position.y << "," << p.position.z << ") layer " << p.layer
                           << " id " << static_cast<int32_t>(p.blockRuntimeId) << " "
-                          << BlockPalette::Instance().Name(BlockPalette::Instance().InternRuntime(static_cast<int32_t>(p.blockRuntimeId))) << std::endl;
+                          << BlockPalette::Instance().Name(BlockPalette::Instance().InternRuntime(static_cast<int32_t>(p.blockRuntimeId)))
+                          << " afterAuthTick=" << LastAuthTick() << std::endl;
+            }
             NoteUnknownBlock(static_cast<int32_t>(p.blockRuntimeId));
             if (p.layer == 0)
                 ConfirmPlace(p.position.x, static_cast<int32_t>(p.position.y), p.position.z, static_cast<int32_t>(p.blockRuntimeId));
@@ -819,11 +827,16 @@ namespace perlin {
                 const int32_t y = static_cast<int32_t>(b.position.y);
                 if (y < -64 || y >= 320 || std::abs(b.position.x) > 30000000 || std::abs(b.position.z) > 30000000)
                     return false;
-                return netLevel.HasSectionAt(b.position.x, y, b.position.z);
+                // An existing column can legitimately receive its first block
+                // in an empty, unallocated section (for example a new bridge).
+                // SetBlock/SetLiquid allocate that section; requiring it to
+                // exist here silently discarded the server's terrain updates.
+                return netLevel.HasChunk(b.position.x >> 4, b.position.z >> 4);
             };
             static int logged = 0;
-            if (logged < 100) {
-                logged++;
+            if (logged < 100 || PERLIN_ENV("PERLIN_BLOCK_DEBUG")) {
+                if (logged < 100)
+                    ++logged;
                 int ok = 0;
                 for (const BlockUpdate& b : p.blocks) ok += sane(b) ? 1 : 0;
                 std::cout << "[block] update_subchunk_blocks at (" << p.x << "," << p.y << "," << p.z << ") " << p.blocks.size()
@@ -831,8 +844,14 @@ namespace perlin {
                 if (!p.blocks.empty())
                     std::cout << "; first (" << p.blocks[0].position.x << "," << static_cast<int32_t>(p.blocks[0].position.y) << ","
                               << p.blocks[0].position.z << ") rid " << p.blocks[0].runtimeId;
-                std::cout << std::endl;
+                std::cout << " afterAuthTick=" << LastAuthTick() << std::endl;
             }
+            // Native ClientNetworkHandler lambda 0x103E7D27C applies the
+            // extra (liquid) layer before the primary block layer.
+            for (const BlockUpdate& b : p.extra)
+                if (sane(b))
+                    netLevel.SetLiquid(b.position.x, static_cast<int32_t>(b.position.y), b.position.z,
+                                       BlockPalette::Instance().InternRuntime(static_cast<int32_t>(b.runtimeId)));
             for (const BlockUpdate& b : p.blocks) {
                 if (!sane(b))
                     continue;
@@ -841,10 +860,6 @@ namespace perlin {
                 netLevel.SetBlock(b.position.x, static_cast<int32_t>(b.position.y), b.position.z,
                                   BlockPalette::Instance().InternRuntime(static_cast<int32_t>(b.runtimeId)));
             }
-            for (const BlockUpdate& b : p.extra)
-                if (sane(b))
-                    netLevel.SetLiquid(b.position.x, static_cast<int32_t>(b.position.y), b.position.z,
-                                       BlockPalette::Instance().InternRuntime(static_cast<int32_t>(b.runtimeId)));
         });
 
         On<UpdateBlockSyncedPacket>([this](const UpdateBlockSyncedPacket& p) {
@@ -871,13 +886,17 @@ namespace perlin {
             const bool forced = p.mode == MovePlayerPacketMode::Teleport || p.mode == MovePlayerPacketMode::Reset;
             if (forced) {
                 pendingTeleportAck = true;
-                serverMotion.poseChanged = true;
-                serverMotion.teleport = true;
-                serverMotion.hasRotation = true;
-                serverMotion.yaw = p.yaw;
-                serverMotion.pitch = p.pitch;
-                serverMotion.hasVelocity = true;
-                serverMotion.velocity[0] = serverMotion.velocity[1] = serverMotion.velocity[2] = 0;
+                ServerMotion motion;
+                motion.poseChanged = true;
+                motion.teleport = true;
+                motion.hasRotation = true;
+                motion.filterTravel = p.mode == MovePlayerPacketMode::Teleport;
+                motion.tick = p.tick;
+                motion.onGround = p.onGround;
+                motion.yaw = p.yaw;
+                motion.pitch = p.pitch;
+                motion.hasVelocity = true;
+                QueueServerMotion(motion);
             }
         });
 
@@ -906,10 +925,11 @@ namespace perlin {
                         false,        true};
                 gotSpawn = true;
                 haveLastAuthPos = false;
-                serverMotion.poseChanged = true;
-                serverMotion.teleport = true;
-                serverMotion.hasVelocity = true;
-                serverMotion.velocity[0] = serverMotion.velocity[1] = serverMotion.velocity[2] = 0;
+                ServerMotion motion;
+                motion.poseChanged = true;
+                motion.teleport = true;
+                motion.hasVelocity = true;
+                QueueServerMotion(motion);
             }
             proto::PlayerActionPacket done;
             done.runtimeEntityId = runtimeId;
@@ -936,26 +956,35 @@ namespace perlin {
                 std::cout << "[move] server correction #" << correctionsReceived << " tick=" << p.tick << " pos=("
                           << p.position.x << "," << p.position.y << "," << p.position.z << ") delta=("
                           << p.delta.x << "," << p.delta.y << "," << p.delta.z << ")" << std::endl;
-            serverMotion.poseChanged = true;
-            serverMotion.correction = true;
-            serverMotion.tick = p.tick;
-            serverMotion.onGround = p.onGround;
-            serverMotion.pos[0] = pose.x;
-            serverMotion.pos[1] = pose.y;
-            serverMotion.pos[2] = pose.z;
-            serverMotion.hasVelocity = true;
-            serverMotion.velocity[0] = p.delta.x;
-            serverMotion.velocity[1] = p.delta.y;
-            serverMotion.velocity[2] = p.delta.z;
+            if (PERLIN_ENV("PERLIN_BLOCK_DEBUG"))
+                std::cout << "[move] correction_received #" << correctionsReceived
+                          << " tick=" << p.tick << " afterAuthTick=" << LastAuthTick() << std::endl;
+            ServerMotion motion;
+            motion.poseChanged = true;
+            motion.correction = true;
+            motion.tick = p.tick;
+            motion.onGround = p.onGround;
+            motion.hasVelocity = true;
+            motion.velocity[0] = p.delta.x;
+            motion.velocity[1] = p.delta.y;
+            motion.velocity[2] = p.delta.z;
+            QueueServerMotion(motion);
         });
 
         On<SetEntityMotionPacket>([this](const SetEntityMotionPacket& p) {
             if (runtimeId == 0 || p.runtimeEntityId != runtimeId)
                 return;
-            serverMotion.hasVelocity = true;
-            serverMotion.velocity[0] = p.velocity.x;
-            serverMotion.velocity[1] = p.velocity.y;
-            serverMotion.velocity[2] = p.velocity.z;
+            ServerMotion motion;
+            motion.hasVelocity = true;
+            motion.stampedVelocity = p.tick != 0;
+            motion.tick = p.tick;
+            motion.velocity[0] = p.velocity.x;
+            motion.velocity[1] = p.velocity.y;
+            motion.velocity[2] = p.velocity.z;
+            QueueServerMotion(motion);
+            if (PERLIN_ENV("PERLIN_BLOCK_DEBUG"))
+                std::cout << "[move] motion_received tick=" << p.tick << " afterAuthTick=" << LastAuthTick()
+                          << " velocity=(" << p.velocity.x << ',' << p.velocity.y << ',' << p.velocity.z << ')' << std::endl;
             NoteKnockback(p.velocity.x, p.velocity.z);
         });
 
@@ -1194,8 +1223,10 @@ namespace perlin {
             }
             {
                 std::lock_guard lk(attrMutex);
-                for (const PlayerAttributesEntry& a : p.attributes)
+                for (const PlayerAttributesEntry& a : p.attributes) {
                     ownAttributes[a.name] = a.current;
+                    if (a.name == "minecraft:movement") movementAttribute = a;
+                }
             }
             for (const PlayerAttributesEntry& a : p.attributes) {
                 if (a.name == "minecraft:health") {
@@ -1370,7 +1401,18 @@ namespace perlin {
                 SendTickSync(p.timestamp);
         });
 
-        On<CommandOutputPacket>([](const CommandOutputPacket& p) {
+        On<CommandOutputPacket>([this](const CommandOutputPacket& p) {
+            {
+                std::lock_guard lock(commandResultMutex);
+                ++commandResult.received;
+                commandResult.success = p.successCount;
+                commandResult.output.clear();
+                for (const auto& message : p.output) {
+                    commandResult.output += message.messageId;
+                    for (const auto& parameter : message.parameters) commandResult.output += " " + parameter;
+                    commandResult.output += '\n';
+                }
+            }
             std::cout << "[bedrock] CommandOutput success=" << p.successCount << " msgs=" << p.output.size();
             for (size_t i = 0; i < p.output.size() && i < 4; i++) {
                 std::cout << " [" << p.output[i].messageId;

@@ -51,6 +51,9 @@ namespace perlin {
         } else if (!s.editing && editing) {
             editing = false;
         }
+        // Geometry only depends on viewport, scale and layout. Rebuilding it
+        // every gameplay frame needlessly holds the finger-event mutex.
+        // Leaving the editor must restore the saved layout even if unchanged.
         if ((relayout || startEditing || stopEditing) && width > 0)
             BuildLayout();
     }

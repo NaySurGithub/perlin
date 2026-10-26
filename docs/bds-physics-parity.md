@@ -7,13 +7,330 @@ numeric tests below are a small part of that requirement.
 
 ## Authoritative reference
 
-All new behavioral evidence comes from the IDA MCP instance containing
+The numeric evidence ledger below uses the IDA MCP instance containing
 **Windows Server 1.26.10**, image base `0x140000000`.
 IDA's stored original-input SHA-256 is
 `f35469677a9d0db236e8559e9e72c4d6532230edf54497e88677eceff4cde539`.
 The database is mostly stripped. System-name string references, registration
 factories, vtables, ECS iteration wrappers, and callbacks establish provenance.
 Decompiler argument names and inferred types are not treated as semantic names.
+
+## Live server checks, 2026-10-24
+
+The hidden native client also runs against **Windows BDS 1.26.52.3** under
+Wine 11 over localhost RakNet. Movement strictness remains enabled and the
+server's default correction threshold remains unchanged. A game-time query
+advanced 77 server ticks over approximately four seconds, checking that Wine's
+clock was progressing normally before interpreting movement results.
+
+The movement attribute packet during sprint contains current speed `0.13` and
+modifier `d208fc00-42aa-4aad-9276-d5446530de43`, named `Sprinting speed boost`,
+amount `0.3`, operation/operand `2/2`. Perlin previously multiplied this current
+value by another 1.3 in ground travel. The session now replaces only that known
+modifier with the locally predicted sprint state, and travel consumes the
+resolved attribute once. This also preserves other received movement modifiers
+and supplies the resolved value to water acceleration and FOV prediction.
+
+A separate **Minecraft 26.52 native client** IDA database supplies supporting
+producer evidence; these addresses are not Windows BDS addresses:
+
+- Sprint action body `0x10678e628` calls toggle `0x106783b50`, which changes
+  actor sprint flag bit 3 and queues an attribute add/remove request.
+- Modifier initialization `0x10aca67fc` identifies the UUID above and float 0.3.
+- Attribute registry `0x105f49030` maps MovementAttributes slot 0 to
+  `minecraft:movement`; updater `0x107034a50` copies the current attribute.
+- PlayerResetMovementSpeed traversal `0x10612e098` copies that optional value
+  into MovementSpeed, or zero when absent, without an extra sprint multiplier.
+- Player air-speed traversal `0x1070f1f14` separately selects float 0.02 or
+  float 0.026 from the actor sprint flag.
+
+The same live 40-tick sprint changed from **eight movement corrections to zero**.
+The subsequent matrix produced zero movement corrections in all 12 cases:
+forward/back/left/right walking, diagonal walking, sprinting, sneaking, standing
+jump, walking jump, sprint-jump, sneak-jump, and rotated diagonal walking.
+Four raw corrections occurred during teleport setup and remain counted and
+reported separately. This is bounded runtime evidence, not overall BDS parity
+or proof that all network correction behavior is correct. All 62 CTest tests
+pass after supplying resolved attributes in the legacy trace adapter and the
+sprint-distance fixture; expected distances and assertion tolerances are unchanged.
+
+Five additional cases with Speed I, Slowness I, and combined Speed II/Slowness I
+also produced zero movement corrections, including walking and sprinting. This
+checks that removing the known sprint contribution does not discard the other
+received modifiers. A fresh platform at y=160–162 changed from loaded air to
+stone with collision at all 11 probes spanning positive/negative chunk borders.
+
+The localhost browser view has also been exercised against the actual hidden
+renderer: a quick E tap opens inventory, a pointer click opens the recipe panel,
+native text input receives an unsent draft, Escape restores logical capture,
+and the command form receives a real server game-time reply. These interface
+checks do not substitute for broader physics coverage.
+
+A subsequent still-water matrix with Water Breathing maintained health 20 and
+air 300 throughout. Idle, forward, backward, sideways and ordinary water-jump
+cases produced zero movement corrections. Sprint swimming produced one and
+swim-plus-jump produced eleven. These remain unresolved; native swim input,
+vertical control, surface behavior and transition ordering are under audit.
+An earlier water run ended in drowning and is not used as a healthy swimming
+comparison. The control endpoint now exposes health, air and death state so
+scenario runners can detect that interruption explicitly.
+
+### Eating and swimming transition follow-up
+
+The native 26.52 ItemUseSlowdown producer `0x10605c660` selects a default
+modifier of `0.35`, with an optional `minecraft:use_modifiers` override.
+Apply callback `0x10605e790` squares that modifier before multiplying the
+resolved movement lanes and clears the gameplay sprint timer. Perlin used
+`0.2` before normalizing input, making diagonal eating faster than axial eating.
+The local input producer now normalizes first and applies `0.35 * 0.35`.
+Food start/release transactions precede movement. Slowdown lifetime now follows
+the player's simulation ticks independently of the hand animation: 32 ticks
+for ordinary food, 16 for dried kelp and 40 for honey bottles. The animation
+clock previously made ordinary-food completion one tick early in a hungry
+apple test even after the numeric strength was corrected.
+
+The initial golden-apple tests produced five movement corrections each while
+walking, moving diagonally and holding sprint. The corrected build produced
+zero in all six cases: baseline walking, eating while walking, diagonal eating,
+holding sprint while eating, sneak eating, and a 48-tick forward hold spanning
+consumption and return to ordinary walking. Additional hungry-apple, honey and
+dried-kelp completion cases each produced zero corrections with the simulation
+timer. The hungry-apple case restored hunger from 16 to 20 and dried kelp from
+5 to 6, confirming actual server consumption. Health remained 20. Custom item
+modifiers and the full set of item-use and inventory transitions remain unverified.
+
+A full-hunger apple check exposed another request-lifetime bug: the client
+rejected eating locally but still sent an in-air use transaction, which made
+the server apply slowdown. That transaction is now suppressed for ineligible
+food use. The same 40-tick hold then produced zero corrections and ordinary
+walking distance (approximately 8.634 blocks).
+
+Swimming now changes the actual collision height to 0.6 and invalidates its
+cached shape, uses a standing-clearance probe contracted by float 0.01, and
+keeps its low pose when standing would collide. Physics head sensing uses the
+simulation pose instead of the interpolated rendering camera. Swim-control's
+native view excludes jumping actors. MobJump suppresses impulses while swim
+amount is strictly between zero and one or a swimmer's head is above water;
+the swim amount advances by 0.1 in the post-movement stage. The supporting
+native callbacks are `0x10610532c`, `0x106785410`, `0x106785794`,
+`0x10607861c` and traversal `0x10671acac`.
+
+Sprint intent `0x10678c8e4` retains existing sprint while the preceding swimming
+flag and water membership are present. Applying that ordering removed the
+swim-release correction. On a roofed pool that prevents surface freezing,
+ordinary water jump and swimming release each have zero movement corrections;
+swimming plus jump initially retained one surface-exit correction. Fluid
+sensing now consumes the preceding collision pose, before the swimming shape
+expands to standing. This removes the premature water exit caused by the
+standing shape's higher contracted lower bound. All three protected-pool cases
+then produced zero movement corrections, with health 20 and air 300. A regression
+checks that the expansion changes the fluid query on the following tick.
+The older unroofed pool developed ice and is
+not interchangeable with this fixture. Full native system scheduling, fluid
+flow, custom item-use lifetimes and remaining interactions still need coverage.
+
+All 17 flat-ground/effect cases were rerun after the eating and swim-intent
+changes with zero movement corrections. Eight corrections occurred between
+cases during teleport setup and remain in the raw counter. All 62 CTest tests
+pass, including input-strength, diagonal, sneak composition, actual eating
+travel distance, swim-entry, surface and low-tunnel regressions. No correction
+thresholds, expected legacy distances or tolerances were relaxed.
+
+The terrain handler also accepts first block updates in an unallocated section
+of an existing loaded chunk, allowing Level to allocate the section. Previously
+the section-presence guard silently discarded those updates, leaving holes in
+the client's collision terrain. Unloaded chunks are still rejected.
+
+### Swimming pitch and air transitions
+
+Extending the matrix to ±30° and ±60° pitch exposed one correction looking
+upward at 30° and three at 60°. Downward swimming, diagonal swimming and
+swim-jumping beneath the frozen pool's ceiling produced zero movement
+corrections. The investigation found three missing producer/consumer details:
+
+- SwimControl `0x106785410` explicitly writes vertical velocity zero when
+  positive look fails its liquid predicate; it does not retain prior momentum.
+- Sprint intent reads water membership at the current collision position before
+  resolving movement. Perlin had reused the preceding tick's cached flag.
+  A fresh query now controls sprint retention, entry eligibility and sneak input.
+- SwimTrigger `0x106785794` requires a non-air cell above the bounding-box centre
+  when starting a swim with upward look >=0.15. The world adapter now preserves
+  air material identity, including for noncolliding blocks.
+
+Raw SprintDown and predicted Sprinting are separate auth-input flags. Sending
+both whenever the key was held told the server to sprint while local intent
+correctly rejected a new sprint in air. They are now emitted independently.
+Grounded, water and flight membership permit starting sprint; an already active
+sprint can continue in air.
+
+The supporting coordinate helper `0x10711790c` takes offset-type enum **7**,
+not a seven-block ray distance. Helper `0x10711762c` resolves that offset;
+player updater `0x10abd19cc` writes its height-dependent value. Native head-water
+producer `0x107015a44` uses that position and liquid-height helper `0x10a16970c`.
+The height helper confirms source height 1.0 and the existing depth/9 reduction.
+Perlin's complete offset-component lifecycle and all probe consumers remain
+unreconstructed; the above fixes do not establish whole-system parity.
+
+After these changes, all six extended water cases produced zero movement
+corrections: upward/downward 30° and 60°, diagonal swimming, and jumping/swimming
+under the ice ceiling. Eating with sprint held and a complete food-use lifetime
+also retained zero corrections after separating the packet flags. Teleport setup
+is counted separately. Sprinting, walking jump, sprint-jump and sneak-jump were
+rerun on the dry platform and each also produced zero movement corrections.
+Those setup corrections remain present in the raw logs. All 62 CTest suites pass, including
+the new failed-liquid-predicate and current-pose water-query regressions.
+
+### Flowing water and bubble-column contacts
+
+Five flowing-water cases (idle drift, moving with/against the current, sideways
+travel, and jumping) produced zero movement corrections on the strict localhost
+BDS server. This covers a shallow horizontal stream, not all flow producers.
+
+An enclosed soul-sand bubble column exposed eight corrections in a 40-tick
+baseline. Perlin decoded bubble columns as water but omitted their inside-block
+action. Native 26.52 client visitors `0x10674cbe8` and `0x10674d054` add 0.06 to
+vertical velocity, capped at 0.7, or subtract 0.03 for `drag_down`, capped at -0.3.
+Each contacted block queues an action and resets fall distance. Perlin now
+applies these actions in its existing post-movement inside-block traversal,
+after water drag and gravity. Tests cover two/three vertical contacts, terminal
+velocities, fall-distance reset, and leaving the column. These native addresses
+are supporting client evidence; the runtime checks use Windows BDS 1.26.52.3.
+
+The patched upward column and a downward column entered at mid-height both
+produced zero movement corrections. At the upward column's ceiling, the native
+and local vertical velocity is approximately 0.115, matching two contact actions
+after water gravity. Open-surface bubble behavior and complete native action
+request/component lifetimes remain unverified.
+
+The expanded matrix also found a crouching ceiling mismatch: Perlin stopped at
+feet y=243.50 while BDS held y=243.51, causing 15 corrections. Native
+PlayerBoundingBoxStateUpdateSystem traversal `0x106104994` selects float bits
+`0x3fbeb852` (1.49) for the ordinary reduced crouch height, or 1.8 for its
+alternate settings path, before passing that height to probe `0x10610532c`.
+The default local crouch height now uses 1.49 instead of 1.50; the alternate
+native setting and its configuration lifecycle remain unported.
+With the corrected height, the sneak ceiling case changed from 15 corrections
+to zero. The final five-case column matrix (upward, downward from mid-height,
+upward with jump, upward with sneak and release, and upward sprint-swimming)
+each produced zero movement corrections; setup teleports remain in the raw
+counter. All 62 CTest suites pass after the height change.
+
+The eating regression was rerun against this bubble-enabled build: walking,
+diagonal movement, sprint held while eating, and complete food use each had zero
+movement corrections. The 24-tick walking and diagonal cases traveled 0.634624
+and 0.634639 blocks respectively, including the common 20-tick release window;
+sprint held while eating traveled 0.634624 blocks. These are measured scenario
+distances, not a replacement for the native modifier and input-order evidence.
+
+### Open bubble-column surface follow-up
+
+Removing the column roof exposed 17 idle-lift corrections and 18 corrections
+with jump held. Native action visitor `0x10674cb7c` uses a separate +0.1/1.8
+upward and -0.03/-0.9 downward branch. Gather callback `0x106755fe4` selects
+action type 0 via `0x106744130` when the block above has legacy ID zero, and
+type 1 via `0x106744288` otherwise. The latter requires
+`ActorMovementTickNeededComponent` (FNV-1a 2484423886), obtained by adapter
+`0x10675b8e4`. Force application `0x106744a60` dispatches through
+`0x110e67620` and skips actors whose MovementAbilities flying bit is set.
+`0x106744af0` subsequently dispatches surface particles through a different
+table (`0x110e67630`); the particle action is not the force producer.
+
+Perlin now selects the surface force from the actual block above each contact
+and skips bubble forces while flying. Unit tests cover the surface action,
+its separate caps and the flight exclusion. The complete native request storage
+and scheduler lifetime remain open; the local adapter executes these actions
+within its existing player movement tick.
+
+The surface-action patch removed the idle-lift and jump corrections. Downward
+entry, falling into the downward surface, and sneaking also produced zero.
+Swimming toward the wall still produced three corrections, exposing a separate
+clearance-probe issue. Native ClimbOutOfLiquidSystem callback `0x1070b4b48`
+first checks the full translated actor AABB for liquid, then queries collision
+shapes; it writes vertical velocity 0.3 only if both checks are clear. Perlin
+used contracted immersion bounds for the liquid check, permitting a step-out
+boost while the full probe still touched water. The adapter now uses the full
+probe and the current crouch pose, with float translation arithmetic. A local
+slab-at-waterline regression distinguishes these queries and rejects the
+incorrect boost. All 62 CTest suites pass with this correction.
+
+The final live matrix produced zero movement corrections in all six cases:
+idle surface lift, surface jumping, downward entry, falling into the downward
+surface, sneaking, and swimming toward the wall. The wall case changed from
+three corrections to zero after correcting the clearance query. Teleport setup
+corrections remain in the raw counter and are excluded only from the bounded
+movement windows. These checks do not prove every fluid transition or actor
+interaction.
+
+### Lava travel and fall-distance follow-up
+
+The same strict Windows BDS 1.26.52.3 server produced zero movement corrections
+in eight source-lava scenarios: idle, forward, diagonal, sprint held, sneak,
+jump, forward jump, and falling into the pool. Four effect scenarios (Speed II,
+Slowness II, Levitation I and Slow Falling I) also produced zero corrections.
+The accepted effect sweep starts each setup on dry ground, restores health,
+then applies Fire Resistance before entering lava. An earlier sweep cleared
+protection while immersed and lost health; it is not the healthy comparison.
+All accepted cases retained health 20.
+
+Three ledge cases produced zero corrections: pushing against the lava-pool
+wall, jumping out, and jumping out with sprint held. The latter two actually
+left lava and reached the dry side; the sprint case continued beyond the test
+platform and fell, retaining zero movement corrections and full health. Five
+shallow flowing-lava cases on the rebuilt client also produced zero corrections:
+idle drift, with/against the current, sideways travel and jumping. The with-flow
+case left the stream onto dry ground. These are 20 bounded live scenarios,
+with setup teleports still retained in the raw counters. Nether-specific
+behavior, vertical falls, partial blocks and all entity interactions remain
+separate coverage requirements.
+
+Native 26.52 LavaResetFallDistanceSystem traversal `0x10607a698` consumes
+UpdateWaterStateRequest material 6 and multiplies FallDistance by 0.5 every tick.
+Perlin previously omitted this update. It now runs beside the existing
+water/lava state callbacks. A multi-tick integration test checks 12 → 6 → 3
+and retention on leaving lava. This ports that consumer, not the complete
+fall-distance accumulation/landing/request lifecycle. All 62 CTest suites pass.
+
+Supporting native anchors for further lava/flow reconstruction are
+LavaMoveSystem callback `0x10606dbc4`, LavaTravelSystem traversal
+`0x10607b014`, MobLavaGravity callback `0x1070b76b8`, and
+LiquidBlockBase::_getFlow `0x10b4321ec`. The latter includes per-face admission
+and material flags that the current geometry-based world adapter does not yet
+fully represent; passing a shallow full-block stream does not prove those
+predicates.
+
+### Ladder collision follow-up
+
+The first ladder matrix exposed 14 movement corrections while climbing forward,
+nine while jumping over the top, and 13 while entering from the side. Perlin
+classified ladders alongside passable vines before consulting its physics
+registry, discarding the ladder collision shape. BDS stopped the actor at
+z=-8.5125 against the south-facing ladder; Perlin reached the backing wall at
+z=-8.7. The difference is the ladder's 3/16-block thickness.
+
+The existing registry already contains oriented ladder boxes for facing states
+2–5: the high-Z, low-Z, high-X and low-X plates respectively. Removing the
+early ladder override restores those shapes and the stored climbable flag.
+The hidden client's probes confirmed the decoded planes for the other three
+directions as well: [0,0,0.8125,1,1,1], [0.8125,0,0,1,1,1] and
+[0,0,0,0.1875,1,1].
+
+All seven original cases then produced zero movement corrections: idle descent,
+forward climbing, sneak descent, jumping, jumping over the top, sideways exit,
+and side entry. Three additional facing-direction ascent cases also produced
+zero corrections. All ten accepted cases retained full health; teleport setup
+corrections remain in the raw logs. All 62 CTest suites pass.
+
+Supporting native 26.52 anchors for the remaining climbing audit are
+AutoClimb callback `0x1070b3c34` and LadderResetFallDamage callback
+`0x10606b6c0`. They distinguish Wallclimbing (bit 18), CanClimb (bit 19),
+block climbability and powder-snow-related memberships. Perlin's complete
+eligibility producers, native ladder fall-distance-reset predicate and timing,
+scaffolding behavior and associated component lifetimes remain unproven.
+
+See [local client control](client-control.md) for the hidden launch, live browser
+view, tick-bounded input, block probes and raw correction telemetry. Broader
+terrain, fluid, effect, mode, entity and authority-transition coverage remains
+required below.
 
 ## Evidence and implementation ledger
 
@@ -160,7 +477,7 @@ build/bds-oracle-venv/bin/python tools/bds_reference/relative_movement.py \
   --native-pages build/bds-native-pages.bin --out tests/data/bds_relative_movement.txt
 build/bds-oracle-venv/bin/python tools/bds_reference/trig_constants.py \
   --export build/bds-reference.json --out build/bds-trig-tables.hpp
-cmp src/client/player/BdsTrigTables.hpp build/bds-trig-tables.hpp
+cmp src/client/player/PerlinTrigTables.hpp build/bds-trig-tables.hpp
 cmake --build build --target bds_numeric_selftest bds_collision_selftest bds_vertical_selftest bds_water_drag_selftest bds_movement_effects_selftest bds_gliding_selftest bds_gliding_trace_selftest bds_trig_selftest bds_finalization_selftest bds_landing_selftest bds_support_selftest bds_world_collision_selftest bds_terrain_query_selftest bds_block_geometry_selftest voxel_shapes_selftest bds_block_offset_selftest block_offset_definition_selftest bds_collision_cache_selftest bds_cache_difference_selftest bds_cache_refresh_selftest bds_cache_refresh_records_selftest bds_block_slowdown_selftest bds_sneak_selftest bds_inside_query_selftest physics_selftest bedsim_trace_selftest
 ctest --test-dir build -R '^(bds_numeric_selftest|bds_collision_selftest|bds_vertical_selftest|bds_water_drag_selftest|bds_movement_effects_selftest|bds_gliding_selftest|bds_gliding_trace_selftest|bds_trig_selftest|bds_finalization_selftest|bds_landing_selftest|bds_support_selftest|bds_world_collision_selftest|bds_terrain_query_selftest|bds_block_geometry_selftest|voxel_shapes_selftest|bds_block_offset_selftest|block_offset_definition_selftest|bds_collision_cache_selftest|bds_cache_difference_selftest|bds_cache_refresh_selftest|bds_cache_refresh_records_selftest|bds_block_slowdown_selftest|bds_sneak_selftest|bds_inside_query_selftest|physics_selftest|bedsim_trace_selftest)$' --output-on-failure
 ```
@@ -844,7 +1161,7 @@ turn the rest of the legacy simulator into a whole-native BDS oracle.
 The GitHub jobs for head `61ac44f` (run `39937551824`) independently report the
 same 152 legacy trace discrepancies on Linux x86-64 and macOS ARM64; all other
 52-target suite entries pass there. Windows compilation exposed a missing
-standard `<bit>` include in BdsCollisionCache.hpp. The header now includes its
+standard `<bit>` include in PerlinCollisionCache.hpp. The header now includes its
 bit-cast dependency explicitly; local rebuild and the three affected cache
 self-tests pass. A new Windows CI result is still required to verify that fix.
 The later entity-inside additions have separate local ARM64/x86-64 evidence and
@@ -853,7 +1170,7 @@ must also complete current-head CI before platform validation is claimed.
 
 ## Complete ground-jump callbacks
 
-`BdsJump.hpp` ports the full ordinary callback `0x140EAFAF0` and alternate
+`PerlinJump.hpp` ports the full ordinary callback `0x140EAFAF0` and alternate
 callback `0x140EAFFD0`, beyond the previously tested sprint impulse. The
 reference executes their original instructions and the native event constructor
 `0x140EC4780`. Synthetic services supply world blocks, the optional height
@@ -915,13 +1232,13 @@ unchanged. No expectations or tolerances were changed.
 
 ## Jump request classification and cleanup ordering
 
-`BdsJumpRequests.hpp` ports JumpFromGroundFilterSystem callback `0x140EAF890`.
+`PerlinJumpRequests.hpp` ports JumpFromGroundFilterSystem callback `0x140EAF890`.
 Its wrapper `0x140EB4AB0` proves the tested optional memberships are
 LocalPlayerComponent `0x63A37B09`, LavaSlimeFlagComponent `0x5F10CF3F`, and
 SquidFlagComponent `0x881BF973`. Classification prioritizes local player, then
 lava slime, then squid, with OtherJumpRequest as the fallback. It creates only
 the selected request and only if that entity is absent from the destination.
-Component payload bytes are not consulted. `BdsEntityMembership.hpp` preserves
+Component payload bytes are not consulted. `PerlinEntityMembership.hpp` preserves
 18-bit sparse-page indexing, generation comparison, null/missing pages, and the
 reserved packed-index rejection.
 
@@ -1030,7 +1347,7 @@ clear fall distance when below the honey top and outside its side threshold.
 The threshold is `bodyWidth*0.5f+0.43125f`; the top is block Y plus `0.9375f`.
 Multiple contacts attenuate repeatedly, in their original order.
 
-`BdsHoney.hpp` ports that complete callback. The 640 finite native executions
+`PerlinHoney.hpp` ports that complete callback. The 640 finite native executions
 have no runtime hooks and verify all three velocity lanes and fall-distance
 bits, with zero through four contacts, negative positions, boundary comparisons,
 existing upward/downward/signed-zero speeds, thin/negative widths and repeated
@@ -1151,7 +1468,7 @@ The first three lead to callbacks `0x140FC98E0`, `0x140E0E6F0` and
 `0x140E0E820`. Registration order alone does not establish all native execution
 or deferred component-mutation timing.
 
-`BdsFluidState.hpp` ports these verified behaviors:
+`PerlinFluidState.hpp` ports these verified behaviors:
 
 - Water and lava contract the supplied body using native float arithmetic,
   respectively by `(0.001, 0.401, 0.001)` and `(0.1, 0.4, 0.1)`. Crossed
@@ -1251,3 +1568,872 @@ ActorGameType, world game type, head-water transitions and WasInLava, and can
 replace or erase the pending splash request and create PostSplashGameEventRequest.
 That callback and its lifetime interactions are not yet ported. These explicit
 remaining paths prevent a claim of complete 1:1 physics.
+
+### Scaffolding runtime follow-up (2026-10-24)
+
+The actor metadata layout now places `laying_down` at absolute bit 64 and
+scaffolding flags at 69/70/71. The vendor schema had 65 entries in the first
+64-bit word; the protocol override corrects the boundary without modifying that
+vendor input. The native Mac 26.52 scaffolding collision provider
+`0x10B47CBAC` admits a full cube only from above, with strict horizontal overlap,
+stability other than 7, and no fall-through request.
+
+Six live scenarios against Windows BDS 1.26.52.3 over RakNet improved from
+0/21/10/14/13/5 corrections to 0/0/1/0/1/1 (idle, ascent, descent, standing on top,
+descent from top, jumping entry). These bounded counts exclude setup teleports;
+the raw correction counter is retained. Three transition corrections remain.
+Received actor metadata is still used for scaffold movement state; the local
+world-state producer and its ordering have not been reconstructed.
+
+The native Mac MobJump callback `0x10607861C` also accepts
+`InAscendableBlock` (absolute bit 99), independently of `InScaffolding`, when
+fall-through is clear. That branch sets vertical speed to 0.15 and jump delay to
+10 before the ordinary ground-jump path. The corresponding input and regression
+coverage are now included. This does not establish that the three live
+transition corrections are resolved.
+
+The subsequent local sensing change resolves all three corrections on those
+same six scenarios: **0/0/0/0/0/0**. The native `BlockClimberSystem` callback
+`0x1066AEDBC` calls footprint readers `0x1066AF32C` and `0x1066AF5DC` at
+`floor(AABB.minY)` and `floor(float(AABB.minY - 1))`. Both horizontal integer
+endpoints participate, without the EntityInside epsilon. Scaffold membership
+matches the block identifier; the player ascendable branch additionally rejects
+scaffolding with air, water, or flowing water immediately beneath it.
+
+Perlin now predicts these scaffold contacts before recording and applying its
+movement input, including keyboard fall-through. Per-tick control traces include
+the contact flags used for prediction. Unit coverage exercises the lower-layer
+transition, inclusive horizontal boundary, top contact, and water-supported
+exclusion. Powder-snow capability state still comes from server metadata; its
+equipment predicates and the complete native system ordering remain unfinished.
+These six passing routes do not establish parity for every scaffold placement,
+capability, input mode, or cross-system interaction.
+
+### Powder-snow contact and support follow-up (2026-10-24)
+
+Four unequipped live routes (idle inside, repeated jump, falling into the stack,
+and jumping entry) initially reported **0/10/12/14** corrections. Wiring the
+native contact multiplier and selecting jump permission from the supporting
+block reduced these to **0/0/0/0**. In particular, a player standing on stone
+inside powder snow can jump: the stored vertical multiplier scales the ordinary
+0.42 displacement to 0.63. Testing the feet block instead incorrectly suppresses
+that jump.
+
+The native powder contact callback `0x106743CD0` accumulates **(0.9, 1.5, 0.9)**
+by component minimum, not by multiplying for every touched block. Existing
+player slowdown immunity requires flying and instabuild together. Perlin now
+retains powder-snow identity independently of its empty static collision shape,
+so server voxel geometry cannot replace the actor-dependent collision rule.
+
+The native collision provider `0x10B464E74` first requires feet at or above the
+full block top (float epsilon) and no fall-through request. The player branch
+then admits a full cube when capable of standing on snow, or a 0.9-high cube for
+fall distance above 2.5. The reduced shape's admission still uses the full top.
+`PerlinPowderSnow.hpp` implements this predicate, with regression checks for
+capability, fall-through, falling shape, threshold and unordered comparisons.
+The falling shape is tested with an explicitly supplied fall-distance component;
+the complete native fall-distance accumulation/reset producers remain unported.
+
+Three leather-boots routes (standing on top, ascent through the stack, descent)
+initially reported **14/13/1** corrections and now report **0/0/0**. The local
+BlockClimber footprint query includes powder snow when the vanilla player has
+leather boots, removing received-metadata lag from ascent/descent transitions.
+Native non-player standability, additional equipment/custom capability producers,
+all input modes, freezing/equipment immunity and complete scheduling remain
+outside this verification. These passing routes are not an overall parity claim.
+
+### Resolved-movement fall distance (2026-10-24)
+
+The native CheckFallDamageSystem wrapper `0x1066C1ED0` reads resolved Y at
+MoveRequestComponent offset 64; FinalizeMove callback `0x106748CC0` independently
+confirms requested versus resolved vectors at offsets 48 and 60. The scalar
+update in Actor::_checkFallDamage `0x10A48CEEC` clears a disabled component,
+clears preceding water distance for ordinary players, then subtracts negative
+resolved Y while airborne. Landing or nonnegative travel writes positive zero.
+Landing events, damage, actor exemptions and their request lifetimes remain
+separate from this scalar port.
+
+Perlin now applies that scalar after move finalization. The later
+BlockClimberSystem callback clears the component for its scaffold contacts,
+unless its first eligible lower block is powder snow. The horizontal query is
+shared with input prediction, with a production adapter that distinguishes real
+water blocks from aquatic plants and bubble columns. Unit coverage includes
+mixed scaffold/powder first-hit order, lava decay followed by movement, water
+reset followed by movement, and the post-move glide value. The chained glide
+fixture retains its original exact callback checks and additionally verifies
+the integrated fall distance; its fixture format is unchanged.
+
+A harness audit found that earlier teleport-based fall measurements could start
+partway through descent. Those windows cover only their recorded segment, not
+the complete drop. Two replacement static-ledge scenarios capture a grounded
+start at feet Y=265 and Y=285 before walking off. Both report zero corrections,
+reach recorded fall distances above 26 and 46 respectively, and each trace
+contains a grounded landing at feet Y=236.9 on the reduced powder shape.
+
+Two additional scenarios remove the supporting platform after the measurement
+begins. Each improved from two corrections to one: the powder-impact mismatch
+is resolved, but the server can remove support before the client receives its
+block update. That remaining correction is retained and unresolved. These
+results do not establish zero corrections across world mutations or full native
+fall-distance scheduling, landing/damage requests, ladder reset ordering,
+vehicles, teleports or network replay.
+
+### Platform-removal packet-order investigation (2026-10-24)
+
+An instrumented repeat of the two held-platform drops reported **1/0** movement
+corrections, showing that the earlier **1/1** result is timing-dependent. In the
+failing repeat, the movement correction was applied before the corresponding
+UpdateSubchunkBlocks removal packet was decoded. The decoded packet applies its
+blocks directly to the collision Level; there is no render-mesh staging delay.
+No per-frame receive-budget limit was reached anywhere in that run. This rules
+out that time limit as the observed cause in this repeat, but does not identify
+socket arrival time or prove all transport scheduling correct. The synchronized
+world-update/replay behavior remains unresolved; the correction counter and
+server movement settings are unchanged.
+
+The native ladder fall reset callback `0x10606B6C0` has also been inspected. It
+checks wall-climbing/can-climb actor flags, the feet-position block's climbable
+property, and powder-snow standability memberships. Its registration uses the
+InterpolateMovementNeeded component. Its complete scheduling relative to the
+post-move fall check remains unproven; the player integration below does not
+establish native scheduler parity.
+
+### Climbing fall-reset predicate (2026-10-25)
+
+`0x10606B6C0` preserves an already-zero component (including negative zero),
+clears distance for wall climbing independently of ordinary climbing capability,
+and otherwise requires CAN_CLIMB plus a climbable feet block or powder snow with
+standability membership. Perlin now supplies actor flag bits 18/19 and the
+resolved vanilla leather-boots capability to that predicate before player
+travel. The current move can then contribute downward distance to the later
+fall check. The native InterpolateMovementNeeded producer, full multi-request
+ordering and non-player component lifetimes still require reconstruction; this
+pre-travel placement is bounded player integration, not proof of exact native
+phase ordering.
+
+Two live ladder-to-powder descents already reported zero corrections before
+this change, while Perlin incorrectly retained **5.3120313** fall distance at
+sample points still on the ladder. The candidate keeps the component at **0.2**
+after a downward move and both scenarios remain at zero corrections. The native
+reset condition is source-backed; the sampled post-move value is Perlin
+telemetry, not a direct read of the BDS component. Unit checks cover capability
+gating, powder standability, negative-zero preservation and repeated descent.
+
+Validation for this change: all 62 local CTest suites pass. Two chained
+ladder-to-powder descents, seven ordinary ladder routes, three boots/powder
+routes with the upper ladder still present, and three restored powder-only
+boots routes all report zero corrections (15 bounded scenarios). The mixed
+fixture's ascent reached the upper ladder, so it is recorded as an additional
+interaction rather than substituted for the original powder-only regression.
+Clients remained connected, initialized and alive. This does not resolve the
+previously recorded support-removal synchronization correction.
+
+### Sweet berry bush slowdown (2026-10-25)
+
+The native ordinary-player berry contact path `0x10B904ED8` marks slowing
+contact independently of growth; growth >=1 additionally queues damage.
+InsideSweetBerryBush slowdown callback `0x10604E17C` accumulates **(0.8, 0.75,
+0.8)** by component minimum and retains the existing applied-record behavior.
+Its collision provider `0x10B905770` returns no fixed box. Perlin now preserves
+berry identity outside the static geometry fallback and feeds its contacts into
+the existing slowdown, player-ability immunity and fall-distance path.
+
+A first stone-supported fixture was discarded because it did not verify that
+bushes persisted. The accepted fixture uses dirt support and probes the loaded
+bush after settling. Its baseline counts for idle, walking, jumping and entry
+were **0/11/11/11**; the candidate reports **0/0/0/0**. Five additional routes
+(sprinting, diagonal movement, and fixtures initialized at growth 0, 1 and 2)
+also report zero corrections. The mature baseline fixture was initialized at
+growth 3. These are bounded ordinary-player checks with protective effects;
+bush damage-event behavior and health prediction are not established by them.
+
+Unit coverage checks contact across multiple cells, the scaled grounded jump,
+and minimum accumulation when a body touches both web and bushes. Native
+block-pattern slowdown-immunity lists, non-player category exemptions and
+complete ECS lifetimes remain to be reconstructed.
+
+Two live web/berry boundary routes (walking and jumping) also report zero
+corrections. The accepted runs assert feet X=304.0, spanning the web column at
+X=303 and berry column at X=304. An earlier integer-coordinate teleport was
+centered by BDS at X=304.5 and discarded as a mixed-contact test. In the accepted
+walking run, travel was about 1.47 blocks versus about 4.70 in berries alone,
+consistent with the stronger web accumulator. All 11 accepted live scenarios
+kept the client connected, initialized and alive; all 62 local CTest suites pass.
+This does not resolve the previously recorded world-update synchronization cases
+or prove complete native block-effect and actor-lifetime parity.
+
+### Weaving and webs (2026-10-25)
+
+The macOS 26.52 weaving system `0x1066B6B14` checks effect slot 33 and replaces
+the slowdown vector with **(0.5, 0.25, 0.5)**, without reading the amplifier.
+Its query requires web contact and the applied slowdown record, excludes
+powder-snow and berry contact, and therefore does not restore records removed
+by player flying/instabuild immunity. Perlin now implements this contact rule.
+The placement in the post-move contact path remains provisional: complete
+native phase ordering and effect request lifetimes are not established.
+
+Live pure-web walking/jumping improved from **11/11** corrections to **0/0**.
+Web/berry walking and web/powder walking/jumping also report zero, with explicit
+boundary positions and loaded-block probes. A two-second natural-expiry run
+reports zero. Explicit removal and re-addition during movement produced **two
+corrections**, each differing by approximately 0.0245 blocks (one movement tick's
+multiplier difference). This transition mismatch remains unresolved. The
+received effect cache currently ignores the packet tick and expires by wall
+clock; optional `PERLIN_BLOCK_DEBUG` logging records effect packet ticks beside
+the last sent movement tick to investigate timing without suppressing corrections.
+An instrumented repeat received both explicit transition packets after sending
+movement tick `packet.tick + 1`; each subsequent correction again measured
+approximately 0.0245 blocks while the player was still in the web stripe.
+The repeat later walked past the fixture and fell, so it is not accepted as an
+end-to-end route. This timing evidence does not by itself distinguish native
+phase ordering from a missing historical effect update/replay.
+
+### Timestamped status-effect replay (2026-10-25)
+
+Further native inspection found the missing history path. The legacy client
+packet handler `0x1044BCD94` sends nonzero-stamped effect packets through
+`History::MobEffectsReplay` (vtable `0x110CCF100`). Insertion `0x105F67914`
+clamps stamps older than retained history and marks the following snapshot
+dirty. Helper `0x105F674FC` inserts the correction into that following snapshot;
+the replay callback `0x103D0E860` changes the effects component and associated
+attributes. Immediate non-history application uses `0x106FC24C0`.
+
+Perlin now retains received effect updates separately from its presentation
+cache. Jump boost, levitation, slow falling and weaving update saved movement
+attributes for records **after** the packet stamp, then replay from the earliest
+changed record. Zero-stamped packets continue through the current cache.
+Recorded non-simulated ticks retain their zero-velocity behavior during both
+effect replay and server-motion replay. Session/player resets clear pending
+effect updates, and mount-locked movement discards them with movement history.
+
+An initial candidate included the stamped record itself and produced two errors
+with the opposite sign; that candidate was rejected. With the following-record
+boundary, three repeated web removal/re-addition routes report **0/0/0**
+corrections, including packets received after their stamped tick. All starts
+and endpoints stayed within the loaded dirt-supported runway, connected,
+initialized and alive. Jump-boost and levitation addition/removal routes also
+report zero corrections. The first slow-falling matrix route landed during
+setup and is excluded as airborne-effect evidence.
+
+A replacement slow-falling removal route starts grounded on a static ledge at
+feet Y=275. The recorded pre-removal position is Y=273.0302 and the received
+removal state is Y=267.9827; it lands at Y=225 with **zero corrections**. Forward
+input expires after 40 simulation ticks, keeping the entire fall over the
+cleared runway. An earlier unlimited-input attempt reached beyond that lane
+and is excluded as a full-route result. The accepted explicit-transition set
+therefore contains six zero-correction routes: three weaving repeats, jump
+boost, levitation and airborne slow-falling removal. Matrix traces confirm
+positive vertical motion for jump boost and levitation, rather than effect
+presence telemetry alone.
+Natural weaving expiry was rerun after the replay change and also reports zero
+corrections. The packet log shows addition at tick 395134 with duration 40 and
+removal at tick 395174. Control-endpoint observation times are not exact effect
+transition ticks and should not be used to infer duration from polling alone.
+
+This ports the movement attributes currently consumed by Perlin, not the entire
+native effects component or all attribute producers. Wall-clock effect expiry,
+future-stamped updates, effect changes across older world mutations, input/mode
+regeneration during replay and full native snapshot/request lifetimes still
+require investigation. These results do not establish complete BDS parity.
+
+### Status-effect duration clock (2026-10-25)
+
+Native `TickMobEffectsSystem` wrapper `0x1067B2158` calls `0x1067B2814` for
+entities with `InterpolateMovementNeededComponent`. Each present effect can
+run its callback, then normally decrements finite duration once and queues a
+remove request at zero. Duration **-1 alone** is infinite. A skip-duration byte
+at offset 37 clears itself instead of decrementing; ordinary packet replay
+initializes it to zero. Producers of that skip state and complete remove-request
+phase lifetimes remain open.
+
+The former received-effect cache expired by wall clock and treated durations
+at least `32767*20` as infinite. Perlin now derives remaining finite duration
+from movement ticks, anchored to a nonzero packet stamp or the receipt movement
+tick for unstamped packets. Queued history updates retain duration, limiting
+the effect's movement attributes to its stamped lifetime during replay. Unit
+coverage includes the finite endpoint, very large finite durations, large tick
+gaps and the exact infinite sentinel.
+
+The wall-clock baseline reports **0/1/0/0** corrections for one-second weaving
+expiry, expiry across a 1.5-second client process stall, three-second expiry,
+and an infinite effect followed by explicit removal. The failing stall route
+differs by approximately **0.245 blocks**. With tick-based duration all four
+report zero; three further stall repeats also report zero. The stall pauses
+only the verified Perlin process, resumes it in a finally block, and leaves BDS
+running. Raw correction counts and BDS strictness are unchanged.
+
+Three verified-air vertical routes also report zero: levitation expiry,
+levitation expiry across the stall, and airborne slow-falling expiry across the
+stall. The slow-falling route starts grounded on a static ledge at Y=275,
+receives the effect while falling near Y=256.09 and lands at Y=225. Forward
+input has a simulation-tick lease to keep the complete route inside the runway.
+All ten accepted lifetime routes end connected, initialized and alive; all 62
+local CTest suites pass. An earlier vertical fixture retained berry bushes and
+is not counted as plain-air validation; the accepted repeat clears the column
+and probes air before starting.
+
+The adapter's movement-tick clock is verified for these ordinary-player paths.
+Complete native InterpolateMovementNeeded production, sleeping/unloaded actors,
+skip-duration producers, non-player lifetimes, historical world state and
+remove-request ordering remain unverified. This does not establish whole-engine
+parity or resolve the previously recorded support-removal packet timing issue.
+
+### Subchunk layer order and correction receipt (2026-10-25)
+
+Both held-platform removal routes still report **1/1** corrections on the
+tick-lifetime build. Native subchunk handling is dispatcher `0x106851A34` →
+client handler `0x103E67ACC` → block-source callback `0x103E7D27C` → update
+helper `0x1044BBFFC`. The callback applies the extra/liquid vector before the
+primary block vector. Perlin's handler now follows that order. Complete native
+block-source notifications, property overrides, transition actor handling and
+chunk/deferred-update lifetimes are not thereby reconstructed.
+
+The packet and per-block records carry no movement tick. Their entity identity
+and transition fields must not be repurposed as timestamps. Native handler
+`0x103E44250` routes updates through block-source/chunk availability handling;
+this is distinct from timestamped MobEffectsReplay.
+
+Opt-in `PERLIN_BLOCK_DEBUG` now records correction receipt with the last sent
+auth tick, and keeps block packet logging enabled beyond the ordinary sample
+caps. Previously only the later replay mismatch had an uncapped log, which
+could not establish packet decode order.
+
+The instrumented layer-order build still reports **1/1** corrections. In the
+first route, removal is decoded after auth tick 414578, then correction for
+414578 is decoded. In the second route, correction for 414798 is decoded before
+the removal packet, also after sending 414798. Both errors are one downward
+movement step (about 0.0784 blocks). A separate setup teleport correction is
+outside the movement window and remains in the raw count. This establishes
+that decode order varies and the affected input can already have been sent;
+it does not establish socket arrival time, the authoritative world-change
+tick or a complete native replay policy. No inferred block timestamp or
+correction suppression was added. All 62 local CTest suites pass.
+
+### Replay boundaries and bed controls (2026-10-25)
+
+Native `ReplayStateValidateFrameSupportSystem` wrapper `0x106166268` reaches
+callback `0x106166CE0`. It invalidates/clears history for passenger membership,
+sleeping membership and a changed previously-known dimension, and always updates
+the previous-dimension value. It also tests raw optional movement-attribute
+fields (float +32/presence byte +36) and InsideGenericBlock data (+56); those
+complete producers remain unmapped and are not approximated by block names.
+Native invalidation also clears queued correction state; Perlin's complete
+equivalent queue/component lifetimes remain unported.
+
+Perlin now clears history before effect/server-motion replay on a sleeping or
+changed-dimension boundary, and does not save sleeping, mount-locked or first
+changed-dimension movement records. The existing mounted-history clearing is
+retained. Control telemetry now reports sleeping, dimension and retained
+prediction-history size. This integrates the known boundaries, not the whole
+native frame-support predicate or exact scheduler ordering.
+
+A real BDS bed interaction retained 23 history records after entry in the
+baseline and later reached the 200-record cap while asleep. The candidate
+retains **zero** through sleep, a two-second weaving effect and its expiry.
+BDS sent the effect removal exactly 40 ticks after addition during sleep.
+The stable sleep/effect window reports zero corrections, but entry and exit
+still each produce one correction. Bed pose/AABB and transition prediction
+remain unresolved; this is not a zero-correction complete bed route.
+
+The same test exposed keyboard Escape failing to leave bed: text mode routes
+it to the typed-key queue while the bed screen checked only gameplay Pause.
+The screen now handles typed Escape, and the hidden control's ordinary key
+down/up path successfully wakes the player. Retained history then resumes
+growing (19 records at the wake observation, 59 after settling). Raw server
+correction counts are unchanged.
+
+### Dimension packet position convention (2026-10-25)
+
+The dimension round trip exposed an independent 1.62-block placement error.
+Native packet handler `0x1044C49B4` delegates to LocalPlayer `0x104D0AFB4`, which
+copies the received target vector unchanged into its dimension-change request.
+Unlike MovePlayer, ChangeDimension's target must not have eye height subtracted.
+Perlin now preserves that target Y.
+
+For explicit BDS command transitions to Nether Y=130 and back to the supported
+Overworld platform at Y=225, the old conversion produced **2/1** corrections.
+The corrected conversion reports **2/0**: the Overworld return is clean and the
+Nether actor-position offset is fixed, but the Nether leg still has a
+one-step zero-velocity/falling mismatch followed by a roof-landing mismatch.
+Both endpoints are grounded (Nether Y=128, Overworld Y=225), connected,
+initialized and alive. The first observed new-dimension history counts are
+already repopulated after several ticks; polling does not prove the exact
+first-frame gate ordering.
+
+Current dimension acknowledgement uses nine seen columns or a four-second
+timeout, whereas movement tests ColumnSettled at the actor's column. Native
+loading/readiness and unavailable-terrain scheduling need further tracing;
+no arbitrary delay or inferred correction timestamp was added to force a pass.
+All 62 local CTest suites pass. The two Nether transition corrections, bed
+entry/exit corrections and support-removal synchronization remain visible.
+
+### Dimension readiness diagnostics and input queue depth
+
+The control snapshot distinguishes `dimensionChanging` (the pending dimension
+acknowledgement) from `columnSettled` (the current actor column has been seen
+and has no pending subchunk slots). `initialized` remains the initial login
+state and must not be used as a terrain-readiness assertion on a dimension
+round trip. Opt-in block debugging records the acknowledgement's last auth
+tick, elapsed milliseconds, actor position and column readiness. These fields
+observe the existing scheduling; they do not alter acknowledgement timing or
+correction counters.
+
+Further supporting native-client evidence identifies the
+`PlayerDimensionTransferer` RTTI at `0x1110ec138`. Its readiness virtual body
+`0x10b3aa288` queries a box from floor(actor position minus 16) through
+floor(actor position plus 16), after replacing an out-of-range actor Y using
+the dimension's virtual 232 result. It calls dependency virtual 144 and
+returns the inverse of the result's first flag. Completion bodies
+`0x10b3aa3a8` and `0x10b3aa61c` construct PlayerAction 14. Mapping the queried
+result and the transfer state machine to Perlin is still required; the
+existing nine-column/four-second approximation is not an exact native port.
+These are native 26.52 client addresses, not Windows BDS addresses.
+
+For input responsiveness, bgfx now requests a maximum GPU frame latency of
+one instead of leaving the backend default queue depth. The bundled backend
+code consumes this value in Metal command-queue scheduling, Vulkan frames in
+flight and DXGI maximum frame latency. Swap-chain resets inherit it. Metal
+still requires at least two drawable surfaces; drawable count is distinct
+from queued command frames. Touch layout geometry is rebuilt only for a
+viewport, scale, layout or editor-mode change instead of every gameplay
+frame while holding the finger-event mutex. Neither change alters the 20 Hz
+physics clock, movement speed or replay records. This is not a measured
+sub-10ms end-to-end latency result. Tick consumption and delayed camera
+interpolation remain latency work, and refresh/presentation must be included
+in any key-to-screen measurement.
+
+The instrumented baseline repeats **2/0** corrections and records both
+acknowledgements with `columnSettled=0` (800ms entering the Nether and 1996ms
+returning). The normal completion guard now requires every column intersecting
+the destination's horizontal plus/minus-16-block area to be seen and have no
+pending subchunk slots. It preserves the existing four-second fallback.
+This removes the unrelated-nine-columns admission bug, but checking whole
+columns is not equivalent to the native vertical box predicate, and the
+fallback is still provisional. It must not be called exact scheduler parity.
+
+With this guard the first live round trip produced **0/0** corrections and
+acknowledgements with `columnSettled=1` at 1372/1652ms. A repeat produced
+**1/0**, also with settled acknowledgements at 769/1367ms. The remaining
+Nether correction is an initial 0.0784-block falling-step mismatch: Perlin has
+already fallen while the server still reports the target Y and grounded state.
+Thus the locality check fixes premature terrain admission but does not finish
+dimension movement scheduling. Both runs end connected, initialized, alive
+and grounded at Nether Y=128 and Overworld Y=225. All 62 CTests pass (3.15s).
+
+### Authoritative grounded corrections and actor observations
+
+Replay previously ignored corrections whose squared position and velocity
+errors were each at most `1e-5`, and never compared the received grounded flag.
+It now applies every position, velocity or grounded difference. The unmatched
+history fallback also adopts the correction's grounded flag. A grounded-only
+correction changes subsequent jump eligibility even if the numeric vectors
+match; applying the packet is distinct from the visual smoothing policy.
+Raw correction counts and server thresholds remain unchanged. This does not
+supply missing jump-delay, world, pose or mode history producers.
+
+The control snapshot now includes tracked actors' exact string-encoded runtime,
+unique and vehicle IDs, position, motion, last server position, grounded state,
+and movement/hurt serials. These are received/tracked observations, not a new
+native actor simulation. The HTTP self-test round-trips IDs beyond JavaScript's
+safe-integer range and a mount link without losing precision.
+
+An initial 50-tick empty-lane/walk-into-cow comparison reports **0/0** corrections.
+Observed actor samples confirm proximity of approximately 0.410 blocks between
+centers and cow displacement from X=355.5 to approximately X=357.115. Both
+player routes end at X=361.292694 on the supported Y=225 platform, alive and
+connected. The cow received Slowness 256 and was command-verified at the fixture
+before contact; the tagged test cow was removed afterward. This verifies one
+player-to-cow contact route, not pushing the player, crowd behavior, knockback,
+vehicles or actor parity generally.
+
+Two more dimension round trips after the correction change still produce
+**0/0** and **1/0**. The repeat's initial falling mismatch remains; applying
+smaller/ground-only corrections is not represented as a fix for that scheduling
+error. All 62 CTests pass after the actor schema and exact-ID regression (3.20s).
+
+Further native-client lifetime anchors: `PlayerDimensionTransferManager`
+processing `0x10b3a63c8` iterates request components through `0x106705b68`.
+Callback `0x10b3a66e4` advances payload states 0 to 1 and optionally 2 through
+the transferer's virtual operations; successful completion causes the iterator
+to remove the request component. The client's `_tickReadyToContinueClient`
+`0x106738a28` writes the request's leading ready byte, whereas the server view
+excludes Passenger, Vehicle and DimensionTransition components. These are
+separate predicates and phases, not one column-ready boolean. LocalPlayer
+begin/end virtuals `0x104d04a98`/`0x104d04afc` call base
+`0x10abf6c4c`/`0x10abf6b68`; the latter removes BlockSourceComponent from its
+registry. Complete integration with movement/interpolation scheduling remains
+unported.
+
+### Stamped knockback motion replay
+
+A real `/damage ... entity_attack entity <tagged cow>` test applies one health
+point and an actual motion impulse in both horizontal directions. The initial
+receipt-only build produced **1/0** corrections and displacement of approximately
++/-2.069031 blocks. The protocol already decodes `SetEntityMotion.tick`, but
+Perlin discarded it, cleared history and applied the velocity at receipt.
+
+Native 26.52 client dispatcher `0x10684ad78` routes to legacy handler
+`0x1044bdcc8` (handler virtual 536). A nonzero stamp at packet offset 72 with
+history support creates `History::createPosDeltaReplay` through
+`0x103ce816c`, inserts it with `0x105f67914`, and marks history dirty. A zero
+stamp/no-history path instead calls actor virtual 184 directly. Replay body
+`0x103d10e14` writes StateVectorComponent's delta lanes at offsets 24..32;
+RTTI of the selected storage confirms that component identity.
+
+Stamped own-actor motion now follows the history boundary: it replaces velocity
+before the following movement record, clamps old stamps to the retained oldest
+snapshot boundary, and retains the impulse in that record for subsequent effect
+or server-correction replay. Future/current-boundary impulses wait for the
+following local auth tick. Zero-stamped packets retain direct application.
+Session reset clears queued incoming impulses, and mounted prediction discards
+them with its unsupported history. Teleport fallback also preserves the original
+incoming pose separately from any pose published during earlier history replay.
+The complete native unsupported-frame/transition/component predicates, ordering
+between multiple coalesced server-motion packets, and future impulses across
+teleports still require reconstruction.
+
+The first candidate run reports **0/0** with the same +/-2.069031 displacement;
+receipt stamps equal the last auth tick. A repeat reports **1/1**: impulses
+stamped 470742/470852 arrive after auth 470743/470853. Replaying those records
+makes their position/velocity agree with the already-received server correction,
+but cannot retract a correction already emitted by BDS. The raw counts remain
+visible. An additional setup teleport correction lies outside the measured
+attack windows. Damage, both directions of motion, alive/connected/initialized
+endpoints, and cleanup of only tagged test actors are verified. This is evidence
+for stamped motion replay, not zero flags or full knockback/actor parity.
+
+After shared replay refactoring, four effect-lifetime routes again report
+**0/0/0/0** corrections: one-second expiry, expiry across a 1.5-second client
+pause, three-second expiry, and infinite duration followed by explicit removal.
+The initial attempt missed the one-second active window because HTTP polling
+stalled; it is an invalid observation, not a passing route or physics failure.
+The rerun used closing HTTP connections and observed both active and expired
+states. All endpoints stayed alive, connected and on the validated web runway.
+
+The control server now closes each response connection. On this macOS setup,
+12 state requests with a 30ms interval previously included frequent 458-470ms
+idle-connection delays. TCP_NODELAY did not improve them and was removed. With
+server-side connection closing, the first request took 57ms and the remaining
+11 took approximately 0.8-1.3ms using the same Node fetch polling pattern.
+This measures HTTP response latency, not command-to-simulation or key-to-screen
+latency, and does not establish an under-10ms gameplay guarantee.
+
+The final build's knockback check again produces **0/0** for west/east impulses,
+with debug evidence of stamps 475631/475695 applied to following auth ticks
+475632/475696. A setup teleport correction between routes remains in the raw
+counter outside both attack windows. The preceding **1/1** late-delivery run
+remains part of the evidence and is not superseded by this clean run. The final
+Release build and all 62 CTests pass (3.15s).
+
+### Ordered motion packets and forced-pose boundaries (2026-10-25)
+
+Incoming motion now uses an ordered queue of independent packet events. The
+previous mutable aggregate could overwrite multiple positions in one receive
+batch, retain correction/teleport flags from unrelated packets, and process all
+stamped impulses before the aggregate forced pose. Each position event captures
+its own authoritative coordinates before prediction can publish another pose.
+Forced MovePlayer events also retain their tick and on-ground bit.
+
+The initial plain FIFO implementation was insufficient: teleport-then-damage
+produced 1/0/1/0 corrections across four alternating command-order cases, against
+0/0/0/0 in the earlier aggregate implementation. The source impulse belonged to
+the frame replaced by the forced pose. The candidate now discards stamped
+impulses at or before that forced-pose boundary; later stamps still enter replay.
+The six-case live run reports 0/0/0/0/0/0, including two deliberately later
+impulses which each displaced the player +2.06903076171875 blocks. Teleports are
+inside the measured windows. Raw correction counters are not reset or filtered.
+
+Native Mac client reference: MovePlayer rewind handler 0x103CBB8CC routes
+stamped teleports through MovePlayerInput; replay apply 0x103CE5980 writes the
+position, clears StateVector delta, sets HasTeleportedFlagComponent and applies
+the packet ground bit through 0x103CE522C. These are client reference addresses,
+not Windows BDS addresses. Native MobTravelTeleportedFilterSystem subsequently
+removes MobTravelComponent for teleported actors. That full phase/lifetime
+pipeline, short-distance teleport replay and MotionPredictionHints' separate
+prediction-sample queue remain unported; the bounded passing cases do not prove
+those systems or complete teleport/knockback parity.
+
+A repeat after the kelp visual fixture was invalid: water altered the movement
+and the source cow disappeared before the final attack/cleanup. Its partial
+results are retained but are not a passing dry-ground regression run.
+
+After clearing the visual fixture and restoring the stone runway, the dry
+six-case repeat also reports **0/0/0/0/0/0**. Both later impulses again displace
++2.06903076171875 blocks, all endpoints remain alive/connected/settled and the
+source actor cleanup succeeds. Evidence: `out/teleport-impulse-boundary-dry-repeat-report.json`
+and `out/teleport-boundary-dry-repeat-run.log`. The rebuilt candidate also passes
+all 62 CTests (8.91s). These routes cover same-frame command ordering and later
+impulses; arbitrary delayed delivery, mounts and full native phase scheduling
+remain outside this result.
+
+The candidate's subsequent dimension round trip remains **1/0** corrections
+(Nether/Overworld), ending grounded at Y128/Y225 with history restored. The
+motion queue does not resolve the remaining destination initial-fall scheduling
+mismatch. Evidence: `out/motion-queue-dimension-run.log` and
+`out/dimension-history-fixed-report.json`; no zero-flags or full dimension
+parity claim is made.
+
+### Destination prediction eligibility investigation (2026-10-25)
+
+A stricter dimension harness now waits for dimensionChanging=false and a settled
+player column rather than treating Initialized as transfer completion. Baseline
+still reports 1/0 corrections. On Nether arrival it observes the requested
+position Y130 and zero delta while changing, but 36 prediction records and
+Y129.92160034179688/deltaY=-0.1552319973707199 by readiness. This exposes an
+eligibility gap: LocalPlayer allowed physics and history as soon as the local
+column settled, although the surrounding-terrain transfer was still pending.
+The candidate gates simulation, movement-effect consumption and saved prediction
+history on transfer completion as well as the existing column/sleep predicates.
+It adds no elapsed-time delay and changes no correction tolerance.
+
+Additional native Mac client tracing identifies InitialTickFilterSystem::tick
+RTTI 0x10E97F8C4, adapter 0x106039FA0 and per-entity callback 0x10602CF58.
+Its view includes InterpolateMovementNeeded and StateVector, excludes GlobalActor,
+and reads the dimension/block-source factory. The callback floors XYZ and queries
+block-source virtuals 136/16 before potentially removing ActorMovementTickNeeded,
+InterpolateMovementNeeded and VehicleInputIntent. The compared interned block
+identifier at 0x1116A0480 is not yet confidently named; this predicate is not
+ported as a guessed air/unknown-block test. The separate ticking-area callback
+0x10602D8EC consults CurrentTick and removes movement/interpolation eligibility
+when its live ticking-area check fails.
+
+HasTeleportedFlag cleanup is registered by 0x102A1729C with phase value 9,
+alongside TickEndResetSystem. It requires ActorMovementTickNeeded. This confirms
+conditional tick-end cleanup rather than an unconditional wall-clock lifetime;
+the complete native component lifecycle remains unfinished.
+
+The transfer-gated candidate builds and passes all 62 CTests (9.83s). Live
+Nether/Overworld remains **1/0** corrections. The improved harness samples 44/101
+pending-transfer snapshots respectively and verifies zero velocity and zero
+prediction history in all of them; readiness now has only one prediction record,
+rather than the baseline's 36/64. Nether readiness is Y130/deltaY=-0.0784. The
+remaining correction is at auth tick 520976, two ticks after acknowledgement
+520974: client Y129.9216/deltaY=-0.155232 versus server Y130/deltaY=-0.0784.
+This fixes prediction during transfer but does not fix post-ack travel phase
+ordering. Evidence is retained in `out/dimension-transfer-gate-report.json`,
+`out/dimension-transfer-gate-trace.ndjson` and `out/dimension-transfer-gate-client.log`.
+
+The travel registrar 0x1029F7F68 places MobTravelTeleportedFilterSystem in phase
+6 before NavigationTravelSystem, MobTravelUpdateSpeedsSystem, Water/Lava travel
+and TravelMoveRequestSystem. The travel-type producer's execution context
+(RTTI 0x10EA4EBE1) requires MobTravelComponent and creates the Air/Ground/Water/
+Lava/Gliding/Flying flags. Gravity request producers consume those travel flags
+(RTTI 0x10EA620EA onward); gravity application itself consumes ApplyGravity
+(0x10EA6399B). Consequently a future port must carry travel eligibility through
+flag/request production, not merely suppress final position integration or skip
+all status/contact systems. This narrows the next implementation boundary while
+leaving exact registration dependencies and component producers to verify.
+
+### Teleport travel eligibility candidate (2026-10-25)
+
+Native generic teleport 0x10A48EBF8 clears delta unless explicitly retained,
+resets previous position, then creates HasTeleportedFlagComponent through
+storage accessor 0x102A6FF60. Player teleportTo 0x10ABF5854 (identified by its
+native diagnostic string) calls this path. Stamped MovePlayer mode-2 replay
+0x103CE5980 creates the same flag; Reset mode is distinct.
+
+The candidate carries that flag in physics State, so saved history and replay
+retain its lifetime. Dimension-change/MovePlayer Teleport events set it; Reset
+and the separate respawn event do not assume the same producer. An eligible
+Step filters relative travel, glide/flight integration, collision requests and
+travel gravity while retaining sensing, pre-travel jump actions and the existing
+post-movement contacts/effect expiry. Step clears the flag at tick end. A pending
+transfer/unavailable column does not call Step and therefore cannot consume it.
+This is a partial phase boundary within the current simulator, not a complete
+native ECS/request scheduler. The full fluid/jump/climb combinations need live
+validation, and their existing monolithic ordering is not declared reconstructed.
+
+A new physics regression verifies no travel/velocity on the filtered tick,
+continued movement-effect expiry, flag cleanup and resumed input/gravity on the
+next eligible tick. The live pre-change baseline adds ordinary air teleport,
+held-forward teleport and held-jump teleport, each producing one correction
+(1/1/1); the measured windows include their teleport commands.
+
+The first live filter candidate reports 0/0/2 for air/forward/jump teleports,
+against baseline 1/1/1. Its dimension run remains 1/0, with the Nether error now
+reversed (candidate one movement step behind the server). These failures are
+retained and are not passing evidence. Applying the flag to ChangeDimension
+was therefore removed: that packet's producer and transfer-time cleanup are
+not proved equivalent to stamped MovePlayer Teleport mode.
+
+The held-jump trace identifies double application after late delivery: teleport
+stamp 527711 and following correction 527712 are decoded together after auth
+527712. The correction already contains Y225/deltaY=0.42, but the candidate's
+pending teleport flag filtered travel again at 527713, leading to the second
+correction at 527719. The revised candidate consumes the pending flag when an
+authoritative correction is past its forced-pose boundary. Full stamped
+MovePlayer input insertion/replay remains unfinished; this fix prevents that
+specific duplicate lifetime, rather than claiming to reconstruct that pipeline.
+
+After the late-correction lifetime fix, ordinary air/forward/jump teleport runs
+report **0/0/1** and **0/1/1**. The earlier baseline is 1/1/1; the first candidate's
+0/0/2 remains recorded as a regression, not hidden. Jump still has an immediate
+late-arrival correction; the repeat's forward case also demonstrates delivery
+sensitivity. No general zero-teleport claim follows from these results.
+All six teleport/impulse routes remain **0/0/0/0/0/0**, with both later impulses
+still displacing +2.06903076171875 blocks. The subsequent dimension run reports
+0/0, but the earlier 1/0 runs and unported dimension producer/lifetime remain
+open. Evidence: `out/teleport-air-boundary-report.json`,
+`out/teleport-air-boundary-repeat-report.json`,
+`out/teleport-impulse-travel-filter-report.json`, and
+`out/teleport-travel-final-dimension-run.log`. All endpoints remain valid.
+The revised build passes all 62 CTests (8.16s).
+
+SwimControlSystemImpl's context at 0x10EA21E58 also requires MobTravelComponent
+(and separately excludes jumping). Its pitch control is now gated during the
+filtered travel tick. An additional water regression verifies fluid/pose sensing
+still runs while pitch control does not create velocity. A ground-jump regression
+verifies the independent jump action can create its delta without integrating
+position on the filtered tick, then resumes on the following tick.
+
+The final swim-predicate build passes all 62 CTests (13.95s). Three live
+teleports while actively swimming in the probed water fixture record **0/0/1**
+corrections for camera pitches 0/-30/+30. Each route verifies active swimming
+and water before the teleport, includes that teleport in the measured window,
+and ends alive/connected with a settled column. Upward swimming remains a
+failing combined interaction; this newly measured route has no matched
+pre-change baseline, so it is not labelled a resolved case or proven regression.
+Evidence: `out/teleport-swim-filter-report.json`,
+`out/teleport-swim-filter-trace.ndjson` and `out/teleport-filter-final-client.log`.
+The final implementation sets the travel flag only for MovePlayer Teleport mode;
+dimension arrival and Reset do not infer that same lifetime.
+
+### Swim-control ordering before teleport filtering (2026-10-25)
+
+The previous swim eligibility change inferred execution order from the context's
+MobTravel read. Further native tracing disproves that inference. SwimControlSystem
+vtable 0x110E6A1D0 is registered by 0x102A048D0 at 0x102A076B8 in phase 6.
+The same registrar calls the travel registrar 0x1029F7F68 later at 0x102A08760;
+that registrar installs MobTravelTeleportedFilterSystem. Swim pitch control
+therefore runs before travel eligibility is removed, and its delta survives the
+filtered tick even though position integration does not.
+
+This explains the measured upward-swim error at 535052: client Y193.03/deltaY
+0.024 versus server Y193.058/deltaY0.0465574. With lookY approximately 0.5,
+the first filtered tick should retain approximately 0.03, then the following
+control update produces approximately 0.0582 before movement/water drag. Skipping
+that first update was incorrect. The candidate removes the premature swim guard
+and corrects the water regression to check the two-tick recurrence: with lookY=-1,
+filtered deltaY=-0.085 and no displacement, followed by Y=-0.162775 and deltaY
+approximately -0.13022. This replaces the erroneous zero-velocity test oracle.
+Old live report/trace are preserved as `out/teleport-swim-before-order-fix-*`.
+
+The corrected ordering builds and passes all 62 CTests (18.28s). Live runs at
+pitches 0/-30/+30 report **0/0/0**, repeated **0/0/0**; a further 0/-60/+60 run
+also reports **0/0/0**. Each measured window includes the teleport while actively
+swimming; all endpoints remain alive, connected and on settled terrain. The
+prior 0/0/1 upward failure is preserved for comparison. Evidence:
+`out/swim-order-first-report.json`, `out/swim-order-repeat-report.json`,
+`out/swim-order-steep-report.json`, their corresponding trace files, and
+`out/swim-before-teleport-client.log`. Setup teleports outside those measured
+windows still produce raw corrections (five by the final observation); no
+counter reset, filtering or tolerance change hides them. These nine passing
+cases establish the tested swim-before-filter ordering, not complete session
+zero flags, arbitrary delayed teleport replay or all movement-mode interactions.
+
+### Stamped short-distance teleport replay candidate (2026-10-25)
+
+Native MovePlayer rewind handler 0x103CBB8CC checks stamp/history availability,
+uses a direct/reset path for Reset mode and passengers, and clears history when
+position distance is >=16 blocks. Mode-2 teleports below that distance construct
+MovePlayerInput (vtable 0x110CCDD68) and insert it through 0x103CBB1F4. Replay
+apply 0x103CE5980 writes position, clears StateVector delta, applies on-ground,
+creates HasTeleportedFlag and rebuilds the actor AABB. These remain native Mac
+client reference addresses, not Windows BDS addresses.
+
+The candidate stores a stamped teleport alongside each prediction record and
+reapplies it before that record's movement. Current/future boundaries queue until
+the following input record. Effects, motion and correction replay all retain
+the teleport event rather than clearing history on every receipt. Stamped deltas
+at the replaced frame are removed; newer queued deltas remain. Reset/long-distance/
+unavailable-history fallback and mounted history exclusion remain separate.
+The existing saved input/attribute stream is retained; complete regeneration of
+all native producers and world/block-update history remains unfinished.
+
+The first fresh pre-change live baseline ended during destination streaming and
+is invalid, not a passing route or terminal runtime failure. The existing client
+was verified alive/connected/healthy with the column subsequently settled, then
+the baseline was rerun without restarting either process.
+
+### Strict 1e-7 audit and current-version arithmetic (2026-10-25)
+
+The Windows BDS 1.26.52.3 lab was restarted with
+`player-position-acceptance-threshold=0.0000001`, preserving its other movement
+settings. This is the configured value; an independent readback of any internal
+clamping is not established. Raw correction counts include setup and teleports.
+The earlier default-threshold results do not establish parity at this threshold.
+
+Full-precision replay diagnostics exposed a version mismatch in ordinary travel.
+The current Windows relative-movement function `0x14845B3C0` calls the actual
+CRT `sinf` and `cosf` imports independently. The old 1.26.10 wrapper constructs
+cosine through a rounded `abs(angle)+pi/2` sine argument. At yaw -180 that old
+path yields cosine -0.99999994; current BDS yields -1. This changes velocity
+by one binary32 step and eventually produces position corrections. The current
+integrated-server reference `0x10706ADB8` uses Apple's `__sincosf_stret` with
+the same movement arithmetic and a separately evaluated cosine result.
+
+Gameplay now selects the current relative-movement path. Historical kernel
+fixtures remain unchanged and continue exercising the old bundled calculation.
+An additional ignored local 1,656-case fixture executes the unmodified current Windows kernel
+under Wine 11/Rosetta with its actual resolved CRT imports, original constants
+and supplied state. All output velocity bits agree on macOS ARM64. These finite
+cases do not establish all CRT exceptional inputs or native Windows/Linux libm
+agreement. The server executable SHA-256 is
+`19c88569af2e4b7d984e999055a31cbcb0799dacf8bbbf7371eda42f5772a443`.
+
+The first strict flat-ground rerun improves from 33 bounded corrections to nine:
+16 of 17 routes have zero; sprint-jump retains nine. Setup adds three more raw
+corrections. The food matrix improves from 11 to two bounded corrections, with
+six additional setup corrections. Honey and dried-kelp completion each retain
+one. These failures remain open; later food repeats sometimes have zero,
+showing that completion timing also needs investigation.
+
+Current ground-jump `0x14661F790`, matching integrated-server `0x1060774B8`,
+rounds degrees to radians before multiplying by 10430.378 for its table index.
+The older audited function used direct degrees-to-index conversion. Current
+initializer `0x14118BBF0` divides each table index by 10430.378 and calls CRT
+sinf; the old table multiplies by a rounded radians-per-entry constant and uses
+the bundled vector sine. There are 22,737 differing table words. The current
+numeric table was read from the running BDS process at `0x14CC495F8`, without
+changing its memory. Its 262,144-byte SHA-256 is
+`ad80e88d62b795fa32bdd8b44a8712737c2e74ff02378134ff585a489fd380fc`.
+Only these numerical values are committed; executable code and disposable
+reference drivers stay outside the source tree. CMake generates endian-neutral
+binary32 word initializers, avoiding host-libm differences in this fixed table.
+An additional ignored local 81-case reference executes the unmodified current sprint impulse
+instruction range `[0x14661F9A1,0x14661FA09)` with that actual table; a return
+outside the range transfers control to the driver. Both new local fixtures and all
+old trig fixtures match in the standalone ARM64 check (12,569 cases total).
+Historical compatibility trace adapters explicitly select their 1.26.10 math
+profile; their expectations and tolerances are unchanged.
+
+Integrated-server SwimControl `0x106785410` interpolates/wraps pitch and uses
+the current sine table after radians-to-index conversion. The client previously
+used a continuous host sine for its `lookY`; at pitched swimming this produces
+small persistent vertical errors visible at the strict threshold. The candidate
+now supplies the native table result to swim eligibility and control. Live
+validation of the combined sprint-jump/table/swim candidate is still pending.
+
+Fixture isolation also needed repair. Scripts originally used different player
+names; normalizing them to one controlled actor without clearing inventory let
+later `/give` commands put food in another slot. Such an eating label did not
+prove eating occurred. The rerun clears inventory between scripts, selects slot
+zero, preserves all original reports and verifies consumption where available.
+One combined item fixture still fails a `/fill ... outOfWorld` setup and must
+be repaired rather than counted as a physics pass.
+
+The native item lifetime is not uniformly a movement-tick clock:
+`ItemUseTickDurationMovementSystem` includes
+`ItemInUseTicksDuringMovementComponent`, while the ordinary ActorTick duration
+system excludes it. Integrated-server start-use `0x10ABFD4F0` creates that tag
+for the `minecraft:is_trident` item property (initializer `0x101CE7298`). The
+movement callback `0x10605F7A8` decrements positive remaining time at offset 8.
+Food uses the other lifetime path. Exact actor/movement tick alignment and use
+transactions remain required work; changing all durations by one is not a
+source-backed substitute for that scheduling.
+
+Physics work is paused at the user’s request. The 101-script strict rerun was
+stopped after 15 scripts on the relative-trig-only build; the combined current
+sine-table/jump/swim candidate has not completed live validation. Generated
+local test/reference files under tests/data are ignored; existing tracked
+fixtures remain in the repository. New reference drivers and reports stay local.

@@ -1,7 +1,7 @@
 #pragma once
 
-#include "client/player/BdsFloat.hpp"
-#include "client/player/BdsLanding.hpp"
+#include "client/player/PerlinFloat.hpp"
+#include "client/player/PerlinLanding.hpp"
 
 #include <span>
 

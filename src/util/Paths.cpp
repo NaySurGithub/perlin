@@ -47,12 +47,8 @@ namespace perlin::paths {
     }
 
     std::string DataDir() {
-#if !defined(__EMSCRIPTEN__) && !defined(__ANDROID__)
-        // Isolated profiles keep renderer fixtures and local server tests away
-        // from the player's accounts and settings.
-        if (const char* dir = std::getenv("PERLIN_DATA_DIR"); dir && *dir && fs::path(dir).is_absolute())
-            return fs::path(dir).generic_string();
-#endif
+        if (const char* override = std::getenv("PERLIN_DATA_DIR"); override && *override)
+            return fs::path(override).generic_string();
 #if defined(__EMSCRIPTEN__)
         return "/perlin";
 #elif defined(__ANDROID__)

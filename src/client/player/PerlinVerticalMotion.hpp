@@ -1,6 +1,6 @@
 #pragma once
 
-#include "client/player/BdsPhysicsNumerics.hpp"
+#include "client/player/PerlinPhysicsNumerics.hpp"
 
 #include <optional>
 
@@ -111,5 +111,16 @@ namespace perlin::physics::bds {
         if (auto gravity = PlayerWaterGravity(swimming))
             velocity = ApplyGravity(velocity, fallDistance, *gravity);
         return velocity;
+    }
+
+    // Native 26.52 EntityInside action visitors 0x10674CBE8 / 0x10674D054.
+    // Each contacted bubble block contributes one action after movement.
+    inline float BubbleColumnVelocity(float velocity, bool dragDown, float& fallDistance, bool surface = false) {
+        fallDistance = 0;
+        // Surface action 0x10674CB7C has separate acceleration and caps.
+        const float next = detail::Round(velocity + (dragDown ? -0.03f : surface ? 0.1f : 0.06f));
+        if (dragDown)
+            return next < (surface ? -0.9f : -0.3f) ? (surface ? -0.9f : -0.3f) : next;
+        return next > (surface ? 1.8f : 0.7f) ? (surface ? 1.8f : 0.7f) : next;
     }
 }

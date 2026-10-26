@@ -1,7 +1,7 @@
 #pragma once
 
-#include "client/player/BdsCollision.hpp"
-#include "client/player/BdsLanding.hpp"
+#include "client/player/PerlinCollision.hpp"
+#include "client/player/PerlinLanding.hpp"
 
 #include <limits>
 #include <span>

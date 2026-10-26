@@ -23,6 +23,13 @@ namespace perlin {
         void Poll();
 
         bool IsDown(Action action) const;
+        void SetControlActions(std::bitset<kActionCount> actions, uint64_t untilTick) {
+            controlPressed |= actions & ~(controlTick < controlUntil ? controlActions : std::bitset<kActionCount>{});
+            controlActions = actions;
+            controlUntil = untilTick;
+            controlled = true;
+        }
+        void SetControlTick(uint64_t tick) { controlTick = tick; }
         bool Pressed(Action action) const { return pressed.test(static_cast<size_t>(action)); }
         float Axis(Action positive, Action negative) const;
         LookDelta Look() const { return (locks & 2u) ? LookDelta{} : look; }
@@ -70,6 +77,9 @@ namespace perlin {
         Input& input;
         Options& options;
         std::bitset<kActionCount> pressed;
+        bool controlled = false;
+        std::bitset<kActionCount> controlActions, controlPressed;
+        uint64_t controlTick = 0, controlUntil = 0;
         std::optional<Action> rebinding;
         std::vector<Typed> typed;
         LookDelta look;

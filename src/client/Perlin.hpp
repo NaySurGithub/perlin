@@ -9,6 +9,7 @@
 #include "client/Accounts.hpp"
 #include "client/Camera.hpp"
 #include "client/Options.hpp"
+#include "client/ClientControl.hpp"
 #include "client/entity/EntityRenderer.hpp"
 #include "client/renderer/WeatherRenderer.hpp"
 #include "client/hand/HandRenderer.hpp"
@@ -68,6 +69,8 @@ namespace perlin {
         bool secure = false;
         bool acceptEula = false;
         std::string stun;
+        bool hidden = false;
+        int controlPort = 0;
     };
 
     class Perlin {
@@ -81,6 +84,11 @@ namespace perlin {
 
     private:
         void RenderThreadMain();
+        void PollControl();
+        void PublishControl();
+        void TraceControlTick(uint64_t tick, const physics::State& state, const physics::Input& input);
+        std::shared_ptr<ClientControl> control;
+        ControlSnapshot controlState;
         void FillHudState(ui::HudState& state, BedrockSession* live, bool preview);
         void Connect();
         bool AcceptEula();

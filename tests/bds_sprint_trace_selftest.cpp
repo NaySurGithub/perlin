@@ -1,4 +1,4 @@
-#include "client/player/BdsSineTable.hpp"
+#include "client/player/PerlinSineTable.hpp"
 
 #include <array>
 #include <bit>

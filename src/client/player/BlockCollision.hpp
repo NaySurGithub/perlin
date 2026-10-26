@@ -17,6 +17,7 @@ namespace perlin {
         LevelCollision(const Level& level, const BlockLibrary* blocks);
 
         physics::BlockShape Query(int x, int y, int z) const override;
+        physics::bds::ScaffoldingCell ClimberCell(int x, int y, int z) const override;
         bool CollisionChunkReady(int x, int z) const override;
         physics::bds::TerrainHeightLimits CollisionHeightLimits() const override;
         static const physics::BlockShape& ShapeOf(uint16_t id);

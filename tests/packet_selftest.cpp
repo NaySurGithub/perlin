@@ -12,6 +12,15 @@ namespace perlin::proto2193 {
 using namespace perlin;
 using namespace perlin::proto;
 
+// Native actor bits 64, 69–71, 76 and 109 must retain their positions across
+// the metadata word boundary. The upstream schema's first list has 65 names.
+static_assert(FlagsMetadataFlags2::LayingDown == (uint64_t{1} << 0));
+static_assert(FlagsMetadataFlags2::InScaffolding == (uint64_t{1} << 5));
+static_assert(FlagsMetadataFlags2::OverScaffolding == (uint64_t{1} << 6));
+static_assert(FlagsMetadataFlags2::FallThroughScaffolding == (uint64_t{1} << 7));
+static_assert(FlagsMetadataFlags2::Sleeping == (uint64_t{1} << 12));
+static_assert(FlagsMetadataFlags2::PushTowardsClosestSpace == (uint64_t{1} << 45));
+
 static int failures = 0;
 #define CHECK(c)                                                                                             \
     do {                                                                                                     \

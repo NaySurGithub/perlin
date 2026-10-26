@@ -1,7 +1,7 @@
 #pragma once
 
-#include "client/player/BdsSupport.hpp"
-#include "client/player/BdsCacheDifference.hpp"
+#include "client/player/PerlinSupport.hpp"
+#include "client/player/PerlinCacheDifference.hpp"
 
 #include <bit>
 #include <vector>

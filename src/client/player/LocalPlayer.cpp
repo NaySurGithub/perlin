@@ -1,14 +1,20 @@
 #include "client/player/LocalPlayer.hpp"
 
 #include "client/player/BlockCollision.hpp"
+#include "client/player/PerlinScaffolding.hpp"
+#include "client/player/PerlinStatusEffect.hpp"
 #include "protocol/Packets.hpp"
 #include "world/level/block/BlockPalette.hpp"
 #include "network/PlayerConstants.hpp"
+#include "util/Env.hpp"
 
 #include <algorithm>
 #include <bit>
 #include <cmath>
 #include <iostream>
+#include <iomanip>
+#include <limits>
+#include <sstream>
 
 namespace perlin {
     namespace {
@@ -31,6 +37,26 @@ namespace perlin {
 
         float BedrockPitch(float cameraPitch) {
             return -cameraPitch;
+        }
+
+        void ApplyMotion(physics::State& state, const std::optional<std::array<double, 3>>& motion) {
+            if (!motion)
+                return;
+            state.vx = (*motion)[0];
+            state.vy = (*motion)[1];
+            state.vz = (*motion)[2];
+        }
+
+        void ApplyTeleport(physics::State& state, const std::optional<BedrockSession::ServerMotion>& teleport) {
+            if (!teleport)
+                return;
+            state.x = teleport->pos[0];
+            state.y = teleport->pos[1];
+            state.z = teleport->pos[2];
+            state.vx = state.vy = state.vz = 0;
+            state.onGround = teleport->onGround;
+            state.hasTeleported = teleport->filterTravel;
+            state.hasBox = false;
         }
 
         namespace Flag {
@@ -68,12 +94,157 @@ namespace perlin {
         }
     }
 
-    void LocalPlayer::ApplyServerMotion(BedrockSession& session, Camera& camera) {
-        BedrockSession::ServerMotion motion;
-        if (!session.TakeServerMotion(motion))
+    void LocalPlayer::ApplyEffectUpdates(BedrockSession& session) {
+        const auto updates = session.TakeEffectUpdates();
+        size_t first = history.size();
+        // Native LegacyClientNetworkHandler 0x1044BCD94 routes stamped
+        // MobEffect packets through History::MobEffectsReplay. Its history
+        // insertion 0x105F67914 clamps old stamps to the oldest snapshot and
+        // marks the following snapshot dirty when the effect state changes.
+        for (const auto& update : updates) {
+            if (update.tick == 0 || history.empty())
+                continue;
+            const uint64_t boundary = std::max(update.tick, history.front().tick);
+            for (size_t i = 0; i < history.size(); ++i) {
+                Record& record = history[i];
+                // The stamp names the preceding history boundary; native
+                // insertion stores this correction in the following snapshot.
+                if (record.tick <= boundary)
+                    continue;
+                const bool active = update.active && physics::bds::StatusEffectTicksAt(
+                    update.duration, update.tick, record.tick - 1) != 0;
+                auto& a = record.attributes;
+                bool changed = false;
+                switch (update.id) {
+                case 8: {
+                    const int value = active ? update.amplifier + 1 : 0;
+                    changed = a.jumpBoost != value;
+                    a.jumpBoost = value;
+                    break;
+                }
+                case 24: {
+                    const int value = active ? update.amplifier + 1 : 0;
+                    changed = a.levitation != value;
+                    a.levitation = value;
+                    break;
+                }
+                case 27:
+                    changed = a.slowFalling != active;
+                    a.slowFalling = active;
+                    break;
+                case 33:
+                    changed = a.weaving != active;
+                    a.weaving = active;
+                    break;
+                default: break;
+                }
+                if (changed)
+                    first = std::min(first, i);
+            }
+        }
+        ReplayFrom(session, first);
+    }
+
+    void LocalPlayer::ApplyMotionUpdate(BedrockSession& session, const BedrockSession::MotionUpdate& update) {
+        // A forced pose replaces the old frame's position and delta. A stamped
+        // impulse from that frame must not resurrect motion after the reset,
+        // even when its packet was decoded after the teleport packet.
+        if (teleportMotionBoundary && update.tick <= *teleportMotionBoundary) {
+            if (PERLIN_ENV("PERLIN_BLOCK_DEBUG"))
+                std::cout << "[move] motion_before_teleport stamp=" << update.tick
+                          << " boundary=" << *teleportMotionBoundary << std::endl;
             return;
+        }
+        size_t first = history.size();
+        bool inserted = false;
+        if (!history.empty()) {
+            const uint64_t boundary = std::max(update.tick, history.front().tick);
+            for (size_t i = 0; i < history.size(); ++i) {
+                if (history[i].tick <= boundary)
+                    continue;
+                history[i].motion = update.velocity;
+                first = i;
+                inserted = true;
+                if (PERLIN_ENV("PERLIN_BLOCK_DEBUG"))
+                    std::cout << "[move] motion_replay stamp=" << update.tick << " target=" << history[i].tick
+                              << " records=" << history.size() - i << std::endl;
+                break;
+            }
+        }
+        if (!inserted)
+            futureMotion.push_back(update);
+        ReplayFrom(session, first);
+    }
+
+    void LocalPlayer::ReplayFrom(BedrockSession& session, size_t first) {
+        if (first >= history.size())
+            return;
+        physics::State replay = history[first].before;
+        LevelCollision world(session.NetLevel(), blocksPtr);
+        for (size_t i = first; i < history.size(); ++i) {
+            Record& record = history[i];
+            record.before = replay;
+            replay.yaw = record.yaw;
+            ApplyTeleport(replay, record.teleport);
+            ApplyMotion(replay, record.motion);
+            if (record.simulated)
+                physics::Step(replay, record.input, record.attributes, world);
+            else
+                replay.vx = replay.vy = replay.vz = 0;
+            record.after = replay;
+        }
+        state = replay;
+        previous = history.back().before;
+        session.SetPose(static_cast<float>(state.x), static_cast<float>(state.y),
+                        static_cast<float>(state.z), state.yaw, session.GetPose().pitch);
+    }
+
+    void LocalPlayer::ApplyServerMotion(BedrockSession& session, Camera& camera,
+                                       BedrockSession::ServerMotion motion) {
+        if (motion.stampedVelocity) {
+            ApplyMotionUpdate(session, {motion.tick, {motion.velocity[0], motion.velocity[1], motion.velocity[2]}});
+            return;
+        }
         bool handled = false;
+        if (motion.teleport && motion.filterTravel && motion.tick != 0 && !history.empty() &&
+            motion.tick >= history.front().tick) {
+            const float dx = static_cast<float>(motion.pos[0]) - static_cast<float>(state.x);
+            const float dy = static_cast<float>(motion.pos[1]) - static_cast<float>(state.y);
+            const float dz = static_cast<float>(motion.pos[2]) - static_cast<float>(state.z);
+            // Native MovePlayer rewind 0x103CBB8CC retains short mode-2
+            // teleports as inputs; Reset, passengers and >=16 blocks reset.
+            if (std::sqrt(dx * dx + dy * dy + dz * dz) < 16.0f) {
+                teleportMotionBoundary = motion.tick;
+                std::erase_if(futureMotion, [&](const auto& v) { return v.tick <= motion.tick; });
+                size_t first = history.size();
+                for (size_t i = 0; i < history.size(); ++i) {
+                    if (history[i].tick <= motion.tick)
+                        continue;
+                    history[i].teleport = motion;
+                    // A delta stamped at the replaced boundary cannot revive
+                    // its old frame. Newer recorded deltas remain replayable.
+                    if (history[i].tick == motion.tick + 1)
+                        history[i].motion.reset();
+                    first = i;
+                    break;
+                }
+                if (first == history.size())
+                    futureTeleports.push_back(motion);
+                else
+                    ReplayFrom(session, first);
+                if (PERLIN_ENV("PERLIN_BLOCK_DEBUG"))
+                    std::cout << "[move] teleport_replay stamp=" << motion.tick << " records="
+                              << history.size() - first << " queued=" << (first == history.size()) << std::endl;
+                handled = true;
+                motion.hasVelocity = false;
+            }
+        }
         if (motion.correction) {
+            // This authoritative snapshot is already past the forced-pose
+            // frame. A late teleport and its following correction can be
+            // decoded together; do not run that frame's filter a second time.
+            if (teleportMotionBoundary && motion.tick > *teleportMotionBoundary)
+                state.hasTeleported = false;
             while (!history.empty() && history.front().tick < motion.tick)
                 history.pop_front();
             if (!history.empty() && history.front().tick == motion.tick) {
@@ -85,14 +256,19 @@ namespace perlin {
                 const double ez = r.after.vz - motion.velocity[2];
                 const double posErr = dx * dx + dy * dy + dz * dz;
                 const double velErr = ex * ex + ey * ey + ez * ez;
-                if (posErr > 1e-5 || velErr > 1e-5) {
+                // Grounded state affects the following jump/travel tick even
+                // when position and velocity already match the server. Apply
+                // every authoritative difference, including sub-threshold ones.
+                if (posErr > 0.0 || velErr > 0.0 || r.after.onGround != motion.onGround) {
                     const physics::State shown = state;
-                    if (correctionReplays < 40 || correctionReplays % 100 == 0) {
+                    if (PERLIN_ENV("PERLIN_BLOCK_DEBUG") || correctionReplays < 40 || correctionReplays % 100 == 0) {
                         const Level& lv = session.NetLevel();
                         auto name = [&](int bx, int by, int bz) { return BlockPalette::Instance().Name(lv.GetBlock(bx, by, bz)); };
                         const int fx = static_cast<int>(std::floor(r.before.x)), fz = static_cast<int>(std::floor(r.before.z));
                         const int fy = static_cast<int>(std::floor(r.before.y - 0.001));
-                        std::cout << "[move] mismatch tick=" << motion.tick << " ours=(" << r.after.x << "," << r.after.y << ","
+                        std::ostringstream diagnostic;
+                        diagnostic << std::setprecision(std::numeric_limits<double>::max_digits10);
+                        diagnostic << "[move] mismatch tick=" << motion.tick << " ours=(" << r.after.x << "," << r.after.y << ","
                                   << r.after.z << ") server=(" << motion.pos[0] << "," << motion.pos[1] << ","
                                   << motion.pos[2] << ") vel ours=(" << r.after.vx << "," << r.after.vy << "," << r.after.vz
                                   << ") server=(" << motion.velocity[0] << "," << motion.velocity[1] << ","
@@ -102,7 +278,11 @@ namespace perlin {
                                   << " sneak=" << r.input.sneak << " feet=" << name(fx, fy + 1, fz) << " under="
                                   << name(fx, fy, fz) << " east=" << name(fx + 1, fy + 1, fz) << " west="
                                   << name(fx - 1, fy + 1, fz) << " north=" << name(fx, fy + 1, fz - 1)
-                                  << " south=" << name(fx, fy + 1, fz + 1) << std::endl;
+                                  << " south=" << name(fx, fy + 1, fz + 1)
+                                  << " before=(" << r.before.x << "," << r.before.y << "," << r.before.z
+                                  << ") beforeVel=(" << r.before.vx << "," << r.before.vy << "," << r.before.vz
+                                  << ") yaw=" << r.yaw << " speed=" << r.attributes.speed;
+                        std::cout << diagnostic.str() << std::endl;
                     }
                     r.after.x = motion.pos[0];
                     r.after.y = motion.pos[1];
@@ -117,7 +297,12 @@ namespace perlin {
                         Record& q = history[i];
                         q.before = s;
                         s.yaw = q.yaw;
-                        physics::Step(s, q.input, q.attributes, world);
+                        ApplyTeleport(s, q.teleport);
+                        ApplyMotion(s, q.motion);
+                        if (q.simulated)
+                            physics::Step(s, q.input, q.attributes, world);
+                        else
+                            s.vx = s.vy = s.vz = 0;
                         q.after = s;
                     }
                     state = s;
@@ -144,18 +329,25 @@ namespace perlin {
             }
         }
         if (motion.poseChanged && !handled) {
-            const BedrockSession::PlayerPose pose = session.GetPose();
-            state.x = pose.x;
-            state.y = pose.y;
-            state.z = pose.z;
+            // History replay may already have published a predicted pose this
+            // frame. Keep the packet's authoritative position independent of it.
+            state.x = motion.pos[0];
+            state.y = motion.pos[1];
+            state.z = motion.pos[2];
             previous = state;
             accumulator = 0.0;
             history.clear();
             if (motion.teleport) {
+                teleportMotionBoundary = motion.tick ? motion.tick : session.LastAuthTick();
+                futureMotion.clear();
+                futureTeleports.clear();
+                state.hasTeleported = motion.filterTravel;
                 state.vx = state.vy = state.vz = 0;
-                state.onGround = false;
+                state.onGround = motion.onGround;
                 smoothOffset[0] = smoothOffset[1] = smoothOffset[2] = 0;
             }
+            if (motion.correction)
+                state.onGround = motion.onGround;
         }
         if (motion.hasVelocity) {
             history.clear();
@@ -171,17 +363,43 @@ namespace perlin {
 
     void LocalPlayer::Tick(BedrockSession& session, const InputManager& input, const Camera& camera,
                            const physics::World& world) {
+        const uint64_t nextTick = session.LastAuthTick() + 1;
+        std::optional<BedrockSession::ServerMotion> tickTeleport;
+        for (auto it = futureTeleports.begin(); it != futureTeleports.end();) {
+            if (it->tick < nextTick) {
+                tickTeleport = *it;
+                it = futureTeleports.erase(it);
+            } else {
+                ++it;
+            }
+        }
+        // Current-boundary inputs precede pose/fluid/input-mode producers,
+        // rather than moving the body only after those queries used the old pose.
+        ApplyTeleport(state, tickTeleport);
         previous = state;
         const physics::State before = state;
+        const bool currentWater = physics::TouchingWater(state, world);
+        const bool itemSlow = this->itemSlow && input.IsDown(Action::Use)
+                           && (!itemSlowUntil || tickCounter < itemSlowUntil);
 
-        const float useScale = itemSlow ? 0.2f : 1.0f;
         // While mounted our own body stays on the seat, but the keys still have to reach the server: it steers the
         // saddled horse/pig/strider/boat from the rider's move input and look direction.
         const bool asleep = session.Sleeping();
+        const int dimension = session.DimensionId();
+        const bool dimensionChanged = replayDimension && *replayDimension != dimension;
+        replayDimension = dimension;
+        // Native ReplayStateValidateFrameSupportSystem 0x106166CE0 clears
+        // history for sleeping/passenger actors and a dimension transition.
+        // Its additional raw movement-attribute and InsideGenericBlock
+        // predicates still need their complete component producers.
+        const bool dimensionChanging = session.DimensionChanging();
+        const bool savePrediction = !asleep && !rideLock && !dimensionChanged && !dimensionChanging;
+        if (!savePrediction)
+            history.clear();
         const float forwardKeys = asleep ? 0.0f : input.Axis(Action::Forward, Action::Back);
         const float strafeKeys = asleep ? 0.0f : input.Axis(Action::Right, Action::Left);
-        const float forward = forwardKeys * useScale;
-        const float strafe = strafeKeys * useScale;
+        const float forward = forwardKeys;
+        const float strafe = strafeKeys;
         const bool jump = !asleep && input.IsDown(Action::Jump);
         const bool sneakHeldKey = input.IsDown(Action::Sneak);
         const bool sneakKey = sneakToggle ? sneakLatch : sneakHeldKey;
@@ -193,12 +411,28 @@ namespace perlin {
         const bool wasSprinting = sprinting;
         const BedrockSession::Vitals vitals = session.GetVitals();
         tooHungryToSprint = vitals.known && vitals.hunger <= 6.0f;
-        if (forward <= 0.0f || sneakKey || itemSlow || state.horizontalCollision || tooHungryToSprint)
+        const bool stopSprintIntent = forward <= 0.0f || sneakKey || itemSlow || state.horizontalCollision || tooHungryToSprint;
+        // SprintTrigger consumes the previous swimming flag before SwimTrigger
+        // changes the pose. A swimmer in water retains sprint for this tick.
+        if ((stopSprintIntent && !(swimming && currentWater)) || (swimming && !currentWater))
             sprinting = false;
-        else if (sprintKey)
+        else if (!stopSprintIntent && sprintKey && (sprinting || state.onGround || currentWater || flying))
             sprinting = true;
 
         const bool wasSneaking = sneaking;
+        const auto headInWaterAt = [&](float eyeHeight) {
+            const int x = static_cast<int>(std::floor(state.x)), z = static_cast<int>(std::floor(state.z));
+            const float eyeY = static_cast<float>(state.y) + eyeHeight;
+            const int y = static_cast<int>(std::floor(eyeY));
+            const auto cell = world.Query(x, y, z);
+            if (cell.fluid != 1) return false;
+            const float top = world.Query(x, y + 1, z).fluid == 1 ? 1.0f : cell.fluidLevel;
+            return eyeY < static_cast<float>(y) + top;
+        };
+        // Physics head sensing uses the current simulation pose, independently
+        // of the smoothed camera and render-frame interpolation.
+        const bool headInWaterBeforePose = headInWaterAt(static_cast<float>(
+            (swimming || crawling || gliding) ? physics::kCrawlEye : sneaking ? physics::kSneakEye : physics::kStandEye));
         bool forcedSneak = false;
         bool wantCrawl = false;
         if (!flying && !rideLock && !gliding && !swimming) {
@@ -221,12 +455,37 @@ namespace perlin {
 
         const bool column = session.ColumnSettled(static_cast<int>(std::floor(state.x)) >> 4,
                                                   static_cast<int>(std::floor(state.z)) >> 4);
+        // A destination column can arrive before the transfer's surrounding
+        // terrain is ready. Do not advance destination physics while the
+        // dimension request still owns the loading/acknowledgement boundary.
+        const bool simulate = column && !asleep && !dimensionChanging;
 
         bool levitating = false;
         for (const auto& effect : session.GetEffects())
             if (effect.id == 24)
                 levitating = true;
-        swimming = sprinting && !flying && (swimming ? state.inWater : headUnderwater);
+        const auto swimBox = physics::BoundingBox(state, wasSneaking);
+        const auto aboveSwimBox = world.Query(
+            static_cast<int>(std::floor(static_cast<float>((swimBox.x0 + swimBox.x1) * 0.5))),
+            static_cast<int>(std::floor(static_cast<float>((swimBox.y0 + swimBox.y1) * 0.5))) + 1,
+            static_cast<int>(std::floor(static_cast<float>((swimBox.z0 + swimBox.z1) * 0.5))));
+        // SwimTrigger requires cover above the bounding-box centre when
+        // entering a swim while looking upward (native lookY >= .15).
+        // Integrated-server SwimControl 0x106785410 interpolates/wraps pitch
+        // and uses the current sine table, rather than a continuous host sine.
+        const float lookPitch = physics::bds::InterpolateAngle(state.previousRotation.pitch,
+                                                               BedrockPitch(camera.pitch), 1.0f);
+        const float lookCoordinate = physics::bds::detail::Round(
+            physics::bds::detail::Round(lookPitch * -0.017453292f) * 10430.378f);
+        const float lookY = physics::bds::CurrentSineEntry(physics::bds::SineIndex(lookCoordinate));
+        const bool canStartSwimUp = lookY < 0.15f || !aboveSwimBox.isAir
+                                || aboveSwimBox.fluid != 0 || !aboveSwimBox.Empty();
+        const bool wantsSwimming = sprinting && !stopSprintIntent && !flying
+                                && (swimming ? currentWater : headInWaterBeforePose && canStartSwimUp);
+        // SwimTriggerSystem only requests a stop when the standing-shape probe
+        // succeeds. Keep the low pose under a ceiling even after releasing input.
+        const bool canStopSwimming = !swimming || physics::PoseFits(state, world, physics::kStandHeight);
+        swimming = !flying && (wantsSwimming || (swimming && !canStopSwimming));
         if (gliding && (!hasElytra || state.onGround || state.inWater || flying || rideLock))
             gliding = false;
         else if (!gliding && hasElytra && jump && !jumpHeld && !state.onGround && !state.inWater && !state.inLava &&
@@ -261,9 +520,11 @@ namespace perlin {
         in.forceCrouch = forcedSneak;
         in.pitch = BedrockPitch(camera.pitch);
         in.swimming = swimming && !gliding;
-        in.headInWater = headUnderwater;
-        in.lookY = std::sin(glm::radians(camera.pitch));
-        const physics::MoveVector move = physics::ProcessMoveInput(forward, strafe, sneaking, state.inWater);
+        in.headInWater = headInWaterAt(static_cast<float>((swimming || crawling || gliding) ? physics::kCrawlEye
+                                                         : sneaking ? physics::kSneakEye : physics::kStandEye));
+        in.lookY = lookY;
+        const physics::MoveVector move = physics::ProcessMoveInput(forward, strafe, sneaking, currentWater,
+                                                                  itemSlow ? 0.35f : 1.0f);
         in.forward = move.forward;
         in.strafe = move.strafe;
         in.jump = jump;
@@ -276,15 +537,33 @@ namespace perlin {
         in.creativeFlight = session.GameType() == 1 ||
             (session.GameType() == 5 && session.World().worldGameMode == 1);
         const auto actorFlags = session.OwnActorFlags();
+        in.canClimb = (actorFlags[0] & proto::FlagsMetadataFlags1::CanClimb) != 0;
+        in.wallClimbing = (actorFlags[0] & proto::FlagsMetadataFlags1::Wallclimbing) != 0;
         in.actorMovementFlags = static_cast<uint8_t>(actorFlags[0]);
         in.pushTowardsClosestSpace = (actorFlags[1] & proto::FlagsMetadataFlags2::PushTowardsClosestSpace) != 0;
         in.gravity.hasGravity = (actorFlags[0] & proto::FlagsMetadataFlags1::AffectedByGravity) != 0;
         in.gravity.inScaffolding = (actorFlags[1] & proto::FlagsMetadataFlags2::InScaffolding) != 0;
         in.gravity.overScaffolding = (actorFlags[1] & proto::FlagsMetadataFlags2::OverScaffolding) != 0;
         in.gravity.descendThroughBlock = (actorFlags[1] & proto::FlagsMetadataFlags2::FallThroughScaffolding) != 0;
+        const auto boots = session.GetInventory().armor[3];
+        in.canStandOnPowderSnow = !boots.Empty() &&
+            (boots.name == "minecraft:leather_boots" || boots.name == "leather_boots");
+        const auto contactBox = physics::BoundingBox(state, wasSneaking);
+        const auto scaffold = physics::bds::SenseScaffolding(
+            physics::bds::CollisionBox{static_cast<float>(contactBox.x0), static_cast<float>(contactBox.y0),
+                static_cast<float>(contactBox.z0), static_cast<float>(contactBox.x1),
+                static_cast<float>(contactBox.y1), static_cast<float>(contactBox.z1)},
+            [&](int32_t x, int32_t y, int32_t z) {
+                return world.ClimberCell(x, y, z);
+            }, in.canStandOnPowderSnow);
+        in.gravity.inScaffolding = scaffold.inside;
+        in.gravity.overScaffolding = scaffold.over;
+        in.inAscendableBlock = scaffold.ascendable;
+        in.overDescendableBlock = scaffold.descendable;
+        in.gravity.descendThroughBlock = in.sneak && in.overDescendableBlock;
 
         physics::Attributes attributes;
-        attributes.speed = session.MovementSpeedAttribute();
+        attributes.speed = session.PredictedMovementSpeed(sprinting);
         attributes.flySpeed = session.FlySpeed();
         attributes.verticalFlySpeed = session.VFlySpeed();
         attributes.airDrag = session.AirDragAttribute();
@@ -297,9 +576,11 @@ namespace perlin {
                 attributes.levitation = effect.amplifier + 1;
             else if (effect.id == 27)
                 attributes.slowFalling = true;
+            else if (effect.id == 33)
+                attributes.weaving = true;
         }
 
-        if (column && !asleep)
+        if (simulate)
             for (const auto& effect : session.TakeMovementEffects())
                 in.movementEffects.push_back({effect.tick, std::bit_cast<int32_t>(effect.duration),
                                               static_cast<int32_t>(effect.type)});
@@ -310,7 +591,20 @@ namespace perlin {
         rec.attributes = attributes;
         rec.yaw = state.yaw;
         rec.before = state;
-        if (column && !asleep) {
+        rec.simulated = simulate;
+        rec.teleport = tickTeleport;
+        for (auto it = futureMotion.begin(); it != futureMotion.end();) {
+            if (it->tick < nextTick) {
+                rec.motion = it->velocity;
+                if (PERLIN_ENV("PERLIN_BLOCK_DEBUG"))
+                    std::cout << "[move] motion_apply stamp=" << it->tick << " target=" << nextTick << std::endl;
+                it = futureMotion.erase(it);
+            } else {
+                ++it;
+            }
+        }
+        ApplyMotion(state, rec.motion);
+        if (simulate) {
             physics::Step(state, in, attributes, world);
         } else {
             state.vx = state.vy = state.vz = 0;
@@ -386,10 +680,10 @@ namespace perlin {
             f.push_back(Flag::SneakReleasedRaw);
         sneakHeld = sneakKey;
 
-        if (sprintKey || sprinting) {
+        if (sprintKey)
             f.push_back(Flag::SprintDown);
+        if (sprinting)
             f.push_back(Flag::Sprinting);
-        }
         if (sprinting && !wasSprinting)
             f.push_back(Flag::StartSprinting);
         if (!sprinting && wasSprinting)
@@ -443,7 +737,9 @@ namespace perlin {
         if (session.SendMoveInput(packet)) {
             rec.tick = session.LastAuthTick();
             rec.after = state;
-            history.push_back(rec);
+            if (tickObserver) tickObserver(rec.tick, state, rec.input);
+            if (savePrediction)
+                history.push_back(rec);
             while (history.size() > 200)
                 history.pop_front();
         }
@@ -488,7 +784,7 @@ namespace perlin {
         }
     }
 
-    void LocalPlayer::Update(BedrockSession& session, const InputManager& input, Camera& camera,
+    void LocalPlayer::Update(BedrockSession& session, InputManager& input, Camera& camera,
                              const BlockLibrary& blocks, float dt) {
         BedrockSession::PlayerPose pose = session.GetPose();
         if (!pose.known)
@@ -516,12 +812,22 @@ namespace perlin {
         } else {
             sprintLatch = false;
         }
+        // Do not replay an old-world or sleeping history before Tick has
+        // applied the native frame-support boundary for this update.
+        if (session.Sleeping() || (replayDimension && *replayDimension != session.DimensionId()))
+            history.clear();
         if (rideLock) {
+            session.TakeEffectUpdates();
+            futureMotion.clear();
+            futureTeleports.clear();
             BedrockSession::ServerMotion ignored;
             while (session.TakeServerMotion(ignored)) {}
             history.clear();
         } else {
-            ApplyServerMotion(session, camera);
+            ApplyEffectUpdates(session);
+            BedrockSession::ServerMotion motion;
+            while (session.TakeServerMotion(motion))
+                ApplyServerMotion(session, camera, motion);
         }
         ApplyModCommands();
 
@@ -580,6 +886,7 @@ namespace perlin {
                 accumulator = 0.0;
                 break;
             }
+            input.SetControlTick(tickCounter);
             Tick(session, input, camera, world);
         }
 

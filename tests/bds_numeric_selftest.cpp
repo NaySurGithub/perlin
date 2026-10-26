@@ -1,5 +1,5 @@
-#include "client/player/BdsPhysicsNumerics.hpp"
-#include "client/player/BdsSineTable.hpp"
+#include "client/player/PerlinPhysicsNumerics.hpp"
+#include "client/player/PerlinSineTable.hpp"
 
 #include <array>
 #include <bit>

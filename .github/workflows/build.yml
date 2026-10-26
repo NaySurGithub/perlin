@@ -55,8 +55,8 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: .cpm-cache
-          key: cpm-${{ matrix.name }}-${{ hashFiles('CMakeLists.txt', 'cmake/CPM.cmake') }}
-          restore-keys: cpm-${{ matrix.name }}-
+          key: cpm-complete-v2-${{ matrix.name }}-${{ hashFiles('CMakeLists.txt', 'cmake/CPM.cmake') }}
+          restore-keys: cpm-complete-v2-${{ matrix.name }}-
 
       - name: Install Linux packages
         if: runner.os == 'Linux'
@@ -190,11 +190,13 @@ jobs:
           if otool -L "$bin" | tail -n +2 | grep -Ev '^\s+(/usr/lib/|/System/Library/)' ; then echo "::error::links a non-system dylib"; exit 1; fi
 
       - name: Save dependency cache
-        if: always() && steps.cpm-cache.outputs.cache-hit != 'true'
+        # Failed configuration can leave incomplete submodule checkouts that
+        # CPM reuses without fetching again. Cache only successful builds.
+        if: success() && steps.cpm-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
         with:
           path: .cpm-cache
-          key: cpm-${{ matrix.name }}-${{ hashFiles('CMakeLists.txt', 'cmake/CPM.cmake') }}
+          key: cpm-complete-v2-${{ matrix.name }}-${{ hashFiles('CMakeLists.txt', 'cmake/CPM.cmake') }}
 
       - name: Keep debug symbols (Windows)
         if: runner.os == 'Windows'

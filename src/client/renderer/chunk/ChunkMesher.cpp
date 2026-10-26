@@ -63,6 +63,7 @@ namespace perlin {
         bool wallPost = false;
         int cakeBites = -1;
         bool fire = false;
+        bool kelp = false;
         bool flammable = false;
     };
     const GeomInfo& GeomFor(uint16_t id) {
@@ -87,6 +88,7 @@ namespace perlin {
             {
                 const std::string nm = pal.Name(id);
                 g.fire = nm == "minecraft:fire";
+                g.kelp = nm == "minecraft:kelp" || nm == "minecraft:kelp_plant";
                 static const char* kBurn[] = {"planks", "_log", "_wood", "leaves", "wool", "carpet", "hay_block", "bookshelf",
                                               "tnt", "vine", "coal_block", "dried_kelp_block", "bamboo_block", "scaffolding",
                                               "azalea", "lectern", "loom", "composter", "beehive", "bee_nest", "target",
@@ -428,7 +430,9 @@ namespace perlin {
             m.modelKnown[id] = 1;
             const ModelEntry* geo = library->Geometry().Empty() ? nullptr : library->Geometry().Find(id);
             m.model[id] = geo ? geo
-                          : library->Models().Loaded()
+                          // The bundled single-block kelp model has no neighbour
+                          // context; the plant mesher selects connected stems.
+                          : !GeomFor(id).kelp && library->Models().Loaded()
                               ? library->Models().Find(BlockPalette::Instance().NetworkId(id))
                               : nullptr;
         }
@@ -1753,6 +1757,11 @@ namespace perlin {
                         const std::vector<int>& cvv = app->varSide.empty() ? app->varTop : app->varSide;
                         int tile = PickTile(cvv, app->side ? app->side : app->top, bhash);
                         std::string tex = app->texSide.empty() ? app->texTop : app->texSide;
+                        if (gi.kelp && GeomFor(cache.Get(x, y + 1, z)).kelp) {
+                            // Age is independent of whether another kelp segment is above.
+                            tile = PickTile(app->varTop, app->top, static_cast<uint32_t>(y) & 3u);
+                            tex = app->texTop;
+                        }
                         if (gi.dblPlant) {
                             if (gi.upper && app->top) {
                                 tile = PickTile(app->varTop, app->top, bhash);
@@ -1772,7 +1781,7 @@ namespace perlin {
                         }
                         float u0, v0uv, u1, v1uv;
                         BlockLibrary::TileUV(tile, u0, v0uv, u1, v1uv);
-                        if ((bhash >> 3) & 1) {
+                        if (!gi.kelp && ((bhash >> 3) & 1)) {
                             float t = u0;
                             u0 = u1;
                             u1 = t;

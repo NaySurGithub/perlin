@@ -154,6 +154,8 @@ namespace perlin {
         lastMouseX = mx;
         lastMouseY = my;
         haveMouse = true;
+        if (!blocked && !input.TextMode()) pressed |= controlPressed;
+        controlPressed.reset();
     }
 
     bool InputManager::IsDown(Action action) const {
@@ -173,6 +175,8 @@ namespace perlin {
                 default: break;
             }
         }
+        if (controlled)
+            return controlTick < controlUntil && controlActions.test(static_cast<size_t>(action));
         if (holds[static_cast<size_t>(action)] > std::chrono::steady_clock::now())
             return true;
         const Binding& pb = options.GetPadKey(action);
