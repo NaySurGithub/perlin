@@ -92,10 +92,13 @@ namespace perlin::entity {
         if (name == "is_persona_or_premium_skin") return yes(false);
         if (name == "has_head_gear") return yes(!e.armor[0].empty());
         if (name == "has_cape") return yes(e.skin && e.skin->capeWidth > 0);
-        if (name == "has_target") return yes(e.targetUid > 0);
+        if (name == "has_target") return yes(e.targetUid != 0 && e.targetUid != -1);
+        if (name == "facing_target_to_range_attack" || name == "is_facing_target_to_range_attack")
+            return yes((e.flagsExtended & flag::FacingTargetToRangeAttack) != 0);
+        if (name == "is_charging") return has(flag::Charging);
         if (name == "has_rider" || name == "has_owner" || name == "is_attached_to_entity") return yes(e.Has(flag::Tamed) && name == "has_owner");
         if (name == "is_shield_powered" || name == "is_blocking" || name == "blocking") return yes(c.blocking);
-        if (name == "is_charging" || name == "is_roaring" || name == "is_stunned" || name == "is_delayed_attacking" ||
+        if (name == "is_roaring" || name == "is_stunned" || name == "is_delayed_attacking" ||
             name == "is_playing_dead" || name == "is_casting" || name == "is_celebrating" || name == "is_celebrating_special" ||
             name == "is_croaking" || name == "is_digging" || name == "is_emerging" || name == "is_emoting" ||
             name == "is_ghost" || name == "is_grazing" || name == "is_admiring" || name == "is_avoiding_block" ||
@@ -104,7 +107,7 @@ namespace perlin::entity {
             name == "is_shaking" || name == "is_stalking" || name == "is_standing" || name == "out_of_control" ||
             name == "is_selected_item" || name == "has_biome_tag" || name == "has_block_property" ||
             name == "block_neighbor_has_any_tag" || name == "item_is_charged" || name == "show_bottom" ||
-            name == "facing_target_to_range_attack" || name == "is_trading" || name == "is_sneezing")
+            name == "is_trading" || name == "is_sneezing")
             return yes(false);
 
         if (name == "modified_move_speed") return num(c.limbAmount);

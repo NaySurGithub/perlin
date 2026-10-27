@@ -239,6 +239,11 @@ namespace perlin {
             const auto it = ownAttributes.find("minecraft:underwater_movement");
             return it == ownAttributes.end() ? 0.02f : it->second;
         }
+        std::optional<float> AirDragAttribute() const {
+            std::lock_guard lock(attrMutex);
+            const auto it = ownAttributes.find("minecraft:air_drag_modifier");
+            return it == ownAttributes.end() ? std::nullopt : std::optional<float>(it->second);
+        }
         void ArmPredictionSync() { if (predictionSyncCountdown < 0) predictionSyncCountdown = 200; }
         bool SendPredictionSync();
         bool Initialized() const { return initializedSent; }
@@ -485,8 +490,8 @@ void RequestRespawn();
         bool Spectator() const { return gameType == 6 || gameType == 3 || gameType == 4 || noClip; }
         bool NoClip() const { return noClip || gameType == 6; }
         int GameType() const { return gameType; }
-        float FlySpeed() const { return flySpeed > 0 ? flySpeed : 0.05f; }
-        float VFlySpeed() const { return vFlySpeed > 0 ? vFlySpeed : 1.0f; }
+        float FlySpeed() const { return flySpeed; }
+        float VFlySpeed() const { return vFlySpeed; }
         float WalkSpeed() const { return walkSpeed > 0 ? walkSpeed : 0.1f; }
         uint64_t CurrentServerTick() const { return serverTick; }
         bool HaveStartPos() const { return haveStartPos; }
@@ -913,6 +918,9 @@ void RequestRespawn();
         int lodScanRadius = -1;
         std::map<std::tuple<int, int, int, int>, std::chrono::steady_clock::time_point> inflight;
         std::map<std::tuple<int, int, int, int>, int> retries;
+        static constexpr int kMaxSubChunkRetries = 3;
+        // Requires reqMutex. Drops every request-tracking entry for a column.
+        void ForgetColumnRequests(int cx, int cz);
         void CompleteRequest(const std::tuple<int, int, int, int>& key, bool retry);
         void DropSlot(const std::tuple<int, int, int, int>& key, std::vector<std::pair<int, int>>& completed);
         void FinishColumns(const std::vector<std::pair<int, int>>& columns);

@@ -216,6 +216,10 @@ namespace perlin {
         if (!loaded || id == 0)
             return false;
         const Info& info = Lookup(id, blocks);
+        if (info.selectionDefined) {
+            out = info.selection;
+            return !out.empty();
+        }
         if (info.kind == Kind::Plain) {
             const SelectionTable& t = Selections();
             const auto it = t.byHash.find(BlockPalette::Instance().NetworkId(id));
@@ -227,7 +231,7 @@ namespace perlin {
                 return true;
             }
         }
-        const physics::BlockShape shape = Query(x, y, z);
+        const physics::BlockShape shape = QueryMain(x, y, z);
         if (shape.fluid != 0)
             return false;
         if (shape.Empty()) {
@@ -291,6 +295,15 @@ namespace perlin {
                 if (EvaluateBlockCondition(condition, id))
                     chosen = &set;
         Info info = chosen ? Info{} : ClassifyVanilla(id, blocks);
+        const CollisionSet* selection = hasCustom && custom.selection.defined ? &custom.selection : nullptr;
+        if (hasCustom)
+            for (const auto& [condition, set] : custom.selectionPermutations)
+                if (EvaluateBlockCondition(condition, id)) selection = &set;
+        if (selection) {
+            info.selectionDefined = true;
+            for (const auto& b : selection->boxes)
+                info.selection.push_back({b[0], b[1], b[2], b[3], b[4], b[5]});
+        }
         // BDS honey-block registration 0x140584982 -> 0x1406B78D0 sets
         // BlockLegacy property 43, independently of supplied collision boxes.
         const std::string blockName = BlockPalette::Instance().Name(id);

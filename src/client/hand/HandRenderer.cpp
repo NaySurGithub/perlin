@@ -768,10 +768,15 @@ namespace perlin {
         worldPass = false;
     }
 
-    void HandRenderer::DrawHeldItem(const ui::HudItem& item, const glm::mat4& arm, bool left, const glm::vec3& light) {
+    void HandRenderer::DrawHeldItem(const ui::HudItem& item, const glm::mat4& arm, bool left, const glm::vec3& light, float bowUseTicks) {
         if (!renderer || item.Empty())
             return;
-        const Model& model = ItemModel(item);
+        ui::HudItem renderedItem = item;
+        if (item.name == "minecraft:bow" && bowUseTicks >= 0.0f) {
+            const int frame = bowUseTicks >= 18.0f ? 2 : bowUseTicks >= 13.0f ? 1 : 0;
+            renderedItem.name = "minecraft:bow_pulling_" + std::to_string(frame);
+        }
+        const Model& model = ItemModel(renderedItem);
         if (!model.valid)
             return;
         const float side = left ? -1.0f : 1.0f;

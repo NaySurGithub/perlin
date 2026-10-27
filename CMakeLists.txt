@@ -821,7 +821,9 @@ endif()
 # Keep these rules even when PERLIN_FAST_MATH relaxes rendering calculations.
 foreach(PERLIN_PHYSICS_SOURCE IN ITEMS
         "${CMAKE_CURRENT_SOURCE_DIR}/src/client/player/PlayerPhysics.cpp"
-        "${CMAKE_CURRENT_SOURCE_DIR}/src/client/resources/BlockOffsetDefinition.cpp")
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/client/player/PlayerFov.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/client/resources/BlockOffsetDefinition.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/client/resources/BlockBoxDefinition.cpp")
     if(MSVC)
         set_property(SOURCE "${PERLIN_PHYSICS_SOURCE}" APPEND PROPERTY COMPILE_OPTIONS /fp:strict)
     else()
@@ -976,11 +978,47 @@ endif()
 option(PERLIN_BUILD_TESTS "Build unit tests" OFF)
 if(PERLIN_BUILD_TESTS AND NOT EMSCRIPTEN AND NOT ANDROID)
     enable_testing()
+    add_executable(skin_lifetime_selftest tests/skin_lifetime_selftest.cpp src/client/entity/EntityTracker.cpp)
+    target_include_directories(skin_lifetime_selftest PRIVATE src "${glm_SOURCE_DIR}")
+    target_compile_features(skin_lifetime_selftest PRIVATE cxx_std_23)
+    add_test(NAME skin_lifetime_selftest COMMAND skin_lifetime_selftest)
+    add_executable(block_palette_selftest tests/block_palette_selftest.cpp
+        src/world/level/block/BlockPalette.cpp src/util/Json.cpp)
+    target_include_directories(block_palette_selftest PRIVATE src)
+    target_link_libraries(block_palette_selftest PRIVATE glaze::glaze)
+    target_compile_features(block_palette_selftest PRIVATE cxx_std_23)
+    add_test(NAME block_palette_selftest COMMAND block_palette_selftest "${CMAKE_CURRENT_SOURCE_DIR}/resources/block_states.json")
+    add_executable(entity_render_selftest tests/entity_render_selftest.cpp
+        src/client/entity/EntityQuery.cpp src/client/entity/EntityTracker.cpp src/client/entity/BlockEntityView.cpp
+        src/client/multiplayer/BlockEntities.cpp src/client/attachable/Geometry.cpp
+        src/client/attachable/Animation.cpp src/client/attachable/Molang.cpp src/client/ui/Json.cpp
+        src/world/level/block/BlockPalette.cpp src/util/Json.cpp)
+    target_include_directories(entity_render_selftest PRIVATE src "${glm_SOURCE_DIR}")
+    target_link_libraries(entity_render_selftest PRIVATE glaze::glaze)
+    target_compile_features(entity_render_selftest PRIVATE cxx_std_23)
+    add_test(NAME entity_render_selftest COMMAND entity_render_selftest)
+    add_executable(player_fov_selftest tests/player_fov_selftest.cpp src/client/player/PlayerFov.cpp)
+    target_include_directories(player_fov_selftest PRIVATE src)
+    target_compile_features(player_fov_selftest PRIVATE cxx_std_23)
+    add_test(NAME player_fov_selftest COMMAND player_fov_selftest)
+    add_executable(block_box_definition_selftest tests/block_box_definition_selftest.cpp
+        src/client/resources/BlockBoxDefinition.cpp src/client/ui/Json.cpp)
+    target_include_directories(block_box_definition_selftest PRIVATE src "${glm_SOURCE_DIR}")
+    target_compile_features(block_box_definition_selftest PRIVATE cxx_std_23)
+    add_test(NAME block_box_definition_selftest COMMAND block_box_definition_selftest)
     add_executable(hud_dump tests/hud_dump.cpp src/client/ui/Json.cpp src/client/ui/UiExpr.cpp src/client/ui/JsonUi.cpp
         src/client/ui/UiLayout.cpp src/client/ui/McFont.cpp src/client/ui/RmlEmit.cpp src/client/ui/HudData.cpp
         src/client/ui/HudRenderers.cpp src/client/ui/EffectData.cpp src/client/i18n/Lang.cpp src/client/resources/ServerPackRegistry.cpp src/client/i18n/BuiltinEnglish.cpp src/util/Resources.cpp src/util/Paths.cpp)
     target_include_directories(hud_dump PRIVATE src "${stb_SOURCE_DIR}")
     target_compile_features(hud_dump PRIVATE cxx_std_23)
+    add_executable(entity_animation_selftest tests/entity_animation_selftest.cpp
+        src/client/entity/JavaAnimation.cpp src/client/attachable/Geometry.cpp
+        src/client/attachable/Animation.cpp src/client/attachable/Molang.cpp src/client/ui/Json.cpp)
+    target_include_directories(entity_animation_selftest PRIVATE src "${glm_SOURCE_DIR}")
+    target_compile_features(entity_animation_selftest PRIVATE cxx_std_23)
+    add_test(NAME entity_animation_selftest COMMAND entity_animation_selftest
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/data/java_animation_reference.txt"
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/data/java_animation_root_reference.txt")
     add_executable(attachable_selftest tests/attachable_selftest.cpp
         src/client/attachable/Molang.cpp src/client/attachable/Animation.cpp src/client/attachable/Geometry.cpp
         src/client/ui/Json.cpp)
@@ -1070,6 +1108,12 @@ if(PERLIN_BUILD_TESTS AND NOT EMSCRIPTEN AND NOT ANDROID)
     target_link_libraries(packet_selftest PRIVATE perlin_protocol)
     add_test(NAME packet_selftest COMMAND packet_selftest)
 
+    add_executable(touch_input_selftest tests/touch_input_selftest.cpp
+        src/client/input/TouchControls.cpp src/client/input/Input.cpp
+        src/client/input/Keys.cpp src/client/input/KeyMapping.cpp)
+    target_include_directories(touch_input_selftest PRIVATE src "${concurrentqueue_SOURCE_DIR}")
+    target_compile_features(touch_input_selftest PRIVATE cxx_std_23)
+    add_test(NAME touch_input_selftest COMMAND touch_input_selftest)
     add_executable(input_selftest
         tests/input_selftest.cpp
         src/client/input/Keys.cpp

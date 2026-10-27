@@ -67,6 +67,7 @@ namespace perlin {
             Kind kind = Kind::Hold;
             const char* label = "";
             bool system = false;
+            bool visible = false;
         };
 
         struct Sprite {
@@ -111,6 +112,7 @@ namespace perlin {
         bool wasGameplay = false;
         bool editing = false;
         bool editDone = false;
+        bool cancelPending = false;
         int editSelected = -1;
         std::map<std::string, TouchPlace> editLayout;
         float stickCX = 0, stickCY = 0, stickR = 0;

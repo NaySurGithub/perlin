@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <map>
+#include <limits>
 
 namespace perlin {
     namespace {
@@ -344,6 +345,36 @@ namespace perlin {
         out.push_back(1);
         out.push_back((uint8_t)(int8_t)yIndex);
         WriteStorage(out, cells);
+    }
+
+    bool ChunkCodec::ParseColumn(const uint8_t* data, size_t size, uint32_t count,
+                                 int firstSubY, int slots,
+                                 std::vector<std::pair<int, SubChunkData>>& out,
+                                 size_t& consumed, const char** err) {
+        out.clear();
+        consumed = 0;
+        if (slots < 0 || count > static_cast<uint32_t>(slots) || (count != 0 && (!data || size == 0))) {
+            if (err) *err = "inline subchunk count exceeds dimension height";
+            return false;
+        }
+        std::vector<std::pair<int, SubChunkData>> parsed;
+        size_t offset = 0;
+        for (uint32_t i = 0; i < count; ++i) {
+            SubChunkData sc;
+            size_t used = 0;
+            if (!ParseSubChunk(data + offset, size - offset, sc, used, err)) return false;
+            const int64_t y = sc.hasYIndex ? sc.yIndex : static_cast<int64_t>(firstSubY) + i;
+            if (y > std::numeric_limits<int>::max() || y < firstSubY || y >= static_cast<int64_t>(firstSubY) + slots ||
+                std::any_of(parsed.begin(), parsed.end(), [y](const auto& entry) { return entry.first == y; })) {
+                if (err) *err = "invalid or repeated inline subchunk height";
+                return false;
+            }
+            offset += used;
+            parsed.emplace_back(static_cast<int>(y), std::move(sc));
+        }
+        out = std::move(parsed);
+        consumed = offset;
+        return true;
     }
 
 }

@@ -32,6 +32,8 @@ namespace perlin {
             uint64_t definitionRevision = 0;
             uint64_t voxelRevision = 0;
             physics::BlockShape shape;
+            bool selectionDefined = false;
+            std::vector<physics::Box> selection;
         };
 
         physics::BlockShape QueryMain(int x, int y, int z) const;

@@ -6,6 +6,8 @@
 #include <algorithm>
 #include <unordered_map>
 #include <unordered_set>
+#include <set>
+#include <tuple>
 
 namespace perlin::entity {
     namespace {
@@ -96,7 +98,7 @@ namespace perlin::entity {
 
     void BuildBlockEntityDraws(const std::vector<SpecialBlock>& specials, const BlockEntityStore& store, std::vector<BlockEntityDraw>& out) {
         BlockPalette& palette = BlockPalette::Instance();
-        std::unordered_set<uint64_t> beds;
+        std::set<std::tuple<int, int, int>> beds;
         const char* forced = std::getenv("PERLIN_PREVIEW_SIGNTEXT");
         for (const SpecialBlock& s : specials) {
             const std::string name = palette.Name(s.id);
@@ -109,9 +111,7 @@ namespace perlin::entity {
                 BedStep(direction, dx, dz);
                 const int fx = head ? s.x - dx : s.x, fz = head ? s.z - dz : s.z;
                 const int ox = head ? fx : fx + dx, oz = head ? fz : fz + dz;
-                const uint64_t key = (static_cast<uint64_t>(static_cast<uint32_t>(fx)) << 40) ^ (static_cast<uint64_t>(static_cast<uint32_t>(fz)) << 8) ^
-                                     static_cast<uint64_t>(s.y + 4096);
-                if (!beds.insert(key).second)
+                if (!beds.emplace(fx, s.y, fz).second)
                     continue;
                 BlockEntityDraw d;
                 d.kind = BlockEntityDraw::Kind::Bed;

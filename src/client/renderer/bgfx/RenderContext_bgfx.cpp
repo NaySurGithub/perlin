@@ -1827,6 +1827,8 @@ namespace perlin {
     }
 
     void RenderContext_bgfx::EndFrame() {
+        static const bool memoryStats = PERLIN_ENV("PERLIN_MEMORY_STATS") != nullptr;
+        static auto lastMemoryStats = std::chrono::steady_clock::now();
         static const bool gpuTime = PERLIN_ENV("PERLIN_GPUTIME") != nullptr;
         static uint32_t timedFrames = 0;
         static double gpuSum = 0, cpuSum = 0, viewSum[16] = {};
@@ -1834,6 +1836,23 @@ namespace perlin {
             bgfx::setDebug(BGFX_DEBUG_PROFILER);
         FinishReadbacks(bgfx::frame());
         ReleaseFrameMeshes();
+        if (memoryStats && std::chrono::steady_clock::now() - lastMemoryStats >= std::chrono::seconds(5)) {
+            lastMemoryStats = std::chrono::steady_clock::now();
+            uint64_t reserved = 0, used = 0;
+            for (const Page& p : pages) {
+                reserved += uint64_t(p.vAlloc.Capacity()) * sizeof(Vertex);
+                used += uint64_t(p.vAlloc.Capacity() - p.vAlloc.FreeTotal()) * sizeof(Vertex);
+                for (const auto& a : p.iAlloc) {
+                    reserved += uint64_t(a.Capacity()) * sizeof(uint32_t);
+                    used += uint64_t(a.Capacity() - a.FreeTotal()) * sizeof(uint32_t);
+                }
+            }
+            const auto* stats = bgfx::getStats();
+            std::printf("[memory] chunkMeshes=%zu meshMiB=%.1f reservedMiB=%.1f textures=%u textureMiB=%.1f staticUiMeshes=%u\n",
+                        gpuChunks.size(), used / 1048576.0, reserved / 1048576.0, stats->numTextures,
+                        stats->textureMemoryUsed / 1048576.0, staticUiMeshes);
+            std::fflush(stdout);
+        }
         if (gpuTime) {
             const bgfx::Stats* stats = bgfx::getStats();
             const double toMs = 1000.0 / static_cast<double>(stats->gpuTimerFreq ? stats->gpuTimerFreq : 1);

@@ -89,6 +89,7 @@ namespace perlin {
         size_t vanillaSequence = 0;
         std::vector<int32_t> baseSequence;
         std::unordered_set<int32_t> reservedHashes;
+        std::unordered_set<int32_t> dataDrivenHashes;
         std::vector<uint64_t> baseKeys, sequenceKeys;
         std::vector<int32_t> netByLocal;
         std::vector<CustomRun> customRuns;

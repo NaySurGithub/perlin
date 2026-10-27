@@ -90,8 +90,9 @@ namespace perlin {
                 case MetadataDictionaryEntryKey::FlagsExtended: {
                     int64_t bits = 0;
                     const uint64_t ext = MetaInt(m, bits) ? static_cast<uint64_t>(bits) : static_cast<uint64_t>(static_cast<int64_t>(n));
+                    tracker.SetFlagsExtended(rid, ext);
                     tracker.SetCrawling(rid, ((ext >> 50) & 1ull) != 0);
-                    tracker.SetSleeping(rid, ((ext >> 11) & 1ull) != 0);
+                    tracker.SetSleeping(rid, ((ext >> 12) & 1ull) != 0);
                     break;
                 }
                 case MetadataDictionaryEntryKey::PlayerFlags: tracker.SetSleeping(rid, (static_cast<int64_t>(n) & 2) != 0, true); break;
@@ -111,7 +112,11 @@ namespace perlin {
                 }
                 case MetadataDictionaryEntryKey::MarkVariant: mark = static_cast<int>(n); break;
                 case MetadataDictionaryEntryKey::Color: color = static_cast<int>(n); break;
-                case MetadataDictionaryEntryKey::TargetEid: tracker.SetTarget(rid, static_cast<int64_t>(n)); break;
+                case MetadataDictionaryEntryKey::TargetEid: {
+                    int64_t target = 0;
+                    if (MetaInt(m, target)) tracker.SetTarget(rid, target);
+                    break;
+                }
                 case MetadataDictionaryEntryKey::OwnerEid: tracker.SetOwner(rid, static_cast<int64_t>(n)); break;
                 default: break;
                 }
@@ -435,6 +440,9 @@ namespace perlin {
             BlockPalette::Instance().SetSequential(!p.blockNetworkIdsAreHashes);
             std::cout << "[bedrock] blockNetworkIdsAreHashes=" << (p.blockNetworkIdsAreHashes ? "true" : "false")
                       << std::endl;
+            std::cout << "[bedrock] StartGame gameVersion=" << p.gameVersion
+                      << " engine=" << p.engine << " paletteChecksum=" << p.blockPalletteChecksum
+                      << " blockProperties=" << p.blockProperties.size() << std::endl;
             std::cout << "[bedrock] client_side_generation=" << (clientGen ? "true" : "false")
                       << " (requested chunk radius " << chunkRadius << ", max view distance " << maxViewDistance
                       << ")" << std::endl;
@@ -1148,6 +1156,7 @@ namespace perlin {
                                 t.perm = pm->second;
                         }
                 } else {
+                    entities.RemoveSkin(key);
                     std::lock_guard<std::mutex> lk(tabMutex);
                     tabPlayers.erase(std::remove_if(tabPlayers.begin(), tabPlayers.end(), [&](const TabPlayer& t) { return t.uuid == key; }),
                                      tabPlayers.end());
@@ -1158,7 +1167,7 @@ namespace perlin {
         On<PlayerSkinPacket>([this](const PlayerSkinPacket& p) {
             const std::string key = UuidKey(p.uuid);
             auto skin = ConvertSkin(p.skin);
-            entities.SetSkin(key, skin);
+            entities.SetSkin(key, skin, false);
             std::lock_guard<std::mutex> lk(tabMutex);
             for (TabPlayer& t : tabPlayers)
                 if (t.uuid == key)
@@ -1359,9 +1368,11 @@ namespace perlin {
                 if (layer.allowed & (1u << 10)) fly = (layer.enabled & (1u << 10)) != 0;
                 if (layer.allowed & (1u << 9)) flying = (layer.enabled & (1u << 9)) != 0;
                 if (layer.allowed & (1u << 17)) clip = (layer.enabled & (1u << 17)) != 0;
-                if (layer.flySpeed > 0) flySpeed = layer.flySpeed;
-                if (layer.verticalFlySpeed > 0) vFlySpeed = layer.verticalFlySpeed;
-                if (layer.walkSpeed > 0) walkSpeed = layer.walkSpeed;
+                // Speeds are carried when their ability bit (FlySpeed 13, WalkSpeed 14, VerticalFlySpeed 19) is
+                // set in the layer; an explicit zero is a real value, not "absent".
+                if (layer.allowed & (1u << 13)) flySpeed = layer.flySpeed;
+                if (layer.allowed & (1u << 19)) vFlySpeed = layer.verticalFlySpeed;
+                if (layer.allowed & (1u << 14)) walkSpeed = layer.walkSpeed;
             }
             mayFly = fly;
             isFlying = flying;

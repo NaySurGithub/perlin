@@ -270,7 +270,7 @@ namespace perlin::entity::java {
             auto& xf = pose[b.name];
             if (found != parts.end()) {
                 const auto& part = *found->second;
-                const glm::vec3 degrees = glm::degrees(part.rotation) * glm::vec3(1, -1, 1);
+                const glm::vec3 degrees = glm::degrees(part.rotation);
                 const glm::mat4 desired = glm::translate(glm::mat4(1), part.offset + b.pivot) *
                                           attachable::EulerZYX(degrees) *
                                           glm::translate(glm::mat4(1), -b.pivot);
@@ -280,7 +280,7 @@ namespace perlin::entity::java {
                 const float x =
                     singular ? std::atan2(-fit[2][1], fit[1][1]) : std::atan2(fit[1][2], fit[2][2]);
                 const float z = singular ? 0.0f : std::atan2(fit[0][1], fit[0][0]);
-                const glm::vec3 rotation = -glm::degrees(glm::vec3(x, y, z));
+                const glm::vec3 rotation = glm::degrees(glm::vec3(-x, y, -z));
                 xf.rotation = rotation - b.rotation;
                 xf.position =
                     glm::vec3(fit[3]) - b.pivot + glm::mat3(attachable::EulerZYX(rotation)) * b.pivot;

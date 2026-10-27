@@ -133,6 +133,13 @@ void CheckJavaRootReference(const char* file) {
     CHECK(mismatches == 0);
     std::cout << "Java JAR roots: " << cases << "/120 matrices, maximum error " << largestError << "\n";
 }
+// Independent Java model rotation in the renderer's mirrored model space.
+static glm::mat4 JavaRotation(glm::vec3 r) {
+    return glm::rotate(glm::mat4(1), -r.z, glm::vec3(0, 0, 1)) *
+           glm::rotate(glm::mat4(1), r.y, glm::vec3(0, 1, 0)) *
+           glm::rotate(glm::mat4(1), -r.x, glm::vec3(1, 0, 0));
+}
+
 int main(int argc, char** argv) {
     if (argc > 1)
         CheckJavaReference(argv[1]);
@@ -263,7 +270,7 @@ int main(int argc, char** argv) {
                     CHECK(attachable::BoneWorld(*g, pose, name, actual, pivot));
                     const glm::mat4 expected =
                         glm::translate(glm::mat4(1), part->offset + pivot) *
-                        attachable::EulerZYX(glm::degrees(part->rotation) * glm::vec3(1, -1, 1)) *
+                        JavaRotation(part->rotation) *
                         glm::translate(glm::mat4(1), -pivot);
                     for (int i = 0; i < 4; ++i)
                         for (int j = 0; j < 4; ++j)
@@ -287,7 +294,7 @@ int main(int argc, char** argv) {
     glm::vec3 pivot;
     attachable::BoneWorld(*baseGeometry, singularPose, "head", actual, pivot);
     auto expected = glm::translate(glm::mat4(1), pivot) *
-                    attachable::EulerZYX(glm::degrees(p.head.rotation) * glm::vec3(1, -1, 1)) *
+                    JavaRotation(p.head.rotation) *
                     glm::translate(glm::mat4(1), -pivot);
     for (int i = 0; i < 4; ++i)
         for (int j = 0; j < 4; ++j)

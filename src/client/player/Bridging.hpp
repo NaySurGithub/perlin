@@ -58,6 +58,7 @@ namespace perlin::bridging {
     private:
         bool active = false;
         uint64_t at = 0;
+        uint64_t firstAt = 0;
         glm::ivec3 lastDestination{};
         uint32_t lastItem = 0;
     };

@@ -175,8 +175,9 @@ int main() {
     CHECK(!repeat.Ready(1199, {1, 0, 0}, 42, false));
     CHECK(repeat.Ready(1200, {1, 0, 0}, 42, false));
     CHECK(!repeat.Ready(1049, {2, 0, 0}, 42, false));
-    CHECK(repeat.Ready(1050, {2, 0, 0}, 42, false));
-    CHECK(repeat.Ready(1050, {1, 0, 0}, 43, false));
+    CHECK(!repeat.Ready(1050, {2, 0, 0}, 42, false));
+    CHECK(!repeat.Ready(1050, {1, 0, 0}, 43, false));
+    CHECK(repeat.Ready(1200, {2, 0, 0}, 42, false));
     CHECK(repeat.Ready(1001, {1, 0, 0}, 42, true));
     CHECK(repeat.Ready(999, {1, 0, 0}, 42, false));
     repeat.Reset();

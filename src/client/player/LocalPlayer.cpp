@@ -440,7 +440,10 @@ namespace perlin {
                 if (physics::PoseFits(state, world, physics::kSneakHeight))
                     forcedSneak = true;
                 else
-                    wantCrawl = true;
+                    // Ordinary wall/support overlap must not enter a new low
+                    // pose. Only retain an existing crawl until
+                    // there is enough room to stand again.
+                    wantCrawl = crawling || state.crawling;
             }
         }
         crawling = wantCrawl;
@@ -531,7 +534,8 @@ namespace perlin {
         in.flyUp = flying && jump;
         in.flyDown = flying && sneakKey;
         in.noClip = flying && (session.NoClip() || session.Spectator());
-        in.creativeFlight = session.GameType() == 1;
+        in.creativeFlight = session.GameType() == 1 ||
+            (session.GameType() == 5 && session.World().worldGameMode == 1);
         const auto actorFlags = session.OwnActorFlags();
         in.canClimb = (actorFlags[0] & proto::FlagsMetadataFlags1::CanClimb) != 0;
         in.wallClimbing = (actorFlags[0] & proto::FlagsMetadataFlags1::Wallclimbing) != 0;
@@ -562,6 +566,7 @@ namespace perlin {
         attributes.speed = session.PredictedMovementSpeed(sprinting);
         attributes.flySpeed = session.FlySpeed();
         attributes.verticalFlySpeed = session.VFlySpeed();
+        attributes.airDrag = session.AirDragAttribute();
         attributes.waterWalkSpeedEnchant = session.WaterWalkSpeedEnchant();
         attributes.underwaterSpeed = session.UnderwaterMovementSpeedAttribute();
         for (const auto& effect : session.GetEffects()) {
@@ -623,6 +628,13 @@ namespace perlin {
             flyPending = true;
             flyPendingAt = std::chrono::steady_clock::now();
         }
+
+        int slownessAmplifier = -1;
+        for (const auto& effect : session.GetEffects())
+            if (effect.id == 2)
+                slownessAmplifier = effect.amplifier;
+        fov.Tick(MovementFovTarget(session.MovementSpeedAttribute(), session.WalkSpeed(),
+                                   flying, slownessAmplifier));
 
         BedrockSession::MoveInput packet;
         std::vector<uint32_t>& f = packet.flags;
@@ -832,16 +844,15 @@ namespace perlin {
         }
         if (flyPending && (session.IsFlying() == flying || now - flyPendingAt > std::chrono::milliseconds(750)))
             flyPending = false;
-        if (session.IsFlying() != serverFlying) {
+        // Only follow the server when its flying state actually changes; servers that never echo abilities must
+        // not cancel a local toggle. While our own toggle is still unanswered, an incoming ability update may just
+        // be the answer to an earlier toggle; don't let it undo what the player did since.
+        if (!flyPending && session.IsFlying() != serverFlying) {
             serverFlying = session.IsFlying();
-            // While our own toggle is still unanswered, an incoming ability update may just be the answer to an
-            // earlier toggle; don't let it undo what the player did since.
-            if (!flyPending) {
-                if (serverFlying && session.MayFly() && !flying) {
-                    flying = true;
-                } else if (!serverFlying && flying && !spectator) {
-                    flying = false;
-                }
+            if (serverFlying && session.MayFly() && !flying) {
+                flying = true;
+            } else if (!serverFlying && flying && !spectator) {
+                flying = false;
             }
         }
         if (session.MayFly() && !spectator && input.Pressed(Action::Jump)) {
@@ -877,17 +888,6 @@ namespace perlin {
             }
             input.SetControlTick(tickCounter);
             Tick(session, input, camera, world);
-        }
-
-        {
-            float target = 1.0f;
-            if (flying)
-                target *= 1.1f;
-            const float speed = session.PredictedMovementSpeed(sprinting);
-            target *= (speed / 0.1f + 1.0f) / 2.0f;
-            target = std::clamp(target, 0.1f, 1.5f);
-            const float keep = std::pow(0.5f, dt * 20.0f);
-            fovModifier = target + (fovModifier - target) * keep;
         }
 
         const double t = std::clamp(accumulator / physics::kTickSeconds, 0.0, 1.0);

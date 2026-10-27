@@ -51,10 +51,44 @@ namespace perlin::physics::bds {
         return hasGravity ? velocity * 0.98f : velocity;
     }
 
-    // PlayerFlyingDrag callback 0x141051C40.
-    inline float FlyingVerticalDrag(float velocity, float& fallDistance) {
+    // iOS 26.52 VerticalFlySpeedControlSystem, 0x10704C838.
+    inline float FlyingControl(float velocity, float speed, bool hover, bool creative,
+                               bool up, bool down, bool upSlow = false, bool downSlow = false) {
+        if (up && down)
+            return 0.0f;
+        if (hover && creative && !up && !down && !upSlow && !downSlow)
+            velocity *= 0.375f;
+        float acceleration = up ? 0.15f : 0.0f;
+        if (upSlow) acceleration += 0.05f;
+        if (down) acceleration -= 0.22f;
+        if (downSlow) acceleration -= 0.15f;
+        return detail::Round(acceleration * speed) + velocity;
+    }
+
+    // Preserve the native comparison order, including unordered values.
+    inline float FlyingDragRetention(float amount) {
+        const float upper = amount <= 1.0f ? amount : 1.0f;
+        return amount >= 0.0f ? 1.0f - upper : 1.0f;
+    }
+
+    // iOS 26.52 MobMovementFriction<PlayerFlyingTravelComponent>, 0x1070E076C.
+    inline float FlyingHorizontalRetention(float coefficient, std::optional<float> override,
+                                           std::optional<float> airDrag) {
+        if (override)
+            return (coefficient * *override) * 0.91f;
+        const float modifier = airDrag.value_or(1.0f);
+        const auto retention = [](float amount) {
+            return amount < 0.0f ? 1.0f : 1.0f - (amount > 1.0f ? 1.0f : amount);
+        };
+        return retention((1.0f - coefficient) * modifier) * retention(0.089999974f * modifier);
+    }
+
+    // iOS 26.52 PlayerFlyingVerticalDragSystem, 0x1070D925C.
+
+    inline float FlyingVerticalDrag(float velocity, float& fallDistance,
+                                    std::optional<float> airDrag = std::nullopt) {
         fallDistance = 0;
-        return velocity * 0.6f;
+        return velocity * FlyingDragRetention(airDrag ? *airDrag * 0.39999998f : 0.39999998f);
     }
 
     inline float PostGroundVertical(float velocity, float& fallDistance, const GravityFlags& flags,

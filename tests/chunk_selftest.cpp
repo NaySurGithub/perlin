@@ -34,6 +34,37 @@ static ChunkCodec::CellIds MakeCells(int distinct, uint32_t seed) {
 }
 
 int main() {
+    {
+        ChunkCodec::CellIds first, second;
+        first.fill(5); second.fill(19);
+        std::vector<uint8_t> column;
+        ChunkCodec::WriteSubChunk(column, -4, first);
+        const size_t firstSize = column.size();
+        ChunkCodec::WriteSubChunk(column, -3, second);
+        std::vector<std::pair<int, SubChunkData>> parsed;
+        size_t consumed = 0;
+        CHECK(ChunkCodec::ParseColumn(column.data(), column.size(), 2, -4, 24, parsed, consumed));
+        CHECK(parsed.size() == 2 && consumed == column.size());
+        CHECK(parsed[0].first == -4 && parsed[1].first == -3);
+        ChunkCodec::CellIds expanded;
+        CHECK(ChunkCodec::Expand(parsed[1].second.storages[0], expanded));
+        CHECK(expanded == second);
+        // Every truncated second subchunk must leave the column uncommitted.
+        for (size_t cut = firstSize; cut < column.size(); ++cut) {
+            CHECK(!ChunkCodec::ParseColumn(column.data(), cut, 2, -4, 24, parsed, consumed));
+            CHECK(parsed.empty() && consumed == 0);
+        }
+        std::vector<uint8_t> duplicate;
+        ChunkCodec::WriteSubChunk(duplicate, -4, first);
+        ChunkCodec::WriteSubChunk(duplicate, -4, second);
+        CHECK(!ChunkCodec::ParseColumn(duplicate.data(), duplicate.size(), 2, -4, 24, parsed, consumed));
+        CHECK(parsed.empty());
+        CHECK(!ChunkCodec::ParseColumn(column.data(), column.size(), 25, -4, 24, parsed, consumed));
+        CHECK(!ChunkCodec::ParseColumn(column.data(), column.size(), 2, 0, 24, parsed, consumed));
+        CHECK(ChunkCodec::ParseColumn(nullptr, 0, 0, -4, 24, parsed, consumed));
+        CHECK(parsed.empty() && consumed == 0);
+    }
+
 
     for (int distinct : {1, 2, 3, 4, 5, 9, 17, 40, 65, 200, 300}) {
         auto cells = MakeCells(distinct, 1000 + distinct);

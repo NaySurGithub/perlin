@@ -566,21 +566,11 @@ namespace perlin::physics {
         if (in.flying) {
             if (s.hasTeleported)
                 return;
-            const bool hovering = std::max(std::fabs(forward), std::fabs(strafe)) < 0.01f * 0.98f + 1e-9;
-            const float hoverMod = hovering ? (in.creativeFlight ? 0.375f : 0.75f) : 1.0f;
             const bool hover = std::max(std::fabs(in.forward), std::fabs(in.strafe)) < 0.01f;
-            (void)hoverMod;
             MoveRelative(s, strafe, forward, static_cast<double>(attr.flySpeed) * (in.sprint ? 2.0 : 1.0),
                          attr.currentMovementMath);
-            if (in.flyUp && in.flyDown) {
-                s.vy = 0;
-            } else {
-                float prev = static_cast<float>(s.vy);
-                if (hover && in.creativeFlight && !in.flyUp && !in.flyDown)
-                    prev *= 0.375f;
-                const float accel = in.flyUp ? 0.15f : (in.flyDown ? -0.22f : 0.0f);
-                s.vy = F(accel * attr.verticalFlySpeed + prev);
-            }
+            s.vy = bds::FlyingControl(static_cast<float>(s.vy), attr.verticalFlySpeed,
+                hover, in.creativeFlight, in.flyUp, in.flyDown, in.flyUpSlow, in.flyDownSlow);
             const float hMod = hover ? (in.creativeFlight ? 0.375f : 0.75f) : 1.0f;
             const Vec3 req = ApplyStoredBlockSlowdown(s, {s.vx, s.vy, s.vz});
             if (in.noClip) {
@@ -594,10 +584,11 @@ namespace perlin::physics {
                 s.vy = velocity.y;
                 s.vz = velocity.z;
                 s.jumpDelay = 0;
-                const float h = 1.0f * hMod * 0.91f;
+                const float h = bds::FlyingHorizontalRetention(1.0f,
+                    hover ? std::optional<float>(hMod) : std::nullopt, attr.airDrag);
                 s.vx = DampHorizontal(s.vx, h);
                 s.vz = DampHorizontal(s.vz, h);
-                s.vy = bds::FlyingVerticalDrag(static_cast<float>(s.vy), s.fallDistance);
+                s.vy = bds::FlyingVerticalDrag(static_cast<float>(s.vy), s.fallDistance, attr.airDrag);
                 return;
             }
             const double groundFriction = grounded ? blockFriction : 1.0;
@@ -614,11 +605,12 @@ namespace perlin::physics {
             s.vx = finalized.x;
             s.vy = finalized.y;
             s.vz = finalized.z;
-            const float h = static_cast<float>(groundFriction) * hMod * 0.91f;
+            // Native ModifierType1: hover override bypasses the air-drag attribute.
+            const float h = bds::FlyingHorizontalRetention(static_cast<float>(groundFriction),
+                hover ? std::optional<float>(hMod) : std::nullopt, attr.airDrag);
             s.vx = DampHorizontal(s.vx, h);
             s.vz = DampHorizontal(s.vz, h);
-            s.vy = bds::FlyingVerticalDrag(static_cast<float>(s.vy), s.fallDistance);
-            if (s.onGround && s.verticalCollision && in.flyDown == false && m.cy && req.y < 0) {}
+            s.vy = bds::FlyingVerticalDrag(static_cast<float>(s.vy), s.fallDistance, attr.airDrag);
             return;
         }
 

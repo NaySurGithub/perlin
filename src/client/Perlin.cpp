@@ -67,6 +67,7 @@
 #include "client/ui/DebugScreen.hpp"
 #include "client/ui/GuiScale.hpp"
 #include "client/input/TouchState.hpp"
+#include "client/input/TouchControls.hpp"
 #include "client/ui/ItemData.hpp"
 #include "client/ui/HudRenderers.hpp"
 #include "util/SystemInfo.hpp"
@@ -6473,6 +6474,11 @@ namespace perlin {
                 previewEntities.SetOwner(rid, 1000);
             if (const char* held = PERLIN_ENV("PERLIN_PREVIEW_HELD"))
                 previewEntities.SetHeld(rid, held);
+            if (variant == "aiming") {
+                previewEntities.SetHeld(rid, "minecraft:bow");
+                previewEntities.SetTarget(rid, -7);
+                previewEntities.SetFlagsExtended(rid, entity::flag::FacingTargetToRangeAttack);
+            }
             if (const char* armor = PERLIN_ENV("PERLIN_PREVIEW_ARMOR")) {
                 static const char* parts[4] = {"helmet", "chestplate", "leggings", "boots"};
                 for (int i = 0; i < 4; i++)
@@ -6539,6 +6545,8 @@ namespace perlin {
         PERLIN_WEB_PERSIST auto previewReadyAt = previous;
         PERLIN_WEB_PERSIST size_t previewLastMeshed = 0;
         if (preview) {
+            if (const char* show = PERLIN_ENV("PERLIN_PREVIEW_HUD"))
+                options.showHud = std::atoi(show) != 0;
             camera.x = 24.0f; camera.y = 74.0f; camera.z = -22.0f; camera.yaw = 100.0f; camera.pitch = -6.0f;
             if (const char* c = PERLIN_ENV("PERLIN_PREVIEW_CAM"))
                 std::sscanf(c, "%f,%f,%f,%f,%f", &camera.x, &camera.y, &camera.z, &camera.yaw, &camera.pitch);
@@ -6698,11 +6706,9 @@ namespace perlin {
                 const float target = handRenderer.Scoping() && camera.mode == PerspectiveMode::FirstPerson ? 0.1f : 1.0f;
                 scopeFov += (target - scopeFov) * (1.0f - std::pow(0.5f, dt * 20.0f));
             }
-            camera.fov = zoom.Fov(options.fov * (options.fovEffects ? player.FovModifier() : 1.0f)) * scopeFov;
             if (sessionReady && session) {
                 CameraEffects& fx = session->Camera();
                 fx.Tick({glm::vec3(camera.x, camera.y, camera.z), camera.yaw - 90.0f, -camera.pitch});
-                camera.fov = fx.Fov(camera.fov);
                 if (fx.PoseActive()) {
                     const CameraPose pose = fx.Pose();
                     camera.x = pose.position.x;
@@ -6837,6 +6843,19 @@ namespace perlin {
                 if (!replayCtl.Playing())
                     player.Update(*live, inputManager, camera, levelRenderer->Blocks(), dt);
             }
+            // Sample after movement advances this frame's ticks and partial tick.
+            float movementFov = player.FovModifier();
+            if (preview && !live) {
+                if (const char* movement = PERLIN_ENV("PERLIN_PREVIEW_FOV_MOVEMENT")) {
+                    float speed = 0.1f, walk = 0.1f;
+                    int fly = 0, slowness = -1;
+                    if (std::sscanf(movement, "%f,%f,%d,%d", &speed, &walk, &fly, &slowness) >= 2)
+                        movementFov = MovementFovTarget(speed, walk, fly != 0, slowness);
+                }
+            }
+            camera.fov = zoom.Fov(options.fov * (options.fovEffects ? movementFov : 1.0f)) * scopeFov;
+            if (sessionReady && session)
+                camera.fov = session->Camera().Fov(camera.fov);
             if (const char* g = PERLIN_ENV("PERLIN_GLASS"))
                 options.glass = g;
             {
@@ -7067,6 +7086,7 @@ namespace perlin {
                 int& bkx = gBreak.x; int& bky = gBreak.y; int& bkz = gBreak.z; int& bkFace = gBreak.face;
                 float& breakProgress = gBreak.progress;
                 static int breakDelayTicks = 0;
+                static uint64_t creativeBreakReadyAt = 0;
                 static int hitTicks = 0;
                 breakClock += dt;
                 useClock += dt;
@@ -7106,7 +7126,9 @@ namespace perlin {
                             }
                         }
                     }
-                    if (live && attackHeld && gAim.kind == AimHit::Kind::Block) {
+                    const bool creativeSword = creative && held.name.ends_with("_sword");
+                    if (live && attackHeld && !creativeSword &&
+                        (!creative || MsNow() >= creativeBreakReadyAt) && gAim.kind == AimHit::Kind::Block) {
                         const bool newTarget = !breaking || gAim.bx != bkx || gAim.by != bky || gAim.bz != bkz;
                         if (newTarget && breakDelayTicks > 0 && !breaking) {
                         } else if (newTarget) {
@@ -7124,11 +7146,14 @@ namespace perlin {
                                 live->NetLevel().SetBlock(fx, fy, fz, 0);
                                 sounds.PlayBlockEvent(fireName, "break", glm::dvec3(fx + 0.5, fy + 0.5, fz + 0.5));
                                 breakDelayTicks = 5;
+                                if (creative) creativeBreakReadyAt = MsNow() + 250;
                             } else {
                                 bkx = gAim.bx; bky = gAim.by; bkz = gAim.bz; bkFace = gAim.face;
                                 breaking = true;
                                 breakProgress = 0.0f;
-                                breakClock = 0;
+                                // Creative is instant on the initial press;
+                                // held repeats still obey the shared cooldown.
+                                breakClock = creative ? 0.05 : 0.0;
                                 hitTicks = 0;
                                 live->SendPlayerAuthInputBlockAction(0  , bkx, bky, bkz, bkFace);
                             }
@@ -7202,6 +7227,7 @@ namespace perlin {
                                 live->ClearCrack(bkx, bky, bkz);
                                 { handRenderer.Swing(options.hand); gSelfSwing++; }
                                 breakDelayTicks = 5;
+                                if (creative) creativeBreakReadyAt = MsNow() + 250;
                             } else {
                                 gLocalCrack = {breakProgress > 0.0f, bkx, bky, bkz, std::clamp(static_cast<int>(breakProgress * 10.0f), 0, 9), std::clamp(breakProgress, 0.0f, 1.0f)};
                             }
@@ -8259,7 +8285,12 @@ namespace perlin {
                     ein.hitboxes = showHitboxes;
                     ein.playerPos = glm::dvec3(camera.x, camera.y - 1.62, camera.z);
                 }
-                if (gAim.kind == AimHit::Kind::Block && options.showHud) {
+                if (preview && previewLevel && PERLIN_ENV("PERLIN_PREVIEW_AIM")) {
+                    gAim = Raycast(*previewLevel, &levelRenderer->Blocks(), {},
+                                   [](const entity::Entity&) { return glm::vec2(0.6f, 1.8f); },
+                                   {camera.x, camera.y, camera.z}, glm::dvec3(camera.Direction()), 5.7, 0.0);
+                }
+                if (gAim.kind == AimHit::Kind::Block && (options.showHud || (preview && PERLIN_ENV("PERLIN_PREVIEW_AIM")))) {
                     ein.outline = true;
                     ein.outlineLo = gAim.boxLo;
                     ein.outlineHi = gAim.boxHi;
@@ -8804,8 +8835,17 @@ namespace perlin {
                     touchEditing = false;
                     optionsSignature.clear();
                 }
-                if (touchEditing || (!deathShown && !pauseShown && !invShown && !disconnectShown && !loadingShown && !titleShown))
+                const bool previewTouch = preview && PERLIN_ENV("PERLIN_PREVIEW_TOUCH");
+                if (previewTouch) {
+                    // Exercise the shared overlay renderer on desktop platforms
+                    // whose native window backend has no touch input surface.
+                    static TouchControls previewControls;
+                    previewControls.SetViewport(width, height);
+                    previewControls.SetState(touchState);
+                    previewControls.Draw(*renderer, true);
+                } else if (touchEditing || (!deathShown && !pauseShown && !invShown && !disconnectShown && !loadingShown && !titleShown)) {
                     platform->DrawTouchOverlay(*renderer);
+                }
             }
             if (inputManager.Pressed(Action::Screenshot))
                 TakeScreenshot();

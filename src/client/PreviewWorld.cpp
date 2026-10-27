@@ -1,5 +1,6 @@
 #include "client/PreviewWorld.hpp"
 #include "util/Paths.hpp"
+#include "client/resources/BlockBoxDefinition.hpp"
 #include "world/level/block/BlockPalette.hpp"
 
 #include <algorithm>
@@ -165,6 +166,22 @@ namespace perlin {
     bool BuildPreviewWorld(Level& level, int radius) {
         if (!BlockPalette::Instance().NamesLoaded())
             return false;
+        if (const char* path = std::getenv("PERLIN_PREVIEW_BOX_FILE")) {
+            std::ifstream file(path);
+            const std::string text((std::istreambuf_iterator<char>(file)), {});
+            ui::Json definitions;
+            std::string error;
+            if (!ui::Json::Parse(text, definitions, error) || !definitions.IsObject()) {
+                std::cerr << "[preview] invalid box fixture: " << error << '\n';
+                return false;
+            }
+            for (const auto& [name, components] : definitions.object) {
+                CustomBlockCollision collision;
+                collision.base = ParseBlockBoxComponent(components.Find("minecraft:collision_box"));
+                collision.selection = ParseBlockBoxComponent(components.Find("minecraft:selection_box"));
+                ServerBlocks::Instance().SetCollision(name, std::move(collision));
+            }
+        }
         if (const char* g = std::getenv("PERLIN_PREVIEW_GALLERY"))
             return BuildGallery(level, radius, g);
         Ids ids;

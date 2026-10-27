@@ -36,7 +36,10 @@ namespace perlin::entity {
             FireImmune = 1ull << 49, Dancing = 1ull << 50, Enchanted = 1ull << 51, Transforming = 1ull << 54,
             SpinAttack = 1ull << 55, Swimming = 1ull << 56, Bribed = 1ull << 57, Pregnant = 1ull << 58, LayingEgg = 1ull << 59,
             Eating = 1ull << 62, LayingDown = 1ull << 63, Sleeping = 0,
+            Charging = 1ull << 43,
         };
+        // Global actor flag 88 is bit 24 of the second metadata word.
+        constexpr uint64_t FacingTargetToRangeAttack = 1ull << 24;
     }
 
     struct Entity {
@@ -51,6 +54,7 @@ namespace perlin::entity {
         float yaw = 0, pitch = 0, headYaw = 0;
         bool onGround = true;
         uint64_t flags = 0;
+        uint64_t flagsExtended = 0;
         bool crawling = false;
         float scale = 1.0f;
         int variant = 0, markVariant = 0, color = 0;
@@ -83,6 +87,7 @@ namespace perlin::entity {
         struct Attribute { float min = 0, value = 0, max = 0; };
         std::map<std::string, Attribute> attributes;
         bool Has(uint64_t f) const { return (flags & f) != 0 || (crawling && (f & flag::Swimming) != 0); }
+        bool AimingBow() const { return mainHand == "minecraft:bow" && (flagsExtended & flag::FacingTargetToRangeAttack) != 0; }
     };
 
     class EntityTracker {
@@ -105,6 +110,7 @@ namespace perlin::entity {
         void MoveDelta(uint64_t rid, const double* x, const double* y, const double* z, const float* pitch, const float* yaw,
                        const float* headYaw, bool onGround);
         void SetFlags(uint64_t rid, uint64_t flags);
+        void SetFlagsExtended(uint64_t rid, uint64_t flags);
         void SetCrawling(uint64_t rid, bool crawling);
         void SetScale(uint64_t rid, float scale);
         void SetNameTag(uint64_t rid, const std::string& nameTag);
@@ -122,7 +128,9 @@ namespace perlin::entity {
         void Swing(uint64_t rid);
         void SetProperty(uint64_t rid, const std::string& key, float value);
         void SetPropertyText(uint64_t rid, const std::string& key, const std::string& text);
-        void SetSkin(const std::string& uuid, std::shared_ptr<const SkinData> skin);
+        void SetSkin(const std::string& uuid, std::shared_ptr<const SkinData> skin, bool listed = true);
+        // Player-list removal releases the cached skin; an actor still in view owns its copy.
+        void RemoveSkin(const std::string& uuid);
         void SetSelf(uint64_t rid, const std::string& uuid);
 
         std::vector<Entity> Snapshot() const;

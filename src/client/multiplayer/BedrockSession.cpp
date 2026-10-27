@@ -23,6 +23,7 @@
 #include <miniz.h>
 
 #include <algorithm>
+#include <unordered_set>
 #include <chrono>
 #include <cctype>
 #include <cmath>
@@ -679,8 +680,18 @@ namespace perlin {
                 columns.erase(found);
             }
             seenColumns.erase({p.x, p.z});
-            colPending.erase({p.x, p.z});
+            ForgetColumnRequests(p.x, p.z);
         }
+    }
+
+    void BedrockSession::ForgetColumnRequests(int cx, int cz) {
+        const auto inColumn = [cx, cz](const std::tuple<int, int, int, int>& key) {
+            return std::get<1>(key) == cx && std::get<3>(key) == cz;
+        };
+        std::erase_if(inflight, [&](const auto& entry) { return inColumn(entry.first); });
+        std::erase_if(retries, [&](const auto& entry) { return inColumn(entry.first); });
+        std::erase_if(requestedSlots, inColumn);
+        colPending.erase({cx, cz});
     }
 
     void BedrockSession::Update() {
@@ -1574,20 +1585,24 @@ namespace perlin {
             const uint8_t* p = pkt.payload.data();
             size_t left = pkt.payload.size();
             std::vector<std::pair<int, SubChunkData>> parsed;
-            parsed.reserve(pkt.subChunkCount);
-            for (uint32_t i = 0; i < pkt.subChunkCount; i++) {
-                SubChunkData sc;
-                size_t used = 0;
-                const char* why = nullptr;
-                if (!ChunkCodec::ParseSubChunk(p, left, sc, used, &why)) {
-                    LogHex("inline sub-chunk", why ? why : "?", pkt.payload);
-                    break;
+            size_t used = 0;
+            const char* why = nullptr;
+            if (!ChunkCodec::ParseColumn(p, left, pkt.subChunkCount, dim.MinSubChunk(), dim.slots, parsed, used, &why)) {
+                LogHex("inline column", why ? why : "?", pkt.payload);
+                // A truncated column is unresolved, never an empty complete
+                // column. Retain request metadata and recover missing data.
+                {
+                    std::lock_guard<std::mutex> lk(reqMutex);
+                    ColumnInfo& c = columns[ChunkPos{pkt.x, pkt.z}];
+                    c.dim = pkt.dimension;
+                    c.firstSubY = dim.MinSubChunk();
+                    c.slots = dim.slots;
                 }
-                p += used;
-                left -= used;
-                const int absY = sc.hasYIndex ? sc.yIndex : dim.MinSubChunk() + (int)i;
-                parsed.emplace_back(absY, std::move(sc));
+                QueueSubChunkRequests(pkt.dimension, pkt.x, pkt.z, dim.MinSubChunk(), dim.slots);
+                return;
             }
+            p += used;
+            left -= used;
             BlockPalette& blockPalette = BlockPalette::Instance();
             if (blockPalette.Sequential() && !parsed.empty()) {
                 // The highest sub-chunk of a column is normally nothing but air, so a
@@ -1777,14 +1792,16 @@ namespace perlin {
                               << ") result=" << resultId << " payload=" << body.size() << "B"
                               << std::endl;
             }
-            CompleteRequest(std::make_tuple(pkt.dimension, cx, absY, cz),
-                            result == SubChunkEntryEntryResult::ChunkNotFound);
             if (result == SubChunkEntryEntryResult::SuccessAllAir) {
                 static const std::array<uint16_t, ChunkCodec::kCells> air{};
                 netLevel.SetSubChunk(cx, cz, absY, air.data());
+                CompleteRequest(std::make_tuple(pkt.dimension, cx, absY, cz), false);
                 continue;
             }
             if (result != SubChunkEntryEntryResult::Success) {
+                CompleteRequest(std::make_tuple(pkt.dimension, cx, absY, cz),
+                    result != SubChunkEntryEntryResult::YIndexOutOfBounds &&
+                    result != SubChunkEntryEntryResult::InvalidDimension);
                 static int logged = 0;
                 if (logged++ < 8)
                     std::cout << "[chunk] SubChunk (" << cx << "," << absY << "," << cz
@@ -1800,9 +1817,11 @@ namespace perlin {
             const char* why = nullptr;
             if (!ChunkCodec::ParseSubChunk(job.body->data(), job.body->size(), sc, used, &why)) {
                 LogHex("SubChunk payload", why ? why : "?", *job.body);
+                CompleteRequest(std::make_tuple(dimensionId.load(), job.cx, job.absY, job.cz), true);
                 return;
             }
-            ApplySubChunk(job.cx, job.cz, job.absY, sc);
+            const bool applied = ApplySubChunk(job.cx, job.cz, job.absY, sc);
+            CompleteRequest(std::make_tuple(dimensionId.load(), job.cx, job.absY, job.cz), !applied);
             if (used < job.body->size())
                 ParseBlockEntities(job.body->data() + used, job.body->size() - used, false);
         };
@@ -2002,10 +2021,12 @@ namespace perlin {
         {
             std::lock_guard<std::mutex> lk(reqMutex);
             inflight.erase(key);
-            if (retry && ++retries[key] <= 3) {
+            if (retry && requestedSlots.count(key) && ++retries[key] <= kMaxSubChunkRetries) {
                 reqQueue.push(key);
                 return;
             }
+            // Past the cap (including ChunkNotFound) the slot is settled so
+            // the column can finish instead of being requested forever.
             retries.erase(key);
             DropSlot(key, completed);
         }
@@ -2081,11 +2102,14 @@ namespace perlin {
         lodScanCentre[0] = cx;
         lodScanCentre[1] = cz;
         std::vector<ChunkPos> candidates, demote;
+        std::unordered_set<ChunkPos, ChunkPosHash> recoverable;
         {
             std::lock_guard<std::mutex> lk(reqMutex);
-            for (const auto& entry : columns)
+            for (const auto& entry : columns) {
+                recoverable.insert(entry.first);
                 if (std::max(std::abs(entry.first.x - cx), std::abs(entry.first.z - cz)) <= nearRadius)
                     candidates.push_back(entry.first);
+            }
         }
         {
             std::lock_guard<std::mutex> lk(netLevel.mutex);
@@ -2097,7 +2121,11 @@ namespace perlin {
                              candidates.end());
             for (const auto& entry : netLevel.chunks) {
                 const ChunkPos& p = entry.first;
-                if (!entry.second.lodOnly && std::max(std::abs(p.x - cx), std::abs(p.z - cz)) > nearRadius + 3)
+                // Only request-mode columns have metadata to fetch their
+                // subchunks again. Evicting inline columns here leaves holes
+                // inside the server's unchanged streaming radius.
+                if (!entry.second.lodOnly && recoverable.contains(p) &&
+                    std::max(std::abs(p.x - cx), std::abs(p.z - cz)) > nearRadius + 3)
                     demote.push_back(p);
             }
         }
@@ -2111,6 +2139,13 @@ namespace perlin {
         for (const ChunkPos& p : demote) {
             netLevel.RemoveChunk(p.x, p.z);
             blockEntities.RemoveChunk(p.x, p.z);
+        }
+        if (!demote.empty()) {
+            // Evicted columns must not keep timing out and re-requesting
+            // slots; promotion re-queues them from the column metadata.
+            std::lock_guard<std::mutex> lk(reqMutex);
+            for (const ChunkPos& p : demote)
+                ForgetColumnRequests(p.x, p.z);
         }
         for (const auto& [pos, info] : promote) {
             if (info.slots <= 0)
@@ -2138,7 +2173,7 @@ namespace perlin {
                 }
                 auto key = it->first;
                 it = inflight.erase(it);
-                if (++retries[key] <= 3) {
+                if (requestedSlots.count(key) && ++retries[key] <= kMaxSubChunkRetries) {
                     reqQueue.push(key);
                 } else {
                     retries.erase(key);

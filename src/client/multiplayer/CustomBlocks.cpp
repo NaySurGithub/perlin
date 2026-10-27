@@ -2,6 +2,7 @@
 
 #include "client/multiplayer/NbtJson.hpp"
 #include "client/resources/ServerBlocks.hpp"
+#include "client/resources/BlockBoxDefinition.hpp"
 #include "client/resources/BlockOffsetDefinition.hpp"
 #include "world/level/block/BlockPalette.hpp"
 #include "world/level/lighting/LightRegistry.hpp"
@@ -35,70 +36,6 @@ namespace perlin {
             return hash;
         }
 
-
-        float Number(const ui::Json* v, float fallback) {
-            return v && v->IsNumber() ? static_cast<float>(v->NumberOr(fallback)) : fallback;
-        }
-
-        bool Vec3(const ui::Json* v, float out[3]) {
-            if (!v || !v->IsArray() || v->array.size() < 3)
-                return false;
-            for (int i = 0; i < 3; i++)
-                out[i] = Number(&v->array[static_cast<size_t>(i)], 0.0f);
-            return true;
-        }
-
-        bool ParseBox(const ui::Json& o, CollisionBox& box) {
-            float origin[3] = {-8, 0, -8}, size[3] = {16, 16, 16};
-            if (!o.IsObject())
-                return false;
-            if (const ui::Json* e = o.Find("enabled"); e && (e->IsNumber() ? e->NumberOr(1) == 0 : (e->IsBool() && !e->boolean)))
-                return false;
-            Vec3(o.Find("origin"), origin);
-            Vec3(o.Find("size"), size);
-            box = {(origin[0] + 8) / 16.0f, origin[1] / 16.0f, (origin[2] + 8) / 16.0f,
-                   (origin[0] + 8 + size[0]) / 16.0f, (origin[1] + size[1]) / 16.0f, (origin[2] + 8 + size[2]) / 16.0f};
-            return true;
-        }
-
-        CollisionSet ParseCollision(const ui::Json* v) {
-            CollisionSet set;
-            if (!v)
-                return set;
-            if (v->IsBool()) {
-                set.defined = true;
-                if (v->boolean)
-                    set.boxes.push_back({0, 0, 0, 1, 1, 1});
-                return set;
-            }
-            if (v->IsNumber()) {
-                set.defined = true;
-                if (v->NumberOr(1) != 0)
-                    set.boxes.push_back({0, 0, 0, 1, 1, 1});
-                return set;
-            }
-            set.defined = true;
-            if (v->IsArray()) {
-                for (const ui::Json& e : v->array) {
-                    CollisionBox box;
-                    if (ParseBox(e, box))
-                        set.boxes.push_back(box);
-                }
-            } else if (v->IsObject()) {
-                if (const ui::Json* boxes = v->Find("boxes"); boxes && boxes->IsArray()) {
-                    for (const ui::Json& e : boxes->array) {
-                        CollisionBox box;
-                        if (ParseBox(e, box))
-                            set.boxes.push_back(box);
-                    }
-                } else {
-                    CollisionBox box;
-                    if (ParseBox(*v, box))
-                        set.boxes.push_back(box);
-                }
-            }
-            return set;
-        }
 
         int ParseLevel(const ui::Json* v, const char* key, bool fraction) {
             if (!v)
@@ -311,7 +248,8 @@ namespace perlin {
             CustomBlockCollision collision;
             int emission = -1, dampening = -1;
             if (const ui::Json* components = nbt.Find("components"); components && components->IsObject()) {
-                collision.base = ParseCollision(components->Find("minecraft:collision_box"));
+                collision.base = ParseBlockBoxComponent(components->Find("minecraft:collision_box"));
+                collision.selection = ParseBlockBoxComponent(components->Find("minecraft:selection_box"));
                 collision.randomOffset = ParseBlockOffsetDefinition(components->Find("minecraft:random_offset"));
                 if (const ui::Json* f = components->Find("minecraft:friction")) {
                     const ui::Json* v = f->IsObject() ? f->Find("value") : f;
@@ -345,13 +283,17 @@ namespace perlin {
                     const ui::Json* comps = perm.Find("components");
                     if (!cond || !cond->IsString() || !comps || !comps->IsObject())
                         continue;
-                    CollisionSet set = ParseCollision(comps->Find("minecraft:collision_box"));
+                    CollisionSet set = ParseBlockBoxComponent(comps->Find("minecraft:collision_box"));
                     if (set.defined)
                         collision.permutations.emplace_back(cond->string, std::move(set));
+                    CollisionSet selection = ParseBlockBoxComponent(comps->Find("minecraft:selection_box"));
+                    if (selection.defined)
+                        collision.selectionPermutations.emplace_back(cond->string, std::move(selection));
                     if (auto offset = ParseBlockOffsetDefinition(comps->Find("minecraft:random_offset")))
                         collision.randomOffsetPermutations.emplace_back(cond->string, *offset);
                 }
-            if (collision.base.defined || !collision.permutations.empty() || collision.friction >= 0.0f ||
+            if (collision.base.defined || !collision.permutations.empty() || collision.selection.defined ||
+                !collision.selectionPermutations.empty() || collision.friction >= 0.0f ||
                 collision.randomOffset || !collision.randomOffsetPermutations.empty())
                 ServerBlocks::Instance().SetCollision(entry.name, std::move(collision));
             if (emission >= 0 || dampening >= 0)

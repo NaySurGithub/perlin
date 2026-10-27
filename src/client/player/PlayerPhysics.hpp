@@ -78,6 +78,7 @@ namespace perlin::physics {
         float speed = 0.1f;
         float flySpeed = 0.05f;
         float verticalFlySpeed = 1.0f;
+        std::optional<float> airDrag;
         std::optional<float> jumpHeight;
         int jumpBoost = 0;
         int levitation = 0;
@@ -99,6 +100,8 @@ namespace perlin::physics {
         bool flying = false;
         bool flyUp = false;
         bool flyDown = false;
+        bool flyUpSlow = false;
+        bool flyDownSlow = false;
         bool noClip = false;
         bool creativeFlight = false;
         bool swimming = false;
