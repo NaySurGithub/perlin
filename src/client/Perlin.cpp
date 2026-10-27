@@ -242,7 +242,10 @@ namespace perlin {
         constexpr auto kTitleInterval = std::chrono::milliseconds(500);
         constexpr auto kAnimationStep = std::chrono::milliseconds(200);
 
-        bool ParseServer(const std::string& text, std::string& host, uint16_t& port) {
+        bool ParseServer(const std::string& raw, std::string& host, uint16_t& port) {
+            // Pasted addresses often carry stray spaces, which DNS rejects.
+            const auto first = raw.find_first_not_of(" \t\r\n");
+            const std::string text = first == std::string::npos ? std::string() : raw.substr(first, raw.find_last_not_of(" \t\r\n") - first + 1);
             host = text;
             port = 19132;
             std::string portText;
@@ -4373,9 +4376,19 @@ namespace perlin {
                     if (text.rfind(scheme, 0) == 0)
                         text.erase(0, std::char_traits<char>::length(scheme));
                 const auto start = Clock::now();
-                const bool ok = ParseServer(text, host, port) && RakNet::Ping(host, port, ad, error, 2500);
+                const bool parsed = ParseServer(text, host, port);
+                const bool ok = parsed && RakNet::Ping(host, port, ad, error, 2500);
+                // NetherNet servers don't answer RakNet pings; their /v1/join reply carries the same details.
+                NetherNetServerInfo info;
+                const bool nether = parsed && !ok && NetherNet::Probe(host, port, info, error, 3);
                 r.pingMs = static_cast<int>(std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now() - start).count());
-                r.status = ok ? ui::ServerEntry::Status::Online : ui::ServerEntry::Status::Offline;
+                r.status = ok || nether ? ui::ServerEntry::Status::Online : ui::ServerEntry::Status::Offline;
+                if (nether) {
+                    r.motd = StripFormatting(info.name);
+                    r.version = info.version;
+                    r.players = info.players;
+                    r.maxPlayers = info.maxPlayers;
+                }
                 if (ok) {
                     std::vector<std::string> f;
                     size_t from = 0;
@@ -5761,6 +5774,7 @@ namespace perlin {
             show = true;
             t.message = tr("progressScreen.title.downloading", "Downloading packs %1", {"3/25"});
             t.progress = 0.4f;
+            t.detail = "40%  -  8.7 / 21.7 MB  -  262 KB/s";
         } else if (PERLIN_ENV("PERLIN_PREVIEW") && !session) {
             show = false;
         } else if (!session || (!sessionReady && session->GetState() != BedrockSession::State::Failed) || transferring) {
@@ -5787,7 +5801,28 @@ namespace perlin {
                     t.message = tr("progressScreen.title.downloading", "Downloading packs %1", {std::to_string(progress.done + 1) + "/" + std::to_string(progress.total)});
                     t.progress = progress.bytesTotal > 0 ? static_cast<float>(progress.bytes) / static_cast<float>(progress.bytesTotal)
                                                           : static_cast<float>(progress.done) / static_cast<float>(progress.total);
-                    t.detail = std::to_string(pct) + "%";
+                    // Speed averaged over ~2 s windows so the readout doesn't flicker between chunk bursts.
+                    static uint64_t rateBytes = 0;
+                    static auto rateAt = now;
+                    static double rate = 0.0;
+                    if (progress.bytes < rateBytes) {
+                        rateBytes = progress.bytes;
+                        rateAt = now;
+                        rate = 0.0;
+                    }
+                    if (const double dt = std::chrono::duration<double>(now - rateAt).count(); dt >= 2.0) {
+                        rate = static_cast<double>(progress.bytes - rateBytes) / dt;
+                        rateBytes = progress.bytes;
+                        rateAt = now;
+                    }
+                    const auto mb = [](uint64_t b) {
+                        char s[32];
+                        std::snprintf(s, sizeof(s), "%.1f", static_cast<double>(b) / (1024.0 * 1024.0));
+                        return std::string(s);
+                    };
+                    t.detail = std::to_string(pct) + "%  -  " + mb(progress.bytes) + " / " + mb(progress.bytesTotal) + " MB";
+                    if (rate > 0.0)
+                        t.detail += "  -  " + std::to_string(static_cast<int>(rate / 1024.0)) + " KB/s";
                 } else {
                     t.message = tr("progressScreen.title.applyingPacks", "Loading resource packs");
                 }

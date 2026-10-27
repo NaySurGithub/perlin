@@ -19,6 +19,8 @@ static int failures = 0;
 int main(int argc, char** argv) {
     CHECK(Lang::Format("%s joined the game", {"Steve"}) == "Steve joined the game");
     CHECK(Lang::Format("%2$s then %1$s", {"a", "b"}) == "b then a");
+    CHECK(Lang::Format("Downloading packs %1", {"1/2"}) == "Downloading packs 1/2");
+    CHECK(Lang::Format("%1 of %3", {"a"}) == "a of %3");
     CHECK(Lang::Format("100%% of %d", {"5"}) == "100% of 5");
     CHECK(Lang::Format("%s and %s", {"x"}) == "x and ");
 

@@ -16,7 +16,10 @@ namespace perlin::ui {
 body { position: absolute; left: 0px; top: 0px; width: {{w}}px; height: {{h}}px; margin: 0; padding: 0; background: transparent; }
 div { display: block; position: absolute; }
 mcimg { display: block; position: absolute; }
-#message { left: 0px; top: {{msg_y}}px; width: {{w}}px; height: 9px; font-family: minecraft-shadow; font-size: 8px; line-height: 9px; text-align: center; color: #ffffff; white-space: nowrap; z-index: 3; }
+#title { left: 0px; top: {{title_y}}px; width: {{w}}px; height: 9px; font-family: minecraft-shadow; font-size: 8px; line-height: 9px; text-align: center; color: #ffffff; white-space: nowrap; z-index: 3; }
+#track { left: {{bar_x}}px; top: {{bar_y}}px; width: {{bar_w}}px; height: 4px; background-color: #1e1e1e; border: 1px #000000; display: {{bar_display}}; z-index: 3; }
+#fill { left: 1px; top: 1px; width: {{fill_w}}px; height: 2px; background-color: #5ed15e; }
+#message { left: 0px; top: {{msg_y}}px; width: {{w}}px; height: 9px; font-family: minecraft-shadow; font-size: 8px; line-height: 9px; text-align: center; color: #c6c6c6; white-space: nowrap; z-index: 3; }
 #detail { left: {{detail_x}}px; top: {{detail_y}}px; width: {{detail_w}}px; height: 27px; font-family: minecraft-shadow; font-size: 8px; line-height: 9px; text-align: center; color: #8a8a8a; z-index: 3; }
 .btn { width: 204px; height: 20px; background-color: #000000; z-index: 5; }
 .btn div { position: absolute; }
@@ -33,7 +36,9 @@ mcimg { display: block; position: absolute; }
 </head>
 <body>
   <mcimg src="textures/blocks/dirt" tiled="1" tilescale="{{tile_scale}}" color="0.25 0.25 0.25" style="left: 0px; top: 0px; width: {{w}}px; height: {{h}}px;"></mcimg>
+  <div id="title">{{title}}</div>
   <div id="message">{{message}}</div>
+  <div id="track"><div id="fill"></div></div>
   <div id="detail">{{detail}}</div>
   <div id="cancel" class="btn" style="left: {{btn_x}}px; top: {{btn_y}}px;">
     <div class="rim"></div><div class="face"></div><div class="shade"></div><div class="edge"></div>
@@ -46,7 +51,10 @@ mcimg { display: block; position: absolute; }
 
     std::string BuildLoadingScreenRml(const std::string& templateText, const LoadingScreenText& t, int guiW, int guiH, double) {
         const int msgY = guiH / 2 - 24;
-        const int detailY = msgY + 14;
+        const bool bar = t.progress >= 0.0f;
+        const int barW = std::min(182, guiW - 40);
+        const int barY = msgY + 14;
+        const int detailY = bar ? barY + 10 : msgY + 14;
         const int btnY = std::min(guiH - 24, detailY + 36 + (t.warning.empty() ? 0 : 32));
         std::string d = templateText;
         ReplaceAll(d, "w", std::to_string(guiW));
@@ -58,6 +66,13 @@ mcimg { display: block; position: absolute; }
         ReplaceAll(d, "detail_w", std::to_string(std::min(300, guiW - 20)));
         ReplaceAll(d, "btn_x", std::to_string(guiW / 2 - 102));
         ReplaceAll(d, "btn_y", std::to_string(btnY));
+        ReplaceAll(d, "title_y", std::to_string(msgY - 16));
+        ReplaceAll(d, "title", EscapeRml(t.title));
+        ReplaceAll(d, "bar_x", std::to_string((guiW - barW) / 2));
+        ReplaceAll(d, "bar_y", std::to_string(barY));
+        ReplaceAll(d, "bar_w", std::to_string(barW));
+        ReplaceAll(d, "bar_display", bar ? "block" : "none");
+        ReplaceAll(d, "fill_w", std::to_string(static_cast<int>(std::clamp(t.progress, 0.0f, 1.0f) * static_cast<float>(barW - 2))));
         ReplaceAll(d, "cancel", EscapeRml(t.cancel.empty() ? std::string("Cancel") : t.cancel));
         ReplaceAll(d, "message", EscapeRml(t.message));
         ReplaceAll(d, "detail", EscapeRml(t.detail));

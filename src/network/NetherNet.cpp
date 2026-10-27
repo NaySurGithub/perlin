@@ -245,6 +245,11 @@ namespace perlin {
         std::cout << "[nethernet] offer identity added (" << offer.size() << " bytes)" << std::endl;
 
         std::string netIdStr = std::to_string(netId);
+        // 1.26.60 clients announce themselves on /v1/join before offering.
+        HttpRequest(host, port, "GET",
+                    "/v1/join?version=" + std::string(kBedrockVersion) + "&protocol=" + std::to_string(kBedrockProtocol) +
+                        "&platform=1&id=" + netIdStr,
+                    "", "", 5);
         std::string wpath = "/v1/join/" + netIdStr;
         std::cout << "[nethernet] offer ready (" << offer.size() << " bytes), POSTing to /v1/join/"
                   << netIdStr << "..." << std::endl;

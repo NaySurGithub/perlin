@@ -105,7 +105,7 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	l.PongData([]byte("MCPE;Harness;2193;1.26.52;0;10;1234567;Perlin;Survival;1;19132;19133;"))
+	l.PongData([]byte("MCPE;Harness;2225;1.26.60;0;10;1234567;Perlin;Survival;1;19132;19133;"))
 	if *rel != "" {
 		go relay(*rel, *listen, *drop)
 	}

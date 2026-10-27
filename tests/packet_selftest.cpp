@@ -5,7 +5,7 @@
 #include <cstdio>
 #include <string>
 
-namespace perlin::proto2193 {
+namespace perlin::proto2225 {
     int RoundTripAll(std::string& failures, int& skipped);
 }
 
@@ -142,8 +142,8 @@ int main() {
     }
     {
         RequestNetworkSettingsPacket p;
-        p.clientProtocol = 2193;
-        CHECK((net::Encode(p) == std::vector<uint8_t>{0, 0, 0x08, 0x91}));
+        p.clientProtocol = 2225;
+        CHECK((net::Encode(p) == std::vector<uint8_t>{0, 0, 0x08, 0xB1}));
         NetworkSettingsPacket ns;
         CHECK(Decode({1, 0, 0, 0, 0, 0, 0, 0, 0, 0}, ns) && ns.compressionThreshold == 1);
     }

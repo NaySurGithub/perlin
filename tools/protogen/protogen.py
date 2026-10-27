@@ -756,7 +756,7 @@ def main():
     ap.add_argument("--out", required=True)
     ap.add_argument("--parts", type=int, default=6)
     ap.add_argument("--list", action="store_true")
-    ap.add_argument("--namespace", default="proto2193", help="C++ namespace (inside perlin) for this protocol version, e.g. proto2193")
+    ap.add_argument("--namespace", default="proto2225", help="C++ namespace (inside perlin) for this protocol version, e.g. proto2225")
     ap.add_argument("--no-current-alias", action="store_true", help="do not make perlin::proto an alias of this version")
     opts = ap.parse_args()
 

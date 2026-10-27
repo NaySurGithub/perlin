@@ -189,6 +189,9 @@ namespace perlin {
             timeval tv{timeoutMs / 1000, (timeoutMs % 1000) * 1000};
             setsockopt(s, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
 #endif
+            // Pack chunks arrive as ~180-datagram bursts; the default buffer (64 KB on Windows) drops most of them.
+            const int rcvbuf = 4 << 20;
+            setsockopt(s, SOL_SOCKET, SO_RCVBUF, reinterpret_cast<const char*>(&rcvbuf), sizeof(rcvbuf));
             if (connect(s, to.Raw(), to.length) != 0) {
                 CloseSocket(s);
                 return kInvalid;
