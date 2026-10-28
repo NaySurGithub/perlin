@@ -6497,7 +6497,7 @@ namespace perlin {
                                         variant.find("stack") != std::string::npos ? 40 : 1, 0, 0, false);
             } else if (type == "player") {
                 previewEntities.AddPlayer(rid, static_cast<int64_t>(rid), "preview" + std::to_string(i), "Steve",
-                                          {p.x, p.y + entity::kPlayerEye, p.z}, 0.0f, yaw, yaw, 0, "");
+                                          {p.x, p.y, p.z}, 0.0f, yaw, yaw, 0, "");
                 auto skin = std::make_shared<entity::SkinData>();
                 skin->serial = 100 + i;
                 const bool slim = variant.find("alex") != std::string::npos;

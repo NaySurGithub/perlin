@@ -1046,6 +1046,7 @@ namespace perlin {
             std::string held;
             if (const auto it = itemNames.find(p.heldItem.networkId); p.heldItem.networkId != 0 && it != itemNames.end())
                 held = it->second;
+            // AddPlayer carries the feet position, unlike the move packets which carry the eye.
             entities.AddPlayer(p.runtimeId, p.uniqueId, UuidKey(p.uuid), p.username,
                                {p.position.x, p.position.y, p.position.z}, p.pitch, p.yaw, p.headYaw, MetaFlags(p.metadata), held);
             ApplyMetadata(entities, p.runtimeId, p.metadata);

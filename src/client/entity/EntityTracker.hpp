@@ -93,7 +93,7 @@ namespace perlin::entity {
     class EntityTracker {
     public:
         void Clear();
-        void AddPlayer(uint64_t rid, int64_t uid, const std::string& uuid, const std::string& name, glm::dvec3 eyePos, float pitch,
+        void AddPlayer(uint64_t rid, int64_t uid, const std::string& uuid, const std::string& name, glm::dvec3 feetPos, float pitch,
                        float yaw, float headYaw, uint64_t flags, const std::string& mainHand);
         void AddEntity(uint64_t rid, int64_t uid, const std::string& type, glm::dvec3 feetPos, float pitch, float yaw, float headYaw,
                        uint64_t flags, float scale, int variant, int markVariant, int color);
