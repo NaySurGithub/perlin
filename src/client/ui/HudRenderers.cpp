@@ -140,7 +140,32 @@ namespace perlin::ui {
                 Tex(w, n, right - i * 8 - 9, n.ay, 9, i < full ? "bubble" : "bubble_pop");
         }
 
+        // The totem / omen activation: the icon rises from below the screen, swells past the crosshair and fades.
+        // Curve from Java's GameRenderer item activation.
+        void ScreenAnimation(const HudState& s, const LNode& n, RmlWriter& w) {
+            if (s.screenAnimation < 0)
+                return;
+            const float f = std::clamp(s.screenAnimationT, 0.0f, 1.0f);
+            const float f2 = f * f, f3 = f2 * f;
+            const float rise = 10.25f * f3 * f2 - 24.95f * f2 * f2 + 25.5f * f3 - 13.8f * f2 + 4.0f * f;
+            const float size = s.guiH * (0.12f + 0.55f * std::sin(rise * 3.14159265f));
+            const float x = s.guiW * 0.5f - size * 0.5f;
+            const float y = s.guiH * (0.5f + 0.6f * (1.0f - rise)) - size * 0.5f;
+            const float alpha = f > 0.8f ? (1.0f - f) / 0.2f : 1.0f;
+            if (s.screenAnimation == 1000) {
+                w.Item(x, y, size, size, n.layer + 2, "minecraft:totem_of_undying;0", alpha);
+                return;
+            }
+            EffectInfo info;
+            if (!GetEffectInfo(s.screenAnimation, info))
+                return;
+            ImageStyle st;
+            st.alpha = alpha;
+            w.Image(x, y, size, size, n.layer + 2, std::string("mcres:effect_") + info.texture + ".png", st);
+        }
+
         void Fire(const HudState& s, const LNode& n, RmlWriter& w) {
+            ScreenAnimation(s, n, w);
             if (!s.burning)
                 return;
             const float unit = s.guiH * 1.4286f;

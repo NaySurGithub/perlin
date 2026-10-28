@@ -47,7 +47,7 @@ int main() {
     CHECK(received.metadata.size() == 2);
     int64_t word = 0;
     entity::EntityTracker tracker;
-    tracker.AddPlayer(17, 17, "test", "Test", {0, entity::kPlayerEye, 0}, 0, 0, 0, 0, "minecraft:bow");
+    tracker.AddPlayer(17, 17, "test", "Test", {}, 0, 0, 0, 0, "minecraft:bow");
     CHECK(net::MetadataInteger(received.metadata[0], word));
     CHECK(static_cast<uint64_t>(word) == flags);
     tracker.SetFlags(17, static_cast<uint64_t>(word));
