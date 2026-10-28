@@ -7151,7 +7151,7 @@ namespace perlin {
                                        return glm::vec2(hb.first, hb.second);
                                    },
                                    {camera.x, camera.y, camera.z}, glm::dvec3(camera.Direction()),
-                                   PickRange(creative, 1), creative ? 7.0 : 3.0);
+                                   PickRange(creative, 1), PickRange(creative, 1));
                 }
                 if (PERLIN_ENV("PERLIN_AIM_DEBUG"))
                     std::cout << "[aim] kind " << static_cast<int>(gAim.kind) << " block " << gAim.bx << "," << gAim.by << "," << gAim.bz
