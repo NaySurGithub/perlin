@@ -60,6 +60,8 @@ public:
     virtual void SetClipboard(const std::string& text) { (void)text; }
     virtual std::string GetClipboard() { return {}; }
     virtual double DisplayRefreshHz() { return 0.0; }
+    virtual bool WindowFocused() const { return true; }
+    virtual bool WindowMinimized() const { return false; }
     virtual void OpenUrl(const std::string& url) { (void)url; }
     virtual bool TakeSurfaceChanged() { return false; }
     virtual bool PickFile(const std::string& kind) { (void)kind; return false; }

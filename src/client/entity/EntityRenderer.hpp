@@ -76,6 +76,24 @@ namespace perlin::entity {
                 float width = 1.0f;
             };
             const std::vector<ModLine>* modLines = nullptr;
+            // Mod overrides for one entity: hide, scale, tint, swap the main texture, hide or replace the name tag.
+            struct ModStyle {
+                bool hidden = false;
+                glm::vec3 scale{1.0f};
+                float tint[4] = {1, 1, 1, 1};
+                std::string texture;
+                int nameTag = 0;  // 0 keep, 1 hide, 2 replace
+                std::string nameText;
+            };
+            std::function<const ModStyle*(const Entity&)> modStyle;
+            // Mod triangles in the world; texture is a renderer texture id (0 for plain colour).
+            struct ModMesh {
+                std::vector<UiVertex> vertices;  // relative to `origin`, three per triangle
+                glm::dvec3 origin{0.0};
+                uint32_t texture = 0;
+                bool depthTest = true;
+            };
+            const std::vector<ModMesh>* modMeshes = nullptr;
             bool skins3d = false;
             const std::vector<particle::Quad>* particles = nullptr;
             const particle::DataParticles* dataParticles = nullptr;
@@ -128,6 +146,8 @@ namespace perlin::entity {
         void Draw(const Entity& e, const View& v, const std::vector<Layer>& layers, float scale, const FrameIn& in);
         const FpState* fp = nullptr;
         bool shadowOnlyPass = false;
+        glm::vec3 modScale{1.0f};
+        void DrawModMeshes(const FrameIn& in);
         const glm::mat4* fpModel = nullptr;
         const glm::mat4* dollModel = nullptr;
         const int* dollClip = nullptr;

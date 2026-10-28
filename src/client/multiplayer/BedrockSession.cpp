@@ -1,6 +1,8 @@
 #include "util/Paths.hpp"
 #include "util/Env.hpp"
 #include "client/multiplayer/BedrockSession.hpp"
+
+#include "client/mods/ModManager.hpp"
 #include "util/SimClock.hpp"
 #include "util/SystemInfo.hpp"
 #include "client/multiplayer/NbtJson.hpp"
@@ -688,8 +690,11 @@ namespace perlin {
                 if (outside(entry.first))
                     loaded.push_back(entry.first);
         }
-        for (const ChunkPos& p : loaded)
-            { netLevel.RemoveChunk(p.x, p.z); blockEntities.RemoveChunk(p.x, p.z); }
+        for (const ChunkPos& p : loaded) {
+            netLevel.RemoveChunk(p.x, p.z);
+            blockEntities.RemoveChunk(p.x, p.z);
+            NoteModChunk(false, p.x, p.z);
+        }
         std::lock_guard<std::mutex> lk(reqMutex);
         std::vector<ChunkPos> doomed = std::move(loaded);
         for (const auto& entry : columns)
@@ -1563,7 +1568,18 @@ namespace perlin {
         }
     }
 
+    void BedrockSession::NoteModChunk(bool loaded, int x, int z) const {
+        auto& mm = mods::ModManager::Instance();
+        const abi::Event event = loaded ? abi::Event::ChunkLoaded : abi::Event::ChunkUnloaded;
+        if (!mm.Wants(event))
+            return;
+        abi::Writer w;
+        w.write(abi::EventChunk{x, z, static_cast<abi::Dimension>(dimensionId.load())});
+        mm.Queue(event, std::move(w));
+    }
+
     void BedrockSession::HandleLevelChunk(const LevelChunkPacket& pkt) {
+        NoteModChunk(true, pkt.x, pkt.z);
         static int logged = 0;
         static int loggedFull = 0;
         const bool interesting = pkt.payload.size() > 0 || (int32_t)pkt.subChunkCount != 0;
@@ -2156,6 +2172,7 @@ namespace perlin {
         for (const ChunkPos& p : demote) {
             netLevel.RemoveChunk(p.x, p.z);
             blockEntities.RemoveChunk(p.x, p.z);
+            NoteModChunk(false, p.x, p.z);
         }
         if (!demote.empty()) {
             std::lock_guard<std::mutex> lk(reqMutex);

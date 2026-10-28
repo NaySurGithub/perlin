@@ -368,6 +368,8 @@ void RequestRespawn();
             return it == permByUid.end() ? -1 : it->second;
         }
         int DimensionId() const { return dimensionId; }
+        // Tells mods a chunk column arrived or left (no-op when no mod listens).
+        void NoteModChunk(bool loaded, int x, int z) const;
         bool DimensionChanging() const { return dimAckPending.load(); }
         uint32_t HurtCount() const { return hurtCounter.load(); }
         struct HurtSource {

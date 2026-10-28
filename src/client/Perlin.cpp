@@ -593,7 +593,14 @@ namespace perlin {
     void Perlin::ApplyTexturePacks() {
         {
             std::string error;
-            TexturePack::Instance().OpenStack(paths::DataDir() + "/texturepacks", options.texturePacks, error);
+            // Packs that mods ship sit under the player's own, by absolute path.
+            std::vector<std::string> stack = options.texturePacks;
+            {
+                std::lock_guard lock(modHooks.mutex);
+                for (const auto& pack : modHooks.packs)
+                    stack.push_back(pack.second);
+            }
+            TexturePack::Instance().OpenStack(paths::DataDir() + "/texturepacks", stack, error);
             if (!error.empty())
                 std::cout << "[textures] " << error << " (using default textures)" << std::endl;
         }
@@ -604,6 +611,7 @@ namespace perlin {
         if (hud)
             hud->Reload();
         hotTexStamp.clear();
+        mods::ModManager::Instance().Queue(abi::Event::ResourcesReloaded, {});
     }
 
     void Perlin::UnloadServerPacks() {
@@ -900,7 +908,7 @@ namespace perlin {
         ui::ServerLayerData data;
         if (toastText.empty()) {
             BedrockSession::ServerToast t;
-            if (live->TakeToast(t)) {
+            if (live->TakeToast(t) && !DispatchModToast(t.title, t.message)) {
                 toastText = t.title + "\n" + t.message;
                 toastAt = now;
                 data.toastTitle = t.title;
@@ -1379,6 +1387,7 @@ namespace perlin {
         }
         s.debugLeft = cachedLeft;
         s.debugRight = cachedRight;
+        ApplyModDebugLines(s.debugLeft, s.debugRight);
     }
 
     void Perlin::UpdateAudio(BedrockSession* live, double now, float dt) {
@@ -1937,7 +1946,8 @@ namespace perlin {
                     if (n < v.recipes.size())
                         live->InvFillRecipe(v.recipes[n].index);
                 } else if (invHoverAddr >= 0) {
-                    if (input.IsKeyDown(Key::Shift))
+                    if (DispatchModSlotClick(invHoverAddr, isRight, input.IsKeyDown(Key::Shift))) {
+                    } else if (input.IsKeyDown(Key::Shift))
                         live->InvShiftClick(invHoverAddr);
                     else
                         live->InvClick(invHoverAddr, isRight);
@@ -6247,7 +6257,17 @@ namespace perlin {
         const int guiH = static_cast<int>(std::ceil(static_cast<float>(fbH) / static_cast<float>(scale)));
         const double time = std::chrono::duration<double>(now.time_since_epoch()).count();
         const std::string signature = std::to_string(guiW) + "x" + std::to_string(guiH) + "|" + t.title + "|" + t.message + "|" + t.detail + "|" + t.cancel;
-        if (signature != loadingSignature || !hud.Overlay().HasOverlay()) {
+        bool modHidden = false;
+        {
+            std::lock_guard lock(modHooks.mutex);
+            modHidden = !modHooks.loadingHidden.empty();
+        }
+        // A mod hid the loading screen: the connection carries on underneath, with nothing drawn over it.
+        if (modHidden) {
+            if (hud.Overlay().HasOverlay())
+                hud.Overlay().ClearOverlay();
+            loadingSignature.clear();
+        } else if (signature != loadingSignature || !hud.Overlay().HasOverlay()) {
             loadingSignature = signature;
             std::string error;
             if (!hud.Overlay().SetOverlay(ui::BuildLoadingScreenRml(loadingTemplate, t, guiW, guiH, time), error)) {
@@ -7268,7 +7288,7 @@ namespace perlin {
                         entity::Entity target;
                         aimInteracts = !live->Entities().Find(gAim.entity, target) || IsInteractable(target.type);
                     }
-                    if (use && eating && !aimInteracts && inputManager.Pressed(Action::Use)) {
+                    if (use && eating && !aimInteracts && inputManager.Pressed(Action::Use) && !DispatchModInteract(abi::InteractKind::UseItem, 0, 0, 0, 0, 0)) {
                         const float eye[3] = {static_cast<float>(camera.x), static_cast<float>(camera.y), static_cast<float>(camera.z)};
                         earlyItemUse = live->SendUseItemInAir(eye);
                         usingItem = earlyItemUse;
@@ -7557,7 +7577,8 @@ namespace perlin {
                                 live->QueueInputFlag(InputFlag::MissedSwing);
                             entity::Entity attacked;
                             const bool mobBlocked = live->Adventure().noPvm && live->Entities().Find(gAim.entity, attacked) && !attacked.isPlayer;
-                            if (gAim.kind == AimHit::Kind::Entity && !mobBlocked) {
+                            if (gAim.kind == AimHit::Kind::Entity && !mobBlocked &&
+                                !DispatchModInteract(abi::InteractKind::Attack, 0, 0, 0, 0, gAim.entity)) {
                                 // The click position is where the ray meets the target's hitbox, relative to the target's base
                                 // coordinate, not a world position.
                                 const glm::dvec3 feet((gAim.boxLo.x + gAim.boxHi.x) * 0.5, gAim.boxLo.y, (gAim.boxLo.z + gAim.boxHi.z) * 0.5);
@@ -7584,6 +7605,7 @@ namespace perlin {
                         (!creative || MsNow() >= creativeBreakReadyAt) && gAim.kind == AimHit::Kind::Block) {
                         const bool newTarget = !breaking || gAim.bx != bkx || gAim.by != bky || gAim.bz != bkz;
                         if (newTarget && breakDelayTicks > 0 && !breaking) {
+                        } else if (newTarget && DispatchModInteract(abi::InteractKind::StartBreak, gAim.bx, gAim.by, gAim.bz, gAim.face, 0)) {
                         } else if (newTarget) {
                             stopBreaking();
                             static const int faceDx[6] = {0, 0, 0, 0, -1, 1};
@@ -7827,7 +7849,8 @@ namespace perlin {
                         bool interactedEntity = false;
                         if (usePressed && live && useAim.kind == AimHit::Kind::Entity) {
                             entity::Entity target;
-                            if (live->Entities().Find(useAim.entity, target) && IsInteractable(target.type) && !(live->InputLocks() & 128u)) {
+                            if (live->Entities().Find(useAim.entity, target) && IsInteractable(target.type) && !(live->InputLocks() & 128u) &&
+                                !DispatchModInteract(abi::InteractKind::InteractEntity, 0, 0, 0, 0, useAim.entity)) {
                                 const glm::vec3 offset = EntityClickOffset({camera.x, camera.y, camera.z}, glm::dvec3(camera.Direction()), target.pos,
                                                                            (useAim.boxHi.x - useAim.boxLo.x) * 0.5, useAim.boxHi.y - useAim.boxLo.y,
                                                                            (useAim.boxLo + useAim.boxHi) * 0.5);
@@ -7840,7 +7863,8 @@ namespace perlin {
                         }
                         const bool allowed = usePressed || (use == blockuse::Use::Place);
                         const bool consumableInAir = holdsItem && !holdsBlock && use == blockuse::Use::Nothing && HandRenderer::IsFood(held.name);
-                        if (useAim.kind == AimHit::Kind::Block && allowed && !consumableInAir) {
+                        if (useAim.kind == AimHit::Kind::Block && allowed && !consumableInAir &&
+                            !DispatchModInteract(abi::InteractKind::UseOnBlock, useAim.bx, useAim.by, useAim.bz, useAim.face, 0)) {
                             bool sent = !live;
                             if (live) {
                                 float click[3];
@@ -7887,7 +7911,8 @@ namespace perlin {
                                 sounds.PlayBlockEvent(held.name, "place", glm::dvec3(dest[0] + 0.5, dest[1] + 0.5, dest[2] + 0.5));
                             }
                         }
-                        if (usePressed && !earlyItemUse && !blockedFoodUse && live && holdsItem && use == blockuse::Use::Nothing && !interactedEntity) {
+                        if (usePressed && !earlyItemUse && !blockedFoodUse && live && holdsItem && use == blockuse::Use::Nothing && !interactedEntity &&
+                            !DispatchModInteract(abi::InteractKind::UseItem, 0, 0, 0, 0, 0)) {
                             live->SendUseItemInAir(eyeF);
                             usingItem = true;
                         }
@@ -8376,6 +8401,7 @@ namespace perlin {
                 }
             }
 
+            ApplyModFog(fog);
             if (preview) {
                 static int once = 0;
                 if (once++ == 20)
@@ -8619,6 +8645,7 @@ namespace perlin {
                     SpawnPreviewEntities();
                 }
                 std::vector<entity::Entity> entities = frameEntities;
+                ApplyModSkins(entities);
                 if (player.Gliding()) {
                     const glm::dvec3 here(camera.x, camera.y, camera.z);
                     entities.erase(std::remove_if(entities.begin(), entities.end(),
@@ -8760,6 +8787,7 @@ namespace perlin {
                     if (!modAdv.frameLines.empty() && !(replayCtl.Playing() && replayUi.hideHud))
                         ein.modLines = &modAdv.frameLines;
                 }
+                PrepareModRender(ein);
                 ein.capePhysics = options.capePhysics == "shoulder" ? 2 : options.capePhysics == "off" ? 0 : 1;
                 if (live) {
                     int fast = -1, slow = -1;
@@ -9235,6 +9263,7 @@ namespace perlin {
                         }
                         uiClickWasDown = pressed;
                     }
+                    DrawModTint(fbW, fbH);
                     hud->Render();
                     DrawModGfx(fbW, fbH);
                     const bool creativeUi = hudState.mode == ui::GameMode::Creative || PERLIN_ENV("PERLIN_PREVIEW_CREATIVE");
@@ -9423,8 +9452,9 @@ namespace perlin {
                         std::this_thread::sleep_until(target);
                 }
             }
-            if (options.maxFps > 0 && !exportJob.active)
-                FrameGenPacer::SleepUntil(frameStart + std::chrono::microseconds(1000000LL * std::max(1, fgActive) / options.maxFps));
+            const int fpsCap = ModFrameLimit(options.maxFps);
+            if (fpsCap > 0 && !exportJob.active)
+                FrameGenPacer::SleepUntil(frameStart + std::chrono::microseconds(1000000LL * std::max(1, fgActive) / fpsCap));
 #endif
         };
 

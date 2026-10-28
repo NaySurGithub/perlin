@@ -1320,7 +1320,7 @@ namespace perlin::entity {
             model = glm::rotate(model, (90.0f + v.pitch) * kDeg, glm::vec3(1, 0, 0));
             model = glm::translate(model, glm::vec3(0.0f, -12.0f / 16.0f * scale, 0.0f));
         }
-        model = glm::scale(model, glm::vec3(scale / 16.0f));
+        model = glm::scale(model, glm::vec3(scale / 16.0f) * modScale);
         glm::vec3 light(1.0f);
         if (in.light)
             light = in.light(v.pos + glm::dvec3(0.0, 1.0, 0.0));
@@ -1966,6 +1966,9 @@ namespace perlin::entity {
             View& v = *slot;
             v.lastSeen = in.time;
             Track(e, v, in);
+            const FrameIn::ModStyle* style = in.modStyle ? in.modStyle(e) : nullptr;
+            if (style && style->hidden)
+                continue;
             const glm::dvec3 delta = v.pos - in.camera;
             if (glm::dot(delta, delta) > static_cast<double>(in.maxDistance) * in.maxDistance)
                 continue;
@@ -2004,7 +2007,7 @@ namespace perlin::entity {
             // fake players leave both off. The shown text is the name tag, falling back to a player's username.
             const bool nameAllowed = e.isSelf || e.Has(flag::CanShowName) || e.Has(flag::AlwaysShowName) || !e.isPlayer;
             if (in.nametags && !e.isItem && !nameHidden && nameAllowed && !(e.isSelf && (in.firstPerson || !in.ownNametag))) {
-                const std::string& label = !e.nameTag.empty() ? e.nameTag : e.isPlayer ? e.name : e.nameTag;
+                const std::string& label = style && style->nameTag == 1 ? std::string() : style && style->nameTag == 2 ? style->nameText : !e.nameTag.empty() ? e.nameTag : e.isPlayer ? e.name : e.nameTag;
                 const double d2 = glm::dot(delta, delta);
                 if (!label.empty() && d2 < (e.isPlayer ? 64.0 * 64.0 : 16.0 * 16.0)) {
                     const auto hb = HitBox(e);
@@ -2066,8 +2069,23 @@ namespace perlin::entity {
             const double dist2 = glm::dot(delta, delta);
             const bool pinned = e.dying || e.Has(flag::Riding);
             const double reuseFor = pinned ? 0.0 : dist2 > 80.0 * 80.0 ? 0.066 : dist2 > 48.0 * 48.0 ? 0.033 : dist2 > 24.0 * 24.0 ? 0.016 : dist2 > 16.0 * 16.0 ? 0.008 : 0.0035;
+            const auto drawStyled = [&](const std::vector<Layer>& layers, float scale) {
+                if (!style) {
+                    Draw(e, v, layers, scale, in);
+                    return;
+                }
+                std::vector<Layer> styled = layers;
+                for (Layer& l : styled)
+                    for (int i = 0; i < 4; i++)
+                        l.tint[i] *= style->tint[i];
+                if (!style->texture.empty() && !styled.empty())
+                    styled.front().texture = style->texture;
+                modScale = style->scale;
+                Draw(e, v, styled, scale, in);
+                modScale = glm::vec3(1.0f);
+            };
             if (reuseFor > 0.0 && in.time - v.cacheTime < reuseFor && !v.cachedLayers.empty()) {
-                Draw(e, v, v.cachedLayers, v.cachedScale, in);
+                drawStyled(v.cachedLayers, v.cachedScale);
                 drawn++;
                 continue;
             }
@@ -2082,7 +2100,7 @@ namespace perlin::entity {
                 }
                 continue;
             }
-            Draw(e, v, layers, scale, in);
+            drawStyled(layers, scale);
             if (reuseFor > 0.0) {
                 v.cachedLayers = std::move(layers);
                 v.cachedScale = scale;
@@ -2122,6 +2140,7 @@ namespace perlin::entity {
         if (in.modLines)
             for (const FrameIn::ModLine& l : *in.modLines)
                 lines.push_back({l.a, l.b, l.colour, l.width});
+        DrawModMeshes(in);
         if (in.chunkBorders) {
             const int pcx = static_cast<int>(std::floor(in.playerPos.x)) >> 4, pcz = static_cast<int>(std::floor(in.playerPos.z)) >> 4;
             const int sectionY = static_cast<int>(std::floor(in.playerPos.y)) >> 4;
@@ -2358,6 +2377,34 @@ namespace perlin::entity {
         std::copy_n(&model[0][0], 16, draw.model);
         draw.shadowOnly = shadowOnlyPass;
         renderer->UiSubmit(UiLayer::World, draw);
+    }
+
+    void EntityRenderer::DrawModMeshes(const FrameIn& in) {
+        if (!in.modMeshes)
+            return;
+        for (const FrameIn::ModMesh& m : *in.modMeshes) {
+            if (m.vertices.size() < 3)
+                continue;
+            std::vector<uint32_t> indices(m.vertices.size() - m.vertices.size() % 3);
+            for (uint32_t i = 0; i < indices.size(); i++)
+                indices[i] = i;
+            const uint32_t mesh = renderer->UiCreateFrameMesh(m.vertices.data(), static_cast<uint32_t>(m.vertices.size()), indices.data(),
+                                                             static_cast<uint32_t>(indices.size()));
+            if (!mesh)
+                continue;
+            pendingMeshes.push_back(mesh);
+            UiDraw draw;
+            draw.mesh = mesh;
+            draw.texture = m.texture;
+            draw.premultiplied = false;
+            draw.blend = 1;
+            draw.depth = m.depthTest;
+            draw.depthWrite = false;
+            glm::mat4 model(1.0f);
+            model[3] = glm::vec4(glm::vec3(m.origin), 1.0f);
+            std::copy_n(&model[0][0], 16, draw.model);
+            renderer->UiSubmit(UiLayer::World, draw);
+        }
     }
 
     uint32_t EntityRenderer::TextureByPath(const std::string& path) {
