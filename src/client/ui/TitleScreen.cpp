@@ -1,4 +1,5 @@
 #include "client/ui/TitleScreen.hpp"
+#include "client/ui/OreUi.hpp"
 #include "client/ui/UiAssets.hpp"
 
 #include "client/ui/FormatCodes.hpp"
@@ -373,6 +374,76 @@ mcimg { display: block; position: absolute; }
             return d;
         }
 
+        // OreUI main menu: logo over a column of actions led by Play, the player's character card beside it, and a
+        // utility bar along the bottom.
+        std::string OreMain(const TitleModel& m, int w, int h) {
+            using namespace ore;
+            std::string d;
+            const int face = std::max(h * 5 / 4, 64);
+            const int top = -(face - h) / 2;
+            if (!m.nativePanorama) {
+                d += "<div style=\"left:0px;top:0px;width:" + N(w) + "px;height:" + N(h) + "px;overflow:hidden;background-color:#000000;\">\n";
+                d += "<div id=\"pano\" style=\"left:0px;top:" + N(top) + "px;width:" + N(face * 5) + "px;height:" + N(face) + "px;animation: 240s linear infinite pano;\">\n";
+                for (int i = 0; i < 5; i++)
+                    d += "<mcimg src=\"textures/ui/panorama_" + N(i % 4) + "\" style=\"left:" + N(i * face) + "px;top:0px;width:" + N(face) + "px;height:" + N(face) + "px;\"></mcimg>\n";
+                d += "</div></div>\n";
+            }
+            // Soft dark wash so the panorama reads as a background, as on the game's menus.
+            d += "<div style=\"left:0px;top:0px;width:" + N(w) + "px;height:" + N(h) + "px;background-color:#00000040;z-index:1;\"></div>\n";
+
+            const int colW = 160, cardW = 104, gap = 8;
+            const int blockW = colW + gap + cardW;
+            const int bx = (w - blockW) / 2;
+            const int logoH = std::clamp(h / 5, 28, 64), logoW = logoH * 4;
+            const int logoY = std::max(6, h / 12);
+            if (!m.logoSrc.empty())
+                d += "<mcimg src=\"" + EscapeRml(m.logoSrc) + "\" style=\"left:" + N((w - logoW) / 2) + "px;top:" + N(logoY) + "px;width:" + N(logoW) +
+                     "px;height:" + N(logoH) + "px;z-index:3;\"></mcimg>\n";
+            else
+                d += "<mcimg src=\"mcres:ui_menu_logo.png\" style=\"left:" + N((w - logoW) / 2) + "px;top:" + N(logoY) + "px;width:" + N(logoW) +
+                     "px;height:" + N(logoH) + "px;z-index:3;\"></mcimg>\n";
+
+            const int by = logoY + logoH + 10;
+            const int rowH = 24, rowGap = 4;
+            const int playH = 36;
+            int y = by;
+            d += Button(kTitleMulti, bx, y, colW, playH, "Play", Kind::Primary, true);
+            y += playH + rowGap + 2;
+            const int half = (colW - rowGap) / 2;
+            d += Button(kTitleMods, bx, y, half, rowH, "Mods", Kind::Neutral);
+            d += Button(kTitleReplays, bx + half + rowGap, y, colW - half - rowGap, rowH, "Replays", Kind::Neutral);
+            y += rowH + rowGap;
+            d += Button(kTitleOptions, bx, y, colW, rowH, "Settings", Kind::Neutral);
+            y += rowH + rowGap;
+            const int columnBottom = y - rowGap;
+
+            // Character card, as tall as the action column.
+            const int cardX = bx + colW + gap, cardH = columnBottom - by;
+            d += Card(cardX, by, cardW, cardH);
+            const int nameY = by + 6;
+            d += Label(cardX + 4, nameY, cardW - 8, m.playerName.empty() ? m.accountUser : m.playerName, "center");
+            const int dressH = 22;
+            const int dollTop = nameY + 12, dollBottom = by + cardH - dressH - 8;
+            if (!m.dollSrc.empty() && dollBottom - dollTop > 20) {
+                const int dh = dollBottom - dollTop, dw = dh * 3 / 5;
+                d += "<mcimg src=\"" + EscapeRml(m.dollSrc) + "\" style=\"left:" + N(cardX + (cardW - dw) / 2) + "px;top:" + N(dollTop) + "px;width:" + N(dw) +
+                     "px;height:" + N(dh) + "px;z-index:4;\"></mcimg>\n";
+            }
+            d += Button(kTitleWardrobe, cardX + 6, by + cardH - dressH - 5, cardW - 12, dressH, "Dressing Room", Kind::Neutral);
+
+            // Utility bar: account on the left, quit on the right.
+            const int barY = std::min(h - 40, columnBottom + 14);
+            if (!m.accountUser.empty()) {
+                const int textW = TextWidth(m.accountUser);
+                d += Button(kTitleAccounts, bx, barY, std::clamp(textW + 24, 60, colW), 22, m.accountUser, Kind::Neutral);
+            }
+            d += Button(kTitleQuit, bx + blockW - 60, barY, 60, 22, "Quit", Kind::Neutral);
+
+            d += Label(4, h - 12, w / 2, m.version, "left", true);
+            d += Label(w / 2, h - 12, w / 2 - 4, m.copyright, "right", true);
+            return d;
+        }
+
         std::string Servers(const TitleModel& m, int w, int h) {
             std::string d = Dirt(w, h, "0.25 0.25 0.25");
             const int cx = w / 2;
@@ -618,11 +689,13 @@ mcimg { display: block; position: absolute; }
 
     std::string BuildTitleRml(const TitleModel& m, int guiW, int guiH) {
         std::string out = ScreenTemplate("title_screen.rml", kStyle);
+        if (m.oreUi && out.find("</style>") != std::string::npos)
+            out.insert(out.find("</style>"), ore::Styles());
         ReplaceAll(out, "w", std::to_string(guiW));
         ReplaceAll(out, "h", std::to_string(guiH));
         ReplaceAll(out, "span", std::to_string(std::max(guiH * 5 / 4, 64) * 4));
         switch (m.page) {
-            case TitlePage::Main: out += Main(m, guiW, guiH); break;
+            case TitlePage::Main: out += m.oreUi ? OreMain(m, guiW, guiH) : Main(m, guiW, guiH); break;
             case TitlePage::Servers: out += Servers(m, guiW, guiH); break;
             case TitlePage::Edit: out += Edit(m, guiW, guiH); break;
             case TitlePage::Direct: out += Direct(m, guiW, guiH); break;

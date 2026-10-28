@@ -360,6 +360,19 @@ namespace perlin::ui {
                     int count = std::max(0, cols * rows);
                     if (!collection.empty())
                         count = std::min(count, data.CollectionSize(collection));
+                    // A rescaling grid holds #maximum_grid_items items (or the whole collection) and works out its own
+                    // rows and columns from the space it gets.
+                    if (const std::string rescale = n->Str("grid_rescaling_type"); rescale == "horizontal" || rescale == "vertical") {
+                        int maxItems = -1;
+                        if (const Json* m = n->bag.Find("#maximum_grid_items"); m && m->IsNumber())
+                            maxItems = static_cast<int>(m->number);
+                        else if (const Json* m = n->p.Find("maximum_grid_items"); m && m->IsNumber())
+                            maxItems = static_cast<int>(m->number);
+                        if (collection.empty())
+                            count = std::max(0, maxItems);
+                        else
+                            count = maxItems >= 0 ? std::min(maxItems, data.CollectionSize(collection)) : data.CollectionSize(collection);
+                    }
                     for (int i = 0; i < count; i++) {
                         std::vector<Collection> inner = collections;
                         if (!collection.empty())
@@ -471,7 +484,7 @@ namespace perlin::ui {
 
                 float sumW = 0, sumH = 0, maxW = 0, maxH = 0;
                 if (isGrid) {
-                    GridExtent(n, live, sumW, sumH);
+                    GridExtent(n, live, Known(w) ? w : n.w, Known(h) ? h : n.h, sumW, sumH);
                     maxW = sumW;
                     maxH = sumH;
                 } else {
@@ -1024,14 +1037,15 @@ namespace perlin::ui {
                 if (w.empty() || h.empty()) {
                     Term hundred{Term::Pct, 100, 1};
                     Term def{Term::Default, 0, 1};
-                    const bool intrinsic = (n.type == "label" || (n.type == "image" && !fill));
+                    // With no size at all, only labels take their natural size; every other control (images too, as
+                    // in vanilla's dialog backgrounds) fills its parent. An explicit "default" still means natural size.
+                    const bool intrinsic = n.type == "label";
+                    (void)fill;
                     if (n.type == "grid") hundred.kind = Term::PctChildren;
                     if (w.empty()) w.push_back(intrinsic ? def : hundred);
                     if (h.empty()) h.push_back(intrinsic ? def : hundred);
                 }
                 // inherit_max_sibling_width/height grow the control to its widest/tallest sibling; Measure applies it.
-                if (n.Bool("inherit_max_sibling_width", false)) w = Dim{Term{Term::PctSibling, 100, 1}};
-                if (n.Bool("inherit_max_sibling_height", false)) h = Dim{Term{Term::PctSibling, 100, 1}};
             }
 
             void Intrinsic(LNode& n, float pw, const Dim& wd, float& iw, float& ih) {
@@ -1249,9 +1263,35 @@ namespace perlin::ui {
                 return EvalDim(d, c, v);
             }
 
-            void GridExtent(LNode& n, std::vector<LNode*>& live, float& w, float& h) const {
-                int cols = 1, rows = 1;
+            // Columns and rows for laying out `live`: grid_dimensions, or for a rescaling grid as many items as fit
+            // across `width` (horizontal) or down `height` (vertical), growing the other way to hold the rest.
+            void GridShape(const LNode& n, const std::vector<LNode*>& live, float width, float height, int& cols, int& rows) const {
                 GridDimensions(n, cols, rows);
+                const std::string rescale = n.Str("grid_rescaling_type");
+                if ((rescale != "horizontal" && rescale != "vertical") || live.empty())
+                    return;
+                float itemW = 0, itemH = 0;
+                for (const LNode* k : live) {
+                    itemW = std::max(itemW, k->w);
+                    itemH = std::max(itemH, k->h);
+                }
+                const int items = static_cast<int>(live.size());
+                if (rescale == "horizontal") {
+                    if (itemW > 0 && Known(width) && width > 0)
+                        cols = std::max(1, static_cast<int>(std::floor((width + 0.01f) / itemW)));
+                    rows = (items + cols - 1) / cols;
+                } else {
+                    if (itemH > 0 && Known(height) && height > 0)
+                        rows = std::max(1, static_cast<int>(std::floor((height + 0.01f) / itemH)));
+                    cols = (items + rows - 1) / rows;
+                }
+                cols = std::max(cols, 1);
+                rows = std::max(rows, 1);
+            }
+
+            void GridExtent(LNode& n, std::vector<LNode*>& live, float availW, float availH, float& w, float& h) const {
+                int cols = 1, rows = 1;
+                GridShape(n, live, availW, availH, cols, rows);
                 std::vector<float> colWidth(static_cast<size_t>(cols), 0.0f), rowHeight(static_cast<size_t>(rows), 0.0f);
                 for (size_t i = 0; i < live.size(); i++) {
                     const size_t c = i % static_cast<size_t>(cols), r = i / static_cast<size_t>(cols);
@@ -1267,7 +1307,7 @@ namespace perlin::ui {
 
             void PlaceGrid(LNode& n, std::vector<LNode*>& live, float ax, float ay) {
                 int cols = 1, rows = 1;
-                GridDimensions(n, cols, rows);
+                GridShape(n, live, n.w, n.h, cols, rows);
                 std::vector<float> colWidth(static_cast<size_t>(cols), 0.0f), rowHeight(static_cast<size_t>(rows), 0.0f);
                 for (size_t i = 0; i < live.size(); i++) {
                     const size_t c = i % static_cast<size_t>(cols), r = i / static_cast<size_t>(cols);

@@ -2,30 +2,31 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
 
 namespace perlin::heldbuild {
     namespace {
         const glm::ivec3 kFaceNormal[6] = {{0, -1, 0}, {0, 1, 0}, {0, 0, -1}, {0, 0, 1}, {-1, 0, 0}, {1, 0, 0}};
 
-        int FaceOf(glm::ivec3 direction) {
-            for (int f = 0; f < 6; f++)
-                if (kFaceNormal[f] == direction)
-                    return f;
-            return -1;
-        }
-
-        bool UnitStep(glm::ivec3 d) { return std::abs(d.x) + std::abs(d.y) + std::abs(d.z) == 1; }
+        bool Contains(const std::string& s, const char* part) { return s.find(part) != std::string::npos; }
     }
 
-    int MovementFace(glm::vec3 v) {
-        if (!std::isfinite(v.x) || !std::isfinite(v.z))
-            return -1;
-        const float ax = std::fabs(v.x), az = std::fabs(v.z);
-        if (std::max(ax, az) < 0.3f)  // blocks per second; below this the player is effectively still
-            return -1;
-        if (ax > az)
+    int FacingFromVec(glm::vec3 v) {
+        const float ax = std::fabs(v.x), ay = std::fabs(v.y), az = std::fabs(v.z);
+        if (ax >= ay && ax >= az)
             return v.x > 0.0f ? 5 : 4;
+        if (ay >= az)
+            return v.y > 0.0f ? 1 : 0;
         return v.z > 0.0f ? 3 : 2;
+    }
+
+    bool IsSnappable(const std::string& name, const std::vector<physics::Box>& shape) {
+        if (Contains(name, "stairs") || Contains(name, "slab") || Contains(name, "fence") || Contains(name, "_wall") ||
+            Contains(name, "glass_pane") || Contains(name, "iron_bars"))
+            return true;
+        // A full cube: one box covering the whole cell.
+        return shape.size() == 1 && shape[0].x0 <= 1e-6 && shape[0].y0 <= 1e-6 && shape[0].z0 <= 1e-6 && shape[0].x1 >= 1.0 - 1e-6 &&
+               shape[0].y1 >= 1.0 - 1e-6 && shape[0].z1 >= 1.0 - 1e-6;
     }
 
     bool SegmentHitsCell(glm::vec3 a, glm::vec3 b, glm::ivec3 cell) {
@@ -59,38 +60,79 @@ namespace perlin::heldbuild {
         return false;
     }
 
-    std::optional<Target> HeldBuild::Choose(std::optional<Target> crosshair, glm::vec3 eye, glm::vec3 look, float reach,
-                                            glm::vec3 velocity, bool sneaking) const {
-        if (last && step && !sneaking && SegmentHitsCell(eye, eye + look * reach, *last + *step))
-            return Target{*last, FaceOf(*step)};
-        if (crosshair)
-            return crosshair;
-        if (!last || sneaking)
-            return std::nullopt;
-        const int face = MovementFace(velocity);
-        if (face < 0)
-            return std::nullopt;
-        // Only build where the player could actually reach.
-        const glm::vec3 centre = glm::vec3(*last + kFaceNormal[face]) + glm::vec3(0.5f);
-        if (glm::length(centre - eye) > reach + 0.5f)
-            return std::nullopt;
-        return Target{*last, face};
+    void HeldBuild::Start() {
+        lastInteractive = lastSnappable = false;
+        hasDirection = hasLastBuilt = false;
+        pendingLine = false;
     }
 
-    void HeldBuild::Placed(glm::ivec3 cell) {
-        if (last) {
-            const glm::ivec3 d = cell - *last;
-            if (UnitStep(d)) {
-                if (pendingStep && *pendingStep == d)
-                    step = d;
-                else if (!step || *step != d)
-                    step.reset();
-                pendingStep = d;
-            } else {
-                step.reset();
-                pendingStep.reset();
+    void HeldBuild::Stop() {
+        hasDirection = hasLastBuilt = false;
+        pendingLine = false;
+    }
+
+    uint64_t HeldBuild::Delay(glm::vec3 posDelta, bool sneaking) const {
+        const float speed = glm::length(posDelta) * 20.0f;
+        if (sneaking || lastInteractive || (lastSnappable && !hasDirection))
+            return 300;
+        if (speed > 0.0f)
+            return static_cast<uint64_t>(std::min(900.0f / speed, 180.0f));
+        return 200;
+    }
+
+    std::optional<Target> HeldBuild::Next(const Hit& hit, glm::vec3 eye, glm::vec3 posDelta, bool sneaking, uint64_t nowMs,
+                                          const std::function<bool(glm::ivec3)>& canBuildOver) {
+        pendingLine = false;
+        // Which block to click (ClientInstance::_tickBuildAction).
+        Target click;
+        if (hasDirection && lastSnappable) {
+            if (!SegmentHitsCell(eye, hit.point, nextBuild))
+                return std::nullopt;
+            click = {nextBuild - direction, continueFacing};
+        } else if (hit.block) {
+            const glm::vec3 d = posDelta;
+            if (!lastSnappable || hasDirection || !hasLastBuilt || glm::dot(d, d) <= 0.0099999998f)
+                click = hit.target;
+            else
+                click = {lastBuilt, FacingFromVec(d)};
+        } else {
+            return std::nullopt;
+        }
+
+        // Whether the repeat may go now, and the build line (GameMode::continueBuildBlock).
+        const glm::ivec3 cell = canBuildOver(click.support) ? click.support : click.support + kFaceNormal[std::clamp(click.face, 0, 5)];
+        const uint64_t deadline = lastBuildMs + Delay(posDelta, sneaking);
+        if (deadline >= nowMs)
+            return std::nullopt;
+        // While moving, a late repeat banks at most 180 ms of lost time, so the next one is not instant.
+        nextBuildMs = glm::length(posDelta) > 0.0f ? std::max(deadline, nowMs > 180 ? nowMs - 180 : 0) : nowMs;
+        if (sneaking || !lastSnappable)
+            return click;
+        if (!hasDirection) {
+            if (!hasLastBuilt)
+                return click;
+            const glm::ivec3 d = cell - lastBuilt;
+            if (std::abs(d.x) + std::abs(d.y) + std::abs(d.z) == 1) {
+                hasDirection = true;
+                nextBuild = cell;
+                direction = d;
+                continueFacing = FacingFromVec(glm::vec3(d));
             }
         }
-        last = cell;
+        if (!hasDirection || cell != nextBuild)
+            return std::nullopt;
+        pendingLine = true;
+        return click;
+    }
+
+    void HeldBuild::Built(const Target&, glm::ivec3 cell, bool snappable, bool interactive, uint64_t nowMs, bool fromRepeat) {
+        if (fromRepeat && pendingLine)
+            nextBuild += direction;
+        pendingLine = false;
+        lastInteractive = interactive;
+        lastSnappable = !interactive && snappable;
+        lastBuilt = cell;
+        hasLastBuilt = true;
+        lastBuildMs = fromRepeat ? nextBuildMs : nowMs;
     }
 }

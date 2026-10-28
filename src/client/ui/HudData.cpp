@@ -130,8 +130,8 @@ namespace perlin::ui {
             if (index < 0 || static_cast<size_t>(index) >= s.sidebar.size())
                 return false;
             const HudSidebarRow& row = s.sidebar[static_cast<size_t>(index)];
-            if (binding == "#player_name_sidebar") return set(Json(row.name));
-            if (binding == "#player_score_sidebar") return set(Json(std::to_string(row.score)));
+            if (binding == "#player_name_sidebar" || binding == "#player_name") return set(Json(row.name));
+            if (binding == "#player_score_sidebar" || binding == "#player_score") return set(Json(std::to_string(row.score)));
             return false;
         }
         if (collection != "hotbar_items" || index < 0 || index >= 9)

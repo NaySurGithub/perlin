@@ -4,43 +4,73 @@
 #include <glm/glm.hpp>
 
 #include <cstdint>
+#include <functional>
 #include <optional>
+#include <string>
 #include <vector>
 
-// Placement while the use button is held, Bedrock style: after the first block, holding use keeps building from the
-// block you just placed, so walking backwards (or sideways) off an edge extends a bridge without aiming at a face.
+// Placement while the use button stays held, following the game's own rules (ClientInstance::_tickBuildAction and
+// GameMode::startBuildBlock / continueBuildBlock / stopBuildBlock):
+//  - A fresh press always places at the crosshair (Start + Built).
+//  - While held, each attempt waits for the repeat delay: 300 ms when sneaking, after an interactive block, or with a
+//    snappable block before a build line exists; otherwise min(900 / speed, 180) ms (speed in blocks per second,
+//    3D, from this tick's movement), 200 ms when standing still.
+//  - Snappable blocks (full cubes, stairs, slabs, fences, panes and bars) form a build line: once a repeat lands one
+//    block from the last one, only the next cell along that line is ever placed, and only while the look ray passes
+//    through it. Moving players extend from the last placed block on the face they move toward.
+//  - Releasing use ends the line.
 namespace perlin::heldbuild {
-    // A support block and the face of it to click (0 down, 1 up, 2 north, 3 south, 4 west, 5 east).
+    // A block and the face of it to click (0 down, 1 up, 2 north, 3 south, 4 west, 5 east).
     struct Target {
         glm::ivec3 support{};
         int face = 0;
     };
 
-    class HeldBuild {
-    public:
-        // The target for this attempt, in priority order:
-        //  1. Continuing a confirmed bridge: once two placements in a row stepped the same way, the next cell in that
-        //     direction is used whenever the look ray (eye..eye+look*reach) passes through it.
-        //  2. The crosshair's block face.
-        //  3. The last placed block, on its side facing the player's horizontal movement (not while sneaking: sneaking
-        //     builds only where you aim).
-        std::optional<Target> Choose(std::optional<Target> crosshair, glm::vec3 eye, glm::vec3 look, float reach,
-                                     glm::vec3 velocity, bool sneaking) const;
-        // A placement was sent into `cell`.
-        void Placed(glm::ivec3 cell);
-        void Reset() { *this = HeldBuild{}; }
-
-    private:
-        std::optional<glm::ivec3> last;
-        std::optional<glm::ivec3> step;  // confirmed by two consecutive unit steps in the same direction
-        std::optional<glm::ivec3> pendingStep;
+    struct Hit {
+        bool block = false;     // the crosshair is on a block (a direct hit)
+        Target target;
+        glm::vec3 point{};      // where the ray stopped: the hit point, or eye + look * reach without a hit
     };
 
-    // Face index pointing along the dominant horizontal movement axis, or -1 when (nearly) standing still.
-    int MovementFace(glm::vec3 velocity);
+    class HeldBuild {
+    public:
+        // Fresh press (GameMode::startBuildBlock): forgets the previous block's kind and any line.
+        void Start();
+        // Use released (GameMode::stopBuildBlock).
+        void Stop();
 
-    // Whether a block with collision `shape` (block-local boxes) placed at `cell` would overlap `body`. Bedrock never
-    // places a block into the player.
+        // The repeat to attempt now, or nothing. `canBuildOver(pos)` says whether placing on `pos` replaces that
+        // block (tall grass, snow layer...). `posDelta` is this tick's movement in blocks.
+        std::optional<Target> Next(const Hit& hit, glm::vec3 eye, glm::vec3 posDelta, bool sneaking, uint64_t nowMs,
+                                   const std::function<bool(glm::ivec3)>& canBuildOver);
+
+        // A placement went through: the click on `clicked` produced a block at `cell`. `snappable` / `interactive`
+        // describe the held block and the clicked block, as GameMode::useItemOn records them.
+        void Built(const Target& clicked, glm::ivec3 cell, bool snappable, bool interactive, uint64_t nowMs, bool fromRepeat);
+
+    private:
+        uint64_t Delay(glm::vec3 posDelta, bool sneaking) const;
+
+        bool lastInteractive = false;
+        bool lastSnappable = false;
+        bool hasDirection = false;
+        bool hasLastBuilt = false;
+        glm::ivec3 lastBuilt{};
+        glm::ivec3 nextBuild{};
+        glm::ivec3 direction{};
+        int continueFacing = 0;
+        uint64_t lastBuildMs = 0;
+        uint64_t nextBuildMs = 0;  // lastBuildMs after the attempt Next returned succeeds
+        bool pendingLine = false;  // the attempt in flight is the line's next cell
+    };
+
+    // Face index along the dominant axis of `v` (Facing::fromVec3), vertical included.
+    int FacingFromVec(glm::vec3 v);
+
+    // Full cubes, stairs, slabs, fences, walls, panes and bars: blocks that start a build line.
+    bool IsSnappable(const std::string& blockName, const std::vector<physics::Box>& shape);
+
+    // Whether a block with collision `shape` (block-local boxes) placed at `cell` would overlap `body`.
     bool OverlapsBody(glm::ivec3 cell, const std::vector<physics::Box>& shape, const physics::Box& body);
 
     // Whether the segment a..b passes through the unit cell (touching counts).

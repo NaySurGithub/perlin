@@ -755,7 +755,9 @@ namespace perlin::physics {
                 NoCollision(world, probe, scratch))
                 v.y = 0.3f;
         }
-        if (s.onGround && !sneaking && static_cast<float>(v.y) < 0.1f) {
+        // IDA SlimeBlock::onStandOn (0x1421c9d70): gates on fabs(mPosDelta.y) < 0.1,
+        // not a one-sided comparison. A fast rise (vy > 0.1, e.g. bounce) must not damp.
+        if (s.onGround && !sneaking && std::fabs(static_cast<float>(v.y)) < 0.1f) {
             const BlockShape stand = world.Query(static_cast<int>(std::floor(s.x)),
                                                  static_cast<int>(std::floor(s.y - 0.5)),
                                                  static_cast<int>(std::floor(s.z)));

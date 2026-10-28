@@ -556,6 +556,10 @@ namespace perlin::ui {
             }
 
             bool Global(const std::string& name, Json& out) const override {
+                if (name == "#form_button_length") {
+                    out = Json(static_cast<double>(items.size()));
+                    return true;
+                }
                 if (name == "#title_text") {
                     out = Json(form.title);
                     return true;
@@ -627,11 +631,17 @@ namespace perlin::ui {
                     return true;
                 }
                 if (binding == "#form_button_texture") {
-                    out = Json(b.imageType == "path" ? b.imageData : std::string());
+                    // Web images report "loading" until downloaded, as the game does; packs show a spinner for it.
+                    if (b.imageType == "url") {
+                        std::string bytes;
+                        out = Json(FormImageBytes(b.imageData, bytes) ? (bytes.empty() ? std::string() : "mcurl:" + b.imageData) : std::string("loading"));
+                    } else {
+                        out = Json(b.imageType == "path" ? b.imageData : std::string());
+                    }
                     return true;
                 }
                 if (binding == "#form_button_texture_file_system") {
-                    out = Json(std::string());
+                    out = Json(std::string(b.imageType == "url" ? "Url" : b.imageType == "path" ? "InUserPackage" : ""));
                     return true;
                 }
                 if (binding == "#form_button_contents") {

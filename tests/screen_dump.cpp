@@ -45,8 +45,13 @@ namespace {
     }
 
     void Props(const Node& n, const std::string& name) {
-        if (n.name == name) std::fprintf(stderr, "PROPS %s: %s\n", n.path.c_str(), n.props.Dump().c_str());
+        if (n.name == name) {
+            std::fprintf(stderr, "PROPS %s: %s\n", n.path.c_str(), n.props.Dump().c_str());
+            for (const Json& b : n.bindings) std::fprintf(stderr, "  BINDING %s\n", b.Dump().c_str());
+        }
         for (auto& k : n.children) Props(*k, name);
+        if (n.gridTemplate) Props(*n.gridTemplate, name);
+        for (auto& f : n.factoryControls) Props(*f.second, name);
     }
 
     // SCREEN_VARS: {"#name": value}; SCREEN_COLLECTIONS: {"form_buttons": [{"#form_button_text": "x"}]};

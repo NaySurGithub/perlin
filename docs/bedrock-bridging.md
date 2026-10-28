@@ -1,35 +1,44 @@
 # Bedrock bridging
 
-With **Bedrock Bridging** enabled in gameplay settings, holding **Use Item / Place Block** with a block in hand
-follows Bedrock Edition's held-placement rules, so every bridging technique (speed, god, breezily, telly, jump,
-sneak bridging) behaves as it does in the game. With the option off, Perlin uses ordinary ray targeting and a fixed
-repeat.
+With **Bedrock Bridging** enabled in gameplay settings, placing blocks follows Bedrock Edition's own rules. They were
+read out of the client (`ClientInstance::_tickBuildAction`, `GameMode::startBuildBlock`, `continueBuildBlock`,
+`stopBuildBlock` and `GameMode::useItemOn`) and live in `src/client/player/HeldBuild.{hpp,cpp}`. Reach-around for
+fresh presses (placing against the block you stand on while aiming past its edge) lives in
+`src/client/player/Bridging.{hpp,cpp}`.
 
-The rules live in `src/client/player/BuildIntention.{hpp,cpp}`, ported from
-[Cinnabar](https://github.com/cinnabar-mc/cinnabar) under the PolyForm Noncommercial License 1.0.0
-(`third_party/cinnabar/LICENSE`).
+## Fresh press
 
-## Target
+A new press places at the crosshair (or the reach-around target) immediately and starts a new build: the previous
+block's kind and any build line are forgotten. A block is never placed into the player's own body.
 
-- The first click of a press uses the crosshair's block face, as normal.
-- While use stays held, after a successful placement, the next attempt clicks the **last placed block** on the face
-  pointing along the player's **dominant movement axis** (sneaking keeps the crosshair's own support). Walking
-  backwards off an edge therefore keeps extending the bridge without aiming at a face.
-- Two adjacent successful repeats without sneaking establish a **build line**. From then on the next cell on that
-  line is clicked whenever the look ray, from the eye to the 5.7 block reach, passes through it, wherever the
-  crosshair is pointing. A failed attempt does not advance the line. Releasing use, emptying the hand or leaving
-  gameplay clears the line.
+## Held use
 
-## Repeat timing
+While use stays held, each attempt first picks what to click:
 
-| State | Interval |
+1. With a **build line** (see below), the next cell on the line, but only while the look ray (eye to the crosshair hit,
+   or to full reach without a hit) passes through that cell.
+2. Otherwise, with the crosshair directly on a block:
+   - the crosshair block and face, unless the player is moving, the last block was snappable, no line exists yet and
+     a block was already placed: then the **last placed block**, on the face along the player's movement this tick
+     (dominant axis of the 3D movement, so vertical movement counts too).
+3. Without a direct hit (and no line), nothing.
+
+It then waits for the repeat delay since the last placement:
+
+| State | Delay |
 | --- | --- |
-| Sneaking, using a block, or placing before a line exists | 300 ms |
+| Sneaking, after an interactive block, or a snappable block before a line exists | 300 ms |
+| Moving | `min(900 / speed, 180)` ms, speed in blocks per second from this tick's movement |
 | Standing still | 200 ms |
-| Moving | `min(900 / speed, 180)` ms, speed in blocks per second |
-| Survival / adventure floor | at least 100 ms |
 
-A fresh press always acts immediately.
+While moving, a late placement banks at most 180 ms of the lost time, so the next one is not instant.
+
+## Build line
+
+Snappable blocks are full cubes, stairs, slabs, fences, walls, panes and bars (`isSnappableBlock`). When a held repeat
+lands exactly one block from the last placed block, that step becomes the line: from then on only the line's next cell
+is placed, and each success moves it one step further. Sneaking, or a non-snappable block, places wherever the click
+goes without a line. Releasing use ends the line.
 
 ## Prediction
 
@@ -39,9 +48,8 @@ corrected by the existing prediction expiry.
 
 ## Validation
 
-`build_intention_selftest` covers the repeat table, the dominant-axis face, line establishment, continuation off
-the crosshair, failed attempts, and sneaking.
+`bridging_selftest` covers reach-around targeting.
 
 ```sh
-cmake --build build --target build_intention_selftest && ./build/build_intention_selftest
+cmake --build build --target bridging_selftest && ./build/bridging_selftest
 ```

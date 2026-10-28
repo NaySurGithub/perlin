@@ -1,6 +1,7 @@
 #pragma once
 #include "client/entity/EntityTracker.hpp"
 #include "client/player/BlockCollision.hpp"
+#include "client/player/Targeting.hpp"
 
 #include <functional>
 #include <glm/glm.hpp>
@@ -25,17 +26,4 @@ namespace perlin {
                    const std::function<glm::vec2(const entity::Entity&)>& bounds, const glm::dvec3& eye,
                    const glm::dvec3& direction, double reach, double entityReach = -1.0);
 
-    // GameMode::getPickRange (client 0x141f87030): the block-interaction range the game validates against.
-    // Mouse 5.7, gamepad/motion 5.6, creative 12.0, VR 7.0 (12.0 creative).
-    inline double PickRange(bool creative, int inputMode, bool vr = false) {
-        if (vr)
-            return creative ? 12.0 : 7.0;
-        if (inputMode == 1)
-            return 5.7;
-        if (inputMode == 3 || inputMode == 4)
-            return 5.6;
-        if (creative)
-            return 12.0;
-        return 6.7;
-    }
 }

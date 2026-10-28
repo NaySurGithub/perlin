@@ -1,3 +1,4 @@
+#include <cstdlib>
 #include "client/ui/RmlEmit.hpp"
 #include "client/ui/FormatCodes.hpp"
 #include "client/ui/McFont.hpp"
@@ -94,6 +95,8 @@ namespace perlin::ui {
             body += " alpha=\"" + Num(st.alpha) + "\"";
         if (st.keepRatio)
             body += " keep=\"1\"";
+        if (!st.id.empty())
+            body += " id=\"" + EscapeRml(st.id) + "\"";
         body += "/>\n";
     }
 
@@ -126,8 +129,9 @@ namespace perlin::ui {
                             const std::string& extraAttrs) {
         count++;
         body += "  <div" + (cls.empty() ? std::string() : " class=\"" + cls + "\"") + (id.empty() ? std::string() : " id=\"" + EscapeRml(id) + "\"") + extraAttrs +
-                " style=\"position:absolute;display:block;left:" + Num(ax - ox) + "px;top:" + Num(ay - oy) + "px;width:" + Num(w) + "px;height:" + Num(h) +
-                "px;z-index:" + std::to_string(z) + ";" + (clip ? "overflow:hidden;" : "") + "\">\n";
+                // Hover/default layers take display from the stylesheet, so an inline display must not override it.
+                " style=\"position:absolute;" + (cls == "hv" || cls == "df" ? "" : "display:block;") + "left:" + Num(ax - ox) + "px;top:" + Num(ay - oy) + "px;width:" + Num(w) + "px;height:" + Num(h) +
+                "px;z-index:" + std::to_string(z) + ";" + (clip ? "overflow:hidden;clip:always;" : "") + "\">\n";
         origins.emplace_back(ox, oy);
         ox = ax;
         oy = ay + scroll;
@@ -205,6 +209,34 @@ namespace perlin::ui {
 
     namespace {
         bool ReadColor(const Json* v, float& r, float& g, float& b, float* a = nullptr) {
+            // Colours can also be named ("black", "white", ...) or written as hex ("#RRGGBB").
+            if (v && v->IsString()) {
+                static const std::pair<const char*, uint32_t> kNamed[] = {
+                    {"white", 0xFFFFFF}, {"black", 0x000000}, {"red", 0xFF0000}, {"green", 0x00FF00}, {"blue", 0x0000FF},
+                    {"yellow", 0xFFFF00}, {"cyan", 0x00FFFF}, {"magenta", 0xFF00FF}, {"grey", 0x808080}, {"gray", 0x808080},
+                    {"orange", 0xFFA500}, {"purple", 0x800080}, {"pink", 0xFFC0CB}, {"brown", 0x8B4513}, {"nil", 0xFFFFFF}};
+                std::string name;
+                for (const char c : v->string)
+                    name += static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+                uint32_t rgb = 0;
+                bool found = false;
+                for (const auto& [key, value] : kNamed)
+                    if (name == key) {
+                        rgb = value;
+                        found = true;
+                    }
+                if (!found && name.size() == 7 && name[0] == '#') {
+                    char* end = nullptr;
+                    rgb = static_cast<uint32_t>(std::strtoul(name.c_str() + 1, &end, 16));
+                    found = end && *end == 0;
+                }
+                if (!found)
+                    return false;
+                r = static_cast<float>((rgb >> 16) & 0xFF) / 255.0f;
+                g = static_cast<float>((rgb >> 8) & 0xFF) / 255.0f;
+                b = static_cast<float>(rgb & 0xFF) / 255.0f;
+                return true;
+            }
             if (!v || !v->IsArray() || v->array.size() < 3)
                 return false;
             r = static_cast<float>(v->array[0].NumberOr(1));
@@ -316,6 +348,33 @@ namespace perlin::ui {
                     return "s:" + std::to_string(std::max(0, n.index)) + ":+";
                 if (id == "button.menu_exit" || id == "button.menu_cancel" || id == "button.exit_dialog" || id.find("close") != std::string::npos)
                     return "close";
+            }
+            // Container slots answer to the ids Perlin's inventory logic already understands: s<n> for the player's
+            // inventory (hotbar first) and k<n> for the open container.
+            for (const Json& m : maps->array) {
+                const Json* to = m.IsObject() ? m.Find("to_button_id") : nullptr;
+                if (!to || !to->IsString() || to->string != "button.container_take_all_place_all" || n.index < 0)
+                    continue;
+                if (n.collection == "container_items")
+                    return "k" + std::to_string(n.index);
+                if (n.collection == "inventory_items")
+                    return "s" + std::to_string(9 + n.index);
+                if (n.collection == "hotbar_items")
+                    return "s" + std::to_string(n.index);
+            }
+            // Any other screen: hand the game the raw button id so it can route button.menu_play, button.menu_settings, ...
+            // Collection rows carry their index, as Bedrock's button handlers receive it.
+            for (const Json& m : maps->array) {
+                const Json* to = m.IsObject() ? m.Find("to_button_id") : nullptr;
+                if (!to || !to->IsString() || to->string.empty() || to->string[0] == '$')
+                    continue;
+                const Json* from = m.Find("from_button_id");
+                const Json* type = m.Find("mapping_type");
+                // Pure focus/controller mappings never fire from a mouse click.
+                if (type && type->IsString() && type->string == "focused" && from && from->IsString() &&
+                    from->string != "button.menu_select" && from->string != "button.menu_ok")
+                    continue;
+                return "jb:" + to->string + (n.index >= 0 ? ":" + std::to_string(n.index) : std::string());
             }
             return {};
         }
@@ -459,7 +518,11 @@ namespace perlin::ui {
                 unknown.push_back(name);
             }
         }
-        const bool clips = n.Bool("clips_children", false) && n.type != "button" && n.w > 0 && n.h > 0 && !n.kids.empty();
+        const bool clipFlag = n.Bool("clips_children", false) && n.type != "button" && !n.kids.empty();
+        // A clipping control with no area shows nothing (packs hide "font warmer" labels this way).
+        if (clipFlag && (n.w <= 0 || n.h <= 0))
+            return;
+        const bool clips = clipFlag;
         if (clips)
             out.BeginBox(n.ax, n.ay, n.w, n.h, n.layer, "", "", true);
         for (const auto& kid : n.kids)
@@ -655,7 +718,10 @@ mcimg, mcitem { display: block; position: absolute; }
             ".link { display: block; position: absolute; }\n"
             ".link .ul { display: none; position: absolute; left: 0px; bottom: 0px; width: 100%; height: 1px; background-color: #ffff55; }\n"
             ".link:hover .ul { display: block; }\n"
-            ".bt .hv { display: none; }\n.bt:hover .hv { display: block; }\n.bt:hover .df { display: none; }\n";
+            ".df { display: block; }\n.bt .hv { display: none; }\n.bt:hover .hv { display: block; }\n.bt:hover .df { display: none; }\n"
+            // Only interactive controls take the pointer, as in the game: decoration drawn over a button (sheens,
+            // borders, hover fills) must not swallow its clicks.
+            "body * { pointer-events: none; }\n.bt, .bt *, .link, .link * { pointer-events: auto; }\n";
         if (const size_t at = doc.find("<style>"); at != std::string::npos)
             doc.insert(at + 7, kEngineCss);
         return doc;

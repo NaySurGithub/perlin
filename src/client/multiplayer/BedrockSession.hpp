@@ -289,6 +289,10 @@ namespace perlin {
         bool SendSettingsCommand(const std::string& command);
         bool SendSkinUpdate();
         std::string lastSentSkinName;
+        // Locally predicted XP orb pickup (TakeItemEntityPacket) to dedupe the
+        // server SoundOrb echo for the same pickup.
+        uint64_t lastLocalOrbMs = 0;
+        float lastOrbX = 0.0f, lastOrbY = 0.0f, lastOrbZ = 0.0f;
         uint32_t CommandsVersion() const { std::lock_guard<std::mutex> lk(commandMutex); return commandVersion; }
         std::vector<ui::CommandInfo> Commands() const { std::lock_guard<std::mutex> lk(commandMutex); return commands; }
         struct TabPlayer {

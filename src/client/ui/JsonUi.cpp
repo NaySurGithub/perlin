@@ -296,10 +296,12 @@ namespace perlin::ui {
                     documents.push_back(std::move(patched));
                     def.json = &documents.back();
                     def.key = existing->second.key;
-                } else if (existing != ns.defs.end() && member.first.find('@') == std::string::npos) {
+                } else if (existing != ns.defs.end() &&
+                           (member.first.find('@') == std::string::npos || member.first == existing->second.key)) {
                     // A later file (a server pack over a vanilla screen) refines the control it named: properties
-                    // replace, "controls" is replaced only when the refinement lists its own. Redefining the control
-                    // through a template ("name@other.control") replaces it outright instead.
+                    // replace, "controls" is replaced only when the refinement lists its own. The same key with the same
+                    // template ("long_form@common_dialogs.main_panel_no_buttons" again) is the same JSON entry and merges
+                    // too; naming a different template ("name@other.control") replaces the control outright.
                     Json merged = *existing->second.json;
                     for (const auto& prop : member.second.object)
                         merged.Set(prop.first, prop.second);
@@ -351,7 +353,10 @@ namespace perlin::ui {
             switch (v.type) {
             case Json::Type::Bool: return v.boolean ? "true" : "false";
             case Json::Type::Number: return v.Dump();
-            case Json::Type::String: return expression ? "'" + v.string + "'" : v.string;
+            // Inside an expression a variable holding a binding name ("#is_selected_slot") stands for that binding;
+            // any other string is a quoted literal.
+            case Json::Type::String:
+                return expression && !(v.string.size() > 1 && v.string[0] == '#') ? "'" + v.string + "'" : v.string;
             case Json::Type::Null: return expression ? "null" : "";
             default: return v.Dump();
             }
