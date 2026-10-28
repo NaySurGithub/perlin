@@ -39,6 +39,7 @@
 #include "client/player/Bridging.hpp"
 #include "client/ui/DeathScreen.hpp"
 #include "client/ui/BedScreen.hpp"
+#include "client/ui/CreditsScreen.hpp"
 #include "client/ui/InventoryScreen.hpp"
 #include "client/ui/CreativeScreen.hpp"
 #include "client/ui/DisconnectScreen.hpp"
@@ -1102,6 +1103,51 @@ namespace perlin {
         bedLeftDown = down;
         if (leave)
             live->SendStopSleeping();
+    }
+
+    void Perlin::UpdateCreditsScreen(ui::Hud& hud, BedrockSession* live, int fbW, int fbH) {
+        // PERLIN_PREVIEW_CREDITS replays the credits from the top whenever they finish.
+        const bool preview = !live && PERLIN_ENV("PERLIN_PREVIEW_CREDITS") != nullptr;
+        if (!live && !preview) {
+            creditsShown = false;
+            return;
+        }
+        if ((preview || live->TakeCreditsRequest()) && !creditsShown) {
+            creditsShown = true;
+            creditsScroll = 0;
+            creditsLast = std::chrono::steady_clock::now();
+            input.SetTextMode(true);
+        }
+        if (!creditsShown)
+            return;
+        const int scale = hud.OverlayScale();
+        const int guiW = static_cast<int>(std::ceil(static_cast<float>(fbW) / static_cast<float>(scale)));
+        const int guiH = static_cast<int>(std::ceil(static_cast<float>(fbH) / static_cast<float>(scale)));
+        const auto now = std::chrono::steady_clock::now();
+        // About one GUI pixel per tick, like the Java end poem.
+        creditsScroll += std::chrono::duration<double>(now - creditsLast).count() * 20.0;
+        creditsLast = now;
+        // The document only changes when the text moves by a whole pixel.
+        const std::string signature = std::to_string(static_cast<int>(creditsScroll)) + "|" + std::to_string(guiW) + "x" + std::to_string(guiH);
+        if (signature != creditsSignature || !hud.Overlay().HasOverlay()) {
+            creditsSignature = signature;
+            std::string error;
+            if (!hud.Overlay().SetOverlay(ui::BuildCreditsScreenRml(guiW, guiH, static_cast<int>(creditsScroll), live ? live->PlayerName() : options.playerName), error))
+                std::cout << "[ui] credits screen: " << error << std::endl;
+        }
+        hud.UpdateOverlay(fbW, fbH, options.guiScale);
+        bool done = creditsScroll > guiH + ui::CreditsHeight();
+        for (const auto& t : inputManager.TakeTyped())
+            if (!t.character && t.key == Key::Escape)
+                done = true;
+        if (done) {
+            creditsShown = false;
+            hud.Overlay().ClearOverlay();
+            if (!chat.IsOpen())
+                input.SetTextMode(false);
+            if (live)
+                live->SendCreditsFinished();
+        }
     }
 
     void Perlin::UpdateDeathScreen(ui::Hud& hud, BedrockSession* live, const ui::HudState& state, int fbW, int fbH) {
@@ -6000,9 +6046,16 @@ namespace perlin {
         if (preview) {
             info.happened = true;
             info.reason = 55;
+            const char kind = PERLIN_ENV("PERLIN_PREVIEW_DISCONNECT")[0];
+            if (kind == 'c' || kind == 's') {
+                info.outdated = kind == 'c' ? 1 : 2;
+                info.serverVersion = kind == 'c' ? "1.26.70" : "1.21.50";
+            }
             info.message = PERLIN_ENV("PERLIN_PREVIEW_DISCONNECT")[0] == 'b'
                                ? "You are banned from this server.\nReason: Cheating (fly hacks)\nExpires in 29d 23h 59m"
                                : "Kicked by an operator";
+            if (info.outdated)
+                info.message.clear();
         } else {
             info = session->GetDisconnectInfo();
             lastError = session->LastError();
@@ -6013,7 +6066,17 @@ namespace perlin {
             if (translated != message)
                 message = translated;
         }
-        if (info.happened && info.connectionLost) {
+        if (info.outdated != 0) {
+            const bool clientOld = info.outdated == 1;
+            t.title = i18n::Tr(clientOld ? "perlin.disconnect.outdated_client" : "perlin.disconnect.outdated_server");
+            t.reason = i18n::Tr(clientOld ? "perlin.disconnect.outdated_client_reason" : "perlin.disconnect.outdated_server_reason");
+            const std::string theirs = !info.serverVersion.empty() ? info.serverVersion
+                                       : info.serverProtocol > 0  ? "protocol " + std::to_string(info.serverProtocol)
+                                                                  : "?";
+            t.reason += "\n\n" + i18n::Tr("perlin.disconnect.versions", {theirs, std::string(kBedrockVersion)});
+            if (!message.empty())
+                t.reason += "\n" + message;
+        } else if (info.happened && info.connectionLost) {
             t.title = i18n::Tr("perlin.disconnect.lost");
             t.reason = i18n::Tr("perlin.disconnect.lost_reason");
             if (!message.empty())
@@ -6163,6 +6226,14 @@ namespace perlin {
             }
             s.burning = PERLIN_ENV("PERLIN_PREVIEW_FIRE") != nullptr;
             s.fireFrame = static_cast<int>(s.tick % 32);
+            // PERLIN_PREVIEW_SCREENANIM=totem or an effect id (28 bad omen, 29 hero of the village): loops every 2.5 s.
+            if (const char* anim = PERLIN_ENV("PERLIN_PREVIEW_SCREENANIM")) {
+                const double t = std::fmod(std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count(), 2.5) / 2.0;
+                if (t < 1.0) {
+                    s.screenAnimation = std::string(anim) == "totem" ? BedrockSession::kTotemScreenAnimation : std::atoi(anim);
+                    s.screenAnimationT = static_cast<float>(t);
+                }
+            }
             if (const char* item = PERLIN_ENV("PERLIN_PREVIEW_ITEM")) {
                 ui::HudItem& h = s.hotbar[std::clamp(previewSlot, 0, 8)];
                 h.name = item;
@@ -6252,6 +6323,18 @@ namespace perlin {
         s.air = vitals.air;
         s.burning = vitals.onFire && s.mode != ui::GameMode::Spectator;
         s.fireFrame = static_cast<int>(s.tick % 32);
+        if (auto next = live->TakeScreenAnimation(); next.effect >= 0)
+            screenAnimation = next;
+        if (screenAnimation.effect >= 0) {
+            // Vanilla plays the item activation for 40 ticks.
+            const float t = std::chrono::duration<float>(std::chrono::steady_clock::now() - screenAnimation.started).count() / 2.0f;
+            if (t >= 1.0f) {
+                screenAnimation = {};
+            } else {
+                s.screenAnimation = screenAnimation.effect;
+                s.screenAnimationT = t;
+            }
+        }
         s.maxAir = std::max(1, vitals.maxAir);
         s.poison = vitals.poison;
         s.wither = vitals.wither;
@@ -6524,7 +6607,7 @@ namespace perlin {
                                         variant.find("stack") != std::string::npos ? 40 : 1, 0, 0, false);
             } else if (type == "player") {
                 previewEntities.AddPlayer(rid, static_cast<int64_t>(rid), "preview" + std::to_string(i), "Steve",
-                                          {p.x, p.y + entity::kPlayerEye, p.z}, 0.0f, yaw, yaw, 0, "");
+                                          {p.x, p.y, p.z}, 0.0f, yaw, yaw, 0, "");
                 auto skin = std::make_shared<entity::SkinData>();
                 skin->serial = 100 + i;
                 const bool slim = variant.find("alex") != std::string::npos;
@@ -7192,7 +7275,11 @@ namespace perlin {
                             live->SendSwingArm(gAim.kind == AimHit::Kind::Block ? "mine" : "attack");
                             if (gAim.kind == AimHit::Kind::None)
                                 live->QueueInputFlag(InputFlag::MissedSwing);
-                            if (gAim.kind == AimHit::Kind::Entity) {
+                            entity::Entity attacked;
+                            const bool mobBlocked = live->Adventure().noPvm && live->Entities().Find(gAim.entity, attacked) && !attacked.isPlayer;
+                            if (gAim.kind == AimHit::Kind::Entity && !mobBlocked) {
+                                // The click position is where the ray meets the target's hitbox, relative to the target's base
+                                // coordinate, not a world position.
                                 const glm::dvec3 feet((gAim.boxLo.x + gAim.boxHi.x) * 0.5, gAim.boxLo.y, (gAim.boxLo.z + gAim.boxHi.z) * 0.5);
                                 const glm::vec3 offset = EntityClickOffset({camera.x, camera.y, camera.z}, glm::dvec3(camera.Direction()), feet,
                                                                            (gAim.boxHi.x - gAim.boxLo.x) * 0.5, gAim.boxHi.y - gAim.boxLo.y,
@@ -7203,7 +7290,7 @@ namespace perlin {
                         }
                     }
                     const bool creativeSword = creative && held.name.ends_with("_sword");
-                    if (live && attackHeld && !creativeSword &&
+                    if (live && attackHeld && !creativeSword && !live->Adventure().immutableWorld &&
                         (!creative || MsNow() >= creativeBreakReadyAt) && gAim.kind == AimHit::Kind::Block) {
                         const bool newTarget = !breaking || gAim.bx != bkx || gAim.by != bky || gAim.bz != bkz;
                         if (newTarget && breakDelayTicks > 0 && !breaking) {
@@ -7395,6 +7482,8 @@ namespace perlin {
                             nameAt(clicked[0] + kOff[f][0], clicked[1] + kOff[f][1], clicked[2] + kOff[f][2]), clicked, useAim.face,
                             holdsItem, holdsBlock, player.Sneaking());
                         use = r.use;
+                        if (use == blockuse::Use::Place && live && live->Adventure().immutableWorld)
+                            use = blockuse::Use::Nothing;
                         std::copy(r.dest, r.dest + 3, dest);
                     }
                     if (gBridgeTarget && (use != blockuse::Use::Place ||
@@ -7479,8 +7568,13 @@ namespace perlin {
                             live->SendReleaseItem(eyeF);
                     }
 
-                    if (live && inputManager.Pressed(Action::PickBlock) && gAim.kind == AimHit::Kind::Block)
-                        live->SendPickBlock(gAim.bx, gAim.by, gAim.bz);
+                    if (live && inputManager.Pressed(Action::PickBlock)) {
+                        entity::Entity picked;
+                        if (gAim.kind == AimHit::Kind::Block)
+                            live->SendPickBlock(gAim.bx, gAim.by, gAim.bz);
+                        else if (gAim.kind == AimHit::Kind::Entity && live->Entities().Find(gAim.entity, picked))
+                            live->SendPickEntity(picked.runtimeId);
+                    }
 
                     if (live && inputManager.Pressed(Action::Drop) && !held.Empty())
                         live->SendDropSelected(inputManager.IsDown(Action::Sprint) ? 0 : 1);
@@ -8308,6 +8402,7 @@ namespace perlin {
                     ein.selfShadow = packShadows;
                 }
                 ein.ownNametag = options.thirdPersonNametag;
+                ein.nametags = !live || live->Adventure().showNameTags;
                 ein.nametagDepth = fgActive > 1;
                 ein.ownParts = options.skinParts;
                 ein.skins3d = options.skins3d;
@@ -8764,12 +8859,15 @@ namespace perlin {
                         else
                             UpdateReplayScreen(*hud, live, fbW, fbH);
                     } else if (!touchEditing && !titleUp && !disconnectUp && !loadingUp) {
-                        UpdateDeathScreen(*hud, live, hudState, fbW, fbH);
-                        UpdateFormScreen(*hud, live, fbW, fbH);
-                        UpdateInventoryScreen(*hud, live, hudState, fbW, fbH);
-                        UpdatePauseScreen(*hud, live, fbW, fbH);
-                        UpdateBedScreen(*hud, live, fbW, fbH);
-                        UpdateChatClicks(*hud, live, fbW, fbH);
+                        UpdateCreditsScreen(*hud, live, fbW, fbH);
+                        if (!creditsShown) {
+                            UpdateDeathScreen(*hud, live, hudState, fbW, fbH);
+                            UpdateFormScreen(*hud, live, fbW, fbH);
+                            UpdateInventoryScreen(*hud, live, hudState, fbW, fbH);
+                            UpdatePauseScreen(*hud, live, fbW, fbH);
+                            UpdateBedScreen(*hud, live, fbW, fbH);
+                            UpdateChatClicks(*hud, live, fbW, fbH);
+                        }
                     }
                     {
                         {
@@ -8862,7 +8960,7 @@ namespace perlin {
                         }
                     }
                     float cx, cy, cw, ch;
-                    if (options.showHud && !replayCtl.Playing() && !deathShown && !formShown && !invShown && !pauseShown && !disconnectShown && !loadingShown && !titleShown && (camera.mode == PerspectiveMode::FirstPerson || options.thirdPersonCrosshair) &&
+                    if (options.showHud && !replayCtl.Playing() && !deathShown && !formShown && !invShown && !pauseShown && !disconnectShown && !loadingShown && !titleShown && !creditsShown && (camera.mode == PerspectiveMode::FirstPerson || options.thirdPersonCrosshair) &&
                         hudState.mode != ui::GameMode::Spectator &&
                         hud->Cursor(cx, cy, cw, ch))
                         renderer->DrawHudCursor(cx, cy, cw, ch);

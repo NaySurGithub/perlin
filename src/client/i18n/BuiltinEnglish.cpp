@@ -93,6 +93,11 @@ namespace perlin::i18n {
     "perlin.disconnect.rejoin=Attempt to Rejoin\n"
     "perlin.disconnect.code=Reason code %s\n"
     "perlin.disconnect.hint.id_conflict=The server still has a session with this name from an earlier run. Wait about 30 seconds and try again.\n"
+    "perlin.disconnect.outdated_client=Perlin is outdated\n"
+    "perlin.disconnect.outdated_client_reason=This server runs a newer version of Minecraft than this Perlin build. Update Perlin to join it.\n"
+    "perlin.disconnect.outdated_server=Outdated server\n"
+    "perlin.disconnect.outdated_server_reason=This server runs an older version of Minecraft than Perlin supports. The server needs to update.\n"
+    "perlin.disconnect.versions=Server: %s  ·  Perlin: %s\n"
     "perlin.disconnect.hint.version=This server runs a different Minecraft version than Perlin supports.\n"
     "perlin.disconnect.hint.login=This server needs an Xbox login: start Perlin with --login.\n"
             ;

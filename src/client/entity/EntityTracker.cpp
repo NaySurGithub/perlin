@@ -29,7 +29,7 @@ namespace perlin::entity {
             e.skin = it->second;
     }
 
-    void EntityTracker::AddPlayer(uint64_t rid, int64_t uid, const std::string& uuid, const std::string& name, glm::dvec3 eyePos,
+    void EntityTracker::AddPlayer(uint64_t rid, int64_t uid, const std::string& uuid, const std::string& name, glm::dvec3 feetPos,
                                   float pitch, float yaw, float headYaw, uint64_t flags, const std::string& mainHand) {
         std::lock_guard lock(mutex);
         Entity& e = entities[rid];
@@ -40,7 +40,7 @@ namespace perlin::entity {
         e.isPlayer = true;
         e.uuid = uuid;
         e.name = name;
-        e.pos = {eyePos.x, eyePos.y - kPlayerEye, eyePos.z};
+        e.pos = feetPos;
         e.pitch = SignedPitch(pitch);
         e.yaw = yaw;
         e.headYaw = headYaw;
