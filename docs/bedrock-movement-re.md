@@ -71,3 +71,25 @@ against server behaviour, not assumed.
 3. `Actor::_move` (`0x141c55310`) — collision resolution order (axis order matters for bridging).
 4. `LocalPlayer::jumpFromGround` — jump impulse and jump-trigger conditions.
 5. Placement: search `*placeBlock*`, `*BlockPlacement*`, `*HitResult*` — reach, raycast, overlap.
+
+## Verified since (client 1.19 DB)
+
+| item | address | result |
+|---|---|---|
+| `Player::_jumpFromGround` | `0x141ed5f00` | gates on `canJump()`, then `Mob::_jumpFromGround`, then server jump-anim event |
+| `Mob::_jumpFromGround` | `0x141ea2770` | `mPosDelta.y = calculateJumpImpulse`; if sprinting `x -= sin[yaw*182.04443]*0.2`, `z += sin[yaw*182.04443 + 16384]*0.2` |
+| `Mob::calculateJumpImpulse` | `0x141ea25b0` | `getJumpPower() * (prevented ? 0.6 : 1.0)` + `((amp*0.1)+0.1)*mult` for JUMP effect |
+| `GameMode::getPickRange` | `0x141f87030` | mouse 5.7, gamepad/motion 5.6, creative 12.0, VR 7.0/12.0, default 6.7 |
+| `InGamePlayScreen::_pick` | `0x140f09e00` | casts with `clip(maxDistance: 200)`, caps selection with `fminf(dist, 7.0)` |
+| `Mob::_travel` | `0x141e9df30` | order: `_calcMoveRelativeSpeed` → `moveRelative` → gravity (`-0.01` or `-0.08`) → `getFrictionModifier()` → `applyFinalFriction(f, 0)` |
+| `Actor::_move` | `0x141c55310` | per-shape `AABB::clipCollide` over the collected collision list, not axis-separated sweeps |
+| `GameMode::useItemOn` | `0x141f864e0` | invisible-bedrock reject, target block identity check, AABB gate, liquid/bucket + axe/shovel tag branches, creative/survival split |
+
+Perlin already matches: `0.91 * blockFriction` ground composition, `DampComponent` snap at
+FLT_EPSILON, ice 0.98 / blue ice 0.989 / slime 0.8, sprint-jump 0.2 boost
+(`PerlinSineTable.hpp:41`), jump impulse + 0.6 prevention + JUMP effect (`PerlinJump.hpp:52-64`),
+`-0.08` gravity (`PerlinVerticalMotion.hpp:26`).
+
+Perlin does NOT have: the `-0.01` gravity branch, `getFrictionModifier()`, and it resolves motion
+by axis sweeps rather than a per-shape `clipCollide` loop — that last one is what makes
+edge/sneak-bridge placement decisions differ.
