@@ -66,7 +66,7 @@ namespace perlin::entity {
             bool chunkBorders = false;
             bool hitboxes = false;
             bool ownNametag = false;
-            bool nametags = true;  // UpdateAdventureSettings showNameTags
+            bool nametags = true;
             bool nametagDepth = false;
             SkinParts ownParts;
             glm::vec3 ownPose{0.0f};
