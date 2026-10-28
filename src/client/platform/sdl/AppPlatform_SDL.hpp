@@ -45,6 +45,8 @@ private:
     void SetClipboard(const std::string& text) override;
     std::string GetClipboard() override;
     double DisplayRefreshHz() override;
+    bool WindowFocused() const override;
+    bool WindowMinimized() const override;
     void OpenUrl(const std::string& url) override;
     bool PickFile(const std::string& kind) override;
     bool TakeSurfaceChanged() override { return surfaceChanged.exchange(false); }

@@ -296,6 +296,10 @@ std::string AppPlatform_SDL::GetClipboard() {
     return text;
 }
 
+bool AppPlatform_SDL::WindowFocused() const { return window && (SDL_GetWindowFlags(window) & SDL_WINDOW_INPUT_FOCUS) != 0; }
+
+bool AppPlatform_SDL::WindowMinimized() const { return window && (SDL_GetWindowFlags(window) & SDL_WINDOW_MINIMIZED) != 0; }
+
 double AppPlatform_SDL::DisplayRefreshHz() {
     static double cached = 0.0;
     static auto checked = std::chrono::steady_clock::time_point{};

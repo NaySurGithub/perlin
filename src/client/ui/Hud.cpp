@@ -222,8 +222,11 @@ namespace perlin::ui {
             BuildReport crossReport;
             crosshairTree = BuildTree(library, "hud_crosshair.hud_crosshair_screen", EngineRootVariables(), crossReport);
             cursorEmitter.Register("cursor_renderer", [this](const LNode& n, RmlWriter&) {
-                cursorX = std::floor(n.ax + (n.w - 15.0f) * 0.5f);
-                cursorY = std::floor(n.ay + (n.h - 15.0f) * 0.5f);
+                float dx = 0, dy = 0;
+                if (!FilterHudElement("cursor_renderer", dx, dy))
+                    return;
+                cursorX = std::floor(n.ax + dx + (n.w - 15.0f) * 0.5f);
+                cursorY = std::floor(n.ay + dy + (n.h - 15.0f) * 0.5f);
                 cursorValid = true;
             });
             cursorValid = false;
@@ -336,7 +339,8 @@ namespace perlin::ui {
         const bool animTick = animHost.animating && now - lastAnimEval >= 1.0 / 60.0;
         const std::string& rcss = rcssCache;
         const uint64_t signature = stateChanged || resized || rebuilt ? HudSignature(state) : lastSignature;
-        if (!rebuilt && !resized && !animTick && signature == lastSignature && rcss == lastRcss && fontVersion == McFont::Instance().Version()) {
+        if (!rebuilt && !resized && !animTick && signature == lastSignature && rcss == lastRcss && fontVersion == McFont::Instance().Version() &&
+            filterVersion == HudFilterVersion()) {
             backend.Update();
             return scale;
         }
@@ -344,6 +348,7 @@ namespace perlin::ui {
         lastAnimEval = now;
         lastRcss = rcss;
         fontVersion = McFont::Instance().Version();
+        filterVersion = HudFilterVersion();
 
         auto evaluated = EvaluateTree(*tree, *data, services, guiW, guiH);
         lastRml = emitter.Emit(*evaluated, guiW, guiH, rcss, false);

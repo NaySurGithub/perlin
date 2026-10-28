@@ -1,4 +1,5 @@
 #pragma once
+#include "client/ui/HudRenderers.hpp"
 #include "client/ui/HudData.hpp"
 #include "client/ui/HudState.hpp"
 #include "client/ui/JsonUi.hpp"
@@ -30,7 +31,8 @@ namespace perlin::ui {
         void Render();
 
         bool Cursor(float& x, float& y, float& w, float& hgt) const {
-            if (!cursorValid)
+            float dx = 0, dy = 0;
+            if (!cursorValid || !FilterHudElement("cursor_renderer", dx, dy))
                 return false;
             x = cursorX * scale; y = cursorY * scale; w = hgt = 15.0f * scale;
             return true;
@@ -90,5 +92,6 @@ namespace perlin::ui {
         bool dumped = false;
         bool javaStyle = false;
         uint64_t fontVersion = 0;
+        uint64_t filterVersion = 0;
     };
 }

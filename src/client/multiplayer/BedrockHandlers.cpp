@@ -6,6 +6,7 @@
 #include "client/multiplayer/CustomBlocks.hpp"
 #include "client/i18n/Lang.hpp"
 #include "client/player/VoxelShapes.hpp"
+#include "client/mods/ModManager.hpp"
 #include "network/ClientIdentity.hpp"
 #include "network/PacketDump.hpp"
 #include "world/level/block/BlockPalette.hpp"
@@ -859,6 +860,16 @@ namespace perlin {
                 ConfirmPlace(p.position.x, static_cast<int32_t>(p.position.y), p.position.z, static_cast<int32_t>(p.blockRuntimeId));
             if (p.layer == 0) {
                 const uint16_t id = BlockPalette::Instance().InternRuntime(static_cast<int32_t>(p.blockRuntimeId));
+                auto& mm = mods::ModManager::Instance();
+                if (mm.Wants(abi::Event::BlockChanged)) {
+                    const uint16_t was = netLevel.GetBlock(lastBlockPos[0], lastBlockPos[1], lastBlockPos[2]);
+                    if (was != id) {
+                        abi::Writer w;
+                        w.write(abi::EventBlockChanged{lastBlockPos[0], lastBlockPos[1], lastBlockPos[2], BlockPalette::Instance().Name(was),
+                                                       BlockPalette::Instance().Name(id)});
+                        mm.Queue(abi::Event::BlockChanged, std::move(w));
+                    }
+                }
                 netLevel.SetBlock(lastBlockPos[0], lastBlockPos[1], lastBlockPos[2], id);
                 std::lock_guard lock(supportMutex);
                 const auto now = std::chrono::steady_clock::now();
