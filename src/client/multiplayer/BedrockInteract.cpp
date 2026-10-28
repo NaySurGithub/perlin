@@ -188,6 +188,24 @@ namespace perlin {
         return Send(p);
     }
 
+    bool BedrockSession::SendCreditsFinished() {
+        ShowCreditsPacket p;
+        p.runtimeEntityId = runtimeId;
+        p.status = 1;
+        return Send(p);
+    }
+
+    bool BedrockSession::SendPickEntity(uint64_t runtimeId) {
+        EntityPickRequestPacket p;
+        p.runtimeEntityId = runtimeId;
+        p.withData = false;
+        {
+            std::lock_guard lock(statusMutex);
+            p.selectedSlot = static_cast<uint8_t>(std::clamp(inventory.selected, 0, 8));
+        }
+        return Send(p);
+    }
+
     bool BedrockSession::SendDropRequest(int slot, int count, int attempt) {
         ItemStackRequestPacket p;
         ItemStackRequest r;

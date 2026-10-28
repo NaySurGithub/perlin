@@ -2003,7 +2003,7 @@ namespace perlin::entity {
             // Bedrock shows a name only when the server allows it (can-show / always-show name flags); NPCs that are
             // fake players leave both off. The shown text is the name tag, falling back to a player's username.
             const bool nameAllowed = e.isSelf || e.Has(flag::CanShowName) || e.Has(flag::AlwaysShowName) || !e.isPlayer;
-            if (!e.isItem && !nameHidden && nameAllowed && !(e.isSelf && (in.firstPerson || !in.ownNametag))) {
+            if (in.nametags && !e.isItem && !nameHidden && nameAllowed && !(e.isSelf && (in.firstPerson || !in.ownNametag))) {
                 const std::string& label = !e.nameTag.empty() ? e.nameTag : e.isPlayer ? e.name : e.nameTag;
                 const double d2 = glm::dot(delta, delta);
                 if (!label.empty() && d2 < (e.isPlayer ? 64.0 * 64.0 : 16.0 * 16.0)) {

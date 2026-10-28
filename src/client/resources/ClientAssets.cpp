@@ -16,7 +16,7 @@ namespace fs = std::filesystem;
 
 namespace perlin::clientassets {
     namespace {
-        constexpr const char* kMarker = ".ready5";
+        constexpr const char* kMarker = ".ready7";
         const std::string kBase = "assets/minecraft/textures/";
 
         struct Image {
@@ -74,6 +74,19 @@ namespace perlin::clientassets {
             ~Jar() {
                 if (open)
                     mz_zip_reader_end(&zip);
+            }
+
+            bool Raw(const std::string& name, std::string& out) {
+                const auto it = index.find(name);
+                if (it == index.end())
+                    return false;
+                size_t size = 0;
+                void* bytes = mz_zip_reader_extract_to_heap(&zip, it->second, &size, 0);
+                if (!bytes)
+                    return false;
+                out.assign(static_cast<const char*>(bytes), size);
+                mz_free(bytes);
+                return true;
             }
 
             Image Load(const std::string& name) {
@@ -262,6 +275,13 @@ namespace perlin::clientassets {
             };
             for (const auto& [dst, src] : sprites)
                 emit(dst, gui(src));
+        }
+
+        // The End poem and Mojang's Java credits, rolled when leaving the End.
+        for (const char* text : {"end.txt", "credits.json", "postcredits.txt"}) {
+            std::string bytes;
+            if (jar.Raw(std::string("assets/minecraft/texts/") + text, bytes))
+                std::ofstream(dir / text, std::ios::binary) << bytes;
         }
 
         std::cout << "[assets] built " << saved << " client images (" << missing << " missing)" << std::endl;

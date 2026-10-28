@@ -219,13 +219,19 @@ namespace perlin {
 
         On<PlayStatusPacket>([this](const PlayStatusPacket& p) {
             std::cout << "[bedrock] PlayStatus " << static_cast<int>(p.status) << std::endl;
+            // Status 1 means our client is outdated, 2 (named FailedSpawn in the protocol data; LoginFailedServer in
+            // Bedrock) means the server is. Either can arrive before the network settings, not only after Login.
+            if ((p.status == PlayStatusPacketStatus::FailedClient || p.status == PlayStatusPacketStatus::FailedSpawn) && state != State::InGame) {
+                const bool clientOld = p.status == PlayStatusPacketStatus::FailedClient;
+                lastError = clientOld ? "Perlin is outdated for this server" : "the server is outdated for Perlin";
+                SetOutdated(clientOld ? 1 : 2);
+                state = State::Failed;
+                return;
+            }
             if (state == State::WaitingPlayStatus) {
                 if (p.status != PlayStatusPacketStatus::LoginSuccess) {
                     const int code = static_cast<int>(p.status);
                     lastError = "login rejected, PlayStatus=" + std::to_string(code);
-                    if (code == 1 || code == 2)
-                        lastError += " (the server runs a different Minecraft version than Perlin's " +
-                                     std::string(kBedrockVersion) + ")";
                     state = State::Failed;
                 } else if (!cacheStatusSent) {
                     SendClientCacheStatus();
@@ -263,6 +269,9 @@ namespace perlin {
             }
             std::cout << "[bedrock] " << lastError << std::endl;
             SetDisconnectInfo(static_cast<int>(p.reason), p.message, false);
+            if (p.reason == DisconnectFailReason::OutdatedClient || p.reason == DisconnectFailReason::OutdatedServer ||
+                p.reason == DisconnectFailReason::VersionMismatch)
+                SetOutdated(p.reason == DisconnectFailReason::OutdatedClient ? 1 : p.reason == DisconnectFailReason::OutdatedServer ? 2 : 0);
             state = State::Failed;
         });
 
@@ -1045,6 +1054,7 @@ namespace perlin {
             std::string held;
             if (const auto it = itemNames.find(p.heldItem.networkId); p.heldItem.networkId != 0 && it != itemNames.end())
                 held = it->second;
+            // AddPlayer carries the feet position, unlike the move packets which carry the eye.
             entities.AddPlayer(p.runtimeId, p.uniqueId, UuidKey(p.uuid), p.username,
                                {p.position.x, p.position.y, p.position.z}, p.pitch, p.yaw, p.headYaw, MetaFlags(p.metadata), held);
             ApplyMetadata(entities, p.runtimeId, p.metadata);
@@ -1395,7 +1405,10 @@ namespace perlin {
             if (p.eventId != EntityEventPacketEventId::ConsumeTotem)
                 return;
             glm::dvec3 at{pose.x, pose.y + 0.9, pose.z};
-            if (!(runtimeId != 0 && p.runtimeEntityId == runtimeId)) {
+            if (runtimeId != 0 && p.runtimeEntityId == runtimeId) {
+                std::lock_guard<std::mutex> lk(worldMutex);
+                screenAnimation = {kTotemScreenAnimation, std::chrono::steady_clock::now()};
+            } else {
                 entity::Entity e;
                 if (!entities.Find(p.runtimeEntityId, e))
                     return;
@@ -1450,6 +1463,26 @@ namespace perlin {
             if (gameType == 1)
                 mayFly = true;
         });
+        On<SetDefaultGameTypePacket>([this](const SetDefaultGameTypePacket& p) {
+            std::lock_guard<std::mutex> lk(worldMutex);
+            world.worldGameMode = static_cast<int>(p.gamemode);
+        });
+
+        On<UpdateAdventureSettingsPacket>([this](const UpdateAdventureSettingsPacket& p) {
+            std::lock_guard<std::mutex> lk(worldMutex);
+            adventure = {p.noPvm, p.noMvp, p.immutableWorld, p.showNameTags, p.autoJump};
+        });
+
+        On<OnScreenTextureAnimationPacket>([this](const OnScreenTextureAnimationPacket& p) {
+            std::lock_guard<std::mutex> lk(worldMutex);
+            screenAnimation = {static_cast<int>(p.animationType), std::chrono::steady_clock::now()};
+        });
+
+        On<ShowCreditsPacket>([this](const ShowCreditsPacket& p) {
+            if (p.status == 0 && (runtimeId == 0 || p.runtimeEntityId == runtimeId))
+                creditsRequested = true;
+        });
+
         On<SetPlayerGameTypePacket>([this](const SetPlayerGameTypePacket& p) {
             gameType = static_cast<int>(p.gamemode);
             if (gameType == 1)

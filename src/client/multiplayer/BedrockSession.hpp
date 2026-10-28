@@ -338,6 +338,26 @@ void RequestRespawn();
             bool commandsEnabled = true;
             bool known = false;
         };
+        struct AdventureSettings {
+            bool noPvm = false, noMvp = false, immutableWorld = false, showNameTags = true, autoJump = true;
+        };
+        // OnScreenTextureAnimation: the effect id to play (-1 = none) and when it arrived.
+        static constexpr int kTotemScreenAnimation = 1000;  // not an effect id: the totem item itself
+        struct ScreenAnimation {
+            int effect = -1;
+            std::chrono::steady_clock::time_point started{};
+        };
+        ScreenAnimation TakeScreenAnimation() {
+            std::lock_guard<std::mutex> lk(worldMutex);
+            return std::exchange(screenAnimation, ScreenAnimation{});
+        }
+        // ShowCredits asks for the end-of-game credits; the server waits for status 1 before respawning us.
+        bool TakeCreditsRequest() { return creditsRequested.exchange(false); }
+        bool SendCreditsFinished();
+        AdventureSettings Adventure() const {
+            std::lock_guard<std::mutex> lk(worldMutex);
+            return adventure;
+        }
         WorldSettings World() const {
             std::lock_guard<std::mutex> lk(worldMutex);
             return world;
@@ -462,6 +482,10 @@ void RequestRespawn();
             int reason = -1;
             std::string message;
             bool connectionLost = false;
+            // The versions don't match: 1 = Perlin is too old for the server, 2 = the server is too old for Perlin.
+            int outdated = 0;
+            std::string serverVersion;
+            int serverProtocol = 0;
         };
         DisconnectInfo GetDisconnectInfo() const {
             std::lock_guard<std::mutex> lk(disconnectMutex);
@@ -627,6 +651,7 @@ void RequestRespawn();
         bool SendLeaveVehicle();
         int64_t RidingUid() const { return ridingUid.load(); }
         bool SendPickBlock(int bx, int by, int bz);
+        bool SendPickEntity(uint64_t runtimeId);
         bool SendDropSelected(int count);
         bool OpenInventory();
         bool OpenMountInventory();
@@ -816,6 +841,7 @@ void RequestRespawn();
         mutable std::mutex disconnectMutex;
         DisconnectInfo disconnectInfo;
         void SetDisconnectInfo(int reason, const std::string& message, bool lost);
+        void SetOutdated(int who);
         bool usedRak = false;
 
         std::unique_ptr<Transport> net;
@@ -867,6 +893,9 @@ void RequestRespawn();
         std::map<int64_t, int> permByUid;
         mutable std::mutex worldMutex;
         WorldSettings world;
+        AdventureSettings adventure;
+        ScreenAnimation screenAnimation;
+        std::atomic<bool> creditsRequested{false};
         mutable std::mutex commandMutex;
         std::vector<ui::CommandInfo> commands;
         uint32_t commandVersion = 0;

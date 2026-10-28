@@ -12,6 +12,9 @@ namespace perlin {
         std::string name;
         int protocol = 0;
         std::string version;
+        // What the server advertised in its ping reply (0 / empty if it said nothing).
+        int advertisedProtocol = 0;
+        std::string advertisedVersion;
         std::string level;
         int players = 0;
         int maxPlayers = 0;

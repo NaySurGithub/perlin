@@ -444,6 +444,20 @@ namespace perlin {
         disconnectInfo.connectionLost = lost;
     }
 
+    void BedrockSession::SetOutdated(int who) {
+        const int theirs = net ? net->Info().advertisedProtocol : 0;
+        // A plain version mismatch doesn't say which side is behind; the protocol from the ping reply does.
+        if (who == 0 && theirs > 0 && theirs != kBedrockProtocol)
+            who = theirs > kBedrockProtocol ? 1 : 2;
+        if (who == 0)
+            return;
+        std::lock_guard<std::mutex> lk(disconnectMutex);
+        disconnectInfo.happened = true;
+        disconnectInfo.outdated = who;
+        disconnectInfo.serverProtocol = theirs;
+        disconnectInfo.serverVersion = net ? net->Info().advertisedVersion : std::string();
+    }
+
     bool BedrockSession::RequestReconnect() {
         if (lastHost.empty() || transferring)
             return false;
