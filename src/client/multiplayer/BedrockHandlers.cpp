@@ -215,13 +215,19 @@ namespace perlin {
 
         On<PlayStatusPacket>([this](const PlayStatusPacket& p) {
             std::cout << "[bedrock] PlayStatus " << static_cast<int>(p.status) << std::endl;
+            // Status 1 means our client is outdated, 2 (named FailedSpawn in the protocol data; LoginFailedServer in
+            // Bedrock) means the server is. Either can arrive before the network settings, not only after Login.
+            if ((p.status == PlayStatusPacketStatus::FailedClient || p.status == PlayStatusPacketStatus::FailedSpawn) && state != State::InGame) {
+                const bool clientOld = p.status == PlayStatusPacketStatus::FailedClient;
+                lastError = clientOld ? "Perlin is outdated for this server" : "the server is outdated for Perlin";
+                SetOutdated(clientOld ? 1 : 2);
+                state = State::Failed;
+                return;
+            }
             if (state == State::WaitingPlayStatus) {
                 if (p.status != PlayStatusPacketStatus::LoginSuccess) {
                     const int code = static_cast<int>(p.status);
                     lastError = "login rejected, PlayStatus=" + std::to_string(code);
-                    if (code == 1 || code == 2)
-                        lastError += " (the server runs a different Minecraft version than Perlin's " +
-                                     std::string(kBedrockVersion) + ")";
                     state = State::Failed;
                 } else if (!cacheStatusSent) {
                     SendClientCacheStatus();
@@ -259,6 +265,9 @@ namespace perlin {
             }
             std::cout << "[bedrock] " << lastError << std::endl;
             SetDisconnectInfo(static_cast<int>(p.reason), p.message, false);
+            if (p.reason == DisconnectFailReason::OutdatedClient || p.reason == DisconnectFailReason::OutdatedServer ||
+                p.reason == DisconnectFailReason::VersionMismatch)
+                SetOutdated(p.reason == DisconnectFailReason::OutdatedClient ? 1 : p.reason == DisconnectFailReason::OutdatedServer ? 2 : 0);
             state = State::Failed;
         });
 

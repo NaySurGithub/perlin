@@ -5989,9 +5989,16 @@ namespace perlin {
         if (preview) {
             info.happened = true;
             info.reason = 55;
+            const char kind = PERLIN_ENV("PERLIN_PREVIEW_DISCONNECT")[0];
+            if (kind == 'c' || kind == 's') {
+                info.outdated = kind == 'c' ? 1 : 2;
+                info.serverVersion = kind == 'c' ? "1.26.70" : "1.21.50";
+            }
             info.message = PERLIN_ENV("PERLIN_PREVIEW_DISCONNECT")[0] == 'b'
                                ? "You are banned from this server.\nReason: Cheating (fly hacks)\nExpires in 29d 23h 59m"
                                : "Kicked by an operator";
+            if (info.outdated)
+                info.message.clear();
         } else {
             info = session->GetDisconnectInfo();
             lastError = session->LastError();
@@ -6002,7 +6009,17 @@ namespace perlin {
             if (translated != message)
                 message = translated;
         }
-        if (info.happened && info.connectionLost) {
+        if (info.outdated != 0) {
+            const bool clientOld = info.outdated == 1;
+            t.title = i18n::Tr(clientOld ? "perlin.disconnect.outdated_client" : "perlin.disconnect.outdated_server");
+            t.reason = i18n::Tr(clientOld ? "perlin.disconnect.outdated_client_reason" : "perlin.disconnect.outdated_server_reason");
+            const std::string theirs = !info.serverVersion.empty() ? info.serverVersion
+                                       : info.serverProtocol > 0  ? "protocol " + std::to_string(info.serverProtocol)
+                                                                  : "?";
+            t.reason += "\n\n" + i18n::Tr("perlin.disconnect.versions", {theirs, std::string(kBedrockVersion)});
+            if (!message.empty())
+                t.reason += "\n" + message;
+        } else if (info.happened && info.connectionLost) {
             t.title = i18n::Tr("perlin.disconnect.lost");
             t.reason = i18n::Tr("perlin.disconnect.lost_reason");
             if (!message.empty())

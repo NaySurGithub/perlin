@@ -849,6 +849,8 @@ namespace perlin {
             if (parts.size() > 3) {
                 info.name = parts[1];
                 const int theirs = std::atoi(parts[2].c_str());
+                info.advertisedProtocol = theirs;
+                info.advertisedVersion = parts[3];
                 if (theirs != 0 && theirs != kBedrockProtocol)
                     std::cout << "[raknet] note: the server advertises protocol " << theirs << " (" << parts[3]
                               << "), Perlin speaks " << kBedrockProtocol << " (" << kBedrockVersion << ")" << std::endl;

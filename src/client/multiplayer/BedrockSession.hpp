@@ -471,6 +471,10 @@ void RequestRespawn();
             int reason = -1;
             std::string message;
             bool connectionLost = false;
+            // The versions don't match: 1 = Perlin is too old for the server, 2 = the server is too old for Perlin.
+            int outdated = 0;
+            std::string serverVersion;
+            int serverProtocol = 0;
         };
         DisconnectInfo GetDisconnectInfo() const {
             std::lock_guard<std::mutex> lk(disconnectMutex);
@@ -828,6 +832,7 @@ void RequestRespawn();
         mutable std::mutex disconnectMutex;
         DisconnectInfo disconnectInfo;
         void SetDisconnectInfo(int reason, const std::string& message, bool lost);
+        void SetOutdated(int who);
         bool usedRak = false;
 
         std::unique_ptr<Transport> net;
