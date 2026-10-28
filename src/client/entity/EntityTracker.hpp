@@ -57,6 +57,8 @@ namespace perlin::entity {
         uint64_t flagsExtended = 0;
         bool crawling = false;
         float scale = 1.0f;
+        // Hitbox the server reported (metadata BOUNDINGBOX_WIDTH/HEIGHT); 0 when it never sent one.
+        float boxWidth = 0.0f, boxHeight = 0.0f;
         int variant = 0, markVariant = 0, color = 0;
         float health = -1.0f;
         uint32_t moveSerial = 0;
@@ -112,6 +114,7 @@ namespace perlin::entity {
         void SetFlagsExtended(uint64_t rid, uint64_t flags);
         void SetCrawling(uint64_t rid, bool crawling);
         void SetScale(uint64_t rid, float scale);
+        void SetBoundingBox(uint64_t rid, float width, float height);
         void SetNameTag(uint64_t rid, const std::string& nameTag);
         void SetVariant(uint64_t rid, int variant, int markVariant, int color);
         void SetHealth(uint64_t rid, float health);

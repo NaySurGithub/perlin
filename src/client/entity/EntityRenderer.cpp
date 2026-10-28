@@ -257,13 +257,17 @@ namespace perlin::entity {
     }
 
     std::pair<float, float> EntityRenderer::HitBox(const Entity& e) const {
+        const float scale = e.scale > 0.0f ? e.scale : 1.0f;
+        // The server's own bounding box wins: metadata BOUNDINGBOX_WIDTH/HEIGHT is what it collides and raycasts with.
+        if (e.boxWidth > 0.0f && e.boxHeight > 0.0f)
+            return {e.boxWidth * scale, e.boxHeight * scale};
         if (e.isPlayer)
-            return {0.6f, (e.Has(flag::Gliding) || e.Has(flag::Swimming)) ? 0.6f : e.Has(flag::Sneaking) ? 1.5f : 1.8f};
+            return {0.6f, (e.Has(flag::Gliding) || e.Has(flag::Swimming) || e.crawling) ? 0.6f : e.Has(flag::Sneaking) ? 1.5f : 1.8f};
         if (e.isItem)
             return {0.25f, 0.25f};
         float w, h;
         if (assets.CollisionBox(e.type, w, h))
-            return {w, h};
+            return {w * scale, h * scale};
         return {0.6f, 1.0f};
     }
 

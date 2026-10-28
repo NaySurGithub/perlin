@@ -70,6 +70,7 @@ namespace perlin {
 
         void ApplyMetadata(entity::EntityTracker& tracker, uint64_t rid, const std::vector<MetadataDictionaryEntry>& metadata) {
             int variant = -1, mark = -1, color = -1;
+            float boxWidth = 0.0f, boxHeight = 0.0f;
             for (const MetadataDictionaryEntry& m : metadata) {
                 if (m.key == MetadataDictionaryEntryKey::Nametag) {
                     if (const auto* inner = std::get_if<4>(&m.value))
@@ -96,6 +97,8 @@ namespace perlin {
                 }
                 case MetadataDictionaryEntryKey::PlayerFlags: tracker.SetSleeping(rid, (static_cast<int64_t>(n) & 2) != 0, true); break;
                 case MetadataDictionaryEntryKey::Scale: tracker.SetScale(rid, static_cast<float>(n)); break;
+                case MetadataDictionaryEntryKey::BoundingboxWidth: boxWidth = static_cast<float>(n); break;
+                case MetadataDictionaryEntryKey::BoundingboxHeight: boxHeight = static_cast<float>(n); break;
                 case MetadataDictionaryEntryKey::Variant: variant = static_cast<int>(n); break;
                 case MetadataDictionaryEntryKey::ExperienceValue: {
                     const int xp = static_cast<int>(n);
@@ -122,6 +125,8 @@ namespace perlin {
             }
             if (variant >= 0 || mark >= 0 || color >= 0)
                 tracker.SetVariant(rid, std::max(variant, 0), std::max(mark, 0), std::max(color, 0));
+            if (boxWidth > 0.0f && boxHeight > 0.0f)
+                tracker.SetBoundingBox(rid, boxWidth, boxHeight);
         }
 
         uint64_t MetaFlags(const std::vector<MetadataDictionaryEntry>& metadata) {

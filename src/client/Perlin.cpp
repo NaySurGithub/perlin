@@ -972,6 +972,14 @@ namespace perlin {
                 return;
             }
             std::cout << "[form] opened form " << sf.id << " '" << formModel.title << "'" << std::endl;
+            // Dev hook: PERLIN_DUMP_FORM=1 keeps the server's form json and the emitted document on disk.
+            if (PERLIN_ENV("PERLIN_DUMP_FORM")) {
+                std::error_code ec;
+                const std::string dir = paths::DataDir() + "/ui_generated";
+                std::filesystem::create_directories(dir, ec);
+                if (std::ofstream json(dir + "/last_form.json", std::ios::binary); json)
+                    json << sf.json;
+            }
             formUi.Warm(ServerPacks::Instance().Directories());
             formUi.WaitReady(150);
             formEngine = formUi.Ready();
