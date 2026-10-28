@@ -1969,7 +1969,7 @@ namespace perlin::entity {
                     DrawShadow(v.pos, std::min(hb.first, 1.4f) * 0.8f * (e.scale > 0 ? e.scale : 1.0f), 1.0f, in);
                 }
             }
-            if (!e.isItem && !e.Has(flag::Invisible) && !(e.isSelf && (in.firstPerson || !in.ownNametag))) {
+            if (in.nametags && !e.isItem && !e.Has(flag::Invisible) && !(e.isSelf && (in.firstPerson || !in.ownNametag))) {
                 const std::string& label = e.isPlayer ? e.name : e.nameTag;
                 const double d2 = glm::dot(delta, delta);
                 if (!label.empty() && d2 < (e.isPlayer ? 64.0 * 64.0 : 16.0 * 16.0)) {

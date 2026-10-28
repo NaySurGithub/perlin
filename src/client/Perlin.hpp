@@ -95,6 +95,12 @@ namespace perlin {
         void TakeScreenshot();
         void UpdateBedScreen(ui::Hud& hud, BedrockSession* live, int fbW, int fbH);
         bool bedShown = false, bedLeftDown = false;
+        BedrockSession::ScreenAnimation screenAnimation;
+        bool creditsShown = false;
+        double creditsScroll = 0;
+        std::string creditsSignature;
+        std::chrono::steady_clock::time_point creditsLast{};
+        void UpdateCreditsScreen(ui::Hud& hud, BedrockSession* live, int fbW, int fbH);
         std::string bedSignature;
         void UpdateDeathScreen(ui::Hud& hud, BedrockSession* live, const ui::HudState& state, int fbW, int fbH);
         bool deathShown = false, deathLeftDown = false, deathRespawnSent = false, deathTextMode = false;

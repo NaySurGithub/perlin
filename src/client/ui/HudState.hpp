@@ -60,6 +60,9 @@ namespace perlin::ui {
         int xpLevel = 0;
         bool burning = false;
         int fireFrame = 0;
+        // OnScreenTextureAnimation / totem: what to show (-1 none, an effect id, or 1000 for the totem) and its progress 0..1.
+        int screenAnimation = -1;
+        float screenAnimationT = 0;
         int air = 300;
         int maxAir = 300;
         bool inWater = false;

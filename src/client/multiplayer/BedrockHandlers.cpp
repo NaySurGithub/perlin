@@ -1386,7 +1386,10 @@ namespace perlin {
             if (p.eventId != EntityEventPacketEventId::ConsumeTotem)
                 return;
             glm::dvec3 at{pose.x, pose.y + 0.9, pose.z};
-            if (!(runtimeId != 0 && p.runtimeEntityId == runtimeId)) {
+            if (runtimeId != 0 && p.runtimeEntityId == runtimeId) {
+                std::lock_guard<std::mutex> lk(worldMutex);
+                screenAnimation = {kTotemScreenAnimation, std::chrono::steady_clock::now()};
+            } else {
                 entity::Entity e;
                 if (!entities.Find(p.runtimeEntityId, e))
                     return;
@@ -1445,6 +1448,26 @@ namespace perlin {
             if (gameType == 1)
                 mayFly = true;
         });
+        On<SetDefaultGameTypePacket>([this](const SetDefaultGameTypePacket& p) {
+            std::lock_guard<std::mutex> lk(worldMutex);
+            world.worldGameMode = static_cast<int>(p.gamemode);
+        });
+
+        On<UpdateAdventureSettingsPacket>([this](const UpdateAdventureSettingsPacket& p) {
+            std::lock_guard<std::mutex> lk(worldMutex);
+            adventure = {p.noPvm, p.noMvp, p.immutableWorld, p.showNameTags, p.autoJump};
+        });
+
+        On<OnScreenTextureAnimationPacket>([this](const OnScreenTextureAnimationPacket& p) {
+            std::lock_guard<std::mutex> lk(worldMutex);
+            screenAnimation = {static_cast<int>(p.animationType), std::chrono::steady_clock::now()};
+        });
+
+        On<ShowCreditsPacket>([this](const ShowCreditsPacket& p) {
+            if (p.status == 0 && (runtimeId == 0 || p.runtimeEntityId == runtimeId))
+                creditsRequested = true;
+        });
+
         On<SetPlayerGameTypePacket>([this](const SetPlayerGameTypePacket& p) {
             gameType = static_cast<int>(p.gamemode);
             if (gameType == 1)

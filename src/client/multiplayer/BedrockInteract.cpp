@@ -188,6 +188,13 @@ namespace perlin {
         return Send(p);
     }
 
+    bool BedrockSession::SendCreditsFinished() {
+        ShowCreditsPacket p;
+        p.runtimeEntityId = runtimeId;
+        p.status = 1;
+        return Send(p);
+    }
+
     bool BedrockSession::SendPickEntity(uint64_t runtimeId) {
         EntityPickRequestPacket p;
         p.runtimeEntityId = runtimeId;
