@@ -84,6 +84,7 @@ namespace perlin {
             float padSensitivity = 1.0f;
             float padDeadzone = 0.15f;
             bool padInvertY = false;
+            bool padVibration = true;
             float touchSensitivity = 1.0f;
             float touchScale = 1.0f;
             float touchOpacity = 0.85f;
@@ -318,6 +319,7 @@ namespace perlin {
         o.padSensitivity = std::clamp(stored.padSensitivity, 0.1f, 3.0f);
         o.padDeadzone = std::clamp(stored.padDeadzone, 0.0f, 0.6f);
         o.padInvertY = stored.padInvertY;
+        o.padVibration = stored.padVibration;
         o.touchSensitivity = std::clamp(stored.touchSensitivity, 0.1f, 3.0f);
         o.touchScale = std::clamp(stored.touchScale, 0.5f, 1.8f);
         o.touchOpacity = std::clamp(stored.touchOpacity, 0.2f, 1.0f);
@@ -400,6 +402,7 @@ namespace perlin {
         stored.padSensitivity = padSensitivity;
         stored.padDeadzone = padDeadzone;
         stored.padInvertY = padInvertY;
+        stored.padVibration = padVibration;
         stored.touchSensitivity = touchSensitivity;
         stored.touchScale = touchScale;
         stored.touchOpacity = touchOpacity;

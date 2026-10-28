@@ -130,6 +130,7 @@ namespace perlin {
         float padSensitivity = 1.0f;
         float padDeadzone = 0.15f;
         bool padInvertY = false;
+        bool padVibration = true;
         float touchSensitivity = 1.0f;
         float touchScale = 1.0f;
         float touchOpacity = 0.85f;
