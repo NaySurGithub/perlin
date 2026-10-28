@@ -8776,7 +8776,6 @@ namespace perlin {
                     ein.selfShadow = packShadows;
                 }
                 ein.ownNametag = options.thirdPersonNametag;
-                ein.nametags = !live || live->Adventure().showNameTags;
                 ein.nametagDepth = fgActive > 1;
                 ein.ownParts = options.skinParts;
                 ein.skins3d = options.skins3d;

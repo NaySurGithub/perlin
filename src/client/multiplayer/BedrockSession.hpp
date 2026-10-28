@@ -339,6 +339,7 @@ void RequestRespawn();
             bool known = false;
         };
         struct AdventureSettings {
+            // showNameTags is kept for completeness only: the game draws name tags whatever it says.
             bool noPvm = false, noMvp = false, immutableWorld = false, showNameTags = true, autoJump = true;
         };
         // OnScreenTextureAnimation: the effect id to play (-1 = none) and when it arrived.
