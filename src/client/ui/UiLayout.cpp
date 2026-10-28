@@ -1,4 +1,5 @@
 #include "client/ui/UiLayout.hpp"
+#include "client/ui/TenFont.hpp"
 #include "client/ui/UiExpr.hpp"
 
 #include <algorithm>
@@ -15,7 +16,7 @@ namespace perlin::ui {
         bool Known(float v) { return !std::isnan(v); }
 
         struct Term {
-            enum Kind : uint8_t { Px, Pct, PctChildren, PctChildrenMax, PctSibling, PctOtherAxis, Fill, Default };
+            enum Kind : uint8_t { Px, Pct, PctChildren, PctChildrenMax, PctSibling, PctX, PctY, Fill, Default };
             Kind kind = Px;
             double value = 0;
             int sign = 1;
@@ -70,8 +71,8 @@ namespace perlin::ui {
                         if (s.compare(i, 2, "cm") == 0) { t.kind = Term::PctChildrenMax; i += 2; }
                         else if (s.compare(i, 2, "sm") == 0) { t.kind = Term::PctSibling; i += 2; }
                         else if (i < s.size() && s[i] == 'c') { t.kind = Term::PctChildren; i++; }
-                        else if (i < s.size() && s[i] == 'x') { t.kind = Term::PctOtherAxis; i++; }
-                        else if (i < s.size() && s[i] == 'y') { t.kind = Term::PctOtherAxis; i++; }
+                        else if (i < s.size() && s[i] == 'x') { t.kind = Term::PctX; i++; }
+                        else if (i < s.size() && s[i] == 'y') { t.kind = Term::PctY; i++; }
                     } else if (s.compare(i, 2, "px") == 0) {
                         i += 2;
                     }
@@ -90,10 +91,11 @@ namespace perlin::ui {
 
         struct DimContext {
             float parent = kUnknown;
+            float parentX = kUnknown;
+            float parentY = kUnknown;
             float children = kUnknown;
             float childrenMax = kUnknown;
             float sibling = kUnknown;
-            float other = kUnknown;
             float fill = kUnknown;
             float intrinsic = kUnknown;
             float defaultValue = kUnknown;
@@ -121,9 +123,13 @@ namespace perlin::ui {
                     if (!Known(c.sibling)) return false;
                     v = t.value / 100.0 * c.sibling;
                     break;
-                case Term::PctOtherAxis:
-                    if (!Known(c.other)) return false;
-                    v = t.value / 100.0 * c.other;
+                case Term::PctX:
+                    if (!Known(c.parentX)) return false;
+                    v = t.value / 100.0 * c.parentX;
+                    break;
+                case Term::PctY:
+                    if (!Known(c.parentY)) return false;
+                    v = t.value / 100.0 * c.parentY;
                     break;
                 case Term::Fill:
                     if (Known(c.fill)) v = c.fill;
@@ -242,13 +248,29 @@ namespace perlin::ui {
         public:
             Evaluator(const UiData& data, const UiServices& services) : data(data), services(services) {}
 
-            std::unique_ptr<LNode> Instantiate(const Node& node, const std::vector<Collection>& collections,
+            std::unique_ptr<LNode> Instantiate(const Node& node, const std::vector<Collection>& outerCollections,
                                                const Vars* factoryVars, int parentLayer, float parentAlpha,
                                                bool propagateAlpha) {
                 auto n = std::make_unique<LNode>();
                 n->src = &node;
                 n->type = node.type;
                 n->id = node.name;
+                // collection_name on a plain control opens a collection for its descendants; a descendant's
+                // collection_index then binds it to one item of it, without a grid.
+                std::vector<Collection> scoped;
+                if (const Json* ci = node.props.Find("collection_index"); ci && ci->IsNumber()) {
+                    scoped = outerCollections;
+                    for (size_t i = scoped.size(); i-- > 0;)
+                        if (scoped[i].index < 0) {
+                            scoped[i].index = static_cast<int>(ci->number);
+                            break;
+                        }
+                } else if (const Json* cn = node.props.Find("collection_name"); cn && cn->IsString() && !cn->string.empty() &&
+                           node.type != "grid") {
+                    scoped = outerCollections;
+                    scoped.push_back({cn->string, -1});
+                }
+                const std::vector<Collection>& collections = scoped.empty() ? outerCollections : scoped;
                 if (!collections.empty()) {
                     n->collection = collections.back().name;
                     n->index = collections.back().index;
@@ -270,8 +292,9 @@ namespace perlin::ui {
                 bool visible = true;
                 if (const Json* v = n->p.Find("visible"))
                     visible = Truthy(*v) || (v->IsString() && v->string.empty());
+                // A #visible binding decides on its own; the "visible" property is only the default.
                 if (const Json* v = n->bag.Find("#visible"))
-                    visible = visible && Truthy(*v);
+                    visible = Truthy(*v);
                 n->visible = visible;
                 if (services.anim && services.anim->destroyed.count(n->id))
                     return nullptr;
@@ -322,7 +345,7 @@ namespace perlin::ui {
                     if (const Json* v = n->p.Find("visible"))
                         nowVisible = Truthy(*v) || (v->IsString() && v->string.empty());
                     if (const Json* v = n->bag.Find("#visible"))
-                        nowVisible = nowVisible && Truthy(*v);
+                        nowVisible = Truthy(*v);
                     if (!nowVisible) {
                         n->visible = false;
                         n->kids.clear();
@@ -349,6 +372,41 @@ namespace perlin::ui {
                     if (const Json* f = n->p.Find("factory"); f && f->IsObject())
                         if (const Json* fn = f->Find("name"); fn && fn->IsString())
                             name = fn->string;
+                    // A factory whose #collection_length is a list of control ids creates exactly those controls,
+                    // in order. Servers use this to pick one of several layouts from a binding.
+                    // A numeric #collection_length stamps the factory's control once per item of the panel's collection.
+                    if (const Json* count = n->bag.Find("#collection_length"); count && count->IsNumber() && node.factoryControls.size() == 1) {
+                        const std::string c = n->Str("collection_name");
+                        const int total = std::clamp(static_cast<int>(count->number), 0, 1000);
+                        for (int i = 0; i < total; i++) {
+                            std::vector<Collection> inner = collections;
+                            if (!inner.empty() && inner.back().name == c && inner.back().index < 0)
+                                inner.back().index = i;
+                            else if (!c.empty())
+                                inner.push_back({c, i});
+                            auto kid = Instantiate(*node.factoryControls.front().second, inner, factoryVars, n->layer, n->alpha, propagate);
+                            if (kid)
+                                kid->fromFactory = true;
+                            addKid(std::move(kid));
+                        }
+                    }
+                    if (const Json* ids = n->bag.Find("#collection_length"); ids && ids->IsArray()) {
+                        int index = 0;
+                        for (const Json& id : ids->array) {
+                            if (id.IsString())
+                                for (const auto& entry : node.factoryControls)
+                                    if (entry.first == id.string) {
+                                        std::vector<Collection> inner = collections;
+                                        if (const std::string c = n->Str("collection_name"); !c.empty())
+                                            inner.push_back({c, index});
+                                        auto kid = Instantiate(*entry.second, inner, factoryVars, n->layer, n->alpha, propagate);
+                                        if (kid)
+                                            kid->fromFactory = true;
+                                        addKid(std::move(kid));
+                                    }
+                            index++;
+                        }
+                    }
                     for (const FactoryItem& item : data.Factory(name))
                         for (const auto& entry : node.factoryControls)
                             if (entry.first == item.id) {
@@ -381,13 +439,14 @@ namespace perlin::ui {
                 auto resolve = [&]() {
                     DimContext cw, ch;
                     cw.parent = pw; ch.parent = ph;
+                    // "%x"/"%y" name the parent's axes, whichever axis the control itself is measuring.
+                    cw.parentX = ch.parentX = pw;
+                    cw.parentY = ch.parentY = ph;
                     cw.fill = fillW; ch.fill = fillH;
                     cw.sibling = sibW; ch.sibling = sibH;
                     cw.intrinsic = intrinsicW; ch.intrinsic = intrinsicH;
-                    cw.other = h; ch.other = w;
                     if (!Known(w)) EvalDim(wd, cw, w);
                     if (!Known(h)) EvalDim(hd, ch, h);
-                    cw.other = h; ch.other = w;
                     if (!Known(w)) EvalDim(wd, cw, w);
                     if (!Known(h)) EvalDim(hd, ch, h);
                 };
@@ -396,8 +455,9 @@ namespace perlin::ui {
 
                 const bool needsChildrenW = UsesKind(wd, Term::PctChildren) || UsesKind(wd, Term::PctChildrenMax);
                 const bool needsChildrenH = UsesKind(hd, Term::PctChildren) || UsesKind(hd, Term::PctChildrenMax);
-                const bool needsSiblingW = UsesKind(wd, Term::PctSibling);
-                const bool needsSiblingH = UsesKind(hd, Term::PctSibling);
+                const bool inheritW = n.Bool("inherit_max_sibling_width", false), inheritH = n.Bool("inherit_max_sibling_height", false);
+                const bool needsSiblingW = UsesKind(wd, Term::PctSibling) || inheritW;
+                const bool needsSiblingH = UsesKind(hd, Term::PctSibling) || inheritH;
                 n.needSibW = needsSiblingW;
                 n.needSibH = needsSiblingH;
 
@@ -415,7 +475,22 @@ namespace perlin::ui {
                     maxW = sumW;
                     maxH = sumH;
                 } else {
+                    // Widgets show one state child at rest; the others (hover, pressed, locked...) take no space.
+                    std::vector<std::string> resting;
+                    if (n.type == "button") {
+                        for (const char* key : {"hover_control", "pressed_control", "locked_control"})
+                            if (const std::string name = n.Str(key); !name.empty() && name != n.Str("default_control"))
+                                resting.push_back(name);
+                    } else if (n.type == "toggle") {
+                        for (const char* key : {"checked_control", "checked_hover_control", "unchecked_hover_control",
+                                                "checked_locked_control", "unchecked_locked_control", "checked_locked_hover_control",
+                                                "unchecked_locked_hover_control"})
+                            if (const std::string name = n.Str(key); !name.empty() && name != n.Str("unchecked_control"))
+                                resting.push_back(name);
+                    }
                     for (LNode* k : live) {
+                        if (std::find(resting.begin(), resting.end(), k->id) != resting.end())
+                            continue;
                         maxW = std::max(maxW, k->w);
                         maxH = std::max(maxH, k->h);
                         sumW += k->w;
@@ -425,24 +500,24 @@ namespace perlin::ui {
                 {
                     DimContext cw, ch;
                     cw.parent = pw; ch.parent = ph;
+                    cw.parentX = ch.parentX = pw;
+                    cw.parentY = ch.parentY = ph;
                     cw.fill = fillW; ch.fill = fillH;
                     cw.sibling = sibW; ch.sibling = sibH;
                     cw.intrinsic = intrinsicW; ch.intrinsic = intrinsicH;
                     cw.childrenMax = maxW; ch.childrenMax = maxH;
-                    cw.children = (isStack && !vertical) ? sumW : maxW;
-                    ch.children = (isStack && vertical) ? sumH : maxH;
-                    if (isStack) {
-                        if (!vertical) { cw.children = sumW; ch.children = maxH; }
-                        else { cw.children = maxW; ch.children = sumH; }
-                    }
-                    if (!Known(w) || needsChildrenW) { float t = kUnknown; cw.other = h; if (EvalDim(wd, cw, t)) w = t; }
-                    if (!Known(h) || needsChildrenH) { float t = kUnknown; ch.other = w; if (EvalDim(hd, ch, t)) h = t; }
-                    cw.other = h; ch.other = w;
+                    // "%c" is the sum of the visible children on that axis for every control; "%cm" is the largest.
+                    cw.children = sumW;
+                    ch.children = sumH;
+                    if (!Known(w) || needsChildrenW) { float t = kUnknown; if (EvalDim(wd, cw, t)) w = t; }
+                    if (!Known(h) || needsChildrenH) { float t = kUnknown; if (EvalDim(hd, ch, t)) h = t; }
                     if (!Known(w)) { float t = kUnknown; if (EvalDim(wd, cw, t)) w = t; }
                     if (!Known(h)) { float t = kUnknown; if (EvalDim(hd, ch, t)) h = t; }
                 }
                 if (!Known(w)) w = 0;
                 if (!Known(h)) h = 0;
+                if (inheritW && Known(sibW)) w = std::max(w, sibW);
+                if (inheritH && Known(sibH)) h = std::max(h, sibH);
                 ClampSize(n, pw, ph, w, h);
                 n.w = w;
                 n.h = h;
@@ -468,19 +543,22 @@ namespace perlin::ui {
                         live.push_back(k.get());
                 if (n.type == "stack_panel") {
                     const bool vertical = StackVertical(n);
+                    // Children sit at the start of the cross axis unless the stack opts into their own anchors.
+                    const bool childAnchors = n.Bool("use_child_anchors", false);
                     float cursor = 0;
                     for (LNode* k : live) {
-                        float ox = 0, oy = 0;
-                        Offset(*k, n.w, n.h, ox, oy);
+                        float ox = 0, oy = 0;  // stack children ignore their offset
                         if (vertical) {
                             float cx = 0, cy = 0;
-                            AnchorPosition(*k, n.w, n.h, cx, cy);
+                            if (childAnchors)
+                                AnchorPosition(*k, n.w, n.h, cx, cy);
                             k->x = cx + ox;
                             k->y = cursor + oy;
                             cursor += k->h;
                         } else {
                             float cx = 0, cy = 0;
-                            AnchorPosition(*k, n.w, n.h, cx, cy);
+                            if (childAnchors)
+                                AnchorPosition(*k, n.w, n.h, cx, cy);
                             k->x = cursor + ox;
                             k->y = cy + oy;
                             cursor += k->w;
@@ -509,21 +587,20 @@ namespace perlin::ui {
 
             void WrapFinal(LNode& n) {
                 const float scale = FontScale(n);
+                const bool ten = TenLabel(n);
                 int lines = 1;
                 float width = 0;
                 n.lines.clear();
                 if (n.text.empty())
                     return;
                 const float wrap = n.w + 0.01f;
-                WrapLines(n.text, scale, wrap, n.lines);
+                WrapLines(n.text, scale, ten, wrap, n.lines);
                 (void)lines;
                 (void)width;
             }
 
-            void WrapLines(const std::string& text, float scale, float wrapWidth, std::vector<std::string>& out) const {
-                const auto measure = [&](const std::string& s) {
-                    return services.textWidth ? services.textWidth(s, scale) : 6.0f * static_cast<float>(s.size()) * scale;
-                };
+            void WrapLines(const std::string& text, float scale, bool ten, float wrapWidth, std::vector<std::string>& out) const {
+                const auto measure = [&](const std::string& s) { return Measure(s, scale, ten); };
                 size_t start = 0;
                 while (start <= text.size()) {
                     const size_t nl = text.find('\n', start);
@@ -595,6 +672,11 @@ namespace perlin::ui {
 
             void ApplyBindings(LNode& n, const std::vector<Collection>& collections) {
                 byName[n.id] = &n;
+                // A control's property_bag seeds its binding values; bindings below may overwrite them.
+                if (const Json* bag = n.src->props.Find("property_bag"); bag && bag->IsObject())
+                    for (const auto& member : bag->object)
+                        if (!n.bag.Find(member.first))
+                            n.bag.Set(member.first, member.second);
                 for (const Json& b : n.src->bindings) {
                     if (!b.IsObject())
                         continue;
@@ -621,6 +703,11 @@ namespace perlin::ui {
                             env.binding = [&](const std::string& name, Json& out) { return Lookup(*source, name, nullptr, out); };
                             EvalExpression(text, env, result);
                         }
+                        // A result naming another property ("#if_" + ... -> "#if_true") reads that property, the
+                        // indirection packs use to pick values out of a property_bag.
+                        if (result.IsString() && result.string.size() > 1 && result.string[0] == '#' && result.string != target->string)
+                            if (const Json* named = n.bag.Find(result.string))
+                                result = *named;
                         n.bag.Set(target->string, result);
                         continue;
                     }
@@ -633,9 +720,26 @@ namespace perlin::ui {
                         target = o->string;
                     Json value;
                     bool have = false;
+                    // The collection row this binding reads, if it is a collection binding.
+                    int row = -1;
+                    std::string rowCollection;
+                    if (type == "collection") {
+                        const Json* c = b.Find("binding_collection_name");
+                        rowCollection = c && c->IsString() ? c->string : std::string();
+                        for (size_t i = collections.size(); i-- > 0;)
+                            if (collections[i].name == rowCollection) {
+                                row = collections[i].index;
+                                break;
+                            }
+                    }
                     if (IsExpression(name)) {
+                        // In a collection binding, the names inside the expression are that row's values.
                         ExprEnv env;
-                        env.binding = [&](const std::string& nm, Json& out) { return Lookup(n, nm, nullptr, out); };
+                        env.binding = [&](const std::string& nm, Json& out) {
+                            if (row >= 0 && data.CollectionValue(rowCollection, row, nm, out))
+                                return true;
+                            return Lookup(n, nm, nullptr, out);
+                        };
                         have = EvalExpression(name, env, value);
                     } else if (type == "collection") {
                         const Json* c = b.Find("binding_collection_name");
@@ -834,13 +938,21 @@ namespace perlin::ui {
             void ApplyAnimations(LNode& n, const std::string& instanceKey) {
                 if (!services.anim || !services.animDef || !n.src)
                     return;
-                const Json* list = n.src->props.Find("anims");
-                if (!list || !list->IsArray())
-                    return;
+                std::vector<std::string> refs;
+                if (const Json* list = n.src->props.Find("anims"); list && list->IsArray())
+                    for (const Json& entry : list->array)
+                        if (entry.IsString())
+                            refs.push_back(entry.string);
+                // A property can name an animation directly: "size": "@ns.logo_in_anim", "offset": "@ns.slide".
+                for (const auto& member : n.src->props.object) {
+                    if (!member.second.IsString() || member.second.string.empty() || member.second.string[0] != '@')
+                        continue;
+                    if (services.animDef(member.second.string, n.src->ns).Find("anim_type"))
+                        refs.push_back(member.second.string);
+                }
                 std::unordered_map<std::string, Json> out;
-                for (const Json& entry : list->array)
-                    if (entry.IsString())
-                        RunAnimation(entry.string, n.src->ns, instanceKey + "|" + entry.string, &n, out);
+                for (const std::string& ref : refs)
+                    RunAnimation(ref, n.src->ns, instanceKey + "|" + ref, &n, out);
                 for (auto& [type, value] : out) {
                     if (type == "clip") {
                         if (value.IsNumber()) n.bag.Set("#clip_ratio", value);
@@ -916,6 +1028,7 @@ namespace perlin::ui {
                     if (w.empty()) w.push_back(intrinsic ? def : hundred);
                     if (h.empty()) h.push_back(intrinsic ? def : hundred);
                 }
+                // inherit_max_sibling_width/height grow the control to its widest/tallest sibling; Measure applies it.
                 if (n.Bool("inherit_max_sibling_width", false)) w = Dim{Term{Term::PctSibling, 100, 1}};
                 if (n.Bool("inherit_max_sibling_height", false)) h = Dim{Term{Term::PctSibling, 100, 1}};
             }
@@ -923,6 +1036,7 @@ namespace perlin::ui {
             void Intrinsic(LNode& n, float pw, const Dim& wd, float& iw, float& ih) {
                 if (n.type == "label") {
                     float scale = FontScale(n);
+                    const bool ten = TenLabel(n);
                     const std::string plain = StripFormatting(n.text);
                     float wrap = kUnknown;
                     DimContext c;
@@ -947,10 +1061,10 @@ namespace perlin::ui {
                     }
                     if (!Known(wrap) && Known(maxW))
                         wrap = maxW;
-                    const float line = services.lineHeight ? services.lineHeight(scale) : 9.0f * scale;
+                    const float line = LineHeight(scale, ten);
                     int lines = 1;
                     float width = 0;
-                    LayoutText(plain, scale, wrap, lines, width);
+                    LayoutText(plain, scale, ten, wrap, lines, width);
                     iw = std::ceil(width);
                     ih = static_cast<float>(lines) * line + (lines - 1) * static_cast<float>(n.Num("line_padding", 0));
                     n.textLines = lines;
@@ -980,12 +1094,32 @@ namespace perlin::ui {
                 return scale;
             }
 
-            void LayoutText(const std::string& text, float scale, float wrapWidth, int& lines, float& width) const {
+            // A label asking for font_type: MinecraftTen is measured with that face's metrics, not the 8 px bitmap font.
+            bool TenLabel(const LNode& n) const {
+                if (!IsTenFontType(n.Str("font_type")))
+                    return false;
+                TenFont::Instance().EnsureLoaded();
+                return TenFont::Instance().Available();
+            }
+
+            float Measure(const std::string& text, float scale, bool ten) const {
+                if (services.textWidth)
+                    return services.textWidth(text, scale, ten);
+                return 6.0f * static_cast<float>(text.size()) * scale;
+            }
+
+            float LineHeight(float scale, bool ten) const {
+                if (services.lineHeight)
+                    return services.lineHeight(scale, ten);
+                return 9.0f * scale;
+            }
+
+            void LayoutText(const std::string& text, float scale, bool ten, float wrapWidth, int& lines, float& width) const {
                 lines = 1;
                 width = 0;
                 if (text.empty())
                     return;
-                const auto measure = [&](const std::string& s) { return services.textWidth ? services.textWidth(s, scale) : 6.0f * s.size() * scale; };
+                const auto measure = [&](const std::string& s) { return Measure(s, scale, ten); };
                 if (!Known(wrapWidth) || wrapWidth <= 0) {
                     size_t start = 0;
                     lines = 0;
@@ -1044,7 +1178,9 @@ namespace perlin::ui {
                         if (d.empty()) continue;
                         DimContext c;
                         c.parent = axis == 0 ? pw : ph;
-                        c.children = c.childrenMax = c.sibling = c.other = kUnknown;
+                        c.parentX = pw;
+                        c.parentY = ph;
+                        c.children = c.childrenMax = c.sibling = kUnknown;
                         float value = 0;
                         if (!EvalDim(d, c, value))
                             continue;

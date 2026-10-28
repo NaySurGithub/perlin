@@ -6122,21 +6122,21 @@ namespace perlin {
                          : hudAnim.ticks;
         s.inWater = headUnderwater;
         chat.Fill(s, hudAnim.ticks, MsNow());
-        s.scoreboard = false;
-        s.scoreboardTitle.clear();
-        s.scoreboardRows.clear();
+        s.sidebarVisible = false;
+        s.sidebarTitle.clear();
+        s.sidebar.clear();
         if (live) {
             const auto sb = live->Scoreboard();
-            s.scoreboard = sb.visible;
+            s.sidebarVisible = sb.visible;
             if (sb.visible) {
-                s.scoreboardTitle = sb.title;
+                s.sidebarTitle = sb.title;
                 for (const auto& r : sb.rows)
-                    s.scoreboardRows.emplace_back(r.name, r.score);
+                    s.sidebar.push_back({r.name, r.score});
             }
         } else if (preview && PERLIN_ENV("PERLIN_PREVIEW_SCOREBOARD")) {
-            s.scoreboard = true;
-            s.scoreboardTitle = "\xC2\xA7" "e\xC2\xA7" "lPERLIN";
-            s.scoreboardRows = {{"Kills", 12}, {"Deaths", 3}, {"\xC2\xA7" "aCoins", 450}};
+            s.sidebarVisible = true;
+            s.sidebarTitle = "\xC2\xA7" "e\xC2\xA7" "lPERLIN";
+            s.sidebar = {{"Kills", 12}, {"Deaths", 3}, {"\xC2\xA7" "aCoins", 450}};
         }
         if (preview) {
             s.health = 20.0f;

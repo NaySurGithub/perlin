@@ -1,5 +1,6 @@
 #pragma once
 #include <atomic>
+#include <chrono>
 #include <cstdint>
 #include <thread>
 #include <string>
@@ -49,12 +50,21 @@ namespace perlin::ui {
         bool WaitReady(int timeoutMs);
         bool Build(const FormModel& form, int guiW, int guiH, float scroll, std::string& rml, float& contentHeight, float& viewHeight);
         const std::string& Problem() const { return problem; }
+        // True when a server or resource pack (not just vanilla) defines the server_form screen.
+        // The server's ui files are still being read.
+        bool Building() const { return state.load() == 1; }
+        bool ServerStyled() const { return Ready() && library.RootCount() > 3 && library.DefinedBefore("server_form", library.RootCount() - 3); }
+        // True while the last built form still has an animation running.
+        bool Animating() const { return anim.animating; }
 
     private:
         UiLibrary library;
         std::unique_ptr<Node> tree;
         RmlEmitter emitter;
         UiServices services;
+        AnimHost anim;
+        std::unordered_map<std::string, Json> animCache;
+        std::chrono::steady_clock::time_point animStart = std::chrono::steady_clock::now();
         std::string problem;
         std::thread worker;
         std::atomic<int> state{0};

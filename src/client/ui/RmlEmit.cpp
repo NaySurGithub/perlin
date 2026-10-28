@@ -1,6 +1,7 @@
 #include "client/ui/RmlEmit.hpp"
 #include "client/ui/FormatCodes.hpp"
 #include "client/ui/McFont.hpp"
+#include "client/ui/TenFont.hpp"
 
 #include <algorithm>
 #include <cctype>
@@ -181,9 +182,13 @@ namespace perlin::ui {
         ax -= ox;
         ay -= oy;
         count++;
-        const float size = 8.0f * st.scale;
-        const float lineHeight = 9.0f * st.scale + st.linePadding;
-        body += "  <div class=\"t" + std::string(st.outline ? " o" : (st.shadow ? " s" : "")) + "\" style=\"left:" + std::to_string(Px(ax)) + "px;top:" +
+        // MinecraftTen is a real font: 11 px em instead of the 8 px bitmap grid, and its own line height.
+        const float size = (st.ten ? TenFont::kEm : 8.0f) * st.scale;
+        const float lineHeight = (st.ten ? TenFont::Instance().LineHeight(st.scale) : 9.0f * st.scale) + st.linePadding;
+        std::string cls = st.ten ? "t ten" : "t";
+        if (st.outline) cls += " o";
+        else if (st.shadow) cls += " s";
+        body += "  <div class=\"" + cls + "\" style=\"left:" + std::to_string(Px(ax)) + "px;top:" +
                 std::to_string(Px(ay)) + "px;width:" + Num(std::max(w, 1.0f)) + "px;height:" + Num(h) + "px;z-index:" +
                 std::to_string(z) + ";font-size:" + Num(size) + "px;line-height:" + Num(lineHeight) + "px;text-align:" +
                 st.align + ";color:" + Hex(st.r, st.g, st.b, st.a) + ";\">";
@@ -276,6 +281,10 @@ namespace perlin::ui {
         st.outline = n.Bool("perlin_text_outline", false);
         st.align = n.Str("text_alignment", "left");
         st.linePadding = static_cast<float>(n.Num("line_padding", 0));
+        if (IsTenFontType(n.Str("font_type"))) {
+            TenFont::Instance().EnsureLoaded();
+            st.ten = TenFont::Instance().Available();
+        }
         out.Text(n.ax, n.ay, n.w, n.h, n.layer, n.lines, st);
     }
 
@@ -511,6 +520,9 @@ mcimg, mcitem { display: block; position: absolute; }
 .t { display: block; position: absolute; font-family: minecraft; white-space: nowrap; overflow: visible; }
 .t.s { font-family: minecraft-shadow; }
 .t.o { font-family: minecraft-outline; }
+.t.ten { font-family: minecraft-ten; }
+.t.ten.s { font-family: minecraft-ten-shadow; }
+.t.ten.o { font-family: minecraft-ten-outline; }
 
 /* ---- HUD elements ----------------------------------------------------------------------------------------------
    Every part of the HUD is its own element, named by the list in <!--elements--> above (JSON UI control = element id;
@@ -638,6 +650,8 @@ mcimg, mcitem { display: block; position: absolute; }
             "\nmcimg, mcitem { display: block; position: absolute; }\n"
             ".t { display: block; position: absolute; font-family: minecraft; white-space: nowrap; overflow: visible; }\n"
             ".t.s { font-family: minecraft-shadow; }\n.t.o { font-family: minecraft-outline; }\n"
+            ".t.ten { font-family: minecraft-ten; }\n.t.ten.s { font-family: minecraft-ten-shadow; }\n"
+            ".t.ten.o { font-family: minecraft-ten-outline; }\n"
             ".link { display: block; position: absolute; }\n"
             ".link .ul { display: none; position: absolute; left: 0px; bottom: 0px; width: 100%; height: 1px; background-color: #ffff55; }\n"
             ".link:hover .ul { display: block; }\n"

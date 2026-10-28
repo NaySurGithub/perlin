@@ -1,6 +1,7 @@
 #include "client/ui/HudData.hpp"
 #include "client/ui/HudRenderers.hpp"
 #include "client/ui/McFont.hpp"
+#include "client/ui/TenFont.hpp"
 #include "client/ui/RmlEmit.hpp"
 
 #include <cstdio>
@@ -53,8 +54,10 @@ int main(int argc, char** argv) {
     if (argc > 4) state.itemName = argv[4], state.itemNameAlpha = 1;
     HudData data(state);
     UiServices services;
-    services.textWidth = [](const std::string& t, float s) { return McFont::Instance().Width(t, s); };
-    services.lineHeight = [](float s) { return McFont::kLineHeight * s; };
+    services.textWidth = [](const std::string& t, float s, bool ten) {
+        return ten ? TenFont::Instance().Width(t, s) : McFont::Instance().Width(t, s);
+    };
+    services.lineHeight = [](float s, bool ten) { return ten ? TenFont::Instance().LineHeight(s) : McFont::kLineHeight * s; };
     services.textureSize = [&](const std::string& tex, int& w, int& h) {
         std::string p = pack + "/" + tex;
         if (p.size() < 4 || p.substr(p.size() - 4) != ".png") p += ".png";

@@ -467,6 +467,10 @@ void RequestRespawn();
         int ServerProtocol() const { return serverProtocol; }
         bool MayFly() const { return mayFly; }
         bool IsFlying() const { return isFlying; }
+        // Entity flag 32 (gliding) as last reported by the server for the local player.
+        // Actor flag 75 (sleeping) lives in the extended flag word.
+        // The local player's invisibility (actor flag 5), from our own SetActorData.
+        bool Invisible() const { std::lock_guard lock(attrMutex); return (ownFlagWords[0] & (1ull << 5)) != 0; }
         bool Sleeping() const { std::lock_guard lock(attrMutex); return (ownFlagWords[1] & proto::FlagsMetadataFlags2::Sleeping) != 0 || (ownPlayerFlags & 2) != 0; }
         bool SendStopSleeping() { return SendPlayerAction(6, 0, 0, 0, 0); }
         bool ServerGliding() const {

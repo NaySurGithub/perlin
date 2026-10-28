@@ -2,6 +2,7 @@
 #include "client/i18n/Lang.hpp"
 
 #include <algorithm>
+#include <initializer_list>
 #include <cmath>
 
 namespace perlin::ui {
@@ -31,6 +32,37 @@ namespace perlin::ui {
         v["$ps4"] = Json(false);
         v["$xbox"] = Json(false);
         v["$switch"] = Json(false);
+
+        // Platform flags the game sets before any screen is built. Perlin presents itself as the Windows
+        // (GDK) desktop client, so the vanilla screens take their desktop branches.
+        for (const char* on : {"$win10_edition", "$microsoft_os", "$ms_platform", "$is_desktop", "$ignore_edu_pause",
+                               "$is_publish", "$is_xboxlive_enabled", "$is_realms_enabled", "$gamepad_supported",
+                               "$keyboard_and_mouse_supported", "$can_quit", "$supports_clipboard_set", "$screen_transitions_enabled",
+                               "$use_animation", "$new_video_settings", "$display_copyright_info",
+                               "$sales_disabled_on_screen", "$unlock_full_game_button_ignored", "$featured_world_ignored",
+                               "$edu_feedback_ignored", "$edu_ignore_cloud_storage", "$supports_user_configured_safezone"})
+            v[on] = Json(true);
+        for (const char* off : {"$is_console", "$console_edition", "$pocket_edition", "$osx_edition", "$apple_os", "$google_os",
+                                "$nx_os", "$is_android", "$is_ios", "$is_ps4", "$is_ps5", "$xbox_one", "$thirdpartyconsole",
+                                "$is_big_screen", "$is_low_memory_device", "$trial", "$is_new_trial_mode_enabled", "$is_preview_app",
+                                "$beta_build", "$pre_release", "$creator_build", "$touch_supported", "$file_picking_supported",
+                                "$supports_share", "$is_worldbuilder", "$is_mashup", "$is_secondary_client", "$can_splitscreen",
+                                "$is_seeds_enabled", "$supports_add_friend", "$supports_flite_tts", "$platform_tts_exists",
+                                "$supports_launching_legacy_version", "$supports_legacy_worlds", "$legacy_worlds_share_storage",
+                                "$legacy_worlds_supports_migration", "$auto_fetch_legacy_worlds", "$is_nx_link_unlink_enabled",
+                                "$device_must_be_removed_for_xbl_signin", "$requires_xbl_signin_to_play", "$is_editor_playtest_roundtrip",
+                                "$built_with_ore_ui_docs_and_tests", "$test_infrastructure_disabled", "$debug_settings",
+                                "$show_debug_panel", "$use_smithing_table_2_ui", "$ignore_3rd_party_servers", "$ignore_add_servers",
+                                "$content_cards_enabled", "$storage_location_switch_enabled", "$is_holographic", "$pause_menu_icon_settings_layout",
+                                "$no_buttons_visible", "$single_button_visible", "$two_buttons_visible", "$three_buttons_visible",
+                                "$destructive_two_buttons_visible", "$destructive_three_buttons_visible",
+                                "$single_button_checkbox_visible", "$two_buttons_checkbox_visible"})
+            v[off] = Json(false);
+        for (const char* zero : {"$top_vertical_safezone_size", "$bottom_vertical_safezone_size", "$left_horizontal_safezone_size",
+                                 "$right_horizontal_safezone_size"})
+            v[zero] = Json(0.0);
+        v["$version"] = Json(std::string("1.26.60"));
+        v["$store_button_text"] = Json(std::string("menu.store"));  // label localizes to "Marketplace"
         return v;
     }
 
@@ -76,9 +108,9 @@ namespace perlin::ui {
         if (name == "#hud_subtitle_text_string") return set(Json(s.subtitle));
         if (name == "#tooltip_visible") return set(B(!s.itemName.empty()));
         if (name == "#status_effects_visible") return set(B(hud && !s.effects.empty()));
-        if (name == "#scoreboard_sidebar_visible") return set(B(s.visible && s.scoreboard));
-        if (name == "#objective_sidebar_name") return set(Json(s.scoreboardTitle));
-        if (name == "#scoreboard_sidebar_size") return set(N(static_cast<double>(s.scoreboardRows.size())));
+        if (name == "#scoreboard_sidebar_visible") return set(B(hud && s.sidebarVisible));
+        if (name == "#objective_sidebar_name") return set(Json(s.sidebarTitle));
+        if (name == "#scoreboard_sidebar_size") return set(N(static_cast<double>(s.sidebar.size())));
         if (name == "#objective_background_opacity") return set(N(0.3));
         if (name == "#scoreboard_objective_background_opacity") return set(N(0.4));
         if (name == "#interact_visible") return set(B(false));
@@ -88,18 +120,18 @@ namespace perlin::ui {
 
     int HudData::CollectionSize(const std::string& collection) const {
         if (collection == "scoreboard_players" || collection == "scoreboard_scores")
-            return static_cast<int>(s.scoreboardRows.size());
+            return static_cast<int>(s.sidebar.size());
         return collection == "hotbar_items" ? 9 : 0;
     }
 
     bool HudData::CollectionValue(const std::string& collection, int index, const std::string& binding, Json& out) const {
         const auto set = [&](Json v) { out = std::move(v); return true; };
         if (collection == "scoreboard_players" || collection == "scoreboard_scores") {
-            if (index < 0 || static_cast<size_t>(index) >= s.scoreboardRows.size())
+            if (index < 0 || static_cast<size_t>(index) >= s.sidebar.size())
                 return false;
-            const auto& row = s.scoreboardRows[static_cast<size_t>(index)];
-            if (binding == "#player_name_sidebar") return set(Json(row.first));
-            if (binding == "#player_score_sidebar") return set(Json(std::to_string(row.second)));
+            const HudSidebarRow& row = s.sidebar[static_cast<size_t>(index)];
+            if (binding == "#player_name_sidebar") return set(Json(row.name));
+            if (binding == "#player_score_sidebar") return set(Json(std::to_string(row.score)));
             return false;
         }
         if (collection != "hotbar_items" || index < 0 || index >= 9)
@@ -124,7 +156,7 @@ namespace perlin::ui {
         std::vector<FactoryItem> items;
         if (name == "player_list_factory" || name == "player_score_factory") {
             const bool players = name == "player_list_factory";
-            for (size_t i = 0; i < s.scoreboardRows.size(); i++)
+            for (size_t i = 0; i < s.sidebar.size(); i++)
                 items.push_back({players ? "scoreboard_sidebar_player" : "scoreboard_sidebar_score", {},
                                  players ? "scoreboard_players" : "scoreboard_scores", static_cast<int>(i)});
         } else if (name == "item_text_factory") {
@@ -153,6 +185,12 @@ namespace perlin::ui {
         const auto mixq = [&](float v) { mix(static_cast<uint64_t>(static_cast<int64_t>(std::lround(v * 24.0f)))); };
         const auto mixs = [&](const std::string& t) { for (const char c : t) mix(static_cast<uint8_t>(c)); mix(0xff); };
         mix(i18n::Lang::Get().Version());
+        mix(s.sidebarVisible);
+        mixs(s.sidebarTitle);
+        for (const HudSidebarRow& r : s.sidebar) {
+            mixs(r.name);
+            mix(static_cast<uint64_t>(static_cast<int64_t>(r.score)));
+        }
         mix(s.visible);
         mix(static_cast<uint64_t>(s.mode));
         mixf(s.xpProgress);
@@ -216,12 +254,12 @@ namespace perlin::ui {
                 mixs(t.name);
                 mixs(t.headKey);
             }
-        mix(s.scoreboard);
-        if (s.scoreboard) {
-            mixs(s.scoreboardTitle);
-            for (const auto& row : s.scoreboardRows) {
-                mixs(row.first);
-                mix(static_cast<uint64_t>(static_cast<int64_t>(row.second)));
+        mix(s.sidebarVisible);
+        if (s.sidebarVisible) {
+            mixs(s.sidebarTitle);
+            for (const auto& row : s.sidebar) {
+                mixs(row.name);
+                mix(static_cast<uint64_t>(static_cast<int64_t>(row.score)));
             }
         }
         mix(s.debug);

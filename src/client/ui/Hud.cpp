@@ -1,5 +1,6 @@
 #include "client/ui/Hud.hpp"
 #include "client/ui/GuiScale.hpp"
+#include "client/ui/TenFont.hpp"
 
 #include "client/ui/CreativeScreen.hpp"
 #include "client/ui/DeathScreen.hpp"
@@ -15,8 +16,10 @@
 #include "client/ui/UiTemplate.hpp"
 #include "client/resources/ServerPacks.hpp"
 #include "client/resources/TexturePack.hpp"
+#include "client/resources/TextureLoader.hpp"
 
 #include <algorithm>
+#include <cstdio>
 #include <chrono>
 #include <cmath>
 #include <filesystem>
@@ -73,7 +76,22 @@ namespace perlin::ui {
     Hud::~Hud() = default;
 
     void Hud::WriteDefaults() {
-        Write(fs::path(dataDir) / "ui_defaults" / "_perlin_java.json", kJavaHudOverrides);
+        const fs::path file = fs::path(dataDir) / "ui_defaults" / "_perlin_java.json";
+        std::error_code ec;
+        if (javaStyle)
+            Write(file, kJavaHudOverrides);
+        else
+            fs::remove(file, ec);
+    }
+
+    void Hud::SetJavaStyle(bool java) {
+        if (java == javaStyle && !dataDir.empty())
+            return;
+        javaStyle = java;
+        if (dataDir.empty())
+            return;
+        WriteDefaults();
+        reloadRequested = true;
     }
 
     bool Hud::Initialize(RenderContext& renderer, const std::string& vanilla, const std::string& data_dir) {
@@ -98,8 +116,12 @@ namespace perlin::ui {
             ExportScreenTemplates();
         }
 
-        services.textWidth = [](const std::string& text, float s) { return McFont::Instance().Width(text, s); };
-        services.lineHeight = [](float s) { return static_cast<float>(McFont::kLineHeight) * s; };
+        services.textWidth = [](const std::string& text, float s, bool ten) {
+            return ten ? TenFont::Instance().Width(text, s) : McFont::Instance().Width(text, s);
+        };
+        services.lineHeight = [](float s, bool ten) {
+            return ten ? TenFont::Instance().LineHeight(s) : static_cast<float>(McFont::kLineHeight) * s;
+        };
         services.textureSize = [](const std::string& tex, int& w, int& h) { return UiAssets::Instance().ImageSize(tex, w, h); };
         services.localize = [](const std::string& key) { return UiAssets::Instance().Localize(key); };
 
@@ -130,11 +152,43 @@ namespace perlin::ui {
         tree.reset();
     }
 
+    namespace {
+        // font/glyph_XX.png pages: vanilla first, then server packs from lowest to highest priority, so the pack the
+        // server lists first wins. Servers draw logos and icons in chat, titles and sidebars with these.
+        void LoadGlyphPages(const std::string& vanillaRoot) {
+            McFont& font = McFont::Instance();
+            font.ClearGlyphPages();
+            std::vector<std::string> dirs{vanillaRoot};
+            const std::vector<std::string> server = ServerPacks::Instance().Directories();
+            for (size_t i = server.size(); i-- > 0;)
+                dirs.push_back(server[i]);
+            int loaded = 0;
+            for (const std::string& dir : dirs) {
+                std::error_code ec;
+                for (const auto& entry : fs::directory_iterator(fs::path(dir) / "font", ec)) {
+                    const std::string name = entry.path().filename().string();
+                    unsigned page = 0;
+                    if (name.size() != 12 || name.rfind("glyph_", 0) != 0 || name.substr(8) != ".png" ||
+                        std::sscanf(name.c_str() + 6, "%2x", &page) != 1)
+                        continue;
+                    Texture t;
+                    if (!LoadTexture(entry.path().string(), t))
+                        continue;
+                    font.AddGlyphPage(page, t.pixels, t.width, t.height);
+                    loaded++;
+                }
+            }
+            if (loaded)
+                std::cout << "[ui] glyph pages: " << loaded << " loaded" << std::endl;
+        }
+    }
+
     bool Hud::Rebuild() {
         if (probeLaunched) {
             changeProbe.wait();
             probeLaunched = false;
         }
+        LoadGlyphPages(vanillaRoot);
         {
             std::vector<std::string> roots;
             const std::vector<std::string> server = ServerPacks::Instance().Directories();

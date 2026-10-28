@@ -387,9 +387,68 @@ namespace perlin::ui {
         return false;
     }
 
+    void McFont::AddGlyphPage(uint32_t page, const std::vector<uint8_t>& rgba, int width, int height) {
+        if (width < 16 || height < 16 || rgba.size() < static_cast<size_t>(width) * static_cast<size_t>(height) * 4)
+            return;
+        glyphPages[page] = {rgba, width, height};
+        for (uint32_t cp = page << 8; cp < ((page + 1) << 8); cp++)
+            dyn.erase(cp);
+        version++;
+    }
+
+    void McFont::ClearGlyphPages() {
+        for (const auto& [page, sheet] : glyphPages)
+            for (uint32_t cp = page << 8; cp < ((page + 1) << 8); cp++)
+                dyn.erase(cp);
+        glyphPages.clear();
+        version++;
+    }
+
+    const McFont::Glyph* McFont::FromGlyphPage(uint32_t cp) const {
+        const auto page = glyphPages.find(cp >> 8);
+        if (page == glyphPages.end() || atlasWidth < 16)
+            return nullptr;
+        const GlyphPage& gp = page->second;
+        const int perRow = atlasWidth / 16;
+        const int rows = (atlasHeight - dynY0) / 16;
+        if (dynNext >= perRow * rows)
+            return nullptr;
+        const int cellW = gp.width / 16, cellH = gp.height / 16;
+        const int sx0 = static_cast<int>(cp & 15) * cellW, sy0 = static_cast<int>((cp >> 4) & 15) * cellH;
+        // Glyphs fill the full line like the game draws them: the cell is scaled to the 16 px atlas slot (8 gui px).
+        const int cx = (dynNext % perRow) * 16, cy = dynY0 + (dynNext / perRow) * 16;
+        int ink = 0, left = 16;
+        for (int y = 0; y < 16; y++)
+            for (int x = 0; x < 16; x++) {
+                const int sx = sx0 + x * cellW / 16, sy = sy0 + y * cellH / 16;
+                const uint8_t* src = &gp.rgba[(static_cast<size_t>(sy) * static_cast<size_t>(gp.width) + static_cast<size_t>(sx)) * 4];
+                uint8_t* dst = &atlas[(static_cast<size_t>(cy + y) * static_cast<size_t>(atlasWidth) + static_cast<size_t>(cx + x)) * 4];
+                std::copy(src, src + 4, dst);
+                if (src[3] > 16) {
+                    ink = std::max(ink, x + 1);
+                    left = std::min(left, x);
+                }
+            }
+        if (ink == 0)
+            return nullptr;  // empty cell: let other sources (or the fallback) draw it
+        dynNext++;
+        Glyph g;
+        g.width = (ink + 1) / 2;
+        g.advance = g.width + 1;
+        g.cell = kCell;
+        g.u0 = static_cast<float>(cx) / static_cast<float>(atlasWidth);
+        g.v0 = static_cast<float>(cy) / static_cast<float>(atlasHeight);
+        g.u1 = static_cast<float>(cx + g.width * 2) / static_cast<float>(atlasWidth);
+        g.v1 = static_cast<float>(cy + 16) / static_cast<float>(atlasHeight);
+        version++;
+        return &dyn.emplace(cp, g).first->second;
+    }
+
     const McFont::Glyph* McFont::Dynamic(uint32_t cp) const {
         if (const auto it = dyn.find(cp); it != dyn.end())
             return &it->second;
+        if (const Glyph* g = FromGlyphPage(cp))
+            return g;
         if (const Glyph* g = FromSheet(cp))
             return g;
         if (!ttfs.empty()) {
@@ -455,6 +514,9 @@ namespace perlin::ui {
         if (cp == ' ')
             return glyphs[' '];
         if (cp >= 0x80) {
+            if (glyphPages.count(cp >> 8))
+                if (const Glyph* g = Dynamic(cp))
+                    return *g;
             if (const auto it = mapped.find(cp); it != mapped.end())
                 return it->second;
             if (const Glyph* g = Dynamic(cp))

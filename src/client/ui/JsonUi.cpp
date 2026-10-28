@@ -1,3 +1,5 @@
+#include <deque>
+#include <optional>
 #include "client/ui/JsonUi.hpp"
 #include "client/ui/UiExpr.hpp"
 
@@ -265,6 +267,19 @@ namespace perlin::ui {
                 if (member.first == "namespace" || !member.second.IsObject())
                     continue;
                 const std::string name = SplitName(member.first);
+                // "parent/child": a patch for a control nested inside another one, not a control of its own.
+                if (name.find('/') != std::string::npos) {
+                    const size_t slash = name.find('/');
+                    auto& list = ns.nested[name.substr(0, slash)];
+                    const std::string rest = name.substr(slash + 1);
+                    auto existing = std::find_if(list.begin(), list.end(),
+                                                 [&](const auto& e) { return e.first == rest; });
+                    if (existing != list.end())
+                        existing->second = &member.second;
+                    else
+                        list.emplace_back(rest, &member.second);
+                    continue;
+                }
                 Def def;
                 def.json = &member.second;
                 def.key = member.first;
@@ -281,10 +296,30 @@ namespace perlin::ui {
                     documents.push_back(std::move(patched));
                     def.json = &documents.back();
                     def.key = existing->second.key;
+                } else if (existing != ns.defs.end() && member.first.find('@') == std::string::npos) {
+                    // A later file (a server pack over a vanilla screen) refines the control it named: properties
+                    // replace, "controls" is replaced only when the refinement lists its own. Redefining the control
+                    // through a template ("name@other.control") replaces it outright instead.
+                    Json merged = *existing->second.json;
+                    for (const auto& prop : member.second.object)
+                        merged.Set(prop.first, prop.second);
+                    documents.push_back(std::move(merged));
+                    def.json = &documents.back();
+                    def.key = existing->second.key;
                 }
                 ns.defs[name] = def;
             }
         }
+    }
+
+    bool UiLibrary::DefinedBefore(const std::string& ns, size_t root) const {
+        auto it = namespaces.find(ns);
+        if (it == namespaces.end())
+            return false;
+        for (const size_t index : it->second.files)
+            if (files[index].root < root)
+                return true;
+        return false;
     }
 
     const UiLibrary::Def* UiLibrary::Find(const std::string& ns, const std::string& name) {
@@ -295,6 +330,16 @@ namespace perlin::ui {
             LoadNamespace(ns, it->second);
         auto def = it->second.defs.find(name);
         return def == it->second.defs.end() ? nullptr : &def->second;
+    }
+
+    const std::unordered_map<std::string, std::vector<std::pair<std::string, const Json*>>>*
+    UiLibrary::Nested(const std::string& ns) {
+        auto it = namespaces.find(ns);
+        if (it == namespaces.end())
+            return nullptr;
+        if (!it->second.loaded)
+            LoadNamespace(ns, it->second);
+        return it->second.nested.empty() ? nullptr : &it->second.nested;
     }
 
     namespace {
@@ -312,7 +357,22 @@ namespace perlin::ui {
             }
         }
 
-        Json SubstituteImpl(const Json& value, const Vars& vars, std::unordered_set<std::string>* unresolved, int depth) {
+        // Variables visible to a control: its own scope, then the shared globals. Globals stay in one map instead of
+        // being copied into every control's scope, which made big server screens take seconds to build.
+        struct VarScope {
+            const Vars& local;
+            const Vars* globals = nullptr;
+            const Json* Find(const std::string& name) const {
+                if (auto it = local.find(name); it != local.end())
+                    return &it->second;
+                if (globals)
+                    if (auto it = globals->find(name); it != globals->end())
+                        return &it->second;
+                return nullptr;
+            }
+        };
+
+        Json SubstituteImpl(const Json& value, const VarScope& vars, std::unordered_set<std::string>* unresolved, int depth) {
             if (depth > 16)
                 return value;
             switch (value.type) {
@@ -322,12 +382,12 @@ namespace perlin::ui {
                     return value;
                 if (s.size() > 1 && s[0] == '$' &&
                     std::all_of(s.begin() + 1, s.end(), [](char c) { return IsNameChar(c); })) {
-                    auto it = vars.find(s);
-                    if (it == vars.end()) {
+                    const Json* found = vars.Find(s);
+                    if (!found) {
                         if (unresolved) unresolved->insert(s);
                         return value;
                     }
-                    return SubstituteImpl(it->second, vars, unresolved, depth + 1);
+                    return SubstituteImpl(*found, vars, unresolved, depth + 1);
                 }
                 const bool expression = IsExpression(s);
                 std::string out;
@@ -340,9 +400,9 @@ namespace perlin::ui {
                     while (j < s.size() && IsNameChar(s[j]))
                         j++;
                     const std::string name = s.substr(i, j - i);
-                    auto it = vars.find(name);
-                    if (name.size() > 1 && it != vars.end()) {
-                        out += Literal(SubstituteImpl(it->second, vars, unresolved, depth + 1), expression);
+                    const Json* found = name.size() > 1 ? vars.Find(name) : nullptr;
+                    if (found) {
+                        out += Literal(SubstituteImpl(*found, vars, unresolved, depth + 1), expression);
                     } else {
                         if (unresolved && name.size() > 1) unresolved->insert(name);
                         out += name;
@@ -376,7 +436,7 @@ namespace perlin::ui {
     }
 
     Json Substitute(const Json& value, const Vars& vars, std::unordered_set<std::string>* unresolved) {
-        return SubstituteImpl(value, vars, unresolved, 0);
+        return SubstituteImpl(value, VarScope{vars}, unresolved, 0);
     }
 
     namespace {
@@ -387,22 +447,23 @@ namespace perlin::ui {
 
         struct ChildEntry {
             std::string key;
-            Json value;
+            const Json* value;  // points into the library, or into the owning Build's substituted lists
             std::string ns;
         };
 
         class Builder {
         public:
-            Builder(UiLibrary& library, BuildReport& report) : library(library), report(report) {}
+            Builder(UiLibrary& library, BuildReport& report, const Vars& globals) : library(library), report(report), globals(globals) {}
 
             std::unique_ptr<Node> Build(const std::string& key, const Json& overrides, const std::string& ns,
-                                        const Vars& parentVars, const std::string& parentPath, int depth) {
+                                        const Vars& parentVars, const std::string& parentPath, int depth,
+                                        const std::vector<std::pair<std::string, const Json*>>* pending = nullptr) {
                 if (depth > 64)
                     return nullptr;
                 std::string ref;
                 std::string name = SplitName(key, &ref);
                 if (!ref.empty() && ref.find('$') != std::string::npos) {
-                    const Json resolved = Substitute(Json(ref), parentVars, &report.unresolvedVariables);
+                    const Json resolved = Sub(Json(ref), parentVars, &report.unresolvedVariables);
                     ref = resolved.StringOr("");
                 }
                 if (!ref.empty() && ref[0] == '@')
@@ -413,14 +474,66 @@ namespace perlin::ui {
                     ResolveChain(ref, ns, layers, 0);
                 layers.push_back({&overrides, ns});
 
-                Vars vars = parentVars;
+                // "a/b/c" definitions patch a control nested inside another: a bare name lands on this node, a path is
+                // routed into the child it names when the children are built.
+                std::unordered_map<std::string, std::vector<std::pair<std::string, const Json*>>> childPatches;
+                const auto routePatch = [&](const std::string& rel, const Json* patch) {
+                    const size_t slash = rel.find('/');
+                    if (slash == std::string::npos) {
+                        layers.push_back({patch, ns});
+                        return;
+                    }
+                    childPatches[rel.substr(0, slash)].emplace_back(rel.substr(slash + 1), patch);
+                };
+                if (pending)
+                    for (const auto& entry : *pending)
+                        routePatch(entry.first, entry.second);
+                // Path definitions live in the namespace that owns the control, which can differ from the namespace of
+                // the file that listed this child.
+                std::string defName = name;
+                std::string defNs = ns;
+                if (!ref.empty()) {
+                    const size_t dot = ref.rfind('.');
+                    defName = dot == std::string::npos ? ref : ref.substr(dot + 1);
+                    if (dot != std::string::npos)
+                        defNs = ref.substr(0, dot);
+                }
+                const auto applyNested = [&](const std::string& lookupNs) {
+                    const auto* nested = library.Nested(lookupNs);
+                    if (!nested)
+                        return;
+                    const auto found = nested->find(defName);
+                    if (found == nested->end())
+                        return;
+                    for (const auto& entry : found->second) {
+                        // The library key names the child itself: everything after the first "/" is handed down, an
+                        // empty remainder means "this child gets these properties".
+                        const size_t slash = entry.first.find('/');
+                        if (slash == std::string::npos)
+                            childPatches[entry.first].emplace_back(std::string(), entry.second);
+                        else
+                            childPatches[entry.first.substr(0, slash)].emplace_back(entry.first.substr(slash + 1), entry.second);
+                    }
+                };
+                applyNested(ns);
+                if (defNs != ns)
+                    applyNested(defNs);
+
+                // Most controls assign no variables; only copy the parent's scope when one does.
+                std::optional<Vars> ownVars;
+                auto writable = [&]() -> Vars& {
+                    if (!ownVars)
+                        ownVars.emplace(parentVars);
+                    return *ownVars;
+                };
+                std::unordered_set<std::string> chainDefaults;
                 for (const Layer& layer : layers) {
                     if (!layer.json->IsObject())
                         continue;
                     for (const auto& member : layer.json->object) {
                         if (member.first.empty() || member.first[0] != '$')
                             continue;
-                        AssignVariable(vars, member.first, member.second);
+                        AssignVariable(writable(), member.first, member.second, &chainDefaults);
                     }
                     if (const Json* conditional = layer.json->Find("variables")) {
                         if (!conditional->IsArray())
@@ -430,7 +543,7 @@ namespace perlin::ui {
                                 continue;
                             bool apply = true;
                             if (const Json* requiresJson = entry.Find("requires")) {
-                                Json condition = Substitute(*requiresJson, vars, &report.unresolvedVariables);
+                                Json condition = Sub(*requiresJson, ownVars ? *ownVars : parentVars, &report.unresolvedVariables);
                                 if (condition.IsString() && IsExpression(condition.string)) {
                                     ExprEnv env;
                                     Json result;
@@ -443,14 +556,17 @@ namespace perlin::ui {
                                 continue;
                             for (const auto& member : entry.object)
                                 if (!member.first.empty() && member.first[0] == '$')
-                                    AssignVariable(vars, member.first, member.second);
+                                    AssignVariable(writable(), member.first, member.second, &chainDefaults);
                         }
                     }
                 }
+                const Vars& vars = ownVars ? *ownVars : parentVars;
 
-                Json props = Json::MakeObject();
-                std::vector<Json> bindingList;
+                // Properties by name, later layers replacing earlier ones; copied once, when substituted.
+                std::vector<std::pair<const std::string*, const Json*>> propRefs;
+                std::vector<const Json*> bindingList;
                 std::vector<ChildEntry> childList;
+                std::deque<Json> substitutedLists;
                 for (const Layer& layer : layers) {
                     if (!layer.json->IsObject())
                         continue;
@@ -459,13 +575,24 @@ namespace perlin::ui {
                         if (k.empty() || k[0] == '$' || k == "variables" || k == "modifications" || k == "namespace")
                             continue;
                         if (k == "controls") {
-                            MergeChildren(childList, member.second, layer.ns);
+                            // A control that lists its own children replaces the inherited list entirely, as in the
+                            // game; adding to a template's children is what "modifications" are for.
+                            childList.clear();
+                            // "controls": "$row_controls" passes a whole child list through a variable.
+                            if (member.second.IsString() && !member.second.string.empty() && member.second.string[0] == '$')
+                                MergeChildren(childList, substitutedLists.emplace_back(Sub(member.second, vars, &report.unresolvedVariables)), layer.ns);
+                            else
+                                MergeChildren(childList, member.second, layer.ns);
                         } else if (k == "bindings") {
                             if (member.second.IsArray())
                                 for (const Json& b : member.second.array)
-                                    bindingList.push_back(b);
+                                    bindingList.push_back(&b);
                         } else {
-                            props.Set(k, member.second);
+                            auto existing = std::find_if(propRefs.begin(), propRefs.end(), [&](const auto& p) { return *p.first == k; });
+                            if (existing != propRefs.end())
+                                existing->second = &member.second;
+                            else
+                                propRefs.emplace_back(&k, &member.second);
                         }
                     }
                 }
@@ -476,7 +603,10 @@ namespace perlin::ui {
                 node->ns = ns;
                 report.nodes++;
 
-                Json substituted = Substitute(props, vars, &report.unresolvedVariables);
+                Json substituted = Json::MakeObject();
+                substituted.object.reserve(propRefs.size());
+                for (const auto& [k, v] : propRefs)
+                    substituted.object.emplace_back(*k, Sub(*v, vars, &report.unresolvedVariables));
                 if (const Json* ignored = substituted.Find("ignored")) {
                     Json value = *ignored;
                     if (value.IsString() && IsExpression(value.string) && !UsesBindings(value.string)) {
@@ -497,11 +627,26 @@ namespace perlin::ui {
                 else
                     node->type = "panel";
 
-                for (const Json& b : bindingList)
-                    node->bindings.push_back(Substitute(b, vars, &report.unresolvedVariables));
+                for (const Json* b : bindingList)
+                    node->bindings.push_back(Sub(*b, vars, &report.unresolvedVariables));
 
                 for (const ChildEntry& entry : childList) {
-                    auto child = Build(entry.key, entry.value, entry.ns, vars, node->path, depth + 1);
+                    std::vector<std::pair<std::string, const Json*>> childPending;
+                    if (!childPatches.empty())
+                        if (const auto it = childPatches.find(SplitName(entry.key)); it != childPatches.end())
+                            childPending = it->second;
+                    auto child = Build(entry.key, *entry.value, entry.ns, vars, node->path, depth + 1,
+                                       childPending.empty() ? nullptr : &childPending);
+                    if (child)
+                        node->children.push_back(std::move(child));
+                }
+                // A path patch for a child the parent never listed still defines that child.
+                for (const auto& entry : childPatches) {
+                    const bool listed = std::any_of(childList.begin(), childList.end(),
+                                                    [&](const ChildEntry& e) { return SplitName(e.key) == entry.first; });
+                    if (listed || entry.second.front().second == nullptr)
+                        continue;
+                    auto child = Build(entry.first, *entry.second.front().second, ns, vars, node->path, depth + 1, &entry.second);
                     if (child)
                         node->children.push_back(std::move(child));
                 }
@@ -546,6 +691,15 @@ namespace perlin::ui {
                     }
                 }
                 if (const Json* factory = node->props.Find("factory"); factory && factory->IsObject()) {
+                    // "factory": {"control_name": "ns.control"} stamps one control per collection item.
+                    if (const Json* name2 = factory->Find("control_name"); name2 && name2->IsString() && !name2->string.empty()) {
+                        std::string refName = name2->string;
+                        if (refName[0] == '@') refName.erase(0, 1);
+                        const size_t dot = refName.find('.');
+                        const std::string simple = dot == std::string::npos ? refName : refName.substr(dot + 1);
+                        if (auto template2 = Build(simple + "@" + refName, Json::MakeObject(), ns, vars, node->path, depth + 1))
+                            node->factoryControls.emplace_back(simple, std::move(template2));
+                    }
                     if (const Json* ids = factory->Find("control_ids"); ids && ids->IsObject()) {
                         for (const auto& member : ids->object) {
                             if (!member.second.IsString())
@@ -582,8 +736,17 @@ namespace perlin::ui {
         private:
             UiLibrary& library;
             BuildReport& report;
+            const Vars& globals;
 
-            void AssignVariable(Vars& vars, const std::string& rawName, const Json& value) {
+            Json Sub(const Json& value, const Vars& vars, std::unordered_set<std::string>* unresolved) const {
+                return SubstituteImpl(value, VarScope{vars, &globals}, unresolved, 0);
+            }
+
+            // `chainDefaults` holds names that only have a "|default" value from this control's own inheritance
+            // chain. Layers run base first, so a more derived "|default" must still replace a base one: only values
+            // from the parent scope or an explicit assignment block a default.
+            void AssignVariable(Vars& vars, const std::string& rawName, const Json& value,
+                                std::unordered_set<std::string>* chainDefaults = nullptr) {
                 std::string name = rawName;
                 bool onlyDefault = false;
                 const size_t bar = name.find('|');
@@ -591,10 +754,16 @@ namespace perlin::ui {
                     onlyDefault = name.substr(bar + 1) == "default";
                     name = name.substr(0, bar);
                 }
-                if (onlyDefault && vars.count(name))
-                    return;
+                if (onlyDefault) {
+                    if ((vars.count(name) || globals.count(name)) && !(chainDefaults && chainDefaults->count(name)))
+                        return;
+                    if (chainDefaults)
+                        chainDefaults->insert(name);
+                } else if (chainDefaults) {
+                    chainDefaults->erase(name);
+                }
                 if (value.IsString() && value.string.find('$') != std::string::npos) {
-                    vars[name] = Substitute(value, vars, nullptr);
+                    vars[name] = Sub(value, vars, nullptr);
                     return;
                 }
                 vars[name] = value;
@@ -607,7 +776,7 @@ namespace perlin::ui {
                     if (!element.IsObject())
                         continue;
                     for (const auto& member : element.object) {
-                        ChildEntry entry{member.first, member.second, ns};
+                        ChildEntry entry{member.first, &member.second, ns};
                         const std::string name = SplitName(member.first);
                         bool replaced = false;
                         for (ChildEntry& existing : list)
@@ -654,13 +823,11 @@ namespace perlin::ui {
 
     std::unique_ptr<Node> BuildTree(UiLibrary& library, const std::string& reference, const Vars& rootVars,
                                     BuildReport& report) {
-        Builder builder(library, report);
+        Builder builder(library, report, library.GlobalVariables());
         const size_t dot = reference.find('.');
         const std::string ns = dot == std::string::npos ? "" : reference.substr(0, dot);
         const std::string name = dot == std::string::npos ? reference : reference.substr(dot + 1);
-        Vars vars = library.GlobalVariables();
-        for (const auto& entry : rootVars)
-            vars[entry.first] = entry.second;
+        Vars vars = rootVars;
         return builder.Build(name + "@" + reference, Json::MakeObject(), ns, vars, {}, 0);
     }
 }

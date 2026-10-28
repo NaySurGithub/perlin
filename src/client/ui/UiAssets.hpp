@@ -80,6 +80,7 @@ namespace perlin::ui {
         bool langLoaded = false;
         uint32_t generation = 0;
         std::unordered_map<std::string, TextureSidecar> sidecars;
+        uint64_t sidecarGeneration = 0;
         std::unordered_map<std::string, std::pair<int, int>> sizeCache;
         std::unordered_map<std::string, std::string> stemIndex;
         bool stemIndexBuilt = false;

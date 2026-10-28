@@ -6,6 +6,7 @@
 #include "client/ui/HudRenderers.hpp"
 #include "client/ui/ItemTooltip.hpp"
 #include "client/ui/McFont.hpp"
+#include "client/ui/TenFont.hpp"
 #include "client/ui/UiAssets.hpp"
 #include "client/ui/UiTemplate.hpp"
 #include "util/Paths.hpp"
@@ -130,8 +131,12 @@ div { display: block; position: absolute; }
     }
 
     ChestUi::ChestUi() {
-        services.textWidth = [](const std::string& text, float s) { return McFont::Instance().Width(text, s); };
-        services.lineHeight = [](float s) { return static_cast<float>(McFont::kLineHeight) * s; };
+        services.textWidth = [](const std::string& text, float s, bool ten) {
+            return ten ? TenFont::Instance().Width(text, s) : McFont::Instance().Width(text, s);
+        };
+        services.lineHeight = [](float s, bool ten) {
+            return ten ? TenFont::Instance().LineHeight(s) : static_cast<float>(McFont::kLineHeight) * s;
+        };
         services.textureSize = [](const std::string& tex, int& w, int& h) { return UiAssets::Instance().ImageSize(tex, w, h); };
         services.localize = [](const std::string& k) { return UiAssets::Instance().Localize(k); };
         emitter.SetTemplates(kChestTemplate, std::string());
