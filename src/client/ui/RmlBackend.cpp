@@ -98,7 +98,7 @@ namespace perlin::ui {
                 const auto ms = static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(
                                                           std::chrono::steady_clock::now().time_since_epoch())
                                                           .count());
-                const GlintTransform g = MakeGlintTransform(ms, 0.5f, 16.0f / static_cast<float>(std::max(1, gGlintWidth)));
+                const GlintTransform g = MakeGlintTransform(ms);
                 std::copy(g.matrix, g.matrix + 4, draw.glintMatrix);
                 std::copy(g.offset, g.offset + 2, draw.glintOffset);
             }

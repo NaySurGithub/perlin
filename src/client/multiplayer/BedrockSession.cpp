@@ -4,6 +4,7 @@
 #include "util/SimClock.hpp"
 #include "util/SystemInfo.hpp"
 #include "client/multiplayer/NbtJson.hpp"
+#include "client/multiplayer/PacketLog.hpp"
 #include "client/multiplayer/DeviceProfile.hpp"
 #include "client/multiplayer/DefaultSkinGeometry.hpp"
 
@@ -613,12 +614,14 @@ namespace perlin {
             net->Disconnect();
         compressEnabled = false;
         cacheStatusSent = false;
+        packsCompletedSent = false;
         radiusSent = false;
     }
 
     bool BedrockSession::Transmit(uint32_t packetId, const std::vector<uint8_t>& body, bool reliable) {
         if (replayMode)
             return true;
+        packetlog::Record(true, packetId, body.data(), body.size());
         if ((packetId == 144 || packetId == 36 || packetId == 44 || packetId == 31) && tapActive.load(std::memory_order_acquire)) {
             std::lock_guard<std::mutex> tl(tapMutex);
             if (recordTap)
@@ -928,6 +931,7 @@ namespace perlin {
                           << " bytes)" << std::endl;
         }
 
+        packetlog::Record(false, id, body.data(), body.size());
         if (id == LevelChunkPacket::kId || id == SubchunkPacket::kId) {
             {
                 std::lock_guard<std::mutex> lk(chunkMutex);
@@ -1054,6 +1058,7 @@ namespace perlin {
         ResetWorldForDimension();
         compressEnabled = false;
         cacheStatusSent = false;
+        packsCompletedSent = false;
         radiusSent = false;
         startGameSeen = false;
         spawnSeen = false;
@@ -1173,6 +1178,9 @@ namespace perlin {
     }
 
     bool BedrockSession::SendMoveInput(const MoveInput& input) {
+        // Vanilla holds PlayerAuthInput until SetLocalPlayerAsInitialized; earlier input is an anticheat tell.
+        if (!initializedSent)
+            return false;
         auto finite = [](float v) { return std::isfinite(v); };
         for (float v : {input.position[0], input.position[1], input.position[2], input.yaw, input.pitch,
                         input.eyeHeight, input.moveX, input.moveZ})
@@ -1192,6 +1200,12 @@ namespace perlin {
             if (id <= 65)
                 add(id);
 
+        {
+            std::lock_guard lock(pendingInputMutex);
+            for (uint32_t id : pendingInputFlags)
+                add(id);
+            pendingInputFlags.clear();
+        }
         if (pendingTeleportAck) {
             add(InputFlag::HandledTeleport);
             pendingTeleportAck = false;
@@ -1299,7 +1313,7 @@ namespace perlin {
             p.boundingBox.width = ownWidth;
             p.boundingBox.height = ownHeight;
         }
-        p.entityRuntimeId = static_cast<uint64_t>(uniqueId);
+        p.entityUniqueId = uniqueId;
         p.isFlying = flying;
         std::cout << "[move] prediction sync" << std::endl;
         return Send(p);

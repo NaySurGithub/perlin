@@ -31,13 +31,17 @@ namespace perlin::ui {
         bool horse = false;
         int horseChest = 0;
         std::array<HudItem, 17> horseItems;
+        int chestRows = 0;  // 3 for a chest/barrel/shulker box, 6 for a double chest
+        std::array<HudItem, 54> chestItems;
         bool advancedTooltips = false;
     };
 
     inline constexpr int kInvPanelW = 176;
     inline constexpr int kInvPanelH = 166;
-    inline constexpr int kInvAddrArmor = 36, kInvAddrOffhand = 40, kInvAddrCraft = 41, kInvAddrOutput = 45, kInvAddrWork = 47, kInvAddrHorse = 56;
-    void InventorySlotPos(int addr, int& x, int& y, bool workbench = false);
+    inline constexpr int kInvAddrArmor = 36, kInvAddrOffhand = 40, kInvAddrCraft = 41, kInvAddrOutput = 45, kInvAddrWork = 47, kInvAddrHorse = 56,
+                                kInvAddrChest = 73;
+    void InventorySlotPos(int addr, int& x, int& y, bool workbench = false, int chestRows = 0);
+    int InventoryPanelH(const InventoryView& view);
     std::string BuildEffectsPanel(const std::vector<HudEffect>& effects, int x, int y, int guiW);
     int InventoryPanelX(const InventoryView& view, int guiW);
     inline constexpr int kBookCols = 5, kBookRows = 4;

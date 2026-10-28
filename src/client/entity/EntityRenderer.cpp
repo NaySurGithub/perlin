@@ -2522,6 +2522,7 @@ namespace perlin::entity {
             std::vector<SkullPart> parts;
             std::vector<SkullBox> boxes;
             int flagPart = -1;
+            int lidPart = -1;  // chests: swung open about its pivot
         };
 
         const SkullModelDef& SkullModelFor(int kind) {
@@ -2594,6 +2595,26 @@ namespace perlin::entity {
                                           {{0, -10, -20.5f, 9.5f, 20, 2, 2, 0, 42, 0, false},
                                            {1, -10, 0, -2, 20, 40, 1, 0, 0, 0, false}},
                                           1});
+                // Chests (kinds 14+), the classic chest model in the same frame as the skulls.
+                // Single: base, lid hinged at the back with the latch on it.
+                const auto chest = [](const char* tex, bool large) {
+                    const float w = large ? 30.0f : 14.0f;
+                    SkullModelDef d{tex, large ? 128.0f : 64.0f, 64.0f,
+                                    {{-1, glm::vec3(0.0f), glm::vec3(0.0f), 1.0f}, {0, glm::vec3(-7.0f, -9.0f, 7.0f), glm::vec3(0.0f), 1.0f}},
+                                    {{0, -7, -10, -7, w, 10, 14, 0, 19, 0, false},
+                                     {1, 0, -5, -14, w, 5, 14, 0, 0, 0, false},
+                                     {1, large ? 14.0f : 6.0f, -2, -15, 2, 4, 1, 0, 0, 0, false}}};
+                    d.lidPart = 1;
+                    return d;
+                };
+                for (const char* tex : {"textures/entity/chest/normal", "textures/entity/chest/trapped", "textures/entity/chest/ender",
+                                        "textures/entity/chest/copper_default", "textures/entity/chest/copper_exposed",
+                                        "textures/entity/chest/copper_weathered", "textures/entity/chest/copper_oxidized"})
+                    m.push_back(chest(tex, false));
+                for (const char* tex : {"textures/entity/chest/double_normal", "textures/entity/chest/trapped_double",
+                                        "textures/entity/chest/copper_default_double", "textures/entity/chest/copper_exposed_double",
+                                        "textures/entity/chest/copper_weathered_double", "textures/entity/chest/copper_oxidized_double"})
+                    m.push_back(chest(tex, true));
                 return m;
             }();
             return models[static_cast<size_t>(std::clamp(kind, 0, static_cast<int>(models.size()) - 1))];
@@ -2607,7 +2628,7 @@ namespace perlin::entity {
             m = glm::translate(m, p.offset);
             m = glm::rotate(m, p.rotation.z, glm::vec3(0, 0, 1));
             m = glm::rotate(m, p.rotation.y, glm::vec3(0, 1, 0));
-            m = glm::rotate(m, p.rotation.x + (part == def.flagPart ? flagXRot : 0.0f), glm::vec3(1, 0, 0));
+            m = glm::rotate(m, p.rotation.x + (part == def.flagPart || part == def.lidPart ? flagXRot : 0.0f), glm::vec3(1, 0, 0));
             return glm::scale(m, glm::vec3(p.scale));
         }
     }
@@ -2742,6 +2763,8 @@ namespace perlin::entity {
                     const float phase = static_cast<float>(t - std::floor(t / 100.0) * 100.0) / 100.0f;
                     flagXRot = (-0.0125f + 0.01f * std::cos(6.2831853f * phase)) * 3.14159265f;
                 }
+                if (def.lidPart >= 0)
+                    flagXRot = -d.lid * 1.5707963f;
                 const auto emitBox = [&](SkullBatch& batch, const SkullBox& b, float extraGrow, const glm::vec3& tint) {
                     const glm::mat4 m = place * SkullPartMatrix(def, b.part, flagXRot);
                     const float g = b.grow + extraGrow;

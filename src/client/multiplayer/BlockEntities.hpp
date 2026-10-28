@@ -1,6 +1,7 @@
 #pragma once
 #include "client/ui/Json.hpp"
 
+#include <chrono>
 #include <cstdint>
 #include <mutex>
 #include <string>
@@ -23,6 +24,9 @@ namespace perlin {
         float rotation = 0.0f;
         int base = -1, bannerType = 0;
         std::vector<std::pair<std::string, int>> patterns;
+        // Bedrock chests: the partner half of a double chest.
+        bool paired = false;
+        int pairX = 0, pairZ = 0;
         std::string nbt;
     };
 
@@ -35,6 +39,9 @@ namespace perlin {
         void Clear();
         void TakeFrom(BlockEntityStore& other);
         size_t Size() const;
+        // Chest-like lids, driven by block_event (type 1 = viewer count).
+        void SetLidOpen(int x, int y, int z, bool open);
+        float LidOpenness(int x, int y, int z) const;
 
     private:
         static uint64_t Key(int x, int y, int z) {
@@ -43,5 +50,12 @@ namespace perlin {
         }
         mutable std::mutex mutex;
         std::unordered_map<uint64_t, BlockEntity> entities;
+        struct Lid {
+            bool open = false;
+            float from = 0.0f;  // openness when the last change started
+            std::chrono::steady_clock::time_point at{};
+        };
+        std::unordered_map<uint64_t, Lid> lids;
+        static float LidAt(const Lid& lid, std::chrono::steady_clock::time_point now);
     };
 }

@@ -151,7 +151,9 @@ namespace perlin {
         std::vector<BossBar> BossBars() const;
         ScoreboardView Scoreboard() const;
         bool TakeToast(ServerToast& out);
-        uint32_t InputLocks() const { return inputLocks.load(); }
+        // The server's input locks, plus movement and jump while our actor carries the IMMOBILE flag
+        // (minigame countdowns, cutscenes): vanilla stops applying move input locally in that state.
+        uint32_t InputLocks() const { return inputLocks.load() | (immobile.load() ? 4u | 64u : 0u); }
         uint32_t HiddenHud() const { return hiddenHud.load(); }
         std::atomic<bool> serverAuthBreaking{true};
 
@@ -247,6 +249,16 @@ namespace perlin {
         void ArmPredictionSync() { if (predictionSyncCountdown < 0) predictionSyncCountdown = 200; }
         bool SendPredictionSync();
         bool Initialized() const { return initializedSent; }
+        // Blocks above a predicted break (the top of tall grass, ...) that were cleared with it. The server only
+        // resends the block it rejected, so these are put back when that block is restored.
+        void NoteBrokenSupport(int x, int y, int z, std::vector<std::pair<int, uint16_t>> above) {
+            std::lock_guard lock(supportMutex);
+            brokenSupports.push_back({x, y, z, std::move(above), std::chrono::steady_clock::now()});
+        }
+        void QueueInputFlag(uint32_t flag) {
+            std::lock_guard lock(pendingInputMutex);
+            pendingInputFlags.push_back(flag);
+        }
         void PruneChunks(int centerChunkX, int centerChunkZ, int radiusChunks);
         bool SendLoadingScreen(bool start, std::optional<uint32_t> id = std::nullopt);
         bool SendPlayerAuthInputWithFlags(const std::vector<uint32_t>& flags, float pitchOverride,
@@ -521,6 +533,7 @@ void RequestRespawn();
             int nbtTags = 0;
             std::vector<std::pair<int, int>> enchants;
             std::vector<std::string> lore;
+            int networkId = 0;
             bool Empty() const { return name.empty() || count <= 0; }
         };
         struct Vitals {
@@ -548,8 +561,14 @@ void RequestRespawn();
             bool horseOpen = false;
             int horseChestSlots = 0;
             int64_t horseEntity = 0;
+            // Open chest-like block container (chest, trapped/ender chest, barrel, shulker box): 27 slots, 54 for a double chest.
+            ItemStackInfo chest[54];
+            bool chestOpen = false;
+            int chestSlots = 0;
+            std::string chestTitle;
         };
-        static constexpr int kInvArmor0 = 36, kInvOffhand = 40, kInvCraft0 = 41, kInvOutput = 45, kInvCursor = 46, kInvWork0 = 47, kInvSlots = 56, kInvHorse0 = 56, kInvHorseCount = 17, kInvTotal = 73;
+        static constexpr int kInvArmor0 = 36, kInvOffhand = 40, kInvCraft0 = 41, kInvOutput = 45, kInvCursor = 46, kInvWork0 = 47, kInvSlots = 56, kInvHorse0 = 56, kInvHorseCount = 17, kInvChest0 = 73, kInvChestCount = 54,
+                             kInvTotal = 127;
         static bool IsCraftAddr(int a) { return (a >= kInvCraft0 && a < kInvOutput) || (a >= kInvWork0 && a < kInvSlots); }
         struct CreativeGroup {
             int category = 0;
@@ -633,6 +652,8 @@ void RequestRespawn();
         bool WorkbenchOpen() const { std::lock_guard lock(statusMutex); return workbenchOpen; }
         bool TakeWorkbenchOpened();
         bool TakeHorseOpened();
+        bool TakeChestOpened();
+        bool ChestOpen() const { std::lock_guard lock(statusMutex); return inventory.chestOpen; }
         bool HorseOpen() const { std::lock_guard lock(statusMutex); return inventory.horseOpen; }
         struct RecipeEntry { int index = 0; bool craftable = false; ItemStackInfo out; };
         std::vector<RecipeEntry> GetRecipes(int side) const;
@@ -748,6 +769,10 @@ void RequestRespawn();
         std::map<int64_t, int64_t> scoreIdentities;
         std::deque<ServerToast> toasts;
         std::atomic<uint32_t> inputLocks{0};
+        std::atomic<bool> immobile{false};
+        // StartGame's serverAuthoritativeInventory was false (e.g. The Hive): such servers ignore item stack
+        // requests and expect legacy inventory_transaction packets listing each slot's old and new item.
+        std::atomic<bool> legacyInventory{false};
         std::atomic<uint32_t> hiddenHud{0};
         net::PacketDispatcher dispatcher;
         bool SendRequestNetworkSettings();
@@ -943,6 +968,17 @@ void RequestRespawn();
         float lastAuthPos[3] = {0, 0, 0};
         bool haveLastAuthPos = false;
         bool pendingTeleportAck = false;
+        // One-shot PlayerAuthInput flags raised by input events (MissedSwing, StartUsingItem) for the next tick.
+        std::vector<uint32_t> pendingInputFlags;
+        std::mutex pendingInputMutex;
+        struct BrokenSupport {
+            int x, y, z;
+            std::vector<std::pair<int, uint16_t>> above;
+            std::chrono::steady_clock::time_point at;
+        };
+        std::vector<BrokenSupport> brokenSupports;
+        std::mutex supportMutex;
+        std::chrono::steady_clock::time_point lastSwingAt{};
         std::deque<BlockActionData> pendingBlockActions;
         // Packet events are consumed in decode order; merging them loses
         // teleport/correction boundaries and velocity updates from one frame.
@@ -1038,6 +1074,10 @@ void RequestRespawn();
         proto::ItemV4 extraRaw[20];
         proto::ItemV4 horseRaw[17];
         int horseWindow = -1;
+        proto::ItemV4 chestRaw[54];
+        int chestWindow = -1;
+        bool chestJustOpened = false;
+        proto::ContainerSlotType chestSlotType = proto::ContainerSlotType::Container;
         std::chrono::steady_clock::time_point invServerAt[36]{};
         struct RecipeIngredientInfo { bool empty = true; std::string name, tag; int meta = 0; };
         struct RecipeInfo {
@@ -1052,12 +1092,17 @@ void RequestRespawn();
             InventoryView view;
             proto::ItemV4 raw[36];
             proto::ItemV4 extra[20];
+            proto::ItemV4 chest[54];
+            proto::ItemV4 horse[17];
         };
         std::map<int32_t, InvSnapshot> invSnapshots;
+        bool SendLegacyInventoryLocked(const InvSnapshot& before);
         int craftedRecipe = -1;
         std::deque<std::function<bool(proto::ItemStackRequest&)>> invQueue;
         bool invCloseWanted = false;
         int32_t invPendingRequest = 0;
+        // Requests sent but not yet answered; the client keeps predicting while these are in flight.
+        std::map<int32_t, std::chrono::steady_clock::time_point> invInFlight;
         std::chrono::steady_clock::time_point invPendingAt{};
         void InvRecomputeOutputLocked();
         ItemStackInfo& InvInfoLocked(int addr);
@@ -1095,6 +1140,7 @@ void RequestRespawn();
         uint16_t compressThreshold = 0;
         uint16_t compressAlgorithm = 0;
         bool cacheStatusSent = false;
+        bool packsCompletedSent = false;
         bool radiusSent = false;
     };
 

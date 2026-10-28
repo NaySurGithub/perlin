@@ -90,7 +90,7 @@ namespace perlin {
         uint32_t glintTexture = 0;
         float glintMatrix[4] = {1, 0, 0, 1};
         float glintOffset[2] = {0, 0};
-        float glintStrength = 0.9f;
+        float glintStrength = 1.0f;
         bool shadowOnly = false;
     };
 

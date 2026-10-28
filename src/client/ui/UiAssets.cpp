@@ -624,7 +624,11 @@ namespace perlin::ui {
 
         CustomItemDef custom;
         const bool customItem = ServerBlocks::Instance().Item(id, custom);
-        bool flat = FlatSprite(name, aux, sprite, dye, customItem ? custom.icon : std::string());
+        // Server packs key item_texture.json by the full identifier ("hivehub:pet_egg"); try it before the short name.
+        std::string iconKey = customItem ? custom.icon : std::string();
+        if (iconKey.empty() && id.find(':') != std::string::npos && id.rfind("minecraft:", 0) != 0)
+            iconKey = id;
+        bool flat = FlatSprite(name, aux, sprite, dye, iconKey);
         if (!flat) {
             std::vector<std::string> stems;
             if (customItem && !custom.icon.empty())

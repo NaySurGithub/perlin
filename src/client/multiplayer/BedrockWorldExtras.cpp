@@ -467,6 +467,11 @@ namespace perlin {
             commandVersion++;
         });
 
+        On<BlockEventPacket>([this](const BlockEventPacket& p) {
+            // Chests, ender chests and shulker boxes: data is the number of players viewing the container.
+            if (p.type == BlockEventPacketType::ChangeState)
+                blockEntities.SetLidOpen(p.position.x, p.position.y, p.position.z, p.data > 0);
+        });
         On<MotionPredictionHintsPacket>([this](const MotionPredictionHintsPacket& p) {
             if (runtimeId == 0 || p.entityRuntimeId != runtimeId)
                 return;
@@ -482,7 +487,7 @@ namespace perlin {
 
     void BedrockSession::RegisterIgnoredHandlers() {
         auto accept = [this]<class... T>() { (On<T>([](const T&) {}), ...); };
-        accept.template operator()<AnimateEntityPacket, BlockEventPacket,
+        accept.template operator()<AnimateEntityPacket,
                 EmotePacket, HurtArmorPacket, PlayerArmorDamagePacket, LevelEventGenericPacket,
                 PlayerLocationPacket, ServerPostMovePacket, SetLastHurtByPacket, ShowCreditsPacket,
                 SimulationTypePacket, SpawnExperienceOrbPacket, UpdateBlockPropertiesPacket, UpdateEquipmentPacket,

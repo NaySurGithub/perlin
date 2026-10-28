@@ -96,6 +96,8 @@ mcitem { display: block; position: absolute; }
             return kInvAddrCraft + v;
         if (id[0] == 'w' && v >= 0 && v < 9)
             return kInvAddrWork + v;
+        if (id[0] == 'k' && v >= 0 && v < 54)
+            return kInvAddrChest + v;
         if (id[0] == 'h' && v >= 0 && v < 17)
             return kInvAddrHorse + v;
         return -1;
@@ -105,8 +107,24 @@ mcitem { display: block; position: absolute; }
         return (guiW - kInvPanelW) / 2 + (v.bookOpen ? 77 : 0);
     }
 
-    void InventorySlotPos(int addr, int& x, int& y, bool workbench) {
+    int InventoryPanelH(const InventoryView& v) {
+        return v.chestRows > 0 ? 114 + v.chestRows * 18 : kInvPanelH;
+    }
+
+    void InventorySlotPos(int addr, int& x, int& y, bool workbench, int chestRows) {
         x = y = 0;
+        if (addr >= kInvAddrChest) {
+            const int c = addr - kInvAddrChest;
+            x = 7 + (c % 9) * 18;
+            y = 17 + (c / 9) * 18;
+            return;
+        }
+        if (chestRows > 0 && addr < 36) {
+            // generic_54 layout: the player inventory sits below the container rows.
+            x = 7 + (addr % 9) * 18;
+            y = addr < 9 ? chestRows * 18 + 88 : chestRows * 18 + 30 + ((addr - 9) / 9) * 18;
+            return;
+        }
         if (addr >= kInvAddrHorse) {
             const int h = addr - kInvAddrHorse;
             if (h == 0) { x = 7; y = 17; }
@@ -125,15 +143,19 @@ mcitem { display: block; position: absolute; }
     }
 
     namespace {
-        std::string Chrome(bool workbench, bool horse = false) {
+        std::string Chrome(bool workbench, bool horse = false, int chestRows = 0) {
+            if (chestRows > 0) {
+                const int top = 17 + chestRows * 18;
+                return SpriteRml("ui_chest.png", 0, 0, 176, top, 0, 0) + SpriteRml("ui_chest.png", 0, 126, 176, 96, 0, top);
+            }
             if (horse)
                 return SpriteRml("ui_horse.png", 0, 0, 176, 166, 0, 0);
             return SpriteRml(workbench ? "ui_crafting_table.png" : "ui_inventory.png", 0, 0, 176, 166, 0, 0);
         }
 
-        std::string Cell(const std::string& id, int px, int py, int addr, const HudItem& item, bool workbench) {
+        std::string Cell(const std::string& id, int px, int py, int addr, const HudItem& item, bool workbench, int chestRows = 0) {
             int x, y;
-            InventorySlotPos(addr, x, y, workbench);
+            InventorySlotPos(addr, x, y, workbench, chestRows);
             std::string s = "  <div id=\"" + id + "\" class=\"slot\" style=\"left:" + std::to_string(px + x) + "px;top:" + std::to_string(py + y) +
                             "px;\">";
             if (addr == kInvAddrHorse || addr == kInvAddrHorse + 1) {
@@ -189,10 +211,16 @@ mcitem { display: block; position: absolute; }
     }
 
     std::string BuildInventoryScreenRml(const std::string& templateText, const InventoryView& v, int guiW, int guiH) {
-        const int px = InventoryPanelX(v, guiW), py = (guiH - kInvPanelH) / 2;
+        const int px = InventoryPanelX(v, guiW), py = (guiH - InventoryPanelH(v)) / 2;
         const bool wb = v.workbench;
+        const int rows = v.chestRows;
         std::string slots;
-        if (v.horse) {
+        if (rows > 0) {
+            for (int i = 0; i < rows * 9; i++)
+                slots += Cell("k" + std::to_string(i), px, py, kInvAddrChest + i, v.chestItems[static_cast<size_t>(i)], false, rows);
+            slots += "  <div class=\"label\" style=\"left:" + std::to_string(px + 8) + "px;top:" + std::to_string(py + rows * 18 + 20) + "px;z-index:3;\">" +
+                     EscapeRml(i18n::Tr("container.inventory")) + "</div>\n";
+        } else if (v.horse) {
             slots += Cell("h0", px, py, kInvAddrHorse, v.horseItems[0], false);
             slots += Cell("h1", px, py, kInvAddrHorse + 1, v.horseItems[1], false);
             if (v.horseChest > 0) {
@@ -213,10 +241,10 @@ mcitem { display: block; position: absolute; }
             for (int i = 0; i < 9; i++)
                 slots += Cell("w" + std::to_string(i), px, py, kInvAddrWork + i, v.work[static_cast<size_t>(i)], wb);
         }
-        if (!v.horse)
+        if (!v.horse && rows == 0)
             slots += Cell("co", px, py, kInvAddrOutput, v.output, wb);
         for (int i = 0; i < 36; i++)
-            slots += Cell("s" + std::to_string(i), px, py, i, v.slots[static_cast<size_t>(i)], wb);
+            slots += Cell("s" + std::to_string(i), px, py, i, v.slots[static_cast<size_t>(i)], wb, rows);
 
         const int bx = (guiW - 147) / 2 - 86;
         std::string book;
@@ -243,7 +271,7 @@ mcitem { display: block; position: absolute; }
                     std::to_string(v.bookPage + 1) + "/" + std::to_string(std::max(1, v.bookPages)) + "</div>\n";
         }
         const int btnX = wb ? px + 5 : px + 104, btnY = wb ? py + 34 : py + 61;
-        const std::string bookButton = v.horse ? std::string() : "  <div id=\"rb\" class=\"rbtn\" style=\"left:" + std::to_string(btnX) + "px;top:" + std::to_string(btnY) + "px;\"><div class=\"rn\">" +
+        const std::string bookButton = v.horse || rows > 0 ? std::string() : "  <div id=\"rb\" class=\"rbtn\" style=\"left:" + std::to_string(btnX) + "px;top:" + std::to_string(btnY) + "px;\"><div class=\"rn\">" +
                                        SpriteRml("ui_recipe_button.png", 0, 0, 20, 18, 0, 0) + "</div><div class=\"rh\">" +
                                        SpriteRml("ui_recipe_button.png", 0, 18, 20, 18, 0, 0) + "</div></div>\n";
 
@@ -263,7 +291,8 @@ mcitem { display: block; position: absolute; }
         if (v.cursor.Empty()) {
             const HudItem* it = nullptr;
             if (v.hovered >= 0) {
-                if (v.hovered >= kInvAddrHorse) it = &v.horseItems[static_cast<size_t>(std::min(v.hovered - kInvAddrHorse, 16))];
+                if (v.hovered >= kInvAddrChest) it = &v.chestItems[static_cast<size_t>(std::min(v.hovered - kInvAddrChest, 53))];
+                else if (v.hovered >= kInvAddrHorse) it = &v.horseItems[static_cast<size_t>(std::min(v.hovered - kInvAddrHorse, 16))];
                 else if (v.hovered < 36) it = &v.slots[static_cast<size_t>(v.hovered)];
                 else if (v.hovered < kInvAddrOffhand) it = &v.armor[static_cast<size_t>(v.hovered - kInvAddrArmor)];
                 else if (v.hovered == kInvAddrOffhand) it = &v.offhand;
@@ -284,10 +313,10 @@ mcitem { display: block; position: absolute; }
         ReplaceAll(d, "h", std::to_string(guiH));
         ReplaceAll(d, "x", std::to_string(px));
         ReplaceAll(d, "y", std::to_string(py));
-        ReplaceAll(d, "lx", std::to_string(px + (v.horse ? 8 : wb ? 28 : 97)));
-        ReplaceAll(d, "ly", std::to_string(py + (v.horse ? 6 : wb ? 6 : 8)));
+        ReplaceAll(d, "lx", std::to_string(px + (v.horse || rows > 0 ? 8 : wb ? 28 : 97)));
+        ReplaceAll(d, "ly", std::to_string(py + (v.horse || rows > 0 ? 6 : wb ? 6 : 8)));
         ReplaceAll(d, "title", EscapeRml(v.title.empty() ? i18n::Tr(v.horse ? "entity.minecraft.horse" : "container.crafting") : v.title));
-        ReplaceAll(d, "chrome", Chrome(wb, v.horse));
+        ReplaceAll(d, "chrome", Chrome(wb, v.horse, rows));
         ReplaceAll(d, "book", book);
         ReplaceAll(d, "effects", effects);
         ReplaceAll(d, "bookbutton", bookButton);

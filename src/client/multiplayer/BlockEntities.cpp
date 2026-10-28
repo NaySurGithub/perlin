@@ -1,5 +1,7 @@
 #include "client/multiplayer/BlockEntities.hpp"
 
+#include <algorithm>
+
 namespace perlin {
     namespace {
         void ReadFace(const ui::Json* node, SignFace& face) {
@@ -48,6 +50,13 @@ namespace perlin {
                 if (code && be.patterns.size() < 16)
                     be.patterns.emplace_back(code->StringOr(""), col ? static_cast<int>(col->NumberOr(0)) : 0);
             }
+        const ui::Json* px = nbt.Find("pairx");
+        const ui::Json* pz = nbt.Find("pairz");
+        if (px && pz) {
+            be.paired = true;
+            be.pairX = static_cast<int>(px->NumberOr(0));
+            be.pairZ = static_cast<int>(pz->NumberOr(0));
+        }
         if (const ui::Json* w = nbt.Find("IsWaxed"))
             be.waxed = w->NumberOr(0) != 0 || w->BoolOr(false);
         be.nbt = nbt.Dump();
@@ -88,6 +97,34 @@ namespace perlin {
     void BlockEntityStore::Clear() {
         std::lock_guard lock(mutex);
         entities.clear();
+        lids.clear();
+    }
+
+    float BlockEntityStore::LidAt(const Lid& lid, std::chrono::steady_clock::time_point now) {
+        // Vanilla moves the lid 0.1 per tick, so a full swing takes half a second.
+        const float moved = std::chrono::duration<float>(now - lid.at).count() * 2.0f;
+        return lid.open ? std::min(1.0f, lid.from + moved) : std::max(0.0f, lid.from - moved);
+    }
+
+    void BlockEntityStore::SetLidOpen(int x, int y, int z, bool open) {
+        const auto now = std::chrono::steady_clock::now();
+        std::lock_guard lock(mutex);
+        Lid& lid = lids[Key(x, y, z)];
+        if (lid.open == open && lid.at != std::chrono::steady_clock::time_point{})
+            return;
+        lid.from = lid.at == std::chrono::steady_clock::time_point{} ? 0.0f : LidAt(lid, now);
+        lid.open = open;
+        lid.at = now;
+    }
+
+    float BlockEntityStore::LidOpenness(int x, int y, int z) const {
+        std::lock_guard lock(mutex);
+        const auto it = lids.find(Key(x, y, z));
+        if (it == lids.end())
+            return 0.0f;
+        const float p = LidAt(it->second, std::chrono::steady_clock::now());
+        // Same ease-out as vanilla's chest renderer.
+        return 1.0f - (1.0f - p) * (1.0f - p) * (1.0f - p);
     }
 
     void BlockEntityStore::TakeFrom(BlockEntityStore& other) {
@@ -96,6 +133,8 @@ namespace perlin {
         std::scoped_lock lock(mutex, other.mutex);
         entities = std::move(other.entities);
         other.entities.clear();
+        lids = std::move(other.lids);
+        other.lids.clear();
     }
 
     size_t BlockEntityStore::Size() const {

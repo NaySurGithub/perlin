@@ -713,9 +713,9 @@ namespace perlin {
                 const auto ms = static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(
                                                           std::chrono::steady_clock::now().time_since_epoch())
                                                           .count());
-                const ui::GlintTransform g = ui::MakeGlintTransform(ms, 0.5f, 16.0f / static_cast<float>(std::max(1, glintWidth)));
+                const ui::GlintTransform g = ui::MakeGlintTransform(ms);
                 draw.glintTexture = glintTexture;
-                draw.glintStrength = PERLIN_ENV("PERLIN_GLINT_STRENGTH") ? static_cast<float>(std::atof(PERLIN_ENV("PERLIN_GLINT_STRENGTH"))) : 1.3f;
+                draw.glintStrength = PERLIN_ENV("PERLIN_GLINT_STRENGTH") ? static_cast<float>(std::atof(PERLIN_ENV("PERLIN_GLINT_STRENGTH"))) : 1.0f;
                 std::copy(g.matrix, g.matrix + 4, draw.glintMatrix);
                 std::copy(g.offset, g.offset + 2, draw.glintOffset);
                 renderer->UiSubmit(layer, draw);

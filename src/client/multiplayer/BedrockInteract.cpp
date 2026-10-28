@@ -96,6 +96,7 @@ namespace perlin {
             selected = std::clamp(inventory.selected, 0, 8);
             u.heldItem = inventoryRaw[selected];
         }
+        QueueInputFlag(InputFlag::StartUsingItem);
         u.actionType = TransactionUseItemActionType::ClickAir;
         u.triggerType = TransactionUseItemTriggerType::PlayerInput;
         u.blockPosition = {0, 0, 0};
@@ -214,6 +215,7 @@ namespace perlin {
                 snapshot.view = inventory;
                 std::copy(std::begin(inventoryRaw), std::end(inventoryRaw), std::begin(snapshot.raw));
                 std::copy(std::begin(extraRaw), std::end(extraRaw), std::begin(snapshot.extra));
+                std::copy(std::begin(chestRaw), std::end(chestRaw), std::begin(snapshot.chest));
                 invSnapshots[r.requestId] = std::move(snapshot);
                 if (invSnapshots.size() > 16)
                     invSnapshots.erase(std::prev(invSnapshots.end()));

@@ -19,6 +19,8 @@ namespace perlin {
         constexpr uint32_t HandledTeleport = static_cast<uint32_t>(proto::InputData::HandledTeleport);
         constexpr uint32_t StartFlying = static_cast<uint32_t>(proto::InputData::StartFlying);
         constexpr uint32_t StopFlying = static_cast<uint32_t>(proto::InputData::StopFlying);
+        constexpr uint32_t MissedSwing = static_cast<uint32_t>(proto::InputData::MissedSwing);
+        constexpr uint32_t StartUsingItem = static_cast<uint32_t>(proto::InputData::StartUsingItem);
     }
 
 }
