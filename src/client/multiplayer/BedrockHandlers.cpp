@@ -12,6 +12,7 @@
 
 #include <atomic>
 #include <cctype>
+#include <chrono>
 #include <variant>
 #include <cmath>
 #include <cstdlib>
@@ -70,6 +71,7 @@ namespace perlin {
 
         void ApplyMetadata(entity::EntityTracker& tracker, uint64_t rid, const std::vector<MetadataDictionaryEntry>& metadata) {
             int variant = -1, mark = -1, color = -1;
+            float boxWidth = 0.0f, boxHeight = 0.0f;
             for (const MetadataDictionaryEntry& m : metadata) {
                 if (m.key == MetadataDictionaryEntryKey::Nametag) {
                     if (const auto* inner = std::get_if<4>(&m.value))
@@ -96,6 +98,8 @@ namespace perlin {
                 }
                 case MetadataDictionaryEntryKey::PlayerFlags: tracker.SetSleeping(rid, (static_cast<int64_t>(n) & 2) != 0, true); break;
                 case MetadataDictionaryEntryKey::Scale: tracker.SetScale(rid, static_cast<float>(n)); break;
+                case MetadataDictionaryEntryKey::BoundingboxWidth: boxWidth = static_cast<float>(n); break;
+                case MetadataDictionaryEntryKey::BoundingboxHeight: boxHeight = static_cast<float>(n); break;
                 case MetadataDictionaryEntryKey::Variant: variant = static_cast<int>(n); break;
                 case MetadataDictionaryEntryKey::ExperienceValue: {
                     const int xp = static_cast<int>(n);
@@ -122,6 +126,8 @@ namespace perlin {
             }
             if (variant >= 0 || mark >= 0 || color >= 0)
                 tracker.SetVariant(rid, std::max(variant, 0), std::max(mark, 0), std::max(color, 0));
+            if (boxWidth > 0.0f && boxHeight > 0.0f)
+                tracker.SetBoundingBox(rid, boxWidth, boxHeight);
         }
 
         uint64_t MetaFlags(const std::vector<MetadataDictionaryEntry>& metadata) {
@@ -749,7 +755,16 @@ namespace perlin {
             case LevelEventPacketEvent::SoundAnvilFall: named("random.anvil_land"); break;
             case LevelEventPacketEvent::SoundPop: named("random.pop"); break;
             case LevelEventPacketEvent::SoundPortal: named("portal.portal"); break;
-            case LevelEventPacketEvent::SoundOrb: named("random.orb"); break;
+            case LevelEventPacketEvent::SoundOrb: {
+                // Suppress the server echo of a pickup we already predicted locally.
+                const auto nowMs = static_cast<uint64_t>(
+                    std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count());
+                const float dx = p.position.x - lastOrbX, dy = p.position.y - lastOrbY, dz = p.position.z - lastOrbZ;
+                if (nowMs - lastLocalOrbMs < 200u && dx * dx + dy * dy + dz * dz < 9.0f)
+                    break;
+                named("random.orb");
+                break;
+            }
             case LevelEventPacketEvent::SoundTotem: named("random.totem"); break;
             case LevelEventPacketEvent::SoundCamera: named("camera.take_picture"); break;
             case LevelEventPacketEvent::ParticleDestroy: {
@@ -1090,16 +1105,36 @@ namespace perlin {
         On<TakeItemEntityPacket>([this](const TakeItemEntityPacket& p) {
             droppedRaw.erase(p.runtimeEntityId);
             entity::Entity taken;
-            if (entities.Find(p.runtimeEntityId, taken) && taken.isItem && runtimeId != 0 && p.target == runtimeId) {
-                SoundRequest r;
-                r.kind = SoundRequest::Kind::Named;
-                r.name = "random.pop";
-                r.x = static_cast<float>(taken.pos.x);
-                r.y = static_cast<float>(taken.pos.y);
-                r.z = static_cast<float>(taken.pos.z);
-                r.volume = 0.2f;
-                r.pitch = 1.4f + (static_cast<float>(taken.runtimeId % 7) * 0.05f);
-                PushSound(std::move(r));
+            if (entities.Find(p.runtimeEntityId, taken) && runtimeId != 0 && p.target == runtimeId) {
+                const auto nowMs = static_cast<uint64_t>(
+                    std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count());
+                if (taken.isItem) {
+                    SoundRequest r;
+                    r.kind = SoundRequest::Kind::Named;
+                    r.name = "random.pop";
+                    r.x = static_cast<float>(taken.pos.x);
+                    r.y = static_cast<float>(taken.pos.y);
+                    r.z = static_cast<float>(taken.pos.z);
+                    r.volume = 0.2f;
+                    r.pitch = 1.4f + (static_cast<float>(taken.runtimeId % 7) * 0.05f);
+                    PushSound(std::move(r));
+                } else if (taken.type == "minecraft:xp_orb") {
+                    // Vanilla predicts the orb pickup sound locally; the server echo
+                    // (SoundOrb) is suppressed below when it chases the same pickup.
+                    SoundRequest r;
+                    r.kind = SoundRequest::Kind::Named;
+                    r.name = "random.orb";
+                    r.x = static_cast<float>(taken.pos.x);
+                    r.y = static_cast<float>(taken.pos.y);
+                    r.z = static_cast<float>(taken.pos.z);
+                    r.volume = 0.5f;
+                    r.pitch = 0.9f + (static_cast<float>(taken.runtimeId % 5) * 0.05f);
+                    PushSound(std::move(r));
+                    lastLocalOrbMs = nowMs;
+                    lastOrbX = r.x;
+                    lastOrbY = r.y;
+                    lastOrbZ = r.z;
+                }
             }
             entities.Pickup(p.runtimeEntityId, p.target);
         });

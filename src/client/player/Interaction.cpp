@@ -5,38 +5,7 @@
 #include <limits>
 
 namespace perlin {
-    namespace {
-        bool RayBox(const glm::dvec3& o, const glm::dvec3& d, const glm::dvec3& lo, const glm::dvec3& hi, double maxT, double& tOut, int& face) {
-            double t0 = 0.0, t1 = maxT;
-            int f = -1;
-            for (int a = 0; a < 3; a++) {
-                const double origin = o[a], dir = d[a], mn = lo[a], mx = hi[a];
-                if (std::fabs(dir) < 1e-12) {
-                    if (origin < mn || origin > mx)
-                        return false;
-                    continue;
-                }
-                double ta = (mn - origin) / dir, tb = (mx - origin) / dir;
-                int fa = dir > 0 ? (a == 0 ? 4 : a == 1 ? 0 : 2) : (a == 0 ? 5 : a == 1 ? 1 : 3);
-                if (ta > tb)
-                    std::swap(ta, tb);
-                if (ta > t0) {
-                    t0 = ta;
-                    f = fa;
-                }
-                t1 = std::min(t1, tb);
-                if (t0 > t1)
-                    return false;
-            }
-            tOut = t0;
-            if (f < 0) {
-                const glm::dvec3 ad = glm::abs(d);
-                f = ad.y >= ad.x && ad.y >= ad.z ? (d.y > 0 ? 0 : 1) : ad.x >= ad.z ? (d.x > 0 ? 4 : 5) : (d.z > 0 ? 2 : 3);
-            }
-            face = f;
-            return true;
-        }
-    }
+    using targeting::RayBox;
 
     glm::vec3 EntityClickOffset(const glm::dvec3& eye, const glm::dvec3& dir, const glm::dvec3& feet, double halfWidth, double height,
                                 const glm::dvec3& fallback) {
@@ -128,16 +97,17 @@ namespace perlin {
                     continue;
             }
             const glm::vec2 wh = bounds(e);
-            const double hw = wh.x * 0.5 * (e.scale > 0 ? e.scale : 1.0f);
-            const double pad = 0.0;
+            const double hw = wh.x * 0.5;
+            const double pad = targeting::PickRadius;
             const glm::dvec3 lo(e.pos.x - hw - pad, e.pos.y - pad, e.pos.z - hw - pad),
-                hi(e.pos.x + hw + pad, e.pos.y + wh.y * (e.scale > 0 ? e.scale : 1.0f) + pad, e.pos.z + hw + pad);
+                hi(e.pos.x + hw + pad, e.pos.y + wh.y + pad, e.pos.z + hw + pad);
             double t;
             int f;
-            const double blockDist = best.kind == AimHit::Kind::Block ? best.distance + 0.75 : best.distance;
+            const double blockDist = best.kind == AimHit::Kind::Block ? best.distance : best.distance;
             const double cap = entityReach >= 0.0 ? entityReach : reach;
             const double limit = best.kind == AimHit::Kind::Entity ? std::min(best.distance, cap) : std::min(blockDist, cap);
-            if (RayBox(eye, dir, lo, hi, limit, t, f) && t <= limit) {
+            if (RayBox(eye, dir, lo, hi, limit, t, f) &&
+                (best.kind == AimHit::Kind::Entity ? t < best.distance : targeting::EntityBeforeLimit(t, limit))) {
                 best.kind = AimHit::Kind::Entity;
                 best.entity = e.runtimeId;
                 best.distance = t;

@@ -90,4 +90,42 @@ namespace perlin {
         stbi_image_free(pixels);
         return true;
     }
+
+    bool UpgradeLegacySkinTexture(Texture& skin) {
+        if (skin.width < 64 || skin.width != skin.height * 2 ||
+            skin.pixels.size() < static_cast<size_t>(skin.width) * static_cast<size_t>(skin.height) * 4)
+            return false;
+        const int w = skin.width, s = w / 64;
+        std::vector<unsigned char> square(static_cast<size_t>(w) * static_cast<size_t>(w) * 4, 0);
+        std::copy(skin.pixels.begin(), skin.pixels.begin() + static_cast<std::ptrdiff_t>(w) * skin.height * 4, square.begin());
+        // Copy a face (in 64-unit skin coordinates) from the right limb to the left limb, mirrored horizontally,
+        // because the legacy format only stores the right side.
+        const auto face = [&](int sx, int sy, int dx, int dy, int fw, int fh) {
+            for (int y = 0; y < fh * s; y++)
+                for (int x = 0; x < fw * s; x++) {
+                    const size_t from = (static_cast<size_t>(sy * s + y) * static_cast<size_t>(w) + static_cast<size_t>(sx * s + fw * s - 1 - x)) * 4;
+                    const size_t to = (static_cast<size_t>(dy * s + y) * static_cast<size_t>(w) + static_cast<size_t>(dx * s + x)) * 4;
+                    std::copy(square.begin() + static_cast<std::ptrdiff_t>(from), square.begin() + static_cast<std::ptrdiff_t>(from) + 4,
+                              square.begin() + static_cast<std::ptrdiff_t>(to));
+                }
+        };
+        // Leg: right leg box at (0,16) -> left leg box at (16,48). Faces: top, bottom, then the four sides, where the
+        // outer and inner sides swap when mirrored.
+        face(4, 16, 20, 48, 4, 4);
+        face(8, 16, 24, 48, 4, 4);
+        face(0, 20, 24, 52, 4, 12);
+        face(4, 20, 20, 52, 4, 12);
+        face(8, 20, 16, 52, 4, 12);
+        face(12, 20, 28, 52, 4, 12);
+        // Arm: right arm box at (40,16) -> left arm box at (32,48).
+        face(44, 16, 36, 48, 4, 4);
+        face(48, 16, 40, 48, 4, 4);
+        face(40, 20, 40, 52, 4, 12);
+        face(44, 20, 36, 52, 4, 12);
+        face(48, 20, 32, 52, 4, 12);
+        face(52, 20, 44, 52, 4, 12);
+        skin.pixels = std::move(square);
+        skin.height = w;
+        return true;
+    }
 }

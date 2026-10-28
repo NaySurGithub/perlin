@@ -24,11 +24,16 @@ namespace perlin::ui {
         bool Changed() const;
 
         const Def* Find(const std::string& ns, const std::string& name);
+        // "parent/child/..." definitions: paths into a control's descendants, keyed by the first name in the path.
+        const std::unordered_map<std::string, std::vector<std::pair<std::string, const Json*>>>* Nested(const std::string& ns);
         const Vars& GlobalVariables();
         const std::vector<std::string>& Problems() const { return problems; }
         size_t FileCount() const { return files.size(); }
         size_t NamespaceCount() const { return namespaces.size(); }
         bool Has(const std::string& ns) const { return namespaces.count(ns) != 0; }
+        // True when a file for `ns` comes from a root listed before `root` (roots are highest priority first).
+        bool DefinedBefore(const std::string& ns, size_t root) const;
+        size_t RootCount() const { return roots.size(); }
 
     private:
         struct File {
@@ -42,6 +47,8 @@ namespace perlin::ui {
             std::vector<size_t> files;
             bool loaded = false;
             std::unordered_map<std::string, Def> defs;
+            // "a/b/c" keys: control `a` gets a patch for its descendant `b/c`.
+            std::unordered_map<std::string, std::vector<std::pair<std::string, const Json*>>> nested;
         };
 
         void LoadNamespace(const std::string& name, Namespace& ns);

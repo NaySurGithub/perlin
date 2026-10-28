@@ -32,6 +32,10 @@ namespace perlin::ui {
         bool HasVanillaSheets() const { return !sheets.empty(); }
         bool HasUnihex() const { return !hex.empty(); }
         bool AddTtf(const std::string& path);
+        // Bedrock glyph page (font/glyph_XX.png from a resource pack): a 16x16 grid of U+XX00..U+XXFF, drawn in its own
+        // colours. Replaces any page already loaded for `page`.
+        void AddGlyphPage(uint32_t page, const std::vector<uint8_t>& rgba, int width, int height);
+        void ClearGlyphPages();
         size_t TtfCount() const { return ttfs.size(); }
 
         const Glyph& Get(uint32_t codepoint) const;
@@ -64,6 +68,12 @@ namespace perlin::ui {
             int width = 0, height = 0, cellW = 0, cellH = 0, ascent = 7;
         };
         std::vector<Sheet> sheets;
+        struct GlyphPage {
+            std::vector<uint8_t> rgba;
+            int width = 0, height = 0;
+        };
+        std::unordered_map<uint32_t, GlyphPage> glyphPages;
+        const Glyph* FromGlyphPage(uint32_t cp) const;
         std::unordered_map<uint32_t, std::pair<uint16_t, uint16_t>> sheetChars;
         std::unordered_map<uint32_t, HexGlyph> hex;
         std::string hexPath;

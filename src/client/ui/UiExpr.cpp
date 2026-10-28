@@ -1,3 +1,5 @@
+#include <cstring>
+#include <cstdio>
 #include "client/ui/UiExpr.hpp"
 
 #include <cctype>
@@ -54,6 +56,44 @@ namespace perlin::ui {
                     return false;
                 lex.pos = end;
                 return true;
+            }
+
+            // printf-style formatting of one value, as the game's "'%.3s' * #text" and "'%d' * #n" do.
+            static std::string Format(const std::string& fmt, const Json& value) {
+                std::string out;
+                for (size_t i = 0; i < fmt.size(); i++) {
+                    if (fmt[i] != '%' || i + 1 >= fmt.size()) {
+                        out += fmt[i];
+                        continue;
+                    }
+                    if (fmt[i + 1] == '%') {
+                        out += '%';
+                        i++;
+                        continue;
+                    }
+                    size_t j = i + 1;
+                    while (j < fmt.size() && std::strchr("-+ #0123456789.", fmt[j]))
+                        j++;
+                    if (j >= fmt.size())
+                        break;
+                    const std::string spec = fmt.substr(i, j - i + 1);
+                    const char conv = fmt[j];
+                    char buf[512];
+                    if (conv == 's') {
+                        const std::string text = value.IsString() ? value.string : value.IsNull() ? std::string() : value.Dump();
+                        std::snprintf(buf, sizeof(buf), spec.c_str(), text.c_str());
+                    } else if (conv == 'd' || conv == 'i') {
+                        std::snprintf(buf, sizeof(buf), (spec.substr(0, spec.size() - 1) + "lld").c_str(),
+                                      static_cast<long long>(AsNumber(value)));
+                    } else if (conv == 'f' || conv == 'g' || conv == 'e') {
+                        std::snprintf(buf, sizeof(buf), spec.c_str(), AsNumber(value));
+                    } else {
+                        buf[0] = 0;
+                    }
+                    out += buf;
+                    i = j;
+                }
+                return out;
             }
 
             static bool Equal(const Json& a, const Json& b) {
@@ -128,7 +168,19 @@ namespace perlin::ui {
                             left = Json(AsNumber(left) + AsNumber(right));
                     } else if (lex.pos < lex.s.size() && lex.s[lex.pos] == '-') {
                         lex.pos++;
-                        left = Json(AsNumber(left) - AsNumber(Product()));
+                        Json right = Product();
+                        if (left.IsString()) {
+                            // String minus removes every occurrence of the right side: "(#t - 'x') = #t" tests
+                            // whether #t contains 'x'.
+                            const std::string cut = right.IsString() ? right.string : right.Dump();
+                            std::string out = left.string;
+                            if (!cut.empty())
+                                for (size_t at; (at = out.find(cut)) != std::string::npos;)
+                                    out.erase(at, cut.size());
+                            left = Json(std::move(out));
+                        } else {
+                            left = Json(AsNumber(left) - AsNumber(right));
+                        }
                     } else {
                         return left;
                     }
@@ -141,7 +193,11 @@ namespace perlin::ui {
                     lex.Skip();
                     if (lex.pos < lex.s.size() && lex.s[lex.pos] == '*') {
                         lex.pos++;
-                        left = Json(AsNumber(left) * AsNumber(Unary()));
+                        Json right = Unary();
+                        if (left.IsString() && left.string.find('%') != std::string::npos)
+                            left = Json(Format(left.string, right));  // '%.30s' * #title_text
+                        else
+                            left = Json(AsNumber(left) * AsNumber(right));
                     } else if (lex.pos < lex.s.size() && lex.s[lex.pos] == '/') {
                         lex.pos++;
                         const double d = AsNumber(Unary());
@@ -251,7 +307,9 @@ namespace perlin::ui {
         switch (v.type) {
         case Json::Type::Bool: return v.boolean;
         case Json::Type::Number: return v.number != 0.0;
-        case Json::Type::String: return !v.string.empty() && v.string != "false" && v.string != "0";
+        // A "$name" left after substitution is a variable nothing defined. The game fails to parse it and
+        // keeps the property's default, which for every boolean property is false.
+        case Json::Type::String: return !v.string.empty() && v.string != "false" && v.string != "0" && v.string[0] != '$';
         case Json::Type::Array: return !v.array.empty();
         case Json::Type::Object: return !v.object.empty();
         default: return false;

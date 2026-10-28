@@ -119,6 +119,8 @@ namespace perlin::entity {
             float tint[4] = {1, 1, 1, 1};
             MaterialInfo material;
             uint32_t maskRgb = 0xFFFFFF;
+            // The entity's own model; invisibility hides these but keeps armor and attached items.
+            bool body = true;
         };
         bool Build(const Entity& e, View& v, const FrameIn& in, std::vector<Layer>& layers, float& scale);
         void RunAnimations(const Entity& e, View& v, const ClientEntityDef& def, attachable::Pose& pose, const FrameIn& in,

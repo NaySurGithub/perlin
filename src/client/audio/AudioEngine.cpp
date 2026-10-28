@@ -3,6 +3,7 @@
 #include <SDL3/SDL.h>
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <iostream>
 
@@ -109,6 +110,21 @@ namespace perlin::audio {
         std::lock_guard lock(mutex);
         if (voice.positional && glm::length(voice.position - listener) > static_cast<double>(voice.range))
             return 0;
+        const uint64_t nowMs = static_cast<uint64_t>(
+            std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count());
+        if (voice.positional && !voice.loop && !voice.name.empty()) {
+            // Predict+echo dedup: the client predicts place/break/hit sounds and the
+            // server echo arrives ~1 frame later. Same sound at the same spot within
+            // a short window is the echo, not a second event. Legit repeats (steps at
+            // 250ms+, bridging at 166ms+ in different cells) fall outside the window.
+            for (const Voice& v : voices) {
+                if (v.stopping || v.name != voice.name || nowMs - v.startedMs > 90u)
+                    continue;
+                const glm::dvec3 d = v.position - voice.position;
+                if (glm::dot(d, d) < 2.25)
+                    return v.id;
+            }
+        }
         if (voices.size() >= kMaxVoices) {
             auto it = std::find_if(voices.begin(), voices.end(), [](const Voice& v) { return !v.loop; });
             if (it == voices.end())
@@ -116,6 +132,7 @@ namespace perlin::audio {
             voices.erase(it);
         }
         voice.id = nextId++;
+        voice.startedMs = nowMs;
         voices.push_back(std::move(voice));
         return voices.back().id;
     }

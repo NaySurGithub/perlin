@@ -29,12 +29,14 @@ namespace perlin::i18n {
                           std::unordered_map<std::string, std::string>& out) {
             size_t files = 0;
             std::string text;
-            if (!root.empty() && ReadFile(fs::path(root) / "texts" / (code + ".lang"), text)) {
-                Lang::Parse(text, out);
-                files++;
-            }
+            // Perlin's own strings first, so Bedrock's texts win wherever both define a key: menus read the way
+            // they do in the game.
             if (code == "en_US") {
                 Lang::Parse(BuiltinEnglish(), out);
+                files++;
+            }
+            if (!root.empty() && ReadFile(fs::path(root) / "texts" / (code + ".lang"), text)) {
+                Lang::Parse(text, out);
                 files++;
             }
             for (const std::string& dir : ServerPacks::Instance().Directories())

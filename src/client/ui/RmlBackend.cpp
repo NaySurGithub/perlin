@@ -5,10 +5,12 @@
 #include <chrono>
 #include <algorithm>
 #include "client/ui/RmlBackend.hpp"
+#include "client/ui/JavaWidgets.hpp"
 #include "client/ui/FormScreen.hpp"
 
 #include "client/renderer/RenderContext.hpp"
 #include "client/ui/McFont.hpp"
+#include "client/ui/TenFont.hpp"
 #include "client/ui/UiAssets.hpp"
 
 #include <RmlUi/Core.h>
@@ -85,8 +87,9 @@ namespace perlin::ui {
             draw.model[0] = s;
             draw.model[5] = s;
             draw.model[10] = 1.0f;
-            draw.model[12] = translation.x * s;
-            draw.model[13] = translation.y * s;
+            // Whole device pixels, so pixel art and bitmap text never straddle pixel boundaries.
+            draw.model[12] = std::round(translation.x * s);
+            draw.model[13] = std::round(translation.y * s);
             draw.scissor = scissorOn;
             for (int i = 0; i < 4; i++)
                 draw.scissorRect[i] = scissor[i];
@@ -121,6 +124,14 @@ namespace perlin::ui {
                 t.width = f.AtlasWidth();
                 t.height = f.AtlasHeight();
                 t.pixels = f.Atlas();
+            } else if (source.rfind("mcten:atlas#", 0) == 0) {
+                const int emPx = std::atoi(source.c_str() + 12);
+                const TenFont::Page* page = TenFont::Instance().PageFor(emPx);
+                if (!page || page->rgba.empty())
+                    return 0;
+                t.width = page->width;
+                t.height = page->height;
+                t.pixels = page->rgba;
             } else if (source.rfind("mcres:", 0) == 0) {
                 std::string bytes;
                 std::string stem = source.substr(6);
@@ -227,13 +238,15 @@ namespace perlin::ui {
         Rml::FontFaceHandle GetFontFaceHandle(const Rml::String& family, Rml::Style::FontStyle style, Rml::Style::FontWeight weight,
                                               int size) override {
             Face face;
+            face.ten = family.find("ten") != Rml::String::npos;
             face.shadow = family.find("shadow") != Rml::String::npos;
             face.outline = family.find("outline") != Rml::String::npos;
             face.bold = weight == Rml::Style::FontWeight::Bold;
             face.italic = style == Rml::Style::FontStyle::Italic;
             face.size = std::max(size, 1);
             for (size_t i = 0; i < faces.size(); i++)
-                if (faces[i].shadow == face.shadow && faces[i].outline == face.outline && faces[i].bold == face.bold && faces[i].italic == face.italic && faces[i].size == face.size)
+                if (faces[i].ten == face.ten && faces[i].shadow == face.shadow && faces[i].outline == face.outline &&
+                    faces[i].bold == face.bold && faces[i].italic == face.italic && faces[i].size == face.size)
                     return static_cast<Rml::FontFaceHandle>(i + 1);
             faces.push_back(face);
             return static_cast<Rml::FontFaceHandle>(faces.size());
@@ -243,6 +256,19 @@ namespace perlin::ui {
 
         const Rml::FontMetrics& GetFontMetrics(Rml::FontFaceHandle handle) override {
             Face& f = faces[handle - 1];
+            if (f.ten) {
+                TenFont::Instance().EnsureLoaded();
+                const float s = static_cast<float>(f.size) / TenFont::kEm;
+                const TenFont& ten = TenFont::Instance();
+                f.metrics.size = f.size;
+                f.metrics.ascent = ten.Ascent(s);
+                f.metrics.descent = ten.Descent(s);
+                f.metrics.line_spacing = ten.LineHeight(s);
+                f.metrics.x_height = ten.Ascent(s) * 0.7f;
+                f.metrics.underline_position = 1.0f;
+                f.metrics.underline_thickness = 1.0f;
+                return f.metrics;
+            }
             const float s = static_cast<float>(f.size) / 8.0f;
             f.metrics.size = f.size;
             f.metrics.ascent = 7.0f * s;
@@ -257,10 +283,15 @@ namespace perlin::ui {
         int GetStringWidth(Rml::FontFaceHandle handle, Rml::StringView string, const Rml::TextShapingContext&,
                            Rml::Character) override {
             const Face& f = faces[handle - 1];
+            const std::string text(string.begin(), string.end());
+            if (f.ten) {
+                TenFont::Instance().EnsureLoaded();
+                const float s = static_cast<float>(f.size) / TenFont::kEm;
+                return static_cast<int>(std::lround(TenFont::Instance().Width(text, s)));
+            }
             const float s = static_cast<float>(f.size) / 8.0f;
             const McFont& font = McFont::Instance();
             float width = 0;
-            const std::string text(string.begin(), string.end());
             size_t i = 0;
             uint32_t cp;
             while (McFont::Next(text, i, cp))
@@ -272,6 +303,8 @@ namespace perlin::ui {
                            Rml::StringView string, Rml::Vector2f position, Rml::ColourbPremultiplied colour, float opacity,
                            const Rml::TextShapingContext&, Rml::TexturedMeshList& meshes) override {
             const Face& f = faces[handle - 1];
+            if (f.ten)
+                return GenerateTenString(renderManager, f, string, position, colour, opacity, meshes);
             const float s = static_cast<float>(f.size) / 8.0f;
             const McFont& font = McFont::Instance();
             Rml::Texture texture = renderManager.LoadTexture("mcfont:atlas#" + std::to_string(font.Version()));
@@ -279,18 +312,19 @@ namespace perlin::ui {
             Rml::TexturedMesh& out = meshes.back();
             out.texture = texture;
 
-            const auto scaleAlpha = [&](Rml::ColourbPremultiplied c) {
-                if (opacity < 1.0f) {
-                    c.red = static_cast<Rml::byte>(c.red * opacity);
-                    c.green = static_cast<Rml::byte>(c.green * opacity);
-                    c.blue = static_cast<Rml::byte>(c.blue * opacity);
-                    c.alpha = static_cast<Rml::byte>(c.alpha * opacity);
-                }
-                return c;
-            };
-            const Rml::ColourbPremultiplied main = scaleAlpha(colour);
+            const Rml::ColourbPremultiplied main = Fade(colour, opacity);
             const Rml::ColourbPremultiplied shade(static_cast<Rml::byte>(main.red / 4), static_cast<Rml::byte>(main.green / 4),
                                                   static_cast<Rml::byte>(main.blue / 4), main.alpha);
+
+            // Bitmap glyphs stay crisp only when every font texel covers whole device pixels: a scale that lands near a
+            // whole number of pixels per texel (font_scale_factor 1.05 at any gui scale) is rounded to it, and glyph
+            // origins are snapped to the device grid. Layout widths keep the exact scale.
+            const float device = static_cast<float>(gScale);
+            float texel = s * device;
+            if (const float whole = std::round(texel); whole >= 1.0f && std::fabs(texel - whole) <= 0.2f * texel)
+                texel = whole;
+            const float k = texel / device;
+            const auto snap = [&](float v) { return std::round(v * device) / device; };
 
             const std::string text(string.begin(), string.end());
             const auto quads = [&](float ox, float oy, const Rml::ColourbPremultiplied& c) {
@@ -300,17 +334,17 @@ namespace perlin::ui {
                 while (McFont::Next(text, i, cp)) {
                     const McFont::Glyph& g = font.Get(cp);
                     if (g.width > 0) {
-                        const float x = position.x + pen + ox;
-                        const float y = position.y - 7.0f * s + oy + g.top * s;
-                        const float w = g.width * s, h = g.height * s;
+                        const float x = snap(position.x + pen + ox);
+                        const float y = snap(position.y - 7.0f * k + oy) + g.top * k;
+                        const float w = g.width * k, h = g.height * k;
                         for (int pass = 0; pass < (f.bold ? 2 : 1); pass++) {
                             if (!f.italic) {
-                                Rml::MeshUtilities::GenerateQuad(out.mesh, {x + pass * s, y}, {w, h}, c, {g.u0, g.v0}, {g.u1, g.v1});
+                                Rml::MeshUtilities::GenerateQuad(out.mesh, {x + pass * k, y}, {w, h}, c, {g.u0, g.v0}, {g.u1, g.v1});
                                 continue;
                             }
-                            const float top = (1.0f - 0.25f * g.top) * s, bottom = (1.0f - 0.25f * (g.top + g.height)) * s;
+                            const float top = (1.0f - 0.25f * g.top) * k, bottom = (1.0f - 0.25f * (g.top + g.height)) * k;
                             const int base = static_cast<int>(out.mesh.vertices.size());
-                            const float bx = x + pass * s;
+                            const float bx = x + pass * k;
                             out.mesh.vertices.push_back({{bx + top, y}, c, {g.u0, g.v0}});
                             out.mesh.vertices.push_back({{bx + w + top, y}, c, {g.u1, g.v0}});
                             out.mesh.vertices.push_back({{bx + w + bottom, y + h}, c, {g.u1, g.v1}});
@@ -319,18 +353,18 @@ namespace perlin::ui {
                                 out.mesh.indices.push_back(base + idx);
                         }
                     }
-                    pen += static_cast<float>(g.advance + (f.bold ? 1 : 0)) * s;
+                    pen += static_cast<float>(g.advance + (f.bold ? 1 : 0)) * k;
                 }
                 return pen;
             };
             if (f.shadow)
-                quads(s, s, shade);
+                quads(k, k, shade);
             if (f.outline) {
                 const Rml::ColourbPremultiplied black(0, 0, 0, main.alpha);
-                quads(s, 0, black);
-                quads(-s, 0, black);
-                quads(0, s, black);
-                quads(0, -s, black);
+                quads(k, 0, black);
+                quads(-k, 0, black);
+                quads(0, k, black);
+                quads(0, -k, black);
             }
             const float width = quads(0, 0, main);
             return static_cast<int>(std::lround(width));
@@ -341,6 +375,7 @@ namespace perlin::ui {
 
     private:
         struct Face {
+            bool ten = false;
             bool shadow = false;
             bool outline = false;
             bool bold = false;
@@ -348,6 +383,74 @@ namespace perlin::ui {
             int size = 8;
             Rml::FontMetrics metrics{};
         };
+
+        static Rml::ColourbPremultiplied Fade(Rml::ColourbPremultiplied c, float opacity) {
+            if (opacity < 1.0f) {
+                c.red = static_cast<Rml::byte>(c.red * opacity);
+                c.green = static_cast<Rml::byte>(c.green * opacity);
+                c.blue = static_cast<Rml::byte>(c.blue * opacity);
+                c.alpha = static_cast<Rml::byte>(c.alpha * opacity);
+            }
+            return c;
+        }
+
+        // MinecraftTen: a real TrueType face rasterised at device resolution, so glyph texels cover whole screen pixels
+        // instead of landing between them the way the 8 px bitmap font would at a fractional scale.
+        int GenerateTenString(Rml::RenderManager& renderManager, const Face& f, Rml::StringView string,
+                              const Rml::Vector2f& position, Rml::ColourbPremultiplied colour, float opacity,
+                              Rml::TexturedMeshList& meshes) {
+            TenFont& ten = TenFont::Instance();
+            ten.EnsureLoaded();
+            const float s = static_cast<float>(f.size) / TenFont::kEm;
+            const float device = static_cast<float>(std::max(1, gScale));
+            const int emPx = std::clamp(static_cast<int>(std::lround(static_cast<float>(f.size) * device)), 4, 160);
+            const TenFont::Page* page = ten.PageFor(emPx);
+            if (!page || page->rgba.empty())
+                return 0;
+            // gui pixels per atlas pixel
+            const float k = static_cast<float>(f.size) / static_cast<float>(page->emPx);
+            Rml::Texture texture = renderManager.LoadTexture("mcten:atlas#" + std::to_string(emPx));
+            meshes.resize(meshes.size() + 1);
+            Rml::TexturedMesh& out = meshes.back();
+            out.texture = texture;
+
+            const Rml::ColourbPremultiplied main = Fade(colour, opacity);
+            const Rml::ColourbPremultiplied shade(static_cast<Rml::byte>(main.red / 4), static_cast<Rml::byte>(main.green / 4),
+                                                  static_cast<Rml::byte>(main.blue / 4), main.alpha);
+            const auto snap = [&](float v) { return std::round(v * device) / device; };
+            const float ascent = ten.Ascent(s);
+            const std::string text(string.begin(), string.end());
+
+            const auto quads = [&](float ox, float oy, const Rml::ColourbPremultiplied& c) {
+                float pen = 0;
+                size_t i = 0;
+                uint32_t cp;
+                while (McFont::Next(text, i, cp)) {
+                    const auto it = page->glyphs.find(cp);
+                    if (it != page->glyphs.end() && it->second.w > 0 && it->second.h > 0) {
+                        const TenFont::Glyph& g = it->second;
+                        const float x = snap(position.x + pen + ox);
+                        const float y = snap(position.y + ascent + oy) + static_cast<float>(g.y) * k;
+                        Rml::MeshUtilities::GenerateQuad(out.mesh, {x, y},
+                                                         {static_cast<float>(g.w) * k, static_cast<float>(g.h) * k}, c,
+                                                         {g.u0, g.v0}, {g.u1, g.v1});
+                    }
+                    pen += ten.Advance(cp, s);
+                }
+                return pen;
+            };
+            if (f.shadow)
+                quads(k, k, shade);
+            if (f.outline) {
+                const Rml::ColourbPremultiplied black(0, 0, 0, main.alpha);
+                quads(k, 0, black);
+                quads(-k, 0, black);
+                quads(0, k, black);
+                quads(0, -k, black);
+            }
+            const float width = quads(0, 0, main);
+            return static_cast<int>(std::lround(width));
+        }
         std::vector<Face> faces;
     };
 
@@ -706,7 +809,7 @@ namespace perlin::ui {
     bool RmlBackend::SetOverlay(const std::string& rml, std::string& error) {
         if (!context)
             return false;
-        Rml::ElementDocument* next = context->LoadDocumentFromMemory(rml);
+        Rml::ElementDocument* next = context->LoadDocumentFromMemory(WithJavaWidgets(rml));
         if (!next) {
             error = "RmlUi could not parse the overlay document";
             return false;
@@ -731,6 +834,13 @@ namespace perlin::ui {
             e->SetProperty("left", std::to_string(guiX) + "px");
             e->SetProperty("top", std::to_string(guiY) + "px");
         }
+    }
+
+    void RmlBackend::SetOverlayAttribute(const char* id, const char* name, const std::string& value) {
+        if (!overlay)
+            return;
+        if (Rml::Element* e = overlay->GetElementById(id); e && e->GetAttribute<Rml::String>(name, "") != value)
+            e->SetAttribute(name, value);
     }
 
     void RmlBackend::MouseMove(float guiX, float guiY) {

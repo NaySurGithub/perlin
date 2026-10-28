@@ -35,6 +35,8 @@ namespace perlin::ui {
         void ClearServerLayer();
         bool HasPluginLayer() const { return plugin != nullptr; }
         void MoveOverlayElement(const char* id, int guiX, int guiY);
+        // Changes one attribute of an overlay element in place (e.g. an mcimg's src).
+        void SetOverlayAttribute(const char* id, const char* name, const std::string& value);
         bool HasOverlay() const { return overlay != nullptr; }
         void MouseMove(float guiX, float guiY);
         std::string OverlayHover() const;

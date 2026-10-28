@@ -2,6 +2,7 @@
 
 #include "client/resources/TextureLoader.hpp"
 #include "client/resources/TexturePack.hpp"
+#include "client/ui/UiAssets.hpp"
 #include "util/Resources.hpp"
 
 #include <algorithm>
@@ -106,6 +107,8 @@ namespace perlin::ui {
             };
             std::vector<uint8_t> used(static_cast<size_t>(width) * static_cast<size_t>(height), 0);
             char color[40];
+            constexpr int kMaxRects = 256;
+            int rects = 0;
             for (int y = 0; y < height; y++)
                 for (int x = 0; x < width; x++) {
                     const size_t at = static_cast<size_t>(y) * static_cast<size_t>(width) + static_cast<size_t>(x);
@@ -130,7 +133,28 @@ namespace perlin::ui {
                     std::snprintf(color, sizeof(color), "#%08x", v);
                     out += "<div class=\"r\" style=\"left:" + std::to_string(dstX + x) + "px;top:" + std::to_string(dstY + y) +
                            "px;width:" + std::to_string(w) + "px;height:" + std::to_string(h) + "px;background-color:" + color + ";\"></div>";
+                    rects++;
                 }
+            // Flat vanilla art turns into a few boxes; detailed pack art would turn into thousands (one GPU mesh each),
+            // so it is drawn as a single texture instead.
+            if (rects > kMaxRects) {
+                Texture crop;
+                crop.width = width;
+                crop.height = height;
+                crop.pixels.assign(static_cast<size_t>(width) * static_cast<size_t>(height) * 4, 0);
+                for (int y = 0; y < height; y++)
+                    for (int x = 0; x < width; x++) {
+                        const int sx = srcX + x, sy = srcY + y;
+                        if (sx < 0 || sy < 0 || sx >= img.width || sy >= img.height)
+                            continue;
+                        const uint8_t* p = &img.rgba[(static_cast<size_t>(sy) * static_cast<size_t>(img.width) + static_cast<size_t>(sx)) * 4];
+                        std::copy(p, p + 4, &crop.pixels[(static_cast<size_t>(y) * static_cast<size_t>(width) + static_cast<size_t>(x)) * 4]);
+                    }
+                const std::string head = "sprite:" + key;
+                UiAssets::Instance().SetHead(head, std::move(crop));
+                out = "<mcimg src=\"mchead:" + head + "\" style=\"display:block;position:absolute;left:" + std::to_string(dstX) + "px;top:" +
+                      std::to_string(dstY) + "px;width:" + std::to_string(width) + "px;height:" + std::to_string(height) + "px;\"/>";
+            }
         }
         std::lock_guard lock(mutex);
         return cache.emplace(key, std::move(out)).first->second;

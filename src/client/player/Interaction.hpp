@@ -1,6 +1,7 @@
 #pragma once
 #include "client/entity/EntityTracker.hpp"
 #include "client/player/BlockCollision.hpp"
+#include "client/player/Targeting.hpp"
 
 #include <functional>
 #include <glm/glm.hpp>
@@ -24,4 +25,5 @@ namespace perlin {
     AimHit Raycast(const Level& level, const BlockLibrary* blocks, const std::vector<entity::Entity>& entities,
                    const std::function<glm::vec2(const entity::Entity&)>& bounds, const glm::dvec3& eye,
                    const glm::dvec3& direction, double reach, double entityReach = -1.0);
+
 }

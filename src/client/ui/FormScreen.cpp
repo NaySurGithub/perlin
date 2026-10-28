@@ -4,6 +4,7 @@
 #include "client/ui/Json.hpp"
 #include "client/resources/TexturePack.hpp"
 #include "client/ui/Hud.hpp"
+#include "client/ui/TenFont.hpp"
 #include "client/ui/HudData.hpp"
 #include "client/ui/McFont.hpp"
 #include "client/ui/RmlEmit.hpp"
@@ -284,7 +285,11 @@ namespace perlin::ui {
         }
         out.type = FormModel::Type::Simple;
         out.content = Str(root.Find("content"));
+        // Classic simple forms list "buttons"; the newer format sends "elements" (buttons mixed with labels,
+        // headers and dividers).
         const Json* buttons = root.Find("buttons");
+        if (!buttons || !buttons->IsArray())
+            buttons = root.Find("elements");
         if (buttons && buttons->IsArray())
             for (const Json& b : buttons->array) {
                 FormButton fb;
@@ -440,7 +445,18 @@ namespace perlin::ui {
             return false;
         if (id.rfind("fb:", 0) == 0) {
             const int index = std::atoi(id.c_str() + 3);
-            response = form.type == FormModel::Type::Modal ? (index == 0 ? "true" : "false") : std::to_string(index);
+            if (form.type == FormModel::Type::Modal) {
+                response = index == 0 ? "true" : "false";
+                return true;
+            }
+            // The server numbers only the buttons; labels, headers and dividers between them do not count.
+            int buttonIndex = 0;
+            for (int i = 0; i < index && i < static_cast<int>(form.buttons.size()); i++) {
+                const std::string& k = form.buttons[static_cast<size_t>(i)].kind;
+                if (k.empty() || k == "button")
+                    buttonIndex++;
+            }
+            response = std::to_string(buttonIndex);
             return true;
         }
         const char kind = id[0];
@@ -540,6 +556,10 @@ namespace perlin::ui {
             }
 
             bool Global(const std::string& name, Json& out) const override {
+                if (name == "#form_button_length") {
+                    out = Json(static_cast<double>(items.size()));
+                    return true;
+                }
                 if (name == "#title_text") {
                     out = Json(form.title);
                     return true;
@@ -611,11 +631,17 @@ namespace perlin::ui {
                     return true;
                 }
                 if (binding == "#form_button_texture") {
-                    out = Json(b.imageType == "path" ? b.imageData : std::string());
+                    // Web images report "loading" until downloaded, as the game does; packs show a spinner for it.
+                    if (b.imageType == "url") {
+                        std::string bytes;
+                        out = Json(FormImageBytes(b.imageData, bytes) ? (bytes.empty() ? std::string() : "mcurl:" + b.imageData) : std::string("loading"));
+                    } else {
+                        out = Json(b.imageType == "path" ? b.imageData : std::string());
+                    }
                     return true;
                 }
                 if (binding == "#form_button_texture_file_system") {
-                    out = Json(std::string());
+                    out = Json(std::string(b.imageType == "url" ? "Url" : b.imageType == "path" ? "InUserPackage" : ""));
                     return true;
                 }
                 if (binding == "#form_button_contents") {
@@ -762,10 +788,30 @@ namespace perlin::ui {
     }
 
     FormUi::FormUi() {
-        services.textWidth = [](const std::string& text, float s) { return McFont::Instance().Width(text, s); };
-        services.lineHeight = [](float s) { return static_cast<float>(McFont::kLineHeight) * s; };
+        services.textWidth = [](const std::string& text, float s, bool ten) {
+            return ten ? TenFont::Instance().Width(text, s) : McFont::Instance().Width(text, s);
+        };
+        services.lineHeight = [](float s, bool ten) {
+            return ten ? TenFont::Instance().LineHeight(s) : static_cast<float>(McFont::kLineHeight) * s;
+        };
         services.textureSize = [](const std::string& tex, int& w, int& h) { return UiAssets::Instance().ImageSize(tex, w, h); };
         services.localize = [](const std::string& key) { return UiAssets::Instance().Localize(key); };
+        services.anim = &anim;
+        services.animDef = [this](const std::string& ref, const std::string& ns) -> Json {
+            std::string full = ref;
+            if (!full.empty() && full[0] == '@')
+                full.erase(0, 1);
+            if (full.find('.') == std::string::npos)
+                full = ns + "." + full;
+            if (auto cached = animCache.find(full); cached != animCache.end())
+                return cached->second;
+            BuildReport report;
+            Json props = Json::MakeObject();
+            if (auto node = BuildTree(library, full, EngineRootVariables(), report))
+                props = node->props;
+            animCache[full] = props;
+            return props;
+        };
         emitter.SetTemplates(kFormTemplate, std::string());
     }
 
@@ -836,6 +882,8 @@ namespace perlin::ui {
         if (state.load() != 2 || !tree)
             return false;
         FormData data(form);
+        const auto started = std::chrono::steady_clock::now();
+        anim.now = std::chrono::duration<double>(started - animStart).count();
         const std::unique_ptr<LNode> root = EvaluateTree(*tree, data, services, static_cast<float>(guiW), static_cast<float>(guiH));
         if (!root)
             return false;
@@ -844,7 +892,9 @@ namespace perlin::ui {
         rml = emitter.Emit(*root, static_cast<float>(guiW), static_cast<float>(guiH), std::string(), false);
         contentHeight = emitter.ContentHeight();
         viewHeight = emitter.ViewportHeight();
-        {
+        // A server's own form design may draw its text as images or decode it (CubeCraft packs flags into titles),
+        // so the text check only guards vanilla-only layouts.
+        if (!ServerStyled()) {
             std::vector<std::string> samples;
             if (form.type == FormModel::Type::Modal) {
                 samples.push_back(form.button1);

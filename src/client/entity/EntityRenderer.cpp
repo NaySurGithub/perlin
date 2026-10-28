@@ -257,13 +257,17 @@ namespace perlin::entity {
     }
 
     std::pair<float, float> EntityRenderer::HitBox(const Entity& e) const {
+        const float scale = e.scale > 0.0f ? e.scale : 1.0f;
+        // The server's own bounding box wins: metadata BOUNDINGBOX_WIDTH/HEIGHT is what it collides and raycasts with.
+        if (e.boxWidth > 0.0f && e.boxHeight > 0.0f)
+            return {e.boxWidth * scale, e.boxHeight * scale};
         if (e.isPlayer)
-            return {0.6f, (e.Has(flag::Gliding) || e.Has(flag::Swimming)) ? 0.6f : e.Has(flag::Sneaking) ? 1.5f : 1.8f};
+            return {0.6f, (e.Has(flag::Gliding) || e.Has(flag::Swimming) || e.crawling) ? 0.6f : e.Has(flag::Sneaking) ? 1.5f : 1.8f};
         if (e.isItem)
             return {0.25f, 0.25f};
         float w, h;
         if (assets.CollisionBox(e.type, w, h))
-            return {w, h};
+            return {w * scale, h * scale};
         return {0.6f, 1.0f};
     }
 
@@ -1148,7 +1152,7 @@ namespace perlin::entity {
         }
         if (e.isPlayer && e.skin && e.skin->capeWidth > 0 && !e.Has(flag::Invisible) && !v.fp && e.armor[1] != "minecraft:elytra" && (!e.isSelf || in.ownParts.cape))
             addLayer("controller.render.player.cape", true);
-        if (itemRenderer && !e.Has(flag::Invisible) && e.isPlayer) {
+        if (itemRenderer && e.isPlayer) {
             const auto bind = [&](const std::string& name, const glm::mat4& boneWorld, bool left) {
                 if (name.empty() || (v.fp && name != "minecraft:bow"))
                     return;
@@ -1180,6 +1184,7 @@ namespace perlin::entity {
                             p = glm::vec3(bone * glm::vec4(p, 1.0f));
                         q.n = glm::normalize(glm::mat3(bone) * q.n);
                     }
+                    layer.body = false;
                     layers.push_back(std::move(layer));
                 }
                 v.attachedItem[left ? 1 : 0] = true;
@@ -1190,7 +1195,7 @@ namespace perlin::entity {
             if (v.hasItemL)
                 bind(e.offHand, v.itemL, true);
         }
-        if (itemRenderer && !e.Has(flag::Invisible) && !layers.empty() && !v.fp) {
+        if (itemRenderer && !layers.empty() && !v.fp) {
             static const int kOrder[4] = {0, 1, 2, 3};
             for (int slot : kOrder) {
                 const std::string& item = e.armor[slot];
@@ -1263,6 +1268,7 @@ namespace perlin::entity {
                 layer.texture = (item == "minecraft:elytra" && e.isPlayer && e.skin && e.skin->capeWidth > 0) ? std::string("#cape") : texture;
                 layer.material = assets.materialLibrary.Find("entity_alphatest");
                 layer.quads = std::move(mesh.body);
+                layer.body = false;
                 layers.push_back(std::move(layer));
             }
         }
@@ -1335,8 +1341,12 @@ namespace perlin::entity {
         std::stable_sort(ordered.begin(), ordered.end(), [](const Layer* a, const Layer* b) {
             return static_cast<int>(a->material.blend) < static_cast<int>(b->material.blend);
         });
+        // Invisibility hides the body (players and mobs alike); armor and held items stay, as in both editions.
+        const bool hideBody = e.Has(flag::Invisible) && !v.fp && !dollModel;
         for (const Layer* layerPtr : ordered) {
             const Layer& layer = *layerPtr;
+            if (hideBody && layer.body)
+                continue;
             uint32_t texture = 0;
             if (layer.texture == "#skin")
                 texture = TextureFor(e, "default");
@@ -1439,7 +1449,7 @@ namespace perlin::entity {
             draw.shadowOnly = shadowOnlyPass;
             renderer->UiSubmit(dollModel ? UiLayer::Doll : fpModel ? UiLayer::Hand : UiLayer::World, draw);
         }
-        if (itemRenderer && !e.Has(flag::Invisible) && !fpModel && (!dollModel || dollClip)) {
+        if (itemRenderer && !fpModel && (!dollModel || dollClip)) {
             const auto held = [&](const std::string& name, const glm::mat4& arm, bool left) {
                 if (name.empty())
                     return;
@@ -1959,8 +1969,11 @@ namespace perlin::entity {
             const glm::dvec3 delta = v.pos - in.camera;
             if (glm::dot(delta, delta) > static_cast<double>(in.maxDistance) * in.maxDistance)
                 continue;
-            if (e.Has(flag::Invisible) && !e.isPlayer)
-                continue;
+            // Server holograms hide the model but keep the name: an entity scaled to zero, or an invisible mob/armor stand
+            // with no gear (with armor or held items, only those show; Draw hides the body).
+            const bool gearless = e.mainHand.empty() && e.offHand.empty() &&
+                                  std::all_of(std::begin(e.armor), std::end(e.armor), [](const std::string& a) { return a.empty(); });
+            const bool modelHidden = !e.isPlayer && (e.scale == 0.0f || (e.Has(flag::Invisible) && gearless));
             if (e.dying && v.deathTime >= 1.0f && !e.isSelf)
                 continue;
             if (in.frustum && !shadowOnlySelf) {
@@ -1977,7 +1990,7 @@ namespace perlin::entity {
                     continue;
                 }
             }
-            if (in.blobShadows && !e.Has(flag::Invisible) && e.type != "minecraft:cushion" && !(e.isSelf && in.firstPerson)) {
+            if (in.blobShadows && !modelHidden && !e.Has(flag::Invisible) && e.type != "minecraft:cushion" && !(e.isSelf && in.firstPerson)) {
                 if (e.isItem) {
                     DrawShadow(v.pos, 0.15f, 0.75f, in);
                 } else if (!e.dying || v.deathTime < 0.9f) {
@@ -1985,8 +1998,13 @@ namespace perlin::entity {
                     DrawShadow(v.pos, std::min(hb.first, 1.4f) * 0.8f * (e.scale > 0 ? e.scale : 1.0f), 1.0f, in);
                 }
             }
-            if (in.nametags && !e.isItem && !e.Has(flag::Invisible) && !(e.isSelf && (in.firstPerson || !in.ownNametag))) {
-                const std::string& label = e.isPlayer ? e.name : e.nameTag;
+            // Invisible players hide their name; invisible holograms (armor stands, mobs) keep an always-shown name.
+            const bool nameHidden = e.Has(flag::Invisible) && (e.isPlayer || !e.Has(flag::AlwaysShowName));
+            // Bedrock shows a name only when the server allows it (can-show / always-show name flags); NPCs that are
+            // fake players leave both off. The shown text is the name tag, falling back to a player's username.
+            const bool nameAllowed = e.isSelf || e.Has(flag::CanShowName) || e.Has(flag::AlwaysShowName) || !e.isPlayer;
+            if (in.nametags && !e.isItem && !nameHidden && nameAllowed && !(e.isSelf && (in.firstPerson || !in.ownNametag))) {
+                const std::string& label = !e.nameTag.empty() ? e.nameTag : e.isPlayer ? e.name : e.nameTag;
                 const double d2 = glm::dot(delta, delta);
                 if (!label.empty() && d2 < (e.isPlayer ? 64.0 * 64.0 : 16.0 * 16.0)) {
                     const auto hb = HitBox(e);
@@ -1997,6 +2015,8 @@ namespace perlin::entity {
                     tags.push_back(std::move(t));
                 }
             }
+            if (modelHidden)
+                continue;
             if (e.isItem) {
                 if (itemRenderer) {
                     ui::HudItem item;

@@ -317,7 +317,11 @@ namespace perlin::javapack {
         } else if (const std::string n2 = after("textures/items/"); !n2.empty()) {
             AddBlockOrItem(out, "item", n2);
         } else if (const std::string n3 = after("textures/ui/"); !n3.empty()) {
-            Hud(n3, out);
+            // Title panorama: both editions number the six cube faces the same way.
+            if (StartsWith(n3, "panorama_"))
+                Add(out, "textures/gui/title/background/" + n3 + ".png");
+            else
+                Hud(n3, out);
         } else if (path == "font/default8" || path == "textures/font/default8") {
             Add(out, "textures/font/ascii.png");
         } else if (const std::string n4 = after("textures/models/armor/"); !n4.empty()) {

@@ -109,7 +109,10 @@ if(OPENSSL_ROOT_DIR)
     file(TO_CMAKE_PATH "${OPENSSL_ROOT_DIR}" OPENSSL_ROOT_DIR)
 endif()
 
-set(OPENSSL_USE_STATIC_LIBS ON)
+# Static by default; distros without libcrypto.a (e.g. Arch) pass -DOPENSSL_USE_STATIC_LIBS=OFF.
+if(NOT DEFINED OPENSSL_USE_STATIC_LIBS)
+    set(OPENSSL_USE_STATIC_LIBS ON)
+endif()
 if(WIN32)
     set(OPENSSL_MSVC_STATIC_RT ON)
 endif()
@@ -894,12 +897,12 @@ if(PERLIN_FAST_MATH)
     message(STATUS "Perlin: fast math is ON")
 endif()
 
-# Bridging rejects malformed/non-finite coordinates before converting to cells.
-# Preserve those guards when the application enables relaxed floating point.
+# The build intention rejects non-finite rays and velocities; keep those guards when the application enables
+# relaxed floating point.
 if(MSVC AND NOT PERLIN_CLANG_CL_BUILD)
-    set_source_files_properties(src/client/player/Bridging.cpp PROPERTIES COMPILE_OPTIONS "/fp:strict")
+    set_source_files_properties(src/client/player/Bridging.cpp src/client/player/HeldBuild.cpp PROPERTIES COMPILE_OPTIONS "/fp:strict")
 else()
-    set_source_files_properties(src/client/player/Bridging.cpp PROPERTIES COMPILE_OPTIONS "-fno-fast-math;-ffp-contract=off")
+    set_source_files_properties(src/client/player/Bridging.cpp src/client/player/HeldBuild.cpp PROPERTIES COMPILE_OPTIONS "-fno-fast-math;-ffp-contract=off")
 endif()
 
 include(CheckIPOSupported)
@@ -1032,10 +1035,32 @@ if(PERLIN_BUILD_TESTS AND NOT EMSCRIPTEN AND NOT ANDROID)
     target_compile_features(block_box_definition_selftest PRIVATE cxx_std_23)
     add_test(NAME block_box_definition_selftest COMMAND block_box_definition_selftest)
     add_executable(hud_dump tests/hud_dump.cpp src/client/ui/Json.cpp src/client/ui/UiExpr.cpp src/client/ui/JsonUi.cpp
-        src/client/ui/UiLayout.cpp src/client/ui/McFont.cpp src/client/ui/RmlEmit.cpp src/client/ui/FormatCodes.cpp src/client/ui/HudData.cpp
+        src/client/ui/UiLayout.cpp src/client/ui/McFont.cpp src/client/ui/TenFont.cpp src/client/ui/RmlEmit.cpp src/client/ui/FormatCodes.cpp src/client/ui/HudData.cpp
         src/client/ui/HudRenderers.cpp src/client/ui/EffectData.cpp src/client/i18n/Lang.cpp src/client/resources/ServerPackRegistry.cpp src/client/i18n/BuiltinEnglish.cpp src/util/Resources.cpp src/util/Paths.cpp)
     target_include_directories(hud_dump PRIVATE src "${stb_SOURCE_DIR}")
     target_compile_features(hud_dump PRIVATE cxx_std_23)
+    add_executable(screen_dump tests/screen_dump.cpp src/client/ui/Json.cpp src/client/ui/UiExpr.cpp src/client/ui/JsonUi.cpp
+        src/client/ui/UiLayout.cpp src/client/ui/McFont.cpp src/client/ui/TenFont.cpp src/client/ui/RmlEmit.cpp src/client/ui/FormatCodes.cpp src/client/ui/HudData.cpp src/client/ui/EffectData.cpp
+        src/client/i18n/Lang.cpp src/client/resources/ServerPackRegistry.cpp src/client/i18n/BuiltinEnglish.cpp src/util/Resources.cpp src/util/Paths.cpp)
+    target_include_directories(screen_dump PRIVATE src "${stb_SOURCE_DIR}")
+    target_compile_features(screen_dump PRIVATE cxx_std_23)
+    add_executable(ui_conformance tests/ui_conformance.cpp src/client/ui/Json.cpp src/client/ui/UiExpr.cpp src/client/ui/JsonUi.cpp
+        src/client/ui/UiLayout.cpp src/client/ui/McFont.cpp src/client/ui/TenFont.cpp src/client/ui/RmlEmit.cpp
+        src/client/ui/HudData.cpp src/client/ui/FormatCodes.cpp src/client/i18n/Lang.cpp
+        src/client/i18n/BuiltinEnglish.cpp src/client/resources/ServerPackRegistry.cpp src/util/Resources.cpp src/util/Paths.cpp)
+    target_include_directories(ui_conformance PRIVATE src "${stb_SOURCE_DIR}" "${glm_SOURCE_DIR}")
+    target_compile_features(ui_conformance PRIVATE cxx_std_23)
+    add_executable(targeting_selftest tests/targeting_selftest.cpp)
+    target_include_directories(targeting_selftest PRIVATE src "${glm_SOURCE_DIR}")
+    target_compile_features(targeting_selftest PRIVATE cxx_std_23)
+    add_test(NAME targeting_selftest COMMAND targeting_selftest)
+    add_executable(bridging_selftest
+        tests/bridging_selftest.cpp
+        src/client/player/Bridging.cpp
+        src/client/player/BlockUse.cpp)
+    target_include_directories(bridging_selftest PRIVATE src "${glm_SOURCE_DIR}")
+    target_compile_features(bridging_selftest PRIVATE cxx_std_23)
+    add_test(NAME bridging_selftest COMMAND bridging_selftest)
     add_executable(entity_animation_selftest tests/entity_animation_selftest.cpp
         src/client/entity/JavaAnimation.cpp src/client/attachable/Geometry.cpp
         src/client/attachable/Animation.cpp src/client/attachable/Molang.cpp src/client/ui/Json.cpp)
@@ -1150,13 +1175,7 @@ if(PERLIN_BUILD_TESTS AND NOT EMSCRIPTEN AND NOT ANDROID)
     target_include_directories(input_selftest PRIVATE src "${glm_SOURCE_DIR}")
     add_test(NAME input_selftest COMMAND input_selftest)
 
-    add_executable(bridging_selftest
-        tests/bridging_selftest.cpp
-        src/client/player/Bridging.cpp
-        src/client/player/BlockUse.cpp)
-    target_include_directories(bridging_selftest PRIVATE src "${glm_SOURCE_DIR}")
-    target_compile_features(bridging_selftest PRIVATE cxx_std_23)
-    add_test(NAME bridging_selftest COMMAND bridging_selftest)
+
 
     add_executable(physics_selftest
         tests/physics_selftest.cpp

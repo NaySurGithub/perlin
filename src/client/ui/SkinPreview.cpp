@@ -16,6 +16,7 @@ namespace perlin::ui {
             int w, h, d;
             bool overlay;
             bool cape;
+            bool head = false;
         };
 
         struct Hit {
@@ -124,6 +125,7 @@ namespace perlin::ui {
         std::vector<Box> boxes;
         const auto add = [&](float x0, float y0, float z0, float x1, float y1, float z1, int u, int v, int w, int h, int d, float grow, bool overlay) {
             Box b{{x0 - grow, y0 - grow, z0 - grow}, {x1 + grow, y1 + grow, z1 + grow}, u, v, w, h, d, overlay, false};
+            b.head = y0 >= 24.0f;
             boxes.push_back(b);
         };
         const int iaw = view.slim ? 3 : 4;
@@ -145,7 +147,7 @@ namespace perlin::ui {
                 add(0, 0, -2, 4, 12, 2, 0 + (ov ? 0 : 16), 48, 4, 12, 4, gb, ov);
         }
         if (haveCape) {
-            Box c{{-5, 8, -3.2f}, {5, 24, -2.1f}, 0, 0, 10, 16, 1, false, true};
+            Box c{{-5, 8, -3.2f}, {5, 24, -2.1f}, 0, 0, 10, 16, 1, false, true, false};
             boxes.push_back(c);
         }
         const float cy = std::cos(view.yaw * 0.017453292f), sy = std::sin(view.yaw * 0.017453292f);
@@ -172,6 +174,22 @@ namespace perlin::ui {
             toModel(az, e0, false);
         }
 
+        // The head turns on its own about the neck (0, 24, 0): rays for head boxes are moved into head space.
+        const bool headTurned = view.headYaw != 0.0f || view.headPitch != 0.0f;
+        const float hcy = std::cos(-view.headYaw * 0.017453292f), hsy = std::sin(-view.headYaw * 0.017453292f);
+        const float hcp = std::cos(-view.headPitch * 0.017453292f), hsp = std::sin(-view.headPitch * 0.017453292f);
+        const auto toHead = [&](const float* a, float* r, bool point) {
+            const float x = a[0], y = point ? a[1] - 24.0f : a[1], z = a[2];
+            const float x1 = hcy * x + hsy * z, z1 = -hsy * x + hcy * z;
+            r[0] = x1;
+            r[1] = hcp * y - hsp * z1;
+            r[2] = hsp * y + hcp * z1;
+            if (point)
+                r[1] += 24.0f;
+        };
+        float hd[3];
+        toHead(md, hd, false);
+
         struct Screen {
             int i0, i1, j0, j1;
         };
@@ -191,6 +209,10 @@ namespace perlin::ui {
                 maxX = std::max(maxX, vx);
                 minY = std::min(minY, vy);
                 maxY = std::max(maxY, vy);
+            }
+            if (b.head && headTurned) {
+                // A turned head can reach a little past its resting box; widen its screen bounds.
+                minX -= 3.0f; maxX += 3.0f; minY -= 3.0f; maxY += 3.0f;
             }
             Screen s;
             s.i0 = std::max(0, static_cast<int>(std::floor(minX * scale + static_cast<float>(outW) * 0.5f)) - 1);
@@ -214,11 +236,19 @@ namespace perlin::ui {
                         if (i < sb.i0 || i > sb.i1 || j < sb.j0 || j > sb.j1)
                             continue;
                         const Box& b = boxes[k];
+                        const float* ro = mo;
+                        const float* rd = md;
+                        float ho[3];
+                        if (b.head && headTurned) {
+                            toHead(mo, ho, true);
+                            ro = ho;
+                            rd = hd;
+                        }
                         float t;
                         int axis, sign;
-                        if (!Intersect(b, mo, md, t, axis, sign))
+                        if (!Intersect(b, ro, rd, t, axis, sign))
                             continue;
-                        float p[3] = {mo[0] + md[0] * t, mo[1] + md[1] * t, mo[2] + md[2] * t};
+                        float p[3] = {ro[0] + rd[0] * t, ro[1] + rd[1] * t, ro[2] + rd[2] * t};
                         float u, v;
                         FaceUv(b, axis, sign, p, u, v);
                         Hit h;

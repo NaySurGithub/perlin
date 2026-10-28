@@ -270,12 +270,9 @@ namespace perlin {
         if (SameItem(offShown, in.off))
             offShown = in.off;
 
-        float mainTarget = SameItem(mainShown, in.main) ? 1.0f : 0.0f;
-        if (mainTarget > 0.0f && s.equipAnimation && in.main.name != "minecraft:shield") {
-            const float delay = std::max(1.0f, 20.0f / AttackSpeed(in.main.name));
-            const float strength = std::clamp((static_cast<float>(attackStrengthTicker) + 1.0f) / delay, 0.0f, 1.0f);
-            mainTarget = strength * strength * strength;
-        }
+        // Bedrock has no attack cooldown, so the held item never dips after a swing (that is Java 1.9+); it only lowers
+        // while switching to a different item.
+        const float mainTarget = SameItem(mainShown, in.main) ? 1.0f : 0.0f;
         const float offTarget = SameItem(offShown, in.off) ? 1.0f : 0.0f;
         if (!s.equipAnimation) {
             mainShown = in.main;
@@ -514,9 +511,13 @@ namespace perlin {
                 const int w = sprite->w, h = sprite->h;
                 model.texture = renderer->UiCreateTexture(w, h, sprite->rgba.data(), false);
                 const float sx = 16.0f / static_cast<float>(w), sy = 16.0f / static_cast<float>(h);
+                // Pixels the item shader's alpha cutoff (0.1) throws away count as empty, so the extruded sides follow
+                // what is actually drawn. Packs with soft glows around a blade otherwise get their walls on the
+                // invisible glow edge and the blade itself looks flat.
                 auto alpha = [&](int x, int y) -> int {
                     if (x < 0 || y < 0 || x >= w || y >= h) return 0;
-                    return sprite->rgba[(static_cast<size_t>(y) * w + x) * 4 + 3];
+                    const int a = sprite->rgba[(static_cast<size_t>(y) * w + x) * 4 + 3];
+                    return a < 26 ? 0 : a;
                 };
                 const float zf = 7.5f / 16.0f, zb = 8.5f / 16.0f;
                 auto P = [&](float px, float py, float z) { return glm::vec3(px * sx / 16.0f, (16.0f - py * sy) / 16.0f, z); };

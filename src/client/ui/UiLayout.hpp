@@ -48,8 +48,8 @@ namespace perlin::ui {
     struct UiServices {
         std::function<Json(const std::string& ref, const std::string& ns)> animDef;
         AnimHost* anim = nullptr;
-        std::function<float(const std::string& text, float scale)> textWidth;
-        std::function<float(float scale)> lineHeight;
+        std::function<float(const std::string& text, float scale, bool ten)> textWidth;
+        std::function<float(float scale, bool ten)> lineHeight;
         std::function<bool(const std::string& texture, int& width, int& height)> textureSize;
         std::function<std::string(const std::string& key)> localize;
     };

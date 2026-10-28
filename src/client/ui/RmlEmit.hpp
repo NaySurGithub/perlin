@@ -18,6 +18,7 @@ namespace perlin::ui {
         float clipRatio = 1.0f;
         float r = 1, g = 1, b = 1, alpha = 1;
         bool keepRatio = false;
+        std::string id;  // element id, so the game can update this image without re-emitting the document
     };
 
     struct TextStyle {
@@ -25,6 +26,7 @@ namespace perlin::ui {
         float r = 1, g = 1, b = 1, a = 1;
         bool shadow = false;
         bool outline = false;
+        bool ten = false;  // font_type: MinecraftTen
         std::string align = "left";
         float linePadding = 0;
     };

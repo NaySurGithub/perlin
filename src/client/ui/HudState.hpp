@@ -44,7 +44,16 @@ namespace perlin::ui {
         uint32_t color = 0xFFFFFFu;
     };
 
+    struct HudSidebarRow {
+        std::string name;
+        int score = 0;
+    };
+
     struct HudState {
+        // Server scoreboard shown in the sidebar slot (SetDisplayObjective "sidebar").
+        bool sidebarVisible = false;
+        std::string sidebarTitle;
+        std::vector<HudSidebarRow> sidebar;
         bool locatorActive = false;
         std::vector<LocatorMarker> locator;
         bool visible = true;
@@ -128,9 +137,6 @@ namespace perlin::ui {
         std::string moveStatus;
         bool advancedTooltips = false;
         std::vector<HudEffect> effects;
-        bool scoreboard = false;
-        std::string scoreboardTitle;
-        std::vector<std::pair<std::string, int>> scoreboardRows;
         std::string gameModeSwitcher;
         std::vector<std::string> debugLeft, debugRight;
         float guiW = 0, guiH = 0;
