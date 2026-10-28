@@ -6,6 +6,7 @@
 #include "client/ui/UiTemplate.hpp"
 #include "util/Paths.hpp"
 
+#include <algorithm>
 #include <filesystem>
 #include <fstream>
 #include <sstream>
@@ -19,37 +20,69 @@ namespace perlin::ui {
             int Height() const { return cls == "title" ? 24 : 12; }
         };
 
-        // Blank entries are spacers.
-        std::vector<Line> PerlinLines() {
-            return {
-                {"PERLIN", "title"},
-                {"", ""},
-                {"A Minecraft: Bedrock Edition client", "sub"},
-                {"", ""},
-                {"", ""},
-                {"Made by", "head"},
-                {"notchyves", "name"},
-                {"", ""},
-                {"", ""},
-                {"Perlin is not affiliated with, endorsed by or", "note"},
-                {"associated with Mojang Studios or Microsoft.", "note"},
-                {"Minecraft is a trademark of Mojang AB.", "note"},
-                {"", ""},
-                {"", ""},
-            };
-        }
-
-        // Mojang's Java Edition credits, copied out of the client jar with the other client assets.
-        bool AppendJavaCredits(std::vector<Line>& lines) {
-            const std::filesystem::path file = std::filesystem::path(clientassets::Directory(paths::DataDir())) / "credits.json";
-            std::ifstream in(file, std::ios::binary);
+        bool ReadText(const char* name, std::string& out) {
+            std::ifstream in(std::filesystem::path(clientassets::Directory(paths::DataDir())) / name, std::ios::binary);
             if (!in)
                 return false;
             std::stringstream ss;
             ss << in.rdbuf();
+            out = ss.str();
+            return true;
+        }
+
+        // Word-wraps a paragraph to about the width Java uses for the poem (274 GUI pixels).
+        void AppendWrapped(std::vector<Line>& lines, const std::string& text, const std::string& cls) {
+            constexpr size_t kColumns = 46;
+            std::string line;
+            std::istringstream words(text);
+            for (std::string word; words >> word;) {
+                if (!line.empty() && line.size() + 1 + word.size() > kColumns) {
+                    lines.push_back({line, cls});
+                    line.clear();
+                }
+                line += (line.empty() ? "" : " ") + word;
+            }
+            if (!line.empty())
+                lines.push_back({line, cls});
+        }
+
+        // end.txt and postcredits.txt: paragraphs separated by blank lines, §3/§2 marking the two speakers.
+        bool AppendStory(std::vector<Line>& lines, const char* name, const std::string& player) {
+            std::string text;
+            if (!ReadText(name, text))
+                return false;
+            std::istringstream in(text);
+            for (std::string raw; std::getline(in, raw);) {
+                if (!raw.empty() && raw.back() == '\r')
+                    raw.pop_back();
+                std::string cls = "poem";
+                if (raw.rfind("\u00a73", 0) == 0) {
+                    cls = "poem3";
+                    raw.erase(0, 3);
+                } else if (raw.rfind("\u00a72", 0) == 0) {
+                    cls = "poem2";
+                    raw.erase(0, 3);
+                }
+                for (size_t at; (at = raw.find("PLAYERNAME")) != std::string::npos;)
+                    raw.replace(at, 10, player);
+                if (raw.empty())
+                    lines.push_back({"", ""});
+                else
+                    AppendWrapped(lines, raw, cls);
+            }
+            lines.push_back({"", ""});
+            lines.push_back({"", ""});
+            return true;
+        }
+
+        // Mojang's Java Edition credits, copied out of the client jar with the other client assets.
+        bool AppendJavaCredits(std::vector<Line>& lines) {
+            std::string text;
+            if (!ReadText("credits.json", text))
+                return false;
             Json root;
             std::string error;
-            if (!Json::Parse(ss.str(), root, error) || !root.IsArray())
+            if (!Json::Parse(text, root, error) || !root.IsArray())
                 return false;
             lines.push_back({"Minecraft: Java Edition", "head"});
             lines.push_back({"", ""});
@@ -80,15 +113,20 @@ namespace perlin::ui {
             return true;
         }
 
-        const std::vector<Line>& Lines() {
-            // The jar is extracted in the background on first launch, so keep looking until the Java list shows up.
+        // Java's order: the End poem, the credits, then the post-credits text.
+        const std::vector<Line>& Lines(const std::string& player = "") {
+            // The jar is extracted in the background on first launch, so keep looking until the Java texts show up.
             static std::vector<Line> lines;
+            static std::string builtFor;
             static bool java = false;
-            if (lines.empty() || !java) {
-                lines = PerlinLines();
-                java = AppendJavaCredits(lines);
-                lines.push_back({"", ""});
-                lines.push_back({"Thanks for playing!", "sub"});
+            if (lines.empty() || !java || (!player.empty() && player != builtFor)) {
+                if (!player.empty())
+                    builtFor = player;
+                lines.clear();
+                java = AppendStory(lines, "end.txt", builtFor);
+                java = AppendJavaCredits(lines) && java;
+                AppendStory(lines, "postcredits.txt", builtFor);
+                lines.push_back({"Perlin is not affiliated with Mojang Studios or Microsoft.", "note"});
             }
             return lines;
         }
@@ -104,6 +142,9 @@ body { position: absolute; left: 0px; top: 0px; width: {{w}}px; height: {{h}}px;
 .sub { color: #aaaaaa; }
 .head { color: #ffff55; }
 .note { color: #555555; }
+.poem { text-align: left; padding-left: {{poem_x}}px; width: 274px; }
+.poem3 { text-align: left; padding-left: {{poem_x}}px; width: 274px; color: #00aaaa; }
+.poem2 { text-align: left; padding-left: {{poem_x}}px; width: 274px; color: #00aa00; }
 .hint { position: absolute; left: 0px; top: {{hint_y}}px; width: {{w}}px; height: 12px; line-height: 12px; background-color: #000000; text-align: center; font-family: minecraft-shadow; font-size: 8px; color: #555555; }
 </style>
 </head>
@@ -122,12 +163,12 @@ body { position: absolute; left: 0px; top: 0px; width: {{w}}px; height: {{h}}px;
         return h;
     }
 
-    std::string BuildCreditsScreenRml(int guiW, int guiH, int scroll) {
+    std::string BuildCreditsScreenRml(int guiW, int guiH, int scroll, const std::string& player) {
         // The Java list runs to thousands of lines, so only the ones on screen go into the document.
         const int top = guiH - scroll;
         int y = 0, skipped = 0;
         std::string lines;
-        for (const Line& l : Lines()) {
+        for (const Line& l : Lines(player)) {
             const int h = l.Height();
             if (top + y + h < 0)
                 skipped += h;
@@ -139,6 +180,7 @@ body { position: absolute; left: 0px; top: 0px; width: {{w}}px; height: {{h}}px;
         ReplaceAll(d, "w", std::to_string(guiW));
         ReplaceAll(d, "h", std::to_string(guiH));
         ReplaceAll(d, "top", std::to_string(top + skipped));
+        ReplaceAll(d, "poem_x", std::to_string(std::max(0, (guiW - 274) / 2)));
         ReplaceAll(d, "hint_y", std::to_string(guiH - 12));
         ReplaceAll(d, "hint", "Press Escape to skip");
         ReplaceAll(d, "lines", lines);

@@ -1132,7 +1132,7 @@ namespace perlin {
         if (signature != creditsSignature || !hud.Overlay().HasOverlay()) {
             creditsSignature = signature;
             std::string error;
-            if (!hud.Overlay().SetOverlay(ui::BuildCreditsScreenRml(guiW, guiH, static_cast<int>(creditsScroll)), error))
+            if (!hud.Overlay().SetOverlay(ui::BuildCreditsScreenRml(guiW, guiH, static_cast<int>(creditsScroll), live ? live->PlayerName() : options.playerName), error))
                 std::cout << "[ui] credits screen: " << error << std::endl;
         }
         hud.UpdateOverlay(fbW, fbH, options.guiScale);

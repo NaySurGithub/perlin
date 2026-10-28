@@ -16,7 +16,7 @@ namespace fs = std::filesystem;
 
 namespace perlin::clientassets {
     namespace {
-        constexpr const char* kMarker = ".ready6";
+        constexpr const char* kMarker = ".ready7";
         const std::string kBase = "assets/minecraft/textures/";
 
         struct Image {
@@ -277,11 +277,11 @@ namespace perlin::clientassets {
                 emit(dst, gui(src));
         }
 
-        // Mojang's Java credits, shown after Perlin's own on the credits screen.
-        {
-            std::string credits;
-            if (jar.Raw("assets/minecraft/texts/credits.json", credits))
-                std::ofstream(dir / "credits.json", std::ios::binary) << credits;
+        // The End poem and Mojang's Java credits, rolled when leaving the End.
+        for (const char* text : {"end.txt", "credits.json", "postcredits.txt"}) {
+            std::string bytes;
+            if (jar.Raw(std::string("assets/minecraft/texts/") + text, bytes))
+                std::ofstream(dir / text, std::ios::binary) << bytes;
         }
 
         std::cout << "[assets] built " << saved << " client images (" << missing << " missing)" << std::endl;
