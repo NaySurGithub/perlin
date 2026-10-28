@@ -13,7 +13,7 @@ namespace perlin::jshader {
         struct Tok {
             enum Kind { Ident, Number, Punct, Directive } kind = Punct;
             std::string text;
-            std::string ws;  // whitespace / comments before the token
+            std::string ws;
         };
 
         bool IsIdStart(char c) { return std::isalpha(static_cast<unsigned char>(c)) || c == '_'; }
@@ -152,7 +152,7 @@ namespace perlin::jshader {
             bool textureMat = false, fogColor = false, fogDensity = false, fogStart = false, fogEnd = false, fogScale = false;
             bool fogCoord = false, fragCoord = false, shadow2D = false, shadow2DLod = false, shadow2DProj = false;
             bool vertexIndex = false;
-            int fragData = 0;  // highest gl_FragData index + 1
+            int fragData = 0;
             bool fragColor = false;
         };
 
@@ -192,7 +192,6 @@ namespace perlin::jshader {
             return s;
         }
 
-        // Replace table for fixed one-to-one renames in expressions.
         std::string Slot(int n) { return std::to_string(n); }
     }
 
@@ -210,11 +209,10 @@ namespace perlin::jshader {
 
     namespace {
         struct Statement {
-            size_t begin = 0, end = 0;  // token range [begin, end)
+            size_t begin = 0, end = 0;
             bool function = false;
         };
 
-        // One stage prepared for emission.
         struct Prepared {
             Stage stage;
             std::vector<Tok> tokens;
@@ -270,7 +268,7 @@ namespace perlin::jshader {
                             finished = true;
                             break;
                         }
-                        continue;  // struct / interface block / initializer list: runs to the ';'
+                        continue;
                     }
                     i++;
                 }
@@ -280,7 +278,6 @@ namespace perlin::jshader {
             return out;
         }
 
-        // Extracts text between matching brackets starting at token index `open` (which holds the opener).
         size_t MatchClose(const std::vector<Tok>& t, size_t open) {
             const std::string o = t[open].text;
             const std::string c = o == "(" ? ")" : o == "[" ? "]" : "}";
@@ -314,18 +311,17 @@ namespace perlin::jshader {
 
         struct DeclInfo {
             std::vector<std::string> qualifiers;
-            std::string layout;       // content of layout(...)
+            std::string layout;
             std::string type;
             struct Name {
                 std::string name;
-                std::string arraySize;  // text inside [] or ""
+                std::string arraySize;
                 std::string init;
             };
             std::vector<Name> names;
             bool valid = false;
         };
 
-        // Parses "qualifiers type a[2], b = x;" starting at token index `begin`.
         DeclInfo ParseDeclaration(const std::vector<Tok>& t, size_t begin, size_t end) {
             DeclInfo d;
             size_t i = begin;
@@ -350,7 +346,6 @@ namespace perlin::jshader {
                 return d;
             d.type = t[i].text;
             i++;
-            // Possible array on the type: float[4] name
             while (i < end) {
                 if (t[i].kind != Tok::Ident)
                     return d;
@@ -389,7 +384,6 @@ namespace perlin::jshader {
             return std::find(d.qualifiers.begin(), d.qualifiers.end(), q) != d.qualifiers.end();
         }
 
-        // Layout text with the location removed, so we can add our own.
         std::string LayoutWithout(const std::string& layout, const char* key, int* value = nullptr) {
             std::vector<std::string> parts;
             std::string cur;
@@ -423,7 +417,7 @@ namespace perlin::jshader {
             std::vector<UniformDecl> uniforms;
             std::vector<SamplerDecl> samplers;
             std::vector<InterfaceVar> inputs, outputs;
-            std::vector<std::string> bodyDecls;  // rewritten top-level statements in source order
+            std::vector<std::string> bodyDecls;
             std::set<std::string> userFunctions;
             std::vector<int> fragmentLocations;
         };
@@ -476,14 +470,12 @@ namespace perlin::jshader {
             return -1;
         }
 
-        // Evaluates simple integer array size expressions made of literals and consts defined earlier.
         int EvalSize(const std::string& expr, const std::map<std::string, int>& consts) {
             std::string e = StripSpace(expr);
             int n = 0;
             if (ParseIntLiteral(e, n)) return n;
             const auto it = consts.find(e);
             if (it != consts.end()) return it->second;
-            // a*b / a+b with simple operands
             for (char op : {'*', '+', '-', '/'}) {
                 const size_t at = e.find(op);
                 if (at != std::string::npos && at > 0) {
@@ -497,7 +489,6 @@ namespace perlin::jshader {
     }
 
     namespace {
-        // Transforms one stage's preprocessed tokens.
         StageResult TransformStage(Stage stage, const std::string& rawSource, const TransformOptions& options) {
             StageResult result;
             result.stage = stage;
@@ -520,7 +511,6 @@ namespace perlin::jshader {
             }
 
             std::vector<Tok> tokens = Lex(pre);
-            // Drop #version / #extension / #line produced by the preprocessor.
             for (Tok& tk : tokens) {
                 if (tk.kind == Tok::Directive) {
                     std::string d = tk.text;
@@ -539,19 +529,16 @@ namespace perlin::jshader {
             ctx.stage = stage;
             ctx.options = &options;
 
-            // Pass 1: user defined functions that clash with 450 built-ins (legal in GLSL 1.20) get renamed.
             std::set<std::string> renameFunctions;
             if (version < 130) {
                 for (const Statement& st : statements) {
                     if (!st.function) continue;
-                    // type name ( ... ) {
                     size_t p = st.begin;
                     while (p < st.end && tokens[p].text != "(") p++;
                     if (p > st.begin && tokens[p - 1].kind == Tok::Ident && Builtin450Functions().count(tokens[p - 1].text))
                         renameFunctions.insert(tokens[p - 1].text);
                 }
             }
-            // User-defined function names (for the texture() disambiguation).
             for (const Statement& st : statements) {
                 if (!st.function) continue;
                 size_t p = st.begin;
@@ -559,16 +546,13 @@ namespace perlin::jshader {
                 if (p > st.begin && tokens[p - 1].kind == Tok::Ident)
                     ctx.userFunctions.insert(tokens[p - 1].text);
             }
-            // The sampler (or any variable) called `texture` must be renamed, but the function texture() stays.
             const bool userDefinesTexture = ctx.userFunctions.count("texture") != 0;
 
-            // Names declared by the shader itself win over the engine-provided "core profile" built-ins below.
             std::set<std::string> declaredNames;
             for (size_t i = 1; i < tokens.size(); i++)
                 if (tokens[i].kind == Tok::Ident && tokens[i - 1].kind == Tok::Ident && (IsType(tokens[i - 1].text) || IsQualifier(tokens[i - 1].text)))
                     declaredNames.insert(tokens[i].text);
 
-            // Pass 2: expression-level replacement over all tokens.
             std::map<std::string, std::string> constInts;
             std::vector<std::string> out(tokens.size());
             for (size_t i = 0; i < tokens.size(); i++) {
@@ -589,7 +573,6 @@ namespace perlin::jshader {
                                                         id == "modelViewMatrixInverse" || id == "projectionMatrixInverse" ||
                                                         id == "textureMatrix" || id == "chunkOffset" || id == "vaPosition" ||
                                                         id == "vaColor" || id == "vaUV0" || id == "vaUV2" || id == "vaNormal")) {
-                    // Iris "core profile" names, available to compatibility shaders too.
                     if (id == "projectionMatrix") { ctx.use.proj = true; rep = "iris_ProjMat"; }
                     else if (id == "modelViewMatrix") { ctx.use.modelView = true; rep = "iris_ModelViewMat"; }
                     else if (id == "normalMatrix") { ctx.use.normalMat = true; rep = "iris_NormalMat"; }
@@ -646,7 +629,6 @@ namespace perlin::jshader {
                 } else if (id == "ftransform" && nextCall) {
                     ctx.use.modelView = ctx.use.proj = true;
                     ctx.vin.position = true;
-                    // swallow "()"
                     rep = "(iris_ProjMat * iris_ModelViewMat * vec4(iris_Position, 1.0))";
                     if (i + 2 < tokens.size() && tokens[i + 2].text == ")") {
                         out[i] = tk.ws + rep;
@@ -712,8 +694,6 @@ namespace perlin::jshader {
                 } else if (id == "texture" && !nextCall && !userDefinesTexture) {
                     rep = "iris_texture";
                 } else if (NewKeywords().count(id) && !nextCall) {
-                    // `smooth` / `sample` ... used as ordinary identifiers by older shaders. `smooth` as an interpolation
-                    // qualifier appears in declarations and must stay.
                     if (id == "smooth") {
                         const bool qualifierUse = i + 1 < tokens.size() && tokens[i + 1].kind == Tok::Ident &&
                                                   (IsType(tokens[i + 1].text) || IsQualifier(tokens[i + 1].text));
@@ -729,14 +709,13 @@ namespace perlin::jshader {
                 out[i] = tk.ws + rep;
             }
 
-            // Pass 3: classify top-level declarations; collect uniforms, samplers, interface variables.
             std::string bodyText;
             std::map<std::string, int> arrayConsts;
             std::set<std::string> seenUniforms, seenSamplers;
             bool hasMain = false;
             std::string uniformBlockPlaceholder = "/*IRIS_UNIFORM_BLOCK*/";
             bool blockPlaced = false;
-            std::vector<std::string> vertexAttribLines;  // user declared attributes with explicit locations
+            std::vector<std::string> vertexAttribLines;
             std::set<std::string> userAttribNames;
 
             auto emitRange = [&](size_t a, size_t b) {
@@ -747,13 +726,11 @@ namespace perlin::jshader {
 
             for (const Statement& st : statements) {
                 if (st.function) {
-                    // main()?
                     size_t p = st.begin;
                     while (p < st.end && tokens[p].text != "(") p++;
                     std::string text = emitRange(st.begin, st.end);
                     if (p > st.begin && tokens[p - 1].text == "main") {
                         hasMain = true;
-                        // rename main -> iris_user_main
                         size_t at = text.find("main");
                         if (at != std::string::npos) text.replace(at, 4, "iris_user_main");
                     }
@@ -821,11 +798,9 @@ namespace perlin::jshader {
                     continue;
                 }
 
-                // Interface variables.
                 bool toFragmentOut = false;
                 const bool vertexStage = stage == Stage::Vertex;
                 if (isAttribute || (vertexStage && isIn)) {
-                    // vertex attribute
                     std::string layoutRest = d.layout;
                     int loc = -1;
                     layoutRest = LayoutWithout(d.layout, "location", &loc);
@@ -871,7 +846,6 @@ namespace perlin::jshader {
                             ctx.inputs.push_back(v);
                     }
                     bodyText += outputDecl ? (stage == Stage::Fragment ? "/*FRAGOUT*/" : "/*VARYING_OUT*/") : "/*VARYING_IN*/";
-                    // Keep one placeholder per name so declarations can be re-emitted by the linker.
                     continue;
                 }
                 (void)toFragmentOut;
@@ -882,7 +856,6 @@ namespace perlin::jshader {
                 result.error = "no main()";
             }
 
-            // Stash everything the linker needs.
             result.uniforms = ctx.uniforms;
             result.samplers = ctx.samplers;
             result.inputs = ctx.inputs;
@@ -890,8 +863,6 @@ namespace perlin::jshader {
             result.vertexInputs = ctx.vin;
             result.glsl = bodyText;
 
-            // Built-in uniform declarations used by this stage are appended to the uniform list so the block
-            // contains them.
             auto addBuiltin = [&](bool used, const char* name) {
                 if (!used) return;
                 for (const UniformDecl& b : BuiltinUniformDecls())
@@ -914,7 +885,6 @@ namespace perlin::jshader {
             addBuiltin(ctx.use.fogScale, "iris_FogScale");
             addBuiltin(options.flipFragCoordY && ctx.use.fragCoord, "iris_ViewHeight");
 
-            // Remember extra flags in notes via sentinel comments the linker reads.
             std::string flags;
             if (ctx.use.fogCoord) flags += "FOGCOORD;";
             if (ctx.use.fragCoord) flags += "FRAGCOORD;";
@@ -975,7 +945,6 @@ namespace perlin::jshader {
         if (!program.ok())
             return program;
 
-        // --- uniform register file: one layout shared by both stages ------------------------------------------
         {
             std::vector<UniformDecl> merged = program.vertex.uniforms;
             for (const UniformDecl& u : program.fragment.uniforms) {
@@ -997,7 +966,6 @@ namespace perlin::jshader {
                 return program;
         }
 
-        // --- sampler bindings: one numbering for the whole program (bgfx binds a texture to both stages at once)
         std::map<std::string, int> samplerBindings;
         {
             std::set<int> used;
@@ -1016,7 +984,6 @@ namespace perlin::jshader {
                 }
         }
 
-        // --- link: interface locations ---------------------------------------------------------------------
         struct Link {
             std::string type, interp;
             int arrayCount = 0;
@@ -1076,8 +1043,6 @@ namespace perlin::jshader {
 
         auto sharedPrelude = [&](StageResult& r, bool vertex) -> std::string {
             std::string glsl = StripFlags(r.glsl);
-            // Uniform block: every uniform is stored as vec4 / mat4 registers (the only types bgfx can feed on all
-            // backends); the original names become initialised globals that unpack the registers.
             std::string block;
             if (!r.uniforms.empty()) {
                 std::string globals;
@@ -1128,7 +1093,6 @@ namespace perlin::jshader {
                 block += "};\n" + globals;
             }
             glsl = ReplaceFirst(glsl, "/*IRIS_UNIFORM_BLOCK*/", "");
-            // Samplers use the program-wide bindings assigned in TransformProgram.
             for (SamplerDecl& smp : r.samplers) smp.binding = samplerBindings.at(smp.name);
             std::string samplerText;
             for (const SamplerDecl& s : r.samplers) {
@@ -1137,21 +1101,17 @@ namespace perlin::jshader {
                 samplerText += ") uniform " + s.type + " " + s.name + ";\n";
             }
             glsl = ReplaceAll(glsl, "/*SAMPLERS*/", "");
-            return block + samplerText + "\x01" + glsl;  // \x01 separates generated declarations from the body
+            return block + samplerText + "\x01" + glsl;
         };
 
-        // Vertex stage ---------------------------------------------------------------------------------------
         {
             StageResult& r = program.vertex;
             std::string head = "#version 450\n";
             std::string text = sharedPrelude(r, true);
             const size_t sep = text.find('\x01');
             std::string samplerText = text.substr(0, sep), body = text.substr(sep + 1);
-            // Attribute inputs.
             std::string attrs;
             const VertexInputs& vi = r.vertexInputs;
-            // Vertex attribute locations are bgfx's Attrib enum values, so every backend can bind them directly
-            // (GL renames them to a_* names, HLSL maps them to semantics, Vulkan uses them as they are).
             auto have = [&](int loc) { return (options.availableAttribs >> loc) & 1u; };
             auto emitAttr = [&](int loc, const std::string& type, const std::string& name, const std::string& fallback) {
                 if (have(loc)) attrs += "layout(location = " + std::to_string(loc) + ") in " + type + " " + name + ";\n";
@@ -1193,9 +1153,7 @@ namespace perlin::jshader {
             if (options.zeroToOneDepth) footer += "    gl_Position.z = (gl_Position.z + gl_Position.w) * 0.5;\n";
             footer += "}\n";
             r.glsl = head + attrs + varyings + samplerText + prelude + body + footer;
-            // Uniform block must come before the body: it was substituted in place already.
         }
-        // Fragment stage -------------------------------------------------------------------------------------
         {
             StageResult& r = program.fragment;
             const std::string flagsSource = r.glsl;
@@ -1210,7 +1168,6 @@ namespace perlin::jshader {
             }
             if (fogCoord) varyings += varyingDecl("iris_FogFragCoord", links["iris_FogFragCoord"], false);
             body = ReplaceAll(body, "/*VARYING_IN*/", "");
-            // Outputs: explicit locations kept; unlocated ones numbered from 0; gl_FragData[n] outputs added.
             std::string outs;
             std::set<int> usedLoc;
             for (const InterfaceVar& v : r.outputs)
@@ -1261,7 +1218,6 @@ namespace perlin::jshader {
                 mainPrefix = "    iris_FragCoord = vec4(gl_FragCoord.x, iris_ViewHeight - gl_FragCoord.y, gl_FragCoord.z, gl_FragCoord.w);\n";
             }
             std::string footer = "\nvoid main() {\n" + mainPrefix + "    iris_user_main();\n}\n";
-            // iris_ViewHeight lives in the uniform block; make sure the block exists when it is needed.
             r.glsl = head + varyings + outs + samplerText + prelude + fragCoord + body + footer;
             if (!mainPrefix.empty() && r.glsl.find("IrisGlobals") == std::string::npos) {
                 r.ok = false;

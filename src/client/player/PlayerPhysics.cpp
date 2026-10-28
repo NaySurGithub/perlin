@@ -144,8 +144,6 @@ namespace perlin::physics {
                                      static_cast<float>(velocity.z)},
                                     stepHeight);
             std::vector<ShapeMetadata> metadata;
-            // One request scope for this Step. Native removal registrations and
-            // multi-request scheduling still require full phase reconstruction.
             bds::CollisionCache cache;
             bds::RefreshCollisionCache(cache, search.region, [&](const bds::CollisionBox& region) {
                 std::vector<ShapeMetadata> incoming;
@@ -195,8 +193,6 @@ namespace perlin::physics {
         }
 
         Vec3 FinalizeMotion(State& state, const Motion& motion, const Vec3& velocity) {
-            // Perlin stores feet coordinates; the native OffsetsComponent producer
-            // and conversion to actor position remain separate from this callback.
             const auto result = bds::FinalizeMove(
                 CollisionBox(motion.box), 0.0f, motion.requested,
                 {static_cast<float>(motion.resolved.x), static_cast<float>(motion.resolved.y),
@@ -227,8 +223,6 @@ namespace perlin::physics {
                 const auto surface = supportingSurface == 1 ? bds::LandingSurface::Slime
                                      : supportingSurface == 2 ? bds::LandingSurface::Bed
                                                             : bds::LandingSurface::Ordinary;
-                // BounceComponent production/event consumers and native actor
-                // position conversion remain separate from velocity response.
                 motion = bds::VerticalCollision(motion, {}, surface, sneaking, false, false, true,
                                                 state.restitution).velocity;
             }
@@ -453,8 +447,6 @@ namespace perlin::physics {
             forward *= 0.3f;
             strafe *= 0.3f;
         }
-        // ItemUseSlowdownSystem::applyItemUseSlowdown (26.52 native
-        // 0x10605E790) squares the modifier after resolving directional input.
         const float useScale = itemUseModifier * itemUseModifier;
         return {forward * useScale, strafe * useScale};
     }
@@ -486,8 +478,6 @@ namespace perlin::physics {
 
     bool PoseFits(const State& s, const World& world, double height) {
         thread_local std::vector<Box> scratch;
-        // PlayerBoundingBoxStateUpdateSystem probes the current shape with a
-        // replacement height and a float 0.01 contraction on every face.
         auto bounds = CollisionBox(BoundingBox(s, false));
         bounds[4] = bounds[1] + static_cast<float>(height);
         for (int axis = 0; axis < 3; ++axis) {
@@ -503,9 +493,6 @@ namespace perlin::physics {
     static void StepMovement(State& s, const Input& in, const Attributes& attr, const World& world) {
         thread_local std::vector<Box> scratch;
         const float swimSpeedMultiplier = bds::SwimSpeedMultiplier(in.swimming, s.movementEffects);
-        // Fluid sensing consumes the preceding collision pose. Expanding from
-        // the swimming shape changes its contracted lower bound, so sensing
-        // after the expansion drops water one tick early at the surface.
         const Box fluidSensingBox = BoundingBox(s, s.collisionHeight == static_cast<float>(kSneakHeight));
         s.crawling = in.crawl && !in.flying;
         s.swimming = in.swimming && !in.flying;
@@ -532,9 +519,6 @@ namespace perlin::physics {
             s.jumpDelay = 0;
 
         const Environment env = Scan(world, fluidSensingBox);
-        // Scan remains the world adapter. Feed its selected material through
-        // the native state callbacks, including water entry and fall reset.
-        // This player path has no Passenger/FallingBlock component.
         const uint32_t fluidMaterial = bds::SelectFluidMaterial(env.water, env.lava);
         bds::UpdateWaterState(fluidMaterial, s.inWater, s.fallDistance,
             s.waterSplashRequest, [] { return false; }, [] { return false; });
@@ -605,7 +589,6 @@ namespace perlin::physics {
             s.vx = finalized.x;
             s.vy = finalized.y;
             s.vz = finalized.z;
-            // Native ModifierType1: hover override bypasses the air-drag attribute.
             const float h = bds::FlyingHorizontalRetention(static_cast<float>(groundFriction),
                 hover ? std::optional<float>(hMod) : std::nullopt, attr.airDrag);
             s.vx = DampHorizontal(s.vx, h);
@@ -616,8 +599,6 @@ namespace perlin::physics {
 
         const bool water = s.inWater, lava = s.inLava;
         auto gravity = in.gravity;
-        // Keyboard/mouse ScaffoldingActionSystem (0x106176C40, input mode 1)
-        // predicts the fall-through flag and downward impulse before movement.
         if (in.overDescendableBlock)
             gravity.descendThroughBlock = in.sneak;
         if (gravity.descendThroughBlock && in.overDescendableBlock) {
@@ -646,13 +627,10 @@ namespace perlin::physics {
                                   (gravity.inScaffolding || in.inAscendableBlock) &&
                                   !gravity.descendThroughBlock;
         if (scaffoldJump) {
-            // MobJump callback 0x10607861C returns before ordinary ground jump.
             s.vy = 0.15f;
             s.jumpDelay = 10;
         }
         if (in.jump && (water || lava)) {
-            // MobJumpSystem suppresses the liquid impulse during the swim
-            // transition and while a swimming actor's head is above water.
             if (jumpBlockedBySwim) {
                 if (water) s.vy = 0;
             } else {
@@ -660,11 +638,6 @@ namespace perlin::physics {
             }
         }
 
-        // Native SwimControlSystem's view excludes MobIsJumpingFlagComponent.
-        // A liquid jump keeps its upward impulse instead of blending it toward
-        // the pitch direction in this stage.
-        // Phase 6 registers SwimControlSystem before the teleport travel
-        // filter. Its delta survives even when travel integration is filtered.
         if (water && in.swimming && !in.jump) {
             const float look = in.lookY;
             const float gain = look < -0.2f ? 0.085f : 0.06f;
@@ -715,9 +688,6 @@ namespace perlin::physics {
             s.jumpDelay = 10;
         }
 
-        // MobTravelTeleportedFilterSystem removes travel eligibility before
-        // travel flags/MoveRequest and gravity requests are produced. Sensing
-        // and pre-travel jump actions above remain separate from that filter.
         if (s.hasTeleported)
             return;
 
@@ -777,8 +747,6 @@ namespace perlin::physics {
         }
 
         if ((water || lava) && (m.cx || m.cz)) {
-            // ClimbOutOfLiquidSystem 26.52 callback 0x1070B4B48 probes
-            // the full translated actor bounds, not the contracted immersion box.
             const float dy = ((static_cast<float>(box.y0) - static_cast<float>(s.y)) + 0.6f)
                              + static_cast<float>(v.y);
             const Box probe = BoundingBox(s, crouched).Offset(static_cast<float>(v.x), dy,
@@ -817,8 +785,6 @@ namespace perlin::physics {
             const Box inside = BoundingBox(s, crouched);
             bool web = false, powderSnow = false, berryBush = false;
             std::vector<bds::BlockPosition> honey;
-            // InsideBlockComponent alternate bounds and expansion producers
-            // remain separate; use this actor's ordinary shape and zero expansion.
             bds::CollectInsideCells(CollisionBox(inside), 0.0f, true,
                                    [&](const bds::CollisionBox& region) { return world.InsideRegionReady(region); },
                                    [&](int32_t x, int32_t y, int32_t z) {
@@ -849,19 +815,11 @@ namespace perlin::physics {
                 std::optional<bool> firstApplication;
                 if (web)
                     bds::AccumulateBlockSlowdown(multiplier, {0.25f, 0.05f, 0.25f}, firstApplication);
-                // EntityInside powder-snow callback 0x106743CD0. Contacts
-                // accumulate by minimum, rather than multiplying per block.
                 if (powderSnow)
                     bds::AccumulateBlockSlowdown(multiplier, {0.9f, 1.5f, 0.9f}, firstApplication);
-                // InsideSweetBerryBush slowdown callback 0x10604E17C.
                 if (berryBush)
                     bds::AccumulateBlockSlowdown(multiplier, {0.8f, 0.75f, 0.8f}, firstApplication);
-                // immunePlayer: MovementAbilities value bits 0 (flying) and
-                // 2 (instabuild); it also removes the first-application record.
                 bds::ApplyPlayerSlowdownImmunity(multiplier, firstApplication, in.flying, in.creativeFlight);
-                // Native weavingMob system 0x1066B6B14 replaces the vector
-                // for effect 33, excluding powder/berry contact. Its Include
-                // requires the applied record retained after player immunity.
                 if (firstApplication && attr.weaving && web && !powderSnow && !berryBush)
                     multiplier = {0.5f, 0.25f, 0.5f};
                 if (firstApplication)
@@ -879,23 +837,13 @@ namespace perlin::physics {
         StepMovement(s, in, attr, world);
         const auto climber = bds::SenseScaffolding(CollisionBox(BoundingBox(s, in.sneak)),
             [&](int32_t x, int32_t y, int32_t z) { return world.ClimberCell(x, y, z); }, in.canStandOnPowderSnow);
-        // BlockClimberSystem follows CheckFallDamage. Its selected lower
-        // ascendable block suppresses the reset when that block is powder snow.
         if (!climber.overPowderSnow && (climber.inside || climber.over || climber.ascendable || climber.descendable))
             s.fallDistance = 0;
-        // EntityInside, player immunity, adjustFallDistance and applied-record
-        // cleanup are registered in this order by 0x1402D48A0.
-        // WasInWaterFlag has passed through the native water-state callback.
-        // World material sensing and complete native phase timing remain open.
         UpdateBlockContacts(s, in, attr, world, s.inWater);
-        // MovementEffectsTick is registered in the post-player-movement phase,
-        // 0x1402D5190. Flying and no-clip paths must also advance effect state.
         bds::TickMovementEffects(s.movementEffects);
         s.swimAmount = in.swimming ? std::fmin(s.swimAmount + 0.1f, 1.0f)
                                   : std::fmax(s.swimAmount - 0.1f, 0.0f);
         s.previousRotation = {in.pitch, s.yaw};
-        // Native phase-9 cleanup requires ActorMovementTickNeeded; callers
-        // that cannot simulate must retain this flag until Step is eligible.
         s.hasTeleported = false;
     }
 }

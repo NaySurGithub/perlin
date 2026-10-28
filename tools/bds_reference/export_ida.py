@@ -17,7 +17,6 @@ def export_reference():
     def read_page(address):
         data = ida_bytes.get_bytes(address, 4096)
         if data is None:
-            # A section can start halfway through a page (notably the CFG IAT).
             data = bytes(ida_bytes.get_byte(ea) if ida_bytes.is_loaded(ea) else 0
                          for ea in range(address, address + 4096))
         return data.hex()
@@ -70,10 +69,8 @@ def export_reference():
                     if ida_bytes.is_loaded(target):
                         pages[hex(page)] = read_page(page)
         if address == 0x1441FC8B0:
-            # IDA omits some type-ID/TLS bookkeeping data references here.
             pages['0x147291000'] = read_page(0x147291000)
         if address == 0x140355790:
-            # RIP-relative invalid-AABB sentinel is not a defined data xref.
             pages['0x14740e000'] = read_page(0x14740E000)
         if address in (0x140EAFAF0, 0x140EAFFD0):
             pages['0x147337000'] = read_page(0x147337000)

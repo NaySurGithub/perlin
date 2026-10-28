@@ -4,9 +4,6 @@
 #include <span>
 
 namespace perlin::physics::bds {
-    // The sparse pools use an 18-bit entity index and packed generation.
-    // Empty page spans represent native null pages, independently of the
-    // outer page count. The reserved packed index is never a membership.
     struct EntityMembership {
         std::span<const std::span<const uint32_t>> pages;
 

@@ -16,7 +16,6 @@ namespace perlin::physics {
     constexpr double kTickSeconds = 0.05;
     constexpr double kWidth = 0.6;
     constexpr double kStandHeight = 1.8;
-    // Native 26.52 PlayerBoundingBoxStateUpdateSystem selects 0x3fbeb852.
     constexpr double kSneakHeight = 1.49;
     constexpr double kCrawlHeight = 0.6;
     constexpr double kCrawlEye = 0.4;
@@ -54,8 +53,8 @@ namespace perlin::physics {
         bool honey = false;
         float speedFactor = 1.0f;
         bool isAir = true;
-        int8_t bubbleColumn = 0; // +1 upward, -1 downward
-        int8_t scaffoldingStability = -1; // -1: other block; 7: unstable scaffolding
+        int8_t bubbleColumn = 0;
+        int8_t scaffoldingStability = -1;
         bool Empty() const { return boxes.empty(); }
     };
 
@@ -71,10 +70,7 @@ namespace perlin::physics {
     };
 
     struct Attributes {
-        // Retain the 1.26.10 arithmetic only for its historical trace adapters.
         bool currentMovementMath = true;
-        // Resolved movement attribute, including the predicted sprint modifier.
-        // Native PlayerResetMovementSpeed copies this value without another boost.
         float speed = 0.1f;
         float flySpeed = 0.05f;
         float verticalFlySpeed = 1.0f;
@@ -132,8 +128,6 @@ namespace perlin::physics {
         bool collidableMobNear = false;
         bool inWater = false;
         bool inLava = false;
-        // Pending native request payload. Later replacement/removal phases and
-        // splash sound/particle consumption are not ported yet.
         std::optional<uint32_t> waterSplashRequest;
         bool onClimbable = false;
         bool crawling = false;
@@ -153,7 +147,6 @@ namespace perlin::physics {
 
         Box box;
         bool hasBox = false;
-        // HasTeleportedFlagComponent survives until an eligible movement tick.
         bool hasTeleported = false;
 
         double Height(bool sneaking) const { return (crawling || swimming) ? kCrawlHeight : sneaking ? kSneakHeight : kStandHeight; }

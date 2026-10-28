@@ -48,16 +48,14 @@ namespace perlin {
         return q(block) | (q(sky) << 8);
     }
 
-    // Per-quad data kept only while a Java shader pack is active (normals and block ids need to know the block).
     struct QuadInfo {
-        float bx, by, bz;   // block origin (minimum corner)
-        uint16_t block;     // palette id
-        uint8_t layer;      // RenderLayer
+        float bx, by, bz;
+        uint16_t block;
+        uint8_t layer;
     };
 
     class Tessellator {
     public:
-        // Set by the renderer when a Java shader pack needs block information; read by mesher threads.
         static void SetCaptureQuadInfo(bool on) { capture.store(on, std::memory_order_relaxed); }
         static bool CaptureQuadInfo() { return capture.load(std::memory_order_relaxed); }
         void SetBlock(uint16_t id, float x, float y, float z) { curBlock = id; curX = x; curY = y; curZ = z; }

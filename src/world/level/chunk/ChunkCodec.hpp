@@ -54,7 +54,6 @@ namespace perlin {
         static bool ParseSubChunk(const uint8_t* data, size_t size, SubChunkData& out, size_t& consumed,
                                   const char** err = nullptr);
 
-        // Commit an inline column only after every advertised subchunk decoded.
         static bool ParseColumn(const uint8_t* data, size_t size, uint32_t count,
                                 int firstSubY, int slots,
                                 std::vector<std::pair<int, SubChunkData>>& out,

@@ -28,8 +28,6 @@ namespace perlin::jshader {
             return out;
         }
 
-        // Handles "#define NAME [value] [//comment]" (optionally behind a leading "//") and returns true when the
-        // line is a shader option; fills `opt` and the pieces needed to rewrite it.
         struct DefineLine {
             bool commentedOut = false;
             std::string indent, name, value, comment;
@@ -60,7 +58,7 @@ namespace perlin::jshader {
                 return false;
             d.name = line.substr(i, n - i);
             if (n < line.size() && line[n] == '(')
-                return false;  // function-like macro
+                return false;
             std::string rest = line.substr(n);
             const size_t cm = rest.find("//");
             if (cm != std::string::npos) {
@@ -121,14 +119,12 @@ namespace perlin::jshader {
         }
 
         std::string ApplyOptions(IncludeContext& ctx, const std::string& file, const std::string& line) {
-            // Fast reject: only lines mentioning define/const matter.
             if (line.find("define") == std::string::npos && line.find("const") == std::string::npos)
                 return line;
             DefineLine d;
             if (ParseDefine(line, d)) {
                 const bool hasList = d.comment.find('[') != std::string::npos;
                 if (d.value.empty() && (!d.commentedOut || true)) {
-                    // A bare "#define NAME" (or its commented-out form) is a toggle.
                     if (d.commentedOut && d.name.empty())
                         return line;
                     ShaderOption opt;
@@ -137,7 +133,6 @@ namespace perlin::jshader {
                     opt.defaultOn = !d.commentedOut;
                     opt.comment = Trim(d.comment);
                     opt.file = file;
-                    // "//#define" lines that are plain prose comments contain spaces right after the name -> still fine.
                     RecordOption(ctx, opt);
                     if (ctx.overrides) {
                         const auto it = ctx.overrides->find(d.name);

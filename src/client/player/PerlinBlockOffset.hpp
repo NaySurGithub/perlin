@@ -49,7 +49,6 @@ namespace perlin::physics::bds {
         std::array<BlockOffsetAxis, 3> axes;
     };
 
-    // Description producer 0x1441FC8B0 scales ranges by 1/16 and copies steps.
     inline BlockRandomOffset BlockOffsetFromDescription(const std::array<BlockOffsetAxis, 3>& description) {
         BlockRandomOffset component;
         for (size_t i = 0; i < 3; ++i)
@@ -71,8 +70,6 @@ namespace perlin::physics::bds {
         return detail::SseAdd(detail::SseMultiply(index, step), range.minimum);
     }
 
-    // Generator 0x1441FC5A0, using position seed constructor 0x14048C340.
-    // Component ranges are already converted from description units by 1/16.
     inline Float3 GenerateBlockOffset(const BlockRandomOffset& component, BlockPosition position) {
         position[1] = 0;
         auto random = SeedPositionRandom(position);

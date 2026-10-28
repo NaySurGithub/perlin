@@ -5,8 +5,6 @@
 
 namespace perlin::entity {
     namespace {
-        // Move packets carry rotations as bytes scaled to 0..360, so a pitch of -10 degrees arrives as 350. Pitch is a signed
-        // angle within +-90; wrapping it here keeps the head from tilting through almost a full turn.
         float SignedPitch(float degrees) {
             if (!std::isfinite(degrees))
                 return 0.0f;
@@ -113,8 +111,6 @@ namespace perlin::entity {
     }
 
     namespace {
-        // The server is authoritative: adopt its position and learn the item's velocity from successive updates, so
-        // the local simulation can fill the gaps when updates are sparse (and never runs when they come every tick).
         void ItemServerUpdate(Entity& e, const glm::dvec3& target, bool onGround) {
             const auto now = std::chrono::steady_clock::now();
             if (e.haveServerPos) {
@@ -166,7 +162,6 @@ namespace perlin::entity {
             return;
         }
         if (x) e.pos.x = *x;
-        // Like move_entity, a player's delta carries the eye position, not the feet.
         if (y) e.pos.y = e.isPlayer ? *y - kPlayerEye : *y;
         if (z) e.pos.z = *z;
         if (pitch) e.pitch = SignedPitch(*pitch);
@@ -365,7 +360,7 @@ namespace perlin::entity {
             if (!e.isItem || !e.simulated)
                 continue;
             if (e.haveServerPos && std::chrono::steady_clock::now() - e.lastServerAt < std::chrono::milliseconds(70))
-                continue;  // the server is updating this item every tick; don't fight it
+                continue;
             e.vel.y -= 0.04;
             glm::dvec3 p = e.pos;
             bool grounded = false;

@@ -1,4 +1,3 @@
-// Replay recording UI hooks, replay list (title screen) and replay playback (free camera, control bar).
 #include "client/Perlin.hpp"
 
 #include "client/i18n/Lang.hpp"
@@ -9,6 +8,7 @@
 #include "client/platform/AppPlatform.hpp"
 #include "client/renderer/chunk/LodStore.hpp"
 #include "client/ui/ReplayScreen.hpp"
+#include "client/ui/TextEdit.hpp"
 #include "client/ui/TitleScreen.hpp"
 #include "util/Paths.hpp"
 #include "util/SimClock.hpp"
@@ -73,7 +73,6 @@ namespace perlin {
         constexpr int kSpeedCount = 8;
     }
 
-    // ------------------------------------------------------------------------------------------ replay list
     void Perlin::RefreshReplayList() {
         std::error_code ec;
         fs::create_directories(replay::ReplayDirectory(), ec);
@@ -118,7 +117,6 @@ namespace perlin {
         const int sort = title.replaySort;
         const bool desc = title.replaySortDesc;
         const auto key = [&](const ui::ReplayEntry& a, const ui::ReplayEntry& b) {
-            // -1 when a sorts before b in ascending order
             const auto cmp = [](auto x, auto y) { return x < y ? -1 : (y < x ? 1 : 0); };
             switch (sort) {
                 case 1: return cmp(a.name, b.name);
@@ -132,7 +130,6 @@ namespace perlin {
             const int c = key(a, b);
             return desc ? c > 0 : c < 0;
         });
-        // keep the selection on the same file
         std::string selected;
         if (title.replaySelected >= 0 && title.replaySelected < static_cast<int>(title.replays.size()))
             selected = title.replays[static_cast<size_t>(title.replaySelected)].file;
@@ -144,27 +141,14 @@ namespace perlin {
         titleSignature.clear();
     }
 
-    bool Perlin::TitleReplayTyped(int key, bool character, bool ctrl) {
+    bool Perlin::TitleReplayTyped(const InputManager::Typed& t) {
+        const int key = t.key;
+        const bool character = t.character;
         if (title.page == ui::TitlePage::ReplayRename) {
-            if (!character && key == Key::Backspace) {
-                while (!title.replayName.empty() && (static_cast<unsigned char>(title.replayName.back()) & 0xC0) == 0x80)
-                    title.replayName.pop_back();
-                if (!title.replayName.empty())
-                    title.replayName.pop_back();
-            } else if (!character && key == Key::Enter) {
+            if (!character && key == Key::Enter)
                 TitleReplayClick(ui::kReplayRenameOk);
-            } else if (character && !ctrl && title.replayName.size() < 60 && key >= 32) {
-                if (key < 0x80) {
-                    title.replayName += static_cast<char>(key);
-                } else if (key < 0x800) {
-                    title.replayName += static_cast<char>(0xC0 | (key >> 6));
-                    title.replayName += static_cast<char>(0x80 | (key & 0x3F));
-                } else {
-                    title.replayName += static_cast<char>(0xE0 | (key >> 12));
-                    title.replayName += static_cast<char>(0x80 | ((key >> 6) & 0x3F));
-                    title.replayName += static_cast<char>(0x80 | (key & 0x3F));
-                }
-            }
+            else
+                ui::TextEdit::Focused().Apply(t, title.replayName, ui::TextLimits{60});
             return true;
         }
         if (title.page == ui::TitlePage::Replays) {
@@ -315,7 +299,6 @@ namespace perlin {
         return true;
     }
 
-    // ------------------------------------------------------------------------------------------ playback
     void Perlin::ReplayStatus(const std::string& text) {
         replayUi.status = text;
         replayUi.statusUntil = Clock::now() + std::chrono::seconds(3);
@@ -335,7 +318,6 @@ namespace perlin {
             std::erase_if(retiredSessions, [](const std::unique_ptr<BedrockSession>& r) { return !r->Transferring(); });
     }
 
-    // The resource packs the server used are stored in the replay; they are mounted exactly like live server packs.
     void Perlin::MountReplayPacks() {
         const auto stored = replayCtl.StoredPacks();
         const bool had = !ServerPacks::Instance().Directories().empty();
@@ -435,8 +417,6 @@ namespace perlin {
         titleReturnToReplays = true;
     }
 
-    // The mouse stays free in a replay. It is only captured while the user holds the right button
-    // or has toggled mouse-look with Tab, and never while a dialog is open.
     void Perlin::UpdateReplayCursor() {
         const bool panel = exportUi.open || kfUi.open;
         if (!pauseShown)
@@ -457,7 +437,6 @@ namespace perlin {
             return;
         if (replayCtl.NeedsRestart()) {
             replayCtl.ClearRestart();
-            // Seamless rewind: the world is rolled back with the undo log and handed to the new session, so no terrain is rebuilt.
             const int64_t epoch = static_cast<int64_t>(replayCtl.SeekTargetMs()) / 1000;
             bool keepWorld = loadingDone && session->ReplayCanRewind(epoch) && session->ReplayRewindWorld(epoch);
             std::unique_ptr<BedrockSession> old = std::move(session);
@@ -494,7 +473,7 @@ namespace perlin {
             const bool world = r.id == 21 || r.id == 58 || r.id == 110 || r.id == 172 || r.id == 174;
             if (world) {
                 if (static_cast<double>(r.timeMs) < worldFrom)
-                    return; // already part of the kept world
+                    return;
                 s->ReplayEpoch(std::max<int64_t>(r.timeMs / 1000, static_cast<int64_t>(worldFrom / 1000.0)));
             }
             s->InjectIncoming(r.id, r.body);
@@ -506,7 +485,7 @@ namespace perlin {
         const bool follow = replayCtl.cameraMode == replay::CameraMode::Follow;
         if ((!replayUi.camInit || follow) && rec.known) {
             camera.x = rec.x;
-            camera.y = rec.y; // PlayerAuthInput positions are eye level
+            camera.y = rec.y;
             camera.z = rec.z;
             camera.yaw = rec.yaw + 90.0f;
             camera.pitch = std::clamp(-rec.pitch, -89.0f, 89.0f);
@@ -556,7 +535,6 @@ namespace perlin {
                 move.y += 1.0f;
             if (inputManager.IsDown(Action::Sneak))
                 move.y -= 1.0f;
-            // Smooth acceleration: the camera eases into and out of movement instead of jerking.
             glm::vec3 wanted(0.0f);
             if (glm::length(move) > 0.001f)
                 wanted = glm::normalize(move) * static_cast<float>(replayUi.flySpeed * (inputManager.IsDown(Action::Sprint) ? 3.0 : 1.0));
@@ -565,7 +543,6 @@ namespace perlin {
             camera.x += replayUi.flyVel.x * dt;
             camera.y += replayUi.flyVel.y * dt;
             camera.z += replayUi.flyVel.z * dt;
-            // Arrow keys turn the camera, so the mouse can stay free.
             if (!input.TextMode()) {
                 const float turn = 110.0f * dt;
                 if (input.IsKeyDown(Key::Left)) camera.yaw -= turn;
@@ -582,7 +559,6 @@ namespace perlin {
     bool Perlin::UpdateReplayScreen(ui::Hud& hud, BedrockSession* live, int fbW, int fbH) {
         (void)live;
         const auto now = Clock::now();
-        // Options sub-screen (reuses the pause menu's pages)
         if (pauseShown) {
             UpdatePauseScreen(hud, live, fbW, fbH);
             if (pauseShown)
@@ -603,11 +579,10 @@ namespace perlin {
         const int guiH = static_cast<int>(std::ceil(static_cast<float>(fbH) / static_cast<float>(scale)));
         const ui::ReplayBarLayout layout = ui::ComputeReplayBarLayout(guiW, guiH);
 
-        // ---- keys ----
         bool escape = false;
         if (inputManager.Pressed(Action::Pause)) {
             if (replayUi.grab)
-                replayUi.grab = false; // Esc first gives the mouse back
+                replayUi.grab = false;
             else
                 escape = true;
         }
@@ -703,7 +678,6 @@ namespace perlin {
         if (kM)
             addMarker();
 
-        // ---- overlay ----
         if (replayUi.status.size() && now > replayUi.statusUntil) {
             replayUi.status.clear();
             replayUi.signature.clear();
@@ -759,7 +733,6 @@ namespace perlin {
         if (replayUi.scrubbing) {
             const double frac = std::clamp((static_cast<double>(mx) - layout.trackX) / std::max(1.0f, layout.trackW), 0.0, 1.0);
             replayUi.scrubMs = frac * replayCtl.DurationMs();
-            // The replay follows the handle while dragging (seeks are cheap now), and lands exactly where it is let go.
             if (!down) {
                 replayUi.scrubbing = false;
                 replayCtl.Seek(replayUi.scrubMs);

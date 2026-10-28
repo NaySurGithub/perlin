@@ -125,8 +125,6 @@ namespace perlin {
     }
 
     int BlockLibrary::GlassTile(int baseTile, int mode, int) const {
-        // Mode 1 (connected) reuses the base tile: the mesher just samples inside the frame on connected edges.
-        // Modes 2 and 3 need a tile with a cleared interior: list[0] keeps the frame, list[1] has none.
         if (mode != 2 && mode != 3)
             return baseTile;
         const auto it = glassTiles.find(baseTile);
@@ -166,8 +164,6 @@ namespace perlin {
             const TileAlpha baseAlpha = AlphaOf(base);
             const bool keepInterior = tinted.count(base) > 0;
             std::vector<int> list(2, 0);
-            // Stained glass keeps its colour when the interior is made clear: the interior becomes a flat translucent wash of the
-            // glass's average colour instead of nothing. Plain glass stays fully clear.
             uint8_t wash[4] = {0, 0, 0, 0};
             if (keepInterior) {
                 double r = 0, g = 0, b = 0, a = 0;
@@ -462,8 +458,6 @@ namespace perlin {
         uint32_t h = 2166136261u;
         for (char c : label)
             h = (h ^ static_cast<uint8_t>(c)) * 16777619u;
-        // A server with hundreds of untextured custom blocks must not eat the whole
-        // atlas: once it is nearly full, reuse a placeholder instead of hiding the block.
         if (nextTile + 24 >= MaxTiles()) {
             if (!synthTiles.empty())
                 return synthTiles[h % synthTiles.size()];
@@ -867,8 +861,6 @@ namespace perlin {
                 app.texTop = topName;
                 app.texSide = sideName;
                 app.texBottom = botName;
-                // Kelp's face names describe stem animation phases, not cube faces.
-                // Keep all four available to the connected-plant mesher.
                 if (bare == "kelp" && !hasOverride) {
                     for (const char* texture : {"kelp_a", "kelp_b", "kelp_c", "kelp_d"})
                         app.varTop.push_back(resolveTexture(texture, nullptr));

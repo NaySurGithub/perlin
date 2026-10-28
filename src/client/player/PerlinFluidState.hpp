@@ -11,9 +11,6 @@ namespace perlin::physics::bds {
         CollisionBox water, lava, readiness;
     };
 
-    // Finite-bounds path of LiquidBlocksFetch 0x140FC98E0. The optional
-    // component that bypasses contraction is supplied by the caller; its
-    // production is separate. A crossed axis collapses to its original center.
     inline LiquidQueryBounds MakeLiquidQueryBounds(const CollisionBox& box, bool bypassContraction = false) {
         LiquidQueryBounds result{box, box, box};
         if (bypassContraction) return result;
@@ -37,17 +34,10 @@ namespace perlin::physics::bds {
         return result;
     }
 
-    // LiquidBlocksFetch 0x140FC98E0 checks both materials and gives lava
-    // priority when both contracted query regions contain fluid.
     inline uint32_t SelectFluidMaterial(bool water, bool lava) {
         return lava ? 6 : (water ? 5 : 0);
     }
 
-    // Common single-body liquid collector, 0x140FC94C0 -> 0x140FC8FA0.
-    // World-ready, finite, ordered bounds are supplied by the caller. Fluid
-    // surface height is not consulted here; head sensing uses a separate path.
-    // Retained records include boundary faces even when their cell origin is
-    // outside the original upper bound. Material 25 is the native wildcard.
     template<class ReadMaterial, class Emit>
     bool CollectLiquidCells(const CollisionBox& bounds, uint32_t material, bool retain,
             ReadMaterial&& read, Emit&& emit) {
@@ -84,20 +74,13 @@ namespace perlin::physics::bds {
         return found;
     }
 
-    // UpdateWaterStateRequestComponent::material, consumed by 0x140E0E6F0
-    // and 0x140E0E820. This is the native material ID, not BlockShape::fluid.
     inline bool WasInLava(uint32_t material) { return material == 6; }
 
-    // Native 26.52 LavaResetFallDistanceSystem 0x10607A698 consumes the
-    // selected material request independently of WasInLavaFlag membership.
     inline void UpdateLavaFallDistance(uint32_t material, float& fallDistance) {
         if (material == 6)
             fallDistance *= 0.5f;
     }
 
-    // Complete water-state callback after component lookup. Boat membership
-    // belongs to the passenger's referenced entity and registry generation.
-    // Lookup remains lazy: non-water requests never query optional components.
     template<class IsBoatPassenger, class IsFallingBlock>
     void UpdateWaterState(uint32_t material, bool& wasInWater, float& fallDistance,
             std::optional<uint32_t>& splashRequest, IsBoatPassenger&& isBoatPassenger,
@@ -109,7 +92,6 @@ namespace perlin::physics::bds {
         if (!isFallingBlock()) fallDistance = 0.0f;
         if (!wasInWater) {
             wasInWater = true;
-            // Native get-or-create followed by an unconditional dword store.
             splashRequest = 1;
         }
     }

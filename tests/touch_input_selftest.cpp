@@ -12,7 +12,7 @@ int main() {
     touch.SetState(state);
     input.SetCaptured(true);
     touch.Update(input);
-    touch.FingerDown(input, 1, 860, 830); // Jump.
+    touch.FingerDown(input, 1, 860, 830);
     Check(input.IsKeyDown(Key::Space), "jump touch did not press");
     state.editing = true;
     touch.SetState(state);
@@ -21,11 +21,10 @@ int main() {
     touch.FingerUp(input, 1, 860, 830);
     state.editing = false;
     touch.SetState(state); touch.Update(input);
-    touch.FingerDown(input, 2, 200, 800); // Stick centre, then forward.
+    touch.FingerDown(input, 2, 200, 800);
     touch.FingerMove(input, 2, 200, 660, 0, -140);
     Check(input.IsKeyDown('W'), "stick did not move forward");
     state.editing = true; touch.SetState(state);
-    // An event can precede Update after an editor transition.
     touch.FingerDown(input, 3, 500, 400);
     Check(!input.IsKeyDown('W'), "editor event leaves stick held");
     touch.Update(input);
@@ -45,8 +44,7 @@ int main() {
     touch.FingerDown(input, 8, 860, 830);
     touch.FingerMove(input, 8, 800, 700, -60, -130);
     touch.FingerUp(input, 8, 800, 700);
-    touch.FingerDown(input, 9, 755, 537); // Editor Done.
-    // The caller publishes its old editing state before taking the result.
+    touch.FingerDown(input, 9, 755, 537);
     touch.SetState(state);
     std::map<std::string, TouchPlace> edited;
     Check(touch.TakeEditResult(edited), "Done result lost when state refreshes");

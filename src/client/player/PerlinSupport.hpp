@@ -26,8 +26,6 @@ namespace perlin::physics::bds {
         }
     }
 
-    // Cached collision selector 0x14478D6B0. Metadata (including null block
-    // pointers) is parallel to the supplied shapes and does not affect selection.
     inline SupportingShape SelectSupportingShape(CollisionBox body, std::span<const CollisionBox> shapes) {
         body[1] = detail::Round(body[1] - 0.2f);
         body[4] = body[1];

@@ -341,9 +341,6 @@ namespace perlin {
         if (!freeSlots && async) {
             if ((++urgentTick & 3) != 0)
                 return;
-            // Reserve a small allowance for nearby edits, but include queued
-            // and completed meshes in the limit. Repeated urgent passes must
-            // not enqueue the entire world behind slow mesh workers/uploads.
             const size_t urgentLimit = maxInFlight + 3;
             if (inFlight.size() >= urgentLimit)
                 return;

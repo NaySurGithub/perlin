@@ -12,7 +12,6 @@ namespace perlin::jshader {
     namespace {
         void CopyMat(const float* in, float* out) { std::memcpy(out, in, 16 * sizeof(float)); }
 
-        // General 4x4 inverse (column-major, double precision internally).
         void Invert(const float* m, float* out) {
             double a[16], inv[16];
             for (int i = 0; i < 16; i++) a[i] = m[i];
@@ -44,9 +43,6 @@ namespace perlin::jshader {
 
         double Fract(double v) { return v - std::floor(v); }
 
-        // --------------------------------------------------------------------------------------------------
-        // Expression engine for uniform.* / variable.* properties.
-        // --------------------------------------------------------------------------------------------------
         struct Value {
             double v[4] = {0, 0, 0, 0};
             int n = 1;
@@ -55,8 +51,8 @@ namespace perlin::jshader {
         struct Node {
             enum class Kind { Number, Variable, Unary, Binary, Call } kind = Kind::Number;
             double number = 0;
-            std::string text;          // variable name / operator / function name
-            std::vector<int> children; // indices into the node pool
+            std::string text;
+            std::vector<int> children;
         };
 
         struct Lexer {
@@ -222,7 +218,6 @@ namespace perlin::jshader {
         };
     }
 
-    // ------------------------------------------------------------------------------------------------------
     struct CustomUniforms::Impl {
         struct Compiled {
             Def def;
@@ -238,7 +233,6 @@ namespace perlin::jshader {
             bool init = false;
         };
         std::map<int, Smooth> smooth;
-        // evaluation context
         const FrameState* frame = nullptr;
         const UniformTable* table = nullptr;
         int stamp = 0;
@@ -296,7 +290,7 @@ namespace perlin::jshader {
         if (it != byName.end()) {
             Compiled& c = items[it->second];
             if (c.stamp != stamp) {
-                if (depth > 32) return out;   // cyclic definition
+                if (depth > 32) return out;
                 c.stamp = stamp;
                 depth++;
                 Run(c);
@@ -372,7 +366,6 @@ namespace perlin::jshader {
             const std::string& f = n.text;
             const size_t argc = n.children.size();
             if (f == "if") {
-                // if(cond1, val1, cond2, val2, ..., default)
                 size_t i = 0;
                 for (; i + 1 < argc; i += 2)
                     if (num(n.children[i]) != 0.0) return Eval(unit, n.children[i + 1]);
@@ -395,7 +388,6 @@ namespace perlin::jshader {
                 return r;
             }
             if (f == "smooth") {
-                // smooth([id,] value, fadeUp, fadeDown)
                 int id = 0;
                 size_t base = 0;
                 if (a.size() >= 4) { id = static_cast<int>(a[0]); base = 1; }
@@ -479,13 +471,11 @@ namespace perlin::jshader {
         return true;
     }
 
-    // ------------------------------------------------------------------------------------------------------
     UniformTable::UniformTable() {
         using C = const Context&;
         auto F = [](C c) -> const FrameState& { return *c.frame; };
         auto D = [](C c) -> const PackDrawState& { return *c.draw; };
 
-        // --- matrices
         Add("gbufferModelView", 16, [=](C c, float* o) { CopyMat(F(c).modelView, o); });
         Add("gbufferModelViewInverse", 16, [=](C c, float* o) { Invert(F(c).modelView, o); });
         Add("gbufferProjection", 16, [=](C c, float* o) { CopyMat(F(c).projection, o); });
@@ -497,7 +487,6 @@ namespace perlin::jshader {
         Add("shadowProjection", 16, [=](C c, float* o) { CopyMat(F(c).shadowProjection, o); });
         Add("shadowProjectionInverse", 16, [=](C c, float* o) { Invert(F(c).shadowProjection, o); });
 
-        // --- engine built-ins (gl_* replacements)
         Add("iris_ModelViewMat", 16, [=](C c, float* o) { CopyMat(D(c).modelView, o); });
         Add("iris_ModelViewMatInverse", 16, [=](C c, float* o) { Invert(D(c).modelView, o); });
         Add("iris_ProjMat", 16, [=](C c, float* o) { CopyMat(D(c).projection, o); });
@@ -511,7 +500,6 @@ namespace perlin::jshader {
         Add("iris_FogScale", 1, [=](C c, float* o) { const float span = D(c).fogEnd - D(c).fogStart; o[0] = span > 0 ? 1.0f / span : 0.0f; });
         Add("iris_ViewHeight", 1, [=](C c, float* o) { o[0] = static_cast<float>(D(c).viewHeight); });
 
-        // --- positions / vectors
         Add("cameraPosition", 3, [=](C c, float* o) { for (int i = 0; i < 3; i++) o[i] = static_cast<float>(F(c).cameraPosition[i]); });
         Add("previousCameraPosition", 3, [=](C c, float* o) { for (int i = 0; i < 3; i++) o[i] = static_cast<float>(F(c).previousCameraPosition[i]); });
         Add("eyePosition", 3, [=](C c, float* o) { for (int i = 0; i < 3; i++) o[i] = static_cast<float>(F(c).cameraPosition[i]); });
@@ -526,7 +514,6 @@ namespace perlin::jshader {
         Add("velocity", 3, [=](C c, float* o) { std::memcpy(o, F(c).velocity, 12); });
         Add("playerLookVector", 3, [=](C c, float* o) { std::memcpy(o, F(c).playerLookVector, 12); });
 
-        // --- scalars
         Add("sunAngle", 1, [=](C c, float* o) { o[0] = F(c).sunAngle; });
         Add("shadowAngle", 1, [=](C c, float* o) { o[0] = F(c).shadowAngle; });
         Add("fogDensity", 1, [=](C c, float* o) { o[0] = F(c).fogDensity; });
@@ -606,7 +593,6 @@ namespace perlin::jshader {
         Add("previousCameraPositionInt", 3, [=](C c, float* o) { for (int i = 0; i < 3; i++) o[i] = static_cast<float>(std::floor(F(c).previousCameraPosition[i])); });
         Add("previousCameraPositionFract", 3, [=](C c, float* o) { for (int i = 0; i < 3; i++) o[i] = static_cast<float>(Fract(F(c).previousCameraPosition[i])); });
 
-        // --- expression-only names (OptiFine "shader variables")
         Add("temperature", 1, [=](C c, float* o) { o[0] = F(c).biomeTemperature; });
         Add("rainfall", 1, [=](C c, float* o) { o[0] = F(c).biomeRainfall; });
         Add("biome", 1, [=](C c, float* o) { o[0] = static_cast<float>(F(c).biome); });

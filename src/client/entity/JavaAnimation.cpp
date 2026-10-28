@@ -17,8 +17,6 @@ namespace perlin::entity::java {
                 difference -= 2 * pi;
             return a + difference * t;
         }
-        // Mth uses this table, including truncation before masking negative indices.
-        // Matching its sampling matters at animation phase and easing boundaries.
         const std::array<float, 65536>& Sines() {
             static const auto table = [] {
                 std::array<float, 65536> result;
@@ -114,8 +112,6 @@ namespace perlin::entity::java {
             p.rightLeg.rotation = {-pi * 0.45f, pi / 10, pi / 40};
             p.leftLeg.rotation = {-pi * 0.45f, -pi / 10, -pi / 40};
         }
-        // Mirror HumanoidModel's priority and affectsOffhandPose rules. A passive
-        // arm must not overwrite the support arm of the active two-handed pose.
         const bool prioritizeRight =
             s.usingItem ? !s.useLeft : (TwoHanded(s.mainLeft ? s.right : s.left) ? !s.mainLeft : s.mainLeft);
         if (prioritizeRight) {
@@ -238,8 +234,6 @@ namespace perlin::entity::java {
             if (s.visuallySwimming)
                 root = glm::translate(root, glm::vec3(0, -1, 0.3f));
         }
-        // Java's root has an inverted Y axis and a 1.501-block model origin;
-        // Bedrock's mesh is expressed upward from the feet in model pixels.
         root = glm::translate(root, glm::vec3(0, modelScale * (1.501f - 1.5f), 0));
         return glm::scale(root, glm::vec3(-1, 1, 1));
     }
@@ -256,8 +250,6 @@ namespace perlin::entity::java {
         for (const auto& [name, part] : parts)
             if (std::none_of(g->bones.begin(), g->bones.end(), [&](const auto& b) { return b.name == name; }))
                 return false;
-        // Standard player controllers also animate these ancestors. Clear their old
-        // contributions before fitting the Java parts, avoiding double swim/crouch.
         for (const char* name :
              {"root", "waist", "hat", "jacket", "leftsleeve", "rightsleeve", "leftpants", "rightpants"})
             pose.erase(name);

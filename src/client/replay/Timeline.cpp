@@ -35,7 +35,6 @@ namespace perlin::replay {
             return 0.5 * ((2 * p1) + (-p0 + p2) * u + (2 * p0 - 5 * p1 + 4 * p2 - p3) * u2 + (-p0 + 3 * p1 - 3 * p2 + p3) * u3);
         }
 
-        // Unwrap angle b so it is the closest equivalent to a.
         double Near(double a, double b) {
             while (b - a > 180.0) b -= 360.0;
             while (b - a < -180.0) b += 360.0;
@@ -92,7 +91,7 @@ namespace perlin::replay {
             if (a.interp == Interp::Hold) return a.value;
             const double u = Shape(a.interp == Interp::Smooth ? Interp::EaseInOut : a.interp, (t - a.tMs) / std::max(1.0, b.tMs - a.tMs));
             double bv = b.value;
-            if (wrapDay) { // go forward in time through midnight rather than backwards
+            if (wrapDay) {
                 while (bv < a.value) bv += 24000.0;
             }
             return static_cast<float>(a.value + (bv - a.value) * u);

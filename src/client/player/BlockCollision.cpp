@@ -253,8 +253,6 @@ namespace perlin {
     const LevelCollision::Info& LevelCollision::Lookup(uint16_t id, const BlockLibrary* blocks) {
         static std::array<std::atomic<Info*>, 65536> table{};
         static std::mutex publishMutex;
-        // ShapeOf returns persistent references. Keep older immutable snapshots
-        // alive when a server definition or voxel packet replaces their data.
         static std::vector<std::unique_ptr<Info>> snapshots;
         for (;;) {
             const auto definitions = ServerBlocks::Instance().CollisionRevision();
@@ -304,8 +302,6 @@ namespace perlin {
             for (const auto& b : selection->boxes)
                 info.selection.push_back({b[0], b[1], b[2], b[3], b[4], b[5]});
         }
-        // BDS honey-block registration 0x140584982 -> 0x1406B78D0 sets
-        // BlockLegacy property 43, independently of supplied collision boxes.
         const std::string blockName = BlockPalette::Instance().Name(id);
         if (blockName == "minecraft:honey_block" || blockName == "honey_block") {
             info.shape.jumpProperties |= physics::bds::ReducedJumpSurfaceProperty;
@@ -386,8 +382,6 @@ namespace perlin {
             s.scaffoldingStability = static_cast<int8_t>(State(id, "stability", 0));
             return info;
         }
-        // Ladders have oriented 3/16-block collision boxes in the registry.
-        // Keep them on that path instead of treating them as passable vines.
         if (n == "vine" || n == "scaffolding_none" || n == "twisting_vines" || n == "weeping_vines" ||
             n == "cave_vines" || n == "cave_vines_body_with_berries" || n == "cave_vines_head_with_berries") {
             s.climbable = true;

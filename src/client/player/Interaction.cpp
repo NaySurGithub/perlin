@@ -40,7 +40,7 @@ namespace perlin {
 
     glm::vec3 EntityClickOffset(const glm::dvec3& eye, const glm::dvec3& dir, const glm::dvec3& feet, double halfWidth, double height,
                                 const glm::dvec3& fallback) {
-        constexpr double kInset = 0.002; // keeps the point strictly inside the box despite float rounding
+        constexpr double kInset = 0.002;
         const glm::dvec3 lo(feet.x - halfWidth + kInset, feet.y + kInset, feet.z - halfWidth + kInset);
         const glm::dvec3 hi(feet.x + halfWidth - kInset, feet.y + height - kInset, feet.z + halfWidth - kInset);
         glm::dvec3 point = fallback;
@@ -129,7 +129,7 @@ namespace perlin {
             }
             const glm::vec2 wh = bounds(e);
             const double hw = wh.x * 0.5 * (e.scale > 0 ? e.scale : 1.0f);
-            const double pad = 0.0; // the real hitbox: a padded box produces hits the server rejects
+            const double pad = 0.0;
             const glm::dvec3 lo(e.pos.x - hw - pad, e.pos.y - pad, e.pos.z - hw - pad),
                 hi(e.pos.x + hw + pad, e.pos.y + wh.y * (e.scale > 0 ? e.scale : 1.0f) + pad, e.pos.z + hw + pad);
             double t;

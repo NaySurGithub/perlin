@@ -616,8 +616,6 @@ namespace perlin {
 }
 
 namespace perlin {
-    // Hands raw input to the plugins that hold a grab, keeps the cursor free while one holds the mouse, and gives the
-    // keyboard back (and the game's chat / pause handling) when the last grab ends.
     void Perlin::PumpModInput(mods::ModManager& mm) {
         if (inputManager.TakeGrabFailsafe() && (mm.GrabsMouse() || mm.GrabsKeyboard())) {
             mm.ReleaseGrabs();

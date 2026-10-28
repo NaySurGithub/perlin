@@ -40,7 +40,6 @@ public:
 
     virtual void SetTitle(const std::string& title) { (void)title; }
 
-    // A small separate progress window (used by exports so nothing has to be drawn into the frames being captured).
     virtual bool HasProgressWindow() const { return false; }
     virtual void SetProgressWindow(bool visible, const std::string& title, const std::string& line1, const std::string& line2, float fraction) {
         (void)visible; (void)title; (void)line1; (void)line2; (void)fraction;
@@ -59,6 +58,8 @@ public:
     }
 
     virtual void SetClipboard(const std::string& text) { (void)text; }
+    virtual std::string GetClipboard() { return {}; }
+    virtual double DisplayRefreshHz() { return 0.0; }
     virtual void OpenUrl(const std::string& url) { (void)url; }
     virtual bool TakeSurfaceChanged() { return false; }
     virtual bool PickFile(const std::string& kind) { (void)kind; return false; }

@@ -1,10 +1,10 @@
-// Export dialog and keyframe editor panel (drawn with the generic settings panel).
 #include "client/Perlin.hpp"
 
 #include "client/input/Keys.hpp"
 #include "client/replay/LibavEncoder.hpp"
 #include "client/platform/AppPlatform.hpp"
 #include "client/ui/ReplayScreen.hpp"
+#include "client/ui/TextEdit.hpp"
 #include "util/Paths.hpp"
 
 #include <algorithm>
@@ -20,24 +20,6 @@ namespace perlin {
         using Clock = std::chrono::steady_clock;
         using ui::PanelRow;
 
-        void AppendUtf8(std::string& s, int cp) {
-            if (cp < 0x80) {
-                s += static_cast<char>(cp);
-            } else if (cp < 0x800) {
-                s += static_cast<char>(0xC0 | (cp >> 6));
-                s += static_cast<char>(0x80 | (cp & 0x3F));
-            } else {
-                s += static_cast<char>(0xE0 | (cp >> 12));
-                s += static_cast<char>(0x80 | ((cp >> 6) & 0x3F));
-                s += static_cast<char>(0x80 | (cp & 0x3F));
-            }
-        }
-        void PopUtf8(std::string& s) {
-            while (!s.empty() && (static_cast<unsigned char>(s.back()) & 0xC0) == 0x80)
-                s.pop_back();
-            if (!s.empty())
-                s.pop_back();
-        }
         std::string Num(double v, int decimals = 0) {
             char buf[48];
             std::snprintf(buf, sizeof buf, "%.*f", decimals, v);
@@ -66,7 +48,6 @@ namespace perlin {
             PanelRow r; r.kind = PanelRow::Kind::Button; r.id = id; r.label = label; r.enabled = enabled; return r;
         }
 
-        // "id:-" "id:+" "id:n" -> base id and direction; returns false if hover is not a cycle control.
         bool SplitCycle(const std::string& hover, std::string& base, int& dir) {
             if (hover.size() < 3 || hover[hover.size() - 2] != ':')
                 return false;
@@ -85,7 +66,6 @@ namespace perlin {
         }
     }
 
-    // ------------------------------------------------------------------ export dialog
     void Perlin::ExportOpenMenu() {
         LoadExportConfig();
         if (!exportUi.catQueried) {
@@ -138,7 +118,6 @@ namespace perlin {
             u.caret = !u.caret;
         }
 
-        // ---- field access ----
         const auto fieldValue = [&](const std::string& id) -> std::string {
             if (id == "ex_w") return std::to_string(c.width);
             if (id == "ex_h") return std::to_string(c.height);
@@ -190,16 +169,14 @@ namespace perlin {
             else if (id == "ex_extra") c.extraArgs = text;
         };
 
-        // ---- keys ----
         for (const auto& t : inputManager.TakeTyped()) {
             if (!t.character && t.key == Key::Escape) {
                 if (!u.focus.empty()) u.focus.clear();
                 else if (now - u.openedAt > std::chrono::milliseconds(120)) { closeMenu(); return true; }
             } else if (!u.focus.empty()) {
                 std::string& buf = u.text[u.focus];
-                if (!t.character && t.key == Key::Backspace) PopUtf8(buf);
-                else if (!t.character && (t.key == Key::Enter || t.key == Key::Tab)) u.focus.clear();
-                else if (t.character && t.key >= 32) AppendUtf8(buf, t.key);
+                if (!t.character && (t.key == Key::Enter || t.key == Key::Tab)) u.focus.clear();
+                else ui::TextEdit::Focused().Apply(t, buf);
                 if (!u.focus.empty()) commitField(u.focus, buf);
             }
         }
@@ -209,7 +186,6 @@ namespace perlin {
                 u.scroll = std::max(0, u.scroll - static_cast<int>(std::lround(wheel)));
         }
 
-        // ---- derived values ----
         const ffmpeg::Container* cont = ffmpeg::FindContainer(c.container);
         if (!cont) { c.container = "mp4"; cont = ffmpeg::FindContainer("mp4"); }
         const bool custom = c.container == "custom";
@@ -234,7 +210,6 @@ namespace perlin {
         for (size_t i = 0; i < FpsPresets().size(); i++)
             if (std::fabs(FpsPresets()[i] - c.fps) < 1e-3) fpsIdx = static_cast<int>(i);
 
-        // ---- build the panel ----
         ui::PanelModel m;
         m.title = "Export Replay";
         m.status = u.status.size() > 52 ? u.status.substr(0, 52) + "..." : u.status;
@@ -339,7 +314,6 @@ namespace perlin {
         h.Overlay().MouseMove(mx, my);
         h.UpdateOverlay(fbW, fbH, options.guiScale);
 
-        // ---- clicks ----
         const bool down = input.IsMouseDown(0);
         if (!down && u.leftDown && now - u.openedAt > std::chrono::milliseconds(150)) {
             const std::string hover = h.Overlay().OverlayHover();
@@ -436,7 +410,6 @@ namespace perlin {
         return true;
     }
 
-    // ------------------------------------------------------------------ keyframe editor
     bool Perlin::UpdateKeyframePanel(ui::Hud& h, int fbW, int fbH) {
         using namespace replay;
         KeyframeUi& k = kfUi;

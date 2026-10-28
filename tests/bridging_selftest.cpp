@@ -54,8 +54,6 @@ int main() {
         CHECK(!blockuse::IsUpperSlabPlacement(face, 0.5f));
         CHECK(blockuse::IsUpperSlabPlacement(face, 0.501f));
     }
-    // Each cardinal direction must produce an actual neighbouring cell, the
-    // matching Bedrock face, and a click on that side of the correct support.
     const std::array<glm::ivec3, 4> offsets{glm::ivec3(0, 0, -1), {0, 0, 1}, {-1, 0, 0}, {1, 0, 0}};
     for (int direction = 0; direction < 4; ++direction)
         for (int negative = 0; negative < 2; ++negative)
@@ -85,20 +83,16 @@ int main() {
     world.Solid({0, 0, 0});
     Request request = Looking({0.5, 1, 0.5}, {1.25, 1, 0.5});
     const auto baseline = world.Find(request);
-    CHECK(baseline && baseline->anchor.y == 0); // Previously the helper incorrectly looked at Y=-1.
+    CHECK(baseline && baseline->anchor.y == 0);
 
-    // The player's centre has crossed the edge; the remaining footprint still
-    // overlaps the old support. Jumping does not require onGround membership.
     for (double height : {1.0, 1.05, 1.25, 2.25, 2.5}) {
         const auto target = world.Find(Looking({1.1, height, 0.5}, {1.4, 1, 0.5}));
         CHECK(target && target->anchor == glm::ivec3(0) && target->destination == glm::ivec3(1, 0, 0));
     }
-    CHECK(!world.Find(Looking({1.31, 1, 0.5}, {1.5, 1, 0.5}))); // No actual support under the footprint.
+    CHECK(!world.Find(Looking({1.31, 1, 0.5}, {1.5, 1, 0.5})));
     CHECK(!world.Find(Looking({0.5, 2.51, 0.5}, {1.25, 1, 0.5})));
     CHECK(!world.Find(Looking({0.5, 0.9, 0.5}, {1.25, 1, 0.5})));
 
-    // A diagonal route needs a side-connected step; corner-only anchors cannot
-    // place a floating diagonal block. A neighbouring step supplies that face.
     CHECK(!world.Find(Looking({0.5, 1, 0.5}, {1.2, 1, 1.2})));
     world.Solid({1, 0, 0});
     const auto diagonal = world.Find(Looking({0.9, 1, 0.9}, {1.2, 1, 1.2}));
@@ -109,11 +103,11 @@ int main() {
     const auto slab = world.Find(Looking({0.5, 0.5, 0.5}, {1.25, 0.5, 0.5}));
     CHECK(slab && slab->anchor.y == 0 && std::abs(slab->point.y - 0.499) < 1e-6);
     request = Looking({1.1, 0.5, 0.5}, {1.4, 0.5, 0.5});
-    CHECK(!world.Find(request)); // A full block would enclose the player above a lower slab.
+    CHECK(!world.Find(request));
     const std::array slabShape{kSlab};
     request.placedShape = slabShape;
     request.horizontalSlab = true;
-    CHECK(world.Find(request).has_value()); // A lower slab only touches the player's feet.
+    CHECK(world.Find(request).has_value());
 
     world.Solid({0, 0, 0}, kCube);
     request = Looking({0.5, 1, 0.5}, {1.25, 1, 0.5});
@@ -125,19 +119,19 @@ int main() {
     request = Looking({1.1, 0.75, 0.5}, {1.4, 0.75, 0.5});
     request.placedShape = slabShape;
     request.horizontalSlab = true;
-    CHECK(!world.Find(request)); // The selected upper slab would overlap the player's feet.
+    CHECK(!world.Find(request));
 
     world = {};
     world.Solid({0, 0, 0}, {0.375, 0, 0.375, 0.625, 1.5, 0.625});
     const auto fence = world.Find(Looking({0.5, 1.5, 0.5}, {1.2, 1.5, 0.5}));
     CHECK(fence && fence->point.y <= 1 && fence->point.x == 0.625);
-    CHECK(!world.Find(Looking({1.0, 1.5, 0.5}, {1.4, 1.5, 0.5}))); // Narrow shape cannot support this footprint.
+    CHECK(!world.Find(Looking({1.0, 1.5, 0.5}, {1.4, 1.5, 0.5})));
 
     world = {};
     world.Solid({0, 0, 0});
     world.cells[{1, 0, 0}] = {false, true, false, {}};
     request = Looking({0.5, 1, 0.5}, {1.25, 1, 0.5});
-    CHECK(!world.Find(request)); // An unloaded destination is not air.
+    CHECK(!world.Find(request));
     world.Solid({1, 0, 0});
     CHECK(!world.Find(request));
     world.cells.erase({1, 0, 0});
@@ -145,10 +139,10 @@ int main() {
     CHECK(!world.Find(request));
     world.cells[{0, 0, 0}].loaded = true;
     world.cells[{0, 0, 0}].replaceable = true;
-    CHECK(!world.Find(request)); // Plants, liquids and other replaceable cells do not anchor a bridge.
+    CHECK(!world.Find(request));
     world.cells[{0, 0, 0}].replaceable = false;
     world.cells[{0, 0, 0}].interactive = true;
-    CHECK(!world.Find(request)); // Air use must not unexpectedly open an interactive support.
+    CHECK(!world.Find(request));
     request.sneaking = true;
     CHECK(world.Find(request).has_value());
     world.cells[{0, 0, 0}].interactive = false;
@@ -183,9 +177,6 @@ int main() {
     repeat.Reset();
     CHECK(repeat.Ready(1001, {1, 0, 0}, 42, false));
 
-    // Held-use routes span chunk borders and a moving/jumping footprint. Each
-    // predicted block becomes the next physical anchor; the target is recomputed
-    // on every frame rather than repeating one saved hit or stacking above it.
     for (int material : {0, 1, 2}) for (bool jumping : {false, true}) {
         World route;
         const physics::Box initial = material == 1 ? kSlab : material == 2 ? physics::Box{0, 0.5, 0, 1, 1, 1} : kCube;
@@ -196,8 +187,6 @@ int main() {
             const double x = 0.5 + tick * 0.27;
             const double y = initial.y1 + (jumping ? 1.25 * std::sin((tick % 12) * 3.141592653589793 / 12) : 0);
             auto move = Looking({x, y, 0.5}, {x + 0.85, initial.y1, 0.5});
-            // Keep yaw/pitch fixed throughout the jump, as a held-use player
-            // does; do not help the solver by tracking a point on the floor.
             move.direction = {0.85, -1.62, 0};
             if (material) {
                 move.placedShape = slabShape;

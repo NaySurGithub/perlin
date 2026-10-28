@@ -53,7 +53,6 @@ namespace perlin {
         void OnKeyRepeat(int key);
         void OnChar(int codepoint);
         void SetTextMode(bool on) { textMode = on; }
-        // Replays: clicking the window must not grab the mouse (the game grabs it explicitly instead).
         void SetFreeCursor(bool on) { freeCursor = on; }
         bool FreeCursor() const { return freeCursor; }
         bool TextMode() const { return textMode; }

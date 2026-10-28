@@ -6,8 +6,6 @@
 #include <vector>
 
 namespace perlin::physics::bds {
-    // Cache-region subtraction 0x140F924E0. Preserve its worklist order,
-    // split offset, merge tolerance and coordinate restoration order.
     inline std::vector<CollisionBox> CacheRegionDifference(const CollisionBox& query, const CollisionBox& cached) {
         const CollisionVector origin{query[0], query[1], query[2]};
         const CollisionVector extent{detail::Round(query[3] - origin[0]),

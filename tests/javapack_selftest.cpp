@@ -55,7 +55,6 @@ namespace {
 }
 
 int main() {
-    // ---- name translation, no files involved -------------------------------------------------------------------
     {
         const auto planks = javapack::Sources("textures/blocks/planks_big_oak.png");
         bool legacy = false, modern = false;
@@ -76,7 +75,6 @@ int main() {
     const fs::path tmp = fs::temp_directory_path() / "perlin_javapack_test";
     fs::remove_all(tmp);
 
-    // widgets.png: slot 3 (x 61..80) red, slot 0 green, selection box blue. icons.png: full heart (52,0) red, empty food yellow.
     Image widgets(256, 256);
     widgets.fill(0, 0, 182, 22, 0, 0, 0);
     widgets.fill(1, 0, 20, 22, 0, 200, 0);
@@ -97,7 +95,6 @@ int main() {
                                     {"assets/minecraft/textures/blocks/stone.png", stone.png()},
                                     {"pack.mcmeta", "{\"pack\":{\"pack_format\":1,\"description\":\"x\"}}"}};
 
-    // zip pack with a wrapper folder
     {
         mz_zip_archive zip{};
         const std::string path = (tmp / "packs/Java.zip").string();
@@ -108,7 +105,6 @@ int main() {
         mz_zip_writer_finalize_archive(&zip);
         mz_zip_writer_end(&zip);
     }
-    // the same pack unpacked as a folder
     for (const auto& f : files)
         WriteFile(tmp / "packs/JavaFolder" / f[0], f[1]);
 
@@ -117,25 +113,20 @@ int main() {
         std::string error;
         CHECK(pack.Open((tmp / "packs").string(), name, error));
         Texture t;
-        // modern name, found through the translation
         CHECK(pack.Load("textures/blocks/planks_oak.png", t) && t.width == 16 && Pixel(t, 3, 3, 150, 100, 50));
-        // identical legacy name
         CHECK(pack.Load("textures/blocks/stone.png", t) && t.width == 32);
-        // hotbar slots are cut out of widgets.png
         CHECK(pack.Load("textures/ui/hotbar_0.png", t) && t.width == 20 && t.height == 22 && Pixel(t, 5, 5, 0, 200, 0));
         CHECK(pack.Load("textures/ui/hotbar_3.png", t) && t.width == 20 && t.height == 22 && Pixel(t, 5, 5, 200, 0, 0));
         CHECK(pack.Load("textures/ui/selected_hotbar_slot.png", t) && t.width == 24 && t.height == 24 && Pixel(t, 10, 10, 0, 0, 200));
-        // icons.png sprites
         CHECK(pack.Load("textures/ui/heart.png", t) && t.width == 9 && t.height == 9 && Pixel(t, 4, 4, 250, 10, 10));
         CHECK(pack.Load("textures/ui/hunger_background.png", t) && t.width == 9 && Pixel(t, 0, 0, 250, 250, 10));
         CHECK(pack.Load("textures/ui/experience_bar_full.png", t) && t.width == 182 && t.height == 5);
-        CHECK(!pack.Load("textures/ui/armor_full.png", t) || t.width == 9); // sheet has nothing there, but it is still a 9x9 cut
+        CHECK(!pack.Load("textures/ui/armor_full.png", t) || t.width == 9);
         CHECK(pack.Has("textures/ui/heart.png"));
         CHECK(!pack.Has("textures/blocks/not_there.png"));
         CHECK(!pack.Load("textures/blocks/not_there.png", t));
     }
 
-    // a zip whose first entries belong to another namespace and whose textures sit inside a wrapper folder with a section sign
     {
         mz_zip_archive zip{};
         const std::string path = (tmp / "packs/Realms.zip").string();
@@ -154,10 +145,9 @@ int main() {
         CHECK(pack.Load("textures/blocks/planks_oak.png", t) && t.width == 16);
     }
 
-    // a high-resolution sheet scales the cut
     {
         Image big(512, 512);
-        big.fill(122, 0, 40, 44, 7, 8, 9); // slot 3 at 2x
+        big.fill(122, 0, 40, 44, 7, 8, 9);
         WriteFile(tmp / "packs/Big/assets/minecraft/textures/gui/widgets.png", big.png());
         WriteFile(tmp / "packs/Big/pack.mcmeta", "{}");
         std::string error;

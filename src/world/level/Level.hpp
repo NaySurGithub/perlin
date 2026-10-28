@@ -50,7 +50,6 @@ namespace perlin {
         void SetBiomeSection(int section, const uint8_t* cells);
 
         Chunk Clone() const;
-        // True when writing these cells would not change the section (used to skip needless remeshing).
         bool SectionEquals(int section, const uint16_t* cells, const uint16_t* liquidCells) const;
         bool BiomeSectionEquals(int section, const uint8_t* cells) const;
         size_t ApproxBytes() const;
@@ -126,16 +125,11 @@ namespace perlin {
         void SetBiomeSubChunk(int cx, int cz, int absSubY, const uint8_t* cells);
         void Clear();
 
-        // ---- undo log (replays): every chunk is copied once per epoch before its first change, so the
-        // world can be rewound to the start of any recent epoch without rebuilding or re-reading it.
         void EnableUndo(size_t capBytes);
         void SetEpoch(int64_t epoch) { currentEpoch.store(epoch); }
         int64_t Epoch() const { return currentEpoch.load(); }
-        // Reverts every change made at epoch >= `epoch`. False if the log no longer reaches that far.
-        // Chunks that did not exist yet are kept (extra terrain is harmless and avoids rebuilding it later).
         bool RewindTo(int64_t epoch);
         bool CanRewindTo(int64_t epoch) const;
-        // Moves all chunks (and the undo log) out of `other` into this level.
         void TakeFrom(Level& other);
 
     private:
@@ -146,7 +140,7 @@ namespace perlin {
             Chunk data;
             size_t bytes = 0;
         };
-        void LogBefore(const ChunkPos& pos); // call with `mutex` held, before changing/creating/removing a chunk
+        void LogBefore(const ChunkPos& pos);
         std::deque<UndoEntry> undo;
         std::unordered_map<ChunkPos, int64_t, ChunkPosHash> loggedEpoch;
         size_t undoBytes = 0, undoCap = 0;

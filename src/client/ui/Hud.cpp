@@ -1,7 +1,13 @@
 #include "client/ui/Hud.hpp"
 #include "client/ui/GuiScale.hpp"
 
+#include "client/ui/CreativeScreen.hpp"
+#include "client/ui/DeathScreen.hpp"
+#include "client/ui/DisconnectScreen.hpp"
 #include "client/ui/HudRenderers.hpp"
+#include "client/ui/InventoryScreen.hpp"
+#include "client/ui/LoadingScreen.hpp"
+#include "client/ui/PauseScreen.hpp"
 #include "client/ui/McFont.hpp"
 #include "client/ui/UiAssets.hpp"
 #include "client/ui/JavaDefaults.hpp"
@@ -79,6 +85,18 @@ namespace perlin::ui {
         std::cout << "[ui] font: " << UiAssets::Instance().LoadFont(dataDir) << std::endl;
         std::error_code ec;
         fs::create_directories(fs::path(dataDir) / "ui", ec);
+        {
+            uint64_t version = 0;
+            LoadUiTemplate(dataDir, "hud_screen.rml", DefaultHudTemplate(), version);
+            LoadUiTemplate(dataDir, "chat_screen.rml", DefaultChatTemplate(), version);
+            LoadUiTemplate(dataDir, "inventory_screen.rml", DefaultInventoryScreenTemplate(), version);
+            LoadUiTemplate(dataDir, "pause_screen.rml", DefaultPauseScreenTemplate(), version);
+            LoadUiTemplate(dataDir, "loading_screen.rml", DefaultLoadingScreenTemplate(), version);
+            LoadUiTemplate(dataDir, "disconnect_screen.rml", DefaultDisconnectScreenTemplate(), version);
+            LoadUiTemplate(dataDir, "creative_screen.rml", DefaultCreativeScreenTemplate(), version);
+            LoadDeathScreenTemplate(dataDir, version);
+            ExportScreenTemplates();
+        }
 
         services.textWidth = [](const std::string& text, float s) { return McFont::Instance().Width(text, s); };
         services.lineHeight = [](float s) { return static_cast<float>(McFont::kLineHeight) * s; };
@@ -239,6 +257,7 @@ namespace perlin::ui {
             if (vh != hudTemplateVersion || vc != chatTemplateVersion || templatesStale) {
                 hudTemplateVersion = vh;
                 chatTemplateVersion = vc;
+                emitter.SetElements(ParseElementMap(hudT));
                 emitter.SetTemplates(std::move(hudT), std::move(chatT));
                 lastSignature = 0;
                 templatesStale = false;

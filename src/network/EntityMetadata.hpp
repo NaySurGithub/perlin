@@ -3,8 +3,6 @@
 #include <type_traits>
 
 namespace perlin::net {
-    // Flag words must never pass through floating point: high flags can coexist
-    // with crouch/use-item bits below the precision of a double.
     inline bool MetadataInteger(const proto::MetadataDictionaryEntry& metadata, int64_t& out) {
         const auto integer = [&](const auto& value) {
             using T = std::decay_t<decltype(value)>;

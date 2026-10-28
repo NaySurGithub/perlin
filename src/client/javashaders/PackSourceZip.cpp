@@ -33,7 +33,6 @@ namespace perlin::jshader {
                         continue;
                     raw.emplace_back(NormalizePath(st.m_filename), i);
                 }
-                // Packs are usually zipped as "shaders/...", sometimes inside one extra top-level folder.
                 std::string prefix;
                 for (const auto& entry : raw) {
                     const size_t at = entry.first.find("shaders/");

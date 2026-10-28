@@ -44,21 +44,15 @@ static BlockShape Slab(double h) {
 }
 
 int main() {
-    // Received duration 40 at boundary 100 remains available to movement
-    // through tick 140; before tick 141 the cache observes boundary 140.
     CHECK(bds::StatusEffectTicksAt(40, 100, 100) == 40);
     CHECK(bds::StatusEffectTicksAt(40, 100, 139) == 1);
     CHECK(bds::StatusEffectTicksAt(40, 100, 140) == 0);
     CHECK(bds::StatusEffectTicksAt(40, 100, 150) == 0);
-    // Large finite durations must expire; the old wall-clock cache treated
-    // every duration >= 32767*20 as infinite.
     CHECK(bds::StatusEffectTicksAt(32767 * 20, 100, 100 + 32767 * 20) == 0);
     CHECK(bds::StatusEffectTicksAt(INT32_MAX, 0, UINT64_MAX) == 0);
     CHECK(bds::StatusEffectTicksAt(-1, 100, UINT64_MAX) == -1);
     Attributes attr;
 
-    // A shallow support/wall overlap within native pose-probe contraction
-    // must not force crouching; a real low ceiling must still reject standing.
     {
         TestWorld world;
         world.fn = [](int x, int y, int z) { return x == 1 && y == 1 && z == 0 ? Full() : BlockShape{}; };
@@ -76,8 +70,6 @@ int main() {
         CHECK(PoseFits(state, world, kSneakHeight));
     }
 
-    // A teleport filters travel/request production, but post-movement effect
-    // lifetimes still advance. The next eligible tick resumes ordinary gravity.
     {
         TestWorld air;
         air.fn = [](int, int, int) { return BlockShape{}; };
@@ -136,8 +128,6 @@ int main() {
         CHECK(Near(s.vy, -0.13022f, 1e-6));
     }
 
-    // Native scaffolding collision is admitted only from above, and the jump
-    // and keyboard descent actions replace vertical speed before movement.
     {
         TestWorld scaffold;
         scaffold.fn = [](int, int y, int) {
@@ -169,8 +159,6 @@ int main() {
         for (int i = 0; i < 10; ++i) Step(s, up, attr, scaffold);
         CHECK(Near(s.y, 1.5, 1e-6));
         CHECK(Near(s.vy, 0.0686, 1e-7) && s.jumpDelay == 9);
-        // MobJump accepts the ascendable-block flag independently of the
-        // scaffolding flag, including before an ordinary grounded jump.
         s = State{};
         s.x = s.z = 0.5;
         s.onGround = true;
@@ -196,7 +184,6 @@ int main() {
             if (x == 1 && z == 0 && y >= 1 && y <= 3) return Cell::Scaffold;
             return y <= 0 ? Cell::Other : Cell::Air;
         };
-        // The max horizontal endpoint participates even on a block boundary.
         auto contact = bds::SenseScaffolding({0.4f, 1.9f, 0.2f, 1, 3.7f, 0.8f}, readScaffold);
         CHECK(contact.inside && contact.ascendable && !contact.over && !contact.descendable);
         contact = bds::SenseScaffolding({0.4f, 2, 0.2f, 1, 3.8f, 0.8f}, readScaffold);
@@ -209,8 +196,6 @@ int main() {
         CHECK(contact.inside && !contact.ascendable && !contact.descendable);
     }
 
-    // A body spanning several bushes receives one accumulated multiplier,
-    // and an ordinary grounded jump is scaled on the following move.
     {
         TestWorld berries;
         berries.fn = [](int, int y, int) {
@@ -254,8 +239,6 @@ int main() {
         s.onGround = true;
         Step(s, Input{}, woven, berries);
         CHECK(s.stuckX == 0.5f && s.stuckY == 0.25f && s.stuckZ == 0.5f);
-        // Removing the effect changes the next contact record. This move
-        // still consumes the multiplier stored by the preceding tick.
         woven.weaving = false;
         s.vz = 1;
         Step(s, Input{}, woven, berries);
@@ -270,8 +253,6 @@ int main() {
         CHECK(s.stuckX == 0 && s.stuckY == 0 && s.stuckZ == 0);
     }
 
-    // Powder contact scales the following movement tick. Jump permission
-    // uses the stone support beneath the actor, not its powder-filled feet.
     {
         TestWorld powder;
         powder.fn = [](int, int y, int) {
@@ -341,12 +322,12 @@ int main() {
         CHECK(bds::FallDistanceAfterMove(3, -0.25f, false, true, false, true) == 3.25f);
         float distance = 7;
         bds::ResetClimbingFallDistance(distance, true, false, false, false, false);
-        CHECK(distance == 0); // Wall climbing bypasses the ordinary capability gate.
+        CHECK(distance == 0);
         distance = 7;
         bds::ResetClimbingFallDistance(distance, false, false, true, false, false);
-        CHECK(distance == 7); // A ladder alone does not grant climbing capability.
+        CHECK(distance == 7);
         bds::ResetClimbingFallDistance(distance, false, true, false, true, false);
-        CHECK(distance == 7); // Unsupported powder snow is not a climbing reset.
+        CHECK(distance == 7);
         bds::ResetClimbingFallDistance(distance, false, true, false, true, true);
         CHECK(distance == 0);
         float negativeZero = -0.0f;
@@ -364,8 +345,6 @@ int main() {
         CHECK(falling.fallDistance == 0.2f);
     }
 
-    // Lava sensing halves the component before the move's downward travel
-    // is accumulated. Leaving lava stops that decay.
     {
         TestWorld lava;
         uint8_t fluid = 2;
@@ -388,8 +367,6 @@ int main() {
         CHECK(!s.inLava && std::bit_cast<uint32_t>(s.fallDistance) == 0x40533332);
     }
 
-    // A ledge-clearance probe still overlaps water at its lower face. Shrinking
-    // it like ordinary immersion sensing incorrectly grants a step-out boost.
     {
         TestWorld ledge;
         ledge.fn = [](int, int y, int z) {
@@ -413,11 +390,9 @@ int main() {
         s.vz = 0.1;
         Step(s, Input{}, attr, ledge);
         CHECK(s.inWater && s.horizontalCollision);
-        CHECK(s.vy == static_cast<double>(0.3f)); // full probe now clears the water
+        CHECK(s.vy == static_cast<double>(0.3f));
     }
 
-    // Bubble actions run once per contacted cell after water drag/gravity.
-    // A standing actor spans two cells at integral feet and three between them.
     {
         TestWorld column;
         int8_t direction = 1;
@@ -494,8 +469,6 @@ int main() {
         CHECK(s.vy == 0);
     }
 
-    // Expanding the swim pose at a fluid surface must not change the fluid
-    // query already produced for that tick. The next tick uses the new pose.
     {
         TestWorld surface;
         surface.fn = [](int, int y, int) {
@@ -509,13 +482,11 @@ int main() {
         s.collisionHeight = static_cast<float>(kCrawlHeight);
         Step(s, Input{}, attr, surface);
         CHECK(s.inWater && !s.swimming);
-        CHECK(!TouchingWater(s, surface)); // current-pose intent must not reuse the cached flag
+        CHECK(!TouchingWater(s, surface));
         Step(s, Input{}, attr, surface);
         CHECK(!s.inWater);
     }
 
-    // Native item-use strength is squared after direction normalization.
-    // Check actual travel speed as well as diagonal and sneak composition.
     {
         const auto axial = ProcessMoveInput(1, 0, false, false, 0.35f);
         const auto diagonal = ProcessMoveInput(1, 1, false, false, 0.35f);
@@ -534,9 +505,6 @@ int main() {
         CHECK(Near(s.z - z, 4.317 * 0.1225, 0.003));
     }
 
-    // Native fluid-state callback integration: entry creates/overwrites the
-    // pending splash payload, continued immersion preserves it, exit clears
-    // the water flag, and each water update resets ordinary player fall distance.
     {
         TestWorld world;
         uint8_t fluid = 1;
@@ -555,8 +523,6 @@ int main() {
         state.waterSplashRequest = 7;
         state.fallDistance = 4;
         Step(state, Input{}, attr, world);
-        // Water sensing clears the preceding distance; CheckFallDamage then
-        // records this move's -0.005 displacement before the next sensing tick.
         CHECK(state.inWater && state.fallDistance == 0.005f && state.waterSplashRequest == 7);
         fluid = 2;
         Step(state, Input{}, attr, world);
@@ -568,8 +534,6 @@ int main() {
         Step(state, Input{}, attr, world);
         CHECK(!state.inWater && !state.inLava && state.waterSplashRequest == 1);
 
-        // LiquidBlocksFetch gives lava priority even while its separate water
-        // intersection result is true. An actor can span adjacent fluid cells.
         world.fn = [](int x, int, int) {
             BlockShape shape;
             shape.fluid = x < 1 ? 1 : 2;
@@ -582,8 +546,6 @@ int main() {
         Step(state, Input{}, attr, world);
         CHECK(!state.inWater && state.inLava && !state.waterSplashRequest);
 
-        // Body sensing uses cell material, independently of the rendered liquid
-        // surface. Here the contracted body starts above the shallow surface.
         world.fn = [](int, int y, int) {
             BlockShape shape;
             if (y == 0) {
@@ -599,8 +561,6 @@ int main() {
         CHECK(state.inWater && state.waterSplashRequest == 1);
     }
 
-    // Honey contact is applied after motion and before accumulated slowdown.
-    // The side contact resets fall distance and clamps downward velocity.
     {
         TestWorld honey;
         bool wet = false;
@@ -647,8 +607,6 @@ int main() {
         CHECK(Near(state.vx, 0.01456, 1e-8));
     }
 
-    // Optional jump-height presence is distinct from a supplied zero. Surface
-    // properties here are raw native masks, independent of block-name mapping.
     {
         TestWorld empty;
         empty.fn = [](int, int, int) { return BlockShape{}; };
@@ -692,8 +650,6 @@ int main() {
         CHECK(state.y == static_cast<double>(0.125f * 0.6f));
     }
 
-    // Slowdown activation is per-lane nonzero, including subnormals. It
-    // clears StateVector velocity before collision response and is consumed.
     {
         TestWorld empty;
         empty.fn = [](int, int, int) { return BlockShape{}; };
@@ -742,8 +698,6 @@ int main() {
         Step(state, input, attr, supportedWeb);
         CHECK(state.x > 0.2 && state.vx == 0);
         input.sneak = false;
-        // Contact processing also runs after flying movement, while flying
-        // with instabuild removes the multiplier in immunePlayer.
         input.flying = true;
         state = {};
         Step(state, input, attr, web);
@@ -760,8 +714,6 @@ int main() {
         CHECK(state.stuckX == 0 && state.stuckY == 0 && state.stuckZ == 0);
     }
 
-    // Independent values from the executed BDS vertical-motion fixture. These
-    // check that Step selects the verified callbacks, including metadata flags.
     {
         TestWorld empty;
         empty.fn = [](int, int, int) { return BlockShape{}; };
@@ -796,8 +748,6 @@ int main() {
         CHECK(state.fallDistance == 0);
     }
 
-    // BDS caps a movement request to 16 blocks, retaining StateVector velocity
-    // until collision response/friction. Clamping velocity itself loses motion.
     {
         TestWorld empty;
         empty.fn = [](int, int, int) { return BlockShape{}; };
@@ -815,9 +765,6 @@ int main() {
         CHECK(state.vx > 60.0);
     }
 
-    // FinalizeMoveSystem preserves collision membership during no-clip and
-    // consumes the nearby-mob tag. Its request flag preserves X/Z velocity
-    // independently of collision membership and subsequent friction.
     {
         TestWorld wall;
         wall.fn = [](int x, int, int) { return x == 1 ? Full() : BlockShape{}; };
@@ -829,8 +776,6 @@ int main() {
         Input input;
         input.gravity.hasGravity = false;
         Step(blocked, input, attr, wall);
-        // A nearby unavailable chunk contributes a preservation record even
-        // though this particular impact is against an ordinary loaded block.
         wall.ready = [](int x, int) { return x >= 0; };
         Step(preserved, input, attr, wall);
         CHECK(blocked.vx == 0);
@@ -866,12 +811,9 @@ int main() {
         gliding.gliding = true;
         gliding.movementEffects.push_back({42, 1, 0});
         Step(state, gliding, attr, empty);
-        // Independent G fixture: level glide, initial rest, active boost.
         CHECK(std::bit_cast<uint32_t>(static_cast<float>(state.vx)) == 0x339e264e);
         CHECK(std::bit_cast<uint32_t>(static_cast<float>(state.vy)) == 0xbc1081c7);
         CHECK(std::bit_cast<uint32_t>(static_cast<float>(state.vz)) == 0x3f57a6ee);
-        // The glide callback sets 1; the later fall check adds the resolved
-        // downward displacement from the independent G velocity fixture.
         CHECK(std::bit_cast<uint32_t>(state.fallDistance) == 0x3f812104);
         CHECK(state.movementEffects[0].type == -1);
         gliding.movementEffects.clear();
@@ -881,8 +823,6 @@ int main() {
         CHECK(state.previousRotation.pitch == -30 && state.previousRotation.yaw == 45);
     }
 
-    // Native unavailable-chunk walls preserve motion and cover the complete
-    // column, including heights outside Perlin's stored block range.
     {
         TestWorld loaded;
         loaded.fn = [](int, int, int) { return BlockShape{}; };
@@ -968,8 +908,6 @@ int main() {
     TestWorld flat;
     flat.fn = [](int, int y, int) { return y < 0 ? Full() : BlockShape{}; };
 
-    // BDS block handlers bounce at speeds below the old 0.08 cutoff and
-    // use StateVector velocity even when the move request was capped to 16.
     {
         TestWorld slime;
         slime.fn = [](int, int y, int) {
@@ -1009,8 +947,6 @@ int main() {
         CHECK(state.vy == 0.5);
         CHECK(!state.restitution);
 
-        // The player's center is over air, but the body lands on the edge of
-        // the adjacent slime block. Select the block from cached geometry.
         slime.fn = [](int x, int y, int) {
             auto block = x == 0 && y == -1 ? Full() : BlockShape{};
             block.surface = 1;
@@ -1103,7 +1039,7 @@ int main() {
         State t;
         in.sprint = true;
         Attributes sprintAttributes = attr;
-        sprintAttributes.speed *= 1.3f; // resolved by the sprint attribute producer
+        sprintAttributes.speed *= 1.3f;
         for (int i = 0; i < 60; i++)
             Step(t, in, sprintAttributes, flat);
         const double t0 = t.z;
@@ -1217,7 +1153,6 @@ int main() {
             Step(s, in, attr, edge);
         CHECK(Near(s.y, 0.0, 1e-6));
         CHECK(s.z < 1.31);
-        // ActorDataFlag 6 (TEMPTED) bypasses the native sneak edge filter.
         s = {};
         s.x = s.z = 0.5;
         s.onGround = true;
@@ -1263,7 +1198,6 @@ int main() {
         enchanted.waterWalkSpeedEnchant = 3;
         Step(state, Input{}, enchanted, water);
         CHECK(state.inWater);
-        // Airborne enchantment drag: independent native W fixture result.
         CHECK(std::bit_cast<uint32_t>(static_cast<float>(state.vx)) == 0x3e90b8d0);
         state = {};
         Input swimming;
@@ -1271,8 +1205,6 @@ int main() {
         Step(state, swimming, attr, water);
         CHECK(state.vy == 0);
 
-        // SwimControl's failed positive-look liquid predicate explicitly
-        // clears upward velocity; retaining it launches the actor at a surface.
         State surfaceControl;
         surfaceControl.swimming = true;
         surfaceControl.collisionHeight = static_cast<float>(kCrawlHeight);
@@ -1286,8 +1218,6 @@ int main() {
         Step(surfaceControl, positiveLook, attr, water);
         CHECK(surfaceControl.vy > 0 && surfaceControl.y > 0);
 
-        // The native swim-control view excludes jumping actors. Pitch must not
-        // steer a liquid jump's vertical impulse, including across repeated ticks.
         State lookingUp, lookingDown;
         Input jumpUp = swimming, jumpDown = swimming;
         jumpUp.jump = jumpDown.jump = true;
@@ -1300,8 +1230,6 @@ int main() {
             CHECK(lookingUp.y == lookingDown.y && lookingUp.vy == lookingDown.vy);
         }
 
-        // Live BDS swim-entry trace: the first liquid jump moves 0.035,
-        // transition ticks hold that height, and tick 14 reaches ~193.363.
         State enteringSwim;
         enteringSwim.y = 193;
         enteringSwim.vy = -0.005f;
@@ -1335,8 +1263,6 @@ int main() {
         CHECK(headAboveWater.inWater && headAboveWater.vy == 0);
         CHECK(Near(headAboveWater.y, 0.65, 0.000001));
 
-        // A swimming player can pass through a one-block-high submerged tunnel.
-        // The standing player must collide with the same ceiling edge.
         TestWorld tunnel;
         tunnel.fn = [](int, int y, int z) {
             if (y < 0 || (z >= 2 && y == 1)) return Full();
@@ -1356,9 +1282,6 @@ int main() {
         CHECK(lowPose.z > 2.5);
         CHECK(standing.z < 1.71 && standing.horizontalCollision);
 
-        // Timed dolphin boosts enter through recorded input and persist in the
-        // state used for prediction replay. A one-tick boost affects this move
-        // before the post-movement expiry pass.
         state = {};
         swimming.forward = 1;
         swimming.movementEffects.push_back({42, 1, 1});
@@ -1371,8 +1294,6 @@ int main() {
         CHECK(replay.z == state.z && replay.vz == state.vz);
         CHECK(replay.movementEffects[1].type == state.movementEffects[1].type);
 
-        // BDS accepts a zero underwater attribute; it must not be replaced by
-        // a default speed, and an absent optional attribute also selects zero.
         Attributes stopped;
         stopped.underwaterSpeed = 0;
         state = {};
@@ -1449,7 +1370,6 @@ int main() {
             CHECK(original.y == replay.y && original.vy == replay.vy);
             CHECK(original.z == replay.z && original.vz == replay.vz);
         }
-        // Zero ability values must stop acceleration rather than restore defaults.
         flightAttr.flySpeed = flightAttr.verticalFlySpeed = 0;
         original = {};
         original.y = 20;

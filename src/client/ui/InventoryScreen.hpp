@@ -31,7 +31,7 @@ namespace perlin::ui {
         bool horse = false;
         int horseChest = 0;
         std::array<HudItem, 17> horseItems;
-        int chestRows = 0;  // 3 for a chest/barrel/shulker box, 6 for a double chest
+        int chestRows = 0;
         std::array<HudItem, 54> chestItems;
         bool advancedTooltips = false;
     };
@@ -48,6 +48,8 @@ namespace perlin::ui {
 
     std::string DefaultInventoryScreenTemplate();
     std::string BuildInventoryScreenRml(const std::string& templateText, const InventoryView& view, int guiW, int guiH);
+    std::string InventoryCursorRml(const InventoryView& view);
+    std::string InventoryTooltipRml(const InventoryView& view, int guiW, int guiH);
     std::string PrettyItemName(const std::string& id);
     int InventoryAddrFromId(const std::string& id);
 }

@@ -1,4 +1,5 @@
 #include "client/ui/PluginLayer.hpp"
+#include "client/ui/UiTemplate.hpp"
 
 #include "client/ui/FormatCodes.hpp"
 #include "client/ui/RmlEmit.hpp"
@@ -110,11 +111,18 @@ namespace perlin::ui {
         }
     }
 
+    namespace {
+        const char* kPluginLayerHead =
+            "<rml>\n<head>\n<title>plugins</title>\n<style>\n"
+            "body { position: absolute; left: 0px; top: 0px; width: {{w}}px; height: {{h}}px; margin: 0; padding: 0; background: transparent; overflow: hidden; }\n"
+            "div, mcimg, mcitem { display: block; position: absolute; }\n</style>\n</head>\n<body>\n";
+        const ScreenTemplateDefault kPluginLayerDefault("plugin_layer.rml", kPluginLayerHead);
+    }
+
     std::string BuildPluginLayerRml(const std::vector<mods::UiLayer>& layers, int guiW, int guiH) {
-        std::string out = "<rml>\n<head>\n<title>plugins</title>\n<style>\nbody { position: absolute; left: 0px; top: 0px; width: " + std::to_string(guiW) +
-                          "px; height: " + std::to_string(guiH) +
-                          "px; margin: 0; padding: 0; background: transparent; overflow: hidden; }\n"
-                          "div, mcimg, mcitem { display: block; position: absolute; }\n</style>\n</head>\n<body>\n";
+        std::string out = ScreenTemplate("plugin_layer.rml", kPluginLayerHead);
+        ReplaceAll(out, "w", std::to_string(guiW));
+        ReplaceAll(out, "h", std::to_string(guiH));
         for (const mods::UiLayer& layer : layers)
             Emit(layer, out);
         out += "</body>\n</rml>\n";

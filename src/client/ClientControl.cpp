@@ -26,7 +26,6 @@ namespace perlin {
         uint64_t nextId = 0;
         std::atomic<bool> frameRequested{false};
         std::string token;
-        // Latest-frame-wins JPEG encoding off the render thread.
         std::thread encoder;
         std::mutex encodeMutex;
         std::condition_variable encodeReady;
@@ -62,9 +61,6 @@ namespace perlin {
         if (port < 1024 || port > 65535 || impl->thread.joinable()) return false;
         auto& p = *impl;
         p.token = RandomToken();
-        // This opt-in localhost control server favors response time over socket
-        // reuse. Idle persistent requests can take hundreds of milliseconds on
-        // macOS; reconnecting keeps state/input polling responsive.
         p.server.set_keep_alive_max_count(1);
         p.server.set_payload_max_length(65536);
         p.server.set_pre_routing_handler([port, &p](const httplib::Request& req, httplib::Response& res) {
@@ -77,8 +73,6 @@ namespace perlin {
                 res.status = 403;
                 return httplib::Server::HandlerResponse::Handled;
             }
-            // Every route needs the startup token. The page accepts it as a query
-            // parameter so the printed URL opens directly; it then sends the header.
             const auto token = req.has_header("X-Perlin-Token") ? req.get_header_value("X-Perlin-Token")
                 : req.path == "/" ? req.get_param_value("token") : std::string();
             if (!SameToken(token, p.token)) {
@@ -146,7 +140,6 @@ namespace perlin {
             res.status = 202;
             res.set_content("{\"id\":" + std::to_string(c.id) + "}", "application/json");
         });
-        // Bind before starting the thread so startup failure is reported reliably.
         if (!p.server.bind_to_port("127.0.0.1", port)) return false;
         p.stopEncoder = false;
         p.encoder = std::thread([&p] {
@@ -210,8 +203,6 @@ namespace perlin {
                 rgb[dst] = row[x * 4 + 2]; rgb[dst + 1] = row[x * 4 + 1]; rgb[dst + 2] = row[x * 4];
             }
         }
-        // Only the copy happens on the render thread; a newer frame replaces one
-        // still waiting for the encoder.
         {
             std::lock_guard lock(impl->encodeMutex);
             impl->pendingRgb = std::move(rgb);

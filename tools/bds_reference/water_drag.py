@@ -40,7 +40,6 @@ def generate(data):
                                                  [0, HEAP + 0x100, HEAP + 0x200,
                                                   HEAP + 0x300, HEAP + 0x400,
                                                   HEAP + 0x500, HEAP + 0x600])
-                            # Two entity handles, each with a sparse pool for entity 0.
                             for handle, pool, present in ((0x100, 0x1000, grounded),
                                                           (0x200, 0x2000, custom is not None)):
                                 machine.qword(HEAP + handle, HEAP + pool)
@@ -54,7 +53,6 @@ def generate(data):
                             machine.put(HEAP + 0x400, [bits(multiplier)])
                             machine.put(HEAP + 0x500, [level & 0xFFFFFFFF])
                             machine.put(HEAP + 0x618, velocity)
-                            # Enchant registry slot 7, object ID 7, real vtable method.
                             machine.qword(0x1473FF070, HEAP + 0x7000)
                             machine.qword(HEAP + 0x7038, HEAP + 0x7100)
                             machine.qword(HEAP + 0x7100, HEAP + 0x7200)

@@ -107,7 +107,6 @@ namespace perlin {
             return static_cast<uint8_t>(v >= 7 ? v + 2 : v);
         }
 
-        // Set under statusMutex when a chest-like container opens; every request is built under the same lock.
         ContainerSlotType gChestSlotType = ContainerSlotType::Container;
 
         void Address(StackRequestSlotInfo& s, int a, const ItemV4& raw) {
@@ -265,7 +264,6 @@ namespace perlin {
                 if (invInFlight.size() >= 8)
                     return;
                 if (invQueue.empty()) {
-                    // Closing waits for every answer so the server doesn't drop requests for a closed container.
                     if (!invCloseWanted || !invInFlight.empty())
                         return;
                     invCloseWanted = false;
@@ -285,7 +283,6 @@ namespace perlin {
                     std::copy(std::begin(horseRaw), std::end(horseRaw), std::begin(snapshot.horse));
                     gChestSlotType = chestSlotType;
                     if (legacyInventory) {
-                        // No response comes back on these servers: send the slot changes and move on.
                         if (op(r) && !r.actions.empty())
                             SendLegacyInventoryLocked(snapshot);
                         continue;
@@ -352,7 +349,6 @@ namespace perlin {
                     di.count = n;
                     dr.count = static_cast<uint16_t>(n);
                     if (n != si.count) {
-                        // A split stack has no server id yet; later requests refer to it by this request's id.
                         dr.stackId = r.requestId;
                         dr.hasStackId = true;
                     }
@@ -843,8 +839,7 @@ namespace perlin {
                 continue;
             int window = 0, slot = 0;
             if (!place(a, window, slot))
-                return false;  // crafting results and the like need the item stack protocol
-            // Legacy servers don't track stack ids; a split stack only has our local placeholder.
+                return false;
             if (now.hasStackId && now.stackId.value_or(0) <= 0) {
                 now.hasStackId = false;
                 now.stackId.reset();

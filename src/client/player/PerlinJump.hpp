@@ -14,8 +14,6 @@ namespace perlin::physics::bds {
     };
 
     struct JumpParameters {
-        // LavaSlimeJumpRequest selects the alternate callback; SquidJumpRequest
-        // forces the low ordinary height. Native request production is separate.
         bool alternate = false;
         float bodyMinimumY = 0;
         Float3 position{};
@@ -27,7 +25,6 @@ namespace perlin::physics::bds {
         bool forceLowHeight = false;
         std::optional<float> customHeight;
         std::optional<int32_t> effectAmplifier;
-        // Resolved type-2 integer in SynchedActorData slot 2.
         std::optional<int32_t> syncedJumpLevel;
         std::optional<TriggerJumpRequest> existingTrigger;
     };
@@ -38,9 +35,6 @@ namespace perlin::physics::bds {
         TriggerJumpRequest trigger;
     };
 
-    // Complete callbacks 0x140EAFAF0 and 0x140EAFFD0 after their ECS selection.
-    // The query supplies BlockLegacy properties; optional providers are resolved
-    // independently by the caller, including absence versus a supplied zero.
     template<class Query>
     JumpResult GroundJump(const JumpParameters& input, Query&& query) {
         BlockPosition position{FloorBlockCoordinate(input.position.x),

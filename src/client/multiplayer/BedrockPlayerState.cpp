@@ -175,8 +175,6 @@ namespace perlin {
     int BedrockSession::WaterWalkSpeedEnchant() const {
         std::lock_guard lock(statusMutex);
         int level = 0;
-        // BDS 0x140DF7F90 takes the maximum enchantment 7 level over the
-        // armor container. The numerical callback clamps it to its limit.
         for (const auto& item : inventory.armor)
             for (const auto& [id, enchantLevel] : item.enchants)
                 if (id == 7)
@@ -206,7 +204,6 @@ namespace perlin {
     }
 
     bool BedrockSession::SendSwingArm(const char* source) {
-        // Vanilla ignores a new swing until the current one is half done (3 of 6 ticks).
         const auto now = std::chrono::steady_clock::now();
         if (now - lastSwingAt < std::chrono::milliseconds(150))
             return false;
@@ -411,9 +408,6 @@ namespace perlin {
             store(p.windowId, p.container, static_cast<int>(p.slot), std::vector<ItemV4>{p.item}, false);
         });
 
-        // Some servers (including play.venitymc.com) hand out picked-up items with a server-to-client
-        // inventory_transaction instead of inventory_slot. Without this the new stack is never stored, so
-        // it stays invisible in the hotbar/inventory until a later request makes the server resend it.
         On<InventoryTransactionPacket>([store](const InventoryTransactionPacket& p) {
             static int logged = 0;
             if (logged < 12) {
@@ -468,7 +462,6 @@ namespace perlin {
                     if (r.status == ItemStackResponsesEntryStatus::Ok)
                         before = snap->second;
                     else {
-                        // Predictions made after the rejected request built on it, so they are discarded too.
                         invSnapshots.erase(invSnapshots.begin(), snap);
                         const int selected = inventory.selected;
                         inventory = snap->second.view;
@@ -481,7 +474,6 @@ namespace perlin {
                     invSnapshots.erase(snap);
                 }
                 invInFlight.erase(r.requestId);
-                // A newer request is still predicted on top of this one; its own answer carries the final slots.
                 const bool newerPending = !invSnapshots.empty() && invSnapshots.begin()->first < r.requestId;
                 if (r.status != ItemStackResponsesEntryStatus::Ok || !r.containers || newerPending)
                     continue;
@@ -709,7 +701,6 @@ namespace perlin {
                 w = ItemStackInfo{};
             if (p.server) {
                 serverClosedInventory = true;
-                // Vanilla acknowledges a server-initiated close, otherwise the server keeps the window open.
                 ContainerClosePacket ack = p;
                 ack.server = false;
                 Send(ack);
@@ -772,7 +763,6 @@ namespace perlin {
         On<MovementEffectPacket>([this](const MovementEffectPacket& p) {
             if (runtimeId == 0 || p.runtimeId != runtimeId)
                 return;
-            // Audited BDS MovementEffectType: GLIDE_BOOST=0, DOLPHIN_BOOST=1.
             const auto type = static_cast<uint32_t>(p.effectType);
             if (type > 1)
                 return;

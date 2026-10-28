@@ -39,7 +39,6 @@ namespace perlin::ui {
         void MouseMove(float guiX, float guiY);
         std::string OverlayHover() const;
         bool OverlayHoverIsButton() const;
-        // Sound of the hovered button (its sound_name / sound_volume / sound_pitch). Returns false if none is hovered.
         bool OverlayHoverSound(std::string& name, float& volume, float& pitch) const;
         std::string HoverLink() const;
         void Update();

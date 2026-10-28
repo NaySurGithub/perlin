@@ -189,7 +189,6 @@ namespace perlin::i18n {
                         out += args[index - 1];
                     i = j + 1;
                 } else if (index >= 1 && index <= args.size()) {
-                    // Bedrock's own strings use bare %1, %2.
                     out += args[index - 1];
                     i = j - 1;
                 } else {

@@ -161,7 +161,7 @@ int main(int argc, char** argv) {
     State state;
     TraceWorld world;
     Attributes attr;
-    attr.currentMovementMath = false; // Historical Windows BDS 1.26.10 trace profile.
+    attr.currentMovementMath = false;
     Input input;
     Expect prev{};
     bool havePrev = false;
@@ -280,8 +280,6 @@ int main(int argc, char** argv) {
                     state.box = prev.box;
             }
             Attributes resolvedAttributes = attr;
-            // --use-speed consumes a trace's resolved movement attribute.
-            // The legacy default instead supplies base 0.1 plus sprint intent.
             if (!opt.useSpeed)
                 resolvedAttributes.speed *= input.sprint ? 1.3f : 1.0f;
             Step(state, input, resolvedAttributes, world);

@@ -43,7 +43,7 @@ namespace perlin {
                     p.x = ev.x;
                     p.y = ev.y;
                     if (!pluginEvents.empty() && pluginEvents.back().type == PluginInput::Type::Move)
-                        pluginEvents.back() = p; // only the latest position matters
+                        pluginEvents.back() = p;
                     else
                         pluginEvents.push_back(p);
                     continue;
@@ -100,7 +100,7 @@ namespace perlin {
                 if (ev.type == InputEvent::Char)
                     typed.push_back({true, ev.key, false});
                 else if (ev.type == InputEvent::KeyDown || ev.type == InputEvent::KeyRepeat)
-                    typed.push_back({false, ev.key, input.IsKeyDown(Key::Control)});
+                    typed.push_back({false, ev.key, input.IsKeyDown(Key::Control), input.IsKeyDown(Key::Shift)});
                 continue;
             }
             if (ev.type == InputEvent::KeyDown) {

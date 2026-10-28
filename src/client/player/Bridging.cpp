@@ -128,8 +128,6 @@ namespace perlin::bridging {
 
     bool PlacementRepeat::Ready(uint64_t now, glm::ivec3 destination, uint32_t item, bool pressed) const {
         if (pressed || !active || now < at) return true;
-        // A target changing because of the first predicted placement is not
-        // another click. Debounce the initial hold before fast bridge repeats.
         if (now - firstAt < 200u) return false;
         const bool same = destination == lastDestination && item == lastItem;
         return now - at >= (same ? 200u : 50u);

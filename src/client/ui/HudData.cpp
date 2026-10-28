@@ -76,21 +76,35 @@ namespace perlin::ui {
         if (name == "#hud_subtitle_text_string") return set(Json(s.subtitle));
         if (name == "#tooltip_visible") return set(B(!s.itemName.empty()));
         if (name == "#status_effects_visible") return set(B(hud && !s.effects.empty()));
-        if (name == "#scoreboard_sidebar_visible") return set(B(false));
+        if (name == "#scoreboard_sidebar_visible") return set(B(s.visible && s.scoreboard));
+        if (name == "#objective_sidebar_name") return set(Json(s.scoreboardTitle));
+        if (name == "#scoreboard_sidebar_size") return set(N(static_cast<double>(s.scoreboardRows.size())));
+        if (name == "#objective_background_opacity") return set(N(0.3));
+        if (name == "#scoreboard_objective_background_opacity") return set(N(0.4));
         if (name == "#interact_visible") return set(B(false));
         if (name == "#hud_text_background_alpha") return set(N(0.5));
         return false;
     }
 
     int HudData::CollectionSize(const std::string& collection) const {
+        if (collection == "scoreboard_players" || collection == "scoreboard_scores")
+            return static_cast<int>(s.scoreboardRows.size());
         return collection == "hotbar_items" ? 9 : 0;
     }
 
     bool HudData::CollectionValue(const std::string& collection, int index, const std::string& binding, Json& out) const {
+        const auto set = [&](Json v) { out = std::move(v); return true; };
+        if (collection == "scoreboard_players" || collection == "scoreboard_scores") {
+            if (index < 0 || static_cast<size_t>(index) >= s.scoreboardRows.size())
+                return false;
+            const auto& row = s.scoreboardRows[static_cast<size_t>(index)];
+            if (binding == "#player_name_sidebar") return set(Json(row.first));
+            if (binding == "#player_score_sidebar") return set(Json(std::to_string(row.second)));
+            return false;
+        }
         if (collection != "hotbar_items" || index < 0 || index >= 9)
             return false;
         const HudItem& item = s.hotbar[index];
-        const auto set = [&](Json v) { out = std::move(v); return true; };
         if (binding == "#slot_selected") return set(B(index == s.selectedSlot));
         if (binding == "#hotbar_visible") return set(B(s.visible));
         if (binding == "#item_id_aux") return set(N(item.Empty() ? 0 : 1));
@@ -108,7 +122,12 @@ namespace perlin::ui {
 
     std::vector<FactoryItem> HudData::Factory(const std::string& name) const {
         std::vector<FactoryItem> items;
-        if (name == "item_text_factory") {
+        if (name == "player_list_factory" || name == "player_score_factory") {
+            const bool players = name == "player_list_factory";
+            for (size_t i = 0; i < s.scoreboardRows.size(); i++)
+                items.push_back({players ? "scoreboard_sidebar_player" : "scoreboard_sidebar_score", {},
+                                 players ? "scoreboard_players" : "scoreboard_scores", static_cast<int>(i)});
+        } else if (name == "item_text_factory") {
             if (s.visible && !s.itemName.empty() && s.itemNameAlpha > 0.0f)
                 items.push_back({"item_text", {}});
         } else if (name == "hud_actionbar_text_factory") {
@@ -197,6 +216,14 @@ namespace perlin::ui {
                 mixs(t.name);
                 mixs(t.headKey);
             }
+        mix(s.scoreboard);
+        if (s.scoreboard) {
+            mixs(s.scoreboardTitle);
+            for (const auto& row : s.scoreboardRows) {
+                mixs(row.first);
+                mix(static_cast<uint64_t>(static_cast<int64_t>(row.second)));
+            }
+        }
         mix(s.debug);
         if (s.debug) {
             for (const std::string& l : s.debugLeft) mixs(l);
@@ -210,6 +237,7 @@ namespace perlin::ui {
         if (s.chatOpen) {
             mixs(s.chatInput);
             mix(static_cast<uint64_t>(s.chatCaret));
+            mix(static_cast<uint64_t>(s.chatSelStart) | (static_cast<uint64_t>(s.chatSelEnd) << 32));
             mix(s.chatCaretVisible);
             for (const std::string& g : s.chatSuggestions)
                 mixs(g);

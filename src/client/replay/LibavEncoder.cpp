@@ -87,7 +87,6 @@ namespace perlin::replay::ffmpeg {
             headerWritten = false;
         }
 
-        // Drain encoder output into the muxer.
         int Drain(std::string& error) {
             for (;;) {
                 const int r = avcodec_receive_packet(ctx, packet);

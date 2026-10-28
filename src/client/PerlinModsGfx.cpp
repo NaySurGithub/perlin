@@ -1,5 +1,3 @@
-// Draws the raw draw lists plugins submit with Op::GfxSubmit (see mods/sdk/perlin/gfx.hpp) and keeps the GPU copies of
-// their textures in step with what they uploaded. The lists were validated when they arrived, so indices are in range.
 #include "client/Perlin.hpp"
 
 #include "client/mods/ModManager.hpp"
@@ -15,7 +13,6 @@ namespace perlin {
         if (!renderer)
             return;
 
-        // GPU copies of the plugins' textures: created when first seen, re-created when the plugin updated them, dropped when gone.
         {
             std::unordered_set<std::string> seen;
             for (const mods::GfxTexture& t : mm.GfxTextures()) {

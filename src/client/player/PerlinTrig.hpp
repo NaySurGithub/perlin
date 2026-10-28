@@ -25,8 +25,6 @@ namespace perlin::physics::bds {
             return Round(signedReduced + Round(Round(square * polynomial) * signedReduced));
         }
 
-        // Scalar form of the BDS vector sinf reduction for |angle| > 10000.
-        // Products/carries deliberately wrap at 32 bits, matching SIMD lanes.
         inline float SineLarge(float angle) {
             const uint32_t raw = std::bit_cast<uint32_t>(angle);
             const uint32_t exponent = (raw >> 23) & 255u;
@@ -98,7 +96,6 @@ namespace perlin::physics::bds {
         }
     }
 
-    // BDS bundled vector sinf, 0x146251EA0 / 0x1462527E0, one scalar lane.
     inline float Sine(float angle) {
         const uint32_t raw = std::bit_cast<uint32_t>(angle);
         const uint32_t absolute = raw & 0x7fffffffu;
@@ -114,8 +111,6 @@ namespace perlin::physics::bds {
         float sine, cosine;
     };
 
-    // The actual __libm_sse2_sincosf_ wrapper, 0x146251E30. The cosine lane
-    // uses rounded |angle| + pi/2 rather than a separate host cosf operation.
     inline SineCosine SinCos(float angle) {
         const uint32_t absoluteBits = std::bit_cast<uint32_t>(angle) & 0x7fffffffu;
         if (absoluteBits > 0x7f800000u)

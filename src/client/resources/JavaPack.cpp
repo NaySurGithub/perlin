@@ -32,7 +32,6 @@ namespace perlin::javapack {
             out.push_back({std::move(path), x0, y0, x1, y1});
         }
 
-        // A sprite inside a 256x256 legacy sheet.
         void AddSheet(std::vector<Source>& out, const char* sheet, int x, int y, int w, int h) {
             Add(out, sheet, x / 256.0f, y / 256.0f, (x + w) / 256.0f, (y + h) / 256.0f);
         }
@@ -41,7 +40,6 @@ namespace perlin::javapack {
             int x, y, w, h;
         };
 
-        // ---- colours and woods --------------------------------------------------------------------------------
         const char* const kColors[] = {"white", "orange", "magenta", "light_blue", "yellow", "lime", "pink", "gray",
                                        "silver", "cyan", "purple", "blue", "brown", "green", "red", "black"};
         const char* const kWoods[] = {"oak", "spruce", "birch", "jungle", "acacia", "big_oak"};
@@ -102,7 +100,6 @@ namespace perlin::javapack {
             return map;
         }
 
-        // planks_oak -> oak_planks, wool_colored_red -> red_wool, ...
         std::string ModernBlockRule(const std::string& name) {
             const auto afterPrefix = [&](std::string_view prefix) -> std::string_view {
                 return StartsWith(name, prefix) ? std::string_view(name).substr(prefix.size()) : std::string_view();
@@ -172,13 +169,11 @@ namespace perlin::javapack {
             return {};
         }
 
-        // ---- the HUD ------------------------------------------------------------------------------------------
-        // Pieces of the Java 256x256 widgets.png / icons.png. Bedrock draws each as its own image.
         struct HudSprite {
-            const char* name;     // textures/ui/<name>
-            const char* sheet;    // legacy sheet
-            Rect rect;            // in the 256x256 sheet
-            const char* sprite;   // current-version sprite under gui/sprites/, or null
+            const char* name;
+            const char* sheet;
+            Rect rect;
+            const char* sprite;
         };
 
         const HudSprite kHud[] = {
@@ -228,7 +223,10 @@ namespace perlin::javapack {
         };
 
         bool Hud(const std::string& name, std::vector<Source>& out) {
-            // The nine hotbar slots are cut from the single 182x22 strip: a one pixel border, nine 20 pixel slots, a border.
+            if (StartsWith(name, "panorama_") && name.size() == 10 && name[9] >= '0' && name[9] <= '5') {
+                Add(out, "textures/gui/title/background/" + name + ".png");
+                return true;
+            }
             if (StartsWith(name, "hotbar_") && name.size() == 8 && name[7] >= '0' && name[7] <= '8') {
                 const int slot = name[7] - '0';
                 Add(out, "textures/gui/sprites/hud/hotbar.png", (1 + 20 * slot) / 182.0f, 0, (21 + 20 * slot) / 182.0f, 1);
@@ -241,8 +239,6 @@ namespace perlin::javapack {
                 AddSheet(out, "textures/gui/widgets.png", start ? 0 : 181, 0, 1, 22);
                 return true;
             }
-            // Server list ping bars: icons.png holds five levels (best first) at y=176, 8px apart, an "unreachable" one at 216,
-            // and the "pinging" sweep in the second column.
             if (StartsWith(name, "ping_anim_") && name.size() == 11 && name[10] >= '0' && name[10] <= '4') {
                 AddSheet(out, "textures/gui/icons.png", 10, 176 + 8 * (name[10] - '0'), 10, 8);
                 return true;
@@ -252,7 +248,6 @@ namespace perlin::javapack {
                 AddSheet(out, "textures/gui/icons.png", 0, 176 + 8 * level, 10, 8);
                 return true;
             }
-            // Whole screens and widgets the client draws from its own images: the inventory family and the menu buttons.
             if (StartsWith(name, "screen_")) {
                 const std::string n = name.substr(7);
                 if (n == "inventory") AddSheet(out, "textures/gui/container/inventory.png", 0, 0, 176, 166);
@@ -326,7 +321,6 @@ namespace perlin::javapack {
         } else if (path == "font/default8" || path == "textures/font/default8") {
             Add(out, "textures/font/ascii.png");
         } else if (const std::string n4 = after("textures/models/armor/"); !n4.empty()) {
-            // Bedrock iron_1 / iron_2, Java iron_layer_1 / iron_layer_2.
             const size_t us = n4.rfind('_');
             if (us != std::string::npos && us + 2 == n4.size() && (n4.back() == '1' || n4.back() == '2')) {
                 std::string material = n4.substr(0, us);

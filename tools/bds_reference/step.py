@@ -112,7 +112,6 @@ def generate(data):
                 shapes.append((*low, *(value + rng.uniform(0.1, 2) for value in low)))
         if index % 2:
             shapes.reverse()
-        # Obtain the initial normal-movement state from the actual BDS kernel.
         address = machine.call(0x14103BE00, [HEAP, HEAP + 0x100, HEAP + 0x200,
                                            HEAP + 0x300, HEAP + 0x400])
         machine.qword(HEAP + 0x100, 3)

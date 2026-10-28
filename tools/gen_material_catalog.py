@@ -11,7 +11,7 @@ def generate(source, output):
         render_pass = fragment.name.removesuffix('.Fragment.glsl')
         vertex = fragment.with_name(render_pass + '.Vertex.glsl')
         if not vertex.is_file():
-            continue  # compute-only and fragment-only families are not draw materials
+            continue
         rows.append('    {' + ', '.join(json.dumps(s) for s in (
             family, render_pass, vertex.relative_to(source).as_posix(),
             fragment.relative_to(source).as_posix())) + '},')

@@ -15,7 +15,6 @@ namespace perlin::jshader {
             return l == "true" || l == "on" || l == "1" || l == "yes";
         }
 
-        // colortexN / shadowcolorN style parsing: returns index or -1.
         int BufferIndex(const std::string& name) {
             static const char* const prefixes[] = {"colortex", "gaux", "composite"};
             if (name.compare(0, 8, "colortex") == 0) {
@@ -78,7 +77,6 @@ namespace perlin::jshader {
         const Properties& p = pack.Props();
         const Directives& d = pack.GetDirectives();
 
-        // ---- const directives
         for (int i = 0; i < kMaxColorTex; i++) {
             const std::string n = "colortex" + std::to_string(i);
             BufferSetup& b = cfg.color[static_cast<size_t>(i)];
@@ -87,7 +85,6 @@ namespace perlin::jshader {
             b.clear = d.Bool(n + "Clear", true);
             const std::string cc = d.Text(n + "ClearColor");
             if (!cc.empty()) {
-                // vec4(0.0, 0.0, 0.0, 0.0)
                 std::string s = cc;
                 const size_t o = s.find('(');
                 if (o != std::string::npos) s = s.substr(o + 1);
@@ -124,7 +121,6 @@ namespace perlin::jshader {
         cfg.depthMipmap = d.Bool("depthtex0MipmapEnabled", false);
         cfg.shadowMapResolution = std::clamp(cfg.shadowMapResolution, 128, 16384);
 
-        // ---- shaders.properties
         cfg.oldLighting = p.Bool("oldLighting", false);
         cfg.oldHandLight = p.Bool("oldHandLight", true);
         cfg.separateAo = p.Bool("separateAo", false);

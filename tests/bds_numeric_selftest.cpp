@@ -78,8 +78,6 @@ int main(int argc, char** argv) {
             check(result.z, 9);
             ++frictionCases;
         } else if (kind == 'A') {
-            // World/identity selection is exercised by the BDS oracle. Only
-            // the resolved arithmetic is currently integrated into Step.
             float effectiveFriction = words[0] == 0 || words[1] == 1 ? f(3) : f(4);
             if (words[1] == 1 && words[2] == 0)
                 effectiveFriction *= 1.225f;

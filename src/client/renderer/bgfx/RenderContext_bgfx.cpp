@@ -38,7 +38,6 @@
 
 namespace perlin {
     namespace {
-        // Compiles the HLSL SPIRV-Cross generates for Java shader packs (Direct3D 11 only). The compiler DLL ships with Windows.
         bool CompilePackHlsl(const std::string& hlsl, bool fragment, std::vector<uint8_t>& dxbc, std::string& error) {
 #ifdef _WIN32
             static HMODULE module = LoadLibraryA("d3dcompiler_47.dll");
@@ -54,7 +53,6 @@ namespace perlin {
                                            &code, &messages);
                 if (FAILED(hr) || !code) {
                     std::string text = messages ? std::string(static_cast<const char*>(messages->GetBufferPointer()), messages->GetBufferSize()) : "D3DCompile failed";
-                    // Keep only the error lines and quote the offending source line.
                     std::string errors;
                     size_t first = 0, srcLine = 0;
                     for (size_t at = 0; at < text.size();) {
@@ -94,7 +92,6 @@ namespace perlin {
                 if (messages) messages->Release();
                 return true;
             };
-            // GLSL allows texture lookups with implicit derivatives inside divergent flow; HLSL needs the branches flattened.
             std::string first;
             if (run(D3DCOMPILE_OPTIMIZATION_LEVEL1, first))
                 return true;
@@ -147,7 +144,7 @@ namespace perlin {
         constexpr bgfx::ViewId kViewCopy2 = 22;
         constexpr bgfx::ViewId kViewPresent = 23;
         constexpr bgfx::ViewId kViewGen = 24;
-        constexpr bgfx::ViewId kViewExportUi = 25; // drawn last, straight to the window
+        constexpr bgfx::ViewId kViewExportUi = 25;
         constexpr uint32_t kPageVerts = 1u << 20;
         constexpr uint32_t kPageIdx = (kPageVerts / 4) * 6;
 
@@ -279,9 +276,6 @@ namespace perlin {
         callback = std::make_unique<Callback>(this);
 
         bgfx::Init init;
-        // Keep old input from accumulating in the GPU queue. Zero selects
-        // bgfx's backend default, which may allow several frames in flight.
-        // Swap-chain resets inherit this value from the initialization state.
         init.swapChain.maxFrameLatency = 1;
         std::string forced = Env("PERLIN_RENDERER");
         if (forced.empty())
@@ -1216,12 +1210,10 @@ namespace perlin {
     }
 
     void RenderContext_bgfx::BeginFrame(const FrameParams& paramsIn) {
-        // The pack owns post processing, so the built-in scaling / blur / bloom / shadow passes stay off while it runs.
         if (PackLoaded() && !packReady) {
             static uint32_t waitFrames = 0;
             const int left = jpack->Pipe().WarmUp(JavaPackHost::AttribMask());
             if (left == 0 && !jpack->Pipe().ProgramUsable("gbuffers_terrain", JavaPackHost::AttribMask())) {
-                // Without a terrain program nothing would be drawn: give up and keep the normal renderer.
                 jpackError = "the shader pack's terrain program failed to compile (see [jshader] lines above)";
                 std::cout << "[javapack] " << jpackError << std::endl;
                 jpack.reset();
@@ -1888,9 +1880,6 @@ namespace perlin {
         if (PERLIN_ENV("PERLIN_CAPTURE_DEBUG"))
             std::cout << "[capture] export=" << exportTarget << " target=" << fg.valid
                       << " size=" << width << 'x' << height << std::endl;
-        // Metal's screenshot API only captures swapchains, not offscreen FBOs.
-        // Read the finished export texture asynchronously instead, retaining its
-        // destination buffer until bgfx's completion frame has passed.
         if (exportTarget && fg.valid && bgfx::isValid(fg.finalColor) &&
             bgfx::isTextureValid(0, false, 1, bgfx::TextureFormat::RGBA8, BGFX_TEXTURE_BLIT_DST | BGFX_TEXTURE_READ_BACK)) {
             FrameReadback readback;
@@ -1915,7 +1904,6 @@ namespace perlin {
             std::lock_guard<std::mutex> lk(captureMutex);
             captureSinks.push_back(std::move(sink));
         }
-        // With an export target the finished frame (without the progress panel) is read from it, not from the window.
         const bool offscreen = exportTarget && fg.valid && bgfx::isValid(fg.finalFb);
         bgfx::FrameBufferHandle target = BGFX_INVALID_HANDLE;
         if (offscreen)
@@ -1958,7 +1946,6 @@ namespace perlin {
             captureSinks.pop_front();
         }
         if (rgba && w > 0 && h > 0) {
-            // the offscreen target is RGBA8 but sinks expect BGRA8
             std::vector<uint8_t> swapped(static_cast<size_t>(pitch) * h);
             for (uint32_t y = 0; y < h; y++) {
                 const uint8_t* src = bgra + static_cast<size_t>(y) * pitch;
@@ -3134,7 +3121,6 @@ namespace perlin {
 
     void RenderContext_bgfx::DrawChunkMeshes(const Frustum& frustum, float camX, float camZ) {
         const bool packMode = PackActive();
-        // Pointers from the previous frame dangle once meshes were cleared or replaced.
         visible.clear();
         visibleSections.clear();
         if (!packMode)
@@ -3232,7 +3218,6 @@ namespace perlin {
         DrawCrosshair();
     }
 
-    // ------------------------------------------------------------------------------------------------ Java shader packs
     bool RenderContext_bgfx::SetJavaShaderPack(const std::string& path, const std::map<std::string, std::string>& options, std::string& error) {
         if (!initialized) {
             error = "renderer is not ready";
@@ -3281,7 +3266,6 @@ namespace perlin {
         Tessellator::SetCaptureQuadInfo(true);
         shadowConfigDirty = true;
         appliedViewOrder = 0;
-        // Existing meshes carry no pack vertices; the caller re-meshes the world.
         ClearChunkMeshes();
         return true;
     }
@@ -3436,7 +3420,7 @@ namespace perlin {
             DrawPackLayer(layer, jshader::Slot::Shadow, "shadow", packShadowChunks, packShadowSections, draw, true);
     }
 
-    void RenderContext_bgfx::DrawPackWorld(const Frustum& /*frustum*/, float camX, float camZ) {
+    void RenderContext_bgfx::DrawPackWorld(const Frustum& , float camX, float camZ) {
         if (!PackActive())
             return;
         if (jpack->Pipe().Config().shadowEnabled && !gpuChunks.empty())

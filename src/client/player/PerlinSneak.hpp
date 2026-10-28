@@ -3,8 +3,6 @@
 #include "client/player/PerlinCollision.hpp"
 
 namespace perlin::physics::bds {
-    // Filter 0x140E76AD0. The optional control component takes precedence
-    // over actor flag bit 1; membership and bit 6 also gate the callback.
     inline bool ShouldClipSneak(uint8_t actorFlags, std::optional<bool> controlSneaking, bool grounded,
                                 bool& requestFlag85) {
         requestFlag85 = grounded && (controlSneaking ? *controlSneaking : bool(actorFlags & 2));
@@ -16,8 +14,6 @@ namespace perlin::physics::bds {
         CollisionVector velocity;
     };
 
-    // SneakMovementSystem kernel 0x140E76C70 after its ECS eligibility filter.
-    // Shapes come from the already populated MoveRequest cache.
     inline SneakMovement ClipSneakMovement(CollisionBox body, float stepHeight, CollisionVector movement,
                                            CollisionVector velocity, std::span<const CollisionBox> shapes) {
         const auto original = body;

@@ -1015,7 +1015,7 @@ if(PERLIN_BUILD_TESTS AND NOT EMSCRIPTEN AND NOT ANDROID)
     target_compile_features(block_box_definition_selftest PRIVATE cxx_std_23)
     add_test(NAME block_box_definition_selftest COMMAND block_box_definition_selftest)
     add_executable(hud_dump tests/hud_dump.cpp src/client/ui/Json.cpp src/client/ui/UiExpr.cpp src/client/ui/JsonUi.cpp
-        src/client/ui/UiLayout.cpp src/client/ui/McFont.cpp src/client/ui/RmlEmit.cpp src/client/ui/HudData.cpp
+        src/client/ui/UiLayout.cpp src/client/ui/McFont.cpp src/client/ui/RmlEmit.cpp src/client/ui/FormatCodes.cpp src/client/ui/HudData.cpp
         src/client/ui/HudRenderers.cpp src/client/ui/EffectData.cpp src/client/i18n/Lang.cpp src/client/resources/ServerPackRegistry.cpp src/client/i18n/BuiltinEnglish.cpp src/util/Resources.cpp src/util/Paths.cpp)
     target_include_directories(hud_dump PRIVATE src "${stb_SOURCE_DIR}")
     target_compile_features(hud_dump PRIVATE cxx_std_23)
@@ -1354,7 +1354,7 @@ if(PERLIN_BUILD_TESTS AND NOT EMSCRIPTEN AND NOT ANDROID)
     target_compile_features(panorama_selftest PRIVATE cxx_std_23)
     add_test(NAME panorama_selftest COMMAND panorama_selftest)
 
-    add_executable(uitemplate_selftest tests/uitemplate_selftest.cpp src/client/ui/UiTemplate.cpp)
+    add_executable(uitemplate_selftest tests/uitemplate_selftest.cpp src/client/ui/UiTemplate.cpp src/util/Paths.cpp)
     target_include_directories(uitemplate_selftest PRIVATE src)
     target_compile_features(uitemplate_selftest PRIVATE cxx_std_23)
     add_test(NAME uitemplate_selftest COMMAND uitemplate_selftest)

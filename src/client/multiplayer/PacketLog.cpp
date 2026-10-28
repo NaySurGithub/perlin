@@ -59,7 +59,6 @@ namespace perlin::packetlog {
             }
         }
 
-        // Checks the control file at most every 250 ms. Called with the mutex held.
         void Poll() {
             const auto now = std::chrono::steady_clock::now();
             if (now - checkedAt < std::chrono::milliseconds(250))

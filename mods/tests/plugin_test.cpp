@@ -109,7 +109,7 @@ int main() {
     c.args = "bogus";
     h.mode = Mode::Fast;
     send_event(abi::Event::Command, c);
-    CHECK(h.mode == Mode::Fast); // bad argument: usage message, handler not run
+    CHECK(h.mode == Mode::Fast);
 
     abi::EventLook look;
     send_event(abi::Event::Look, look);

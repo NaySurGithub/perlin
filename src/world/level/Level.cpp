@@ -297,7 +297,6 @@ namespace perlin {
         undoBytes += entry.bytes;
         undo.push_back(std::move(entry));
         while (undoBytes > undoCap && undo.size() > 1) {
-            // drop the oldest epoch entirely: its first entries are gone, so nothing at or before it can be undone
             const int64_t oldest = undo.front().epoch;
             while (!undo.empty() && undo.front().epoch == oldest) {
                 undoBytes -= std::min(undoBytes, undo.front().bytes);
@@ -337,7 +336,6 @@ namespace perlin {
                     lodOnlyCount++;
                 Touch(it->first, it->second);
             }
-            // existed == false: the chunk was created after the target; it is kept so it never has to be rebuilt
             undoBytes -= std::min(undoBytes, e.bytes);
             undo.pop_back();
         }
@@ -370,7 +368,7 @@ namespace perlin {
         changeCounter++;
         for (auto& [pos, chunk] : chunks)
             chunk.queued = false;
-        dirty.clear(); // the renderer already has these chunks; it is rebound without a reset
+        dirty.clear();
     }
 
     uint16_t Level::GetBlock(int x, int y, int z) const {

@@ -7,8 +7,6 @@
 #include <cmath>
 
 namespace perlin::physics::bds {
-    // Shared relative movement kernel 0x1432674C0. Input lanes and speed are
-    // already resolved travel intent; this callback also supports vertical input.
     template<class Trigonometry>
     inline Float3 RelativeMovementWithTrig(Float3 velocity, float yaw, Float3 intent, float speed,
                                          Trigonometry trigonometry) {
@@ -33,8 +31,6 @@ namespace perlin::physics::bds {
         return RelativeMovementWithTrig(velocity, yaw, intent, speed, SinCos);
     }
 
-    // Windows BDS 1.26.52.3, 0x14845B3C0: separate imports sinf/cosf,
-    // not the bundled 1.26.10 sincos wrapper retained above for its oracle.
     inline Float3 CurrentRelativeMovement(Float3 velocity, float yaw, Float3 intent, float speed) {
         return RelativeMovementWithTrig(velocity, yaw, intent, speed, [](float angle) {
             return SineCosine{std::sin(angle), std::cos(angle)};

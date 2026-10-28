@@ -8,6 +8,8 @@
 #include "client/ui/McFont.hpp"
 #include "client/ui/RmlEmit.hpp"
 #include "client/ui/UiAssets.hpp"
+#include "client/ui/TextEdit.hpp"
+#include "client/ui/UiTemplate.hpp"
 #include "util/Paths.hpp"
 
 #include <algorithm>
@@ -100,6 +102,10 @@ namespace perlin::ui {
             ".field .in { left: 1px; top: 1px; background-color: #000000; }\n"
             ".field.focus .in { background-color: #101030; }\n"
             ".field .txt { font-family: minecraft-shadow; left: 4px; top: 5px; font-size: 8px; line-height: 9px; white-space: nowrap; overflow: hidden; color: #e0e0e0; }\n";
+
+        const std::string kBuiltinFormHead = std::string("<rml>\n<head>\n<title>form</title>\n<style>\nbody { width: {{w}}px; height: {{h}}px; }\n") +
+                                             kStyle + "</style>\n</head>\n<body>\n";
+        const ScreenTemplateDefault kBuiltinFormDefault("server_form_builtin.rml", kBuiltinFormHead);
 
         std::mutex gImageMutex;
         std::map<std::string, std::string> gImages;
@@ -348,7 +354,7 @@ namespace perlin::ui {
                         if (!e.text.empty())
                             text(e.text, false);
                         const bool focus = form.focus == static_cast<int>(i);
-                        const std::string shown = e.value.empty() && !focus ? "\xC2\xA7" "8" + e.placeholder : e.value + (focus ? "_" : "");
+                        const std::string shown = e.value.empty() && !focus ? "\xC2\xA7" "8" + e.placeholder : focus ? TextFieldPlain(e.value, true) : e.value;
                         body += "<div id=\"i:" + n + "\" class=\"field" + (focus ? " focus" : "") + "\" style=\"left:10px;top:" + F(y) + "px;width:" + F(inner) + "px;height:20px;\">";
                         body += "<div class=\"in\" style=\"width:" + F(inner - 2) + "px;height:18px;\"></div>";
                         body += "<div class=\"txt\" style=\"width:" + F(inner - 8) + "px;height:9px;\">" + Rich(shown) + "</div></div>\n";
@@ -397,10 +403,9 @@ namespace perlin::ui {
         const float s = std::clamp(scroll, 0.0f, maxScroll);
         const float visible = std::min(contentHeight, viewHeight);
 
-        std::string out = "<rml>\n<head>\n<title>form</title>\n<style>\n";
-        out += "body { width: " + std::to_string(guiW) + "px; height: " + std::to_string(guiH) + "px; }\n";
-        out += kStyle;
-        out += "</style>\n</head>\n<body>\n";
+        std::string out = ScreenTemplate("server_form_builtin.rml", kBuiltinFormHead);
+        ReplaceAll(out, "w", std::to_string(guiW));
+        ReplaceAll(out, "h", std::to_string(guiH));
         out += "<div id=\"bg\" style=\"width:" + std::to_string(guiW) + "px;height:" + std::to_string(guiH) + "px;\"></div>\n";
         out += "<div id=\"panel\" style=\"left:" + F(panelX) + "px;top:" + F(viewTop - 18) + "px;width:" + F(panelW) + "px;height:" + F(visible + 24) + "px;\"></div>\n";
         out += "<div class=\"t c\" style=\"z-index:4;left:" + F(panelX) + "px;top:" + F(viewTop - 13) + "px;width:" + F(panelW) + "px;height:9px;\">" + Rich(form.title) + "</div>\n";
@@ -475,32 +480,15 @@ namespace perlin::ui {
         return false;
     }
 
-    void FormTypeChar(FormModel& form, int cp) {
-        if (form.focus < 0 || static_cast<size_t>(form.focus) >= form.elements.size() || cp < 32)
-            return;
-        FormElement& e = form.elements[static_cast<size_t>(form.focus)];
-        if (e.kind != FormElement::Kind::Input || e.value.size() > 500)
-            return;
-        if (cp < 0x80) {
-            e.value += static_cast<char>(cp);
-        } else if (cp < 0x800) {
-            e.value += static_cast<char>(0xC0 | (cp >> 6));
-            e.value += static_cast<char>(0x80 | (cp & 0x3F));
-        } else {
-            e.value += static_cast<char>(0xE0 | (cp >> 12));
-            e.value += static_cast<char>(0x80 | ((cp >> 6) & 0x3F));
-            e.value += static_cast<char>(0x80 | (cp & 0x3F));
-        }
-    }
-
-    void FormBackspace(FormModel& form) {
+    bool FormEdit(FormModel& form, const InputManager::Typed& t) {
         if (form.focus < 0 || static_cast<size_t>(form.focus) >= form.elements.size())
-            return;
-        std::string& v = form.elements[static_cast<size_t>(form.focus)].value;
-        while (!v.empty() && (static_cast<unsigned char>(v.back()) & 0xC0) == 0x80)
-            v.pop_back();
-        if (!v.empty())
-            v.pop_back();
+            return false;
+        FormElement& e = form.elements[static_cast<size_t>(form.focus)];
+        if (e.kind != FormElement::Kind::Input)
+            return false;
+        TextLimits limits;
+        limits.maxBytes = 500;
+        return TextEdit::Focused().Apply(t, e.value, limits);
     }
 
     namespace {
@@ -515,7 +503,7 @@ namespace perlin::ui {
                 case FormElement::Kind::StepSlider:
                     return e.text + ": " + e.options[static_cast<size_t>(e.index)];
                 case FormElement::Kind::Input: {
-                    const std::string shown = e.value.empty() && !focused ? "\xC2\xA7" "8" + e.placeholder : e.value + (focused ? "_" : "");
+                    const std::string shown = e.value.empty() && !focused ? "\xC2\xA7" "8" + e.placeholder : focused ? TextFieldPlain(e.value, true) : e.value;
                     return e.text.empty() ? shown : e.text + ": " + shown;
                 }
                 default:
@@ -770,6 +758,7 @@ namespace perlin::ui {
             "body { position: absolute; left: 0px; top: 0px; width: {{w}}px; height: {{h}}px; margin: 0; padding: 0; background: transparent; }\n"
             "mcimg, mcitem { display: block; position: absolute; }\n"
             "{{chat_style}}{{rcss}}\n</style>\n</head>\n<body>\n{{chat}}{{hud}}</body>\n</rml>\n";
+        const ScreenTemplateDefault kFormTemplateDefault("server_form_screen.rml", kFormTemplate);
     }
 
     FormUi::FormUi() {
@@ -851,6 +840,7 @@ namespace perlin::ui {
         if (!root)
             return false;
         emitter.SetScroll(scroll);
+        emitter.SetTemplates(ScreenTemplate("server_form_screen.rml", kFormTemplate), std::string());
         rml = emitter.Emit(*root, static_cast<float>(guiW), static_cast<float>(guiH), std::string(), false);
         contentHeight = emitter.ContentHeight();
         viewHeight = emitter.ViewportHeight();

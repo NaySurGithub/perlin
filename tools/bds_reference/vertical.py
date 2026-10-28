@@ -96,10 +96,9 @@ def generate(data):
                     values = (int(has_gravity), scaffolding, int(slow), velocity,
                               int(gravity_present), acceleration, reset_fall)
                     lines.append("G " + " ".join(f"{v:08x}" for v in values))
-    for mode in range(3):  # ground/air, water after drag, flying after movement
+    for mode in range(3):
         for has_gravity in (False, True):
             for flags in range(8):
-                # Bits select scaffold descent, auto-climb, discard friction.
                 scaffolding = 5 if flags & 1 else 0
                 auto_climb = bool(flags & 2)
                 discard = bool(flags & 4)
@@ -107,7 +106,7 @@ def generate(data):
                     for slow in (False, True):
                         for velocity in velocities:
                             prepare(velocity, has_gravity, scaffolding, slow, level)
-                            swimming = slow  # exercise both water swimming states
+                            swimming = slow
                             if mode == 2:
                                 call(0x141051C40, [0, HEAP + 0x2000, HEAP + 0x500])
                             else:

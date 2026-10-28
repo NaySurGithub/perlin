@@ -1,9 +1,12 @@
 #include "client/ui/RmlEmit.hpp"
+#include "client/ui/FormatCodes.hpp"
 #include "client/ui/McFont.hpp"
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <cstdio>
+#include <functional>
 
 namespace perlin::ui {
     namespace {
@@ -27,63 +30,22 @@ namespace perlin::ui {
             return buffer;
         }
 
-        const char* LegacyColor(char code) {
-            switch (code) {
-            case '0': return "#000000"; case '1': return "#0000aa"; case '2': return "#00aa00"; case '3': return "#00aaaa";
-            case '4': return "#aa0000"; case '5': return "#aa00aa"; case '6': return "#ffaa00"; case '7': return "#aaaaaa";
-            case '8': return "#555555"; case '9': return "#5555ff"; case 'a': case 'A': return "#55ff55";
-            case 'b': case 'B': return "#55ffff"; case 'c': case 'C': return "#ff5555"; case 'd': case 'D': return "#ff55ff";
-            case 'e': case 'E': return "#ffff55"; case 'f': case 'F': return "#ffffff";
-            default: return nullptr;
+        std::string ActiveCodes(const std::string& text) {
+            std::string codes;
+            for (size_t i = 0; i < text.size(); i++) {
+                if (!IsFormatCode(text, i))
+                    continue;
+                const char code = text[i + 2];
+                if (code == 'r' || code == 'R')
+                    codes.clear();
+                else
+                    codes += text.substr(i, 3);
+                i += 2;
             }
+            return codes;
         }
 
-        std::string FormatLine(const std::string& line, const TextStyle& style) {
-            std::string out;
-            std::string pendingEscape;
-            int open = 0;
-            const auto closeAll = [&] {
-                while (open > 0) {
-                    out += "</span>";
-                    open--;
-                }
-            };
-            size_t i = 0;
-            std::string chunk;
-            const auto flush = [&] {
-                out += EscapeRml(chunk);
-                chunk.clear();
-            };
-            const std::string& full = line;
-            while (i < full.size()) {
-                const unsigned char c = static_cast<unsigned char>(full[i]);
-                if (c == 0xC2 && i + 2 < full.size() && static_cast<unsigned char>(full[i + 1]) == 0xA7) {
-                    const char code = full[i + 2];
-                    flush();
-                    if (const char* color = LegacyColor(code)) {
-                        closeAll();
-                        std::string rgba = color;
-                        const int a = std::clamp(static_cast<int>(std::lround(style.a * 255.0f)), 0, 255);
-                        char hex[4];
-                        std::snprintf(hex, sizeof(hex), "%02x", a);
-                        rgba += hex;
-                        out += "<span style=\"color:" + rgba + ";\">";
-                        open++;
-                    } else if (code == 'l' || code == 'L') {
-                        out += "<span style=\"font-weight:bold;\">";
-                        open++;
-                    } else if (code == 'r' || code == 'R') {
-                        closeAll();
-                    }
-                    i += 3;
-                    continue;
-                }
-                chunk += full[i++];
-            }
-            flush();
-            closeAll();
-            return out;
-        }
+        std::string FormatLine(const std::string& line, const TextStyle& style) { return FormatCodesToRml(line, style.a); }
     }
 
     std::string EscapeRml(const std::string& text) {
@@ -225,10 +187,13 @@ namespace perlin::ui {
                 std::to_string(Px(ay)) + "px;width:" + Num(std::max(w, 1.0f)) + "px;height:" + Num(h) + "px;z-index:" +
                 std::to_string(z) + ";font-size:" + Num(size) + "px;line-height:" + Num(lineHeight) + "px;text-align:" +
                 st.align + ";color:" + Hex(st.r, st.g, st.b, st.a) + ";\">";
+        std::string carry;
         for (size_t i = 0; i < lines.size(); i++) {
             if (i)
                 body += "<br/>";
-            body += FormatLine(lines[i], st);
+            const std::string line = carry + lines[i];
+            body += FormatLine(line, st);
+            carry = ActiveCodes(line);
         }
         body += "</div>\n";
     }
@@ -288,8 +253,6 @@ namespace perlin::ui {
         st.clipRatio = std::clamp(ratio, 0.0f, 1.0f);
         ReadColor(n.Get("color"), st.r, st.g, st.b);
         st.alpha = n.alpha;
-        // Bedrock images keep the texture's aspect ratio by default and fit it inside the box (centered); only
-        // nine-slice and tiled images are stretched to fill.
         st.keepRatio = n.Bool("keep_ratio", true) && !st.hasNine && !st.tiled;
         if (st.alpha <= 0.0f)
             return;
@@ -362,7 +325,7 @@ namespace perlin::ui {
         const std::string command = ButtonCommand(n);
         const std::string defName = n.Str("default_control"), hoverName = n.Str("hover_control"), pressedName = n.Str("pressed_control"),
                           lockedName = n.Str("locked_control");
-        const bool hasHover = FindKid(n, hoverName) != nullptr && !command.empty();
+        const bool hasHover = FindKid(n, hoverName) != nullptr && (!command.empty() || inSlot);
         std::string soundAttrs;
         if (const Json* sn = n.Get("sound_name"); sn && sn->IsString())
             soundAttrs = " snd=\"" + EscapeRml(sn->string) + "\" vol=\"" + Num(static_cast<float>(n.Num("sound_volume", 1.0))) +
@@ -408,12 +371,42 @@ namespace perlin::ui {
     void RmlEmitter::Visit(const LNode& n, RmlWriter& out) {
         if (!n.visible)
             return;
+        if (slotNamer && !inSlot) {
+            if (const std::string slot = slotNamer(n); !slot.empty()) {
+                out.BeginBox(n.ax, n.ay, n.w, n.h, n.layer, "slot", slot, false);
+                inSlot = true;
+                Visit(n, out);
+                inSlot = false;
+                out.EndBox();
+                return;
+            }
+        }
+        if (!elements.empty() && grouped != &n) {
+            if (const auto it = elements.find(n.id); it != elements.end()) {
+                std::string id = it->second;
+                if (n.index >= 0 && !n.collection.empty())
+                    id += "-" + std::to_string(n.index);
+                int z = n.layer;
+                const std::function<void(const LNode&)> deepest = [&](const LNode& k) {
+                    z = std::max(z, k.layer);
+                    for (const auto& kid : k.kids)
+                        deepest(*kid);
+                };
+                deepest(n);
+                out.BeginBox(n.ax, n.ay, n.w, n.h, z, "el " + it->second, id, false);
+                const LNode* saved = grouped;
+                grouped = &n;
+                Visit(n, out);
+                grouped = saved;
+                out.EndBox();
+                return;
+            }
+        }
         if (n.type == "button") {
             VisitButton(n, out);
             return;
         }
         if (n.type == "toggle") {
-            // Only the control for the current state is drawn (default: unchecked unless toggle_default_state / #toggle_state).
             bool on = n.Bool("toggle_default_state", false);
             if (const Json* s = n.bag.Find("#toggle_state"); s && s->IsBool())
                 on = s->boolean;
@@ -466,10 +459,51 @@ namespace perlin::ui {
             out.EndBox();
     }
 
+    std::unordered_map<std::string, std::string> ParseElementMap(const std::string& templateText) {
+        std::unordered_map<std::string, std::string> map;
+        const size_t open = templateText.find("<!--elements");
+        if (open == std::string::npos)
+            return map;
+        const size_t close = templateText.find("-->", open);
+        const std::string block = templateText.substr(open + 12, close == std::string::npos ? std::string::npos : close - open - 12);
+        size_t i = 0;
+        while (i < block.size()) {
+            while (i < block.size() && std::isspace(static_cast<unsigned char>(block[i])))
+                i++;
+            const size_t start = i;
+            while (i < block.size() && !std::isspace(static_cast<unsigned char>(block[i])))
+                i++;
+            const std::string token = block.substr(start, i - start);
+            if (const size_t eq = token.find('='); eq != std::string::npos && eq > 0 && eq + 1 < token.size())
+                map[token.substr(0, eq)] = token.substr(eq + 1);
+        }
+        return map;
+    }
+
     std::string DefaultHudTemplate() {
         return R"PERLINRML(<rml>
 <head>
 <title>hud</title>
+<!--elements
+    hotbar_grid=hotbar
+    gui_hotbar_grid_item=hotbar-slot
+    item_icon=hotbar-item
+    hotbar_start_cap=hotbar-start-cap
+    hotbar_end_cap=hotbar-end-cap
+    heart_rend=hearts
+    horse_heart_rend=horse-hearts
+    armor_rend=armor
+    hunger_rend=hunger
+    bubbles_rend=air
+    exp_rend=xp-bar
+    item_text=item-name
+    hud_actionbar_text=actionbar
+    hud_title_text=title
+    subtitle_panel=subtitles
+    mob_effects_renderer=effects
+    boss_health_panel=bossbars
+    sidebar=scoreboard
+-->
 <style>
 /* Edit this file while the game runs: it is reloaded when it changes. {{name}} placeholders are filled in by Perlin. */
 body { position: absolute; left: 0px; top: 0px; width: {{w}}px; height: {{h}}px; margin: 0; padding: 0; background: transparent; }
@@ -477,6 +511,41 @@ mcimg, mcitem { display: block; position: absolute; }
 .t { display: block; position: absolute; font-family: minecraft; white-space: nowrap; overflow: visible; }
 .t.s { font-family: minecraft-shadow; }
 .t.o { font-family: minecraft-outline; }
+
+/* ---- HUD elements ----------------------------------------------------------------------------------------------
+   Every part of the HUD is its own element, named by the list in <!--elements--> above (JSON UI control = element id;
+   add any control name from hud_screen.json there to give it an element too). The game places each one; adjust it here:
+     transform: translate(10px, -4px) scale(1.5);   move / resize (added to where the game puts it)
+     opacity: 0.5;   display: none;                 fade / hide
+   Slots and other repeated parts get their index: #hotbar-slot-0 .. #hotbar-slot-8, and share a class (.hotbar-slot).
+   Chat has its own file, chat_screen.rml. */
+#hotbar { }
+.hotbar-slot { }
+#hotbar-slot-0 { }
+#hotbar-slot-1 { }
+#hotbar-slot-2 { }
+#hotbar-slot-3 { }
+#hotbar-slot-4 { }
+#hotbar-slot-5 { }
+#hotbar-slot-6 { }
+#hotbar-slot-7 { }
+#hotbar-slot-8 { }
+.hotbar-item { }
+#hotbar-start-cap { }
+#hotbar-end-cap { }
+#hearts { }
+#horse-hearts { }
+#armor { }
+#hunger { }
+#air { }
+#xp-bar { }
+#item-name { }
+#actionbar { }
+#title { }
+#subtitles { }
+#effects { }
+#bossbars { }
+#scoreboard { }
 {{chat_style}}
 {{rcss}}
 </style>

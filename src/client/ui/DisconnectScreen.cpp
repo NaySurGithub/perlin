@@ -1,5 +1,6 @@
 #include "client/ui/DisconnectScreen.hpp"
 
+#include "client/ui/FormatCodes.hpp"
 #include "client/ui/RmlEmit.hpp"
 #include "client/ui/UiLayout.hpp"
 #include "client/ui/UiTemplate.hpp"
@@ -73,10 +74,10 @@ mcimg { display: block; position: absolute; }
                 if (end == std::string::npos)
                     end = text.size();
                 const std::string line = text.substr(start, end - start);
-                lines += std::max(1, static_cast<int>((line.size() + perLine - 1) / perLine));
+                lines += std::max(1, static_cast<int>((StripFormatCodes(line).size() + perLine - 1) / perLine));
                 if (!body.empty())
                     body += "<br/>";
-                body += EscapeRml(line);
+                body += FormatCodesToRml(line);
                 start = end + 1;
             }
         }
@@ -102,7 +103,7 @@ mcimg { display: block; position: absolute; }
         ReplaceAll(d, "rejoin_off", t.rejoinEnabled ? "" : " off");
         ReplaceAll(d, "rejoin", EscapeRml(t.rejoin));
         ReplaceAll(d, "quit", EscapeRml(t.quit));
-        ReplaceAll(d, "title", EscapeRml(t.title));
+        ReplaceAll(d, "title", FormatCodesToRml(t.title));
         ReplaceAll(d, "code", EscapeRml(t.code));
         ReplaceAll(d, "reason", body);
         return d;

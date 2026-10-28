@@ -1,10 +1,4 @@
 #pragma once
-// Raw graphics for plugins that bring their own renderer (Dear ImGui, a custom widget toolkit, a canvas library ...).
-//
-// A plugin uploads RGBA textures, builds a draw list - vertices, indices and clipped, textured batches, the shape Dear ImGui's
-// ImDrawData already has - and submits it every frame. The game draws it on top of everything else in framebuffer pixels
-// (display() tells you the size). Input comes from perlin/input.hpp. Nothing here needs a permission; taking the mouse and
-// keyboard (input::grab) needs `control`, and the native window / device handles need `native`.
 #include <algorithm>
 #include <cstdint>
 #include <cstring>
@@ -20,17 +14,14 @@ namespace perlin::gfx {
     using Command = abi::GfxCmd;
     using Display = abi::GfxDisplayInfo;
 
-    // 0xAABBGGRR, the layout of ImU32 / IM_COL32.
     constexpr uint32_t rgba8(uint8_t r, uint8_t g, uint8_t b, uint8_t a = 255) {
         return static_cast<uint32_t>(r) | (static_cast<uint32_t>(g) << 8) | (static_cast<uint32_t>(b) << 16) | (static_cast<uint32_t>(a) << 24);
     }
 
     enum class Filter : bool { Nearest = false, Linear = true };
 
-    // Framebuffer size, GUI scale, mouse position. Cheap enough to call every frame.
     inline Result<Display> display() { return detail::call_as<Display>(Op::GfxDisplay); }
 
-    // A texture owned by the plugin (at most 64 per plugin, 4096x4096 each, 128 MiB together).
     class Texture {
     public:
         Texture() = default;
@@ -48,7 +39,6 @@ namespace perlin::gfx {
         }
         ~Texture() { reset(); }
 
-        // `rgba` is width*height*4 bytes, straight (non-premultiplied) alpha, top row first.
         static Result<Texture> create(int width, int height, std::span<const uint8_t> rgba, Filter filter = Filter::Linear) {
             abi::Writer a;
             a.put<int32_t>(width).put<int32_t>(height).boolean(filter == Filter::Linear).bytes(rgba.data(), rgba.size());
@@ -65,7 +55,6 @@ namespace perlin::gfx {
             return t;
         }
 
-        // Replaces a rectangle (a font atlas that grows, a dynamic canvas).
         Result<void> update(int x, int y, int width, int height, std::span<const uint8_t> rgba) const {
             abi::Writer a;
             a.put<uint32_t>(tid).put<int32_t>(x).put<int32_t>(y).put<int32_t>(width).put<int32_t>(height).bytes(rgba.data(), rgba.size());
@@ -81,7 +70,7 @@ namespace perlin::gfx {
             tid = 0;
         }
 
-        uint32_t id() const { return tid; } // what GfxCmd::texture and ImTextureID carry
+        uint32_t id() const { return tid; }
         int width() const { return w; }
         int height() const { return h; }
         explicit operator bool() const { return tid != 0; }
@@ -91,7 +80,6 @@ namespace perlin::gfx {
         int w = 0, h = 0;
     };
 
-    // A growable draw list. Batches are appended with add(); every batch has its own texture and clip rectangle.
     class DrawList {
     public:
         void clear() {
@@ -100,7 +88,6 @@ namespace perlin::gfx {
             commands_.clear();
         }
 
-        // Starts a batch; the indices passed to triangle()/quad() are relative to the first vertex added after this call.
         DrawList& batch(uint32_t texture, float x0, float y0, float x1, float y1) {
             Command c;
             c.texture = texture;
@@ -125,7 +112,6 @@ namespace perlin::gfx {
                 commands_.back().indexCount += 3;
             return *this;
         }
-        // Axis-aligned textured rectangle in the current batch (u/v of the corners; use 0,0 and 1,1 for a whole texture).
         DrawList& rect(float x0, float y0, float x1, float y1, uint32_t color, float u0 = 0, float v0 = 0, float u1 = 1, float v1 = 1) {
             const uint32_t a = vertex(x0, y0, u0, v0, color), b = vertex(x1, y0, u1, v0, color), c = vertex(x1, y1, u1, v1, color),
                            d = vertex(x0, y1, u0, v1, color);
@@ -140,13 +126,10 @@ namespace perlin::gfx {
     private:
         uint32_t base() const { return 0; }
         std::vector<Vertex> vertices_;
-        std::vector<uint32_t> indices_; // relative to the batch's vertexOffset
+        std::vector<uint32_t> indices_;
         std::vector<Command> commands_;
     };
 
-    // Submits raw arrays. Indices are 16-bit (Dear ImGui's default) or 32-bit; each command adds its vertexOffset to the
-    // indices it draws. The list replaces the layer's previous list and is drawn every frame until replaced or cleared, so
-    // submit only when it changed. Layers are drawn in `z` order; a plugin may have up to 8.
     template <class Index>
         requires(std::same_as<Index, uint16_t> || std::same_as<Index, uint32_t>)
     Result<void> submit(std::string_view layer, int z, std::span<const Vertex> vertices, std::span<const Index> indices,
@@ -173,6 +156,5 @@ namespace perlin::gfx {
         return detail::call_void(Op::GfxClear, a);
     }
 
-    // Needs the `native` permission. Plain integers: the sandbox cannot dereference them (see abi::NativeHandles).
     inline Result<abi::NativeHandles> native_handles() { return detail::call_as<abi::NativeHandles>(Op::NativeInfo); }
 }

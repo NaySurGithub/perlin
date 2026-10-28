@@ -112,6 +112,7 @@ namespace perlin::ui {
         int chatTotalLines = 0, chatScroll = 0;
         std::string chatInput;
         int chatCaret = 0;
+        int chatSelStart = 0, chatSelEnd = 0;
         bool chatCaretVisible = true;
         std::string chatColors;
         std::vector<std::string> chatSuggestions;
@@ -124,6 +125,9 @@ namespace perlin::ui {
         std::string moveStatus;
         bool advancedTooltips = false;
         std::vector<HudEffect> effects;
+        bool scoreboard = false;
+        std::string scoreboardTitle;
+        std::vector<std::pair<std::string, int>> scoreboardRows;
         std::string gameModeSwitcher;
         std::vector<std::string> debugLeft, debugRight;
         float guiW = 0, guiH = 0;

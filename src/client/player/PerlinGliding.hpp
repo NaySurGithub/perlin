@@ -6,8 +6,6 @@
 #include <cmath>
 
 namespace perlin::physics::bds {
-    // GlideMoveSystem callback 0x140C66F70. Multiplication barriers preserve
-    // the reference's separate binary32 operations, including boost blends.
     inline Float3 GlideVelocity(Float3 velocity, Rotation previous, Rotation current, bool slowFalling,
                                 bool boost, float& fallDistance) {
         const auto mul = [](float a, float b) { return detail::Round(a * b); };

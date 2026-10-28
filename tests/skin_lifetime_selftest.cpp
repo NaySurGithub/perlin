@@ -8,8 +8,6 @@ static void Check(bool ok, const char* why) {
 }
 int main() {
     EntityTracker tracker;
-    // Public lobbies continuously add/remove tab-list skins, including players
-    // whose actors are not in range. None should survive their list removal.
     for (int i = 0; i < 2048; ++i) {
         auto skin = std::make_shared<SkinData>();
         skin->skinRgba.resize(128 * 128 * 4);

@@ -38,7 +38,6 @@ namespace perlin::entity {
             Eating = 1ull << 62, LayingDown = 1ull << 63, Sleeping = 0,
             Charging = 1ull << 43,
         };
-        // Global actor flag 88 is bit 24 of the second metadata word.
         constexpr uint64_t FacingTargetToRangeAttack = 1ull << 24;
     }
 
@@ -64,7 +63,6 @@ namespace perlin::entity {
         bool dying = false;
         uint32_t swingSerial = 0;
         bool isItem = false;
-        // Dropped items are simulated locally (blocks/tick) between the server's rare position updates.
         glm::dvec3 vel{0.0};
         bool sleeping = false, sleepExt = false, sleepPlayer = false;
         bool simulated = false;
@@ -129,7 +127,6 @@ namespace perlin::entity {
         void SetProperty(uint64_t rid, const std::string& key, float value);
         void SetPropertyText(uint64_t rid, const std::string& key, const std::string& text);
         void SetSkin(const std::string& uuid, std::shared_ptr<const SkinData> skin, bool listed = true);
-        // Player-list removal releases the cached skin; an actor still in view owns its copy.
         void RemoveSkin(const std::string& uuid);
         void SetSelf(uint64_t rid, const std::string& uuid);
 

@@ -32,7 +32,7 @@ int main() {
     CHECK(!manager.IsDown(Action::Jump));
     manager.SetControlActions(held, 14);
     manager.Poll();
-    CHECK(manager.Pressed(Action::Jump)); // expired hold becomes a new press
+    CHECK(manager.Pressed(Action::Jump));
     manager.SetServerLocks(512);
     CHECK(!manager.IsDown(Action::Forward));
     manager.SetServerLocks(0);
@@ -60,7 +60,7 @@ int main() {
     result = client.Post("/command", {{"X-Perlin-Token", std::string(token.size(), '0')}}, R"({"op":"shutdown"})", "application/json");
     CHECK(result && result->status == 401);
     result = client.Get("/state?token=" + token);
-    CHECK(result && result->status == 401); // only the page accepts the query parameter
+    CHECK(result && result->status == 401);
     result = client.Get("/?token=" + token);
     CHECK(result && result->status == 200 && result->body.find(token) != std::string::npos &&
           result->body.find("__PERLIN_TOKEN__") == std::string::npos);
@@ -84,7 +84,7 @@ int main() {
     commands = server.TakeCommands();
     CHECK(commands.size() == 1 && commands[0].key == 128578);
     result = client.Post("/command", R"({"op":"character","key":55296})", "application/json");
-    CHECK(result && result->status == 400); // UTF-16 surrogates are not Unicode scalar values
+    CHECK(result && result->status == 400);
     result = client.Post("/command", R"({"op":"key","key":128578})", "application/json");
     CHECK(result && result->status == 400);
     ControlSnapshot snapshot;
@@ -107,7 +107,6 @@ int main() {
     CHECK(result && result->body.find("\"9007199254740993\"") != std::string::npos);
     const uint8_t bgra[16] = {0,0,255,255, 0,0,255,255, 0,0,255,255, 0,0,255,255};
     server.Frame(2, 2, 8, bgra, false);
-    // Encoding runs on a worker thread; wait for it to publish.
     for (int i = 0; i < 200; ++i) {
         result = client.Get("/frame");
         if (!result || result->status != 202) break;

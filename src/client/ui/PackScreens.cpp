@@ -2,22 +2,21 @@
 #include "client/ui/PauseScreen.hpp"
 
 #include "client/ui/RmlEmit.hpp"
+#include "client/ui/TextEdit.hpp"
+#include "client/ui/UiTemplate.hpp"
 
 #include <algorithm>
 #include <cmath>
 
 namespace perlin::ui {
     namespace {
-        std::string N(float v) { return std::to_string(static_cast<int>(std::lround(v))); }
-
-        std::string Styles(int guiW, int guiH, int dim) {
-            return std::string(R"PERLINRML(<rml>
+        const char* kMenuHead = R"PERLINRML(<rml>
 <head>
 <title>screen</title>
 <style>
-body { position: absolute; left: 0px; top: 0px; width: )PERLINRML") + N(static_cast<float>(guiW)) + "px; height: " + N(static_cast<float>(guiH)) + R"PERLINRML(px; margin: 0; padding: 0; background: transparent; }
+body { position: absolute; left: 0px; top: 0px; width: {{w}}px; height: {{h}}px; margin: 0; padding: 0; background: transparent; }
 div, mcimg { display: block; position: absolute; }
-#dim { left: 0px; top: 0px; width: )PERLINRML" + N(static_cast<float>(guiW)) + "px; height: " + N(static_cast<float>(guiH)) + "px; background-color: rgba(0,0,0," + std::to_string(dim) + R"PERLINRML(); }
+#dim { left: 0px; top: 0px; width: {{w}}px; height: {{h}}px; background-color: rgba(0,0,0,{{dim}}); }
 .t { font-family: minecraft-shadow; font-size: 8px; line-height: 9px; height: 9px; color: #ffffff; white-space: nowrap; }
 .g { color: #a0a0a0; }
 .c { text-align: center; }
@@ -67,6 +66,18 @@ div, mcimg { display: block; position: absolute; }
 <body>
 <div id="dim"></div>
 )PERLINRML";
+        const ScreenTemplateDefault kMenuHeadDefault("menu_screen.rml", kMenuHead);
+    }
+
+    namespace {
+        std::string N(float v) { return std::to_string(static_cast<int>(std::lround(v))); }
+
+        std::string Styles(int guiW, int guiH, int dim) {
+            std::string d = ScreenTemplate("menu_screen.rml", kMenuHead);
+            ReplaceAll(d, "w", std::to_string(guiW));
+            ReplaceAll(d, "h", std::to_string(guiH));
+            ReplaceAll(d, "dim", std::to_string(dim));
+            return d;
         }
 
         std::string Btn(const std::string& id, float x, float y, float w, const std::string& label, bool off) {
@@ -85,10 +96,9 @@ div, mcimg { display: block; position: absolute; }
 
         std::string Text(float x, float y, float w, const std::string& text, const char* cls, const char* color = nullptr, bool center = false) {
             return "<div class=\"t " + std::string(cls) + (center ? " c" : "") + "\" style=\"left: " + N(x) + "px; top: " + N(y) + "px; width: " + N(w) + "px;" +
-                   (color ? std::string(" color: ") + color + ";" : std::string()) + " overflow: hidden;\">" + EscapeRml(text) + "</div>\n";
+                   (color ? std::string(" color: ") + color + ";" : std::string()) + " overflow: hidden;\">" + FormatCodesToRml(text) + "</div>\n";
         }
 
-        // Pack names and descriptions carry Minecraft formatting codes (section sign + colour letter).
         std::string FormattedText(float x, float y, float w, const std::string& text) {
             return "<div class=\"t\" style=\"left: " + N(x) + "px; top: " + N(y) + "px; width: " + N(w) + "px; overflow: hidden;\">" + FormatCodesToRml(text) + "</div>\n";
         }
@@ -133,17 +143,6 @@ div, mcimg { display: block; position: absolute; }
                 start = end + 1;
             }
             return static_cast<float>(lines) * 9.0f;
-        }
-
-        std::string WithBreaks(const std::string& text) {
-            std::string out;
-            for (char c : text) {
-                if (c == '\n')
-                    out += "<br/>";
-                else
-                    out += c;
-            }
-            return out;
         }
     }
 
@@ -344,7 +343,7 @@ div, mcimg { display: block; position: absolute; }
              "px; background-color: #a0a0a0; z-index: 3;\"></div>\n<div style=\"left: " + N(l.leftX + 1) + "px; top: " + N(l.searchY + 1) + "px; width: " + N(l.leftW - 2) +
              "px; height: " + N(l.searchH - 2) + "px; background-color: #000000; z-index: 3;\"></div>\n";
         d += "<div class=\"t\" style=\"left: " + N(l.leftX + 5) + "px; top: " + N(l.searchY + 5) + "px; width: " + N(l.leftW - 10) + "px; z-index: 4; overflow: hidden;" +
-             (search.empty() ? std::string(" color: #808080;") : std::string()) + "\">" + EscapeRml(search.empty() ? hint : search + (caret ? "_" : "")) + "</div>\n";
+             (search.empty() ? std::string(" color: #808080;") : std::string()) + "\">" + (search.empty() ? EscapeRml(hint) : TextFieldRml(search, caret)) + "</div>\n";
         d += Text(l.leftX, l.searchY + l.searchH + 6, l.leftW, showing, "");
         d += "<div class=\"panel\" style=\"left: " + N(l.leftX) + "px; top: " + N(l.listTop) + "px; width: " + N(l.leftW) + "px; height: " + N(listH) + "px;\">\n";
         for (int i = 0; i < static_cast<int>(rows.size()); i++) {
@@ -379,7 +378,7 @@ div, mcimg { display: block; position: absolute; }
             const float th = l.detailTextBottom - l.detailTextTop;
             d += "<div class=\"panel\" style=\"left: " + N(l.rightX) + "px; top: " + N(l.detailTextTop) + "px; width: " + N(l.rightW) + "px; height: " + N(th) + "px;\">\n";
             d += "<div class=\"wrap\" style=\"left: 6px; top: " + N(4.0f - detailScroll) + "px; width: " + N(l.rightW - 20.0f) + "px; height: " +
-                 N(EstimateWrapHeight(detail.body, l.rightW - 20.0f) + 9.0f) + "px; color: #e0e0e0; overflow: visible;\">" + WithBreaks(EscapeRml(detail.body)) + "</div>\n";
+                 N(EstimateWrapHeight(detail.body, l.rightW - 20.0f) + 9.0f) + "px; color: #e0e0e0; overflow: visible;\">" + FormatCodesToRmlLines(detail.body) + "</div>\n";
             d += Bar(l.rightW - 6.0f, 0, th, EstimateWrapHeight(detail.body, l.rightW - 20.0f) + 8.0f, detailScroll, l.maxDetailScroll);
             d += "</div>\n";
         }

@@ -253,7 +253,6 @@ namespace perlin::jshader {
             const std::string trimmed = Trim(line);
             if (!trimmed.empty() && trimmed[0] == '#') {
                 if (!trimmed.empty() && trimmed.back() == '\\' && trimmed.find("define") == std::string::npos) {
-                    // multi-line directive
                 }
                 std::string body = Trim(StripComments(trimmed.substr(1)));
                 size_t k = 0;
@@ -314,7 +313,6 @@ namespace perlin::jshader {
                 }
             }
             if (active) {
-                // Keep line continuations of ordinary property lines intact.
                 out += line;
             }
             out += '\n';

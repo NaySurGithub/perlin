@@ -37,7 +37,6 @@ int main() {
         }
         assert(play && key && ruler);
         assert(l.sideVisibleRows >= 1 && l.tlX1 > l.tlX0 + 50);
-        // a position maps to a time and back
         const double t = EditorTimeAtX(l, m, EditorXAtTime(l, m, 12345));
         assert(t > 12344 && t < 12346);
     }

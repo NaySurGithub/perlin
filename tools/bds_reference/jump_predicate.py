@@ -19,8 +19,6 @@ def generate(data):
 
     def service(cpu, pc, size, user):
         if pc == 0x143262B80:
-            # Supporting-shape selection is a separate world service under
-            # test here, not an independently verified part of this predicate.
             result = cpu.reg_read(x86.UC_X86_REG_RCX)
             machine.put(result, [7, 8, 9])
         elif pc == RETURN + 0x100:

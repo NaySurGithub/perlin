@@ -1,4 +1,3 @@
-// Replay export (video / image sequence / screenshot) and the keyframe editor panel.
 #include "client/Perlin.hpp"
 
 #include "client/input/Keys.hpp"
@@ -17,7 +16,6 @@
 #include <sstream>
 
 namespace perlin {
-    // The panel is drawn inside the game window (like the other dialogs); a separate window is not used.
     static constexpr bool kExportProgressWindow = false;
 
     namespace fs = std::filesystem;
@@ -36,7 +34,6 @@ namespace perlin {
         }
     }
 
-    // ------------------------------------------------------------------ timeline persistence
     void Perlin::LoadTimeline() {
         timeline = replay::Timeline{};
         timelineDirty = false;
@@ -55,7 +52,6 @@ namespace perlin {
         timelineDirty = false;
     }
 
-    // ------------------------------------------------------------------ config persistence
     void Perlin::LoadExportConfig() {
         if (exportUi.cfgLoaded)
             return;
@@ -85,7 +81,6 @@ namespace perlin {
         platform->GetFramebufferSize(w, h);
     }
 
-    // ------------------------------------------------------------------ export job
     bool Perlin::ExportStart(const ExportRequest& req) {
         ExportJob& j = exportJob;
         if (j.active)
@@ -97,7 +92,7 @@ namespace perlin {
         replay::ExportConfig cfg = req.cfg;
         if (!req.screenshot && !exportUi.cat.available && cfg.container != "png" && cfg.container != "builtin" &&
             replay::ffmpeg::FindContainer(cfg.container) && !replay::ffmpeg::FindContainer(cfg.container)->imageSequence) {
-            cfg.container = "builtin"; // no ffmpeg anywhere: use the encoder that is part of Perlin
+            cfg.container = "builtin";
             std::cout << "[export] ffmpeg not found, using the built-in AVI encoder" << std::endl;
         }
         const replay::ffmpeg::Container* cont = replay::ffmpeg::FindContainer(cfg.container);
@@ -119,7 +114,6 @@ namespace perlin {
             outH = Even(outH);
         }
         int renderW = outW * ssaa, renderH = outH * ssaa;
-        // reduce supersampling when the render target would exceed what GPUs can handle
         while ((renderW > 16384 || renderH > 16384) && ssaa > 1)
             return ExportStart([&] { ExportRequest r = req; r.cfg.ssaa = ssaa - 1; return r; }());
         if (renderW > 16384 || renderH > 16384) {
@@ -139,7 +133,6 @@ namespace perlin {
             return false;
         }
 
-        // ---- range ----
         const double dur = replayCtl.DurationMs();
         j.startMs = 0;
         j.endMs = dur;
@@ -167,7 +160,6 @@ namespace perlin {
             }
         }
 
-        // ---- output ----
         if (req.screenshot) {
             j.outPath = replay::UniquePath(dir + "/" + j.name + ".png", false);
         } else {
@@ -203,7 +195,7 @@ namespace perlin {
             const bool builtin = cfg.container == "builtin";
             const bool pngFallback = j.imageSeq && cfg.container == "png" && !exportUi.cat.available;
             if (pngFallback) {
-                j.useFfmpeg = false; // written by miniz
+                j.useFfmpeg = false;
             } else {
                 if (!exportUi.cat.available && !builtin) {
                     exportUi.status = "ffmpeg is needed for this format (Advanced tab), or pick PNG sequence";
@@ -220,7 +212,6 @@ namespace perlin {
             }
         }
 
-        // ---- take over the replay ----
         j.savedHideHud = replayUi.hideHud;
         j.savedPaused = replayCtl.Paused();
         j.savedMenu = replayUi.menuOpen;
@@ -281,7 +272,6 @@ namespace perlin {
         std::string message;
         std::string err = error;
         {
-            // Let the writer finish what was already captured (a cancelled export drops the queue to stop quickly).
             std::lock_guard<std::mutex> lk(j.capMutex);
             if (cancelled || !err.empty())
                 j.ready.clear();
@@ -299,7 +289,6 @@ namespace perlin {
         if (j.encoder) {
             std::string finishError;
             if (cancelled || !err.empty()) {
-                // finalize what was written so a cancelled export still plays
                 if (!j.encoder->Finish(finishError) && err.empty())
                     err = finishError;
             } else if (!j.encoder->Finish(finishError)) {
@@ -351,7 +340,6 @@ namespace perlin {
         }
     }
 
-    // Runs on the writer thread: scales and encodes frames in order while the render thread keeps going.
     void Perlin::ExportWriterLoop() {
         ExportJob& j = exportJob;
         for (;;) {
@@ -360,7 +348,7 @@ namespace perlin {
                 std::unique_lock<std::mutex> lk(j.capMutex);
                 j.capCv.wait(lk, [&] { return j.stopWriter || !j.ready.empty(); });
                 if (j.ready.empty())
-                    return; // stopped and drained
+                    return;
                 frame = std::move(j.ready.front());
                 j.ready.pop_front();
             }
@@ -425,7 +413,6 @@ namespace perlin {
                 return;
             }
         }
-        // progress in the window title (visible even while the on-screen panel is hidden for a capture)
         if (realNow - j.lastTitle > std::chrono::milliseconds(250)) {
             j.lastTitle = realNow;
             const long long done = j.written.load();
@@ -462,7 +449,6 @@ namespace perlin {
             j.settleIters++;
             const bool quiet = levelRenderer && levelRenderer->PendingMeshes() == 0 && levelRenderer->MeshesInFlight() == 0 && session->ChunkWorkIdle();
             j.quietIters = quiet ? j.quietIters + 1 : 0;
-            // the first frame waits for the world to be fully drawn; later frames only need the meshes of the last step
             const int need = j.frame == 0 ? 3 : 1;
             if ((j.settleIters >= need && j.quietIters >= need) || realNow - j.phaseStart > std::chrono::seconds(30))
                 j.phase = ExportJob::Phase::Capture;
@@ -471,7 +457,6 @@ namespace perlin {
         case ExportJob::Phase::Capture:
             break;
         case ExportJob::Phase::Waiting: {
-            // first frame only: make sure the renderer really produces frames of the requested size
             bool good = false, mismatch = false;
             {
                 std::lock_guard<std::mutex> lk(j.capMutex);
@@ -487,7 +472,7 @@ namespace perlin {
                     return;
                 }
                 j.frame = 0;
-                j.phase = ExportJob::Phase::Capture; // the back buffer had not been resized yet; try again
+                j.phase = ExportJob::Phase::Capture;
             } else if (++j.waitIters > 600) {
                 ExportFinish(false, "the renderer did not deliver a frame");
                 return;
@@ -513,7 +498,6 @@ namespace perlin {
                 break;
             }
             if (j.frame - j.written.load() >= j.maxInFlight || queued >= j.maxInFlight) {
-                // the encoder is behind: let it catch up instead of piling frames up in memory
                 std::this_thread::sleep_for(std::chrono::milliseconds(2));
                 break;
             }
@@ -575,7 +559,7 @@ namespace perlin {
             }
             job->capCv.notify_all();
         });
-        j.frame++; // frames requested so far
+        j.frame++;
         j.phase = j.frame == 1 ? ExportJob::Phase::Waiting : ExportJob::Phase::Captured;
         j.waitIters = 0;
     }
@@ -584,12 +568,10 @@ namespace perlin {
         ExportJob& j = exportJob;
         const auto now = Clock::now();
         if (kExportProgressWindow && platform->HasProgressWindow()) {
-            // progress lives in its own window, so nothing is ever drawn into the frames being captured
             if (h.Overlay().HasOverlay())
                 h.Overlay().ClearOverlay();
             return;
         }
-        // The panel is on screen for every frame except the one that gets captured, so it never ends up in the video.
         const bool visible = j.offscreen || !j.screenshot && (j.phase == ExportJob::Phase::Seeking || j.phase == ExportJob::Phase::Draining ||
                                                 (j.phase == ExportJob::Phase::Settle && j.settleIters <= 1));
         if (!visible) {

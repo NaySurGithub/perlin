@@ -29,9 +29,6 @@ namespace perlin::ui {
         virtual std::vector<FactoryItem> Factory(const std::string& name) const { return {}; }
     };
 
-    // Shared animation clock and per-control animation state. Owned by whoever re-evaluates the tree (the HUD);
-    // the evaluator reads `now`, records which controls were seen, and raises `animating` while anything is moving
-    // so the owner knows to evaluate again next frame.
     struct AnimHost {
         struct Rec {
             double start = 0;
@@ -43,13 +40,12 @@ namespace perlin::ui {
         uint64_t epoch = 0;
         bool animating = false;
         std::unordered_map<std::string, Rec> recs;
-        std::unordered_map<std::string, double> events;     // event name -> time it last fired
-        std::unordered_set<std::string> destroyed;           // control names removed by destroy_at_end
+        std::unordered_map<std::string, double> events;
+        std::unordered_set<std::string> destroyed;
         void Fire(const std::string& name) { events[name] = now; }
     };
 
     struct UiServices {
-        // Resolves "@namespace.name" (or a bare name in `ns`) to the merged properties of an animation control.
         std::function<Json(const std::string& ref, const std::string& ns)> animDef;
         AnimHost* anim = nullptr;
         std::function<float(const std::string& text, float scale)> textWidth;

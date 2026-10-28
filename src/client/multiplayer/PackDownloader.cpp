@@ -235,8 +235,6 @@ namespace perlin {
     }
 
     PackDownloader::Result PackDownloader::Tick() {
-        // The transport is reliable, so a missing chunk is only late. Asking for it again makes
-        // PocketMine-style servers drop the client for a duplicate request, so just report the stall.
         if (!currentKey.empty() && !stallReported && std::chrono::steady_clock::now() - requestedAt > std::chrono::seconds(10)) {
             stallReported = true;
             std::cout << "[packs] no chunk for 10 s, still waiting" << std::endl;

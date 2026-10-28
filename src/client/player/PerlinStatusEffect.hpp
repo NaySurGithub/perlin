@@ -3,10 +3,6 @@
 #include <cstdint>
 
 namespace perlin::physics::bds {
-    // TickMobEffects callback 0x1067B2814 decrements finite durations once
-    // per InterpolateMovementNeeded tick and queues removal at zero. Only
-    // -1 is infinite. Ordinary packet replay initializes its skip-tick byte
-    // to zero (0x103D0E860); other producers of that byte are not modeled here.
     inline int32_t StatusEffectTicksAt(int32_t duration, uint64_t appliedTick, uint64_t movementTick) {
         if (duration == -1)
             return -1;

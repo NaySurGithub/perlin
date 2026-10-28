@@ -31,10 +31,11 @@ body { position: absolute; left: 0px; top: 0px; width: {{w}}px; height: {{h}}px;
 </body>
 </rml>
 )PERLINRML";
+        const ScreenTemplateDefault kBedDefault("bed_screen.rml", kBedTemplate);
     }
 
     std::string BuildBedScreenRml(const std::string& label, int guiW, int guiH) {
-        std::string d = kBedTemplate;
+        std::string d = ScreenTemplate("bed_screen.rml", kBedTemplate);
         ReplaceAll(d, "w", std::to_string(guiW));
         ReplaceAll(d, "h", std::to_string(guiH));
         ReplaceAll(d, "btn_x", std::to_string(guiW / 2 - 100));

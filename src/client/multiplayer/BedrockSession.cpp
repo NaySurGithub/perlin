@@ -548,7 +548,6 @@ namespace perlin {
             if (friendLease ? nether->ConnectFriend(*friendLease, *identity) : nether->Connect(host, port, *identity)) {
                 net = std::move(nether);
             } else if (!friendLease && transportMode == "auto") {
-                // Servers can advertise /v1/join yet refuse the offer while still serving RakNet.
                 std::cout << "[perlin] nethernet failed (" << nether->LastError() << "), falling back to raknet"
                           << std::endl;
                 useRak = true;
@@ -723,9 +722,6 @@ namespace perlin {
         if (startGameSeen && !initializedSent)
             FinishLoadingIfReady();
         if (dimAckPending) {
-            // Native PlayerDimensionTransferer queries the destination's
-            // surrounding terrain, not an arbitrary count of received columns.
-            // A seen column can still have outstanding subchunk requests.
             const int minX = static_cast<int>(std::floor(pose.x - 16.0)) >> 4;
             const int maxX = static_cast<int>(std::floor(pose.x + 16.0)) >> 4;
             const int minZ = static_cast<int>(std::floor(pose.z - 16.0)) >> 4;
@@ -1178,7 +1174,6 @@ namespace perlin {
     }
 
     bool BedrockSession::SendMoveInput(const MoveInput& input) {
-        // Vanilla holds PlayerAuthInput until SetLocalPlayerAsInitialized; earlier input is an anticheat tell.
         if (!initializedSent)
             return false;
         auto finite = [](float v) { return std::isfinite(v); };
@@ -1454,7 +1449,6 @@ namespace perlin {
     }
 
     bool BedrockSession::SendSettingsCommand(const std::string& command) {
-        // The settings screen uses this dedicated packet rather than a chat command request.
         proto::SettingsCommandPacket p;
         p.commandLine = !command.empty() && command[0] == '/' ? command : "/" + command;
         p.suppressOutput = false;
@@ -1489,7 +1483,6 @@ namespace perlin {
         const char* geometry = skin.slimArms ? "geometry.humanoid.customSlim" : "geometry.humanoid.custom";
         p.skin.skinResourcePack = std::string("{\"geometry\":{\"default\":\"") + geometry + "\"}}";
         p.skin.armSize = skin.slimArms ? proto::SkinArmSize::Slim : proto::SkinArmSize::Wide;
-        // Same geometry the login skin carries; "null" here made servers and other players drop the new skin.
         p.skin.geometryData = B64UrlDecode(kDefaultSkinGeometryB64);
         p.skin.geometryDataVersion = "0.0.0";
         p.skin.animationData = std::string();
@@ -1608,8 +1601,6 @@ namespace perlin {
             const char* why = nullptr;
             if (!ChunkCodec::ParseColumn(p, left, pkt.subChunkCount, dim.MinSubChunk(), dim.slots, parsed, used, &why)) {
                 LogHex("inline column", why ? why : "?", pkt.payload);
-                // A truncated column is unresolved, never an empty complete
-                // column. Retain request metadata and recover missing data.
                 {
                     std::lock_guard<std::mutex> lk(reqMutex);
                     ColumnInfo& c = columns[ChunkPos{pkt.x, pkt.z}];
@@ -1624,8 +1615,6 @@ namespace perlin {
             left -= used;
             BlockPalette& blockPalette = BlockPalette::Instance();
             if (blockPalette.Sequential() && !parsed.empty()) {
-                // The highest sub-chunk of a column is normally nothing but air, so a
-                // single-entry palette there gives the id this server uses for air.
                 const auto top = std::max_element(parsed.begin(), parsed.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
                 if (!top->second.storages.empty() && !top->second.storages[0].persistent && top->second.storages[0].palette.size() == 1) {
                     const int32_t seen = top->second.storages[0].palette[0];
@@ -2044,8 +2033,6 @@ namespace perlin {
                 reqQueue.push(key);
                 return;
             }
-            // Past the cap (including ChunkNotFound) the slot is settled so
-            // the column can finish instead of being requested forever.
             retries.erase(key);
             DropSlot(key, completed);
         }
@@ -2140,9 +2127,6 @@ namespace perlin {
                              candidates.end());
             for (const auto& entry : netLevel.chunks) {
                 const ChunkPos& p = entry.first;
-                // Only request-mode columns have metadata to fetch their
-                // subchunks again. Evicting inline columns here leaves holes
-                // inside the server's unchanged streaming radius.
                 if (!entry.second.lodOnly && recoverable.contains(p) &&
                     std::max(std::abs(p.x - cx), std::abs(p.z - cz)) > nearRadius + 3)
                     demote.push_back(p);
@@ -2160,8 +2144,6 @@ namespace perlin {
             blockEntities.RemoveChunk(p.x, p.z);
         }
         if (!demote.empty()) {
-            // Evicted columns must not keep timing out and re-requesting
-            // slots; promotion re-queues them from the column metadata.
             std::lock_guard<std::mutex> lk(reqMutex);
             for (const ChunkPos& p : demote)
                 ForgetColumnRequests(p.x, p.z);

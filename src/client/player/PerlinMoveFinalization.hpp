@@ -20,8 +20,6 @@ namespace perlin::physics::bds {
         MovementFlags flags;
     };
 
-    // FinalizeMoveSystem callback 0x140C638A0. Bounds/offset must produce a
-    // valid BDS position. Producers and world-coordinate conversion are separate.
     inline FinalizedMove FinalizeMove(const CollisionBox& bounds, float verticalOffset,
                                       Float3 requested, Float3 resolved, Float3 velocity,
                                       MovementFlags flags, bool noClip, bool preserveHorizontalMotion) {

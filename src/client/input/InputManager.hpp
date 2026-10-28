@@ -39,11 +39,10 @@ namespace perlin {
             bool character = false;
             int key = 0;
             bool ctrl = false;
+            bool shift = false;
         };
         std::vector<Typed> TakeTyped() { return std::move(typed); }
 
-        // Raw input for plugins that took the mouse / keyboard (Op::InputGrab). While a grab is on, the matching events
-        // never reach the game; they are queued here for the plugin instead. Coordinates are framebuffer pixels.
         struct PluginInput {
             enum class Type { Move, Button, Wheel, Key, Text } type = Type::Move;
             int code = 0;
@@ -56,7 +55,6 @@ namespace perlin {
             grabKeyboard = keyboard;
         }
         std::vector<PluginInput> TakePluginInput() { return std::move(pluginEvents); }
-        // Escape pressed three times within 1.5 s while a plugin holds the keyboard: the game takes everything back.
         bool TakeGrabFailsafe() {
             const bool v = failsafe;
             failsafe = false;

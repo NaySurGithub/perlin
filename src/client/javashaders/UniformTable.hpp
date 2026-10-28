@@ -9,11 +9,9 @@
 #include <vector>
 
 namespace perlin::jshader {
-    // Everything the engine knows about the current frame. Matrices are column-major, GL conventions (what shader
-    // packs expect), vectors in view space unless the name says otherwise.
     struct FrameState {
-        float modelView[16] = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};   // gbufferModelView (rotation only)
-        float projection[16] = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};  // gbufferProjection (no jitter-free copy kept)
+        float modelView[16] = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+        float projection[16] = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
         float prevModelView[16] = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
         float prevProjection[16] = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
         float shadowModelView[16] = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
@@ -67,13 +65,12 @@ namespace perlin::jshader {
         float playerBodyVector[3] = {0, 0, -1};
     };
 
-    // Per-draw values that change between submissions of the same program.
     struct PackDrawState {
-        float modelView[16] = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};  // gl_ModelViewMatrix
+        float modelView[16] = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
         float normalMatrix[9] = {1, 0, 0, 0, 1, 0, 0, 0, 1};
         float textureMatrix0[16] = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
         float textureMatrix1[16] = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
-        float projection[16] = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};  // gl_ProjectionMatrix
+        float projection[16] = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
         float entityColor[4] = {0, 0, 0, 0};
         float fogColor[4] = {1, 1, 1, 1};
         float fogDensity = 0.0f, fogStart = 0.0f, fogEnd = 128.0f;
@@ -85,23 +82,19 @@ namespace perlin::jshader {
 
     class UniformTable;
 
-    // Compiled `uniform.<type>.<name> = <expression>` / `variable.<type>.<name> = <expression>` entries.
     class CustomUniforms {
     public:
         struct Def {
-            std::string type;   // float, int, bool, vec2, vec3, vec4
+            std::string type;
             std::string name;
             std::string source;
             bool variable = false;
         };
         CustomUniforms();
         ~CustomUniforms();
-        // Parses the property entries; returns the problems found (unparsable expressions are skipped).
         std::vector<std::string> Load(const std::vector<std::pair<std::string, std::string>>& properties);
         bool Has(const std::string& name) const;
-        // Evaluates every uniform for this frame (smoothing state advances with frameTime).
         void Evaluate(const FrameState& state, const UniformTable& table);
-        // Writes the natural components of a uniform ("float" 1, "vec3" 3 ...). False when unknown.
         bool Get(const std::string& name, float* out, int& components) const;
         std::string TypeOf(const std::string& name) const;
         size_t Count() const;
@@ -111,7 +104,6 @@ namespace perlin::jshader {
         std::unique_ptr<Impl> impl;
     };
 
-    // Maps shader uniform names to engine values.
     class UniformTable {
     public:
         UniformTable();
@@ -122,10 +114,8 @@ namespace perlin::jshader {
             const PackDrawState* draw = nullptr;
         };
 
-        // Writes the natural components of the uniform. Returns false for unknown names.
         bool Evaluate(const std::string& name, const Context& ctx, float* out, int& components) const;
         bool Known(const std::string& name) const;
-        // Scalar view of any known uniform's first component (used by the expression engine).
         bool Scalar(const std::string& name, const Context& ctx, double& out) const;
 
         void SetCustom(const CustomUniforms* custom) { this->custom = custom; }
@@ -141,7 +131,6 @@ namespace perlin::jshader {
         const CustomUniforms* custom = nullptr;
     };
 
-    // Packs a uniform's natural component values into the vec4/mat4 register layout the transformer declares.
     void PackUniform(const UniformDecl& decl, const float* natural, float* registers);
     int NaturalComponents(const UniformDecl& decl);
 }

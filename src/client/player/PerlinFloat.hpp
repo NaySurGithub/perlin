@@ -10,9 +10,6 @@ namespace perlin::physics::bds::detail {
         return (std::bit_cast<uint32_t>(value) & 0x7fffffffu) > 0x7f800000u;
     }
 
-    // Scalar SSE arithmetic preserves the destination NaN operand's payload, quiets
-    // signaling NaNs, and generates negative canonical NaN for invalid finite/
-    // infinity combinations. ARM's generated NaN sign differs, so make it explicit.
     template <class Operation> inline float SseBinary(float first, float second, Operation operation) {
         if (IsNaN(first))
             return std::bit_cast<float>(std::bit_cast<uint32_t>(first) | 0x00400000u);

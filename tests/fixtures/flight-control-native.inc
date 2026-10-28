@@ -1,5 +1,3 @@
-// iOS 26.52 IDA 0x10704C838, executed in Unicorn ARM64.
-// Existing friction component; external world game type creative; actor mode 0/1.
 {0.625f, 1.375f, false, false, false, false, false, false, 0x3f200000u},
 {-0.3125f, 1.375f, false, false, false, false, false, false, 0xbea00000u},
 {0.625f, 0.0f, false, false, false, false, false, false, 0x3f200000u},

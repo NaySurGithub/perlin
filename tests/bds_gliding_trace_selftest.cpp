@@ -75,9 +75,6 @@ int main(int argc, char** argv) {
                 {uint64_t(words[5]) | (uint64_t(words[6]) << 32), std::bit_cast<int32_t>(words[4]), 0});
         Attributes attributes;
         attributes.slowFalling = words[0] != 0;
-        // This fixture chains GlideMove and effect cleanup, not the later
-        // CheckFallDamage callback. Retain its exact callback assertion and
-        // additionally check the integrated scalar after resolved movement.
         if (static_cast<float>(state.vy) > -0.5f)
             referenceGlideFall = expectedIntegratedFall = 1.0f;
         check(std::bit_cast<uint32_t>(referenceGlideFall), 10);

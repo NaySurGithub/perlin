@@ -58,10 +58,9 @@ namespace perlin {
         Gui,
         Doll,
         Top,
-        Export // above everything, never part of an export capture
+        Export
     };
 
-    // Auto selects entities for world/hand/doll views and UI for screen views.
     enum class DrawMaterial : uint8_t { Auto, Entity, Particle, Weather, Cracks, Nametag };
 
     struct UiDraw {
@@ -147,9 +146,7 @@ namespace perlin {
         virtual bool Initialize(AppPlatform& platform, const Options& options) = 0;
         virtual void Shutdown() = 0;
         virtual bool ReloadShaders() { return false; }
-        // Java (OptiFine / Iris) shader packs. `options` overrides the pack's own settings (name -> value).
-        // Callers re-mesh the world after a successful change (the pack needs extra vertex data).
-        virtual bool SetJavaShaderPack(const std::string& /*path*/, const std::map<std::string, std::string>& /*options*/,
+        virtual bool SetJavaShaderPack(const std::string& , const std::map<std::string, std::string>& ,
                                        std::string& error) {
             error = "Java shader packs are not supported by this renderer";
             return false;
@@ -157,7 +154,7 @@ namespace perlin {
         virtual void ClearJavaShaderPack() {}
         virtual bool JavaShaderPackActive() const { return false; }
         virtual std::string JavaShaderPackError() const { return {}; }
-        virtual void SetJavaShaderPackDimension(const std::string& /*folder*/) {}
+        virtual void SetJavaShaderPackDimension(const std::string& ) {}
         virtual bool PackShadowsActive() const { return false; }
         virtual void SetVsync(bool) {}
         virtual std::string RendererName() const { return {}; }
@@ -168,11 +165,8 @@ namespace perlin {
         virtual void EndFrame() = 0;
         virtual bool PresentGenerated(int  , int  ) { return false; }
         virtual void RequestScreenshot(const std::string& path) = 0;
-        // Replay export: render at a fixed size independent of the window, and receive the finished frame (BGRA8).
         using CaptureSink = std::function<void(uint32_t width, uint32_t height, uint32_t pitch, const uint8_t* bgra, bool flipY)>;
         virtual void SetForcedSize(int, int) {}
-        // Replay export: render the game into an offscreen target that is captured instead of the window, so
-        // UiLayer::Export (the progress panel) can stay on screen without ending up in the video. False = unsupported.
         virtual bool SetExportTarget(bool) { return false; }
         virtual bool QueryNativeHandles(NativeHandleInfo&) const { return false; }
         virtual void RequestFrameCapture(CaptureSink) {}

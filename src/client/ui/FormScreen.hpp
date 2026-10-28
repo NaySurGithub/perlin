@@ -6,6 +6,7 @@
 #include <memory>
 #include <vector>
 
+#include "client/input/InputManager.hpp"
 #include "client/ui/JsonUi.hpp"
 #include "client/ui/RmlEmit.hpp"
 #include "client/ui/UiLayout.hpp"
@@ -68,6 +69,5 @@ namespace perlin::ui {
     std::string BuildFormRml(const FormModel& form, int guiW, int guiH, float scroll, float& contentHeight, float& viewHeight);
     bool FormClick(FormModel& form, const std::string& id, std::string& response);
     std::string FormCustomResponse(const FormModel& form);
-    void FormTypeChar(FormModel& form, int codepoint);
-    void FormBackspace(FormModel& form);
+    bool FormEdit(FormModel& form, const InputManager::Typed& t);
 }

@@ -102,8 +102,6 @@ def generate(data):
                 machine.qword(HEAP + 0x208, (1 << 45) if push else 0)
                 machine.put(HEAP + 0x300, [flags])
                 machine.cpu.mem_write(HEAP + 0x334, bytes([1]))
-                # A valid pre-existing tag prevents tag allocation. Only the
-                # registry lookup is supplied by the host; flag logic is BDS.
                 machine.qword(HEAP + 0x1008, HEAP + 0x1100)
                 machine.qword(HEAP + 0x1010, HEAP + 0x1108)
                 machine.qword(HEAP + 0x1100, HEAP + 0x1200)

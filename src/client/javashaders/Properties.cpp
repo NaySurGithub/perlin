@@ -85,7 +85,6 @@ namespace perlin::jshader {
                 continue;
             if (!line.empty() && line.back() == '\\') {
                 line.pop_back();
-                // Continuation lines drop their leading whitespace.
                 size_t lead = joined.empty() ? 0 : line.find_first_not_of(" \t");
                 joined += lead == std::string::npos ? std::string() : line.substr(lead);
                 joined += ' ';

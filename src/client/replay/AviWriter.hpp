@@ -1,5 +1,4 @@
 #pragma once
-// Self-contained MJPEG-in-AVI writer: video export that needs no external program.
 #include <cstdint>
 #include <cstdio>
 #include <string>

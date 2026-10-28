@@ -47,7 +47,6 @@ namespace perlin::featured {
             return {};
         }
 
-        // The gatherings host comes from service discovery; the well-known host is the fallback.
         std::string GatheringsHost() {
             const http::Response r = http::Request(kDiscoveryHost, 443, true, "GET",
                                                    std::string("/api/v1.0/discovery/MinecraftPE/builds/") + kBedrockVersion, {}, {},
@@ -97,7 +96,7 @@ namespace perlin::featured {
             if (item["IsHidden"].boolean() || !item["ContentType"].isString() || item["ContentType"].str() != "3PP_V2.0")
                 continue;
             json::View props = item["DisplayProperties"];
-            std::optional<json::Document> inner;  // some responses carry the properties as an encoded string
+            std::optional<json::Document> inner;
             if (props.isString()) {
                 inner = json::Document::Parse(props.str());
                 if (!inner)
@@ -129,7 +128,6 @@ namespace perlin::featured {
             r2.server = std::move(s);
             found.push_back(std::move(r2));
         }
-        // Ranked entries first, highest rank first (as the game orders them); creator servers keep service order.
         std::stable_sort(found.begin(), found.end(), [](const Ranked& a, const Ranked& b) {
             if (a.hasRank != b.hasRank)
                 return a.hasRank;

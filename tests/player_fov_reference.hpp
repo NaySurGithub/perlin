@@ -1,5 +1,3 @@
-// Numerical outputs of original Minecraft Windows 26.52 instructions.
-// SHA-256 6001a63a1033977a87bfe06db7d9f932f5334f1fe695d6f32e1fa497db061f73
 struct TargetReference { uint32_t speed, walk; bool flying; int slowness; uint32_t target; };
 constexpr TargetReference targetReferences[] = {
     {0x00000000, 0x3dcccccd, false, -1, 0x3f000000},

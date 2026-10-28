@@ -1,6 +1,4 @@
 #pragma once
-// Video encoding with FFmpeg's libraries linked straight into Perlin (no ffmpeg executable).
-// When Perlin is built without the libraries (PERLIN_HAVE_LIBAV undefined) these are inert stubs.
 #include <cstdint>
 #include <memory>
 #include <string>
@@ -9,7 +7,7 @@
 
 namespace perlin::replay::ffmpeg {
     bool LibavCompiledIn();
-    Catalog QueryLibav(); // encoders/muxers that are compiled into this build; available=false if none
+    Catalog QueryLibav();
 
     class LibavEncoder {
     public:

@@ -1,4 +1,3 @@
-// Round-trips the .perlinreplay format: state cache, recorder (with periodic snapshots), reader and playback seeking.
 #include "client/replay/ReplayController.hpp"
 
 #include <chrono>
@@ -28,17 +27,17 @@ int main(int argc, char** argv) {
     fs::create_directories(base, ec);
 
     StateCache cache;
-    cache.OnToClient(11, std::vector<uint8_t>(4, 1));              // StartGame
-    cache.OnToClient(2, std::vector<uint8_t>{0, 0, 0, 3});          // PlayStatus: player spawn ends the join phase
-    cache.OnToClient(5, std::vector<uint8_t>{1});                   // Disconnect must never be stored
-    cache.OnToClient(58, std::vector<uint8_t>{0, 0, 0, 1});         // LevelChunk (0,0,dim 0)
-    cache.OnToClient(58, std::vector<uint8_t>{2, 0, 0, 9});         // LevelChunk (1,0)
-    cache.OnToClient(58, std::vector<uint8_t>{0, 0, 0, 5});         // resend of (0,0) replaces the first one
-    cache.OnToClient(13, std::vector<uint8_t>{2, 5, 1, 1});         // AddActor unique 1 runtime 5
-    cache.OnToClient(13, std::vector<uint8_t>{4, 6, 1, 1});         // AddActor unique 2 runtime 6
-    cache.OnToClient(14, std::vector<uint8_t>{2});                  // RemoveActor unique 1
+    cache.OnToClient(11, std::vector<uint8_t>(4, 1));
+    cache.OnToClient(2, std::vector<uint8_t>{0, 0, 0, 3});
+    cache.OnToClient(5, std::vector<uint8_t>{1});
+    cache.OnToClient(58, std::vector<uint8_t>{0, 0, 0, 1});
+    cache.OnToClient(58, std::vector<uint8_t>{2, 0, 0, 9});
+    cache.OnToClient(58, std::vector<uint8_t>{0, 0, 0, 5});
+    cache.OnToClient(13, std::vector<uint8_t>{2, 5, 1, 1});
+    cache.OnToClient(13, std::vector<uint8_t>{4, 6, 1, 1});
+    cache.OnToClient(14, std::vector<uint8_t>{2});
     std::vector<Record> snap = cache.Snapshot();
-    CHECK(snap.size() == 5);  // StartGame, PlayStatus, 2 chunks, 1 entity
+    CHECK(snap.size() == 5);
     size_t chunkCount = 0, entityCount = 0;
     for (const Record& r : snap) {
         chunkCount += r.id == 58;
@@ -78,11 +77,10 @@ int main(int argc, char** argv) {
     int injected = 0, chat = 0;
     c.Advance(1e9, [&](const Record& r) { injected++; chat += r.id == 9; }, 0);
     CHECK(chat == 10);
-    CHECK(injected == 5 + 10);  // snapshot + chat; periodic snapshots and serverbound input are not injected
+    CHECK(injected == 5 + 10);
     CHECK(c.RecordedPose().known && c.RecordedPose().x == 39.0f && c.RecordedPose().yaw == 20.0f);
     CHECK(c.AtEnd());
 
-    // Seeking backwards needs a fresh session and starts from a snapshot.
     c.Seek(c.DurationMs() - 20);
     CHECK(c.NeedsRestart());
     int afterSeek = 0, chunks = 0;
@@ -90,7 +88,6 @@ int main(int argc, char** argv) {
     CHECK(chunks == 2);
     CHECK(afterSeek < injected + 20);
 
-    // Markers survive a metadata rewrite.
     c.AddPlaybackMarker("hello", 100);
     CHECK(c.SaveMarkers(error));
     ReplayController again;
@@ -101,7 +98,7 @@ int main(int argc, char** argv) {
     CHECK(Reader::ReadMetadata(file, quick, nullptr, error));
     CHECK(quick.chunks.size() == c.Meta().chunks.size());
 
-    {   // stored resource packs (Windows cannot replace a file that is still open)
+    {
         const size_t chunkCount = c.Meta().chunks.size();
         c.Close();
         again.Close();

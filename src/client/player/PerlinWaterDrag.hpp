@@ -6,8 +6,6 @@
 #include <optional>
 
 namespace perlin::physics::bds {
-    // WaterTravelSystem callback 0x140F1E690. The optional inputs are the
-    // MovementAttributesComponent cache; fallback is MovementSpeedComponent.
     inline float WaterAcceleration(std::optional<float> movement, std::optional<float> underwater,
                                    float fallback, float swimSpeedMultiplier, int waterWalkSpeedEnchant,
                                    bool dolphin, bool grounded, bool player) {
@@ -32,8 +30,6 @@ namespace perlin::physics::bds {
         return acceleration;
     }
 
-    // WaterDragSystem callback 0x14103D110. Component values are resolved by
-    // the caller. Depth strider's real max-level method 0x143972690 returns 3.
     inline Float3 WaterDrag(Float3 velocity, bool grounded, bool sprinting, float swimSpeedMultiplier,
                             int waterWalkSpeedEnchant, std::optional<float> customDrag = std::nullopt) {
         float retention = sprinting ? 0.9f : customDrag.value_or(0.8f);

@@ -89,7 +89,6 @@ namespace perlin::jshader {
         m["MC_SHADOW_QUALITY"] = "1.0";
         m["MC_FXAA_LEVEL"] = "0";
         m["DYNAMIC_HANDLIGHT"] = "";
-        // Render stage ids (world stages that gl_* cannot express; packs read the uniform renderStage).
         const char* stages[] = {"NONE", "SKY", "SUNSET", "CUSTOM_SKY", "SUN", "MOON", "STARS", "VOID", "TERRAIN_SOLID",
                                 "TERRAIN_CUTOUT_MIPPED", "TERRAIN_CUTOUT", "ENTITIES", "BLOCK_ENTITIES", "DESTROY",
                                 "OUTLINE", "DEBUG", "HAND_SOLID", "TERRAIN_TRANSLUCENT", "TRIPWIRE", "PARTICLES", "CLOUDS",

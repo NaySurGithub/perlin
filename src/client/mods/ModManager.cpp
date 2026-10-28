@@ -71,7 +71,6 @@ namespace perlin::mods {
             return !out.empty();
         }
 
-        // Finds the "perlin_manifest" custom section of a WebAssembly module without loading or running it.
         std::string EmbeddedManifest(const std::string& path) {
             std::ifstream in(path, std::ios::binary);
             if (!in)
@@ -180,7 +179,7 @@ namespace perlin::mods {
         std::map<uint32_t, Tex> textures;
         uint32_t nextTexture = 1;
         uint64_t textureBytes = 0;
-        std::atomic<uint8_t> grab{0}; // bit 0 mouse, bit 1 keyboard
+        std::atomic<uint8_t> grab{0};
         std::map<std::string, std::string> savedKeys;
         std::vector<abi::SettingDef> settings;
         std::map<std::string, std::string> savedSettings;
@@ -983,8 +982,6 @@ namespace perlin::mods {
         std::error_code ec;
         std::string manifestIcon;
         std::vector<abi::SettingDef> manifestSettings;
-        // A name.json next to the plugin wins; otherwise the manifest a plugin built with PERLIN_REGISTER carries in its
-        // own "perlin_manifest" custom section is used (read straight from the file, nothing is run).
         std::string manifestText;
         {
             std::ifstream in(base.string() + ".json", std::ios::binary);
@@ -1835,7 +1832,6 @@ namespace perlin::mods {
     }
 
     namespace {
-        // Checks a draw list before it is stored, so the renderer can trust it every frame.
         bool ValidGfx(const std::vector<uint8_t>& blob) {
             if (blob.size() < sizeof(abi::GfxHeader) || blob.size() > abi::kGfxMaxBytes)
                 return false;
@@ -1966,7 +1962,6 @@ namespace perlin::mods {
             return abi::Status::Ok;
         });
 
-        // Taking the mouse / keyboard away from the game is the same level of trust as driving it.
         Register(abi::Op::InputGrab, [this](CallContext& ctx, abi::Reader& r, abi::Writer&) {
             const bool mouse = r.boolean(), keyboard = r.boolean();
             if (!r.Ok())

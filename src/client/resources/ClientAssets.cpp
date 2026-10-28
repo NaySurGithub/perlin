@@ -164,7 +164,6 @@ namespace perlin::clientassets {
             emit("ui_slot_icons.png", icons);
         }
         {
-            // Java bed pieces, one 64x48 sheet per dye (4x3 tiles of 16px): foot up/south/east/west, head up/north/east/west, down.
             static const char* const kJarDye[16] = {"white", "orange", "magenta", "light_blue", "yellow", "lime", "pink", "gray",
                                                     "light_gray", "cyan", "purple", "blue", "brown", "green", "red", "black"};
             static const char* const kOutDye[16] = {"white", "orange", "magenta", "light_blue", "yellow", "lime", "pink", "gray",

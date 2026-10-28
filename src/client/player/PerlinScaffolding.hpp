@@ -13,9 +13,6 @@ namespace perlin::physics::bds {
         bool overPowderSnow = false;
     };
 
-    // BlockClimberSystem 0x1066AEDBC, footprint readers 0x1066AF32C and
-    // 0x1066AF5DC. Both horizontal endpoints are included, without epsilon.
-    // The caller supplies the player's resolved powder-snow capability.
     template<class Read>
     ScaffoldingContacts SenseScaffolding(const CollisionBox& body, Read&& read, bool canStandOnSnow = false) {
         ScaffoldingContacts result;
@@ -48,8 +45,6 @@ namespace perlin::physics::bds {
         return result;
     }
 
-    // Native 26.52 ScaffoldingBlock collision provider 0x10B47CBAC.
-    // The admitted shape is a full cube; the actor can enter from below/sides.
     inline bool ScaffoldingSupports(const CollisionBox& actor, const BlockPosition& block,
                                     int stability, bool fallThrough) {
         const auto next = [](int32_t value) {

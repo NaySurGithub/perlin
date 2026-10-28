@@ -1,6 +1,7 @@
 #include "client/ui/InventoryScreen.hpp"
 
 #include "client/ui/EffectData.hpp"
+#include "client/ui/FormatCodes.hpp"
 #include "client/ui/ItemTooltip.hpp"
 #include "client/ui/RmlEmit.hpp"
 #include "client/ui/UiSprite.hpp"
@@ -120,7 +121,6 @@ mcitem { display: block; position: absolute; }
             return;
         }
         if (chestRows > 0 && addr < 36) {
-            // generic_54 layout: the player inventory sits below the container rows.
             x = 7 + (addr % 9) * 18;
             y = addr < 9 ? chestRows * 18 + 88 : chestRows * 18 + 30 + ((addr - 9) / 9) * 18;
             return;
@@ -277,6 +277,26 @@ mcitem { display: block; position: absolute; }
 
         std::string effects = BuildEffectsPanel(v.effects, px + kInvPanelW + 2, py, guiW);
 
+        std::string d = templateText;
+        ReplaceAll(d, "w", std::to_string(guiW));
+        ReplaceAll(d, "h", std::to_string(guiH));
+        ReplaceAll(d, "x", std::to_string(px));
+        ReplaceAll(d, "y", std::to_string(py));
+        ReplaceAll(d, "lx", std::to_string(px + (v.horse || rows > 0 ? 8 : wb ? 28 : 97)));
+        ReplaceAll(d, "ly", std::to_string(py + (v.horse || rows > 0 ? 6 : wb ? 6 : 8)));
+        ReplaceAll(d, "title", FormatCodesToRml(v.title.empty() ? i18n::Tr(v.horse ? "entity.minecraft.horse" : "container.crafting") : v.title));
+        ReplaceAll(d, "chrome", Chrome(wb, v.horse, rows));
+        ReplaceAll(d, "book", book);
+        ReplaceAll(d, "effects", effects);
+        ReplaceAll(d, "bookbutton", bookButton);
+        ReplaceAll(d, "slots", slots);
+        ReplaceAll(d, "cursor", InventoryCursorRml(v));
+        ReplaceAll(d, "tooltip", InventoryTooltipRml(v, guiW, guiH));
+        ReplaceAll(d, "tipstyle", TooltipStyles());
+        return d;
+    }
+
+    std::string InventoryCursorRml(const InventoryView& v) {
         std::string cursor;
         if (!v.cursor.Empty()) {
             cursor = "  <div id=\"cursor\" style=\"left:" + std::to_string(static_cast<int>(v.mouseX) - 8) + "px;top:" +
@@ -286,7 +306,10 @@ mcitem { display: block; position: absolute; }
                 cursor += "<div class=\"cnt\" style=\"left:-3px;top:9px;width:19px;height:9px;\">" + std::to_string(v.cursor.count) + "</div>";
             cursor += "</div>\n";
         }
+        return cursor;
+    }
 
+    std::string InventoryTooltipRml(const InventoryView& v, int guiW, int guiH) {
         std::string tip;
         if (v.cursor.Empty()) {
             const HudItem* it = nullptr;
@@ -307,23 +330,6 @@ mcitem { display: block; position: absolute; }
             if (it && !it->Empty())
                 tip = TooltipRml(BuildItemTooltip(*it, v.advancedTooltips), static_cast<int>(v.mouseX), static_cast<int>(v.mouseY), guiW, guiH);
         }
-
-        std::string d = templateText;
-        ReplaceAll(d, "w", std::to_string(guiW));
-        ReplaceAll(d, "h", std::to_string(guiH));
-        ReplaceAll(d, "x", std::to_string(px));
-        ReplaceAll(d, "y", std::to_string(py));
-        ReplaceAll(d, "lx", std::to_string(px + (v.horse || rows > 0 ? 8 : wb ? 28 : 97)));
-        ReplaceAll(d, "ly", std::to_string(py + (v.horse || rows > 0 ? 6 : wb ? 6 : 8)));
-        ReplaceAll(d, "title", EscapeRml(v.title.empty() ? i18n::Tr(v.horse ? "entity.minecraft.horse" : "container.crafting") : v.title));
-        ReplaceAll(d, "chrome", Chrome(wb, v.horse, rows));
-        ReplaceAll(d, "book", book);
-        ReplaceAll(d, "effects", effects);
-        ReplaceAll(d, "bookbutton", bookButton);
-        ReplaceAll(d, "slots", slots);
-        ReplaceAll(d, "cursor", cursor);
-        ReplaceAll(d, "tooltip", tip);
-        ReplaceAll(d, "tipstyle", TooltipStyles());
-        return d;
+        return tip;
     }
 }

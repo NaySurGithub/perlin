@@ -13,9 +13,6 @@ namespace perlin {
     void TrimMemory(bool aggressive) {
 #if defined(_WIN32)
         _heapmin();
-        // Deliberately no SetProcessWorkingSetSize(-1, -1) here, even when `aggressive`. Emptying the working set
-        // while the window is in the background pages the whole game out, and every page then has to be faulted
-        // back in when the window is focused again, which is the FPS crash on returning to the window.
         (void)aggressive;
 #elif defined(__GLIBC__)
         (void)aggressive;

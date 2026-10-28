@@ -14,15 +14,15 @@ namespace perlin::jshader {
     BufferFormat ParseBufferFormat(const std::string& text, BufferFormat fallback);
 
     struct BlendFactors {
-        bool set = false;       // false = engine default
-        bool off = false;       // blending disabled
-        int src = 0, dst = 0, srcA = 0, dstA = 0;   // GL enum values
+        bool set = false;
+        bool off = false;
+        int src = 0, dst = 0, srcA = 0, dstA = 0;
     };
 
     struct AlphaTest {
         bool set = false;
         bool off = false;
-        int func = 0x204;       // GL_GREATER
+        int func = 0x204;
         float ref = 0.1f;
     };
 
@@ -30,16 +30,16 @@ namespace perlin::jshader {
         BufferFormat format = BufferFormat::RGBA8;
         bool clear = true;
         float clearColor[4] = {0, 0, 0, 0};
-        bool mipmap = false;    // generate mips before each composite pass
+        bool mipmap = false;
         bool linear = true;
-        float scaleX = 1.0f, scaleY = 1.0f;  // from size.buffer.* / scale
+        float scaleX = 1.0f, scaleY = 1.0f;
         int fixedWidth = 0, fixedHeight = 0;
     };
 
     struct CustomTexture {
-        std::string stage;      // "" / "gbuffers" / "composite" / "deferred" / "shadowcomp" / "prepare" / "noise"
-        std::string sampler;    // sampler name, e.g. "noisetex"
-        std::string path;       // path inside the pack
+        std::string stage;
+        std::string sampler;
+        std::string path;
         std::string type = "texture2D";
     };
 
@@ -49,9 +49,9 @@ namespace perlin::jshader {
         AlphaTest alpha;
         float scale = 1.0f, offsetX = 0.0f, offsetY = 0.0f;
         bool hasScale = false;
-        int explicitEnabled = -1;                       // -1 not specified, 0 off, 1 on
-        std::map<int, bool> flip;                       // colortex N -> flip request (composite chain ping-pong override)
-        std::vector<int> drawBuffers;                   // filled by the pipeline from the program source
+        int explicitEnabled = -1;
+        std::map<int, bool> flip;
+        std::vector<int> drawBuffers;
     };
 
     struct PipelineConfig {
@@ -61,25 +61,25 @@ namespace perlin::jshader {
         float shadowIntervalSize = 2.0f;
         float shadowDistanceRenderMul = -1.0f;
         bool shadowHardwareFiltering[2] = {false, false};
-        bool shadowFilterLinear[2] = {true, true};      // false = nearest
+        bool shadowFilterLinear[2] = {true, true};
         bool shadowMipmap[2] = {false, false};
         bool shadowColorLinear[2] = {true, true};
         BufferFormat shadowColorFormat[2] = {BufferFormat::RGBA8, BufferFormat::RGBA8};
         bool shadowColorClear[2] = {true, true};
-        bool shadowEnabled = false;                     // any shadow program or shadowtex sampler present
+        bool shadowEnabled = false;
         bool depthMipmap = false;
         float sunPathRotation = 0.0f;
         float eyeBrightnessHalflife = 10.0f, centerDepthHalflife = 1.0f, wetnessHalflife = 600.0f, drynessHalflife = 200.0f;
         float ambientOcclusionLevel = 1.0f;
         bool oldLighting = false, oldHandLight = true, separateAo = false, underwaterOverlay = true, sun = true, moon = true, vignette = true;
         bool rainDepth = false, beaconBeamDepth = false, dynamicHandLight = true, frustumCulling = true, shadowTranslucent = true;
-        std::string clouds = "default";                 // default / off / fast / fancy
-        std::string cloudShadow;                        // unused for now
+        std::string clouds = "default";
+        std::string cloudShadow;
         std::string particlesBeforeDeferred;
-        std::map<std::string, ProgramConfig> programs;  // key: program name
+        std::map<std::string, ProgramConfig> programs;
         std::vector<CustomTexture> textures;
-        std::string noiseTexture;                       // texture.noise
-        std::vector<std::pair<std::string, std::string>> customUniformProps;  // uniform.* and variable.* entries
+        std::string noiseTexture;
+        std::vector<std::pair<std::string, std::string>> customUniformProps;
         std::vector<std::string> problems;
 
         const ProgramConfig* Find(const std::string& program) const {
@@ -88,7 +88,6 @@ namespace perlin::jshader {
         }
     };
 
-    // Reads shaders.properties plus the `const` directives from the shader sources.
     PipelineConfig ParsePipelineConfig(ShaderPackInstance& pack);
     int GlEnumFromName(const std::string& name);
 }

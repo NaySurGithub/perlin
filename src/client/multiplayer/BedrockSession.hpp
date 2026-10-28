@@ -151,8 +151,6 @@ namespace perlin {
         std::vector<BossBar> BossBars() const;
         ScoreboardView Scoreboard() const;
         bool TakeToast(ServerToast& out);
-        // The server's input locks, plus movement and jump while our actor carries the IMMOBILE flag
-        // (minigame countdowns, cutscenes): vanilla stops applying move input locally in that state.
         uint32_t InputLocks() const { return inputLocks.load() | (immobile.load() ? 4u | 64u : 0u); }
         uint32_t HiddenHud() const { return hiddenHud.load(); }
         std::atomic<bool> serverAuthBreaking{true};
@@ -210,9 +208,6 @@ namespace perlin {
             std::lock_guard lock(attrMutex);
             const auto it = ownAttributes.find("minecraft:movement");
             float speed = it == ownAttributes.end() ? 0.1f : it->second;
-            // The wire current value already includes this native modifier.
-            // Replace only its contribution with the locally predicted sprint
-            // state; potion, equipment and custom movement modifiers stay intact.
             if (movementAttribute)
                 for (const auto& modifier : movementAttribute->modifiers)
                     if (modifier.id == "d208fc00-42aa-4aad-9276-d5446530de43" &&
@@ -249,8 +244,6 @@ namespace perlin {
         void ArmPredictionSync() { if (predictionSyncCountdown < 0) predictionSyncCountdown = 200; }
         bool SendPredictionSync();
         bool Initialized() const { return initializedSent; }
-        // Blocks above a predicted break (the top of tall grass, ...) that were cleared with it. The server only
-        // resends the block it rejected, so these are put back when that block is restored.
         void NoteBrokenSupport(int x, int y, int z, std::vector<std::pair<int, uint16_t>> above) {
             std::lock_guard lock(supportMutex);
             brokenSupports.push_back({x, y, z, std::move(above), std::chrono::steady_clock::now()});
@@ -400,14 +393,12 @@ void RequestRespawn();
             dropOutActive.store(!droppedOut.empty(), std::memory_order_release);
         }
         void InjectIncoming(uint32_t id, const std::vector<uint8_t>& body) { OnGamePacket(id, body); }
-        // Replay support. The tap sees every clientbound packet and the outgoing PlayerAuthInput (dir 1).
         using RecordTap = std::function<void(int dir, uint32_t id, const std::vector<uint8_t>& body)>;
         void SetRecordTap(RecordTap t) {
             std::lock_guard<std::mutex> lk(tapMutex);
             recordTap = std::move(t);
             tapActive.store(static_cast<bool>(recordTap), std::memory_order_release);
         }
-        // Turns this session into an offline playback target: nothing is sent, no timeouts, packets come from InjectIncoming.
         void BeginReplayMode(const std::string& name, uint64_t localRuntimeId, int protocol) {
             replayMode = true;
             playerName = name;
@@ -416,7 +407,6 @@ void RequestRespawn();
             state = State::InGame;
             netLevel.EnableUndo(static_cast<size_t>(768) << 20);
         }
-        // Seamless rewinds: the world (chunks, undo log, block entities) moves to the new session untouched.
         void AdoptWorld(BedrockSession& old) {
             old.WaitChunkWorkIdle();
             netLevel.TakeFrom(old.netLevel);
@@ -426,7 +416,6 @@ void RequestRespawn();
             for (int i = 0; i < 20000 && !ChunkWorkIdle(); i++)
                 std::this_thread::sleep_for(std::chrono::microseconds(100));
         }
-        // Marks the replay second whose packets are about to be applied (for the undo log).
         void ReplayEpoch(int64_t epoch) {
             if (epoch == netLevel.Epoch())
                 return;
@@ -439,8 +428,6 @@ void RequestRespawn();
             return netLevel.RewindTo(epoch);
         }
         bool IsReplay() const { return replayMode; }
-        // What the recorded player did on the client side (swing, block actions, hotbar), decoded from the
-        // serverbound packets stored in a replay.
         struct ReplayClientEvent {
             enum class Kind { Swing, BlockAction, Hotbar } kind = Kind::Swing;
             uint32_t action = 0;
@@ -480,8 +467,6 @@ void RequestRespawn();
         int ServerProtocol() const { return serverProtocol; }
         bool MayFly() const { return mayFly; }
         bool IsFlying() const { return isFlying; }
-        // Entity flag 32 (gliding) as last reported by the server for the local player.
-        // Actor flag 75 (sleeping) lives in the extended flag word.
         bool Sleeping() const { std::lock_guard lock(attrMutex); return (ownFlagWords[1] & proto::FlagsMetadataFlags2::Sleeping) != 0 || (ownPlayerFlags & 2) != 0; }
         bool SendStopSleeping() { return SendPlayerAction(6, 0, 0, 0, 0); }
         bool ServerGliding() const {
@@ -556,12 +541,10 @@ void RequestRespawn();
             ItemStackInfo output;
             ItemStackInfo cursor;
             int selected = 0;
-            // Open horse / donkey / llama screen: [0] saddle, [1] armor, [2..] the chest slots.
             ItemStackInfo horse[17];
             bool horseOpen = false;
             int horseChestSlots = 0;
             int64_t horseEntity = 0;
-            // Open chest-like block container (chest, trapped/ender chest, barrel, shulker box): 27 slots, 54 for a double chest.
             ItemStackInfo chest[54];
             bool chestOpen = false;
             int chestSlots = 0;
@@ -770,8 +753,6 @@ void RequestRespawn();
         std::deque<ServerToast> toasts;
         std::atomic<uint32_t> inputLocks{0};
         std::atomic<bool> immobile{false};
-        // StartGame's serverAuthoritativeInventory was false (e.g. The Hive): such servers ignore item stack
-        // requests and expect legacy inventory_transaction packets listing each slot's old and new item.
         std::atomic<bool> legacyInventory{false};
         std::atomic<uint32_t> hiddenHud{0};
         net::PacketDispatcher dispatcher;
@@ -944,7 +925,6 @@ void RequestRespawn();
         std::map<std::tuple<int, int, int, int>, std::chrono::steady_clock::time_point> inflight;
         std::map<std::tuple<int, int, int, int>, int> retries;
         static constexpr int kMaxSubChunkRetries = 3;
-        // Requires reqMutex. Drops every request-tracking entry for a column.
         void ForgetColumnRequests(int cx, int cz);
         void CompleteRequest(const std::tuple<int, int, int, int>& key, bool retry);
         void DropSlot(const std::tuple<int, int, int, int>& key, std::vector<std::pair<int, int>>& completed);
@@ -968,7 +948,6 @@ void RequestRespawn();
         float lastAuthPos[3] = {0, 0, 0};
         bool haveLastAuthPos = false;
         bool pendingTeleportAck = false;
-        // One-shot PlayerAuthInput flags raised by input events (MissedSwing, StartUsingItem) for the next tick.
         std::vector<uint32_t> pendingInputFlags;
         std::mutex pendingInputMutex;
         struct BrokenSupport {
@@ -980,8 +959,6 @@ void RequestRespawn();
         std::mutex supportMutex;
         std::chrono::steady_clock::time_point lastSwingAt{};
         std::deque<BlockActionData> pendingBlockActions;
-        // Packet events are consumed in decode order; merging them loses
-        // teleport/correction boundaries and velocity updates from one frame.
         std::deque<ServerMotion> serverMotions;
         void QueueServerMotion(ServerMotion motion);
         mutable std::mutex attrMutex;
@@ -1101,7 +1078,6 @@ void RequestRespawn();
         std::deque<std::function<bool(proto::ItemStackRequest&)>> invQueue;
         bool invCloseWanted = false;
         int32_t invPendingRequest = 0;
-        // Requests sent but not yet answered; the client keeps predicting while these are in flight.
         std::map<int32_t, std::chrono::steady_clock::time_point> invInFlight;
         std::chrono::steady_clock::time_point invPendingAt{};
         void InvRecomputeOutputLocked();

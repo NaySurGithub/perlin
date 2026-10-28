@@ -4,8 +4,6 @@
 #include <cmath>
 
 namespace perlin::entity::java {
-    // Behavioral reference: Minecraft Java 26.3 LivingEntity, WalkAnimationState,
-    // BodyRotationControl and HumanoidModel. Angles here are degrees except Part::rotation.
     inline float Wrap(float a) {
         return a - std::floor((a + 180.0f) / 360.0f) * 360.0f;
     }
@@ -70,7 +68,6 @@ namespace perlin::entity::java {
             return (position - speed * (1.0f - p)) * (baby ? 3.0f : 1.0f);
         }
     };
-    // Sample every crossed 20 Hz tick along the frame trajectory, including catch-up frames.
     inline double TickFraction(double remainder, double dt) {
         return std::clamp(1.0 - remainder / dt, 0.0, 1.0);
     }
@@ -121,14 +118,10 @@ namespace perlin::entity::java {
               height = 1.8f;
         bool gliding = false, spin = false, sleeping = false, inWater = false, visuallySwimming = false;
         bool flyingYaw = false, upsideDown = false, shaking = false;
-        // South, west, north, east; -1 means the bed direction is unavailable.
         int bedDirection = -1;
     };
-    // Root transform in world units, before the common model-pixel scale.
     glm::mat4 PlayerRootTransform(const RootState& state, float modelScale);
     float FlightYaw(float yaw, float pitch, const glm::vec3& velocityPerTick);
-    // Convert independent Java model parts into the supplied Bedrock bone hierarchy.
-    // Children (sleeves, armor, held-item anchors) then inherit exactly once.
     bool ApplyPlayerPose(const PlayerPose& player, const attachable::Geometry* geometry,
                          attachable::Pose& pose);
 }

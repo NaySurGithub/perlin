@@ -127,7 +127,6 @@ namespace perlin::replay::ffmpeg {
             std::istringstream in(RunCapture({path, "-hide_banner", "-encoders"}));
             std::string line;
             while (std::getline(in, line)) {
-                // " V....D libx264              libx264 H.264 ..."
                 if (line.size() > 8 && line[0] == ' ' && line[1] == 'V') {
                     std::istringstream ls(line.substr(8));
                     std::string name;
@@ -141,7 +140,6 @@ namespace perlin::replay::ffmpeg {
             std::istringstream in(RunCapture({path, "-hide_banner", "-muxers"}));
             std::string line;
             while (std::getline(in, line)) {
-                // " E  mp4             MP4 (MPEG-4 Part 14)"
                 if (line.size() > 4 && line[0] == ' ' && (line[1] == 'E' || line[2] == 'E') && line[3] == ' ') {
                     std::istringstream ls(line.substr(3));
                     std::string name;
@@ -263,7 +261,6 @@ namespace perlin::replay::ffmpeg {
                 else
                     a.insert(a.end(), {"-qp", std::to_string(std::min(crf * 4, 255))});
             } else if (enc == "prores_ks" || enc == "prores") {
-                // quality as a profile: 0 proxy .. 3 HQ .. 4 4444
                 const int profile = crf <= 8 ? 4 : crf <= 16 ? 3 : crf <= 24 ? 2 : crf <= 32 ? 1 : 0;
                 a.insert(a.end(), {"-profile:v", std::to_string(profile)});
             } else if (enc == "dnxhd") {
@@ -414,7 +411,6 @@ namespace perlin::replay::ffmpeg {
             error = "unknown container " + s.container;
             return false;
         }
-        // Input: raw BGRA frames over stdin.
         argv = {s.ffmpegPath, "-hide_banner", "-loglevel", "warning", "-y", "-f", "rawvideo", "-pix_fmt", "bgra", "-s", std::to_string(s.inputWidth > 0 ? s.inputWidth : s.width) + "x" + std::to_string(s.inputHeight > 0 ? s.inputHeight : s.height),
                 "-framerate", Num(s.fps), "-i", "-"};
         if (!s.audioPath.empty()) {
@@ -426,7 +422,6 @@ namespace perlin::replay::ffmpeg {
         vf.push_back("setsar=1");
 
         if (cont->imageSequence) {
-            // outputPath is a printf-style pattern such as "dir/name_%05d.png".
             if (s.container == "png")
                 argv.insert(argv.end(), {"-c:v", "png", "-pix_fmt", s.transparent ? "rgba" : "rgb24"});
             else if (s.container == "jpg")
@@ -502,7 +497,6 @@ namespace perlin::replay::ffmpeg {
             argv.insert(argv.end(), {"-c:v", enc});
             QualityArgs(s, enc, argv);
             if (enc == "libx264" || enc == "libx265" || enc == "libsvtav1" || enc == "libvpx-vp9") {
-                // Full-range BGRA -> limited-range BT.709 YUV, tagged so players agree.
                 vf.back() = "scale=in_range=full:out_range=tv:out_color_matrix=bt709,format=" + pix;
                 argv.insert(argv.end(), {"-colorspace", "bt709", "-color_primaries", "bt709", "-color_trc", "bt709", "-color_range", "tv"});
             }

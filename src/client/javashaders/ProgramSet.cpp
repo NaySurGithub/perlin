@@ -55,7 +55,6 @@ namespace perlin::jshader {
             return s.substr(a, b - a);
         }
 
-        // Tiny numeric expression evaluator for `const` directive values (after macro substitution).
         struct NumParser {
             const std::string& s;
             size_t i = 0;
@@ -148,7 +147,6 @@ namespace perlin::jshader {
             for (const char* k : kNames)
                 if (n == k)
                     return true;
-            // colortexNFormat / colortexNClear / colortexNClearColor / colortexNMipmapEnabled / depthtexN...
             if (n.compare(0, 8, "colortex") == 0 || n.compare(0, 8, "depthtex") == 0)
                 return true;
             return false;
@@ -265,7 +263,6 @@ namespace perlin::jshader {
         if (pack->Read("shaders.properties", text))
             props = ParseProperties(text, macros);
         if (dimension.empty()) {
-            // dimension.properties maps folders to dimension ids; it is read when a world is entered.
         }
     }
 
@@ -368,12 +365,9 @@ namespace perlin::jshader {
         return program;
     }
 
-    // Reads `/* DRAWBUFFERS:012 */` / `/* RENDERTARGETS: 0,1,2 */` from the preprocessed fragment source (the last active
-    // tag wins, like Iris).
     static void ParseDrawBuffers(const std::string& text, MacroMap macros, ProgramSource& out) {
         if (text.find("DRAWBUFFERS") == std::string::npos && text.find("RENDERTARGETS") == std::string::npos)
             return;
-        // Tags live in comments, which the conditional preprocessor keeps; conditionals decide which are active.
         const std::string active = ResolveConditionals(text, macros);
         size_t pos = 0;
         std::vector<int> result;
@@ -474,7 +468,6 @@ namespace perlin::jshader {
             return directives;
         directivesLoaded = true;
         directives = {};
-        // `const` configuration lines live in the fragment/vertex/compute programs of the pack.
         std::vector<std::string> names;
         for (const ProgramInfo& p : kPrograms)
             names.push_back(p.name);
@@ -515,8 +508,6 @@ namespace perlin::jshader {
                 }
             }
         }
-        // Pack-level numeric options also count as directives when a `const` line refers to them, which the
-        // substitution above already covers.
         return directives;
     }
 }

@@ -2,7 +2,9 @@
 
 #include "client/ui/InventoryScreen.hpp"
 #include "client/ui/ItemTooltip.hpp"
+#include "client/ui/FormatCodes.hpp"
 #include "client/ui/RmlEmit.hpp"
+#include "client/ui/TextEdit.hpp"
 #include "client/ui/UiSprite.hpp"
 #include "client/ui/UiTemplate.hpp"
 
@@ -171,7 +173,7 @@ mcimg { display: block; position: absolute; }
                         "  <div id=\"sbar\" style=\"left:" + std::to_string(px + 174) + "px;top:" + std::to_string(py + 18) + "px;width:14px;height:112px;\"></div>\n";
             if (v.tab == kCreativeSearchTab)
                 search = "  <div class=\"search\" style=\"left:" + std::to_string(px + 84) + "px;top:" + std::to_string(py + 6) + "px;\">" +
-                         EscapeRml(v.search) + "_</div>\n";
+                         TextFieldRml(v.search, true) + "</div>\n";
         }
         for (int i = 0; i < 9; i++)
             slots += Cell("s" + std::to_string(i), px, py, survival, v.slots[static_cast<size_t>(i)], -1);
@@ -222,7 +224,7 @@ mcimg { display: block; position: absolute; }
         ReplaceAll(d, "by", std::to_string(py + 18));
         ReplaceAll(d, "lx", std::to_string(px + 8));
         ReplaceAll(d, "ly", std::to_string(py + 6));
-        ReplaceAll(d, "title", survival ? std::string() : EscapeRml(v.title));
+        ReplaceAll(d, "title", survival ? std::string() : FormatCodesToRml(v.title));
         ReplaceAll(d, "chrome", SpriteRml(ChromeFor(v.tab), 0, 0, kCreativeW, kCreativeH, 0, 0));
         ReplaceAll(d, "tabs", tabs);
         ReplaceAll(d, "effects", BuildEffectsPanel(v.effects, px + kCreativeW + 2, py, guiW));

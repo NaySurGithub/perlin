@@ -310,15 +310,9 @@ namespace perlin {
         BuildLayoutLocked(false);
     }
 
-    // Rebuilds `sequence` from the vanilla table plus the server's custom blocks.
-    // appended=false puts each custom block at the position its name hash sorts to;
-    // appended=true leaves every vanilla id where the bundled table has it and
-    // puts the custom ones after the last vanilla id.
     void BlockPalette::BuildLayoutLocked(bool appended) {
         sequence.clear();
         sequenceKeys.clear();
-        // Data-driven vanilla blocks only occupy network IDs when StartGame
-        // declares them. Keeping absent definitions shifts every later ID.
         for (size_t i = 0; i < baseSequence.size(); ++i) {
             if (dataDrivenHashes.contains(baseSequence[i]))
                 continue;

@@ -24,7 +24,6 @@ namespace perlin {
         }
         void FromMat(const glm::mat4& m, float* out) { std::memcpy(out, &m[0][0], sizeof(float) * 16); }
 
-        // ZO clip depth -> GL style (-1..1): row z = 2*z - w.
         void ToGlDepth(const float* in, float* out) {
             std::memcpy(out, in, sizeof(float) * 16);
             for (int c = 0; c < 4; c++) out[c * 4 + 2] = 2.0f * in[c * 4 + 2] - in[c * 4 + 3];
@@ -35,7 +34,6 @@ namespace perlin {
             return n;
         }
 
-        // "minecraft:grass_block:snowy=false" / "grass_block" -> "grass_block"
         std::string BaseName(const std::string& entry) {
             std::vector<std::string> parts;
             size_t start = 0;
@@ -67,7 +65,6 @@ namespace perlin {
             return nullptr;
         }
 
-        // Alpha weighted 2x2 box filter.
         void BoxDown(const uint8_t* src, int sw, int sh, int sstride, uint8_t* dst, int dstride) {
             const int dw = std::max(1, sw / 2), dh = std::max(1, sh / 2);
             for (int y = 0; y < dh; y++)
@@ -171,12 +168,10 @@ namespace perlin {
         if (pipeline) pipeline->Resize(w, h);
     }
 
-    // -------------------------------------------------------------------------------------------- blocks
     void JavaPackHost::BuildBlockMap() {
         nameToPackId.clear();
         paletteMap.assign(65536, -2);
         if (!instance) return;
-        // Entries without block state properties win over property variants of the same block.
         std::unordered_map<std::string, bool> plain;
         for (const auto& kv : instance->BlockIds())
             for (const std::string& entry : kv.second) {
@@ -207,7 +202,6 @@ namespace perlin {
         return slot;
     }
 
-    // -------------------------------------------------------------------------------------------- atlas
     void JavaPackHost::SetAtlas(const uint8_t* rgba, int tilePx, int tiles) {
         if (!rgba || tilePx <= 0 || tiles <= 0) return;
         if (bgfx::isValid(atlas)) bgfx::destroy(atlas);
@@ -225,7 +219,6 @@ namespace perlin {
         }
         const int W = gridCols * tilePx, H = gridRows * tilePx;
         atlasWidth = W;
-        // Per-tile mip levels first (no bleeding between tiles), then a plain chain.
         int tileLevels = 0;
         while ((tilePx >> (tileLevels + 1)) >= 2 && tileLevels < 4) tileLevels++;
         atlasLevels = tileLevels + 1;
@@ -256,7 +249,6 @@ namespace perlin {
                         &levels[static_cast<size_t>(l)][(static_cast<size_t>(gy * s) * lw + static_cast<size_t>(gx) * s) * 4], lw * 4);
             }
         }
-        // Remaining levels of the chain down to 1x1.
         while (sizes.back().first > 1 || sizes.back().second > 1) {
             const auto [pw, ph] = sizes.back();
             const int nw = std::max(1, pw / 2), nh = std::max(1, ph / 2);
@@ -295,7 +287,6 @@ namespace perlin {
         }
     }
 
-    // -------------------------------------------------------------------------------------------- vertices
     void JavaPackHost::Convert(const Tessellator& tess, std::vector<PackVertex>& out) {
         const std::vector<Vertex>& verts = tess.Vertices();
         const std::vector<QuadInfo>& quads = tess.Quads();
@@ -327,11 +318,9 @@ namespace perlin {
                 blockOrigin = glm::floor(centre - n * 0.01f);
             }
             const glm::vec3 blockCentre = blockOrigin + glm::vec3(0.5f);
-            // Orient the normal away from the block centre; faces through the middle (plants) point up.
             const float side = glm::dot(n, centre - blockCentre);
             if (std::fabs(side) < 0.15f) n = glm::vec3(0, 1, 0);
             else if (side < 0.0f) n = -n;
-            // Tangent from the uv layout.
             glm::vec2 uv0(v[0].u, v[0].v), uv1(v[1].u, v[1].v), uv2(v[2].u, v[2].v);
             const glm::vec3 e1 = p1 - p0, e2 = p2 - p0;
             const glm::vec2 d1 = uv1 - uv0, d2 = uv2 - uv0;
@@ -340,7 +329,6 @@ namespace perlin {
             if (glm::dot(tangent, tangent) < 1e-12f) tangent = glm::vec3(1, 0, 0);
             tangent = glm::normalize(tangent);
             const int packId = block ? PackBlockId(block) : -1;
-            // Atlas uv and the tile centre.
             float au[4], av[4];
             for (int i = 0; i < 4; i++) {
                 const uint32_t tile = v[i].light >> 16;
@@ -382,7 +370,6 @@ namespace perlin {
         }
     }
 
-    // -------------------------------------------------------------------------------------------- frame
     void JavaPackHost::BuildFrame(const FrameParams& params, jshader::FrameState& s, PackShadowSetup& shadow, bool shadowsOn) {
         s = jshader::FrameState();
         const glm::mat4 view = ToMat(params.view);
@@ -407,7 +394,6 @@ namespace perlin {
         }
         havePrev = true;
 
-        // Time of day. Perlin's sun angle is radians with 0 at noon; packs use a fraction with 0 at sunrise.
         const double a = params.sky.sunAngle;
         double frac = a / (2.0 * kPi) + 0.25;
         frac -= std::floor(frac);
@@ -440,7 +426,6 @@ namespace perlin {
         s.frameTimeCounter = params.timeSeconds;
         s.frameTime = std::clamp(params.timeSeconds - lastTime, 0.0f, 0.25f);
         lastTime = params.timeSeconds;
-        // Clip planes from the GL projection.
         const float c = s.projection[10], d = s.projection[14];
         if (std::fabs(c - 1.0f) > 1e-6f && std::fabs(c + 1.0f) > 1e-6f) {
             s.nearPlane = d / (c - 1.0f);
@@ -458,12 +443,10 @@ namespace perlin {
         s.heavyFog = s.dimensionNether ? 1.0f : 0.0f;
         s.cloudHeight = params.cloud.height;
 
-        // Shadow matrices.
         const jshader::PipelineConfig& cfg = pipeline->Config();
         shadow.resolution = cfg.shadowMapResolution;
         shadow.distance = cfg.shadowDistance;
         glm::vec3 lightDir = dayLight ? sunDir : -sunDir;
-        // Sun path tilt (sunPathRotation) rotates the light around the east-west axis of the path.
         if (std::fabs(cfg.sunPathRotation) > 0.001f) {
             const glm::mat4 tilt = glm::rotate(glm::mat4(1.0f), glm::radians(cfg.sunPathRotation), glm::vec3(1, 0, 0));
             lightDir = glm::vec3(tilt * glm::vec4(lightDir, 0.0f));
@@ -495,7 +478,6 @@ namespace perlin {
         std::memcpy(d.projection, state.projection, sizeof(d.projection));
         const glm::mat3 normalMat(ToMat(params.view));
         std::memcpy(d.normalMatrix, &normalMat[0][0], sizeof(d.normalMatrix));
-        // Vanilla lightmap coordinates: 0..240 -> (x + 8) / 256.
         const float lm[16] = {1.0f / 256.0f, 0, 0, 0, 0, 1.0f / 256.0f, 0, 0, 0, 0, 1, 0, 1.0f / 32.0f, 1.0f / 32.0f, 0, 1};
         std::memcpy(d.textureMatrix1, lm, sizeof(lm));
         for (int i = 0; i < 3; i++) d.fogColor[i] = state.fogColor[i];

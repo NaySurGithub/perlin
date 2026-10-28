@@ -2,7 +2,9 @@
 
 #include "client/ui/RmlEmit.hpp"
 
+#include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <cstdio>
 #include <string_view>
 
@@ -47,6 +49,8 @@ namespace perlin::ui {
         }
     }
 
+    bool IsFormatCode(const std::string& text, size_t i) { return IsSection(text, i); }
+
     std::string StripFormatCodes(const std::string& text) {
         std::string out;
         out.reserve(text.size());
@@ -81,7 +85,15 @@ namespace perlin::ui {
         }
     }
 
-    std::string FormatCodesToRml(const std::string& text) {
+    std::string FormatCodesToRml(const std::string& text, float alpha) {
+        return FormatCodesToRml(text, alpha, false);
+    }
+
+    std::string FormatCodesToRmlLines(const std::string& text) {
+        return FormatCodesToRml(text, 1.0f, true);
+    }
+
+    std::string FormatCodesToRml(const std::string& text, float alpha, bool breaks) {
         std::string out;
         std::string chunk;
         bool bold = false, italic = false, underline = false, strike = false;
@@ -89,6 +101,7 @@ namespace perlin::ui {
         bool obfuscated = false;
         uint32_t color = 0;
         bool open = false;
+        const int alphaByte = std::clamp(static_cast<int>(std::lround(alpha * 255.0f)), 0, 255);
         const auto close = [&] {
             if (open)
                 out += "</span>";
@@ -102,7 +115,10 @@ namespace perlin::ui {
                 char buf[32];
                 std::string style;
                 if (haveColor) {
-                    std::snprintf(buf, sizeof buf, "color:#%06X;", color & 0xFFFFFFu);
+                    if (alphaByte < 255)
+                        std::snprintf(buf, sizeof buf, "color:#%06X%02X;", color & 0xFFFFFFu, alphaByte);
+                    else
+                        std::snprintf(buf, sizeof buf, "color:#%06X;", color & 0xFFFFFFu);
                     style += buf;
                 }
                 if (bold)
@@ -128,7 +144,6 @@ namespace perlin::ui {
                 if (FormatCodeColor(code, rgb)) {
                     haveColor = true;
                     color = rgb;
-                    bold = italic = underline = strike = obfuscated = false;
                 } else {
                     switch (std::tolower(static_cast<unsigned char>(code))) {
                     case 'l': bold = true; break;
@@ -140,9 +155,20 @@ namespace perlin::ui {
                 }
                 continue;
             }
-            const char c = text[i++];
-            if (c == '\r' || c == '\n')
+            if (i + 1 < text.size() && static_cast<unsigned char>(text[i]) == 0xC2 && static_cast<unsigned char>(text[i + 1]) == 0xA7) {
+                i += 2;
                 continue;
+            }
+            const char c = text[i++];
+            if (c == '\r')
+                continue;
+            if (c == '\n') {
+                if (breaks) {
+                    flush();
+                    out += "<br/>";
+                }
+                continue;
+            }
             chunk += c;
         }
         flush();

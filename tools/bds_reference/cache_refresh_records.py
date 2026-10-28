@@ -31,13 +31,13 @@ def generate(data):
         cpu.reg_write(x86.UC_X86_REG_RIP, target)
 
     def service(cpu, pc, size, user):
-        if pc == 0x14030D2C0:  # mechanical sparse-pool insertion result
+        if pc == 0x14030D2C0:
             result = cpu.reg_read(x86.UC_X86_REG_RDX)
             machine.qword(result + 8, 1)
             ret(result)
-        elif pc == 0x1403554E0:  # mechanical component storage lookup
+        elif pc == 0x1403554E0:
             ret(HEAP + 0x400)
-        elif pc == 0x146251860:  # memmove, including overlapping ranges
+        elif pc == 0x146251860:
             dest = cpu.reg_read(x86.UC_X86_REG_RCX)
             source = cpu.reg_read(x86.UC_X86_REG_RDX)
             count = cpu.reg_read(x86.UC_X86_REG_R8)
@@ -72,7 +72,6 @@ def generate(data):
     machine.cpu.mem_write(HEAP + 0x400, bytes([0xA5]) * 152)
     machine.run(entry, budget=10000)
     default_region = machine.get(HEAP + 0x418, 6)
-    # Check the constructor itself, including zeroed vectors and movement fields.
     initialized = machine.get(HEAP + 0x400, 38)
     expected = (*default_region, *default_region, *([0] * 26))
     if initialized != expected:

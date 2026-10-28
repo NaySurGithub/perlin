@@ -1,5 +1,6 @@
 #include "client/ui/DeathScreen.hpp"
 
+#include "client/ui/FormatCodes.hpp"
 #include "client/ui/RmlEmit.hpp"
 #include "client/ui/UiTemplate.hpp"
 #include "util/Resources.hpp"
@@ -11,21 +12,6 @@
 
 namespace perlin::ui {
     namespace fs = std::filesystem;
-
-    namespace {
-        std::string StripCodes(const std::string& in) {
-            std::string out;
-            for (size_t i = 0; i < in.size(); i++) {
-                if (static_cast<unsigned char>(in[i]) == 0xC2 && i + 2 < in.size() && static_cast<unsigned char>(in[i + 1]) == 0xA7) {
-                    i += 2;
-                    continue;
-                }
-                out += in[i];
-            }
-            return out;
-        }
-
-    }
 
     std::string DefaultDeathScreenTemplate() {
         std::string text = resources::ReadText("death_screen.rml");
@@ -45,8 +31,8 @@ namespace perlin::ui {
         ReplaceAll(d, "btn2_y", std::to_string(guiH / 4 + 96));
         ReplaceAll(d, "off", t.buttonsEnabled ? "" : " off");
         ReplaceAll(d, "title_screen", EscapeRml(t.titleScreen));
-        ReplaceAll(d, "title", EscapeRml(t.title));
-        ReplaceAll(d, "cause", EscapeRml(StripCodes(t.cause)));
+        ReplaceAll(d, "title", FormatCodesToRml(t.title));
+        ReplaceAll(d, "cause", FormatCodesToRml(t.cause));
         ReplaceAll(d, "respawn", EscapeRml(t.respawn));
         return d;
     }
