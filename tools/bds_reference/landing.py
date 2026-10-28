@@ -29,14 +29,12 @@ def generate(data):
         a = cpu.reg_read(x86.UC_X86_REG_RCX)
         b = cpu.reg_read(x86.UC_X86_REG_RDX)
         if pc == 0x14478D6B0:
-            # World/cache lookup returns a supplied block descriptor.
             machine.qword(b + 16, HEAP + 0x1000)
             result = b
         elif pc == 0x1403566F0:
             if a != pools[0x76E7A1DF]:
                 raise RuntimeError('Unexpected restitution insertion')
             machine.put(a + 0x300, [0])
-            # 0x1403566F0 initializes all three restitution lanes to zero.
             machine.put(a + 0x500, [0, 0, 0])
             machine.qword(b + 8, 1)
             result = b
@@ -55,11 +53,9 @@ def generate(data):
 
     for pc in (0x14478D6B0, 0x1403566F0, 0x140335160, 0x1402F0E60,
                0x1402F1010, 0x140C218D0, 0x140BB4FC0, 0x1402EA500, 0x1404FB850):
-        # The address may be a runtime service outside exported code pages.
         page = pc & ~4095
         if not any(lo <= pc <= hi for lo, hi, _ in machine.cpu.mem_regions()):
             machine.cpu.mem_map(page, 4096)
-        # Bound Unicorn's translation block for these substituted services.
         machine.cpu.mem_write(pc, b'\xc3')
         machine.cpu.hook_add(unicorn.UC_HOOK_CODE, runtime, begin=pc, end=pc)
 

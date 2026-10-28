@@ -49,7 +49,6 @@ int main() {
         ChunkCodec::CellIds expanded;
         CHECK(ChunkCodec::Expand(parsed[1].second.storages[0], expanded));
         CHECK(expanded == second);
-        // Every truncated second subchunk must leave the column uncommitted.
         for (size_t cut = firstSize; cut < column.size(); ++cut) {
             CHECK(!ChunkCodec::ParseColumn(column.data(), cut, 2, -4, 24, parsed, consumed));
             CHECK(parsed.empty() && consumed == 0);
@@ -133,6 +132,7 @@ int main() {
         std::vector<uint8_t> payload = {1, 2, 3};
         wire::WriteVarUint32(b, (uint32_t)payload.size());
         b.insert(b.end(), payload.begin(), payload.end());
+        b.push_back(0);
         LevelChunkPacket p;
         CHECK(Decode(b.data(), b.size(), p));
         CHECK(p.x == -3 && p.z == 12 && p.dimension == 0 && p.subChunkCount == 2);
@@ -150,6 +150,7 @@ int main() {
         b.push_back(0);
         wire::WriteVarUint32(b, 0);
         wire::WriteVarUint32(b, 0);
+        b.push_back(0);
         LevelChunkPacket p;
         CHECK(Decode(b.data(), b.size(), p));
         CHECK(p.highestSubchunkCount.has_value() && *p.highestSubchunkCount == 9);
@@ -167,6 +168,7 @@ int main() {
         for (int i = 0; i < 4; i++)
             wire::WriteLE32(b, (uint32_t)(i + 1));
         wire::WriteVarUint32(b, 0);
+        b.push_back(0);
         LevelChunkPacket p;
         CHECK(Decode(b.data(), b.size(), p));
         CHECK(p.highestSubchunkCount.has_value() && *p.highestSubchunkCount == -1 && p.cacheEnabled);

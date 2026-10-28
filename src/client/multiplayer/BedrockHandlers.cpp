@@ -53,8 +53,6 @@ namespace perlin {
             return false;
         }
 
-        // Integer metadata read without going through a double: the actor flags are a 64-bit mask and anything above bit 53
-        // (swimming, eating, laying down...) rounds off other bits when squeezed into a double, which turned random flags on.
         bool MetaInt(const MetadataDictionaryEntry& m, int64_t& out) {
             const auto take = [&](const auto& v) { out = static_cast<int64_t>(v); return true; };
             if (const auto* v = std::get_if<1>(&m.value)) return take(*v);
@@ -379,7 +377,6 @@ namespace perlin {
 
         On<ResourcePackStackPacket>([this](const ResourcePackStackPacket&) {
             std::cout << "[bedrock] ResourcePackStack" << std::endl;
-            // Both packets can arrive; vanilla answers Completed once.
             if (!packsCompletedSent) {
                 SendResourcePackResponse(PackStatus::Completed);
                 packsCompletedSent = true;
@@ -392,7 +389,6 @@ namespace perlin {
 
         On<ResourcePacksReadyForValidationPacket>([this](const ResourcePacksReadyForValidationPacket&) {
             std::cout << "[bedrock] ResourcePacksReadyForValidation" << std::endl;
-            // Both packets can arrive; vanilla answers Completed once.
             if (!packsCompletedSent) {
                 SendResourcePackResponse(PackStatus::Completed);
                 packsCompletedSent = true;
@@ -537,7 +533,6 @@ namespace perlin {
                 itemNames.clear();
                 for (const ItemstatesEntry& item : p.itemstates)
                     itemNames[item.runtimeId] = item.name;
-                // Some servers (The Hive's proxy) send the inventory before the registry; name those stacks now.
                 const auto rename = [this](ItemStackInfo& info) {
                     if (info.name != "minecraft:unknown")
                         return;
@@ -593,9 +588,6 @@ namespace perlin {
             dimensionId = p.dimension;
             ResetWorldForDimension();
             if (SaneWorldPos(p.position.x, p.position.y, p.position.z)) {
-                // ChangeDimension carries the target actor position, unlike
-                // MovePlayer's eye position. Native LocalPlayer 0x104D0AFB4
-                // copies this vector unchanged into its dimension request.
                 pose = {p.position.x, p.position.y, p.position.z, pose.yaw, pose.pitch,
                         pose.headYaw, false, true};
                 haveLastAuthPos = false;
@@ -699,8 +691,6 @@ namespace perlin {
                     if (it != crackStates.end())
                         crackStates.erase(it);
                 } else {
-                    // A late "break speed" update for a block we just stopped/finished breaking would resurrect a
-                    // crack that never goes away; likewise the block may already be gone.
                     if (it == crackStates.end()) {
                         if (bx == lastClearedCrack[0] && by == lastClearedCrack[1] && bz == lastClearedCrack[2] &&
                             now - lastClearedAt < std::chrono::milliseconds(750))
@@ -881,10 +871,6 @@ namespace perlin {
                 const int32_t y = static_cast<int32_t>(b.position.y);
                 if (y < -64 || y >= 320 || std::abs(b.position.x) > 30000000 || std::abs(b.position.z) > 30000000)
                     return false;
-                // An existing column can legitimately receive its first block
-                // in an empty, unallocated section (for example a new bridge).
-                // SetBlock/SetLiquid allocate that section; requiring it to
-                // exist here silently discarded the server's terrain updates.
                 return netLevel.HasChunk(b.position.x >> 4, b.position.z >> 4);
             };
             static int logged = 0;
@@ -900,8 +886,6 @@ namespace perlin {
                               << p.blocks[0].position.z << ") rid " << p.blocks[0].runtimeId;
                 std::cout << " afterAuthTick=" << LastAuthTick() << std::endl;
             }
-            // Native ClientNetworkHandler lambda 0x103E7D27C applies the
-            // extra (liquid) layer before the primary block layer.
             for (const BlockUpdate& b : p.extra)
                 if (sane(b))
                     netLevel.SetLiquid(b.position.x, static_cast<int32_t>(b.position.y), b.position.z,
@@ -1426,8 +1410,6 @@ namespace perlin {
                 if (layer.allowed & (1u << 10)) fly = (layer.enabled & (1u << 10)) != 0;
                 if (layer.allowed & (1u << 9)) flying = (layer.enabled & (1u << 9)) != 0;
                 if (layer.allowed & (1u << 17)) clip = (layer.enabled & (1u << 17)) != 0;
-                // Speeds are carried when their ability bit (FlySpeed 13, WalkSpeed 14, VerticalFlySpeed 19) is
-                // set in the layer; an explicit zero is a real value, not "absent".
                 if (layer.allowed & (1u << 13)) flySpeed = layer.flySpeed;
                 if (layer.allowed & (1u << 19)) vFlySpeed = layer.verticalFlySpeed;
                 if (layer.allowed & (1u << 14)) walkSpeed = layer.walkSpeed;
@@ -1443,8 +1425,6 @@ namespace perlin {
             if (uniqueId != 0 && p.playerUniqueId != uniqueId)
                 return;
             gameType = static_cast<int>(p.gamemode);
-            // Creative always allows flight, so don't wait for the abilities packet (it may arrive later or not
-            // at all on some servers); a later abilities update still overrides this.
             if (gameType == 1)
                 mayFly = true;
         });

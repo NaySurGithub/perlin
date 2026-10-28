@@ -1,11 +1,18 @@
 #include "client/ui/UiTemplate.hpp"
 
+#include "util/Paths.hpp"
+
+#include <chrono>
 #include <cinttypes>
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <mutex>
 #include <sstream>
+#include <unordered_map>
+#include <utility>
+#include <vector>
 
 namespace perlin::ui {
     namespace fs = std::filesystem;
@@ -93,5 +100,40 @@ namespace perlin::ui {
         }
         version = static_cast<uint64_t>(stamp.time_since_epoch().count());
         return body;
+    }
+
+    std::string ScreenTemplate(const std::string& fileName, const std::string& defaultText) {
+        struct Entry {
+            std::string defaultText, text;
+            std::chrono::steady_clock::time_point checked{};
+        };
+        static std::mutex mutex;
+        static std::unordered_map<std::string, Entry> cache;
+        std::lock_guard lock(mutex);
+        Entry& e = cache[fileName];
+        const auto now = std::chrono::steady_clock::now();
+        if (e.text.empty() || e.defaultText != defaultText || now - e.checked > std::chrono::seconds(1)) {
+            e.checked = now;
+            e.defaultText = defaultText;
+            uint64_t version = 0;
+            e.text = LoadUiTemplate(paths::DataDir(), fileName, defaultText, version);
+        }
+        return e.text;
+    }
+
+    namespace {
+        std::vector<std::pair<std::string, std::string>>& Registry() {
+            static std::vector<std::pair<std::string, std::string>> registry;
+            return registry;
+        }
+    }
+
+    ScreenTemplateDefault::ScreenTemplateDefault(const char* fileName, std::string defaultText) {
+        Registry().emplace_back(fileName, std::move(defaultText));
+    }
+
+    void ExportScreenTemplates() {
+        for (const auto& [fileName, text] : Registry())
+            ScreenTemplate(fileName, text);
     }
 }

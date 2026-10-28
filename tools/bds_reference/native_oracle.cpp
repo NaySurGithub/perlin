@@ -1,6 +1,3 @@
-// Optional x86-64 cross-check of exported BDS math, using the Windows ABI.
-// Runs on macOS x86-64/Rosetta or Linux x86-64. Only load a locally verified
-// reference export prepared by native.py; executable images stay in build/.
 #if !defined(__x86_64__)
 #error "Build the native oracle for x86-64 (use -arch x86_64 on macOS)."
 #endif

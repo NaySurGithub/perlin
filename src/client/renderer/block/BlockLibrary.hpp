@@ -65,7 +65,6 @@ namespace perlin {
         void SetBetterGrass(int mode) { betterGrass.store(mode, std::memory_order_relaxed); }
         bool IsGlassBase(int tile) const { return glassTiles.find(tile) != glassTiles.end(); }
         int GlassTile(int baseTile, int mode, int mask) const;
-        // How far into the tile (0..1) the glass frame ends; connected edges sample from here inwards.
         static float GlassInset() { return 1.0f / 16.0f + 0.5f / static_cast<float>(tilePxValue); }
         BlockGeometry& Geometry() const { return geometry; }
 

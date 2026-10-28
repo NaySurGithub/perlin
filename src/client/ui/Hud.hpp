@@ -38,7 +38,6 @@ namespace perlin::ui {
         bool Ready() const { return backend.Ready() && tree != nullptr; }
         RmlBackend& Overlay() { return backend; }
         void UpdateOverlay(int framebufferW, int framebufferH, int guiScaleOption);
-        // Starts animations whose play_event (or animation_reset_name) matches `name`.
         void FireUiEvent(const std::string& name) { animHost.Fire(name); animHost.animating = true; }
         int OverlayScale() const { return scale; }
         float GuiWidth() const { return guiW; }

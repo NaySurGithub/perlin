@@ -481,13 +481,11 @@ namespace perlin::particle {
                 break;
             }
             case kBubbleUp: {
-                // Soul sand column: bubbles stream upward through the whole column.
                 Spawn(Kind::Bubble, {bx, y + 0.1, bz}, glm::dvec3(0.0, 0.2, 0.0));
                 Spawn(Kind::Bubble, {x + Rand(), y + Rand(), z + Rand()}, glm::dvec3(0.0, 0.2, 0.0));
                 break;
             }
             case kBubbleDown: {
-                // Magma column: the current pulls bubbles down towards the block.
                 Spawn(Kind::Bubble, {bx, y + 0.8, z + Rand()}, glm::dvec3(0.0, -0.2, 0.0));
                 if (!particles.empty()) {
                     particles.back().gravity = 0.05f;

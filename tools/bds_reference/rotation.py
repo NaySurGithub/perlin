@@ -70,8 +70,6 @@ def generate(data, sine_path):
         machine.run(entry, budget=10000)
         result = (*words, *machine.get(HEAP, 3))
         lines.append("R " + " ".join(f"{v:08x}" for v in result))
-    # Run the real sprint block to check x86 conversion outside finite yaw's
-    # ordinary range, including infinities and NaN payloads.
     lines.append(f"# function 0x140eafaf0 sha256 {data['functions']['0x140eafaf0']['code_sha256']} block 0x140eafd9c..0x140eafdfa")
     for yaw in (bits(11796480), bits(-11796480), bits(1e20), bits(-1e20),
                 0x7F800000, 0xFF800000, 0x7FC12345, 0x7F812345, 0xFFC12345, 0x80000000):

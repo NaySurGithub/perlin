@@ -17,7 +17,6 @@ namespace perlin::physics::bds {
         bool resetFallDistance = false;
     };
 
-    // MobGroundGravity / MobAirGravity callback, 0x14103E8F0.
     inline std::optional<Gravity> GroundGravity(float velocity, const GravityFlags& flags, bool slowFalling) {
         if (!flags.hasGravity ||
             ((flags.inScaffolding || flags.overScaffolding) && flags.descendThroughBlock))
@@ -27,31 +26,26 @@ namespace perlin::physics::bds {
         return Gravity{-0.08f, false};
     }
 
-    // PlayerWaterGravity callback 0x14104FC50 has no HAS_GRAVITY test.
     inline std::optional<Gravity> PlayerWaterGravity(bool swimming) {
         if (swimming)
             return std::nullopt;
         return Gravity{-0.005f, false};
     }
 
-    // ApplyGravity callback 0x14104F970.
     inline float ApplyGravity(float velocity, float& fallDistance, Gravity gravity) {
         if (gravity.resetFallDistance)
             fallDistance = 0;
         return gravity.acceleration + velocity;
     }
 
-    // LevitateSystem callback 0x14104F680. Level is amplifier + 1.
     inline float LevitateVelocity(float velocity, int level) {
         return detail::Round(velocity * 0.8f) + detail::Round(static_cast<float>(level) * 0.01f);
     }
 
-    // AirVerticalDrag / GroundVerticalDrag callback 0x141051E00.
     inline float GroundVerticalDrag(float velocity, bool hasGravity) {
         return hasGravity ? velocity * 0.98f : velocity;
     }
 
-    // iOS 26.52 VerticalFlySpeedControlSystem, 0x10704C838.
     inline float FlyingControl(float velocity, float speed, bool hover, bool creative,
                                bool up, bool down, bool upSlow = false, bool downSlow = false) {
         if (up && down)
@@ -65,13 +59,11 @@ namespace perlin::physics::bds {
         return detail::Round(acceleration * speed) + velocity;
     }
 
-    // Preserve the native comparison order, including unordered values.
     inline float FlyingDragRetention(float amount) {
         const float upper = amount <= 1.0f ? amount : 1.0f;
         return amount >= 0.0f ? 1.0f - upper : 1.0f;
     }
 
-    // iOS 26.52 MobMovementFriction<PlayerFlyingTravelComponent>, 0x1070E076C.
     inline float FlyingHorizontalRetention(float coefficient, std::optional<float> override,
                                            std::optional<float> airDrag) {
         if (override)
@@ -82,8 +74,6 @@ namespace perlin::physics::bds {
         };
         return retention((1.0f - coefficient) * modifier) * retention(0.089999974f * modifier);
     }
-
-    // iOS 26.52 PlayerFlyingVerticalDragSystem, 0x1070D925C.
 
     inline float FlyingVerticalDrag(float velocity, float& fallDistance,
                                     std::optional<float> airDrag = std::nullopt) {
@@ -104,7 +94,6 @@ namespace perlin::physics::bds {
         return velocity;
     }
 
-    // Input velocity has already passed through WaterDragSystem.
     inline float PostWaterVertical(float velocity, float& fallDistance, int levitationLevel, bool swimming) {
         if (levitationLevel > 0)
             return LevitateVelocity(velocity, levitationLevel);
@@ -113,11 +102,8 @@ namespace perlin::physics::bds {
         return velocity;
     }
 
-    // Native 26.52 EntityInside action visitors 0x10674CBE8 / 0x10674D054.
-    // Each contacted bubble block contributes one action after movement.
     inline float BubbleColumnVelocity(float velocity, bool dragDown, float& fallDistance, bool surface = false) {
         fallDistance = 0;
-        // Surface action 0x10674CB7C has separate acceleration and caps.
         const float next = detail::Round(velocity + (dragDown ? -0.03f : surface ? 0.1f : 0.06f));
         if (dragDown)
             return next < (surface ? -0.9f : -0.3f) ? (surface ? -0.9f : -0.3f) : next;

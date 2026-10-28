@@ -1,5 +1,3 @@
-// Adapter for the pinned, independent BedSim C++ compatibility reference.
-// This file deliberately includes no Perlin simulation implementation.
 #include "bedsim/simulator.h"
 
 #include <bit>
@@ -18,8 +16,6 @@
 using namespace bedsim;
 
 namespace perlin_bds_reference {
-    // Called only by the migration tool's patched reference build. The parent
-    // executes original BDS instructions and replies with the two output bits.
     void sprint(float yaw, float& x, float& z) {
         std::cout << "Q " << std::hex << std::bit_cast<uint32_t>(yaw) << ' '
                   << std::bit_cast<uint32_t>(x) << ' ' << std::bit_cast<uint32_t>(z)
@@ -83,8 +79,6 @@ namespace {
     template<class T> void ReadVector(std::istream& input, T& value) { input >> value.x >> value.y >> value.z; }
     void ReadFacts(std::istream& input, Facts& value) {
         input >> value.friction >> value.horizontal >> value.vertical >> value.fluidHeight >> value.flags >> value.surface;
-        // These four compatibility scenarios contain no fluid or web behavior.
-        // Reject unsupported data rather than silently pretending to replay it.
         if (value.flags & ~1 || value.horizontal != 1 || value.vertical != 1 || value.fluidHeight != 0)
             throw std::runtime_error("Unsupported legacy scenario facts");
     }

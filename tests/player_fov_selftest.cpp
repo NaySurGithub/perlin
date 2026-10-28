@@ -23,7 +23,6 @@ int main() {
         for (int i = 0; i != 5; ++i)
             Check(std::bit_cast<uint32_t>(fov.Sample(i * .25f)) == r.samples[i], "native partial-tick FOV differs");
     }
-    // Frame sampling is read-only: 30 and 240 FPS see the same tick trajectory.
     perlin::PlayerFov low, high;
     for (const auto& r : tickReferences) {
         low.Tick(Float(r.target)); high.Tick(Float(r.target));

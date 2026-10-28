@@ -116,7 +116,7 @@ namespace perlin::entity {
                 BlockEntityDraw d;
                 d.kind = BlockEntityDraw::Kind::Bed;
                 d.origin = {static_cast<double>(fx), static_cast<double>(s.y), static_cast<double>(fz)};
-                d.yaw = BedYaw(direction + 2);  // the model's head end points north; turn it to this bed's head direction
+                d.yaw = BedYaw(direction + 2);
                 int color = -1;
                 if (store.Get(s.x, s.y, s.z, be))
                     color = be.color;
@@ -136,10 +136,7 @@ namespace perlin::entity {
                 d.kind = BlockEntityDraw::Kind::Skull;
                 d.origin = {static_cast<double>(s.x), static_cast<double>(s.y), static_cast<double>(s.z)};
                 d.yaw = dir == "north" ? 180.0f : dir == "west" ? 90.0f : dir == "east" ? 270.0f : 0.0f;
-                // The model's +x side, where a double chest's second half sits.
                 const int rx = dir == "south" ? 1 : dir == "north" ? -1 : 0, rz = dir == "west" ? 1 : dir == "east" ? -1 : 0;
-                // Find the other half: our own pairing, or a neighbour whose pairing points at us
-                // (one half's block entity can arrive later than the other's).
                 const bool gallery = std::getenv("PERLIN_PREVIEW_GALLERY") != nullptr;
                 const auto pairedWith = [&](int ox, int oz) {
                     BlockEntity other;
@@ -152,7 +149,7 @@ namespace perlin::entity {
                             return true;
                     return false;
                 };
-                int side = 0;  // +1: partner on the model's +x side, -1: on its -x side
+                int side = 0;
                 if (store.Get(s.x, s.y, s.z, be) && be.paired) {
                     side = be.pairX == s.x + rx && be.pairZ == s.z + rz ? 1 : be.pairX == s.x - rx && be.pairZ == s.z - rz ? -1 : 0;
                 } else if (pairedWith(s.x - rx, s.z - rz)) {
@@ -161,7 +158,7 @@ namespace perlin::entity {
                     side = 1;
                 }
                 if (side < 0)
-                    continue;  // the other half draws the double chest
+                    continue;
                 bool large = side > 0;
                 const int px = s.x + rx, pz = s.z + rz;
                 const bool ender = shortName == "ender_chest", trapped = shortName == "trapped_chest";

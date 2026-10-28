@@ -24,7 +24,7 @@ def generate(data):
         lines.append(f"# function {address} sha256 {data['functions'][address]['code_sha256']}")
     values = ((0.1, 0.02, 0.3), (0.13, 0.04, 0.26), (0.0, -0.0, -0.42))
     for present in range(4):
-        for player_mode in range(3):  # stale registry, absent player, present player
+        for player_mode in range(3):
             for dolphin in (False, True):
                 for grounded in (False, True):
                     for multiplier in (0.0, 0.5, 1.0, 1.000001, 1.2, 2.0):

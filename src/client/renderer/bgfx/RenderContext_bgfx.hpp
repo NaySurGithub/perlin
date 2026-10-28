@@ -90,7 +90,7 @@ namespace perlin {
         };
         struct Page {
             bgfx::DynamicVertexBufferHandle vb = BGFX_INVALID_HANDLE;
-            bgfx::DynamicVertexBufferHandle vbPack = BGFX_INVALID_HANDLE;   // Java shader pack vertices (same indices as vb)
+            bgfx::DynamicVertexBufferHandle vbPack = BGFX_INVALID_HANDLE;
             std::array<bgfx::DynamicIndexBufferHandle, kRenderLayerCount> ib;
             RangeAllocator vAlloc;
             std::array<RangeAllocator, kRenderLayerCount> iAlloc;
@@ -117,7 +117,6 @@ namespace perlin {
             uint32_t secVis = ~0u;
         };
         void UpdateCaveVisibility(float camX, float camY, float camZ);
-        // Java shader pack path.
         bool PackLoaded() const { return jpack && jpack->Active(); }
         bool PackActive() const { return PackLoaded() && packReady; }
         bool packReady = false;

@@ -8,8 +8,6 @@ namespace perlin::physics::bds {
             return std::bit_cast<int32_t>(static_cast<uint32_t>(value) + 1);
         }
 
-        // 0x1410EE9B0 uses CVTTSS2SI and CMOVBE, distinct from the
-        // world-source floor helper for negative overflow and infinities.
         inline int32_t FloorInsideCoordinate(float value) {
             int32_t truncated = std::numeric_limits<int32_t>::min();
             if (std::isfinite(value) && value >= -2147483648.0f && value < 2147483648.0f)
@@ -20,8 +18,6 @@ namespace perlin::physics::bds {
         }
     }
 
-    // LocalConstBlockSource slot 14 -> 0x143E8D580. X chunks advance
-    // first; the wrapped product controls iteration, including empty ranges.
     template<class ReadChunk>
     bool InsideRegionReady(const CollisionBox& bounds, bool rejectField5352, ReadChunk&& read) {
         const int32_t minX = FloorBlockCoordinate(bounds[0]) >> 4;
@@ -46,8 +42,6 @@ namespace perlin::physics::bds {
         return true;
     }
 
-    // EntityInside query 0x1410EE9B0. The world readiness service receives
-    // float-converted integer endpoints; cells visit X/Y/Z, with Z fastest.
     template<class Ready, class Visit>
     bool CollectInsideCells(const CollisionBox& bounds, float expansion, bool callbackPresent,
                              Ready&& ready, Visit&& visit) {

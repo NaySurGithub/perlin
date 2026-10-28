@@ -21,7 +21,6 @@ int main() {
     std::vector<perlin::physics::Box> boxes;
     if (!registry.Find("test:disjoint", boxes) || boxes.size() != 16)
         return 1;
-    // Every occupied voxel remains solid, and every separating gap remains air.
     for (int x = 0; x < 32; ++x) {
         const double center = (x + 0.5) / 32.0;
         bool contained = false;

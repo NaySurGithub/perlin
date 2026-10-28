@@ -18,10 +18,6 @@ namespace perlin {
         std::vector<std::pair<glm::dvec3, glm::dvec3>> shape;
     };
 
-    // The point where the crosshair ray meets an entity's hitbox, relative to the entity's base coordinate (the middle of its
-    // feet), which is what an attack or interact transaction carries as its click position. The point always lies inside the
-    // box: when the ray only grazes it (or misses by the width of a pixel after rounding) the nearest point of the box to
-    // `fallback` is used. `fallback` is typically the box centre.
     glm::vec3 EntityClickOffset(const glm::dvec3& eye, const glm::dvec3& direction, const glm::dvec3& feet, double halfWidth,
                                 double height, const glm::dvec3& fallback);
 

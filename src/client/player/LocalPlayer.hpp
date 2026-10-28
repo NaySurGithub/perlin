@@ -39,8 +39,6 @@ namespace perlin {
         bool Gliding() const { return gliding; }
         bool Crawling() const { return crawling; }
         void SetElytra(bool value) { hasElytra = value; }
-        // restart: a fresh use began this tick. A finite use that completes while
-        // still held starts the next one (eating several items in a row).
         void SetItemSlow(bool slow, uint32_t duration = 0, bool restart = false) {
             const bool completed = itemSlowUntil && tickCounter >= itemSlowUntil;
             if (slow && (!itemSlow || restart || completed)) itemSlowUntil = duration ? tickCounter + duration : 0;
@@ -51,7 +49,6 @@ namespace perlin {
 
         void ModMotion(bool add, double x, double y, double z, bool ax, bool ay, bool az);
         void ModTeleport(double x, double y, double z, bool keepVelocity);
-        // Replay playback: pin the (otherwise unused) local player to the free camera.
         void ReplayPlace(double px, double py, double pz) {
             state.x = px;
             state.y = py;
@@ -124,8 +121,6 @@ namespace perlin {
         bool sneakHeld = false;
         bool sendStartFlying = false;
         bool sendStopFlying = false;
-        // Client-side prediction bookkeeping: our own flight toggle is trusted until the server answers (or a
-        // timeout passes), so a stale ability update can't flip it back. The server still has the final say.
         bool flyPending = false;
         std::chrono::steady_clock::time_point flyPendingAt{};
         bool glideReported = false, glideLocal = false;

@@ -16,7 +16,6 @@ namespace perlin::replay {
     namespace fs = std::filesystem;
 
     namespace {
-        // Bedrock packet ids (stable across the protocol versions Perlin speaks).
         enum : uint32_t {
             kLogin = 1, kPlayStatus = 2, kServerToClientHandshake = 3, kClientToServerHandshake = 4, kDisconnect = 5,
             kResourcePacksInfo = 6, kResourcePackStack = 7, kResourcePackClientResponse = 8, kSetTime = 10, kStartGame = 11,
@@ -233,7 +232,6 @@ namespace perlin::replay {
         }
     }
 
-    // ---------------------------------------------------------------- StateCache
     void StateCache::Reset() {
         std::lock_guard<std::mutex> lk(mutex);
         seq = 0;
@@ -274,7 +272,6 @@ namespace perlin::replay {
         if (!joined) {
             joinBytes += body.size();
             join.push_back(std::move(e));
-            // PlayStatus(player spawn) ends the join phase; a chunk or a publisher update means we are clearly in game as well.
             if (id == kPlayStatus && body.size() >= 4 && body[3] == 3)
                 joined = true;
             else if (id == kLevelChunk || id == kSubChunk || id == kNetworkChunkPublisher)
@@ -372,8 +369,7 @@ namespace perlin::replay {
             if (!ReadVarU(body, pos, runtime))
                 return;
             e.runtime = runtime;
-            e.unique = 1;  // marks "per-entity" for DropEntity
-            // MobEffect: several effects share an entity; keep them apart by effect id when present
+            e.unique = 1;
             uint64_t sub = 0;
             if (id == kMobEffect && pos + 1 < body.size())
                 sub = body[pos + 1];
@@ -398,7 +394,6 @@ namespace perlin::replay {
         default:
             return;
         }
-        // chunk cache eviction (oldest first)
         while (chunkBytes > kChunkByteCap && !chunks.empty()) {
             auto oldest = chunks.begin();
             for (auto it = chunks.begin(); it != chunks.end(); ++it)
@@ -455,7 +450,6 @@ namespace perlin::replay {
         return out;
     }
 
-    // ---------------------------------------------------------------- Recorder
     Recorder::~Recorder() {
         if (active)
             Abort();
@@ -638,7 +632,6 @@ namespace perlin::replay {
         return true;
     }
 
-    // ---------------------------------------------------------------- Reader
     bool Reader::ReadMetadata(const std::string& path, Metadata& out, std::vector<uint8_t>* thumbnail, std::string& error) {
         ZipHolder zh;
         if (!mz_zip_reader_init_file(&zh.za, path.c_str(), 0)) {
@@ -793,7 +786,7 @@ namespace perlin::replay {
             if (!ok)
                 break;
             if (!f.diskPath.empty())
-                ok = mz_zip_writer_add_file(&dst, f.name.c_str(), f.diskPath.c_str(), nullptr, 0, MZ_NO_COMPRESSION); // packs are zips already
+                ok = mz_zip_writer_add_file(&dst, f.name.c_str(), f.diskPath.c_str(), nullptr, 0, MZ_NO_COMPRESSION);
             else
                 ok = mz_zip_writer_add_mem(&dst, f.name.c_str(), f.content.data(), f.content.size(), MZ_DEFAULT_LEVEL);
         }

@@ -31,9 +31,6 @@ namespace perlin {
         return true;
     }
 
-    // File names come back from std::filesystem as narrow strings: UTF-8 on most platforms, the ANSI code page on Windows. The UI
-    // wants UTF-8 (a section sign in a pack's file name is how colour codes get in), so a string that is not valid UTF-8 is
-    // converted from the system code page (Latin-1 elsewhere).
     inline std::string EnsureUtf8(const std::string& s) {
         if (IsValidUtf8(s))
             return s;

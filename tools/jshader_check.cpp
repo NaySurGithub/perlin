@@ -1,4 +1,3 @@
-// Offline compatibility checker: loads a Java shader pack, runs every program through the transformer and glslang.
 #include "client/javashaders/GlslangBridge.hpp"
 #include "client/javashaders/PackSource.hpp"
 #include "client/javashaders/ProgramSet.hpp"
@@ -22,7 +21,6 @@ namespace perlin::jshader {
 namespace {
     EShLanguage ToLang(Stage st) { return st == Stage::Vertex ? EShLangVertex : EShLangFragment; }
 
-    // Parses desktop GLSL (what the OpenGL backend produces) with glslang as a stand-in for a driver.
     bool ValidateGl(const std::string& text, Stage st, std::string& log) {
         glslang::TShader shader(ToLang(st));
         const char* src = text.c_str();
@@ -31,7 +29,6 @@ namespace {
         return true;
     }
 
-    // Parses the HLSL with glslang's HLSL front end, a rough stand-in for fxc.
     bool ValidateHlsl(const std::string& text, bool fragment, std::string& log) {
         const EShLanguage lang = fragment ? EShLangFragment : EShLangVertex;
         glslang::TShader shader(lang);
@@ -103,7 +100,6 @@ int main(int argc, char** argv) {
             if (!CompileToSpirv(s->glsl, s->stage, spv, log)) {
                 pass = false;
                 std::printf("FAIL  %-34s %s: ", name.c_str(), s->stage == Stage::Vertex ? "vertex" : "fragment");
-                // first error line only
                 size_t a = log.find("ERROR");
                 size_t b = log.find('\n', a == std::string::npos ? 0 : a);
                 std::printf("%s\n", log.substr(a == std::string::npos ? 0 : a, b - (a == std::string::npos ? 0 : a)).c_str());

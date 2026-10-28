@@ -16,8 +16,6 @@ int main(int argc, char** argv) {
     auto& palette = BlockPalette::Instance();
     Check(palette.LoadServerStatesText(text, "block_states.json"), "palette failed to load");
     palette.SetSequential(true);
-    // A server without vanilla data-driven definitions uses the compact table.
-    // Lifeboat's primary and empty secondary chunk layers both use this air ID.
     Check(palette.SequentialAir() == 17713, "undeclared blocks shifted Lifeboat air");
     Check(palette.InternRuntime(17713) == 0, "Lifeboat air rendered as a block");
 

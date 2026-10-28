@@ -1,7 +1,6 @@
 #pragma once
 
 namespace perlin {
-    // Resolved native movement attribute: sprint is already included in it.
     float MovementFovTarget(float movementSpeed, float walkSpeed, bool flying,
                             int slownessAmplifier = -1);
 

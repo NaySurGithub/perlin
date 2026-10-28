@@ -40,9 +40,9 @@ def generate(data):
         elif pc == RETURN + 0x500:
             p = cpu.reg_read(x86.UC_X86_REG_R9)
             cells.append(struct.unpack('<3i', cpu.mem_read(p, 12)))
-            result = 0  # Empty shape provider; native query still visits the cell.
+            result = 0
         elif pc == RETURN + 0x600:
-            result = 1  # Native world-border skip predicate, not a replaced tail.
+            result = 1
         else:
             raise RuntimeError('Unexpected terrain-query service')
         sp = cpu.reg_read(x86.UC_X86_REG_RSP)

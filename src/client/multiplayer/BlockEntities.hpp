@@ -24,7 +24,6 @@ namespace perlin {
         float rotation = 0.0f;
         int base = -1, bannerType = 0;
         std::vector<std::pair<std::string, int>> patterns;
-        // Bedrock chests: the partner half of a double chest.
         bool paired = false;
         int pairX = 0, pairZ = 0;
         std::string nbt;
@@ -39,7 +38,6 @@ namespace perlin {
         void Clear();
         void TakeFrom(BlockEntityStore& other);
         size_t Size() const;
-        // Chest-like lids, driven by block_event (type 1 = viewer count).
         void SetLidOpen(int x, int y, int z, bool open);
         float LidOpenness(int x, int y, int z) const;
 
@@ -52,7 +50,7 @@ namespace perlin {
         std::unordered_map<uint64_t, BlockEntity> entities;
         struct Lid {
             bool open = false;
-            float from = 0.0f;  // openness when the last change started
+            float from = 0.0f;
             std::chrono::steady_clock::time_point at{};
         };
         std::unordered_map<uint64_t, Lid> lids;

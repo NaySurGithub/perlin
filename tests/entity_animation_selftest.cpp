@@ -33,7 +33,6 @@ Trace Run(int fps) {
         while (remainder + 1e-10 >= 0.05) {
             remainder = std::max(0.0, remainder - 0.05);
             const double t = end - remainder;
-            // Strafe, stop, then walk backward while looking across the angle seam.
             const auto position = [](double time) {
                 return std::min(time, 2.0) * 2.0 - std::max(time - 4.0, 0.0) * 2.0;
             };
@@ -133,7 +132,6 @@ void CheckJavaRootReference(const char* file) {
     CHECK(mismatches == 0);
     std::cout << "Java JAR roots: " << cases << "/120 matrices, maximum error " << largestError << "\n";
 }
-// Independent Java model rotation in the renderer's mirrored model space.
 static glm::mat4 JavaRotation(glm::vec3 r) {
     return glm::rotate(glm::mat4(1), -r.z, glm::vec3(0, 0, 1)) *
            glm::rotate(glm::mat4(1), r.y, glm::vec3(0, 1, 0)) *
@@ -217,8 +215,6 @@ int main(int argc, char** argv) {
     CHECK(Near(p.head.offset.y, -4.2f));
     CHECK(Near(p.body.rotation.x, .5f));
     CHECK(std::abs(p.body.rotation.y) > .01f);
-    // The head and arms are children of the torso in Bedrock, siblings in Java.
-    // Verify actual world matrices, including attached sleeves, across compound poses.
     attachable::GeometryLibrary lib;
     lib.Load(R"({"minecraft:geometry":[{"description":{"identifier":"geometry.test"},"bones":[
       {"name":"root"},{"name":"waist","parent":"root"},
@@ -285,7 +281,6 @@ int main(int argc, char** argv) {
                         CHECK(Near(arm[i][j], sleeve[i][j]));
             }
     }
-    // The Euler conversion remains finite at a 90-degree relative head turn.
     p = {};
     p.head.rotation = {0.3f, 1.5707963268f, -0.2f};
     attachable::Pose singularPose;

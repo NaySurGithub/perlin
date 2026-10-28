@@ -20,7 +20,7 @@ namespace perlin {
     struct TexturePack::Impl {
         struct Layer {
             bool zipMode = false;
-            bool java = false; // a Java Edition pack: assets/minecraft/textures/..., translated to Bedrock names on lookup
+            bool java = false;
             std::string folder;
             mz_zip_archive zip{};
             FILE* zipFile = nullptr;
@@ -145,9 +145,6 @@ namespace perlin {
                 std::replace(path.begin(), path.end(), '\\', '/');
                 entries.emplace_back(Lower(path), i);
             }
-            // A Java pack keeps its textures under assets/minecraft/ (possibly inside a wrapper folder); look for that first,
-            // over every entry, since other namespaces (assets/realms/...) can come earlier in the archive. Otherwise the first
-            // textures/ folder found is the root, as in a Bedrock pack.
             for (const auto& [lower, idx] : entries) {
                 const size_t java = lower.find("assets/minecraft/textures/");
                 if (java != std::string::npos && (java == 0 || lower[java - 1] == '/') &&
@@ -290,7 +287,6 @@ namespace perlin {
             return false;
         }
 
-        // One Java file by its path under assets/minecraft/.
         bool LoadJavaFile(TexturePack::Impl::Layer& l, const std::string& path, Texture& out) {
             if (l.zipMode) {
                 if (!l.zipOpen)

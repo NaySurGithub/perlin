@@ -1,4 +1,5 @@
 #include "client/ui/ServerLayer.hpp"
+#include "client/ui/UiTemplate.hpp"
 
 #include "client/ui/FormatCodes.hpp"
 #include "client/ui/McFont.hpp"
@@ -31,14 +32,20 @@ namespace perlin::ui {
         }
     }
 
-    std::string BuildServerLayerRml(const ServerLayerData& data, int guiW, int guiH) {
-        std::string out =
+    namespace {
+        const char* kServerLayerHead =
             "<rml>\n<head>\n<title>server</title>\n<style>\n"
-            "body { position: absolute; left: 0px; top: 0px; width: " + std::to_string(guiW) + "px; height: " + std::to_string(guiH) +
-            "px; margin: 0; padding: 0; background: transparent; overflow: hidden; }\n"
+            "body { position: absolute; left: 0px; top: 0px; width: {{w}}px; height: {{h}}px; margin: 0; padding: 0; background: transparent; overflow: hidden; }\n"
             "div { display: block; position: absolute; }\n"
             ".t { font-family: minecraft-shadow; font-size: 8px; line-height: 9px; white-space: nowrap; color: #ffffff; z-index: 3; }\n"
             "</style>\n</head>\n<body>\n";
+        const ScreenTemplateDefault kServerLayerDefault("server_layer.rml", kServerLayerHead);
+    }
+
+    std::string BuildServerLayerRml(const ServerLayerData& data, int guiW, int guiH) {
+        std::string out = ScreenTemplate("server_layer.rml", kServerLayerHead);
+        ReplaceAll(out, "w", std::to_string(guiW));
+        ReplaceAll(out, "h", std::to_string(guiH));
         float y = 12.0f;
         for (const auto& bar : data.bars) {
             const float w = 182.0f, x = (guiW - w) / 2.0f;

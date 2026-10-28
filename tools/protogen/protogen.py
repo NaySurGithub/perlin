@@ -902,7 +902,6 @@ def main():
           "    if (!Read(in, packet) || !in.ok)", "        return false;",
           "    return !glz::write<glz::opts{.prettify = false}>(packet, out);", "}", "}", "",
           "bool PacketJson(uint32_t id, const uint8_t* data, size_t size, std::string& out) {", "    switch (id) {"]
-    # Glaze can't reflect the recursive data-store value (it has user-declared special members); logged as hex.
     no_json = {"ClientboundDataStorePacket"}
     for number, name, struct, mode, info in registry:
         if mode == "generated" and struct not in no_json:

@@ -473,8 +473,7 @@ namespace perlin::ui {
                 uint32_t code;
                 if (Next(s, i, code)) {
                     if (code == 'l' || code == 'L') bold = true;
-                    else if (code == 'r' || code == 'R' || (code >= '0' && code <= '9') || (code >= 'a' && code <= 'f') ||
-                             (code >= 'A' && code <= 'F'))
+                    else if (code == 'r' || code == 'R')
                         bold = false;
                 }
                 continue;

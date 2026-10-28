@@ -1,7 +1,10 @@
 #include "client/ui/TitleScreen.hpp"
 #include "client/ui/UiAssets.hpp"
 
+#include "client/ui/FormatCodes.hpp"
 #include "client/ui/RmlEmit.hpp"
+#include "client/ui/TextEdit.hpp"
+#include "client/ui/UiTemplate.hpp"
 
 #include <algorithm>
 #include "client/resources/TexturePack.hpp"
@@ -56,6 +59,7 @@ mcimg { display: block; position: absolute; }
 </head>
 <body style="width: {{w}}px; height: {{h}}px;">
 )";
+        const ScreenTemplateDefault kTitleDefault("title_screen.rml", kStyle);
 
         std::string Btn(const std::string& id, int x, int y, int w, const std::string& label, bool off = false) {
             std::string d = "<div" + std::string(off ? "" : " id=\"" + id + "\"") + " class=\"btn" + (off ? " off" : "") + "\" style=\"left:" + N(x) + "px;top:" + N(y) +
@@ -92,12 +96,10 @@ mcimg { display: block; position: absolute; }
             return d;
         }
 
-        // The signal bars of the server list. Drawn from the resource pack's sprites when it has them (Java icons.png),
-        // otherwise as plain bars. Hovering shows the latency in a tooltip.
         std::string PingBars(int x, int y, ServerEntry::Status status, int pingMs, int spinner) {
             using St = ServerEntry::Status;
             const bool pinging = status == St::Pinging || status == St::Unknown;
-            int level = 0;  // lit bars, 0..5
+            int level = 0;
             const char* color = "#55ff55";
             std::string tip;
             if (pinging) {
@@ -115,11 +117,10 @@ mcimg { display: block; position: absolute; }
             std::string d = "<div class=\"pg\" style=\"left:" + N(x) + "px;top:" + N(y) + "px;width:10px;height:8px;\">";
             std::string sprite;
             if (!pinging) {
-                // The game's own signal icons: green when fast, yellow when middling, red when slow or unreachable.
                 sprite = status == St::Offline || level <= 2 ? "textures/ui/Ping_Red" : (level == 3 ? "textures/ui/Ping_Yellow" : "textures/ui/Ping_Green");
                 int iw = 0, ih = 0;
                 if (!UiAssets::Instance().ImageSize(sprite, iw, ih))
-                    sprite.clear();  // not in this resource pack: draw plain bars
+                    sprite.clear();
             } else if (TexturePack::Instance().Active()) {
                 const std::string name = "textures/ui/ping_anim_" + N(5 - level);
                 if (TexturePack::Instance().Has(name + ".png"))
@@ -145,27 +146,30 @@ mcimg { display: block; position: absolute; }
             return d;
         }
 
-        // Cut text to fit a width (the font is about 5px per character at this size), ending in "..." when shortened.
         std::string Fit(const std::string& text, int widthPx) {
             const size_t maxChars = static_cast<size_t>(std::max(4, widthPx / 5));
             size_t chars = 0, cut = std::string::npos;
             for (size_t i = 0; i < text.size(); i++) {
+                if (IsFormatCode(text, i)) {
+                    i += 2;
+                    continue;
+                }
                 if ((static_cast<unsigned char>(text[i]) & 0xC0) == 0x80)
                     continue;
                 if (chars == maxChars - 3)
                     cut = i;
                 if (++chars > maxChars)
-                    return text.substr(0, cut) + "...";
+                    return text.substr(0, cut) + "\xC2\xA7r...";
             }
             return text;
         }
 
         std::string RowText(int x, int y, int w, const std::string& text, const std::string& cls = "") {
-            return "<div class=\"txt " + cls + "\" style=\"left:" + N(x) + "px;top:" + N(y) + "px;width:" + N(w) + "px;height:9px;overflow:hidden;\">" + EscapeRml(Fit(text, w)) + "</div>\n";
+            return "<div class=\"txt " + cls + "\" style=\"left:" + N(x) + "px;top:" + N(y) + "px;width:" + N(w) + "px;height:9px;overflow:hidden;\">" + FormatCodesToRml(Fit(text, w)) + "</div>\n";
         }
 
         std::string Text(int x, int y, int w, const std::string& text, const std::string& cls = "") {
-            return "<div class=\"txt " + cls + "\" style=\"left:" + N(x) + "px;top:" + N(y) + "px;width:" + N(w) + "px;height:9px;\">" + EscapeRml(text) + "</div>\n";
+            return "<div class=\"txt " + cls + "\" style=\"left:" + N(x) + "px;top:" + N(y) + "px;width:" + N(w) + "px;height:9px;\">" + FormatCodesToRml(text) + "</div>\n";
         }
 
         std::string Dirt(int w, int h, const char* shade) {
@@ -175,7 +179,7 @@ mcimg { display: block; position: absolute; }
         std::string Field(const std::string& id, int x, int y, int w, const std::string& value, bool focused, bool caret) {
             std::string d = "<div id=\"" + id + "\" class=\"field\" style=\"left:" + N(x) + "px;top:" + N(y) + "px;width:" + N(w) + "px;\">";
             d += "<mcimg src=\"mcres:ui_menu_field" + std::string(focused ? "_hi" : "") + ".png\" nine=\"1 1 1 1\" style=\"left:0px;top:0px;width:" + N(w) + "px;height:20px;\"></mcimg>";
-            d += "<div class=\"txt val\" style=\"width:" + N(w - 8) + "px;\">" + EscapeRml(value + (focused && caret ? "_" : "")) + "</div></div>\n";
+            d += "<div class=\"txt val\" style=\"width:" + N(w - 8) + "px;\">" + (focused ? TextFieldRml(value, caret) : EscapeRml(value)) + "</div></div>\n";
             return d;
         }
 
@@ -395,7 +399,6 @@ mcimg { display: block; position: absolute; }
             for (int i = m.scroll; i < static_cast<int>(list.size()) && i < m.scroll + rows; i++, y += kRowH) {
                 const ServerEntry& s = list[static_cast<size_t>(i)];
                 if (m.tab == ServerTab::Saved && m.friendsOpen[3] && m.savedOffset > 1 && i == m.savedOffset && i > m.scroll) {
-                    // Space between the open Featured Servers group and the player's own servers, so they do not read as one list.
                     constexpr int kGroupGap = 12;
                     if (y + kGroupGap + kRowH - 4 > listBottom)
                         break;
@@ -452,7 +455,6 @@ mcimg { display: block; position: absolute; }
                 d += "</div>\n";
             }
             if (list.empty() && m.tab != ServerTab::Saved) {
-                // Animated "..." like the server pings, for the messages that mean "still working".
                 std::string msg = m.tabMessage;
                 const bool busy = msg.rfind("Scanning", 0) == 0 || msg.rfind("Loading", 0) == 0;
                 if (busy) {
@@ -615,14 +617,10 @@ mcimg { display: block; position: absolute; }
     int TitleVisibleRows(int guiH) { return std::max(1, (TitleListBottom(guiH) - TitleListTop() - 4) / kRowH); }
 
     std::string BuildTitleRml(const TitleModel& m, int guiW, int guiH) {
-        std::string out = kStyle;
-        const std::string width = std::to_string(guiW), height = std::to_string(guiH);
-        const std::string span = std::to_string(std::max(guiH * 5 / 4, 64) * 4);
-        const std::pair<const char*, const std::string*> keys[] = {{"{{w}}", &width}, {"{{h}}", &height}, {"{{span}}", &span}};
-        for (const auto& [key, value] : keys) {
-            const size_t at = out.find(key);
-            out.replace(at, std::char_traits<char>::length(key), *value);
-        }
+        std::string out = ScreenTemplate("title_screen.rml", kStyle);
+        ReplaceAll(out, "w", std::to_string(guiW));
+        ReplaceAll(out, "h", std::to_string(guiH));
+        ReplaceAll(out, "span", std::to_string(std::max(guiH * 5 / 4, 64) * 4));
         switch (m.page) {
             case TitlePage::Main: out += Main(m, guiW, guiH); break;
             case TitlePage::Servers: out += Servers(m, guiW, guiH); break;

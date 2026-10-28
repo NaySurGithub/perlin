@@ -51,6 +51,7 @@
 #include "network/Realms.hpp"
 #include "network/Featured.hpp"
 #include "client/ui/TitleScreen.hpp"
+#include "client/ui/TextEdit.hpp"
 #include "client/ui/TitlePanorama.hpp"
 #include "client/ui/UiLayout.hpp"
 #include "client/ui/PauseScreen.hpp"
@@ -189,7 +190,6 @@ namespace perlin {
         std::vector<std::pair<glm::dvec3, glm::dvec3>> gBridgeOutline;
         bridging::PlacementRepeat gPlacementRepeat;
 
-        // Puts a sleeping player on the bed next to them: feet toward the foot end, head on the pillow, lying on the bed top.
         void ApplyBedPose(Level& level, entity::Entity& e) {
             BlockPalette& pal = BlockPalette::Instance();
             double bestD = 1e9;
@@ -244,7 +244,6 @@ namespace perlin {
         constexpr auto kAnimationStep = std::chrono::milliseconds(200);
 
         bool ParseServer(const std::string& raw, std::string& host, uint16_t& port) {
-            // Pasted addresses often carry stray spaces, which DNS rejects.
             const auto first = raw.find_first_not_of(" \t\r\n");
             const std::string text = first == std::string::npos ? std::string() : raw.substr(first, raw.find_last_not_of(" \t\r\n") - first + 1);
             host = text;
@@ -313,6 +312,11 @@ namespace perlin {
 
     bool Perlin::Initialize(AppPlatform* p) {
         platform = p;
+        ui::TextEdit::SetClipboard([this] { return platform ? platform->GetClipboard() : std::string(); },
+                                   [this](const std::string& text) {
+                                       if (platform)
+                                           platform->SetClipboard(text);
+                                   });
         options = Options::Load();
         runningRenderer = options.renderer;
         i18n::Lang::Get().Configure(std::string(), paths::DataDir(), options.language);
@@ -354,8 +358,6 @@ namespace perlin {
                 std::cerr << "[control] could not bind localhost port " << args.controlPort << std::endl;
                 return false;
             }
-            // Hidden clients have no physical input; only claim action state there
-            // so a visible window keeps responding to the local keyboard and mouse.
             if (args.hidden) {
                 inputManager.SetControlActions({}, std::numeric_limits<uint64_t>::max());
                 input.SetCaptured(true);
@@ -370,7 +372,6 @@ namespace perlin {
         workers = std::make_unique<ThreadPool>(4);
         if (args.server.empty() && !PERLIN_ENV("PERLIN_PREVIEW")) {
             FetchMissingGamertags();
-            // Fetch featured servers during startup so the list is ready when the server page opens.
             RefreshFeatured(false);
         }
         StartAssetDownloads();
@@ -652,7 +653,7 @@ namespace perlin {
         if (!options.shaderPack.empty()) {
             const std::string full = paths::DataDir() + "/shaderpacks/" + options.shaderPack;
             if (jshader::LooksLikeJavaPack(full)) {
-                javaPackPending = full;   // applied once the block atlas exists (PollJavaPack)
+                javaPackPending = full;
             } else {
                 std::string error;
                 if (!pack.Open(paths::DataDir() + "/shaderpacks", options.shaderPack, error))
@@ -909,7 +910,7 @@ namespace perlin {
         if (data.bars.size() > 4)
             data.bars.resize(4);
         const auto sb = live->Scoreboard();
-        if (sb.visible) {
+        if (sb.visible && !hud.Ready()) {
             data.scoreboard = true;
             data.scoreboardTitle = sb.title;
             for (const auto& r : sb.rows)
@@ -987,10 +988,8 @@ namespace perlin {
         for (const auto& t : inputManager.TakeTyped()) {
             if (!t.character && t.key == Key::Escape)
                 cancel = true;
-            else if (!t.character && t.key == Key::Backspace)
-                ui::FormBackspace(formModel);
-            else if (t.character && !t.ctrl)
-                ui::FormTypeChar(formModel, t.key);
+            else
+                ui::FormEdit(formModel, t);
         }
         formScroll = std::max(0.0f, formScroll - inputManager.Scroll() * 20.0f);
         if (cancel) {
@@ -1096,8 +1095,6 @@ namespace perlin {
         hud.UpdateOverlay(fbW, fbH, options.guiScale);
         const bool down = input.IsMouseDown(0);
         bool leave = inputManager.Pressed(Action::Pause);
-        // The bed overlay enables text mode, so keyboard Escape arrives in
-        // the typed queue rather than the gameplay action dispatcher.
         for (const auto& t : inputManager.TakeTyped())
             if (!t.character && t.key == Key::Escape)
                 leave = true;
@@ -1572,6 +1569,10 @@ namespace perlin {
         const bool horseOpened = live && live->TakeHorseOpened();
         const bool chestOpened = live && live->TakeChestOpened();
         if (!invShown && (workbenchOpened || horseOpened || chestOpened) && !deathShown) {
+            if (chestOpened) {
+                chestUi.Warm(ServerPacks::Instance().Directories());
+                chestUi.WaitReady(150);
+            }
             invShown = true;
             invOpenedAt = now;
             invPicked = -1;
@@ -1588,7 +1589,6 @@ namespace perlin {
             inputManager.TakeTyped();
             input.SetTextMode(true);
             if (live) {
-                // Riding: the vanilla client asks to open the *mount's* inventory (target = the ridden entity).
                 if (live->RidingUid() != 0 && live->OpenMountInventory())
                     invMountAsk = now;
                 else {
@@ -1597,11 +1597,10 @@ namespace perlin {
                 }
             }
         }
-        // Riding: if the plain open request didn't bring up the mount's container, ask the server about the mount itself.
         if (invShown && live && invMountAsk != std::chrono::steady_clock::time_point{} && now - invMountAsk > std::chrono::milliseconds(450)) {
             invMountAsk = std::chrono::steady_clock::time_point{};
             if (live->RidingUid() != 0 && !live->HorseOpen())
-                live->OpenInventory();  // the mount has no inventory: fall back to our own
+                live->OpenInventory();
         }
         if (!invShown)
             return;
@@ -1619,6 +1618,10 @@ namespace perlin {
         const bool searching = creativeMode && creativeTab == ui::kCreativeSearchTab;
         if (deathShown || (live && live->TakeServerClosedInventory()))
             close = true;
+        if (invCloseClicked) {
+            invCloseClicked = false;
+            close = true;
+        }
         const auto typedIs = [&](const InputManager::Typed& t, Action a) {
             const Binding& b = options.GetKey(a);
             return t.character && b.device == Binding::Device::Keyboard && std::toupper(t.key) == b.code;
@@ -1628,10 +1631,8 @@ namespace perlin {
                 continue;
             if (!t.character && t.key == Key::Escape)
                 close = true;
-            else if (searching && t.character && t.key >= 32 && t.key < 127)
-                creativeSearch += static_cast<char>(t.key);
-            else if (searching && !t.character && t.key == Key::Backspace && !creativeSearch.empty())
-                creativeSearch.pop_back();
+            else if (searching && ui::TextEdit::Focused().Apply(t, creativeSearch, ui::TextLimits{50})) {
+            }
             else if (typedIs(t, Action::Inventory) && !searching)
                 close = true;
             else if (typedIs(t, Action::Drop) && live && invHoverAddr >= 0)
@@ -1687,6 +1688,7 @@ namespace perlin {
                 for (int i = 0; i < 54; i++)
                     v.chestItems[static_cast<size_t>(i)] = ToHudItem(inv.chest[i]);
                 v.title = i18n::Tr(v.chestRows == 6 && inv.chestTitle == "container.chest" ? "container.chestDouble" : inv.chestTitle);
+                invChestScreen = ui::ChestScreenName(inv.chestTitle, v.chestRows);
             }
             v.offhand = ToHudItem(inv.offhand);
             v.output = ToHudItem(inv.output);
@@ -1709,6 +1711,7 @@ namespace perlin {
                     v.chestItems[static_cast<size_t>(i)].count = i % 3 == 0 ? 1 : 16 + i;
                 }
                 v.title = i18n::Tr(v.chestRows == 6 ? "container.chestDouble" : "container.chest");
+                invChestScreen = ui::ChestScreenName("container.chest", v.chestRows);
             }
         }
 
@@ -1826,7 +1829,11 @@ namespace perlin {
         for (const auto& it : v.armor) sig(it);
         for (const auto& it : v.craft) sig(it);
         for (const auto& it : v.work) sig(it);
-        if (v.chestRows) { signature += "K" + std::to_string(v.chestRows) + v.title; for (const auto& it : v.chestItems) sig(it); }
+        if (v.chestRows) {
+            chestUi.Warm(ServerPacks::Instance().Directories());
+            signature += "K" + std::to_string(v.chestRows) + v.title + (chestUi.Ready() ? "J" : "j");
+            for (const auto& it : v.chestItems) sig(it);
+        }
         if (v.horse) { signature += "H" + std::to_string(v.horseChest); for (const auto& it : v.horseItems) sig(it); }
         for (const auto& c : v.recipes) { signature += c.craftable ? "c" : "n"; sig(c.out); }
         sig(v.offhand);
@@ -1835,7 +1842,18 @@ namespace perlin {
         if (signature != invSignature || !hud.Overlay().HasOverlay()) {
             invSignature = signature;
             std::string error;
-            if (!hud.Overlay().SetOverlay(ui::BuildInventoryScreenRml(invTemplate, v, guiW, guiH), error)) {
+            std::string chestRml;
+            invJsonPanel = v.chestRows > 0 && chestUi.Build(v, invChestScreen, guiW, guiH, chestRml, invPanel);
+            if (v.chestRows > 0 && !invJsonPanel && chestUi.Problem() != invChestProblem) {
+                invChestProblem = chestUi.Problem();
+                if (!invChestProblem.empty())
+                    std::cout << "[chest] json ui: " << invChestProblem << ", using the built-in layout" << std::endl;
+            }
+            if (invJsonPanel && !hud.Overlay().SetOverlay(chestRml, error)) {
+                std::cout << "[chest] " << error << ", using the built-in layout" << std::endl;
+                invJsonPanel = false;
+            }
+            if (!invJsonPanel && !hud.Overlay().SetOverlay(ui::BuildInventoryScreenRml(invTemplate, v, guiW, guiH), error)) {
                 std::cout << "[ui] inventory_screen.rml: " << error << std::endl;
                 invTemplate = ui::DefaultInventoryScreenTemplate();
                 hud.Overlay().SetOverlay(ui::BuildInventoryScreenRml(invTemplate, v, guiW, guiH), error);
@@ -1861,10 +1879,13 @@ namespace perlin {
                 invSignature.clear();
             } else if (leftEdge || rightEdge) {
                 const int px = ui::InventoryPanelX(v, guiW), panelH = ui::InventoryPanelH(v), py = (guiH - panelH) / 2;
-                const bool outside = gx < px || gy < py || gx > px + ui::kInvPanelW || gy > py + panelH;
+                const bool outside = invJsonPanel ? gx < invPanel[0] || gy < invPanel[1] || gx > invPanel[0] + invPanel[2] || gy > invPanel[1] + invPanel[3]
+                                                  : gx < px || gy < py || gx > px + ui::kInvPanelW || gy > py + panelH;
                 const bool isRight = !leftEdge;
                 const bool overBook = invBook && gx >= (guiW - 147) / 2 - 86 && gx < (guiW - 147) / 2 + 61;
-                if (invHoverId == "rb") {
+                if (invHoverId == "close") {
+                    invCloseClicked = true;
+                } else if (invHoverId == "rb") {
                     invBook = !invBook;
                     invRecipeAt = {};
                 } else if (invHoverId == "rp") {
@@ -1969,10 +1990,7 @@ namespace perlin {
         if (bindCapture < 0)
         for (const auto& t : inputManager.TakeTyped()) {
             if (pauseView == 4) {
-                if (t.character && t.key >= 32 && t.key < 127 && modSearch.size() < 40)
-                    modSearch += static_cast<char>(t.key);
-                else if (!t.character && t.key == Key::Backspace && !modSearch.empty())
-                    modSearch.pop_back();
+                ui::TextEdit::Focused().Apply(t, modSearch, ui::TextLimits{40});
             }
             if (!t.character && t.key == Key::Escape && now - pauseOpenedAt > std::chrono::milliseconds(100)) {
                 if (pauseView == 1 && optionsPage == 11) {
@@ -3188,9 +3206,6 @@ namespace perlin {
                     model.push_back({"Activate Cheats", onOff(on), -1.0f, [=](float, bool click) {
                                          if (click && isOp) {
                                              worldOverride["commandsenabled"] = {on ? 0 : 1, nowSec};
-                                             // changesetting is a console command, so a normal command request is refused for
-                                             // players. The settings screen goes through the settings_command packet instead.
-                                             // (Unverified against a live BDS: the server decides whether to honour it.)
                                              if (live)
                                                  live->SendSettingsCommand(std::string("changesetting allow-cheats ") + (on ? "false" : "true"));
                                              else
@@ -3426,11 +3441,14 @@ namespace perlin {
                            [this](float f) { options.upscaleSharpness = static_cast<int>(std::lround(std::clamp(f, 0.0f, 1.0f) * 100.0f)); });
                 }
                 {
-                    const int gen = options.frameGen == "4x" ? 4 : options.frameGen == "3x" ? 3 : options.frameGen == "2x" ? 2 : 1;
-                    slider("Frame Generation", gen == 1 ? tr("options.off", "OFF") : std::to_string(gen) + "x", static_cast<float>(gen - 1) / 3.0f,
+                    const bool autoGen = options.frameGen == "auto";
+                    const int gen = autoGen ? 5 : options.frameGen == "4x" ? 4 : options.frameGen == "3x" ? 3 : options.frameGen == "2x" ? 2 : 1;
+                    const std::string label = autoGen ? "Auto (" + (fgActive > 1 ? std::to_string(fgActive) + "x" : tr("options.off", "OFF")) + ")"
+                                                      : gen == 1 ? tr("options.off", "OFF") : std::to_string(gen) + "x";
+                    slider("Frame Generation", label, static_cast<float>(gen - 1) / 4.0f,
                            [this](float f) {
-                               const int g = 1 + static_cast<int>(std::lround(std::clamp(f, 0.0f, 1.0f) * 3.0f));
-                               options.frameGen = g == 4 ? "4x" : g == 3 ? "3x" : g == 2 ? "2x" : "off";
+                               const int g = 1 + static_cast<int>(std::lround(std::clamp(f, 0.0f, 1.0f) * 4.0f));
+                               options.frameGen = g == 5 ? "auto" : g == 4 ? "4x" : g == 3 ? "3x" : g == 2 ? "2x" : "off";
                            });
                 }
                 {
@@ -4235,28 +4253,6 @@ namespace perlin {
             std::filesystem::create_directories(paths::DataDir(), ec);
             std::ofstream(ServersPath(), std::ios::binary) << root.Dump(2);
         }
-
-        void AppendUtf8(std::string& out, int cp) {
-            if (cp < 32 || cp == 127)
-                return;
-            if (cp < 0x80) {
-                out += static_cast<char>(cp);
-            } else if (cp < 0x800) {
-                out += static_cast<char>(0xC0 | (cp >> 6));
-                out += static_cast<char>(0x80 | (cp & 0x3F));
-            } else {
-                out += static_cast<char>(0xE0 | (cp >> 12));
-                out += static_cast<char>(0x80 | ((cp >> 6) & 0x3F));
-                out += static_cast<char>(0x80 | (cp & 0x3F));
-            }
-        }
-
-        void PopUtf8(std::string& text) {
-            while (!text.empty() && (static_cast<unsigned char>(text.back()) & 0xC0) == 0x80)
-                text.pop_back();
-            if (!text.empty())
-                text.pop_back();
-        }
     }
 
     namespace {
@@ -4447,7 +4443,6 @@ namespace perlin {
                 const auto start = Clock::now();
                 const bool parsed = ParseServer(text, host, port);
                 const bool ok = parsed && RakNet::Ping(host, port, ad, error, 2500);
-                // NetherNet servers don't answer RakNet pings; their /v1/join reply carries the same details.
                 NetherNetServerInfo info;
                 const bool nether = parsed && !ok && NetherNet::Probe(host, port, info, error, 3);
                 r.pingMs = static_cast<int>(std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now() - start).count());
@@ -4740,8 +4735,6 @@ namespace perlin {
         }).detach();
     }
 
-    // Featured servers: the catalog the game's own Servers screen shows. Needs a Microsoft account; without one the
-    // dropdown just isn't there. Refetched at most every 10 minutes unless the Refresh button asks.
     void Perlin::RefreshFeatured(bool force) {
         if (!(accounts.Active() && accounts.Active()->microsoft)) {
             std::lock_guard lock(tabMutex);
@@ -5020,8 +5013,31 @@ namespace perlin {
         titleReturnToServers = true;
     }
 
+    int Perlin::FrameGenMultiplier() {
+        if (options.frameGen == "auto") {
+            double target = platform ? platform->DisplayRefreshHz() : 0.0;
+            if (target < 30.0)
+                target = 60.0;
+            if (options.maxFps > 0)
+                target = std::min(target, static_cast<double>(options.maxFps));
+            return fgPacer.AutoTotal(target, Clock::now());
+        }
+        return options.frameGen == "4x" ? 4 : options.frameGen == "3x" ? 3 : options.frameGen == "2x" ? 2 : 1;
+    }
+
     void Perlin::DrawTitlePanorama(int fbW, int fbH) {
         const auto now = Clock::now();
+        const uint64_t packStamp = (TexturePack::Instance().Generation() << 32) ^ ServerPacks::Instance().Generation();
+        if (packStamp != panoramaPackStamp) {
+            panoramaPackStamp = packStamp;
+            for (uint32_t& id : panoramaTextures) {
+                if (id)
+                    renderer->UiDestroyTexture(id);
+                id = 0;
+            }
+            panoramaReady = false;
+            panoramaRetryAt = {};
+        }
         if (!panoramaReady) {
             if (now < panoramaRetryAt)
                 return;
@@ -5383,24 +5399,22 @@ namespace perlin {
             if (!t.character && t.key == Key::Escape) {
                 back();
             } else if (title.page == ui::TitlePage::Replays || title.page == ui::TitlePage::ReplayRename || title.page == ui::TitlePage::ReplayDelete) {
-                TitleReplayTyped(t.key, t.character, t.ctrl);
+                TitleReplayTyped(t);
             } else if (title.page == ui::TitlePage::AccountName) {
-                if (!t.character && t.key == Key::Backspace)
-                    PopUtf8(title.accountName);
-                else if (!t.character && t.key == Key::Enter)
+                ui::TextLimits limits{16};
+                limits.accept = [](uint32_t cp) { return cp != ' '; };
+                if (!t.character && t.key == Key::Enter)
                     addOffline();
-                else if (t.character && !t.ctrl && title.accountName.size() < 16 && t.key != ' ')
-                    AppendUtf8(title.accountName, t.key);
+                else
+                    ui::TextEdit::Focused().Apply(t, title.accountName, limits);
             } else if (fields) {
                 std::string& field = title.page == ui::TitlePage::Direct || title.page == ui::TitlePage::AddRealm || title.focus == 1 ? title.address : title.name;
-                if (!t.character && t.key == Key::Backspace)
-                    PopUtf8(field);
-                else if (!t.character && t.key == Key::Tab && title.page == ui::TitlePage::Edit)
+                if (!t.character && t.key == Key::Tab && title.page == ui::TitlePage::Edit)
                     title.focus ^= 1;
                 else if (!t.character && t.key == Key::Enter)
                     commit();
-                else if (t.character && !t.ctrl && field.size() < 120)
-                    AppendUtf8(field, t.key);
+                else
+                    ui::TextEdit::Focused().Apply(t, field, ui::TextLimits{120});
             } else if (title.page == ui::TitlePage::Servers) {
                 const int count = static_cast<int>(title.Shown().size());
                 if (!t.character && t.key == Key::Enter)
@@ -5870,7 +5884,6 @@ namespace perlin {
                     t.message = tr("progressScreen.title.downloading", "Downloading packs %1", {std::to_string(progress.done + 1) + "/" + std::to_string(progress.total)});
                     t.progress = progress.bytesTotal > 0 ? static_cast<float>(progress.bytes) / static_cast<float>(progress.bytesTotal)
                                                           : static_cast<float>(progress.done) / static_cast<float>(progress.total);
-                    // Speed averaged over ~2 s windows so the readout doesn't flicker between chunk bursts.
                     static uint64_t rateBytes = 0;
                     static auto rateAt = now;
                     static double rate = 0.0;
@@ -5904,8 +5917,6 @@ namespace perlin {
                 loadingStartAt = now;
             const int chunks = session->ChunksReceived();
             const bool assets = levelRenderer && levelRenderer->Blocks().Complete();
-            // Don't wait for the mesh queue to drain: chunks keep streaming in, so it can stay busy for many
-            // seconds and the screen would sit at 98% while you're already standing in the world.
             const bool enough = chunks >= 9 && assets;
             if (enough) {
                 if (!loadingReadyArmed) {
@@ -6174,6 +6185,22 @@ namespace perlin {
                          : hudAnim.ticks;
         s.inWater = headUnderwater;
         chat.Fill(s, hudAnim.ticks, MsNow());
+        s.scoreboard = false;
+        s.scoreboardTitle.clear();
+        s.scoreboardRows.clear();
+        if (live) {
+            const auto sb = live->Scoreboard();
+            s.scoreboard = sb.visible;
+            if (sb.visible) {
+                s.scoreboardTitle = sb.title;
+                for (const auto& r : sb.rows)
+                    s.scoreboardRows.emplace_back(r.name, r.score);
+            }
+        } else if (preview && PERLIN_ENV("PERLIN_PREVIEW_SCOREBOARD")) {
+            s.scoreboard = true;
+            s.scoreboardTitle = "\xC2\xA7" "e\xC2\xA7" "lPERLIN";
+            s.scoreboardRows = {{"Kills", 12}, {"Deaths", 3}, {"\xC2\xA7" "aCoins", 450}};
+        }
         if (preview) {
             s.health = 20.0f;
             s.food = 20;
@@ -6744,6 +6771,7 @@ namespace perlin {
                 i18n::Lang::Get().Configure(ui::UiAssets::Instance().VanillaRoot(), paths::DataDir(), options.language);
             float dt = std::chrono::duration<float>(frameStart - previous).count();
             previous = frameStart;
+            fgActive = FrameGenMultiplier();
             if (dt <= 0.0f || dt > kMaxFrameDelta)
                 dt = kDefaultFrameDelta;
 
@@ -6756,7 +6784,7 @@ namespace perlin {
             if (exportJob.active)
                 ExportPreFrame(frameStart, dt);
             if (replayCtl.Playing())
-                camera.mode = PerspectiveMode::FirstPerson; // replays are always first person (the recorded player is drawn separately)
+                camera.mode = PerspectiveMode::FirstPerson;
             else if (inputManager.Pressed(Action::CyclePerspective))
                 camera.CycleMode();
             zoom.SetConfig(options.zoom);
@@ -6916,8 +6944,6 @@ namespace perlin {
                         seated = true;
                     }
                     {
-                        // Getting off a cushion leaves us inside its collision box, which read as "no room to stand" and
-                        // flickered into crawling. Lift onto its top when the ride ends.
                         static bool wasSeated = false;
                         static entity::Entity lastSeat;
                         if (seated) {
@@ -6952,9 +6978,6 @@ namespace perlin {
                                         name == "minecraft:chorus_fruit" || name == "minecraft:suspicious_stew";
                     const bool eating = hudState.Survival() && HandRenderer::IsFood(name) && (always || hudState.food < 20);
                     blockedFoodUse = HandRenderer::IsFood(name) && !eating;
-                    // Aim for this frame resolves after movement; the previous frame's target
-                    // decides whether the click interacts instead. Blocks and entities that take
-                    // the click go through the normal use path, which never also starts eating.
                     bool aimInteracts = false;
                     if (gAim.kind == AimHit::Kind::Block) {
                         bool loaded = false;
@@ -6974,8 +6997,6 @@ namespace perlin {
                         live->SendReleaseItem(eye);
                         usingItem = false;
                     }
-                    // Resolve use intent before movement; the render tick follows
-                    // player.Update and otherwise delays slowdown by one tick.
                     const uint32_t useTicks = eating ? (name == "minecraft:dried_kelp" ? 16 :
                                                        name == "minecraft:honey_bottle" ? 40 : 32) : 0;
                     player.SetItemSlow(use && (eating || name == "minecraft:bow" || name == "minecraft:trident" ||
@@ -6984,7 +7005,6 @@ namespace perlin {
                 if (!replayCtl.Playing())
                     player.Update(*live, inputManager, camera, levelRenderer->Blocks(), dt);
             }
-            // Sample after movement advances this frame's ticks and partial tick.
             float movementFov = player.FovModifier();
             if (preview && !live) {
                 if (const char* movement = PERLIN_ENV("PERLIN_PREVIEW_FOV_MOVEMENT")) {
@@ -7117,8 +7137,6 @@ namespace perlin {
                     }
                 }
 
-                // Replays: act out the recorded player's client-side packets (swings, mining, hotbar) so the
-                // hand, cracks, hit particles and sounds match what they did.
                 if (replayCtl.Playing() && live) {
                     struct ReplayMine { bool active = false; int x = 0, y = 0, z = 0, face = 0; float progress = 0.0f; int hits = 0; };
                     static ReplayMine rm;
@@ -7157,10 +7175,10 @@ namespace perlin {
                             live->ReplaySelectSlot(ev.slot);
                         } else {
                             switch (ev.action) {
-                            case 0: // start breaking
+                            case 0:
                                 rm = ReplayMine{true, ev.x, ev.y, ev.z, ev.face, 0.0f, 0};
                                 break;
-                            case 18: // crack / continue
+                            case 18:
                             case 27: {
                                 if (!rm.active || rm.x != ev.x || rm.y != ev.y || rm.z != ev.z)
                                     rm = ReplayMine{true, ev.x, ev.y, ev.z, ev.face, 0.0f, 0};
@@ -7185,11 +7203,11 @@ namespace perlin {
                                                std::clamp(rm.progress, 0.0f, 1.0f)};
                                 break;
                             }
-                            case 26: // predicted destroy
-                            case 2:  // stop break
+                            case 26:
+                            case 2:
                                 finishMine(true);
                                 break;
-                            case 1: // abort
+                            case 1:
                                 finishMine(false);
                                 break;
                             default:
@@ -7296,8 +7314,6 @@ namespace perlin {
                                 bkx = gAim.bx; bky = gAim.by; bkz = gAim.bz; bkFace = gAim.face;
                                 breaking = true;
                                 breakProgress = 0.0f;
-                                // Creative is instant on the initial press;
-                                // held repeats still obey the shared cooldown.
                                 breakClock = creative ? 0.05 : 0.0;
                                 hitTicks = 0;
                                 live->SendPlayerAuthInputBlockAction(0  , bkx, bky, bkz, bkFace);
@@ -7397,8 +7413,6 @@ namespace perlin {
                         breakDelayTicks--;
                     }
 
-                    // Keep the attack/pick ray unchanged. Reacharound placement has
-                    // its own target and cannot turn an air attack into mining.
                     AimHit useAim = gAim;
                     std::vector<physics::Box> heldShape;
                     if (options.bedrockBridging && live && levelRenderer &&
@@ -7437,8 +7451,6 @@ namespace perlin {
                             useAim.face = target.face;
                             useAim.point = target.point;
                             useAim.distance = target.distance;
-                            // Highlight the existing support with the same selection
-                            // geometry as an ordinary ray hit, including partial blocks.
                             std::vector<physics::Box> supportShape;
                             if (collision.Selection(target.anchor.x, target.anchor.y, target.anchor.z, supportShape)) {
                                 const glm::dvec3 origin(target.anchor);
@@ -7476,8 +7488,6 @@ namespace perlin {
                     }
                     if (gBridgeTarget && (use != blockuse::Use::Place ||
                             glm::ivec3(dest[0], dest[1], dest[2]) != gBridgeTarget->destination)) {
-                        // The anchor/destination can change while the network
-                        // thread updates the level. Discard the stale plan.
                         gBridgeTarget.reset();
                         gBridgeOutline.clear();
                         useAim = gAim;
@@ -7491,14 +7501,12 @@ namespace perlin {
                     const bool repeatReady = options.bedrockBridging && use == blockuse::Use::Place && holdsBlock
                         ? gPlacementRepeat.Ready(useTime, destination, held.blockRuntimeId, false)
                         : useClock >= 0.2 && !tooSoon;
-                    // Fresh clicks also start item use immediately, including food.
                     if (usePressed || (useHeld && repeatReady)) {
                         lastUseSent = Clock::now();
                         useClock = 0;
                         bool interactedEntity = false;
                         if (usePressed && live && useAim.kind == AimHit::Kind::Entity) {
                             entity::Entity target;
-                            // UpdateClientInputLocks bit 128 forbids mounting; every interactable entity here is a ride.
                             if (live->Entities().Find(useAim.entity, target) && IsInteractable(target.type) && !(live->InputLocks() & 128u)) {
                                 const glm::vec3 offset = EntityClickOffset({camera.x, camera.y, camera.z}, glm::dvec3(camera.Direction()), target.pos,
                                                                            (useAim.boxHi.x - useAim.boxLo.x) * 0.5, useAim.boxHi.y - useAim.boxLo.y,
@@ -7511,9 +7519,6 @@ namespace perlin {
                             }
                         }
                         const bool allowed = usePressed || (use == blockuse::Use::Place);
-                        // Food and drinks start with a plain in-air use, same as when aiming at the sky. Sending a
-                        // failed block click first (which happens when standing still and looking at the ground)
-                        // made eating start only some of the time.
                         const bool consumableInAir = holdsItem && !holdsBlock && use == blockuse::Use::Nothing && HandRenderer::IsFood(held.name);
                         if (useAim.kind == AimHit::Kind::Block && allowed && !consumableInAir) {
                             bool sent = !live;
@@ -7531,16 +7536,11 @@ namespace perlin {
                             }
                             if (sent && use == blockuse::Use::Place && holdsBlock) {
                                 if (live && gBridgeTarget) {
-                                    // The solver checked the held geometry against the actual
-                                    // body. Extra airborne padding prevents timely jump bridging.
                                     float click[3];
                                     clickOf(useAim, click);
                                     live->PredictBridgePlace(dest[0], dest[1], dest[2], static_cast<int32_t>(held.blockRuntimeId), useAim.face, click);
                                 } else if (live && !player.Flying()) {
                                     const physics::State& pst = player.State();
-                                    // While airborne the server checks the placement against where we'll be a moment from now and
-                                    // delays/rejects it, so predicting it here showed a block in mid-air for a split second. Widen
-                                    // the player box by the vertical motion and a safety margin so those placements wait for the server.
                                     const double pad = pst.onGround ? 0.0 : 0.6;
                                     const double lo = pst.y - pad + std::min(0.0, pst.vy * 2.0);
                                     const double hi = pst.y + 1.85 + pad + std::max(0.0, pst.vy * 2.0);
@@ -7583,8 +7583,6 @@ namespace perlin {
                 gAim = AimHit{};
                 gPlacementRepeat.Reset();
                 if (live) live->EndItemUseOn();
-                // Input is no longer captured (menu, chat, disconnect...): finish any in-progress break properly so
-                // the server and our crack overlay don't keep a half-broken block around.
                 if (gBreak.breaking) {
                     if (live) {
                         live->SendPlayerAuthInputBlockAction(1, gBreak.x, gBreak.y, gBreak.z, gBreak.face);
@@ -8115,7 +8113,7 @@ namespace perlin {
                     static float dynamic = 1.0f;
                     static double frameMs = 16.0;
                     static auto lastChange = std::chrono::steady_clock::now();
-                    const double shownFrames = options.frameGen == "4x" ? 4.0 : options.frameGen == "3x" ? 3.0 : options.frameGen == "2x" ? 2.0 : 1.0;
+                    const double shownFrames = static_cast<double>(fgActive);
                     frameMs += (static_cast<double>(dt) * 1000.0 / shownFrames - frameMs) * 0.05;
                     const double targetMs = 1000.0 / static_cast<double>(options.upscaleTargetFps);
                     const auto nowDyn = std::chrono::steady_clock::now();
@@ -8134,7 +8132,7 @@ namespace perlin {
                 params.upscaler = options.upscaler == "temporal" ? 3 : options.upscaler == "fsr1" ? 2 : options.upscaler == "bicubic" ? 1 : 0;
                 params.upscaleSharpness = static_cast<float>(options.upscaleSharpness) / 100.0f;
             }
-            params.frameGen = options.frameGen == "4x" ? 4 : options.frameGen == "3x" ? 3 : options.frameGen == "2x" ? 2 : 1;
+            params.frameGen = fgActive;
             {
                 const glm::mat4 handProjection = HandRenderer::Projection(70.0f, camera.aspect, camera.farPlane);
                 std::copy_n(glm::value_ptr(handProjection), 16, params.handProjection);
@@ -8216,6 +8214,10 @@ namespace perlin {
 
             if (gProfile.enabled)
                 gProfile.ms[0] += std::chrono::duration<double, std::milli>(Clock::now() - frameStart).count();
+            fgPacer.PreRenderMs(std::chrono::duration<double, std::milli>(Clock::now() - frameStart).count());
+            if (fgPacer.Pending() && !exportJob.active)
+                frames += fgPacer.Pump(FrameGenPacer::Stage::BeforeRender, !options.vsync, Clock::now(),
+                                       [&](int i, int n) { return renderer->PresentGenerated(i, n); });
             renderer->BeginFrame(params);
             if (live) {
                 { ProfScope p(1); levelRenderer->Update(&live->NetLevel(), camera.x, camera.z, frustum); }
@@ -8312,7 +8314,6 @@ namespace perlin {
                     self.yaw = self.headYaw = camera.yaw - 90.0f;
                     self.pitch = -camera.pitch;
                     if (replayCtl.Playing()) {
-                        // The camera is free; draw the recorded player where they actually were.
                         const replay::Pose rp = replayCtl.InterpolatedPose();
                         if (rp.known) {
                             self.pos = {rp.x, rp.y - entity::kPlayerEye, rp.z};
@@ -8322,8 +8323,6 @@ namespace perlin {
                     }
                     self.moveSerial = 1;
                     self.swingSerial = gSelfSwing;
-                    // Drive the same red hurt flash other mobs get; the own player isn't in the tracker so its
-                    // hurt events never reached the renderer before.
                     self.hurtSerial = live ? live->HurtCount() : 0;
                     self.mainHand = hudState.hotbar[std::clamp(hudState.selectedSlot, 0, 8)].name;
                     for (int i = 0; i < 4; i++)
@@ -8361,7 +8360,6 @@ namespace perlin {
                         self.skin = selfSkinData;
                     }
                     if (replayCtl.Playing() && live) {
-                        // Use the skin the recorded player wore (their PlayerList entry), not the viewer's own.
                         const std::string& rn = replayCtl.Meta().playerName;
                         for (const auto& tp : live->PlayerList())
                             if (tp.skin && !tp.skin->skinRgba.empty() && (tp.name == rn || tp.uid == static_cast<int64_t>(replayCtl.Meta().localRuntimeId))) {
@@ -8383,7 +8381,6 @@ namespace perlin {
                     entities.push_back(std::move(self));
                 }
                 if (replayCtl.Playing() && (!replayUi.showPlayers || !replayUi.showEntities || !replayUi.showNametags)) {
-                    // editor visibility toggles (they apply to exports too)
                     entities.erase(std::remove_if(entities.begin(), entities.end(), [&](const entity::Entity& en) {
                                        return en.isPlayer ? !replayUi.showPlayers : !replayUi.showEntities;
                                    }), entities.end());
@@ -8406,6 +8403,7 @@ namespace perlin {
                 }
                 ein.ownNametag = options.thirdPersonNametag;
                 ein.nametags = !live || live->Adventure().showNameTags;
+                ein.nametagDepth = fgActive > 1;
                 ein.ownParts = options.skinParts;
                 ein.skins3d = options.skins3d;
                 {
@@ -8507,8 +8505,6 @@ namespace perlin {
                         int sky = std::clamp<int>(ChunkLighting::Result::Sky(packed), 0, 15);
                         int blk = std::clamp<int>(ChunkLighting::Result::Block(packed), 0, 15);
                         if (sky == 0 && blk == 0) {
-                            // A particle that drifted inside a solid block reads zero light there and went pitch black.
-                            // Borrow the brightest neighbouring cell instead (real dark caves stay dark: all zero).
                             static const int kN[6][3] = {{0, 1, 0}, {0, -1, 0}, {1, 0, 0}, {-1, 0, 0}, {0, 0, 1}, {0, 0, -1}};
                             for (const auto& n : kN) {
                                 const uint8_t q = CachedLight(entityLevel, bx + n[0], by + n[1], bz + n[2], frameStart);
@@ -8539,7 +8535,6 @@ namespace perlin {
                             const std::string pname = BlockPalette::Instance().Name(id);
                             const auto pHas = [&](const char* part) { return pname.find(part) != std::string::npos; };
                             const bool untinted = pHas("cherry_leaves") || pHas("azalea") || pHas("pale_oak_leaves") || pHas("leaf_litter");
-                            // Biome-tinted blocks are tinted at mesh time, so the appearance flags don't tell us; go by name.
                             const bool foliageLike = !untinted && (pHas("leaves") || pHas("vine"));
                             const bool grassLike = !untinted && (pHas("grass") || pHas("fern") || pHas("sugar_cane"));
                             const bool grassBlock = pHas("grass_block");
@@ -8614,8 +8609,6 @@ namespace perlin {
                         return s == 1;
                     };
                     if (live) {
-                        // Dropped items fall and slide locally at 20 Hz so broken-block drops move smoothly; the
-                        // server's position updates only nudge them.
                         static double itemAcc = 0.0;
                         itemAcc = std::min(itemAcc + static_cast<double>(dt), 0.15);
                         const auto itemSolid = [&](int x, int y, int z) {
@@ -8740,7 +8733,6 @@ namespace perlin {
                     }
                 }
             }
-            // In a replay the hand is shown only when watching through the recorded player's eyes.
             if ((live || preview) && (!replayCtl.Playing() || replayCtl.cameraMode == replay::CameraMode::Follow) && camera.mode == PerspectiveMode::FirstPerson && options.showHud &&
                 hudState.mode != ui::GameMode::Spectator && ui::UiAssets::Instance().VanillaRoot().size()) {
                 HandRenderer::FrameIn handFrame;
@@ -8762,7 +8754,6 @@ namespace perlin {
                 static uint64_t replayHandSerial = 0;
                 const LoadedSkin* handSkin = session ? &session->Skin() : nullptr;
                 if (session && replayCtl.Playing()) {
-                    // the recorded player's own skin, taken from their PlayerList entry
                     for (const auto& tp : session->PlayerList()) {
                         if (!tp.skin || tp.skin->skinRgba.empty() || tp.name != replayCtl.Meta().playerName)
                             continue;
@@ -8998,8 +8989,6 @@ namespace perlin {
                 }
                 const bool previewTouch = preview && PERLIN_ENV("PERLIN_PREVIEW_TOUCH");
                 if (previewTouch) {
-                    // Exercise the shared overlay renderer on desktop platforms
-                    // whose native window backend has no touch input surface.
                     static TouchControls previewControls;
                     previewControls.SetViewport(width, height);
                     previewControls.SetState(touchState);
@@ -9014,23 +9003,14 @@ namespace perlin {
                 ExportPostRender();
             PublishControl();
             { ProfScope p(6); renderer->EndFrame(); }
-            if (options.frameGen != "off" && !exportJob.active) {
-                const int total = options.frameGen == "4x" ? 4 : options.frameGen == "3x" ? 3 : 2;
-                static double workMs = 16.0;
+            if (!exportJob.active) {
                 const auto realEnd = Clock::now();
-                workMs += (std::clamp(std::chrono::duration<double, std::milli>(realEnd - frameStart).count(), 1.0, 100.0) - workMs) * 0.1;
-                for (int i = 1; i < total; i++) {
-                    if (!options.vsync) {
-                        const auto due = realEnd + std::chrono::microseconds(static_cast<long long>(workMs * 1000.0 * 0.35 * i));
-                        const auto coarse = due - std::chrono::microseconds(1500);
-                        if (Clock::now() < coarse)
-                            std::this_thread::sleep_until(coarse);
-                        while (Clock::now() < due)
-                            std::this_thread::yield();
-                    }
-                    if (!renderer->PresentGenerated(i, total))
-                        break;
-                    frames++;
+                const double work = std::chrono::duration<double, std::milli>(realEnd - frameStart).count() - fgPacer.TakeWaitedMs();
+                fgPacer.RealFrame(realEnd, fgActive, work);
+                if (fgActive > 1) {
+                    const auto idleUntil = options.maxFps > 0 ? frameStart + std::chrono::microseconds(1000000LL * fgActive / options.maxFps) : realEnd;
+                    frames += fgPacer.Pump(FrameGenPacer::Stage::AfterPresent, !options.vsync, idleUntil,
+                                           [&](int i, int n) { return renderer->PresentGenerated(i, n); });
                 }
             }
             if (gProfile.enabled) {
@@ -9081,7 +9061,6 @@ namespace perlin {
             }
 
 #ifndef __EMSCRIPTEN__
-            // exporting runs as fast as the GPU and encoder allow, so vsync is off for its duration
             const bool wantVsync = options.vsync && !exportJob.active;
             if (appliedVsync != wantVsync) {
                 appliedVsync = wantVsync;
@@ -9102,14 +9081,8 @@ namespace perlin {
                         std::this_thread::sleep_until(target);
                 }
             }
-            if (options.maxFps > 0 && !exportJob.active) {
-                const auto target = frameStart + std::chrono::microseconds(1000000 / options.maxFps);
-                const auto coarse = target - std::chrono::microseconds(1500);
-                if (Clock::now() < coarse)
-                    std::this_thread::sleep_until(coarse);
-                while (Clock::now() < target)
-                    std::this_thread::yield();
-            }
+            if (options.maxFps > 0 && !exportJob.active)
+                FrameGenPacer::SleepUntil(frameStart + std::chrono::microseconds(1000000LL * std::max(1, fgActive) / options.maxFps));
 #endif
         };
 

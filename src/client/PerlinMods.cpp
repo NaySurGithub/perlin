@@ -195,8 +195,6 @@ namespace perlin {
         const uint32_t packets = static_cast<uint32_t>(abi::Permission::Packets);
         using abi::Op;
 
-        // Click position for an attack or interact sent on a plugin's behalf: where the player's crosshair ray meets the target's
-        // hitbox, relative to the target's base coordinate; the box centre when the ray does not hit it.
         const auto ModEntityClick = [this](const entity::Entity& e) {
             const auto hb = entityRenderer.HitBox(e);
             const double scale = e.scale > 0 ? e.scale : 1.0;

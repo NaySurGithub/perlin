@@ -43,6 +43,8 @@ private:
     std::chrono::steady_clock::time_point padLast{};
     float padScroll = 0.0f;
     void SetClipboard(const std::string& text) override;
+    std::string GetClipboard() override;
+    double DisplayRefreshHz() override;
     void OpenUrl(const std::string& url) override;
     bool PickFile(const std::string& kind) override;
     bool TakeSurfaceChanged() override { return surfaceChanged.exchange(false); }
@@ -67,7 +69,6 @@ private:
     std::mutex titleMutex;
     std::string pendingTitle;
     bool titleDirty = false;
-    // export progress window (created, drawn and destroyed on the main thread from PumpFrame)
     std::mutex progMutex;
     bool progWant = false, progDirty = false;
     std::string progTitle, progLine1, progLine2;

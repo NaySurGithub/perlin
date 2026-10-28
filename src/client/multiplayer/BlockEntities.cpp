@@ -101,7 +101,6 @@ namespace perlin {
     }
 
     float BlockEntityStore::LidAt(const Lid& lid, std::chrono::steady_clock::time_point now) {
-        // Vanilla moves the lid 0.1 per tick, so a full swing takes half a second.
         const float moved = std::chrono::duration<float>(now - lid.at).count() * 2.0f;
         return lid.open ? std::min(1.0f, lid.from + moved) : std::max(0.0f, lid.from - moved);
     }
@@ -123,7 +122,6 @@ namespace perlin {
         if (it == lids.end())
             return 0.0f;
         const float p = LidAt(it->second, std::chrono::steady_clock::now());
-        // Same ease-out as vanilla's chest renderer.
         return 1.0f - (1.0f - p) * (1.0f - p) * (1.0f - p);
     }
 

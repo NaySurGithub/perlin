@@ -1,6 +1,3 @@
-// A tiny immediate-mode panel drawn with perlin/gfx.hpp instead of the game's own UI, written in the class style.
-// F8 grabs the mouse; drag inside the panel to draw; Escape (or F8) lets go. This is the same plumbing a Dear ImGui
-// backend uses: a draw list, textures, raw mouse/keyboard events and the framebuffer size.
 #include <perlin/plugin.hpp>
 
 #include <mod_settings.hpp>

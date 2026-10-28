@@ -5,7 +5,6 @@
 namespace perlin::ui {
     struct PauseScreenText {
         std::string title, back, options, quit, advancements, stats, feedback, bugs, lan, players, world, mods;
-        // Replay row: two half-width buttons, the inactive one is drawn locked.
         bool showReplay = false;
         bool replayRecording = false;
         std::string replayStart, replayStop;

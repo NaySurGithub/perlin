@@ -3,7 +3,9 @@
 #include <algorithm>
 
 #include "client/ui/RmlEmit.hpp"
+#include "client/ui/FormatCodes.hpp"
 #include "client/ui/UiTemplate.hpp"
+#include "client/ui/TextEdit.hpp"
 
 namespace perlin::ui {
     std::string DefaultPauseScreenTemplate() {
@@ -167,17 +169,15 @@ mcimg { display: block; position: absolute; }
         return l;
     }
 
-    std::string BuildOptionsScreenRml(const std::vector<OptionsRow>& rows, const std::string& title, const std::string& done,
-                                      float scroll, int guiW, int guiH, int hover) {
-        const OptionsLayout l = ComputeOptionsLayout(rows, guiW, guiH, scroll);
-        std::string d = R"PERLINRML(<rml>
+    namespace {
+        const char* kOptionsHead = R"PERLINRML(<rml>
 <head>
 <title>options</title>
 <style>
-body { position: absolute; left: 0px; top: 0px; width: )PERLINRML" + std::to_string(guiW) + "px; height: " + std::to_string(guiH) + R"PERLINRML(px; margin: 0; padding: 0; background: transparent; }
+body { position: absolute; left: 0px; top: 0px; width: {{w}}px; height: {{h}}px; margin: 0; padding: 0; background: transparent; }
 div { display: block; position: absolute; }
-#dim { left: 0px; top: 0px; width: )PERLINRML" + std::to_string(guiW) + "px; height: " + std::to_string(guiH) + R"PERLINRML(px; background-color: rgba(0,0,0,128); }
-#heading { left: 0px; top: 15px; width: )PERLINRML" + std::to_string(guiW) + R"PERLINRML(px; height: 9px; font-family: minecraft-shadow; font-size: 8px; line-height: 9px; text-align: center; color: #ffffff; white-space: nowrap; z-index: 3; }
+#dim { left: 0px; top: 0px; width: {{w}}px; height: {{h}}px; background-color: rgba(0,0,0,128); }
+#heading { left: 0px; top: 15px; width: {{w}}px; height: 9px; font-family: minecraft-shadow; font-size: 8px; line-height: 9px; text-align: center; color: #ffffff; white-space: nowrap; z-index: 3; }
 .btn { height: 20px; background-color: #000000; z-index: 5; }
 .btn div { position: absolute; }
 .btn .rim { left: 1px; top: 1px; height: 16px; background-color: #aaaaaa; }
@@ -203,7 +203,18 @@ div { display: block; position: absolute; }
 </head>
 <body>
 <div id="dim"></div>
-<div id="heading">)PERLINRML" + EscapeRml(title) + "</div>\n";
+<div id="heading">{{title}}</div>
+)PERLINRML";
+        const ScreenTemplateDefault kOptionsHeadDefault("options_screen.rml", kOptionsHead);
+    }
+
+    std::string BuildOptionsScreenRml(const std::vector<OptionsRow>& rows, const std::string& title, const std::string& done,
+                                      float scroll, int guiW, int guiH, int hover) {
+        const OptionsLayout l = ComputeOptionsLayout(rows, guiW, guiH, scroll);
+        std::string d = ScreenTemplate("options_screen.rml", kOptionsHead);
+        ReplaceAll(d, "w", std::to_string(guiW));
+        ReplaceAll(d, "h", std::to_string(guiH));
+        ReplaceAll(d, "title", EscapeRml(title));
         for (int i = 0; i < l.count; i++) {
             const OptionsRow& row = rows[static_cast<size_t>(i)];
             if (!l.visible[static_cast<size_t>(i)])
@@ -309,19 +320,15 @@ div { display: block; position: absolute; }
         return l;
     }
 
-    std::string BuildKeybindsScreenRml(const std::vector<KeybindRow>& rows, const std::string& title, const std::string& done,
-                                       const std::string& reset, float scroll, int guiW, int guiH) {
-        const KeybindLayout l = ComputeKeybindLayout(static_cast<int>(rows.size()), guiW, guiH);
-        const auto px = [](float v) { return std::to_string(static_cast<int>(std::lround(v))); };
-        const float listH = l.listBottom - l.listTop;
-        std::string d = R"PERLINRML(<rml>
+    namespace {
+        const char* kKeybindsHead = R"PERLINRML(<rml>
 <head>
 <title>keybinds</title>
 <style>
-body { position: absolute; left: 0px; top: 0px; width: )PERLINRML" + px(guiW) + "px; height: " + px(guiH) + R"PERLINRML(px; margin: 0; padding: 0; background: transparent; }
+body { position: absolute; left: 0px; top: 0px; width: {{w}}px; height: {{h}}px; margin: 0; padding: 0; background: transparent; }
 div { display: block; position: absolute; }
-#dim { left: 0px; top: 0px; width: )PERLINRML" + px(guiW) + "px; height: " + px(guiH) + R"PERLINRML(px; background-color: rgba(0,0,0,128); }
-#heading { left: 0px; top: 12px; width: )PERLINRML" + px(guiW) + R"PERLINRML(px; height: 9px; font-family: minecraft-shadow; font-size: 8px; line-height: 9px; text-align: center; color: #ffffff; white-space: nowrap; z-index: 3; }
+#dim { left: 0px; top: 0px; width: {{w}}px; height: {{h}}px; background-color: rgba(0,0,0,128); }
+#heading { left: 0px; top: 12px; width: {{w}}px; height: 9px; font-family: minecraft-shadow; font-size: 8px; line-height: 9px; text-align: center; color: #ffffff; white-space: nowrap; z-index: 3; }
 #list { overflow: hidden; background-color: rgba(0,0,0,112); }
 .btn { height: 20px; background-color: #000000; z-index: 5; }
 .btn div { position: absolute; }
@@ -347,7 +354,20 @@ div { display: block; position: absolute; }
 </head>
 <body>
 <div id="dim"></div>
-<div id="heading">)PERLINRML" + EscapeRml(title) + "</div>\n";
+<div id="heading">{{title}}</div>
+)PERLINRML";
+        const ScreenTemplateDefault kKeybindsHeadDefault("keybinds_screen.rml", kKeybindsHead);
+    }
+
+    std::string BuildKeybindsScreenRml(const std::vector<KeybindRow>& rows, const std::string& title, const std::string& done,
+                                       const std::string& reset, float scroll, int guiW, int guiH) {
+        const KeybindLayout l = ComputeKeybindLayout(static_cast<int>(rows.size()), guiW, guiH);
+        const auto px = [](float v) { return std::to_string(static_cast<int>(std::lround(v))); };
+        const float listH = l.listBottom - l.listTop;
+        std::string d = ScreenTemplate("keybinds_screen.rml", kKeybindsHead);
+        ReplaceAll(d, "w", std::to_string(guiW));
+        ReplaceAll(d, "h", std::to_string(guiH));
+        ReplaceAll(d, "title", EscapeRml(title));
         d += "<div id=\"list\" style=\"left: 0px; top: " + px(l.listTop) + "px; width: " + px(guiW) + "px; height: " + px(listH) + "px;\">\n";
         const auto key = [&](int i, int which, float x, float w, const std::string& label, bool off, const char* color) {
             const std::string id = "kb" + std::to_string(which) + "_" + std::to_string(i);
@@ -388,17 +408,14 @@ div { display: block; position: absolute; }
     }
 
     namespace {
-        std::string Num(float v) { return std::to_string(static_cast<int>(std::lround(v))); }
-
-        std::string ListStyles(int guiW, int guiH, int dim) {
-            return std::string(R"PERLINRML(<rml>
+        const char* kListHead = R"PERLINRML(<rml>
 <head>
 <title>list</title>
 <style>
-body { position: absolute; left: 0px; top: 0px; width: )PERLINRML") + std::to_string(guiW) + "px; height: " + std::to_string(guiH) + R"PERLINRML(px; margin: 0; padding: 0; background: transparent; }
+body { position: absolute; left: 0px; top: 0px; width: {{w}}px; height: {{h}}px; margin: 0; padding: 0; background: transparent; }
 div { display: block; position: absolute; }
-#dim { left: 0px; top: 0px; width: )PERLINRML" + std::to_string(guiW) + "px; height: " + std::to_string(guiH) + "px; background-color: rgba(0,0,0," + std::to_string(dim) + R"PERLINRML(); }
-#heading { left: 0px; top: 12px; width: )PERLINRML" + std::to_string(guiW) + R"PERLINRML(px; height: 9px; font-family: minecraft-shadow; font-size: 8px; line-height: 9px; text-align: center; color: #ffffff; white-space: nowrap; z-index: 3; }
+#dim { left: 0px; top: 0px; width: {{w}}px; height: {{h}}px; background-color: rgba(0,0,0,{{dim}}); }
+#heading { left: 0px; top: 12px; width: {{w}}px; height: 9px; font-family: minecraft-shadow; font-size: 8px; line-height: 9px; text-align: center; color: #ffffff; white-space: nowrap; z-index: 3; }
 .btn { height: 20px; background-color: #000000; z-index: 5; }
 .btn div { position: absolute; }
 .btn .rim { left: 1px; top: 1px; height: 16px; background-color: #aaaaaa; }
@@ -419,6 +436,18 @@ div { display: block; position: absolute; }
 .sep { height: 1px; background-color: rgba(255,255,255,51); }
 .sepb { height: 1px; background-color: rgba(0,0,0,191); }
 )PERLINRML";
+        const ScreenTemplateDefault kListHeadDefault("list_screen.rml", kListHead);
+    }
+
+    namespace {
+        std::string Num(float v) { return std::to_string(static_cast<int>(std::lround(v))); }
+
+        std::string ListStyles(int guiW, int guiH, int dim) {
+            std::string d = ScreenTemplate("list_screen.rml", kListHead);
+            ReplaceAll(d, "w", std::to_string(guiW));
+            ReplaceAll(d, "h", std::to_string(guiH));
+            ReplaceAll(d, "dim", std::to_string(dim));
+            return d;
         }
 
         std::string ButtonBox(const std::string& id, float x, float y, float w, const std::string& label, bool off, const char* color) {
@@ -590,7 +619,7 @@ div { display: block; position: absolute; }
                 d += "<div class=\"wl\" style=\"left: " + Num(px + 8.0f) + "px; top: " + Num(y + 5.0f) + "px; color: " + labelColor + ";\">" + EscapeRml(r.label) + "</div>\n";
                 d += "<div style=\"left: " + Num(px + 8.0f) + "px; top: " + Num(y + 16.0f) + "px; width: " + Num(l.panelW - 16.0f) + "px; height: 20px; background-color: " + (r.editing ? "#ffffff" : "#1e1e1e") + ";\"></div>\n";
                 d += "<div style=\"left: " + Num(px + 9.0f) + "px; top: " + Num(y + 17.0f) + "px; width: " + Num(l.panelW - 18.0f) + "px; height: 18px; background-color: #313233;\"></div>\n";
-                d += "<div class=\"wl\" style=\"left: " + Num(px + 14.0f) + "px; top: " + Num(y + 22.0f) + "px;\">" + EscapeRml(r.value) + (r.editing ? "_" : "") + "</div>\n";
+                d += "<div class=\"wl\" style=\"left: " + Num(px + 14.0f) + "px; top: " + Num(y + 22.0f) + "px;\">" + (r.editing ? TextFieldRml(r.value, true) : EscapeRml(r.value)) + "</div>\n";
                 d += "<div class=\"wd\" style=\"left: " + Num(px + 8.0f) + "px; top: " + Num(y + 41.0f) + "px; width: " + Num(l.panelW - 16.0f) + "px; overflow: hidden;\">" + EscapeRml(r.desc) + "</div>\n";
                 break;
             }
@@ -658,7 +687,7 @@ div { display: block; position: absolute; }
                 const char* color = r.perm >= 2 ? "#ffaa00" : (r.perm == 0 ? "#aaaaaa" : "#55ff55");
                 const std::string& role = r.perm >= 2 ? t.roleOperator : (r.perm == 0 ? t.roleVisitor : t.roleMember);
                 const int ry = 22 + i * 14;
-                b += "<div style=\"left: 8px; top: " + std::to_string(ry) + "px; width: 80px; height: 9px; font-family: minecraft-shadow; font-size: 8px; line-height: 9px; color: #ffffff; white-space: nowrap; overflow: hidden;\">" + EscapeRml(r.name) + "</div>";
+                b += "<div style=\"left: 8px; top: " + std::to_string(ry) + "px; width: 80px; height: 9px; font-family: minecraft-shadow; font-size: 8px; line-height: 9px; color: #ffffff; white-space: nowrap; overflow: hidden;\">" + FormatCodesToRml(r.name) + "</div>";
                 b += "<div style=\"left: 88px; top: " + std::to_string(ry) + "px; width: " + std::to_string(pw - 96) + "px; height: 9px; font-family: minecraft-shadow; font-size: 8px; line-height: 9px; text-align: right; color: " + color + "; white-space: nowrap;\">" + EscapeRml(role) + "</div>";
             }
             b += "</div>\n";

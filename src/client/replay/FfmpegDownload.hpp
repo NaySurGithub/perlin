@@ -6,7 +6,6 @@
 #include <thread>
 
 namespace perlin::replay::ffmpeg {
-    // Downloads a static ffmpeg build into <DataDir>/ffmpeg (Windows x64 only; elsewhere use the system package).
     class Downloader {
     public:
         ~Downloader();
@@ -15,7 +14,7 @@ namespace perlin::replay::ffmpeg {
         bool Running() const { return running.load(); }
         bool Finished() const { return finished.load(); }
         bool Succeeded() const { return succeeded.load(); }
-        float Progress() const; // 0..1, <0 unknown
+        float Progress() const;
         std::string Status();
         void Cancel() { cancel = true; }
         void Join();

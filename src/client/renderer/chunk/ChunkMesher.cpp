@@ -431,8 +431,6 @@ namespace perlin {
             m.modelKnown[id] = 1;
             const ModelEntry* geo = library->Geometry().Empty() ? nullptr : library->Geometry().Find(id);
             m.model[id] = geo ? geo
-                          // The bundled single-block kelp model has no neighbour
-                          // context; the plant mesher selects connected stems.
                           : !GeomFor(id).kelp && library->Models().Loaded()
                               ? library->Models().Find(BlockPalette::Instance().NetworkId(id))
                               : nullptr;
@@ -689,7 +687,6 @@ namespace perlin {
         return l != 0 && IsLiquidId(library, l) ? l : 0;
     }
 
-    // Water id to draw inside a bubble column cell whose own liquid layer was never sent: borrow it from a neighbour.
     static uint16_t ColumnWater(const BlockCache& cache, BlockLibrary* library, int x, int y, int z) {
         static const int dirs[6][3] = {{0, 1, 0}, {0, -1, 0}, {1, 0, 0}, {-1, 0, 0}, {0, 0, 1}, {0, 0, -1}};
         for (const auto& d : dirs) {
@@ -914,9 +911,6 @@ namespace perlin {
                             continue;
                     }
                     if (pass == 0) {
-                        // A bubble column (soul sand / magma) is counted as liquid, so neighbours cull their faces
-                        // against it, yet it is never drawn as a block. Draw water for the column cell itself, or the
-                        // column shows up as a see-through hole in the water.
                         const uint16_t here = cache.Get(x, y, z);
                         const bool column = here != 0 && SpecialKind(here) == 4;
                         id = cache.Liquid(x, y, z);
@@ -1250,8 +1244,6 @@ namespace perlin {
                                 quv[k][1] = q.uv[k][1];
                             }
                             if (const int glassMode = library->GlassMode(); glassMode && library->IsGlassBase(tile)) {
-                                // Panes are made of narrow quads (an arm is 8 wide, the post 2), so the corners are found from the
-                                // quad's own uv bounds rather than assuming it spans the whole 16x16 tile.
                                 int ia = -1, ib = -1, ic = -1;
                                 float umin = 1e9f, umax = -1e9f, vmin = 1e9f, vmax = -1e9f;
                                 for (int k = 0; k < 4; k++) {
@@ -1267,8 +1259,6 @@ namespace perlin {
                                     else if (u16 && v0z) ib = k;
                                     else if (u0z && v16) ic = k;
                                 }
-                                // Only the edges that lie on the tile border (uv 0 or 16) carry the glass frame; an edge in the middle
-                                // of the tile, such as where an arm meets the post, never shows one.
                                 const bool edgeL = umin < 0.01f, edgeR = umax > 15.99f, edgeT = vmin < 0.01f, edgeB = vmax > 15.99f;
                                 if (ia >= 0 && ib >= 0 && ic >= 0) {
                                     int mask = 0;
@@ -1289,7 +1279,6 @@ namespace perlin {
                                     if (edgeB && exposed(q.pos[ia], q.pos[ic], false)) mask |= 8;
                                     tile = library->GlassTile(tile, glassMode, mask);
                                     if (glassMode == 1 || glassMode == 2) {
-                                        // Connected edges don't draw the glass frame: sample just inside it instead of swapping in another tile.
                                         const float k = BlockLibrary::GlassInset() * 16.0f;
                                         for (int c = 0; c < 4; c++) {
                                             float& u = quv[c][0];
@@ -1759,7 +1748,6 @@ namespace perlin {
                         int tile = PickTile(cvv, app->side ? app->side : app->top, bhash);
                         std::string tex = app->texSide.empty() ? app->texTop : app->texSide;
                         if (gi.kelp && GeomFor(cache.Get(x, y + 1, z)).kelp) {
-                            // Age is independent of whether another kelp segment is above.
                             tile = PickTile(app->varTop, app->top, static_cast<uint32_t>(y) & 3u);
                             tex = app->texTop;
                         }
@@ -1865,7 +1853,6 @@ namespace perlin {
                             fuA[i] = fu;
                             fvA[i] = fv;
                             if (glassModeNow == 1 || glassModeNow == 2) {
-                                // Connected edges don't draw the glass frame: sample just inside it instead of swapping in another tile.
                                 const float k = BlockLibrary::GlassInset();
                                 if (!(glassMask & 1) && fu < 0.001f) fu = k;
                                 else if (!(glassMask & 2) && fu > 0.999f) fu = 1.0f - k;
@@ -1972,8 +1959,6 @@ namespace perlin {
                             col[i][2] = base[2] * kv[i];
                         }
                         const bool flip = nx != 0;
-                        // Fallback cube faces need the same alpha classification as
-                        // baked models. The opaque shader does not discard holes.
                         const bool holes = library && library->AlphaOf(tile).holes;
                         const RenderLayer faceLayer = translucent ? RenderLayer::Translucent
                             : holes ? RenderLayer::CutoutCull : RenderLayer::Solid;

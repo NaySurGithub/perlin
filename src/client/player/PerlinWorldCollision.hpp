@@ -11,8 +11,6 @@ namespace perlin::physics::bds {
         int16_t maximum = std::numeric_limits<int16_t>::max();
     };
 
-    // Terrain portion of 0x143E9FFF0. Column acquisition and block-specific
-    // geometry remain supplied by the world; missing columns skip every Y cell.
     template<class ReadColumn, class VisitCell, class AddBoundary>
     void CollectTerrainCells(const CollisionBox& bounds, TerrainHeightLimits limits,
                              ReadColumn&& read, VisitCell&& visit, AddBoundary&& boundary) {
@@ -50,9 +48,6 @@ namespace perlin::physics::bds {
                state.field130 != 0 || state.field5352 != 0;
     }
 
-    // BlockSource query helper 0x143EA1990. Bounds must have valid BDS world
-    // coordinates. The reader supplies native chunk availability state; the
-    // consumer receives records with null block metadata and preserve-motion=true.
     template<class ReadChunk, class AddBarrier>
     void CollectUnavailableChunkBarriers(const CollisionBox& bounds, ReadChunk&& read, AddBarrier&& add) {
         const int32_t minX = (FloorBlockCoordinate(bounds[0]) - 8) >> 4;

@@ -21,7 +21,6 @@ namespace perlin::physics::bds {
         int axis = 0;
     };
 
-    // BDS 1.26.10, 0x144795D10: swept contact and optional overlap recovery.
     inline Contact Collide(const CollisionBox& stationary, const CollisionBox& moving,
                            CollisionVector velocity) {
         Contact result{0, velocity, velocity, 0};
@@ -87,8 +86,6 @@ namespace perlin::physics::bds {
         CollisionBox region{};
     };
 
-    // MoveCollisionSystem callback 0x140F90EA0. This limits the requested
-    // displacement; StateVector velocity is retained until collision response.
     inline MovementSearch SearchMovement(CollisionBox box, CollisionVector movement, float stepHeight) {
         const float lengthSquared = detail::Round(detail::Round(movement[1] * movement[1]) +
                                                   detail::Round(movement[0] * movement[0])) +
@@ -149,8 +146,6 @@ namespace perlin::physics::bds {
         std::optional<CollisionVector> customMinimum;
     };
 
-    // ConfigureDepenetration callback 0x140BBD770. The empty/default component
-    // selects one block; active flags/history can suppress overlap recovery.
     inline CollisionVector RecoveryLimits(const RecoveryState& state) {
         const bool suppress = (state.flags & 8) == 0 && (state.hasHistory || (state.flags & 0x15) != 0);
         CollisionVector result{};
@@ -162,7 +157,6 @@ namespace perlin::physics::bds {
         return result;
     }
 
-    // UpdateDepenetration callback 0x140BBD140; actor flag is bit 45 of word 1.
     inline void UpdateRecovery(RecoveryState& state, bool penetrated, bool pushTowardsClosestSpace) {
         state.flags = (state.flags & ~0x10u) | (pushTowardsClosestSpace ? 0x10u : 0u);
         if (penetrated)
@@ -172,8 +166,6 @@ namespace perlin::physics::bds {
         state.customMinimum.reset();
     }
 
-    // BDS 0x14103BE00. Each requested vector is resolved against shapes in
-    // reverse order. Recovery can alter axes other than the requested axis.
     inline CollisionMove ResolveMoves(CollisionBox box, std::span<const CollisionVector> moves,
                                       std::span<const CollisionBox> shapes, CollisionVector recoveryLimits) {
         CollisionMove result{{}, 0, box};
@@ -193,7 +185,6 @@ namespace perlin::physics::bds {
         return result;
     }
 
-    // AutoStepSystem callback 0x140C1C8E0. The eligibility filter is separate.
     inline bool ShouldAutoStep(float height, CollisionVector requested, CollisionVector resolved,
                                bool onGround, bool flyingAbility, bool& oneShotRequest) {
         const bool requestedStep = oneShotRequest;

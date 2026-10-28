@@ -231,7 +231,6 @@ namespace perlin::entity {
         const glm::dvec3 forward(-std::sin(yawRad), 0.0, std::cos(yawRad)), side(std::cos(yawRad), 0.0, std::sin(yawRad));
         const bool rails = v.type.find("boat") != std::string::npos || v.type.find("minecart") != std::string::npos;
         double lift = rails ? 0.1 : 0.0;
-        // The seat is where the rider's hips go; a player's feet hang below it (cushions are low, so a smaller drop).
         if (playerRider && !rails)
             lift -= v.type == "minecraft:cushion" ? 0.35 : 0.6;
         return v.pos + side * static_cast<double>(sx) + forward * static_cast<double>(sz) + glm::dvec3(0.0, sy + lift, 0.0);
@@ -903,7 +902,6 @@ namespace perlin::entity {
                 std::cout << "[pose] " << e.type << " " << bn << " rot " << xf.rotation.x << "," << xf.rotation.y << "," << xf.rotation.z
                           << " pos " << xf.position.x << "," << xf.position.y << "," << xf.position.z << std::endl;
         if (e.isPlayer && e.Has(flag::Riding) && v.swimAmount < 0.01f && v.lieAmount < 0.01f) {
-            // Seated pose on a mount (same angles as Java's riding pose): legs forward and splayed, arms held out.
             pose["rightleg"].rotation = {-81.0f, -18.0f, -4.5f};
             pose["leftleg"].rotation = {-81.0f, 18.0f, 4.5f};
             pose["rightarm"].rotation.x += -36.0f;
@@ -1297,7 +1295,7 @@ namespace perlin::entity {
             model = glm::rotate(model, f * 90.0f * kDeg, glm::vec3(0, 0, 1));
         }
         if (e.sleeping && e.isPlayer)
-            model = glm::rotate(model, -90.0f * kDeg, glm::vec3(1, 0, 0));  // lying on the back, head toward the pillow
+            model = glm::rotate(model, -90.0f * kDeg, glm::vec3(1, 0, 0));
         if (v.glideTime > 0.0f && e.isPlayer) {
             const float t = std::min(v.glideTime * 20.0f, 10.0f);
             const float amount = std::clamp(t * t / 100.0f, 0.0f, 1.0f);
@@ -1840,6 +1838,24 @@ namespace perlin::entity {
             submit(textV, textI, fontTexture, true, tag.sneaking ? 1.0f : 32.0f / 255.0f);
             if (!tag.sneaking)
                 submit(textV, textI, fontTexture, false, 1.0f);
+            if (in.nametagDepth && !bgV.empty()) {
+                const uint32_t mesh = renderer->UiCreateFrameMesh(bgV.data(), static_cast<uint32_t>(bgV.size()), bgI.data(), static_cast<uint32_t>(bgI.size()));
+                if (mesh) {
+                    pendingMeshes.push_back(mesh);
+                    UiDraw draw;
+                    draw.mesh = mesh;
+                    draw.material = DrawMaterial::Nametag;
+                    std::copy_n(&model[0][0], 16, draw.model);
+                    draw.premultiplied = false;
+                    draw.blend = 0;
+                    draw.colorWrite = false;
+                    draw.alphaWrite = false;
+                    draw.depth = true;
+                    draw.depthWrite = true;
+                    draw.alphaCutoff = 0.004f;
+                    renderer->UiSubmit(UiLayer::WorldLate, draw);
+                }
+            }
         }
         tags.clear();
     }
@@ -2330,8 +2346,6 @@ namespace perlin::entity {
             Texture t;
             uint32_t id = 0;
             bool loaded = ui::UiAssets::Instance().Image(path, t);
-            // Bed sheets are assembled from the extracted block textures into
-            // the client asset directory, outside the vanilla resource pack.
             if (!loaded && path.starts_with("bed_") && path.find('/') == std::string::npos)
                 loaded = LoadTexture(paths::DataDir() + "/assets/" + path, t);
             if (loaded && t.width > 0)
@@ -2351,8 +2365,6 @@ namespace perlin::entity {
         };
 
         const BedCube kBedCubes[] = {
-            // Java 26.x bed: one 16x32x6 mattress (3..9 px above the floor) plus a 3x3x3 leg in each outer corner.
-            // The extra frame rails the old Bedrock-style model had (cubes 1-4) don't exist on the Java bed.
             {{0, 0, 0}, {16, 32, 6}, {0, 0}},
             {{13, 29, 6}, {3, 3, 3}, {12, 38}},
             {{0, 29, 6}, {3, 3, 3}, {0, 38}},   {{13, 0, 6}, {3, 3, 3}, {12, 44}}, {{0, 0, 6}, {3, 3, 3}, {0, 44}},
@@ -2522,7 +2534,7 @@ namespace perlin::entity {
             std::vector<SkullPart> parts;
             std::vector<SkullBox> boxes;
             int flagPart = -1;
-            int lidPart = -1;  // chests: swung open about its pivot
+            int lidPart = -1;
         };
 
         const SkullModelDef& SkullModelFor(int kind) {
@@ -2595,8 +2607,6 @@ namespace perlin::entity {
                                           {{0, -10, -20.5f, 9.5f, 20, 2, 2, 0, 42, 0, false},
                                            {1, -10, 0, -2, 20, 40, 1, 0, 0, 0, false}},
                                           1});
-                // Chests (kinds 14+), the classic chest model in the same frame as the skulls.
-                // Single: base, lid hinged at the back with the latch on it.
                 const auto chest = [](const char* tex, bool large) {
                     const float w = large ? 30.0f : 14.0f;
                     SkullModelDef d{tex, large ? 128.0f : 64.0f, 64.0f,
@@ -2696,12 +2706,9 @@ namespace perlin::entity {
             };
             const glm::vec3 base(static_cast<float>(d.origin.x), static_cast<float>(d.origin.y), static_cast<float>(d.origin.z));
             if (d.kind == BlockEntityDraw::Kind::Bed) {
-                // Java 26.x bed, built from the jar's block models: per piece a 16x6x16 mattress plus two 3x3x3 legs.
-                // Local frame: the head end points north (-z); the whole bed is then turned to the Bedrock direction.
                 auto& batch = beds[std::clamp(d.color, 0, 15)];
-                struct BFace { int dir; float u0, v0, u1, v1; int tile; };  // dir: 0 down 1 up 2 north 3 south 4 west 5 east
+                struct BFace { int dir; float u0, v0, u1, v1; int tile; };
                 struct BBox { float from[3], to[3]; std::vector<BFace> faces; };
-                // tiles: 0 foot_up 1 foot_south 2 foot_east 3 foot_west | 4 head_up 5 head_north 6 head_east 7 head_west | 8 down
                 static const BBox kFoot[] = {
                     {{0, 3, 0}, {16, 9, 16}, {{0, 0, 0, 16, 16, 8}, {1, 0, 0, 16, 16, 0}, {3, 0, 7, 16, 13, 1}, {4, 0, 7, 16, 13, 3}, {5, 0, 7, 16, 13, 2}}},
                     {{0, 0, 13}, {3, 3, 16}, {{0, 7, 13, 10, 16, 3}, {2, 10, 13, 13, 16, 3}, {3, 0, 13, 3, 16, 1}, {4, 13, 13, 16, 16, 3}, {5, 3, 13, 6, 16, 1}}},

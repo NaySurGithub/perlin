@@ -47,14 +47,12 @@ namespace perlin::mods {
         uint64_t serial = 0;
     };
 
-    // Raw draw list submitted with Op::GfxSubmit (validated when it arrives, drawn every frame until replaced).
     struct GfxLayer {
         std::string plugin, name;
         int z = 0;
         std::shared_ptr<const std::vector<uint8_t>> data;
         uint64_t serial = 0;
     };
-    // A texture a plugin uploaded; the renderer keeps the GPU copy in step with `version`.
     struct GfxTexture {
         std::string plugin;
         uint32_t id = 0;
@@ -104,7 +102,6 @@ namespace perlin::mods {
         uint64_t LayerVersion() const { return layerVersion.load(); }
         std::vector<GfxLayer> GfxLayers() const;
         std::vector<GfxTexture> GfxTextures() const;
-        // Plugins that asked to own the mouse / keyboard (Op::InputGrab); events go to them and not to the game.
         bool GrabsMouse() const { return grabMouse.load(); }
         bool GrabsKeyboard() const { return grabKeyboard.load(); }
         std::vector<std::string> GrabbingPlugins() const;

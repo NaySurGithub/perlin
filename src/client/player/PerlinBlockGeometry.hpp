@@ -27,8 +27,6 @@ namespace perlin::physics::bds {
                            box[5] > (*query)[2] && box[2] < (*query)[5]));
     }
 
-    // Common BlockLegacy collision collector 0x143F386B0. Offset and local
-    // shapes are resolved component data; their producers are separate.
     template<class Emit>
     bool CollectBlockComponentShapes(bool enabled, Float3 offset, BlockPosition position,
                                      std::span<const CollisionBox> shapes, const CollisionBox* query,

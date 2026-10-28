@@ -29,6 +29,8 @@
 #include "client/renderer/Lightmap.hpp"
 #include "client/renderer/RenderContext.hpp"
 #include "client/ui/TitleScreen.hpp"
+#include "client/FrameGenPacer.hpp"
+#include "client/ui/ChestScreen.hpp"
 #include "client/ui/FormScreen.hpp"
 #include "client/ui/ChatLog.hpp"
 #include "client/ui/Hud.hpp"
@@ -109,6 +111,7 @@ namespace perlin {
         bool formShown = false, formLeftDown = false, uiClickWasDown = false;
         ui::FormModel formModel;
         ui::FormUi formUi;
+        ui::ChestUi chestUi;
         bool formEngine = false;
         std::string formSignature, serverLayerSignature;
         float formScroll = 0.0f, formContentH = 0.0f, formViewH = 0.0f;
@@ -147,6 +150,9 @@ namespace perlin {
         int invPicked = -1, invHover = -1;
         std::chrono::steady_clock::time_point invOpenedAt{}, invCheckAt{};
         std::string invSignature, invTemplate;
+        float invPanel[4] = {};
+        bool invJsonPanel = false, invCloseClicked = false;
+        std::string invChestScreen, invChestProblem;
         uint64_t invTemplateVersion = 0;
         void UpdatePauseScreen(ui::Hud& hud, BedrockSession* live, int fbW, int fbH);
         bool UpdateDisconnectScreen(ui::Hud& hud, int fbW, int fbH);
@@ -180,6 +186,10 @@ namespace perlin {
         void DrawTitlePanorama(int fbW, int fbH);
         uint32_t panoramaTextures[6] = {};
         bool panoramaReady = false;
+        uint64_t panoramaPackStamp = 0;
+        FrameGenPacer fgPacer;
+        int fgActive = 1;
+        int FrameGenMultiplier();
         std::chrono::steady_clock::time_point panoramaClock{}, panoramaRetryAt{};
         int titleClickRow = -1;
         ui::TitlePage titleLastPage = ui::TitlePage::Main;
@@ -357,7 +367,7 @@ namespace perlin {
             uint32_t gpu = 0;
             uint64_t version = 0;
         };
-        std::unordered_map<std::string, ModGfxTexture> modGfxTextures; // "plugin/id"
+        std::unordered_map<std::string, ModGfxTexture> modGfxTextures;
         void PumpModInput(mods::ModManager& mm);
         void DrawModGfx(int fbW, int fbH);
         int modLastDim = 0, modLastSlot = -1;
@@ -461,12 +471,11 @@ namespace perlin {
         replay::ReplayController replayCtl;
         void ToggleReplayRecording(bool start);
         void FinishReplayRecording(const char* why);
-        // ---- replay playback ----
         struct ReplayUi {
             bool menuOpen = true, grab = false, hideHud = true, uiHidden = false, camInit = false, leftDown = false, scrubbing = false, dirty = false;
             glm::vec3 flyVel{0.0f};
             bool showPlayers = true, showEntities = true, showNametags = true, editorOverUi = false;
-            float editorViewX0 = 0, editorViewY0 = 0, editorViewX1 = 1e9f, editorViewY1 = 1e9f; // framebuffer px of the free 3D view while editing
+            float editorViewX0 = 0, editorViewY0 = 0, editorViewX1 = 1e9f, editorViewY1 = 1e9f;
             double lastScrubSeekMs = -1e9;
             std::chrono::steady_clock::time_point lastScrubAt{};
             double scrubMs = -1, flySpeed = 16.0, inMs = -1, outMs = -1;
@@ -479,7 +488,6 @@ namespace perlin {
         replay::Timeline timeline;
         bool timelineDirty = false;
 
-        // ---- keyframe editor panel ----
         struct KeyframeUi {
             bool open = false;
             int tab = 0, scroll = 0;
@@ -491,12 +499,11 @@ namespace perlin {
             std::chrono::steady_clock::time_point openedAt{};
         } kfUi;
         bool UpdateKeyframePanel(ui::Hud& hud, int fbW, int fbH);
-        // Video-editor style timeline (menu bar, inspector, tracks) for replays.
         struct EditorUi {
             bool open = false, leftDown = false;
-            double viewStart = 0, viewSpan = 0; // span 0 = fit the whole replay
+            double viewStart = 0, viewSpan = 0;
             int selTrack = -1, selIndex = -1, sideScroll = 0;
-            int drag = 0, dragTrack = -1; // 1 playhead, 2 key, 3 scrollbar thumb
+            int drag = 0, dragTrack = -1;
             double dragOffset = 0;
             double lastSeekMs = -1e9;
             std::chrono::steady_clock::time_point lastSeekAt{}, openedAt{};
@@ -507,7 +514,6 @@ namespace perlin {
         void LoadTimeline();
         void SaveTimeline();
 
-        // ---- export ----
         struct ExportRequest {
             replay::ExportConfig cfg;
             bool screenshot = false;
@@ -526,7 +532,7 @@ namespace perlin {
             bool downloadHandled = false;
         } exportUi;
         struct ExportJob {
-            bool offscreen = false; // frames come from an offscreen target, so the progress panel can stay up
+            bool offscreen = false;
             bool active = false, screenshot = false, useFfmpeg = true, imageSeq = false, finishing = false, advanceNow = false;
             replay::ExportConfig cfg;
             replay::ffmpeg::Settings fs;
@@ -539,9 +545,8 @@ namespace perlin {
             int settleIters = 0, quietIters = 0, waitIters = 0;
             long long virtualUs = 0;
             std::chrono::steady_clock::time_point virtualBase{}, realStart{}, phaseStart{}, lastOverlay{};
-            // Frames are captured on the render thread, queued here and encoded on a writer thread so rendering never waits for the encoder.
             struct CapturedFrame {
-                std::vector<uint8_t> data; // top-down BGRA, renderW x renderH
+                std::vector<uint8_t> data;
             };
             std::mutex capMutex;
             std::condition_variable capCv;
@@ -565,7 +570,6 @@ namespace perlin {
                 if (writer.joinable())
                     writer.join();
             }
-            // state restored afterwards
             bool savedHideHud = true, savedPaused = false, savedMenu = false;
             double savedSpeed = 1, savedTimeMs = 0;
             replay::CameraMode savedMode = replay::CameraMode::Free;
@@ -593,12 +597,12 @@ namespace perlin {
         bool UpdateReplayScreen(ui::Hud& hud, BedrockSession* live, int fbW, int fbH);
         void ReplayStatus(const std::string& text);
         void RefreshReplayList();
-        bool TitleReplayTyped(int key, bool character, bool ctrl);
+        bool TitleReplayTyped(const InputManager::Typed& t);
         bool TitleReplayClick(const std::string& hover);
         bool ImportReplayFile(const std::string& source);
         bool replayRecoveryChecked = false;
         double replayPrevMs = 0;
-        double replayWorldFromMs = 0; // world packets older than this are already in the (kept) world
+        double replayWorldFromMs = 0;
         bool titleReturnToReplays = false;
         int replayClickRow = -1;
         std::chrono::steady_clock::time_point replayClickAt{};

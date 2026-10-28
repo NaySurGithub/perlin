@@ -70,6 +70,8 @@ namespace perlin::ui {
         std::string Emit(const LNode& root, float guiW, float guiH, const std::string& extraRcss, bool comments);
         void SetTemplates(std::string hud, std::string chat) { hudTemplate = std::move(hud); chatTemplate = std::move(chat); }
         const std::vector<std::string>& UnknownRenderers() const { return unknown; }
+        void SetSlotNamer(std::function<std::string(const LNode&)> namer) { slotNamer = std::move(namer); }
+        void SetElements(std::unordered_map<std::string, std::string> map) { elements = std::move(map); }
         void SetScroll(float value) { scroll = value; }
         float ContentHeight() const { return contentHeight; }
         float ViewportHeight() const { return viewportHeight; }
@@ -82,6 +84,10 @@ namespace perlin::ui {
         void VisitScroll(const LNode& n, RmlWriter& out);
         float scroll = 0, contentHeight = 0, viewportHeight = 0;
         std::string viewportName, contentName;
+        std::function<std::string(const LNode&)> slotNamer;
+        bool inSlot = false;
+        std::unordered_map<std::string, std::string> elements;
+        const LNode* grouped = nullptr;
 
         std::unordered_map<std::string, CustomRenderer> renderers;
         std::string hudTemplate, chatTemplate;
@@ -91,4 +97,5 @@ namespace perlin::ui {
     std::string EscapeRml(const std::string& text);
     std::string DefaultHudTemplate();
     std::string DefaultChatTemplate();
+    std::unordered_map<std::string, std::string> ParseElementMap(const std::string& templateText);
 }

@@ -199,7 +199,6 @@ namespace perlin::ui {
             return t;
         }
 
-        // Parses "12", 12 or "50%" into a number plus a percent flag.
         bool AnimNumber(const Json& j, double& v, bool& pct) {
             pct = false;
             if (j.IsNumber()) { v = j.number; return true; }
@@ -689,8 +688,6 @@ namespace perlin::ui {
             }
 
 
-            // Evaluates an animation chain starting at `ref` for the control identified by `key`. Fills `out` with the
-            // property overrides (alpha, offset, size, uv, color, clip) the chain currently produces.
             void RunAnimation(const std::string& ref, const std::string& ns, const std::string& key, LNode* n,
                               std::unordered_map<std::string, Json>& out) {
                 AnimHost* host = services.anim;
@@ -919,7 +916,6 @@ namespace perlin::ui {
                     if (w.empty()) w.push_back(intrinsic ? def : hundred);
                     if (h.empty()) h.push_back(intrinsic ? def : hundred);
                 }
-                // inherit_max_sibling_width/height: take the size of the largest sibling (same as 100%sm).
                 if (n.Bool("inherit_max_sibling_width", false)) w = Dim{Term{Term::PctSibling, 100, 1}};
                 if (n.Bool("inherit_max_sibling_height", false)) h = Dim{Term{Term::PctSibling, 100, 1}};
             }

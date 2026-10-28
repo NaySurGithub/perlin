@@ -68,7 +68,6 @@ class Machine:
         return struct.unpack("<" + "I" * count, self.cpu.mem_read(address, count * 4))
 
     def call(self, address, arguments, reset=True):
-        # Windows x64: return address, 32-byte shadow space, remaining arguments.
         sp = STACK + 0xFFF8 - 0x100
         if reset:
             self.cpu.mem_write(HEAP, bytes(0x10000))
@@ -101,8 +100,6 @@ def generate(data, sine_out):
              f"# unicorn {unicorn.__version__}; x86-64; Windows ABI; MXCSR 0x1f80"]
     for address, function in data["functions"].items():
         lines.append(f"# function {address} sha256 {function['code_sha256']}")
-    # BDS constructs its table from four integer lanes times this float scale,
-    # then calls its bundled vector sinf. Execute both CPU dispatch variants.
     scale = struct.unpack("<f", machine.cpu.mem_read(0x146C51680, 4))[0]
     sine_tables = []
     for routine in (0x146251EA0, 0x1462527E0):
@@ -152,7 +149,6 @@ def generate(data, sine_out):
                     machine.cpu.mem_write(HEAP + 40, bytes([vertical]))
                     machine.put(HEAP + 0x200, [bits(multiplier)])
                     machine.put(HEAP + 0x318, values[:3])
-                    # a4 is an entt sparse-set handle (pool pointer, entity id).
                     machine.qword(HEAP + 0x100, HEAP + 0x400)
                     if special:
                         machine.qword(HEAP + 0x408, HEAP + 0x500)
@@ -188,8 +184,6 @@ def generate(data, sine_out):
                 indices.append((address - sine_base) // 4)
 
         hook = machine.cpu.hook_add(unicorn.UC_HOOK_MEM_READ, record_lookup)
-        # Execute the entire sprint impulse basic block, ending before ECS
-        # bookkeeping. No substituted calls, synthetic trig, or patched code.
         machine.cpu.emu_start(0x140EAFD9C, 0x140EAFDFA, count=100)
         machine.cpu.hook_del(hook)
         if machine.cpu.reg_read(x86.UC_X86_REG_RIP) != 0x140EAFDFA or len(indices) != 2:
@@ -197,7 +191,7 @@ def generate(data, sine_out):
         result = (*indices, *machine.get(HEAP + 0x118, 1), *machine.get(HEAP + 0x120, 1))
         lines.append("J " + " ".join(f"{v:08x}" for v in (*values, *result)))
     for variant, routine in enumerate((0x140E104A0, 0x140E105A0)):
-        for block_kind in range(3):  # regular, special hash, air hash
+        for block_kind in range(3):
             for exempt in (False, True):
                 for friction in (0, 0.4, 0.6, 0.8, 0.98, 1, -0.5):
                     for speed in (0.1, 0.13, 0.027, 0.234567):
@@ -212,7 +206,6 @@ def generate(data, sine_out):
                         machine.qword(HEAP + 0x458, HEAP + 0x500)
                         machine.put(HEAP + 0x4A0, [bits(friction)])
                         machine.put(HEAP + 0x6A0, [bits(definition_friction)])
-                        # Select identity explicitly, independent of uninitialized IDB globals.
                         machine.qword(0x147150F08, 0xA11)
                         machine.qword(HEAP + 0x5C8, (0xC0FFEE, 0x93E2BB1CB7F99FC6, 0xA11)[block_kind])
                         queries = []

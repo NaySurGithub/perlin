@@ -397,6 +397,15 @@ namespace perlin::ui {
                         shown += in[k];
                     }
                 }
+                if (s.chatSelEnd > s.chatSelStart) {
+                    const size_t a = std::clamp(static_cast<size_t>(s.chatSelStart), start, in.size());
+                    const size_t b = std::clamp(static_cast<size_t>(s.chatSelEnd), start, in.size());
+                    if (b > a) {
+                        const float x0 = 2.0f + font.Width(in.substr(start, a - start));
+                        const float x1 = 2.0f + font.Width(in.substr(start, b - start));
+                        w.Rect(x0, 1, x1 - x0, 10, 1, 0.24f, 0.42f, 1.0f, 0.7f);
+                    }
+                }
                 w.Text(2, 2, room, 9, 2, {shown}, st);
                 const float cx = 2.0f + font.Width(before);
                 if (s.chatCaretVisible) {

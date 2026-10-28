@@ -26,7 +26,7 @@ int main() {
     assert(lv.HasChunk(1, 0) && lv.HasChunk(2, 0) && lv.GetBlock(17, 70, 1) == 9 && lv.GetBlock(33, 10, 3) == 4);
     assert(lv.RewindTo(1));
     assert(lv.GetBlock(1, 70, 1) == 5 && lv.GetBlock(17, 70, 1) == 0);
-    {   // re-sending identical data changes nothing
+    {
         Level l2;
         l2.EnableUndo(64u << 20);
         l2.SetEpoch(0);
@@ -39,17 +39,14 @@ int main() {
         std::vector<DirtyChunk> d2; l2.DrainDirty(d2);
         assert(d2.empty());
     }
-    // forward again after a rewind works and can be rewound again
     lv.SetBlock(1, 70, 1, 8);
     lv.SetEpoch(2);
     lv.SetBlock(1, 70, 1, 3);
     assert(lv.RewindTo(2) && lv.GetBlock(1, 70, 1) == 8);
-    // transfer to another level keeps the log
     Level other;
     other.TakeFrom(lv);
     assert(other.GetBlock(1, 70, 1) == 8 && !lv.HasChunk(0, 0));
     assert(other.RewindTo(1) && other.GetBlock(1, 70, 1) == 5);
-    // tiny cap trims old epochs and refuses to go back that far
     Level small;
     small.EnableUndo(1);
     small.SetEpoch(0);

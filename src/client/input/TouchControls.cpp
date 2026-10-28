@@ -51,9 +51,6 @@ namespace perlin {
         } else if (!s.editing && editing) {
             editing = false;
         }
-        // Geometry only depends on viewport, scale and layout. Rebuilding it
-        // every gameplay frame needlessly holds the finger-event mutex.
-        // Leaving the editor must restore the saved layout even if unchanged.
         if ((relayout || startEditing || stopEditing) && width > 0)
             BuildLayout();
     }
@@ -98,8 +95,6 @@ namespace perlin {
         set(Sprint, 0.20f * u, H - 0.52f * u, 0.058f * u, Action::Sprint, Kind::SprintToggle, ">>", false);
 
         const float r = 0.043f * u, pitch = 0.112f * u;
-        // Gameplay touch controls expose pause/chat; desktop debug and
-        // function-key shortcuts remain available through their own bindings.
         set(Pause, W * 0.5f - pitch * 0.5f, r + 0.02f * u, r, Action::Pause, Kind::Tap, "II", true);
         set(Chat, W * 0.5f + pitch * 0.5f, r + 0.02f * u, r, Action::Chat, Kind::Tap, "T", true);
 

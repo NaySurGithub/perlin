@@ -152,7 +152,6 @@ namespace perlin {
                     for (const auto& b : blocks)
                         (void)b;
                 if (index < partners.size() && !partners[index].empty()) {
-                    // "same" repeats the block with its states (a double chest, for example).
                     const int32_t partner = partners[index] == "same" ? blocks[index].first
                                                                       : BlockPalette::Instance().FindHash("minecraft:" + partners[index], "", "");
                     level.SetBlock(x + 1, 61, z, BlockPalette::Instance().Intern(partner));

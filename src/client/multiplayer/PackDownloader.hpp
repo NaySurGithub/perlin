@@ -22,10 +22,8 @@ namespace perlin {
         struct Result {
             Step step = Step::Ignore;
             std::string packId;
-            // Chunks of packId to request now; several stay in flight to hide the round trip.
             std::vector<uint32_t> chunks;
             std::string message;
-            // Set on PackDone when the next queued pack starts; chunks then belong to it.
             std::string nextPackId;
         };
         Result Tick();
@@ -36,7 +34,6 @@ namespace perlin {
         struct PackFile {
             std::string path, fileName, uuid, key;
         };
-        // Pack zips of this session that exist on disk (used to store them in replays).
         std::vector<PackFile> Files() const;
         bool AllReceived() const { return awaiting.empty() && active.empty(); }
         size_t Downloaded() const { return downloaded; }
@@ -71,7 +68,6 @@ namespace perlin {
         std::chrono::steady_clock::time_point requestedAt{};
         bool stallReported = false;
         static constexpr uint32_t kWindow = 8;
-        // Requests the next chunks of the current pack until kWindow are outstanding.
         void Refill(Active& a, Result& r);
         std::atomic<size_t> totalPacks{0}, donePacks{0};
         std::atomic<uint64_t> receivedBytes{0}, expectedBytes{0};

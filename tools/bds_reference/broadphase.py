@@ -52,7 +52,7 @@ def generate(data):
                                 0, 0, HEAP + 0xA00, HEAP + 0xB00, 0])
         machine.put(HEAP + 0x100, [bits(value) for value in box])
         machine.put(HEAP + 0x200, [bits(step)])
-        machine.qword(HEAP + 0x300, HEAP + 0xD00)  # absent optional component
+        machine.qword(HEAP + 0x300, HEAP + 0xD00)
         machine.put(HEAP + 0x43C, [bits(value) for value in movement])
         machine.qword(HEAP + 0xA00, HEAP + 0x2000)
         machine.qword(HEAP + 0xA08, HEAP + 0x2000)

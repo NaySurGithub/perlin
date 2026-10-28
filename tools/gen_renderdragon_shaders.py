@@ -139,7 +139,6 @@ def generate(root, out):
 
     write('varying_terrain.def.sc', TERRAIN_VARYING)
     write('vs_terrain.sc', '$input a_position, a_color0, a_texcoord0, a_texcoord1\n$output ' + TERRAIN_IO + '\n' + COMMON + TERRAIN_VERTEX)
-    # Layer is an explicit function parameter, never a global varying in HLSL.
     for name, render_pass in [('fs_terrain_solid', 'Opaque'), ('fs_terrain_cutout', 'AlphaTest'), ('fs_terrain_translucent', 'Transparent')]:
         body = upstream(root, 'RenderChunk', render_pass, TERRAIN_ARGS, 'rdMain',
                         {'s_LightMapTexture': 'rdLightmap'}, {'FogColor': 'u_fogColor'})
@@ -148,8 +147,6 @@ def generate(root, out):
         write(name + '.sc', '$input ' + TERRAIN_IO + '\n' + COMMON + DEFINES + prefix + body +
               '\nvoid main() { gl_FragColor = rdMain(' + TERRAIN_IO + '); }\n', 'RenderChunk.' + render_pass)
 
-    # Perlin's CPU-skinned entity meshes already carry their light/tint in Color0.
-    # The model/view/projection use bgfx's predefined uniform for each UI/world view.
     write('varying_ui.def.sc', UI_VARYING)
     write('vs_ui.sc', '$input a_position, a_color0, a_texcoord0\n$output ' + UI_IO + '\n' + COMMON + UI_UNIFORMS + '''
 void main()
@@ -172,16 +169,11 @@ void main()
     functions = '''vec4 rdBase(vec2 uv) { return texture2D(s_uiTex, uv); }
 vec4 rdGlint(vec2 uv) { return texture2D(s_uiGlint, uv); }
 '''
-    # UIText's bitmap color path is also the standard textured UI primitive path.
     fragment('fs_ui', 'UIText', 'Transparent', UI_IO, UI_ARGS, UI_UNIFORMS + functions,
              UI_IO, 'if (u_uiParams.x > 0.0 && color.a < u_uiParams.x) discard;', samples)
-    # Runtime material selection chooses a real program; opaque/cutout share the
-    # upstream cutoff uniform, while ColorMask has its own upstream pixel body.
     for name, render_pass in [('fs_entity', 'AlphaTest'), ('fs_entity_mask', 'AlphaTestColorMask'), ('fs_entity_emissive', 'Emissive')]:
         fragment(name, 'Entity', render_pass, UI_IO, UI_ARGS, UI_UNIFORMS + functions, UI_IO,
                  'color.a *= v_color0.a;\nif (u_uiParams.x > 0.0 && color.a < u_uiParams.x) discard;', samples)
-    # Glint is a separate additive draw in Perlin. Select the upstream constant
-    # black base so its combined glint program does not draw the base twice.
     prefix = UI_UNIFORMS + functions + '#undef SOURCE_INPUT_TYPE0__SAMPLED\n#define SOURCE_INPUT_TYPE0__CONSTANT 1\n#define MatColor0 vec4_splat(0.0)\n#undef OverlayColor\n#define OverlayColor vec4_splat(0.0)\n'
     fragment('fs_entity_glint', 'Entity', 'Glint', UI_IO, UI_ARGS, prefix,
              'v_color0, v_texcoord0, vec4_splat(0.0), v_light, v_layerUv',
@@ -192,7 +184,6 @@ vec4 rdGlint(vec2 uv) { return texture2D(s_uiGlint, uv); }
     fragment('fs_cracks', 'Cracks', 'Transparent', UI_IO, UI_ARGS, UI_UNIFORMS + functions, UI_IO, samples=samples)
     fragment('fs_nametag', 'Nametag', 'Transparent', UI_IO, UI_ARGS, UI_UNIFORMS + functions + '#define CurrentColor vec4_splat(1.0)\n', UI_IO,
              replacements={'v_color': 'v_color0'})
-    # Roof/height occlusion and lighting are already evaluated by WeatherRenderer.
     weather_prefix = UI_UNIFORMS + functions + '''vec4 rdWeather(vec2 uv) { return rdBase(uv); }
 vec4 rdOcclusion(vec2 uv) { return vec4(0.0, 0.0, 15.0 / 255.0, 0.0); }
 '''
@@ -203,8 +194,6 @@ vec4 rdOcclusion(vec2 uv) { return vec4(0.0, 0.0, 15.0 / 255.0, 0.0); }
     write('fs_weather.sc', '$input ' + UI_IO + '\n' + COMMON + DEFINES + weather_prefix + body +
           '\nvoid main() { vec4 color = rdMain(' + UI_IO + '); color.a *= v_color0.a; gl_FragColor = color; }\n', 'Weather.Transparent')
 
-    # The sky meshes omit Bedrock's color/instance fields. Supply the equivalent
-    # color/fog/UV interpolants while retaining the upstream pixel program.
     sky_varying = '''vec3 a_position : POSITION;
 vec4 a_color0 : COLOR0;
 vec2 a_texcoord0 : TEXCOORD0;
@@ -230,8 +219,6 @@ vec2 v_texcoord0 : TEXCOORD0;
             prefix += 'vec4 rdSky(vec2 uv) { return texture2D(s_sky, uv); }\n'
         fragment('fs_' + base, family, render_pass, sky_io, sky_args, prefix, sky_io,
                  samples={'s_SunMoonTexture': 'rdSky'})
-    # Sunrise and screen tint are engine geometry/color effects: use Sky's
-    # upstream color-output body, with their vertex modulation supplied here.
     for base, inputs, color in [('sunrise', 'a_position, a_color0', 'a_color0 * u_modulator'), ('screen', 'a_position', 'u_modulator')]:
         write('varying_' + base + '.def.sc', sky_varying)
         write('vs_' + base + '.sc', '$input ' + inputs + '\n$output ' + sky_io + '\n' + COMMON +

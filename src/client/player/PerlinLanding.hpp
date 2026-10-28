@@ -13,8 +13,6 @@ namespace perlin::physics::bds {
     using BlockPosition = std::array<int32_t, 3>;
 
     inline int32_t FloorBlockCoordinate(float value) {
-        // CVTTSS2SI, conditional floor correction, CVTTSS2SI as used by
-        // the bed/slime handlers. Avoid an out-of-range C++ integer conversion.
         constexpr int32_t invalid = std::numeric_limits<int32_t>::min();
         if (!std::isfinite(value) || value < -2147483648.0f || value >= 2147483648.0f)
             return invalid;
@@ -29,9 +27,6 @@ namespace perlin::physics::bds {
         std::optional<BlockPosition> bouncePosition;
     };
 
-    // VerticalCollisionSystem 0x140F1D820 dispatches to BlockLegacy slot 65.
-    // Ordinary: 0x143F3BF60; bed: 0x143F0ECA0; slime: 0x144282EC0.
-    // The bounce visitor/helper creates or updates ApplyRestitutionComponent.
     inline LandingResult VerticalCollision(Float3 velocity, Float3 position, LandingSurface surface,
                                             bool sneaking, bool minecart, bool hasBounceComponent,
                                             bool isPlayer, std::optional<Float3>& restitution) {
@@ -52,7 +47,6 @@ namespace perlin::physics::bds {
         return result;
     }
 
-    // ApplyRestitutionSystem callback 0x140C1BA90. Removal is a separate system.
     inline Float3 ApplyRestitution(Float3 velocity, Float3 restitution) {
         return {detail::Round(restitution.x + velocity.x), detail::Round(restitution.y + velocity.y),
                 detail::Round(restitution.z + velocity.z)};

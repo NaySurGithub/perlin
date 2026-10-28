@@ -15,8 +15,6 @@ namespace perlin::physics::bds {
 
     using MovementEffects = std::array<MovementEffect, 2>;
 
-    // 0x14387A590: an active longer/infinite effect rejects a shorter refresh.
-    // This model accepts the two valid enum values in the audited BDS version.
     inline void ApplyMovementEffect(MovementEffects& effects, MovementEffect incoming) {
         if (incoming.type < 0 || incoming.type >= static_cast<int32_t>(effects.size()))
             return;
@@ -27,8 +25,6 @@ namespace perlin::physics::bds {
         current = incoming;
     }
 
-    // MovementEffectsTick callback 0x1410114B0. Signed decrement wraps just
-    // like the x86 instruction; zeroed expiry includes the source tick.
     inline void TickMovementEffects(MovementEffects& effects) {
         for (auto& effect : effects) {
             if (effect.type == -1 || effect.remaining == -1)
@@ -40,7 +36,6 @@ namespace perlin::physics::bds {
         }
     }
 
-    // DolphinBoostSystem::swimSpeedModifier callback 0x140B6FD10.
     inline float SwimSpeedMultiplier(bool swimming, const MovementEffects& effects) {
         return swimming && effects[static_cast<int32_t>(MovementEffectType::DolphinBoost)].type != -1 ? 2.0f
                                                                                                       : 1.0f;

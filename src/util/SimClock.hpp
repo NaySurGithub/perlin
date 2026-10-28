@@ -1,6 +1,4 @@
 #pragma once
-// Clock used for things that must follow *replay time* instead of wall-clock time (day/night extrapolation between SetTime
-// packets, effect timers, ...). Outside of replays it is exactly std::chrono::steady_clock.
 #include <atomic>
 #include <chrono>
 #include <cstdint>

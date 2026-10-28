@@ -11,13 +11,9 @@
 namespace perlin::replay {
     enum class CameraMode { Free = 0, Follow = 1, Keyframes = 2 };
 
-    // Owns the recording state for the live session and the playback state for an opened replay.
     class ReplayController {
     public:
-        // ---- recording ------------------------------------------------------------------
         using Tap = std::function<void(int dir, uint32_t id, const std::vector<uint8_t>& body)>;
-        // Call whenever a new live session is created: resets the snapshot cache and returns the tap to install with
-        // BedrockSession::SetRecordTap. Taps of earlier sessions stop doing anything.
         Tap NewSessionTap();
         void DetachSession();
         struct LiveInfo {
@@ -28,30 +24,23 @@ namespace perlin::replay {
             struct Pack {
                 std::string path, fileName, uuid, key;
             };
-            std::vector<Pack> packs; // the server's resource packs, stored in the replay
-            uint32_t snapshotMs = 120000;  // periodic full-state snapshots so seeking is fast
+            std::vector<Pack> packs;
+            uint32_t snapshotMs = 120000;
         };
         bool StartRecording(const LiveInfo& info, const std::string& perlinVersion, std::string& error);
-        // Saves to the replay folder; `outPath` receives the file.
         bool StopRecording(std::string& outPath, std::string& error);
         bool Recording() const { return recorder.Active(); }
         uint32_t RecordingMs() const { return recorder.ElapsedMs(); }
         uint64_t RecordingBytes() const { return recorder.BytesWritten(); }
         void AddMarker(const std::string& name) { recorder.AddMarker(name); }
-        // Packs a recording that was interrupted (crash, power loss) into a replay file. Returns true when something was recovered.
         static bool RecoverInterrupted(std::string& recoveredPath);
 
-        // ---- playback -------------------------------------------------------------------
         bool Open(const std::string& path, std::string& error);
         void Close();
         bool Playing() const { return reader != nullptr; }
         const Metadata& Meta() const { return meta; }
         const std::string& Path() const { return path; }
-        // Rewinds to t=0 (the caller creates a fresh replay session).
         void Rewind();
-        // Advances playback; every due packet is handed to `inject`. Returns false once the end is reached.
-        // `budgetMs` bounds wall time spent in one call (catching up after a seek).
-        // Receives every recorded client->server packet (pose included) as it becomes due.
         void SetClientSink(std::function<void(const Record&)> sink) { clientSink = std::move(sink); }
         bool Advance(double dtMs, const std::function<void(const Record&)>& inject, double budgetMs);
         void Seek(double ms);
@@ -69,10 +58,8 @@ namespace perlin::replay {
         struct StoredPack {
             std::string file, uuid, key;
         };
-        // Resource packs stored in the opened replay (extracted data comes from ReadArchiveFile(file)).
         std::vector<StoredPack> StoredPacks();
         Pose RecordedPose() const { return recorded; }
-        // Pose at the current replay time, interpolated between the surrounding recorded samples.
         Pose InterpolatedPose() const;
         bool CatchingUp() const { return seekTarget >= 0; }
         const std::vector<Marker>& Markers() const { return meta.markers; }

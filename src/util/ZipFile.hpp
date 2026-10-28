@@ -6,9 +6,6 @@
 #include <string>
 
 namespace perlin {
-    // Opens a zip for reading from a std::filesystem path. miniz's own mz_zip_reader_init_file takes a narrow string, which on
-    // Windows is the ANSI code page and fails for names with characters outside it; this goes through the wide-character API
-    // and falls back to the narrow one. `file` must be fclose()d after mz_zip_reader_end().
     inline bool OpenZipReader(mz_zip_archive& zip, const std::filesystem::path& path, FILE*& file) {
         file = nullptr;
 #ifdef _WIN32

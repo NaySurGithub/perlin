@@ -8,7 +8,6 @@
 
 namespace perlin::physics::bds {
     namespace detail {
-        // BDS table initializer inputs stay within the vector sinf fast range.
         inline float TableEntry(uint32_t index) {
             const float angle = Round(static_cast<float>(index) * std::bit_cast<float>(0x38c90fdbu));
             return SineSmallPositive(angle);
@@ -25,16 +24,12 @@ namespace perlin::physics::bds {
         return table;
     }
 
-    // CVTTSS2SI returns INT_MIN for invalid/out-of-range input; truncating that
-    // to the BDS uint16 table coordinate selects entry zero.
     inline uint16_t SineIndex(float coordinate) {
         if (!(coordinate >= -2147483648.0f && coordinate < 2147483648.0f))
             return 0;
         return static_cast<uint16_t>(static_cast<int32_t>(coordinate));
     }
 
-    // Ground-jump callback 0x140EAFAF0 converts yaw directly from degrees to
-    // table coordinates. A radians conversion first can select another entry.
     inline uint16_t JumpSinIndex(float yaw) {
         return SineIndex(yaw * 182.04443f);
     }
@@ -56,9 +51,6 @@ namespace perlin::physics::bds {
         return std::bit_cast<float>(words[index]);
     }
 
-    // 1.26.52.3 callback 0x14661F790 and integrated-server 0x1060774B8
-    // round radians before the table conversion. The current table initializer
-    // divides each index by 10430.378f and calls CRT sinf (0x14118BBF0).
     inline Float3 CurrentSprintJump(Float3 velocity, float yaw) {
         const float coordinate = detail::Round(detail::Round(yaw * 0.017453292f) * 10430.378f);
         velocity.x = detail::Round(velocity.x - detail::Round(CurrentSineEntry(SineIndex(coordinate)) * 0.2f));

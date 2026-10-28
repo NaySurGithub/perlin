@@ -120,7 +120,6 @@ int main() {
     empty.Resolve();
     empty.InstallBuiltins();
     Expect(empty.Find("terrain_opaque")->Define("PACK_OVERRIDE"), "pack overrides source alias");
-    // Resolve invalidates pointers into the database; reacquire before later checks.
     add = empty.Find("particles_add");
 
     namespace fs = std::filesystem;

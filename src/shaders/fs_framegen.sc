@@ -58,5 +58,24 @@ void main()
     float actual = linearDepth(rawDepth(src));
     bool consistent = inside && expected > 0.0 && abs(actual - expected) < 0.05 * expected + 0.12;
     vec2 pick = consistent ? src : uv;
+    if (!consistent && inside)
+    {
+        vec2 motion = src - uv;
+        vec2 ahead = clamp(src + motion * 0.5, vec2_splat(0.0), vec2_splat(1.0));
+        vec2 behind = clamp(src - motion * 0.5, vec2_splat(0.0), vec2_splat(1.0));
+        float best = actual;
+        pick = src;
+        float aheadDepth = linearDepth(rawDepth(ahead));
+        if (aheadDepth > best)
+        {
+            best = aheadDepth;
+            pick = ahead;
+        }
+        float behindDepth = linearDepth(rawDepth(behind));
+        if (behindDepth > best)
+        {
+            pick = behind;
+        }
+    }
     gl_FragColor = vec4(texture2DLod(s_world, pick, 0.0).rgb, 1.0);
 }

@@ -19,10 +19,8 @@ namespace perlin::jshader {
         constexpr uint8_t kUniformTypeSampler = 0;
         constexpr uint8_t kUniformTypeVec4 = 2;
 
-        // bgfx::TextureDimension ids (see bgfx/src/shader.cpp)
         constexpr uint8_t kDim2D = 0x02;
         constexpr uint8_t kDim3D = 0x06;
-        // bgfx::TextureComponentType ids
         constexpr uint8_t kCompFloat = 0x00, kCompInt = 0x01, kCompUint = 0x02, kCompDepth = 0x03;
 
         struct Writer {
@@ -43,7 +41,6 @@ namespace perlin::jshader {
             return h;
         }
 
-        // bgfx::Attrib::Enum for a vertex input location (the transformer uses the enum values as locations).
         const char* GlAttribName(int attrib) {
             static const char* names[] = {"a_position", "a_normal", "a_tangent", "a_bitangent", "a_color0", "a_color1",
                                           "a_color2", "a_color3", "a_indices", "a_weight", "a_texcoord0", "a_texcoord1",
@@ -70,7 +67,7 @@ namespace perlin::jshader {
         };
 
         uint8_t ComponentId(spirv_cross::SPIRType::BaseType t, bool depth) {
-            if (depth) return kCompFloat;  // comparison samplers are filtered floats from the API's point of view
+            if (depth) return kCompFloat;
             switch (t) {
             case spirv_cross::SPIRType::Int: return kCompInt;
             case spirv_cross::SPIRType::UInt: return kCompUint;
@@ -156,7 +153,6 @@ namespace perlin::jshader {
             }
         }
 
-        // fxc rejects implicit-derivative lookups inside loops that cannot be unrolled; GLSL allows them.
         std::string ForceLod0(const std::string& src) {
             const std::string key = ".Sample(";
             std::string out;
@@ -197,8 +193,6 @@ namespace perlin::jshader {
                     const spirv_cross::SPIRType& t = c.get_type(ub.base_type_id);
                     out.uniformBytes = static_cast<int>(c.get_declared_struct_size(t));
                 }
-                // Direct3D 11 has 16 sampler slots but many more texture slots: stages above 15 reuse the sampler
-                // register (binding % 16) while keeping their own texture register.
                 for (const auto& s : res.sampled_images) {
                     const uint32_t binding = c.get_decoration(s.id, spv::DecorationBinding);
                     if (binding < 16) continue;
@@ -247,11 +241,10 @@ namespace perlin::jshader {
         w.U8('S');
         w.U8('H');
         w.U8(kShaderBinVersion);
-        // bgfx only links a vertex and a fragment shader whose hashes agree.
-        w.U32(fragment ? interfaceHash : 0u);   // hashIn
-        w.U32(fragment ? 0u : interfaceHash);   // hashOut
-        w.U32(0);                      // raw SRV bindings
-        w.U32(0);                      // raw UAV bindings
+        w.U32(fragment ? interfaceHash : 0u);
+        w.U32(fragment ? 0u : interfaceHash);
+        w.U32(0);
+        w.U32(0);
         w.U16(static_cast<uint16_t>(uniforms.size()));
         for (const ContainerUniform& u : uniforms) {
             w.U8(static_cast<uint8_t>(u.name.size()));

@@ -624,7 +624,6 @@ namespace perlin::ui {
 
         CustomItemDef custom;
         const bool customItem = ServerBlocks::Instance().Item(id, custom);
-        // Server packs key item_texture.json by the full identifier ("hivehub:pet_egg"); try it before the short name.
         std::string iconKey = customItem ? custom.icon : std::string();
         if (iconKey.empty() && id.find(':') != std::string::npos && id.rfind("minecraft:", 0) != 0)
             iconKey = id;

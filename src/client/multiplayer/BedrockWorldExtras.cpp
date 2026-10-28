@@ -468,7 +468,6 @@ namespace perlin {
         });
 
         On<BlockEventPacket>([this](const BlockEventPacket& p) {
-            // Chests, ender chests and shulker boxes: data is the number of players viewing the container.
             if (p.type == BlockEventPacketType::ChangeState)
                 blockEntities.SetLidOpen(p.position.x, p.position.y, p.position.z, p.data > 0);
         });

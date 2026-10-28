@@ -1,6 +1,7 @@
 #include <cstring>
 #include "client/ui/ChatLog.hpp"
 #include "client/ui/McFont.hpp"
+#include "client/ui/TextEdit.hpp"
 
 #include <algorithm>
 #include <cctype>
@@ -467,10 +468,14 @@ namespace perlin::ui {
                 continue;
             }
             cycling = false;
-            if (t.character) {
-                Insert(static_cast<uint32_t>(t.key));
-                Recompute();
-                continue;
+            {
+                TextLimits limits;
+                limits.maxChars = kMaxInput;
+                limits.accept = [](uint32_t cp) { return cp != 0xA7; };
+                if (TextEdit::Focused().Apply(t, input, caret, limits)) {
+                    Recompute();
+                    continue;
+                }
             }
             switch (t.key) {
             case Key::Escape:
@@ -488,12 +493,6 @@ namespace perlin::ui {
                 }
                 return r;
             }
-            case Key::Backspace: Erase(false, t.ctrl); break;
-            case Key::Delete: Erase(true, t.ctrl); break;
-            case Key::Left: MoveCaret(-1, t.ctrl); break;
-            case Key::Right: MoveCaret(1, t.ctrl); break;
-            case Key::Home: caret = 0; break;
-            case Key::End: caret = input.size(); break;
             case Key::Up: Recall(-1); break;
             case Key::Down: Recall(1); break;
             case Key::PageUp: scroll = std::clamp(scroll + 19, 0, std::max(0, static_cast<int>(lines.size()) - 20)); break;
@@ -547,6 +546,12 @@ namespace perlin::ui {
         s.chatScroll = scroll;
         s.chatInput = input;
         s.chatCaret = static_cast<int>(caret);
+        {
+            size_t c = 0, a = 0, b = 0;
+            TextEdit::Focused().State(input, c, a, b);
+            s.chatSelStart = static_cast<int>(a);
+            s.chatSelEnd = static_cast<int>(b);
+        }
         s.chatCaretVisible = ((nowMs - openedAt) / 300) % 2 == 0;
         s.chatColors.assign(input.size(), 'r');
         if (!input.empty() && input[0] == '/') {

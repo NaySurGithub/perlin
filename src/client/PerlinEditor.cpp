@@ -1,4 +1,3 @@
-// Video-editor style replay timeline: transport, zoomable ruler, keyframe tracks with drag editing, inspector and visual toggles.
 #include "client/Perlin.hpp"
 #include "client/input/Keys.hpp"
 #include "client/replay/Timeline.hpp"
@@ -34,13 +33,11 @@ namespace perlin {
         const bool shift = input.IsKeyDown(Key::Shift);
         const double t = replayCtl.TimeMs();
 
-        // ---- view window ----
         if (e.viewSpan <= 0)
             e.viewSpan = dur;
         e.viewSpan = std::clamp(e.viewSpan, std::min(200.0, dur), dur);
         e.viewStart = std::clamp(e.viewStart, 0.0, std::max(0.0, dur - e.viewSpan));
 
-        // ---- helpers over the three keyframe tracks ----
         const auto count = [&](int tr) -> int {
             return tr == 0 ? static_cast<int>(timeline.camera.size()) : tr == 1 ? static_cast<int>(timeline.speed.size()) : static_cast<int>(timeline.timeOfDay.size());
         };
@@ -57,7 +54,6 @@ namespace perlin {
             (tr == 0 ? timeline.camera[static_cast<size_t>(i)].interp : tr == 1 ? timeline.speed[static_cast<size_t>(i)].interp : timeline.timeOfDay[static_cast<size_t>(i)].interp) = v;
         };
         const auto selValid = [&] { return e.selTrack >= 0 && e.selTrack < 3 && e.selIndex >= 0 && e.selIndex < count(e.selTrack); };
-        // keeps tracks sorted after a key moved and re-finds the selected key by its time
         const auto resort = [&](double selectedT) {
             const auto byT = [](const auto& a, const auto& b) { return a.tMs < b.tMs; };
             std::stable_sort(timeline.camera.begin(), timeline.camera.end(), byT);
@@ -129,7 +125,6 @@ namespace perlin {
             }
         };
 
-        // ---- keys ----
         const auto keyEdge = [&](int code) {
             const bool down = input.IsKeyDown(code);
             const bool edge = down && !e.keyPrev[code & 255];
@@ -169,11 +164,9 @@ namespace perlin {
         }
         if (keyEdge('F')) e.viewSpan = 0;
 
-        // keep the playhead in view while playing
         if (e.drag == 0 && !replayCtl.Paused() && (t > e.viewStart + e.viewSpan || t < e.viewStart))
             e.viewStart = std::clamp(t - e.viewSpan * 0.1, 0.0, std::max(0.0, dur - e.viewSpan));
 
-        // ---- model ----
         if (replayUi.status.size() && now > replayUi.statusUntil)
             replayUi.status.clear();
         ui::EditorModel m;
@@ -265,7 +258,6 @@ namespace perlin {
                 std::cout << "[ui] editor: " << error << std::endl;
         }
 
-        // ---- mouse ----
         float mx = e.drag ? -1.0f : -1.0f;
         float my = -1.0f;
         const bool captured = input.Captured();
@@ -366,7 +358,6 @@ namespace perlin {
         const bool down = input.IsMouseDown(0);
         const bool pressed = down && !e.leftDown && now - e.openedAt > std::chrono::milliseconds(150);
         if (!captured) {
-            // wheel: zoom the timeline, scroll the inspector
             const float wheel = inputManager.Scroll();
             if (wheel != 0.0f) {
                 if (inDock && mx >= lay.tlX0) {

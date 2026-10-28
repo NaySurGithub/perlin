@@ -126,7 +126,6 @@ namespace perlin::ui {
                 std::string stem = source.substr(6);
                 bool fromPack = false;
                 if (TexturePack::Instance().Active() && stem.rfind("ui_menu_btn", 0) == 0) {
-                    // Buttons come from the resource pack's own button sprites when it has them.
                     if (stem.size() > 4 && stem.compare(stem.size() - 4, 4, ".png") == 0)
                         stem.resize(stem.size() - 4);
                     fromPack = TexturePack::Instance().Load("textures/ui/screen_" + stem.substr(3) + ".png", t) && t.width > 0;

@@ -6,8 +6,6 @@
 #include <span>
 
 namespace perlin::physics::bds {
-    // EntityInside callback 0x140B58CF0. The native ECS view excludes
-    // WasInWaterFlagComponent. Every contact applies attenuation again.
     inline Float3 HoneyContacts(Float3 position, Float3 velocity, float bodyWidth,
             std::span<const BlockPosition> contacts, float& fallDistance) {
         for (const auto& block : contacts) {

@@ -12,8 +12,6 @@
 
 namespace perlin::ui {
     namespace {
-        // The resource-pack counterpart of one of the client's own images ("ui_inventory.png" -> textures/ui/screen_inventory).
-        // Only Java packs are matched: they restyle the same inventory layout the client draws.
         bool PackReplacement(const std::string& resource, Texture& out) {
             if (!TexturePack::Instance().Active() || resource.rfind("ui_", 0) != 0 || resource.size() < 8)
                 return false;
@@ -50,8 +48,6 @@ namespace perlin::ui {
                 d.width = tex.width;
                 d.height = tex.height;
                 d.rgba.assign(tex.pixels.begin(), tex.pixels.end());
-                // A resource pack that restyles this screen supplies the same picture at its own resolution; bring it to the
-                // size the layout was built for so every offset in the layout still lines up.
                 Texture pack;
                 if (PackReplacement(resource, pack) && pack.width > 0 && pack.height > 0) {
                     std::vector<uint8_t> scaled(static_cast<size_t>(d.width) * static_cast<size_t>(d.height) * 4);

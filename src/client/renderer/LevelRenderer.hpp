@@ -45,7 +45,6 @@ namespace perlin {
             }
         }
         void Update(Level* level, float camX, float camZ, const Frustum& frustum);
-        // The level object changed but its contents are the same chunks (replay rewinds): keep every mesh.
         void RebindLevel(Level* level) {
             lastLevel = level;
             lastClear = level ? level->clearCounter.load() : 0;

@@ -696,7 +696,6 @@ namespace perlin {
         draw.blend = 1;
         draw.depth = true;
         if (redTint > 0.0f) {
-            // Same red hurt overlay mobs get in EntityRenderer.
             draw.overlay[0] = 1.0f; draw.overlay[1] = 0.0f; draw.overlay[2] = 0.0f; draw.overlay[3] = 0.3f;
         }
         draw.shadowOnly = worldPass && worldShadowOnly && !dollClip;
@@ -866,8 +865,6 @@ namespace perlin {
         }
     }
 
-    // Builds the "3D Skins" sleeve layer for the first-person arms. Entities already extrude their second skin
-    // layer into voxels; the hand used to draw the flat sleeve box, so the option had no effect in first person.
     void HandRenderer::EnsureSleeves3d(const FrameIn& in) {
         if (sleeve3dSerial == in.skinSerial && sleeve3dFlags == in.skins3d && sleeve3dFallback == skinFallback)
             return;
@@ -891,7 +888,6 @@ namespace perlin {
             bone.inflate = 0.25f;
             attachable::Cube cube;
             cube.size = {w, 12.0f, 4.0f};
-            // Bedrock-style space (y up); converted into the hand's Java-style space (y down) below.
             cube.origin = {right ? (in.slimArm ? -7.0f : -8.0f) : 4.0f, 0.0f, -2.0f};
             cube.uv = right ? glm::vec2(40.0f, 32.0f) : glm::vec2(48.0f, 48.0f);
             cube.inflate = 0.25f;

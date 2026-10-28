@@ -51,8 +51,6 @@ with tempfile.TemporaryDirectory(prefix='perlin-rd-') as temp:
         return None
     with ThreadPoolExecutor(max_workers=4) as pool:
         failures = [result for result in pool.map(compile_shader, jobs) if result]
-    # bgfx links programs using the vertex-output / fragment-input hashes.
-    # Compiling each stage alone cannot detect a mismatched varying interface.
     for path, domain, profile in jobs:
         if not path.name.startswith('fs_'):
             continue

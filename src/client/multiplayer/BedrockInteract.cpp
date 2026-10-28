@@ -298,7 +298,7 @@ namespace perlin {
                 resolved = true;
             }
         }
-        if (!resolved) return false; // Wait for the server if this state's producer is unknown.
+        if (!resolved) return false;
         std::sort(states.begin(), states.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
         const uint16_t placed = palette.Intern(BlockPalette::HashState(name, states));
         const int32_t runtime = palette.RuntimeId(placed);

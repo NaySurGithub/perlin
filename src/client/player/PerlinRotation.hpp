@@ -18,8 +18,6 @@ namespace perlin::physics::bds {
         return movement + previous;
     }
 
-    // Actor direction helper 0x143261390, including its angle wrapping even
-    // when alpha is one. That rounding can change the selected table entry.
     inline Float3 DirectionFromRotation(Rotation previous, Rotation current, float alpha = 1.0f) {
         const float yaw = InterpolateAngle(previous.yaw, current.yaw, alpha);
         const float pitch = InterpolateAngle(previous.pitch, current.pitch, alpha);

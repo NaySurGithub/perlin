@@ -1,6 +1,7 @@
 #include "client/ui/LoadingScreen.hpp"
 
 #include "client/ui/RmlEmit.hpp"
+#include "client/ui/FormatCodes.hpp"
 #include "client/ui/UiTemplate.hpp"
 
 #include <algorithm>
@@ -67,17 +68,16 @@ mcimg { display: block; position: absolute; }
         ReplaceAll(d, "btn_x", std::to_string(guiW / 2 - 102));
         ReplaceAll(d, "btn_y", std::to_string(btnY));
         ReplaceAll(d, "title_y", std::to_string(msgY - 16));
-        ReplaceAll(d, "title", EscapeRml(t.title));
+        ReplaceAll(d, "title", FormatCodesToRml(t.title));
         ReplaceAll(d, "bar_x", std::to_string((guiW - barW) / 2));
         ReplaceAll(d, "bar_y", std::to_string(barY));
         ReplaceAll(d, "bar_w", std::to_string(barW));
         ReplaceAll(d, "bar_display", bar ? "block" : "none");
         ReplaceAll(d, "fill_w", std::to_string(static_cast<int>(std::clamp(t.progress, 0.0f, 1.0f) * static_cast<float>(barW - 2))));
         ReplaceAll(d, "cancel", EscapeRml(t.cancel.empty() ? std::string("Cancel") : t.cancel));
-        ReplaceAll(d, "message", EscapeRml(t.message));
-        ReplaceAll(d, "detail", EscapeRml(t.detail));
+        ReplaceAll(d, "message", FormatCodesToRml(t.message));
+        ReplaceAll(d, "detail", FormatCodesToRml(t.detail));
         if (!t.warning.empty()) {
-            // Added here (not in the template) so a customised loading template cannot drop it.
             const int w = std::min(guiW - 20, 330);
             const std::string note = "<div style=\"left: " + std::to_string((guiW - w) / 2) + "px; top: " + std::to_string(btnY - 30) + "px; width: " + std::to_string(w) +
                                      "px; height: 27px; font-family: minecraft-shadow; font-size: 8px; line-height: 9px; text-align: center; color: #ffff55; z-index: 4;\">" +
@@ -89,16 +89,9 @@ mcimg { display: block; position: absolute; }
         return d;
     }
 
-    std::string BuildDownloadScreenRml(const DownloadScreenText& t, int guiW, int guiH, double time) {
-        const auto N = [](int v) { return std::to_string(v); };
-        const int barW = std::min(guiW - 40, 240);
-        const int x = (guiW - barW) / 2;
-        const int rowsH = static_cast<int>(t.rows.size()) * 34;
-        const bool buttons = !t.retry.empty() || !t.skip.empty();
-        const int contentH = 28 + rowsH + (buttons ? 30 : 0);
-        int y = std::max(10, (guiH - contentH) / 2);
-        std::string d = R"(<rml><head><style>
-body { position: absolute; left: 0px; top: 0px; width: )" + N(guiW) + "px; height: " + N(guiH) + R"(px; margin: 0; padding: 0; background-color: #16181f; }
+    namespace {
+        const char* kDownloadHead = R"(<rml><head><style>
+body { position: absolute; left: 0px; top: 0px; width: {{w}}px; height: {{h}}px; margin: 0; padding: 0; background-color: #16181f; }
 div { display: block; position: absolute; }
 .t { font-family: minecraft-shadow; font-size: 8px; line-height: 9px; height: 9px; white-space: nowrap; color: #ffffff; }
 .c { text-align: center; }
@@ -110,8 +103,22 @@ div { display: block; position: absolute; }
 .btn:hover .face { background-color: #565a68; }
 .btn .lbl { left: 0px; top: 6px; height: 9px; font-family: minecraft-shadow; font-size: 8px; line-height: 9px; text-align: center; color: #ffffff; white-space: nowrap; }
 </style></head><body>
-<div style="left:0px;top:0px;width:)" + N(guiW) + "px;height:" + N(guiH) + R"(px;decorator:vertical-gradient(#1d2230ff #101116ff);"></div>
+<div style="left:0px;top:0px;width:{{w}}px;height:{{h}}px;decorator:vertical-gradient(#1d2230ff #101116ff);"></div>
 )";
+        const ScreenTemplateDefault kDownloadDefault("download_screen.rml", kDownloadHead);
+    }
+
+    std::string BuildDownloadScreenRml(const DownloadScreenText& t, int guiW, int guiH, double time) {
+        const auto N = [](int v) { return std::to_string(v); };
+        const int barW = std::min(guiW - 40, 240);
+        const int x = (guiW - barW) / 2;
+        const int rowsH = static_cast<int>(t.rows.size()) * 34;
+        const bool buttons = !t.retry.empty() || !t.skip.empty();
+        const int contentH = 28 + rowsH + (buttons ? 30 : 0);
+        int y = std::max(10, (guiH - contentH) / 2);
+        std::string d = ScreenTemplate("download_screen.rml", kDownloadHead);
+        ReplaceAll(d, "w", N(guiW));
+        ReplaceAll(d, "h", N(guiH));
         d += "<div class=\"t c\" style=\"left:0px;top:" + N(y) + "px;width:" + N(guiW) + "px;\">" + EscapeRml(t.title) + "</div>\n";
         d += "<div class=\"t c dim\" style=\"left:0px;top:" + N(y + 12) + "px;width:" + N(guiW) + "px;\">" + EscapeRml(t.subtitle) + "</div>\n";
         y += 30;

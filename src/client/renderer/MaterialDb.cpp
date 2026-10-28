@@ -358,8 +358,6 @@ namespace perlin::material {
 
     void Db::FillBuiltins() {
         builtins.clear();
-        // Upstream owns the available shader families and passes. These definitions
-        // describe source identity; Perlin's bgfx shaders adapt its vertex/uniform ABI.
         for (const SourcePass& source : kSourcePasses) {
             Def d;
             d.name = std::string(source.family) + "." + source.pass;
@@ -483,7 +481,6 @@ namespace perlin::material {
                 d.states.insert("DisableAlphaWrite");
             }
         }
-        // Legacy names are aliases only; shader identity comes from upstream.
         const std::pair<const char*, const char*> entityAliases[] = {
             {"agent", "entity"},
             {"allay", "entity_alphatest"},

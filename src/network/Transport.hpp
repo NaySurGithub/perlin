@@ -30,8 +30,6 @@ namespace perlin {
         virtual bool SendUnreliable(const std::vector<uint8_t>& data) = 0;
         virtual bool TryReceive(std::vector<uint8_t>& out) = 0;
         virtual bool IsConnected() const = 0;
-        // Some transports monitor peer traffic themselves, including control
-        // packets that never surface as Bedrock application packets.
         virtual bool HasLivenessTimeout() const { return false; }
         virtual std::string LastError() const = 0;
         virtual const NetherNetServerInfo& Info() const = 0;

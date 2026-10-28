@@ -1,5 +1,3 @@
-// iOS 26.52 IDA 0x1070E076C, executed in Unicorn ARM64.
-// Player without vex tag or vertical damping; optional override/attribute pools.
 {0.0f, std::nullopt, std::nullopt, 1.0f, 0x0u},
 {0.0f, std::nullopt, std::nullopt, -0.3125f, 0x80000000u},
 {0.0f, std::nullopt, std::nullopt, 5.960464477539063e-08f, 0x0u},

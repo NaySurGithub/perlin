@@ -19,7 +19,6 @@ namespace perlin {
     };
 
     struct ControlActor {
-        // Strings preserve all 64 ID bits in browser/JavaScript consumers.
         std::string runtimeId, uniqueId, vehicleUid, type;
         std::array<double, 3> position{}, velocity{}, lastServerPosition{};
         bool onGround = false, haveServerPosition = false;
@@ -63,15 +62,12 @@ namespace perlin {
         std::vector<ControlActor> actors;
     };
 
-    // Opt-in developer interface. HTTP threads queue requests; only the game
-    // thread applies commands or reads simulation state.
     class ClientControl {
     public:
         ClientControl();
         ~ClientControl();
         bool Start(int port);
         void Stop();
-        // Random per-start secret; every request must send it as X-Perlin-Token.
         const std::string& Token() const;
         std::vector<ControlCommand> TakeCommands();
         void Publish(const ControlSnapshot& state);

@@ -11,7 +11,7 @@ int main(int argc, char** argv) {
     std::string dir = argc > 2 ? argv[2] : "/tmp/ffout";
     std::filesystem::create_directories(dir);
     int ok = 0, fail = 0, skip = 0;
-    {   // supersampled input (2x) scaled down by ffmpeg, plus the PNG helper
+    {
         Settings s; s.ffmpegPath = path; s.container = "mp4"; s.codec = "h264"; s.width = 64; s.height = 48; s.inputWidth = 128; s.inputHeight = 96; s.fps = 23.976;
         s.outputPath = dir + "/ssaa.mp4";
         std::string err; Encoder e;
@@ -22,7 +22,7 @@ int main(int argc, char** argv) {
         std::printf("ssaa ok\n");
         if (!WritePngBgra(dir + "/p.png", 128, 96, f.data(), 128 * 4, false, false)) { std::puts("FAIL png"); return 1; }
         std::printf("png ok\n");
-        {   // built-in encoder with supersampled input
+        {
             Settings b; b.container = "builtin"; b.width = 64; b.height = 48; b.inputWidth = 128; b.inputHeight = 96; b.fps = 30; b.outputPath = dir + "/builtin.avi";
             Encoder be; std::string e2;
             if (!be.Start(b, cat, e2)) { std::printf("FAIL builtin: %s\n", e2.c_str()); return 1; }
@@ -34,7 +34,7 @@ int main(int argc, char** argv) {
         if (d.size() != 64 * 48 * 4 || d[0] != 200) { std::puts("FAIL downscale"); return 1; }
         if (argc > 3) return 0;
     }
-    const int W = 130, H = 74; // odd-ish size, even for yuv420
+    const int W = 130, H = 74;
     for (const Container& c : Containers()) {
         if (c.id == "custom") continue;
         std::vector<std::string> codecs = c.codecs;

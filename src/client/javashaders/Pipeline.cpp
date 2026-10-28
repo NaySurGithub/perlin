@@ -94,7 +94,6 @@ namespace perlin::jshader {
             return BGFX_STATE_BLEND_ONE;
         }
 
-        // Built-in helper programs (written in the pack dialect so they take the same path as pack shaders).
         ExpandedSource MakeSource(const char* text) {
             ExpandedSource s;
             s.text = text;
@@ -117,7 +116,6 @@ namespace perlin::jshader {
         Pipeline& o;
         explicit Impl(Pipeline& owner) : o(owner) {}
 
-        // ---------------------------------------------------------------- worker pool
         class Pool {
         public:
             void Start(int n) {
@@ -165,7 +163,6 @@ namespace perlin::jshader {
             bool quit = false;
         };
 
-        // ---------------------------------------------------------------- converted programs
         struct Converted {
             bool ok = false;
             std::string error;
@@ -192,7 +189,7 @@ namespace perlin::jshader {
             int regs = 0;
             std::vector<SamplerBind> samplers;
             std::vector<UniformSlot> slots;
-            std::vector<int> attachments;   // colortex (or shadowcolor) index per fragment output location
+            std::vector<int> attachments;
             std::shared_ptr<ProgramSource> source;
             std::vector<float> frameRegs, drawRegs;
             int frameStamp = -1;
@@ -211,7 +208,6 @@ namespace perlin::jshader {
         bgfx::UniformHandle globalsUniform = BGFX_INVALID_HANDLE;
         std::set<std::string> loggedMissing;
 
-        // ---------------------------------------------------------------- buffers
         struct Buffer {
             bgfx::TextureHandle tex[2] = {BGFX_INVALID_HANDLE, BGFX_INVALID_HANDLE};
             int cur = 0;
@@ -231,12 +227,11 @@ namespace perlin::jshader {
         bool shadowUsed = false;
         int width = 0, height = 0;
 
-        // ---------------------------------------------------------------- per frame state
         UniformTable table;
         CustomUniforms custom;
         FrameState frame;
         int frameStamp = 0;
-        std::map<std::pair<int, std::string>, int> viewSlots;   // (group, fbKey) -> sub index
+        std::map<std::pair<int, std::string>, int> viewSlots;
         std::map<int, int> nextSub;
         std::set<int> viewsPrepared;
         bgfx::VertexLayout quadLayout;
@@ -245,7 +240,6 @@ namespace perlin::jshader {
         bool Flip() const { return o.host.originTopLeft; }
         bool Trace() const { static const bool on = std::getenv("JSHADER_TRACE") != nullptr; return on; }
 
-        // ---------------------------------------------------------------- setup
         bgfx::TextureHandle MakeTexture(int w, int h, bgfx::TextureFormat::Enum fmt, uint64_t flags, const void* data, uint32_t size, bool mips = false) {
             const bgfx::Memory* mem = data ? bgfx::copy(data, size) : nullptr;
             bgfx::TextureHandle t = bgfx::createTexture2D(static_cast<uint16_t>(w), static_cast<uint16_t>(h), mips, 1, fmt, flags, mem);
@@ -260,7 +254,6 @@ namespace perlin::jshader {
             flatNormal = MakeTexture(1, 1, bgfx::TextureFormat::RGBA8, f, normalPx, 4);
             blackTex = MakeTexture(1, 1, bgfx::TextureFormat::RGBA8, f, blackPx, 4);
             noise = MakeTexture(1, 1, bgfx::TextureFormat::RGBA8, f, whitePx, 4);
-            // Pack provided noise / custom textures.
             auto load = [&](const std::string& path) -> bgfx::TextureHandle {
                 std::string bytes;
                 if (!o.host.decodeImage) return BGFX_INVALID_HANDLE;
@@ -283,7 +276,6 @@ namespace perlin::jshader {
             }
         }
 
-        // Which colortex indices does any program of the pack mention?
         void ScanUsage() {
             std::set<std::string> names;
             for (const ProgramInfo& p : StandardPrograms()) names.insert(p.name);
@@ -387,7 +379,6 @@ namespace perlin::jshader {
             return fb;
         }
 
-        // ---------------------------------------------------------------- conversion
         std::string KeyFor(const std::string& name, uint32_t mask, bool toBackbuffer) const {
             return name + "#" + std::to_string(mask) + (toBackbuffer && Flip() ? "B" : "O");
         }
@@ -497,7 +488,6 @@ namespace perlin::jshader {
                 p->anyPerDraw = p->anyPerDraw || slot.perDraw;
                 p->slots.push_back(std::move(slot));
             }
-            // Fragment outputs -> buffer indices.
             int maxLoc = -1;
             for (int l : c.transform.fragment.drawBuffers) maxLoc = std::max(maxLoc, l);
             const std::vector<int>& tag = p->source ? p->source->drawBuffers : std::vector<int>();
@@ -509,7 +499,6 @@ namespace perlin::jshader {
             return raw;
         }
 
-        // Returns the ready program or nullptr (conversion failed).
         Program* GetProgram(const std::string& name, uint32_t mask, bool toBackbuffer, const ExpandedSource* vs = nullptr, const ExpandedSource* fs = nullptr) {
             const std::string key = KeyFor(name, mask, toBackbuffer);
             const auto ready = programs.find(key);
@@ -523,7 +512,6 @@ namespace perlin::jshader {
                 }
             }
             auto fut = Schedule(key, name, mask, toBackbuffer, vs, fs);
-            // Never stall the render thread on conversion: the program is simply unavailable until it is done.
             if (fut.wait_for(std::chrono::seconds(0)) != std::future_status::ready) return nullptr;
             std::shared_ptr<Converted> c = fut.get();
             if (!c->ok) {
@@ -538,12 +526,10 @@ namespace perlin::jshader {
                 return nullptr;
             }
             if (!vs) {
-                // Source tags from builtin helpers are absent; packs use their own tag.
             }
             return p;
         }
 
-        // ---------------------------------------------------------------- uniforms
         void FillUniforms(Program& p, const PackDrawState& draw, bool perDrawOnly) {
             UniformTable::Context ctx;
             ctx.frame = &frame;
@@ -616,7 +602,6 @@ namespace perlin::jshader {
             p.logged = true;
         }
 
-        // ---------------------------------------------------------------- views
         bgfx::ViewId ViewId(int group, int sub) const { return static_cast<bgfx::ViewId>(o.host.firstView + ViewOffset(group) + sub); }
 
         bgfx::ViewId ViewFor(int group, const std::string& fbKey) {
@@ -645,17 +630,15 @@ namespace perlin::jshader {
             for (int idx : att) {
                 if (idx < 0 || idx >= kMaxColorTex) idx = 0;
                 Buffer& b = bufs[static_cast<size_t>(idx)];
-                if (!b.used) b.used = true;   // late discovery: texture is created on the next resize
+                if (!b.used) b.used = true;
                 out.push_back(bgfx::isValid(b.tex[b.cur]) ? b.tex[b.cur] : bufs[0].tex[bufs[0].cur]);
             }
             if (withDepth) out.push_back(depth[0]);
             return out;
         }
 
-        // ---------------------------------------------------------------- fullscreen passes
         PackDrawState FullscreenDraw(int w, int h) {
             PackDrawState d;
-            // Unit quad (0..1) -> NDC.
             const float mv[16] = {2, 0, 0, 0, 0, 2, 0, 0, 0, 0, 1, 0, -1, -1, 0, 1};
             std::memcpy(d.modelView, mv, sizeof(mv));
             d.viewHeight = h;
@@ -689,7 +672,6 @@ namespace perlin::jshader {
             SubmitQuad(view, *p, FullscreenDraw(width, height), BGFX_STATE_WRITE_Z | BGFX_STATE_DEPTH_TEST_ALWAYS);
         }
 
-        // Writes the scene depth into the framebuffer the host keeps drawing into (entities, particles, hand).
         void RunDepthToBackbuffer(bgfx::ViewId view, bgfx::FrameBufferHandle backbuffer, int w, int h) {
             static const ExpandedSource vs = MakeSource(kFullscreenVertex), fs = MakeSource(kCopyDepthFragment);
             Program* p = GetProgram("builtin_copy_depth", FullscreenMask(), true, &vs, &fs);
@@ -698,7 +680,6 @@ namespace perlin::jshader {
             SubmitQuad(view, *p, FullscreenDraw(w, h), BGFX_STATE_WRITE_Z | BGFX_STATE_DEPTH_TEST_ALWAYS);
         }
 
-        // Runs one composite-style pass. Returns false when the program is missing.
         bool RunPass(bgfx::ViewId view, const std::string& name, bool toBackbuffer, bgfx::FrameBufferHandle backbuffer, int outW, int outH) {
             Program* p = GetProgram(name, FullscreenMask(), toBackbuffer);
             if (!p) return false;
@@ -754,7 +735,6 @@ namespace perlin::jshader {
         }
     };
 
-    // ------------------------------------------------------------------------------------------------------
     Pipeline::Pipeline(std::shared_ptr<ShaderPackInstance> packInstance, const PipelineHost& hostInfo)
         : impl(std::make_unique<Impl>(*this)), pack(std::move(packInstance)), host(hostInfo) {
         Impl& m = *impl;
@@ -773,7 +753,6 @@ namespace perlin::jshader {
 
     Pipeline::~Pipeline() {
         Impl& m = *impl;
-        // Wait for background conversions before tearing down.
         for (auto& kv : m.pending) kv.second.wait();
         for (auto& kv : m.programs)
             if (kv.second->valid) bgfx::destroy(kv.second->handle);
@@ -802,7 +781,7 @@ namespace perlin::jshader {
             const std::string key = m.KeyFor(name, mask, toBackbuffer);
             if (m.programs.count(key)) return;
             if (!m.pending.count(key)) {
-                if (started >= 2) { remaining++; return; }   // reading and expanding sources is the part that runs on this thread
+                if (started >= 2) { remaining++; return; }
                 started++;
             }
             m.GetProgram(name, mask, toBackbuffer);
@@ -857,7 +836,6 @@ namespace perlin::jshader {
         m.viewSlots.clear();
         m.custom.Evaluate(m.frame, m.table);
 
-        // Clear views: colour buffers in groups of seven, depth with the first group.
         std::vector<int> used;
         for (int i = 0; i < kMaxColorTex; i++)
             if (m.bufs[static_cast<size_t>(i)].used) used.push_back(i);
@@ -888,7 +866,6 @@ namespace perlin::jshader {
             if (used.empty()) break;
         }
 
-        // Shadow map.
         if (m.shadowUsed && bgfx::isValid(m.shadowDepth)) {
             std::vector<bgfx::TextureHandle> tex;
             for (int i = 0; i < 2; i++)
@@ -899,7 +876,6 @@ namespace perlin::jshader {
             bgfx::setViewClear(v, BGFX_CLEAR_COLOR | BGFX_CLEAR_DEPTH, 0x00000000, 1.0f, 0);
         }
 
-        // begin* passes run before any geometry.
         m.RunChain("begin", VBegin);
     }
 
@@ -951,7 +927,6 @@ namespace perlin::jshader {
         const bgfx::ViewId finalView = m.ViewId(VFinal, 0);
         bool done = false;
         if (std::getenv("JSHADER_DEBUG_BUFFER")) {
-            // fall through to the built-in copy below, which displays the requested buffer
         } else if (pack->ProgramExists("final")) done = m.RunPass(finalView, "final", true, backbuffer, outW, outH);
         if (!done) {
             static const ExpandedSource vs = MakeSource(kFullscreenVertex), fs = MakeSource(kCopyColorFragment);
@@ -965,7 +940,6 @@ namespace perlin::jshader {
         }
         finalOk = done;
         if (!done) {
-            // the built-in copy runs only when the pack has no final pass or it failed; it counts as a pass when it ran
             finalOk = passesRun > 0;
         }
         if (depthToBackbuffer) m.RunDepthToBackbuffer(m.ViewId(VBackDepth, 0), backbuffer, outW, outH);

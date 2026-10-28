@@ -186,13 +186,11 @@ void AppPlatform_SDL::UpdateProgressWindow() {
     SDL_RenderClear(r);
     SDL_SetRenderDrawColor(r, 255, 255, 255, 255);
     SDL_RenderDebugText(r, 14, 12, l1.c_str());
-    // progress bar: dark track, light fill
     fill(14, 34, 352, 20, 0, 0, 0);
     fill(15, 35, 350, 18, 85, 85, 85);
     fill(15, 35, 350.0f * std::clamp(frac, 0.0f, 1.0f), 18, 198, 198, 198);
     SDL_SetRenderDrawColor(r, 170, 170, 170, 255);
     SDL_RenderDebugText(r, 14, 62, l2.c_str());
-    // Cancel button (same look as the game's grey buttons)
     fill(250, 84, 116, 24, 0, 0, 0);
     fill(251, 85, 114, 20, 170, 170, 170);
     fill(252, 86, 112, 19, 111, 111, 111);
@@ -223,6 +221,42 @@ void AppPlatform_SDL::SetClipboard(const std::string& text) {
             SDL_SetClipboardText(t->c_str());
         },
         new std::string(text), false);
+}
+
+std::string AppPlatform_SDL::GetClipboard() {
+    std::string text;
+    SDL_RunOnMainThread(
+        [](void* data) {
+            if (char* clip = SDL_GetClipboardText()) {
+                *static_cast<std::string*>(data) = clip;
+                SDL_free(clip);
+            }
+        },
+        &text, true);
+    return text;
+}
+
+double AppPlatform_SDL::DisplayRefreshHz() {
+    static double cached = 0.0;
+    static auto checked = std::chrono::steady_clock::time_point{};
+    const auto now = std::chrono::steady_clock::now();
+    if (now - checked < std::chrono::seconds(2))
+        return cached;
+    checked = now;
+    struct Query {
+        SDL_Window* window;
+        double hz;
+    } query{window, 0.0};
+    SDL_RunOnMainThread(
+        [](void* data) {
+            auto* q = static_cast<Query*>(data);
+            const SDL_DisplayID display = q->window ? SDL_GetDisplayForWindow(q->window) : SDL_GetPrimaryDisplay();
+            if (const SDL_DisplayMode* mode = display ? SDL_GetCurrentDisplayMode(display) : nullptr)
+                q->hz = static_cast<double>(mode->refresh_rate);
+        },
+        &query, true);
+    cached = query.hz;
+    return cached;
 }
 
 void AppPlatform_SDL::OpenUrl(const std::string& url) {
@@ -475,7 +509,6 @@ void AppPlatform_SDL::SetCursorCaptured(bool captured) {
 
 void AppPlatform_SDL::HandleEvent(const SDL_Event& e) {
     if (progWindowId != 0) {
-        // events of the export progress window never reach the game
         Uint32 wid = 0;
         if (e.type == SDL_EVENT_KEY_DOWN || e.type == SDL_EVENT_KEY_UP)
             wid = e.key.windowID;
@@ -583,17 +616,6 @@ void AppPlatform_SDL::HandleEvent(const SDL_Event& e) {
                 input->OnKeyDown(k);
             else if (k && e.key.repeat && input->TextMode())
                 input->OnKeyRepeat(k);
-            if (k == 'V' && input->TextMode() && (e.key.mod & SDL_KMOD_CTRL)) {
-                if (char* clip = SDL_GetClipboardText()) {
-                    const char* p = clip;
-                    while (*p) {
-                        Uint32 cp = SDL_StepUTF8(&p, nullptr);
-                        if (cp >= 32 && cp != 127)
-                            input->OnChar(static_cast<int>(cp));
-                    }
-                    SDL_free(clip);
-                }
-            }
         }
         break;
     case SDL_EVENT_TEXT_INPUT:

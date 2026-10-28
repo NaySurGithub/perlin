@@ -48,16 +48,16 @@ namespace perlin::replay {
         PutTag("hdrl");
         PutTag("avih");
         Put32(56);
-        Put32(static_cast<uint32_t>(std::lround(1e6 / fps))); // microseconds per frame
-        Put32(0);                                               // max bytes per second
-        Put32(0);                                               // padding
-        Put32(0x10);                                            // AVIF_HASINDEX
+        Put32(static_cast<uint32_t>(std::lround(1e6 / fps)));
+        Put32(0);
+        Put32(0);
+        Put32(0x10);
         avihFramesPos = std::ftell(f);
-        Put32(0); // total frames (patched)
+        Put32(0);
         Put32(0);
         Put32(1);
         strhBufPos = std::ftell(f);
-        Put32(0); // suggested buffer (patched)
+        Put32(0);
         Put32(static_cast<uint32_t>(w));
         Put32(static_cast<uint32_t>(h));
         for (int i = 0; i < 4; i++) Put32(0);
@@ -76,7 +76,7 @@ namespace perlin::replay {
         Put32(rate);
         Put32(0);
         strhLengthPos = std::ftell(f);
-        Put32(0); // length (patched)
+        Put32(0);
         Put32(0);
         Put32(0xFFFFFFFFu);
         Put32(0);
@@ -120,7 +120,7 @@ namespace perlin::replay {
             return false;
         const long chunkPos = std::ftell(f);
         if (static_cast<unsigned long>(chunkPos) + jpeg.size() + 4096 + index.size() * 16 > 0xFFFFFFF0ul)
-            return false; // classic AVI is limited to 4 GB
+            return false;
         PutTag("00dc");
         Put32(static_cast<uint32_t>(jpeg.size()));
         std::fwrite(jpeg.data(), 1, jpeg.size(), f);

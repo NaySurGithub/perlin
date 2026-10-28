@@ -5,6 +5,8 @@
 #include <cstdio>
 
 #include "client/ui/RmlEmit.hpp"
+#include "client/ui/TextEdit.hpp"
+#include "client/ui/UiTemplate.hpp"
 
 namespace perlin::ui {
     namespace {
@@ -66,6 +68,7 @@ div { display: block; position: absolute; }
 </head>
 <body>
 )";
+        const ScreenTemplateDefault kReplayDefault("replay_screen.rml", kStyle);
 
         std::string Button(const std::string& id, float x, float y, float w, const std::string& label, bool on = false, bool off = false) {
             std::string d = "<div id=\"" + id + "\" class=\"btn" + (on ? " on" : "") + (off ? " off" : "") + "\" style=\"left: " + F(x) + "px; top: " + F(y) + "px; width: " + F(w) + "px;\">";
@@ -112,7 +115,7 @@ div { display: block; position: absolute; }
     }
 
     std::string BuildReplayBarRml(const ReplayBarModel& m, int guiW, int guiH) {
-        std::string d = kStyle;
+        std::string d = ScreenTemplate("replay_screen.rml", kStyle);
         const size_t body = d.find("<body>");
         d.insert(body + 6, "");
         d.replace(body, 6, "<body style=\"width: " + N(guiW) + "px; height: " + N(guiH) + "px;\">");
@@ -134,7 +137,6 @@ div { display: block; position: absolute; }
         d += Rect(l.x, l.y, l.w, 1, "#ffffff55", 4);
         d += Text(6, l.y + 5, l.w / 2, m.title.empty() ? "Replay" : m.title, "yellow");
         d += Text(l.w / 2, l.y + 5, l.w / 2 - 6, m.status.empty() ? shown : m.status + "   " + shown, "", "right");
-        // timeline
         d += Rect(l.trackX - 1, l.trackY - 1, l.trackW + 2, l.trackH + 2, "#000000", 5);
         d += Rect(l.trackX, l.trackY, l.trackW, l.trackH, "#3a3a3a", 5);
         const double dur = std::max(1.0, m.durationMs);
@@ -152,7 +154,6 @@ div { display: block; position: absolute; }
         d += Rect(xAt(cur) - 1, l.trackY - 3, 3, l.trackH + 6, "#ffffff", 8);
         d += Text(4, l.trackY + 1, 34, FormatReplayTime(cur), "gray");
         d += Text(l.trackX + l.trackW + 4, l.trackY + 1, 34, FormatReplayTime(m.durationMs), "gray");
-        // clickable strip over the whole track (taller than the bar for easy grabbing)
         d += "<div id=\"" + std::string(kRbTrack) + "\" style=\"left: " + F(l.trackX - 3) + "px; top: " + F(l.trackY - 5) + "px; width: " + F(l.trackW + 6) + "px; height: " + F(l.trackH + 10) + "px; z-index: 9;\"></div>\n";
 
         struct B {
@@ -207,7 +208,7 @@ div { display: block; position: absolute; }
     }
 
     std::string BuildPanelRml(const PanelModel& m, int guiW, int guiH) {
-        std::string d = kStyle;
+        std::string d = ScreenTemplate("replay_screen.rml", kStyle);
         const size_t body = d.find("<body>");
         d.replace(body, 6, "<body style=\"width: " + N(guiW) + "px; height: " + N(guiH) + "px;\">");
         const PanelLayout l = ComputePanelLayout(m, guiW, guiH);
@@ -258,7 +259,6 @@ div { display: block; position: absolute; }
                 d += "<div id=\"" + r.id + "\" style=\"left: " + F(wx) + "px; top: " + F(y + 1) + "px; width: " + F(ww) + "px; height: 20px; background-color: " +
                      (r.focused ? "#ffffff" : "#666666") + "; z-index: 5;\"></div>\n";
                 d += Rect(wx + 1, y + 2, ww - 2, 18, "#000000", 6);
-                // keep the tail of long values visible
                 std::string shown = r.value;
                 const int maxPx = static_cast<int>(ww) - 8;
                 while (!shown.empty() && TextWidth(shown) > maxPx) {
@@ -266,7 +266,11 @@ div { display: block; position: absolute; }
                     while (cut < shown.size() && (static_cast<unsigned char>(shown[cut]) & 0xC0) == 0x80) cut++;
                     shown.erase(0, cut);
                 }
-                d += Text(wx + 4, y + 7, ww - 6, shown + (r.focused && m.caret ? "_" : ""), r.enabled ? "" : "gray");
+                if (r.focused && shown == r.value)
+                    d += "<div class=\"txt" + std::string(r.enabled ? "" : " gray") + "\" style=\"left: " + F(wx + 4) + "px; top: " + F(y + 7) + "px; width: " +
+                         F(ww - 6) + "px; height: 9px; text-align: left;\">" + TextFieldRml(r.value, m.caret) + "</div>\n";
+                else
+                    d += Text(wx + 4, y + 7, ww - 6, shown + (r.focused && m.caret ? "_" : ""), r.enabled ? "" : "gray");
                 break;
             }
             }
@@ -329,7 +333,7 @@ div { display: block; position: absolute; }
     EditorBuilt BuildEditorRml(const EditorModel& m, int guiW, int guiH) {
         EditorBuilt out;
         std::string& d = out.rml;
-        d = kStyle;
+        d = ScreenTemplate("replay_screen.rml", kStyle);
         const size_t body = d.find("<body>");
         d.replace(body, 6, "<body style=\"width: " + N(guiW) + "px; height: " + N(guiH) + "px;\">");
         const EditorLayout l = ComputeEditorLayout(guiW, guiH);
@@ -342,7 +346,6 @@ div { display: block; position: absolute; }
         const float panelBg = 0;
         (void)panelBg;
 
-        // ---- menu bar ----
         d += Rect(0, 0, l.guiW, l.menuH + 4, "#0d0f14ee", 2);
         d += Rect(0, l.menuH + 4, l.guiW, 1, "#ffffff22", 3);
         {
@@ -354,14 +357,12 @@ div { display: block; position: absolute; }
                 const float w = static_cast<float>(std::max(24, TextWidth(b.label) + 12));
                 if (x + w > l.guiW - 80)
                     break;
-                // slim 14px buttons: drawn at full size scaled by clipping, so use the normal button but tighter spacing
                 button(b.id, x, -3, w, b.label);
                 x += w + 3;
             }
             d += Text(x + 4, 5, l.guiW - x - 8, m.status.empty() ? m.title : m.status, m.status.empty() ? "gray" : "yellow", "right");
         }
 
-        // ---- inspector (right) ----
         d += Rect(l.sideX, l.sideTop + 4, l.sideW, l.sideBottom - l.sideTop - 4, "#101218ee", 2);
         d += Rect(l.sideX, l.sideTop + 4, 1, l.sideBottom - l.sideTop - 4, "#ffffff22", 3);
         {
@@ -420,12 +421,10 @@ div { display: block; position: absolute; }
             }
         }
 
-        // ---- timeline dock ----
         d += Rect(0, l.dockY, l.guiW, l.dockH, "#0d0f14f2", 2);
         d += Rect(0, l.dockY, l.guiW, 1, "#ffffff33", 3);
         {
             float x = 4;
-            // the zoom group on the right keeps its space; left items that do not fit are dropped
             const float limit = l.guiW - 6 - static_cast<float>(TextWidth("Fit") + 12 + TextWidth("Zoom +") + 12 + TextWidth("Zoom -") + 12 + 6);
             const auto tb = [&](const char* id, const std::string& label, float w) {
                 if (x + w > limit)
@@ -445,7 +444,6 @@ div { display: block; position: absolute; }
             }
             tb("t_addkey", "+ Camera key", static_cast<float>(TextWidth("+ Camera key") + 12));
             tb("t_delkey", "Delete key", static_cast<float>(TextWidth("Delete key") + 12));
-            // zoom group on the right
             float rx = l.guiW - 6;
             const auto rb = [&](const char* id, const std::string& label) {
                 const float w = static_cast<float>(std::max(20, TextWidth(label) + 12));
@@ -461,7 +459,6 @@ div { display: block; position: absolute; }
         const float tlW = l.tlX1 - l.tlX0;
         const auto xAt = [&](double t) { return EditorXAtTime(l, m, t); };
         const auto visible = [&](float x) { return x >= l.tlX0 - 1 && x <= l.tlX1 + 1; };
-        // ruler
         d += Rect(l.tlX0, l.rulerY, tlW, l.rulerH, "#181b24", 3);
         {
             static const double steps[] = {50, 100, 200, 500, 1000, 2000, 5000, 10000, 15000, 30000, 60000, 120000, 300000, 600000, 1800000, 3600000};
@@ -486,7 +483,6 @@ div { display: block; position: absolute; }
                 }
             }
         }
-        // track rows
         static const char* const kTrackName[4] = {"Camera", "Speed", "Time of day", "Markers"};
         static const char* const kTrackColor[4] = {"#ffd84d", "#4dc3ff", "#ff7a4d", "#7dff7d"};
         static const char* const kClipColor[3] = {"#5a4a1a", "#1a4a5a", "#5a2a1a"};
@@ -498,7 +494,6 @@ div { display: block; position: absolute; }
             hit("track" + N(tr), l.tlX0, y, tlW, l.trackH - 1);
         }
         hit("ruler", l.tlX0, l.rulerY, tlW, l.rulerH);
-        // in/out region
         if (m.inMs >= 0 || m.outMs >= 0) {
             const float a = std::clamp(xAt(m.inMs >= 0 ? m.inMs : 0.0), l.tlX0, l.tlX1);
             const float b = std::clamp(xAt(m.outMs >= 0 ? m.outMs : m.durationMs), l.tlX0, l.tlX1);
@@ -534,7 +529,6 @@ div { display: block; position: absolute; }
                 d += Rect(x - 1, y + 2, 3, 13, kTrackColor[3], 7);
             }
         }
-        // playhead
         {
             const float x = xAt(m.timeMs);
             if (visible(x)) {
@@ -542,7 +536,6 @@ div { display: block; position: absolute; }
                 d += Rect(x - 3, l.rulerY, 7, 5, "#ffffff", 9);
             }
         }
-        // horizontal scrollbar
         {
             const double dur = std::max(1.0, m.durationMs);
             d += Rect(l.tlX0, l.scrollY, tlW, l.scrollH, "#1d2029", 3);

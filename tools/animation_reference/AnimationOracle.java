@@ -11,7 +11,6 @@ import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.item.component.SwingAnimation;
 
-// Executes the original client classes. No animation formulas are duplicated here.
 public final class AnimationOracle {
     private static void roots(String file) throws Exception {
         var unsafeField = sun.misc.Unsafe.class.getDeclaredField("theUnsafe");

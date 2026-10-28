@@ -93,7 +93,6 @@ namespace perlin::replay {
         if (!recorder.Stop(outPath, {}, error))
             return false;
         if (!recordingPacks.empty()) {
-            // The server's resource packs are stored too, so the replay looks the same on any computer.
             std::vector<ArchiveAdd> adds;
             ui::Json list = ui::Json::MakeArray();
             std::set<std::string> seen;
@@ -123,8 +122,6 @@ namespace perlin::replay {
     }
 
     bool ReplayController::RecoverInterrupted(std::string& recoveredPath) {
-        // The recorder writes chunk_N.bin as it goes but metadata.json only on Stop(), so the folder alone is not enough to
-        // rebuild timings. We rebuild the chunk table by scanning the files.
         const fs::path dir = WorkDir();
         std::error_code ec;
         if (!fs::exists(dir, ec))
@@ -252,15 +249,12 @@ namespace perlin::replay {
 
     void ReplayController::Seek(double ms) {
         ms = std::clamp(ms, 0.0, static_cast<double>(meta.durationMs));
-        // Best snapshot chunk at or before the target (chunk 0 always works).
         size_t best = 0;
         for (size_t i = 0; i < meta.chunks.size(); i++)
             if (meta.chunks[i].snapshot && meta.chunks[i].startMs <= ms)
                 best = i;
         const bool backwards = ms < timeMs - 1.0;
         if (backwards) {
-            // Going back: the caller rewinds the world (undo log) and restarts the entity state from the snapshot.
-            // Going forward never restarts, the packets in between are simply applied faster.
             restartRequested = true;
             chunkIndex = best;
             recordIndex = 0;
@@ -333,7 +327,6 @@ namespace perlin::replay {
                 progressed = true;
                 if (budgetMs > 0 && (recordIndex & 63) == 0 &&
                     std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - started).count() > budgetMs) {
-                    // out of time this frame: advance the clock only as far as we got
                     timeMs = std::min(target, static_cast<double>(rec.timeMs));
                     return true;
                 }
@@ -371,7 +364,6 @@ namespace perlin::replay {
     bool ReplayController::SaveArchiveFile(const std::string& name, const std::string& content, std::string& error) {
         if (path.empty())
             return false;
-        // The reader keeps the archive open; release it while the file is rewritten.
         reader.reset();
         const bool ok = UpdateArchiveFile(path, name, content, error);
         auto r = std::make_unique<Reader>();
@@ -396,7 +388,6 @@ namespace perlin::replay {
         Pose out = recorded;
         if (!recorded.known || !chunkLoaded)
             return out;
-        // next recorded sample after the ones already applied
         const size_t limit = std::min(chunkRecords.size(), recordIndex + 600);
         for (size_t i = recordIndex; i < limit; i++) {
             const Record& r = chunkRecords[i];
@@ -407,7 +398,7 @@ namespace perlin::replay {
             if (span <= 0.5 || span > 600.0)
                 return out;
             const float dx = f(8) - recorded.x, dy = f(12) - recorded.y, dz = f(16) - recorded.z;
-            if (dx * dx + dy * dy + dz * dz > 64.0f) // teleport: don't slide across the map
+            if (dx * dx + dy * dy + dz * dz > 64.0f)
                 return out;
             const float t = static_cast<float>(std::clamp((timeMs - recordedAtMs) / span, 0.0, 1.0));
             out.x = recorded.x + dx * t;

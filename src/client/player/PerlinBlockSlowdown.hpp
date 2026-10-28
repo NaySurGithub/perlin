@@ -7,9 +7,6 @@
 #include <optional>
 
 namespace perlin::physics::bds {
-    // applySlowdownOnMove callback 0x140C1EF20. UCOMISS/JNZ treats
-    // unordered lanes like zero here; even the smallest nonzero finite lane
-    // activates the entire vector. Stored velocity is cleared before collision.
     inline bool ApplyBlockSlowdown(Float3& multiplier, Float3& movement, Float3& velocity) {
         bool active = false;
         for (float lane : {multiplier.x, multiplier.y, multiplier.z})
@@ -24,8 +21,6 @@ namespace perlin::physics::bds {
         return true;
     }
 
-    // EntityInside slowdown accumulator 0x140B58EA0 and first applied-record
-    // constructor 0x140B80D80. Existing applied records retain their first value.
     inline void AccumulateBlockSlowdown(Float3& multiplier, const Float3& incoming,
                                         std::optional<bool>& firstApplication) {
         constexpr float epsilon = std::numeric_limits<float>::epsilon();
@@ -45,14 +40,11 @@ namespace perlin::physics::bds {
         }
     }
 
-    // adjustFallDistance callback 0x140C1EF10; ECS membership supplies the byte.
     inline void AdjustSlowdownFallDistance(bool firstApplication, float& fallDistance) {
         if (firstApplication)
             fallDistance = 0.0f;
     }
 
-    // immunePlayer 0x140C1EE80: MovementAbilities value bits 0 and 2 are
-    // flying and instabuild. The native helper also erases the applied record.
     inline void ApplyPlayerSlowdownImmunity(Float3& multiplier, std::optional<bool>& firstApplication,
                                             bool flying, bool instabuild) {
         if (flying && instabuild) {

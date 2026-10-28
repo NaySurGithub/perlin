@@ -21,7 +21,6 @@ namespace perlin {
             return s;
         }
 
-        // Text files saved by Windows editors often start with a UTF-8 byte order mark, which the JSON reader rejects.
         void StripBom(std::string& text) {
             if (text.size() >= 3 && static_cast<unsigned char>(text[0]) == 0xEF && static_cast<unsigned char>(text[1]) == 0xBB &&
                 static_cast<unsigned char>(text[2]) == 0xBF)
@@ -66,8 +65,6 @@ namespace perlin {
             }
         };
 
-        // pack.mcmeta descriptions are plain text or a text component ({"text": "...", "color": "gold", "extra": [...]}, or a
-        // list of them). Flattened to text with section-sign formatting codes so the UI can colour it.
         void Flatten(const ui::Json& node, std::string& out, const std::string& inheritedCode) {
             static const std::pair<const char*, char> kColors[] = {
                 {"black", '0'}, {"dark_blue", '1'}, {"dark_green", '2'}, {"dark_aqua", '3'}, {"dark_red", '4'}, {"dark_purple", '5'},
@@ -123,8 +120,6 @@ namespace perlin {
                 return meta;
             src.zip = true;
             src.open = true;
-            // The pack's root is the folder holding its manifest.json / pack.mcmeta / pack.json (the shallowest one if there are
-            // several), which may be inside a wrapper folder.
             const mz_uint count = mz_zip_reader_get_num_files(&src.archive);
             size_t bestDepth = std::string::npos;
             for (mz_uint i = 0; i < count; i++) {

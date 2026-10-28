@@ -91,7 +91,6 @@ def generate(data):
                   *(v for r in regions for v in r), len(reads),
                   *(v & 0xFFFFFFFF for cell in reads for v in cell), len(visits),
                   *(v for visit in visits for v in (visit[0], *(p & 0xFFFFFFFF for p in visit[1:])))]
-        # Positions use signed-32 storage, distinct from the opaque 64-bit block identity.
         for i, visit in enumerate(visits):
             if visit[0] != HEAP + 0x5000 + ((i + 1) % 8) * 8 or visit[1:] != reads[i]:
                 raise RuntimeError('Inside visitor arguments differ from acquired block/cell')
@@ -101,7 +100,7 @@ def generate(data):
         bounds = (x, -100000, z, x + rng.uniform(0, 40), 100000, z + rng.uniform(0, 40))
         if i % 16 == 0:
             edge = math.floor(x / 16) * 16
-            bounds = (edge, 0, z, edge - 1, 1, z)  # Zero product returns without chunk lookup.
+            bounds = (edge, 0, z, edge - 1, 1, z)
         mode = i % 5
         reject = i & 1
         entry = machine.call(0x143E8D580, [HEAP, HEAP + 0x100, reject])
