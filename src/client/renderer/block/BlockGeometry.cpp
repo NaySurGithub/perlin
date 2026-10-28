@@ -274,7 +274,9 @@ namespace perlin {
         const json::View mi = comps["minecraft:material_instances"];
         if (mi.isObject()) {
             hasMaterials = true;
-            const json::View table = mi["mappings"].isObject() ? mi["mappings"] : mi;
+            // Resource packs write instances directly ({"*": {...}, "up": {...}}); the server's block definitions
+            // (network NBT) nest them under "materials", with "mappings" naming which instance a face uses.
+            const json::View table = mi["materials"].isObject() ? mi["materials"] : mi;
             for (const auto m : table.members()) {
                 if (!m.value.isObject())
                     continue;
@@ -289,6 +291,16 @@ namespace perlin {
                 tiles[key] = tile;
                 dimming[key] = m.value["face_dimming"].boolean(true);
             }
+            if (mi["mappings"].isObject())
+                for (const auto m : mi["mappings"].members()) {
+                    if (!m.value.isString())
+                        continue;
+                    const auto target = tiles.find(m.value.str());
+                    if (target != tiles.end() && !tiles.count(m.key)) {
+                        tiles[m.key] = target->second;
+                        dimming[m.key] = dimming[m.value.str()];
+                    }
+                }
         }
         const json::View tr = comps["minecraft:transformation"];
         if (tr.isObject()) {

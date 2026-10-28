@@ -606,7 +606,9 @@ namespace perlin::ui {
                 n.lines.clear();
                 if (n.text.empty())
                     return;
-                const float wrap = n.w + 0.01f;
+                // Never break lines tighter than the size pass laid them out (its widest line is textWidth): a label
+                // sized to its text must keep the lines it was measured with.
+                const float wrap = std::max(n.w, n.textWidth) + 0.01f;
                 WrapLines(n.text, scale, ten, wrap, n.lines);
                 (void)lines;
                 (void)width;
@@ -1052,7 +1054,8 @@ namespace perlin::ui {
                 if (n.type == "label") {
                     float scale = FontScale(n);
                     const bool ten = TenLabel(n);
-                    const std::string plain = StripFormatting(n.text);
+                    // Measure the text as drawn: the font skips format codes itself and counts bold (§l) glyphs wider.
+                    const std::string& plain = n.text;
                     float wrap = kUnknown;
                     DimContext c;
                     c.parent = pw;
