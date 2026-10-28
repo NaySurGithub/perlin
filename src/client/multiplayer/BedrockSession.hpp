@@ -636,6 +636,7 @@ void RequestRespawn();
         bool SendLeaveVehicle();
         int64_t RidingUid() const { return ridingUid.load(); }
         bool SendPickBlock(int bx, int by, int bz);
+        bool SendPickEntity(uint64_t runtimeId);
         bool SendDropSelected(int count);
         bool OpenInventory();
         bool OpenMountInventory();

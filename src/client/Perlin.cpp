@@ -7481,8 +7481,13 @@ namespace perlin {
                             live->SendReleaseItem(eyeF);
                     }
 
-                    if (live && inputManager.Pressed(Action::PickBlock) && gAim.kind == AimHit::Kind::Block)
-                        live->SendPickBlock(gAim.bx, gAim.by, gAim.bz);
+                    if (live && inputManager.Pressed(Action::PickBlock)) {
+                        entity::Entity picked;
+                        if (gAim.kind == AimHit::Kind::Block)
+                            live->SendPickBlock(gAim.bx, gAim.by, gAim.bz);
+                        else if (gAim.kind == AimHit::Kind::Entity && live->Entities().Find(gAim.entity, picked))
+                            live->SendPickEntity(picked.runtimeId);
+                    }
 
                     if (live && inputManager.Pressed(Action::Drop) && !held.Empty())
                         live->SendDropSelected(inputManager.IsDown(Action::Sprint) ? 0 : 1);
