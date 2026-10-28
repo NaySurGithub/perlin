@@ -6923,7 +6923,11 @@ namespace perlin {
                 previewEntities.SetSkin("preview" + std::to_string(i), skin);
             } else {
                 const uint64_t flags = variant.find("baby") != std::string::npos ? entity::flag::Baby : 0;
-                previewEntities.AddEntity(rid, static_cast<int64_t>(rid), "minecraft:" + type, p, PERLIN_ENV("PERLIN_PREVIEW_ENTITY_PITCH") ? static_cast<float>(std::atof(PERLIN_ENV("PERLIN_PREVIEW_ENTITY_PITCH"))) : 0.0f, yaw, yaw, flags, 1.0f, 0, 0, 0);
+                // "namespace/name" previews a server pack's entity; anything else is a vanilla one.
+                std::string id = "minecraft:" + type;
+                if (const size_t slash = type.find('/'); slash != std::string::npos)
+                    id = type.substr(0, slash) + ":" + type.substr(slash + 1);
+                previewEntities.AddEntity(rid, static_cast<int64_t>(rid), id, p, PERLIN_ENV("PERLIN_PREVIEW_ENTITY_PITCH") ? static_cast<float>(std::atof(PERLIN_ENV("PERLIN_PREVIEW_ENTITY_PITCH"))) : 0.0f, yaw, yaw, flags, 1.0f, 0, 0, 0);
             }
             if (type == "fishing_hook")
                 previewEntities.SetOwner(rid, 1000);
