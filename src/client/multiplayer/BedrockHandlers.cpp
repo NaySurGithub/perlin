@@ -249,7 +249,7 @@ namespace perlin {
                     break;
                 case 35:
                 case 8:
-                    lastError += " (version mismatch with Perlin's 1.26.50)";
+                    lastError += " (version mismatch with Perlin's 1.26.60)";
                     break;
                 case 46:
                     lastError += " (the server wants an Xbox login: use --login)";
@@ -323,13 +323,14 @@ namespace perlin {
         On<ResourcePackDataInfoPacket>([this](const ResourcePackDataInfoPacket& info) {
             const auto step = packs.OnDataInfo(info);
             if (step.step == PackDownloader::Step::RequestChunk) {
-                Send(proto::ResourcePackChunkRequestPacket{.packId = step.packId, .chunkIndex = step.chunkIndex});
+                for (const uint32_t index : step.chunks)
+                    Send(proto::ResourcePackChunkRequestPacket{.packId = step.packId, .chunkIndex = index});
             } else if (step.step == PackDownloader::Step::Failed) {
                 lastError = "resource pack download failed: " + step.message;
                 state = State::Failed;
             } else if (step.step == PackDownloader::Step::PackDone) {
-                if (step.hasNext)
-                    Send(proto::ResourcePackChunkRequestPacket{.packId = step.nextPackId, .chunkIndex = 0});
+                for (const uint32_t index : step.chunks)
+                    Send(proto::ResourcePackChunkRequestPacket{.packId = step.nextPackId, .chunkIndex = index});
                 if (packs.AllReceived()) {
                     packs.MountAll();
                 i18n::Lang::Get().Invalidate();
@@ -343,13 +344,14 @@ namespace perlin {
         On<ResourcePackChunkDataPacket>([this](const ResourcePackChunkDataPacket& chunk) {
             const auto step = packs.OnChunk(chunk);
             if (step.step == PackDownloader::Step::RequestChunk) {
-                Send(proto::ResourcePackChunkRequestPacket{.packId = step.packId, .chunkIndex = step.chunkIndex});
+                for (const uint32_t index : step.chunks)
+                    Send(proto::ResourcePackChunkRequestPacket{.packId = step.packId, .chunkIndex = index});
             } else if (step.step == PackDownloader::Step::Failed) {
                 lastError = "resource pack download failed: " + step.message;
                 state = State::Failed;
             } else if (step.step == PackDownloader::Step::PackDone) {
-                if (step.hasNext)
-                    Send(proto::ResourcePackChunkRequestPacket{.packId = step.nextPackId, .chunkIndex = 0});
+                for (const uint32_t index : step.chunks)
+                    Send(proto::ResourcePackChunkRequestPacket{.packId = step.nextPackId, .chunkIndex = index});
                 if (packs.AllReceived()) {
                     packs.MountAll();
                 i18n::Lang::Get().Invalidate();

@@ -18,8 +18,8 @@ int main(int argc, char** argv) {
     palette.SetSequential(true);
     // A server without vanilla data-driven definitions uses the compact table.
     // Lifeboat's primary and empty secondary chunk layers both use this air ID.
-    Check(palette.SequentialAir() == 15844, "undeclared blocks shifted Lifeboat air");
-    Check(palette.InternRuntime(15844) == 0, "Lifeboat air rendered as a block");
+    Check(palette.SequentialAir() == 17713, "undeclared blocks shifted Lifeboat air");
+    Check(palette.InternRuntime(17713) == 0, "Lifeboat air rendered as a block");
 
     const auto document = json::Document::Parse(text);
     Check(document.has_value(), "invalid palette JSON");
@@ -46,13 +46,13 @@ int main(int argc, char** argv) {
             run.hashes.push_back(static_cast<int32_t>(record[size_t{0}].integer()));
         }
     }
-    Check(declared.size() == 98, "unexpected 1.26.50 data-driven definitions");
+    Check(declared.size() == 98, "unexpected 1.26.60 data-driven definitions");
     std::vector<BlockPalette::CustomRun> runs;
     for (auto& [name, run] : declared) runs.push_back(std::move(run));
     palette.InsertCustomRuns(std::move(runs));
-    Check(palette.SequentialAir() == 17025, "declared vanilla definitions did not restore native IDs");
-    Check(palette.InternRuntime(17025) == 0, "native air did not resolve");
+    Check(palette.SequentialAir() == 18894, "declared vanilla definitions did not restore native IDs");
+    Check(palette.InternRuntime(18894) == 0, "native air did not resolve");
     palette.TruncateSequence();
-    Check(palette.SequentialAir() == 15844, "previous server's definitions survived reconnect");
+    Check(palette.SequentialAir() == 17713, "previous server's definitions survived reconnect");
     std::cout << "conditional block palette passed\n";
 }

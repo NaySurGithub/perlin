@@ -44,7 +44,7 @@ int main(int argc, char** argv) {
     std::string ad, err;
     CHECK(RakNet::Ping(host, port, ad, err));
     std::printf("ping: %s %s\n", ad.c_str(), err.c_str());
-    CHECK(ad.find("MCPE;Harness;2193") == 0);
+    CHECK(ad.find("MCPE;Harness;2225") == 0);
 
     RakNet rak;
     CHECK(rak.Connect(host, port));

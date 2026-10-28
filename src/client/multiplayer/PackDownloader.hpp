@@ -22,9 +22,10 @@ namespace perlin {
         struct Result {
             Step step = Step::Ignore;
             std::string packId;
-            uint32_t chunkIndex = 0;
+            // Chunks of packId to request now; several stay in flight to hide the round trip.
+            std::vector<uint32_t> chunks;
             std::string message;
-            bool hasNext = false;
+            // Set on PackDone when the next queued pack starts; chunks then belong to it.
             std::string nextPackId;
         };
         Result Tick();
@@ -55,6 +56,7 @@ namespace perlin {
             std::string packId;
             uint32_t chunkCount = 0;
             uint32_t next = 0;
+            uint32_t requested = 0;
             uint64_t size = 0;
             std::vector<uint8_t> hash;
             std::vector<uint8_t> data;
@@ -67,7 +69,10 @@ namespace perlin {
         std::string currentKey;
         std::vector<std::string> queuedKeys;
         std::chrono::steady_clock::time_point requestedAt{};
-        int retries = 0;
+        bool stallReported = false;
+        static constexpr uint32_t kWindow = 8;
+        // Requests the next chunks of the current pack until kWindow are outstanding.
+        void Refill(Active& a, Result& r);
         std::atomic<size_t> totalPacks{0}, donePacks{0};
         std::atomic<uint64_t> receivedBytes{0}, expectedBytes{0};
         std::string directory;

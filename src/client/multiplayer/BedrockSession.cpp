@@ -499,7 +499,7 @@ namespace perlin {
         }
         playerUuid = RandomUuid();
         if (account) {
-            constexpr const char* kServiceGameVersion = "1.26.50";
+            constexpr const char* kServiceGameVersion = "1.26.60";
             ClientIdentity* identityPtr = identity.get();
             const std::string publicKey = identity->PublicKeyB64();
             authTask = std::async(std::launch::async, [this, publicKey, kServiceGameVersion] {
@@ -540,6 +540,23 @@ namespace perlin {
             std::cout << "[perlin] transport: " << (useRak ? "raknet (no NetherNet endpoint found)" : "nethernet")
                       << std::endl;
         }
+        if (!useRak) {
+            if (!finishAuth())
+                return false;
+            auto nether = std::make_unique<NetherNet>();
+            if (friendLease ? nether->ConnectFriend(*friendLease, *identity) : nether->Connect(host, port, *identity)) {
+                net = std::move(nether);
+            } else if (!friendLease && transportMode == "auto") {
+                // Servers can advertise /v1/join yet refuse the offer while still serving RakNet.
+                std::cout << "[perlin] nethernet failed (" << nether->LastError() << "), falling back to raknet"
+                          << std::endl;
+                useRak = true;
+            } else {
+                lastError = "transport: " + nether->LastError();
+                state = State::Failed;
+                return false;
+            }
+        }
         usedRak = useRak;
         if (useRak) {
             auto rak = std::make_unique<RakNet>();
@@ -549,16 +566,6 @@ namespace perlin {
                 return false;
             }
             net = std::move(rak);
-        } else {
-            if (!finishAuth())
-                return false;
-            auto nether = std::make_unique<NetherNet>();
-            if (!(friendLease ? nether->ConnectFriend(*friendLease, *identity) : nether->Connect(host, port, *identity))) {
-                lastError = "transport: " + nether->LastError();
-                state = State::Failed;
-                return false;
-            }
-            net = std::move(nether);
         }
         serverProtocol = net->Info().protocol;
         if (serverProtocol <= 0) {
@@ -570,7 +577,7 @@ namespace perlin {
         serverAddress = friendLease ? friendLease->hostNetworkId : host + ":" + std::to_string(port);
         gameVersion = net->Info().version;
         if (gameVersion.empty())
-            gameVersion = "1.26.50";
+            gameVersion = "1.26.60";
         if (!SendRequestNetworkSettings()) {
             lastError = "failed to send RequestNetworkSettings";
             state = State::Failed;
@@ -792,9 +799,7 @@ namespace perlin {
             }
         }
         if (state == State::ResourcePacks) {
-            const auto retry = packs.Tick();
-            if (retry.step == PackDownloader::Step::RequestChunk)
-                Send(proto::ResourcePackChunkRequestPacket{.packId = retry.packId, .chunkIndex = retry.chunkIndex});
+            packs.Tick();
         }
         std::vector<uint8_t> msg;
         const auto receiveStart = std::chrono::steady_clock::now();

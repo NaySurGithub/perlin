@@ -214,38 +214,34 @@ namespace perlin {
             downloaded++;
             return r;
         }
-        r.packId = a.packId;
-        r.chunkIndex = 0;
-        active[key] = std::move(a);
+        auto& slot = active[key] = std::move(a);
         if (currentKey.empty()) {
             currentKey = key;
             requestedAt = std::chrono::steady_clock::now();
-            retries = 0;
-            r.step = Step::RequestChunk;
-            std::cout << "[packs] requesting " << r.packId << " chunk 0" << std::endl;
+            stallReported = false;
+            Refill(slot, r);
         } else {
             queuedKeys.push_back(key);
-            r.step = Step::Ignore;
         }
         return r;
     }
 
+    void PackDownloader::Refill(Active& a, Result& r) {
+        r.packId = a.packId;
+        while (a.requested < a.chunkCount && a.requested - a.next < kWindow)
+            r.chunks.push_back(a.requested++);
+        if (!r.chunks.empty())
+            r.step = Step::RequestChunk;
+    }
+
     PackDownloader::Result PackDownloader::Tick() {
-        Result r;
-        if (currentKey.empty())
-            return r;
-        const auto it = active.find(currentKey);
-        if (it == active.end())
-            return r;
-        if (std::chrono::steady_clock::now() - requestedAt < std::chrono::seconds(4) || retries >= 6)
-            return r;
-        retries++;
-        requestedAt = std::chrono::steady_clock::now();
-        r.step = Step::RequestChunk;
-        r.packId = it->second.packId;
-        r.chunkIndex = it->second.next;
-        std::cout << "[packs] no reply, asking again for " << r.packId << " chunk " << r.chunkIndex << " (try " << retries << ")" << std::endl;
-        return r;
+        // The transport is reliable, so a missing chunk is only late. Asking for it again makes
+        // PocketMine-style servers drop the client for a duplicate request, so just report the stall.
+        if (!currentKey.empty() && !stallReported && std::chrono::steady_clock::now() - requestedAt > std::chrono::seconds(10)) {
+            stallReported = true;
+            std::cout << "[packs] no chunk for 10 s, still waiting" << std::endl;
+        }
+        return {};
     }
 
     PackDownloader::Result PackDownloader::OnChunk(const proto::ResourcePackChunkDataPacket& chunk) {
@@ -264,11 +260,9 @@ namespace perlin {
         receivedBytes += chunk.payload.size();
         a.next++;
         requestedAt = std::chrono::steady_clock::now();
-        retries = 0;
+        stallReported = false;
         if (a.next < a.chunkCount) {
-            r.step = Step::RequestChunk;
-            r.packId = a.packId;
-            r.chunkIndex = a.next;
+            Refill(a, r);
             return r;
         }
         if (a.size != 0 && a.data.size() != a.size)
@@ -295,10 +289,11 @@ namespace perlin {
             queuedKeys.erase(queuedKeys.begin());
             const auto next = active.find(currentKey);
             if (next != active.end()) {
-                r.hasNext = true;
-                r.nextPackId = next->second.packId;
                 requestedAt = std::chrono::steady_clock::now();
-                retries = 0;
+                Result follow;
+                Refill(next->second, follow);
+                r.nextPackId = follow.packId;
+                r.chunks = std::move(follow.chunks);
             }
         }
         return r;
