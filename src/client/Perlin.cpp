@@ -7150,7 +7150,8 @@ namespace perlin {
                                        const auto hb = entityRenderer.HitBox(e);
                                        return glm::vec2(hb.first, hb.second);
                                    },
-                                   {camera.x, camera.y, camera.z}, glm::dvec3(camera.Direction()), 5.7, creative ? 7.0 : 3.0);
+                                   {camera.x, camera.y, camera.z}, glm::dvec3(camera.Direction()),
+                                   PickRange(creative, 1), creative ? 7.0 : 3.0);
                 }
                 if (PERLIN_ENV("PERLIN_AIM_DEBUG"))
                     std::cout << "[aim] kind " << static_cast<int>(gAim.kind) << " block " << gAim.bx << "," << gAim.by << "," << gAim.bz
@@ -7348,6 +7349,7 @@ namespace perlin {
                         request.direction = glm::dvec3(camera.Direction());
                         request.body = physics::BoundingBox(player.State(), player.Sneaking());
                         request.sneaking = player.Sneaking();
+                        request.reach = PickRange(creative, 1);
                         request.placedShape = heldShape;
                         request.horizontalSlab = held.name.find("slab") != std::string::npos && heldShape.size() == 1 &&
                             std::abs(heldShape[0].y1 - heldShape[0].y0 - 0.5) < 1e-5;
