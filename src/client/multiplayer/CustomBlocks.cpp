@@ -8,7 +8,11 @@
 #include "world/level/lighting/LightRegistry.hpp"
 #include "world/level/chunk/ChunkCodec.hpp"
 
+#include "util/Paths.hpp"
+
 #include <algorithm>
+#include <filesystem>
+#include <fstream>
 #include <cmath>
 #include <iostream>
 #include <map>
@@ -133,6 +137,7 @@ namespace perlin {
         size_t states = 0;
         palette.TruncateSequence();
         std::vector<BlockPalette::CustomRun> runs;
+        std::string customDump = "{\n";
         ServerBlocks::Instance().Reset();
         LightRegistry::Instance().ClearCustom();
         for (const proto::BlockPropertiesEntry& entry : blocks) {
@@ -245,6 +250,7 @@ namespace perlin {
             CustomBlockDef def;
             def.name = entry.name;
             def.json = nbt.Dump();
+            customDump += "\"" + entry.name + "\": " + def.json + ",\n";
             CustomBlockCollision collision;
             int emission = -1, dampening = -1;
             if (const ui::Json* components = nbt.Find("components"); components && components->IsObject()) {
@@ -301,6 +307,13 @@ namespace perlin {
             ServerBlocks::Instance().Add(std::move(def));
         }
         palette.InsertCustomRuns(std::move(runs));
+        // The server's custom block definitions as received, for checking geometry and materials offline.
+        if (customDump.size() > 3) {
+            customDump.resize(customDump.size() - 2);
+            std::error_code ec;
+            std::filesystem::create_directories(paths::DataDir() + "/ui_generated", ec);
+            std::ofstream(paths::DataDir() + "/ui_generated/custom_blocks.json", std::ios::binary | std::ios::trunc) << customDump << "\n}\n";
+        }
         return states;
     }
 }
