@@ -133,6 +133,7 @@ int main() {
         std::vector<uint8_t> payload = {1, 2, 3};
         wire::WriteVarUint32(b, (uint32_t)payload.size());
         b.insert(b.end(), payload.begin(), payload.end());
+        b.push_back(0);  // client_biome_update (protocol 1.26.60)
         LevelChunkPacket p;
         CHECK(Decode(b.data(), b.size(), p));
         CHECK(p.x == -3 && p.z == 12 && p.dimension == 0 && p.subChunkCount == 2);
@@ -150,6 +151,7 @@ int main() {
         b.push_back(0);
         wire::WriteVarUint32(b, 0);
         wire::WriteVarUint32(b, 0);
+        b.push_back(0);  // client_biome_update
         LevelChunkPacket p;
         CHECK(Decode(b.data(), b.size(), p));
         CHECK(p.highestSubchunkCount.has_value() && *p.highestSubchunkCount == 9);
@@ -167,6 +169,7 @@ int main() {
         for (int i = 0; i < 4; i++)
             wire::WriteLE32(b, (uint32_t)(i + 1));
         wire::WriteVarUint32(b, 0);
+        b.push_back(0);  // client_biome_update
         LevelChunkPacket p;
         CHECK(Decode(b.data(), b.size(), p));
         CHECK(p.highestSubchunkCount.has_value() && *p.highestSubchunkCount == -1 && p.cacheEnabled);
