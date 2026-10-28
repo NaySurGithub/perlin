@@ -127,7 +127,7 @@ namespace perlin {
         uint64_t creativeTemplateVersion = 0;
         std::optional<entity::Entity> dollSelf;
         int invHoverAddr = -1;
-        bool invWorkbench = false, invBook = false, invHorse = false;
+        bool invWorkbench = false, invBook = false, invHorse = false, invChest = false;
         std::chrono::steady_clock::time_point invMountAsk{};
         int invDragButton = 0;
         bool invMiddleDown = false;

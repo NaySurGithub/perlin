@@ -126,6 +126,64 @@ namespace perlin::entity {
                 out.push_back(std::move(d));
                 continue;
             }
+            if (shortName == "chest" || shortName == "trapped_chest" || shortName == "ender_chest" || shortName.ends_with("copper_chest")) {
+                std::string dir = palette.StateString(s.id, "minecraft:cardinal_direction", "");
+                if (dir.empty()) {
+                    static const char* const kFacing[] = {"south", "south", "north", "south", "west", "east"};
+                    dir = kFacing[std::clamp(palette.StateInt(s.id, "facing_direction", 3), 0, 5)];
+                }
+                BlockEntityDraw d;
+                d.kind = BlockEntityDraw::Kind::Skull;
+                d.origin = {static_cast<double>(s.x), static_cast<double>(s.y), static_cast<double>(s.z)};
+                d.yaw = dir == "north" ? 180.0f : dir == "west" ? 90.0f : dir == "east" ? 270.0f : 0.0f;
+                // The model's +x side, where a double chest's second half sits.
+                const int rx = dir == "south" ? 1 : dir == "north" ? -1 : 0, rz = dir == "west" ? 1 : dir == "east" ? -1 : 0;
+                // Find the other half: our own pairing, or a neighbour whose pairing points at us
+                // (one half's block entity can arrive later than the other's).
+                const bool gallery = std::getenv("PERLIN_PREVIEW_GALLERY") != nullptr;
+                const auto pairedWith = [&](int ox, int oz) {
+                    BlockEntity other;
+                    if (store.Get(ox, s.y, oz, other) && other.paired)
+                        return other.pairX == s.x && other.pairZ == s.z;
+                    if (!gallery)
+                        return false;
+                    for (const SpecialBlock& o : specials)
+                        if (o.x == ox && o.y == s.y && o.z == oz && o.id == s.id)
+                            return true;
+                    return false;
+                };
+                int side = 0;  // +1: partner on the model's +x side, -1: on its -x side
+                if (store.Get(s.x, s.y, s.z, be) && be.paired) {
+                    side = be.pairX == s.x + rx && be.pairZ == s.z + rz ? 1 : be.pairX == s.x - rx && be.pairZ == s.z - rz ? -1 : 0;
+                } else if (pairedWith(s.x - rx, s.z - rz)) {
+                    side = -1;
+                } else if (pairedWith(s.x + rx, s.z + rz)) {
+                    side = 1;
+                }
+                if (side < 0)
+                    continue;  // the other half draws the double chest
+                bool large = side > 0;
+                const int px = s.x + rx, pz = s.z + rz;
+                const bool ender = shortName == "ender_chest", trapped = shortName == "trapped_chest";
+                const int copper = shortName.find("oxidized") != std::string::npos   ? 4
+                                   : shortName.find("weathered") != std::string::npos ? 3
+                                   : shortName.find("exposed") != std::string::npos   ? 2
+                                   : shortName.ends_with("copper_chest")              ? 1
+                                                                                      : 0;
+                if (ender)
+                    large = false;
+                if (large)
+                    d.skull = 21 + (copper ? 1 + copper : trapped ? 1 : 0);
+                else
+                    d.skull = 14 + (copper ? 2 + copper : ender ? 2 : trapped ? 1 : 0);
+                d.lid = store.LidOpenness(s.x, s.y, s.z);
+                if (large)
+                    d.lid = std::max(d.lid, store.LidOpenness(px, s.y, pz));
+                if (const char* forcedLid = std::getenv("PERLIN_PREVIEW_LID"))
+                    d.lid = static_cast<float>(std::atof(forcedLid));
+                out.push_back(std::move(d));
+                continue;
+            }
             static const char* const kSkulls[] = {"skeleton_skull", "wither_skeleton_skull", "zombie_head", "player_head",
                                                    "creeper_head", "dragon_head", "piglin_head"};
             int skull = -1;

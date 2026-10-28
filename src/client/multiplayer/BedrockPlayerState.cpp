@@ -1,3 +1,4 @@
+#include <set>
 #include "client/multiplayer/ItemNbtInfo.hpp"
 #include <array>
 #include "util/Env.hpp"
@@ -140,6 +141,8 @@ namespace perlin {
         invSnapshots.clear();
         ridingUid = 0;
         invPendingRequest = 0;
+        invInFlight.clear();
+        immobile = false;
         recipes.clear();
         craftedRecipe = -1;
         titleText = TitleText{};
@@ -203,6 +206,11 @@ namespace perlin {
     }
 
     bool BedrockSession::SendSwingArm(const char* source) {
+        // Vanilla ignores a new swing until the current one is half done (3 of 6 ticks).
+        const auto now = std::chrono::steady_clock::now();
+        if (now - lastSwingAt < std::chrono::milliseconds(150))
+            return false;
+        lastSwingAt = now;
         AnimatePacket p;
         p.actionId = AnimatePacketActionId::SwingArm;
         p.runtimeEntityId = runtimeId;
@@ -270,6 +278,13 @@ namespace perlin {
                 return info;
             auto it = itemNames.find(raw.networkId);
             info.name = it == itemNames.end() ? std::string("minecraft:unknown") : it->second;
+            if (it == itemNames.end()) {
+                static std::set<int> reported;
+                if (reported.insert(raw.networkId).second)
+                    std::cout << "[items] unknown network id " << raw.networkId << " (registry has " << itemNames.size()
+                              << " items)" << std::endl;
+            }
+            info.networkId = raw.networkId;
             info.count = raw.count;
             info.aux = static_cast<int>(raw.metadata);
             info.blockRuntimeId = raw.blockRuntimeId;
@@ -327,7 +342,18 @@ namespace perlin {
             const bool uiWindow = window == WindowIDVarint::Ui || type == ContainerSlotType::Cursor || type == ContainerSlotType::CraftingInput ||
                                   type == ContainerSlotType::CraftingOutput || type == ContainerSlotType::CreativeOutput;
             const bool horseWin = inventory.horseOpen && horseWindow > 0 && static_cast<int>(window) == horseWindow;
+            const bool chestWin = inventory.chestOpen && chestWindow >= 0 && static_cast<int>(window) == chestWindow;
+            if (chestWin && whole)
+                inventory.chestSlots = std::clamp(static_cast<int>(items.size()), 0, kInvChestCount);
             for (size_t i = 0; i < items.size(); i++) {
+                if (chestWin) {
+                    const int c = firstSlot + static_cast<int>(i);
+                    if (c >= 0 && c < kInvChestCount) {
+                        inventory.chest[c] = convert(items[i]);
+                        chestRaw[c] = items[i];
+                    }
+                    continue;
+                }
                 if (horseWin) {
                     const int rawSlot = firstSlot + static_cast<int>(i);
                     const int h = type == ContainerSlotType::HorseEquip ? rawSlot : type == ContainerSlotType::Container ? rawSlot + 2 : rawSlot;
@@ -442,16 +468,22 @@ namespace perlin {
                     if (r.status == ItemStackResponsesEntryStatus::Ok)
                         before = snap->second;
                     else {
+                        // Predictions made after the rejected request built on it, so they are discarded too.
+                        invSnapshots.erase(invSnapshots.begin(), snap);
                         const int selected = inventory.selected;
                         inventory = snap->second.view;
                         inventory.selected = selected;
                         std::copy(std::begin(snap->second.raw), std::end(snap->second.raw), std::begin(inventoryRaw));
                         std::copy(std::begin(snap->second.extra), std::end(snap->second.extra), std::begin(extraRaw));
+                        std::copy(std::begin(snap->second.chest), std::end(snap->second.chest), std::begin(chestRaw));
                         InvRecomputeOutputLocked();
                     }
                     invSnapshots.erase(snap);
                 }
-                if (r.status != ItemStackResponsesEntryStatus::Ok || !r.containers)
+                invInFlight.erase(r.requestId);
+                // A newer request is still predicted on top of this one; its own answer carries the final slots.
+                const bool newerPending = !invSnapshots.empty() && invSnapshots.begin()->first < r.requestId;
+                if (r.status != ItemStackResponsesEntryStatus::Ok || !r.containers || newerPending)
                     continue;
                 for (const auto& c : *r.containers) {
                     const ContainerSlotType type = c.slotType.containerId;
@@ -467,9 +499,15 @@ namespace perlin {
                         case ContainerSlotType::CraftingOutput:
                         case ContainerSlotType::CreativeOutput: slot = kInvOutput; break;
                         case ContainerSlotType::Cursor: slot = kInvCursor; break;
+                        case ContainerSlotType::Container:
+                        case ContainerSlotType::Shulker:
+                        case ContainerSlotType::Barrel:
+                            if (inventory.chestOpen && s.slot < kInvChestCount)
+                                slot = kInvChest0 + s.slot;
+                            break;
                         default: break;
                         }
-                        if (slot < 0 || slot >= kInvSlots)
+                        if (slot < 0 || (slot >= kInvSlots && slot < kInvChest0) || slot >= kInvTotal)
                             continue;
                         ItemStackInfo& info = InvInfoLocked(slot);
                         ItemV4& raw = InvRawLocked(slot);
@@ -632,6 +670,25 @@ namespace perlin {
             } else {
                 inventory.horseOpen = false;
             }
+            inventory.chestOpen = false;
+            chestWindow = -1;
+            if (p.windowType == WindowType::Container) {
+                bool loaded = false;
+                const std::string name = BlockPalette::Instance().Name(netLevel.GetBlock(p.coordinates.x, p.coordinates.y, p.coordinates.z, loaded));
+                const auto has = [&](const char* s) { return name.find(s) != std::string::npos; };
+                chestSlotType = has("shulker_box") ? ContainerSlotType::Shulker : has("barrel") ? ContainerSlotType::Barrel : ContainerSlotType::Container;
+                inventory.chestTitle = has("ender_chest") ? "container.enderchest" : has("shulker_box") ? "container.shulkerBox"
+                                     : has("barrel")      ? "container.barrel"
+                                                          : "container.chest";
+                inventory.chestOpen = true;
+                inventory.chestSlots = 27;
+                chestWindow = static_cast<int>(p.windowId);
+                chestJustOpened = true;
+                for (int c = 0; c < kInvChestCount; c++) {
+                    inventory.chest[c] = ItemStackInfo{};
+                    chestRaw[c] = ItemV4{};
+                }
+            }
             if (workbenchOpen) {
                 workbenchJustOpened = true;
                 for (auto& w : inventory.work)
@@ -646,10 +703,17 @@ namespace perlin {
             workbenchOpen = false;
             inventory.horseOpen = false;
             horseWindow = -1;
+            inventory.chestOpen = false;
+            chestWindow = -1;
             for (auto& w : inventory.work)
                 w = ItemStackInfo{};
-            if (p.server)
+            if (p.server) {
                 serverClosedInventory = true;
+                // Vanilla acknowledges a server-initiated close, otherwise the server keeps the window open.
+                ContainerClosePacket ack = p;
+                ack.server = false;
+                Send(ack);
+            }
         });
 
         On<PlayerHotbarPacket>([this](const PlayerHotbarPacket& p) {
@@ -753,8 +817,10 @@ namespace perlin {
             std::lock_guard lock(statusMutex);
             for (const MetadataDictionaryEntry& e : p.metadata) {
                 int value = 0;
-                if (e.key == MetadataDictionaryEntryKey::Flags && IntegerOf(e, value))
+                if (e.key == MetadataDictionaryEntryKey::Flags && IntegerOf(e, value)) {
                     vitals.onFire = (value & 1) != 0;
+                    immobile = (value & (1 << 16)) != 0;
+                }
                 else if (e.key == MetadataDictionaryEntryKey::Air && IntegerOf(e, value))
                     vitals.air = value;
                 else if (e.key == MetadataDictionaryEntryKey::MaxAirdataMaxAir && IntegerOf(e, value) && value > 0)

@@ -166,7 +166,8 @@ namespace perlin::entity {
             return;
         }
         if (x) e.pos.x = *x;
-        if (y) e.pos.y = *y;
+        // Like move_entity, a player's delta carries the eye position, not the feet.
+        if (y) e.pos.y = e.isPlayer ? *y - kPlayerEye : *y;
         if (z) e.pos.z = *z;
         if (pitch) e.pitch = SignedPitch(*pitch);
         if (yaw) e.yaw = *yaw;

@@ -107,6 +107,9 @@ namespace perlin {
             return static_cast<uint8_t>(v >= 7 ? v + 2 : v);
         }
 
+        // Set under statusMutex when a chest-like container opens; every request is built under the same lock.
+        ContainerSlotType gChestSlotType = ContainerSlotType::Container;
+
         void Address(StackRequestSlotInfo& s, int a, const ItemV4& raw) {
             using C = ContainerSlotType;
             C type = C::HotbarAndInventory;
@@ -117,7 +120,8 @@ namespace perlin {
             else if (a >= BedrockSession::kInvWork0 && a < BedrockSession::kInvSlots) { type = C::CraftingInput; slot = 32 + a - BedrockSession::kInvWork0; }
             else if (a == BedrockSession::kInvOutput) { type = C::CreativeOutput; slot = 50; }
             else if (a == BedrockSession::kInvCursor) { type = C::Cursor; slot = 0; }
-            else if (a >= BedrockSession::kInvHorse0 && a < BedrockSession::kInvTotal) {
+            else if (a >= BedrockSession::kInvChest0 && a < BedrockSession::kInvTotal) { type = gChestSlotType; slot = a - BedrockSession::kInvChest0; }
+            else if (a >= BedrockSession::kInvHorse0 && a < BedrockSession::kInvChest0) {
                 const int h = a - BedrockSession::kInvHorse0;
                 if (h < 2) { type = C::HorseEquip; slot = h; }
                 else { type = C::Container; slot = h - 2; }
@@ -136,13 +140,15 @@ namespace perlin {
         if (a == kInvOffhand) return inventory.offhand;
         if (a < kInvOutput) return inventory.craft[a - kInvCraft0];
         if (a == kInvOutput) return inventory.output;
-        if (a >= kInvHorse0 && a < kInvTotal) return inventory.horse[a - kInvHorse0];
+        if (a >= kInvChest0 && a < kInvTotal) return inventory.chest[a - kInvChest0];
+        if (a >= kInvHorse0 && a < kInvChest0) return inventory.horse[a - kInvHorse0];
         if (a >= kInvWork0) return inventory.work[a - kInvWork0];
         return inventory.cursor;
     }
 
     ItemV4& BedrockSession::InvRawLocked(int a) {
-        if (a >= kInvHorse0 && a < kInvTotal) return horseRaw[a - kInvHorse0];
+        if (a >= kInvChest0 && a < kInvTotal) return chestRaw[a - kInvChest0];
+        if (a >= kInvHorse0 && a < kInvChest0) return horseRaw[a - kInvHorse0];
         return a < 36 ? inventoryRaw[a] : extraRaw[a - 36];
     }
 
@@ -237,7 +243,7 @@ namespace perlin {
 
     bool BedrockSession::InvBusy() const {
         std::lock_guard lock(statusMutex);
-        return invPendingRequest != 0 || !invQueue.empty();
+        return !invInFlight.empty() || !invQueue.empty();
     }
 
     void BedrockSession::InvEnqueue(std::function<bool(ItemStackRequest&)> op) {
@@ -254,11 +260,13 @@ namespace perlin {
             bool send = false, close = false;
             {
                 std::lock_guard lock(statusMutex);
-                if (invPendingRequest != 0 && std::chrono::steady_clock::now() - invPendingAt < std::chrono::milliseconds(1500))
+                const auto now = std::chrono::steady_clock::now();
+                std::erase_if(invInFlight, [&](const auto& e) { return now - e.second >= std::chrono::milliseconds(1500); });
+                if (invInFlight.size() >= 8)
                     return;
-                invPendingRequest = 0;
                 if (invQueue.empty()) {
-                    if (!invCloseWanted)
+                    // Closing waits for every answer so the server doesn't drop requests for a closed container.
+                    if (!invCloseWanted || !invInFlight.empty())
                         return;
                     invCloseWanted = false;
                     close = true;
@@ -273,6 +281,15 @@ namespace perlin {
                     snapshot.view = inventory;
                     std::copy(std::begin(inventoryRaw), std::end(inventoryRaw), std::begin(snapshot.raw));
                     std::copy(std::begin(extraRaw), std::end(extraRaw), std::begin(snapshot.extra));
+                    std::copy(std::begin(chestRaw), std::end(chestRaw), std::begin(snapshot.chest));
+                    std::copy(std::begin(horseRaw), std::end(horseRaw), std::begin(snapshot.horse));
+                    gChestSlotType = chestSlotType;
+                    if (legacyInventory) {
+                        // No response comes back on these servers: send the slot changes and move on.
+                        if (op(r) && !r.actions.empty())
+                            SendLegacyInventoryLocked(snapshot);
+                        continue;
+                    }
                     if (op(r) && !r.actions.empty()) {
                         invSnapshots[r.requestId] = std::move(snapshot);
                         if (invSnapshots.size() > 16)
@@ -292,7 +309,8 @@ namespace perlin {
                                 std::cout << "[inventory] send request " << r.requestId << ":" << text << std::endl;
                         }
                         invPendingRequest = r.requestId;
-                        invPendingAt = std::chrono::steady_clock::now();
+                        invPendingAt = now;
+                        invInFlight[r.requestId] = now;
                         pkt.requests.push_back(std::move(r));
                         send = true;
                     }
@@ -302,10 +320,8 @@ namespace perlin {
                 SendCloseNow();
                 return;
             }
-            if (send) {
+            if (send)
                 Send(pkt);
-                return;
-            }
         }
     }
 
@@ -336,8 +352,9 @@ namespace perlin {
                     di.count = n;
                     dr.count = static_cast<uint16_t>(n);
                     if (n != si.count) {
-                        dr.stackId.reset();
-                        dr.hasStackId = false;
+                        // A split stack has no server id yet; later requests refer to it by this request's id.
+                        dr.stackId = r.requestId;
+                        dr.hasStackId = true;
                     }
                 } else {
                     di.count += n;
@@ -525,7 +542,11 @@ namespace perlin {
                 InvRecomputeOutputLocked();
                 return ok;
             }
-            if (addr >= kInvHorse0) {
+            if (addr >= kInvChest0) {
+                ok = QuickMove(m, addr, {{0, 8}, {9, 35}});
+            } else if (addr < 36 && inventory.chestOpen && inventory.chestSlots > 0) {
+                ok = QuickMove(m, addr, {{kInvChest0, kInvChest0 + inventory.chestSlots - 1}});
+            } else if (addr >= kInvHorse0) {
                 ok = QuickMove(m, addr, mainThenHotbar);
             } else if (addr < 36 && inventory.horseOpen &&
                        ((S.name.find("saddle") != std::string::npos && inventory.horse[0].Empty()) ||
@@ -550,7 +571,7 @@ namespace perlin {
     }
 
     void BedrockSession::InvHotbarKey(int addr, int hotbar) {
-        if (addr < 0 || addr >= 36 || hotbar < 0 || hotbar > 8 || addr == hotbar)
+        if (addr < 0 || (addr >= 36 && addr < kInvChest0) || addr >= kInvTotal || hotbar < 0 || hotbar > 8 || addr == hotbar)
             return;
         InvEnqueue([this, addr, hotbar](ItemStackRequest& r) {
             Mover m{*this, r, [this](int a) -> ItemStackInfo& { return InvInfoLocked(a); }, [this](int a) -> ItemV4& { return InvRawLocked(a); }};
@@ -583,7 +604,7 @@ namespace perlin {
             const int max = MaxStack(C.name);
             std::vector<int> valid;
             for (int a : slots) {
-                if (a < 0 || a >= kInvSlots || a == kInvCursor || a == kInvOutput)
+                if (a < 0 || (a >= kInvSlots && a < kInvChest0) || a >= kInvTotal || a == kInvCursor || a == kInvOutput)
                     continue;
                 if (a >= kInvArmor0 && a < kInvOffhand && ArmorSlotOf(C.name) != a - kInvArmor0)
                     continue;
@@ -786,6 +807,65 @@ namespace perlin {
         std::lock_guard lock(statusMutex);
         const bool v = horseJustOpened;
         horseJustOpened = false;
+        return v;
+    }
+
+    bool BedrockSession::SendLegacyInventoryLocked(const InvSnapshot& before) {
+        InventoryTransactionPacket pkt;
+        pkt.transaction.transactionType = TransactionTransactionType::Normal;
+        const auto place = [&](int a, int& window, int& slot) {
+            slot = a;
+            if (a < 36) { window = 0; return true; }
+            if (a >= kInvArmor0 && a < kInvOffhand) { window = 120; slot = a - kInvArmor0; return true; }
+            if (a == kInvOffhand) { window = 119; slot = 0; return true; }
+            if (a == kInvCursor) { window = 124; slot = 0; return true; }
+            if (a >= kInvCraft0 && a < kInvOutput) { window = 124; slot = 28 + a - kInvCraft0; return true; }
+            if (a >= kInvWork0 && a < kInvSlots) { window = 124; slot = 32 + a - kInvWork0; return true; }
+            if (a >= kInvChest0 && a < kInvTotal && chestWindow >= 0) { window = chestWindow; slot = a - kInvChest0; return true; }
+            if (a >= kInvHorse0 && a < kInvChest0 && horseWindow >= 0) { window = horseWindow; slot = a - kInvHorse0; return true; }
+            return false;
+        };
+        const auto oldRaw = [&](int a) -> const ItemV4& {
+            if (a < 36) return before.raw[a];
+            if (a >= kInvChest0) return before.chest[a - kInvChest0];
+            if (a >= kInvHorse0) return before.horse[a - kInvHorse0];
+            return before.extra[a - 36];
+        };
+        const auto same = [](const ItemV4& x, const ItemV4& y) {
+            return x.networkId == y.networkId && x.count == y.count && x.metadata == y.metadata;
+        };
+        for (int a = 0; a < kInvTotal; a++) {
+            if (a == kInvOutput)
+                continue;
+            const ItemV4& was = oldRaw(a);
+            ItemV4 now = InvRawLocked(a);
+            if (same(was, now))
+                continue;
+            int window = 0, slot = 0;
+            if (!place(a, window, slot))
+                return false;  // crafting results and the like need the item stack protocol
+            // Legacy servers don't track stack ids; a split stack only has our local placeholder.
+            if (now.hasStackId && now.stackId.value_or(0) <= 0) {
+                now.hasStackId = false;
+                now.stackId.reset();
+            }
+            TransactionActionsEntry e;
+            e.sourceType = TransactionActionsEntrySourceType::Container;
+            e.windowId = static_cast<int8_t>(window);
+            e.slot = static_cast<uint32_t>(slot);
+            e.oldItem = was;
+            e.newItem = now;
+            pkt.transaction.actions.push_back(std::move(e));
+        }
+        if (pkt.transaction.actions.empty())
+            return false;
+        return Send(pkt);
+    }
+
+    bool BedrockSession::TakeChestOpened() {
+        std::lock_guard lock(statusMutex);
+        const bool v = chestJustOpened;
+        chestJustOpened = false;
         return v;
     }
 

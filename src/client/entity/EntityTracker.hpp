@@ -28,7 +28,7 @@ namespace perlin::entity {
         enum : uint64_t {
             Onfire = 1ull << 0, Sneaking = 1ull << 1, Riding = 1ull << 2, Sprinting = 1ull << 3, UsingItem = 1ull << 4,
             Invisible = 1ull << 5, Tempted = 1ull << 6, InLove = 1ull << 7, Saddled = 1ull << 8, Powered = 1ull << 9,
-            Ignited = 1ull << 10, Baby = 1ull << 11, Converting = 1ull << 12, Critical = 1ull << 13, WallClimbing = 1ull << 18,
+            Ignited = 1ull << 10, Baby = 1ull << 11, Converting = 1ull << 12, Critical = 1ull << 13, Immobile = 1ull << 16, WallClimbing = 1ull << 18,
             Resting = 1ull << 23, Sitting = 1ull << 24, Angry = 1ull << 25, Interested = 1ull << 26, Charged = 1ull << 27,
             Tamed = 1ull << 28, Orphaned = 1ull << 29, Leashed = 1ull << 30, Sheared = 1ull << 31, Gliding = 1ull << 32,
             Elder = 1ull << 33, Moving = 1ull << 34, Breathing = 1ull << 35, Chested = 1ull << 36, Stackable = 1ull << 37,

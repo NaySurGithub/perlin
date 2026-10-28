@@ -60,6 +60,8 @@ namespace perlin {
         }
 
         namespace Flag {
+            constexpr uint32_t Ascend = 0;
+            constexpr uint32_t Descend = 1;
             constexpr uint32_t JumpDown = 3;
             constexpr uint32_t SprintDown = 4;
             constexpr uint32_t Jumping = 6;
@@ -403,7 +405,8 @@ namespace perlin {
         const bool jump = !asleep && input.IsDown(Action::Jump);
         const bool sneakHeldKey = input.IsDown(Action::Sneak);
         const bool sneakKey = sneakToggle ? sneakLatch : sneakHeldKey;
-        if (rideLock && sneakKey && !sneakHeld)
+        // UpdateClientInputLocks bit 256 forbids dismounting.
+        if (rideLock && sneakKey && !sneakHeld && !(session.InputLocks() & 256u))
             session.SendLeaveVehicle();
         const bool sprintHeldKey = input.IsDown(Action::Sprint);
         const bool sprintKey = sprintToggle ? sprintLatch : sprintHeldKey;
@@ -705,6 +708,10 @@ namespace perlin {
             f.push_back(Flag::StopGliding);
         sentGliding = gliding;
 
+        if (flying && jump)
+            f.push_back(Flag::Ascend);
+        if (flying && sneakKey)
+            f.push_back(Flag::Descend);
         if (sendStartFlying) {
             f.push_back(InputFlag::StartFlying);
             sendStartFlying = false;

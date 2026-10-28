@@ -405,7 +405,8 @@ namespace perlin {
             };
             const bool skull = ends("_skull") || (ends("_head") && shortName != "piston_head" && shortName.find("bed") == std::string::npos) || shortName.find("copper_golem_statue") != std::string::npos || shortName == "conduit" ||
                               shortName == "standing_banner" || shortName == "wall_banner";
-            m = shortName == "bed" ? 1 : sign ? 2 : skull ? 3 : shortName == "bubble_column" ? 4 : 0;
+            const bool chest = shortName == "chest" || shortName == "trapped_chest" || shortName == "ender_chest" || ends("copper_chest");
+            m = shortName == "bed" ? 1 : sign ? 2 : skull ? 3 : shortName == "bubble_column" ? 4 : chest ? 5 : 0;
         }
         return m;
     }
@@ -513,7 +514,7 @@ namespace perlin {
     }
 
     int BlockLightOpacity(BlockLibrary& library, uint16_t id) {
-        if (SpecialKind(id) == 3)
+        if (SpecialKind(id) == 3 || SpecialKind(id) == 5)
             return 0;
         {
             FaceOcclusion f;
@@ -646,7 +647,7 @@ namespace perlin {
         static bool ComputeSolid(BlockLibrary* library, uint16_t id) {
             if (!library)
                 return true;
-            if (SpecialKind(id) == 1 || SpecialKind(id) == 3)
+            if (SpecialKind(id) == 1 || SpecialKind(id) == 3 || SpecialKind(id) == 5)
                 return false;
             if (const ModelEntry* me = ModelFor(library, id); me && !me->cube)
                 return false;
@@ -932,7 +933,7 @@ namespace perlin {
                             continue;
                         if (const int special = SpecialKind(id); special && special != 4) {
                             tess.AddSpecial(baseX + x, y, baseZ + z, id);
-                            if (special == 1 || special == 3)
+                            if (special == 1 || special == 3 || special == 5)
                                 continue;
                         }
                     }

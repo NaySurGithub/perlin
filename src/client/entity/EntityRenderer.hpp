@@ -21,6 +21,7 @@ namespace perlin::entity {
         int skull = 0;
         std::vector<std::pair<std::string, int>> patterns;
         bool onWall = false;
+        float lid = 0.0f;  // chest lid openness 0..1
         Kind kind = Kind::Bed;
         glm::dvec3 origin{0.0};
         float yaw = 0.0f;

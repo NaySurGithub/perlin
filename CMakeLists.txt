@@ -589,9 +589,10 @@ foreach(i RANGE 0 5)
 endforeach()
 set(PERLIN_PROTOCOL_HEADERS "${PERLIN_PROTOCOL_OUT}/Types.hpp" "${PERLIN_PROTOCOL_OUT}/Packets.hpp")
 set(PERLIN_PROTOCOL_ROUNDTRIP "${PERLIN_PROTOCOL_OUT}/RoundTrip.cpp")
+set(PERLIN_PROTOCOL_JSON "${PERLIN_PROTOCOL_OUT}/PacketJson.cpp")
 
 add_custom_command(
-    OUTPUT ${PERLIN_PROTOCOL_HEADERS} ${PERLIN_PROTOCOL_SOURCES} ${PERLIN_PROTOCOL_ROUNDTRIP}
+    OUTPUT ${PERLIN_PROTOCOL_HEADERS} ${PERLIN_PROTOCOL_SOURCES} ${PERLIN_PROTOCOL_ROUNDTRIP} ${PERLIN_PROTOCOL_JSON}
     COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/protogen/protogen.py"
             --spec "${CMAKE_CURRENT_SOURCE_DIR}/protocol/bedrock-1.26.60.json"
             --overrides "${CMAKE_CURRENT_SOURCE_DIR}/protocol/overrides.json"
@@ -719,6 +720,13 @@ else()
 endif()
 
 target_compile_features(Perlin PRIVATE cxx_std_23)
+# Every packet decoded to JSON for the runtime packet log; one big switch, so compiled quietly.
+target_sources(Perlin PRIVATE ${PERLIN_PROTOCOL_JSON})
+if(MSVC)
+    set_source_files_properties(${PERLIN_PROTOCOL_JSON} PROPERTIES COMPILE_OPTIONS "/w;/bigobj")
+else()
+    set_source_files_properties(${PERLIN_PROTOCOL_JSON} PROPERTIES COMPILE_OPTIONS "-w")
+endif()
 
 target_include_directories(Perlin PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/src"

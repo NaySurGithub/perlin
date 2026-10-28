@@ -83,7 +83,7 @@ uniform vec4 u_rdMaterial;
 #define DiscardValue u_uiParams
 #define MatColor1 vec4(v_color0.rgb, 1.0)
 #define TileLightColor vec4_splat(1.0)
-#define GlintColor vec4_splat(u_uiParams.z)
+#define GlintColor (vec4(0.38, 0.19, 0.608, 1.0) * sqrt(max(u_uiParams.z, 0.0)))
 #define TintColor vec4_splat(1.0)
 #define HudOpacity vec4_splat(1.0)
 #define OcclusionHeightOffset vec4_splat(0.0)
@@ -160,8 +160,12 @@ void main()
     v_texcoord0 = a_texcoord0;
     v_light = vec4(a_color0.rgb, 1.0);
     v_fog = vec4(u_fogColor.rgb, rdFog(world - u_camera.xyz) * u_rdMaterial.x);
-    vec2 glintUv = vec2(dot(u_uiGlintA.xy, a_texcoord0), dot(u_uiGlintA.zw, a_texcoord0)) + u_uiGlintB.xy;
-    v_layerUv = vec4(glintUv, glintUv + vec2(0.25, 0.25));
+    // Bedrock foil: two layers rotated -20 and 80 degrees about the texture centre, scaled by
+    // u_uiGlintA.zw and scrolled along U by u_uiGlintA.xy.
+    vec2 glintC = a_texcoord0 - vec2(0.5, 0.5);
+    vec2 glint0 = vec2(dot(glintC, vec2(0.9396926, -0.3420201)), dot(glintC, vec2(0.3420201, 0.9396926))) + vec2(0.5, 0.5);
+    vec2 glint1 = vec2(dot(glintC, vec2(0.1736482, 0.9848078)), dot(glintC, vec2(-0.9848078, 0.1736482))) + vec2(0.5, 0.5);
+    v_layerUv = vec4(glint0 * u_uiGlintA.zw + vec2(u_uiGlintA.x, 0.0), glint1 * u_uiGlintA.zw + vec2(u_uiGlintA.y, 0.0));
 }
 ''')
     samples = {'s_MatTexture0': 'rdBase', 's_MatTexture1': 'rdGlint', 's_GlyphTexture': 'rdBase', 's_ParticleTexture': 'rdBase', 's_CracksTexture': 'rdBase'}

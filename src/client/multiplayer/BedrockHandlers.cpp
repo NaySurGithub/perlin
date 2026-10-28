@@ -1,3 +1,4 @@
+#include <span>
 #include "client/ui/ChatFormat.hpp"
 #include "util/Env.hpp"
 #include "client/multiplayer/BedrockSession.hpp"
@@ -369,7 +370,11 @@ namespace perlin {
 
         On<ResourcePackStackPacket>([this](const ResourcePackStackPacket&) {
             std::cout << "[bedrock] ResourcePackStack" << std::endl;
-            SendResourcePackResponse(PackStatus::Completed);
+            // Both packets can arrive; vanilla answers Completed once.
+            if (!packsCompletedSent) {
+                SendResourcePackResponse(PackStatus::Completed);
+                packsCompletedSent = true;
+            }
             if (!cacheStatusSent) {
                 SendClientCacheStatus();
                 cacheStatusSent = true;
@@ -378,7 +383,11 @@ namespace perlin {
 
         On<ResourcePacksReadyForValidationPacket>([this](const ResourcePacksReadyForValidationPacket&) {
             std::cout << "[bedrock] ResourcePacksReadyForValidation" << std::endl;
-            SendResourcePackResponse(PackStatus::Completed);
+            // Both packets can arrive; vanilla answers Completed once.
+            if (!packsCompletedSent) {
+                SendResourcePackResponse(PackStatus::Completed);
+                packsCompletedSent = true;
+            }
             if (!cacheStatusSent) {
                 SendClientCacheStatus();
                 cacheStatusSent = true;
@@ -439,6 +448,8 @@ namespace perlin {
             clientGen = p.clientSideGeneration;
             serverAuthBreaking = p.serverAuthoritativeBlockBreaking;
             std::cout << "[bedrock] serverAuthoritativeBlockBreaking=" << (p.serverAuthoritativeBlockBreaking ? "true" : "false") << std::endl;
+            std::cout << "[bedrock] serverAuthoritativeInventory=" << (p.serverAuthoritativeInventory ? "true" : "false") << std::endl;
+            legacyInventory = !p.serverAuthoritativeInventory;
             BlockPalette::Instance().SetSequential(!p.blockNetworkIdsAreHashes);
             std::cout << "[bedrock] blockNetworkIdsAreHashes=" << (p.blockNetworkIdsAreHashes ? "true" : "false")
                       << std::endl;
@@ -517,6 +528,22 @@ namespace perlin {
                 itemNames.clear();
                 for (const ItemstatesEntry& item : p.itemstates)
                     itemNames[item.runtimeId] = item.name;
+                // Some servers (The Hive's proxy) send the inventory before the registry; name those stacks now.
+                const auto rename = [this](ItemStackInfo& info) {
+                    if (info.name != "minecraft:unknown")
+                        return;
+                    if (const auto it = itemNames.find(info.networkId); it != itemNames.end())
+                        info.name = it->second;
+                };
+                InventoryView& v = inventory;
+                for (std::span<ItemStackInfo> group : {std::span<ItemStackInfo>(v.hotbar), std::span<ItemStackInfo>(v.main), std::span<ItemStackInfo>(v.armor),
+                                    std::span<ItemStackInfo>(v.craft), std::span<ItemStackInfo>(v.work), std::span<ItemStackInfo>(v.horse),
+                                    std::span<ItemStackInfo>(v.chest)})
+                    for (ItemStackInfo& info : group)
+                        rename(info);
+                rename(v.offhand);
+                rename(v.output);
+                rename(v.cursor);
             }
             for (const ItemstatesEntry& item : p.itemstates)
                 if (item.name == "minecraft:shield") {
@@ -816,9 +843,25 @@ namespace perlin {
             NoteUnknownBlock(static_cast<int32_t>(p.blockRuntimeId));
             if (p.layer == 0)
                 ConfirmPlace(p.position.x, static_cast<int32_t>(p.position.y), p.position.z, static_cast<int32_t>(p.blockRuntimeId));
-            if (p.layer == 0)
-                netLevel.SetBlock(lastBlockPos[0], lastBlockPos[1], lastBlockPos[2],
-                                  BlockPalette::Instance().InternRuntime(static_cast<int32_t>(p.blockRuntimeId)));
+            if (p.layer == 0) {
+                const uint16_t id = BlockPalette::Instance().InternRuntime(static_cast<int32_t>(p.blockRuntimeId));
+                netLevel.SetBlock(lastBlockPos[0], lastBlockPos[1], lastBlockPos[2], id);
+                std::lock_guard lock(supportMutex);
+                const auto now = std::chrono::steady_clock::now();
+                std::erase_if(brokenSupports, [&](const BrokenSupport& b) {
+                    if (now - b.at > std::chrono::seconds(3))
+                        return true;
+                    if (b.x != lastBlockPos[0] || b.y != lastBlockPos[1] || b.z != lastBlockPos[2])
+                        return false;
+                    if (id != 0)
+                        for (const auto& [y, old] : b.above) {
+                            bool loaded = false;
+                            if (netLevel.GetBlock(b.x, y, b.z, loaded) == 0 && loaded)
+                                netLevel.SetBlock(b.x, y, b.z, old);
+                        }
+                    return true;
+                });
+            }
             else if (p.layer == 1)
                 netLevel.SetLiquid(lastBlockPos[0], lastBlockPos[1], lastBlockPos[2],
                                    BlockPalette::Instance().InternRuntime(static_cast<int32_t>(p.blockRuntimeId)));

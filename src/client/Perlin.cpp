@@ -367,8 +367,11 @@ namespace perlin {
         }
 
         workers = std::make_unique<ThreadPool>(4);
-        if (args.server.empty() && !PERLIN_ENV("PERLIN_PREVIEW"))
+        if (args.server.empty() && !PERLIN_ENV("PERLIN_PREVIEW")) {
             FetchMissingGamertags();
+            // Fetch featured servers during startup so the list is ready when the server page opens.
+            RefreshFeatured(false);
+        }
         StartAssetDownloads();
         if (!PERLIN_ENV("PERLIN_PREVIEW")) {
             if (args.server.empty())
@@ -1521,7 +1524,8 @@ namespace perlin {
         const bool canOpen = (live || preview) && !deathShown && !formShown && !pauseShown && !chat.IsOpen() && state.mode != ui::GameMode::Spectator;
         const bool workbenchOpened = live && live->TakeWorkbenchOpened();
         const bool horseOpened = live && live->TakeHorseOpened();
-        if (!invShown && (workbenchOpened || horseOpened) && !deathShown) {
+        const bool chestOpened = live && live->TakeChestOpened();
+        if (!invShown && (workbenchOpened || horseOpened || chestOpened) && !deathShown) {
             invShown = true;
             invOpenedAt = now;
             invPicked = -1;
@@ -1558,12 +1562,14 @@ namespace perlin {
         bool close = false;
         invWorkbench = live ? live->WorkbenchOpen() : (preview && PERLIN_ENV("PERLIN_PREVIEW_WORKBENCH") != nullptr);
         invHorse = live && live->HorseOpen();
+        const char* previewChest = preview ? PERLIN_ENV("PERLIN_PREVIEW_CHEST") : nullptr;
+        invChest = (live && live->ChestOpen()) || previewChest;
         static bool bookInit = false;
         if (preview && !bookInit && PERLIN_ENV("PERLIN_PREVIEW_BOOK")) {
             bookInit = true;
             invBook = true;
         }
-        const bool creativeMode = (live || preview) && state.mode == ui::GameMode::Creative && !invWorkbench && !invHorse;
+        const bool creativeMode = (live || preview) && state.mode == ui::GameMode::Creative && !invWorkbench && !invHorse && !invChest;
         const bool searching = creativeMode && creativeTab == ui::kCreativeSearchTab;
         if (deathShown || (live && live->TakeServerClosedInventory()))
             close = true;
@@ -1630,6 +1636,12 @@ namespace perlin {
             v.horseChest = inv.horseChestSlots;
             for (int i = 0; i < 17; i++)
                 v.horseItems[static_cast<size_t>(i)] = ToHudItem(inv.horse[i]);
+            if (inv.chestOpen) {
+                v.chestRows = inv.chestSlots > 27 ? 6 : 3;
+                for (int i = 0; i < 54; i++)
+                    v.chestItems[static_cast<size_t>(i)] = ToHudItem(inv.chest[i]);
+                v.title = i18n::Tr(v.chestRows == 6 && inv.chestTitle == "container.chest" ? "container.chestDouble" : inv.chestTitle);
+            }
             v.offhand = ToHudItem(inv.offhand);
             v.output = ToHudItem(inv.output);
             v.cursor = ToHudItem(inv.cursor);
@@ -1643,6 +1655,15 @@ namespace perlin {
             for (int i = 0; i < 4; i++)
                 v.armor[i] = state.armorItems[i];
             v.selectedHotbar = state.selectedSlot;
+            if (previewChest) {
+                v.chestRows = std::atoi(previewChest) > 27 ? 6 : 3;
+                static const char* const kLoot[] = {"minecraft:iron_ingot", "minecraft:bread", "minecraft:diamond_sword", "minecraft:oak_log", "minecraft:gold_ingot"};
+                for (int i = 0; i < v.chestRows * 9; i += 4) {
+                    v.chestItems[static_cast<size_t>(i)].name = kLoot[(i / 4) % 5];
+                    v.chestItems[static_cast<size_t>(i)].count = i % 3 == 0 ? 1 : 16 + i;
+                }
+                v.title = i18n::Tr(v.chestRows == 6 ? "container.chestDouble" : "container.chest");
+            }
         }
 
         v.effects = state.effects;
@@ -1653,6 +1674,7 @@ namespace perlin {
                 if (a == 40) return &v.offhand;
                 if (a < 45) return &v.craft[static_cast<size_t>(a - 41)];
                 if (a >= 47 && a < 56) return &v.work[static_cast<size_t>(a - 47)];
+                if (a >= ui::kInvAddrChest && a < ui::kInvAddrChest + 54) return &v.chestItems[static_cast<size_t>(a - ui::kInvAddrChest)];
                 return nullptr;
             };
             std::vector<ui::HudItem*> targets;
@@ -1758,6 +1780,7 @@ namespace perlin {
         for (const auto& it : v.armor) sig(it);
         for (const auto& it : v.craft) sig(it);
         for (const auto& it : v.work) sig(it);
+        if (v.chestRows) { signature += "K" + std::to_string(v.chestRows) + v.title; for (const auto& it : v.chestItems) sig(it); }
         if (v.horse) { signature += "H" + std::to_string(v.horseChest); for (const auto& it : v.horseItems) sig(it); }
         for (const auto& c : v.recipes) { signature += c.craftable ? "c" : "n"; sig(c.out); }
         sig(v.offhand);
@@ -1791,8 +1814,8 @@ namespace perlin {
                 invDragSlots.assign(1, invHoverAddr);
                 invSignature.clear();
             } else if (leftEdge || rightEdge) {
-                const int px = ui::InventoryPanelX(v, guiW), py = (guiH - ui::kInvPanelH) / 2;
-                const bool outside = gx < px || gy < py || gx > px + ui::kInvPanelW || gy > py + ui::kInvPanelH;
+                const int px = ui::InventoryPanelX(v, guiW), panelH = ui::InventoryPanelH(v), py = (guiH - panelH) / 2;
+                const bool outside = gx < px || gy < py || gx > px + ui::kInvPanelW || gy > py + panelH;
                 const bool isRight = !leftEdge;
                 const bool overBook = invBook && gx >= (guiW - 147) / 2 - 86 && gx < (guiW - 147) / 2 + 61;
                 if (invHoverId == "rb") {
@@ -7149,6 +7172,8 @@ namespace perlin {
                         swingClock = 0;
                         if (live) {
                             live->SendSwingArm(gAim.kind == AimHit::Kind::Block ? "mine" : "attack");
+                            if (gAim.kind == AimHit::Kind::None)
+                                live->QueueInputFlag(InputFlag::MissedSwing);
                             if (gAim.kind == AimHit::Kind::Entity) {
                                 // The click position is where the ray meets the target's hitbox, relative to the target's base
                                 // coordinate, not a world position.
@@ -7246,6 +7271,7 @@ namespace perlin {
                                     lastLocalBreak = {bkx, bky, bkz, std::chrono::steady_clock::now()};
                                 }
                                 live->NetLevel().SetBlock(bkx, bky, bkz, 0);
+                                std::vector<std::pair<int, uint16_t>> clearedAbove;
                                 for (int up = 1; up <= 4; up++) {
                                     bool aboveLoaded = false;
                                     const uint16_t aboveId = live->NetLevel().GetBlock(bkx, bky + up, bkz, aboveLoaded);
@@ -7253,9 +7279,12 @@ namespace perlin {
                                     if (aboveName.empty() || !destroy::NeedsSupportBelow(aboveName))
                                         break;
                                     live->NetLevel().SetBlock(bkx, bky + up, bkz, 0);
+                                    clearedAbove.emplace_back(bky + up, aboveId);
                                     if (up == 1 && !destroy::BreaksWholeStack(aboveName))
                                         break;
                                 }
+                                if (!clearedAbove.empty())
+                                    live->NoteBrokenSupport(bkx, bky, bkz, std::move(clearedAbove));
                                 breaking = false;
                                 breakProgress = 0.0f;
                                 gLocalCrack.active = false;
@@ -7382,7 +7411,8 @@ namespace perlin {
                         bool interactedEntity = false;
                         if (usePressed && live && useAim.kind == AimHit::Kind::Entity) {
                             entity::Entity target;
-                            if (live->Entities().Find(useAim.entity, target) && IsInteractable(target.type)) {
+                            // UpdateClientInputLocks bit 128 forbids mounting; every interactable entity here is a ride.
+                            if (live->Entities().Find(useAim.entity, target) && IsInteractable(target.type) && !(live->InputLocks() & 128u)) {
                                 const glm::vec3 offset = EntityClickOffset({camera.x, camera.y, camera.z}, glm::dvec3(camera.Direction()), target.pos,
                                                                            (useAim.boxHi.x - useAim.boxLo.x) * 0.5, useAim.boxHi.y - useAim.boxLo.y,
                                                                            (useAim.boxLo + useAim.boxHi) * 0.5);
@@ -8779,7 +8809,7 @@ namespace perlin {
                     hud->Render();
                     DrawModGfx(fbW, fbH);
                     const bool creativeUi = hudState.mode == ui::GameMode::Creative || PERLIN_ENV("PERLIN_PREVIEW_CREATIVE");
-                    if (invShown && dollSelf && !invWorkbench && !invHorse && (!creativeUi || creativeDollVisible)) {
+                    if (invShown && dollSelf && !invWorkbench && !invHorse && !invChest && (!creativeUi || creativeDollVisible)) {
                         const int scale = hud->OverlayScale();
                         const int guiW = static_cast<int>(std::ceil(static_cast<float>(fbW) / static_cast<float>(scale)));
                         const int guiH = static_cast<int>(std::ceil(static_cast<float>(fbH) / static_cast<float>(scale)));

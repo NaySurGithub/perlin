@@ -848,6 +848,8 @@ def main():
         pk.append(f'    {{{number}, "{name}"}},')
     pk.append("};")
     pk.append("const char* PacketName(uint32_t id);")
+    pk.append("// Decodes a packet body to JSON (PacketJson.cpp, compiled into the client with glaze). False if it doesn't decode.")
+    pk.append("bool PacketJson(uint32_t id, const uint8_t* data, size_t size, std::string& out);")
     pk.append("}")
     write_if_changed(os.path.join(opts.out, "Packets.hpp"), "\n".join(pk) + "\n")
 
@@ -892,6 +894,21 @@ def main():
             rt.append(f"    bad += Check<{struct}>(failures, skipped);")
     rt += ["    return bad;", "}", "}"]
     write_if_changed(os.path.join(opts.out, "RoundTrip.cpp"), "\n".join(rt) + "\n")
+
+    pj = ['#include "protocol/Packets.hpp"', "", "#include <glaze/glaze.hpp>", "", "#include <string>", "",
+          "namespace perlin::" + opts.namespace + " {", "namespace {",
+          "template <class P> bool Json(const uint8_t* data, size_t size, std::string& out) {",
+          "    P packet{};", "    net::ReadStream in(data, size);",
+          "    if (!Read(in, packet) || !in.ok)", "        return false;",
+          "    return !glz::write<glz::opts{.prettify = false}>(packet, out);", "}", "}", "",
+          "bool PacketJson(uint32_t id, const uint8_t* data, size_t size, std::string& out) {", "    switch (id) {"]
+    # Glaze can't reflect the recursive data-store value (it has user-declared special members); logged as hex.
+    no_json = {"ClientboundDataStorePacket"}
+    for number, name, struct, mode, info in registry:
+        if mode == "generated" and struct not in no_json:
+            pj.append(f"    case {number}: return Json<{struct}>(data, size, out);")
+    pj += ["    default: return false;", "    }", "}", "}"]
+    write_if_changed(os.path.join(opts.out, "PacketJson.cpp"), "\n".join(pj) + "\n")
 
     report = [f"{len(registry)} packets, {len(type_decls)} shared types"]
     if opaque:
