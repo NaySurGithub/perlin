@@ -13,6 +13,10 @@
 #include <cstdio>
 #include <filesystem>
 #include "util/Paths.hpp"
+#include "util/Resources.hpp"
+#include "client/resources/TextureLoader.hpp"
+#include <fstream>
+#include <iterator>
 #include <cstdlib>
 #include <memory>
 #include <iostream>
@@ -91,6 +95,62 @@ namespace {
             return -1;
         }
     }
+
+    void ApplyWindowIcon(SDL_Window* window) {
+#if !defined(SDL_PLATFORM_ANDROID) && !defined(__EMSCRIPTEN__)
+        std::string png;
+        perlin::Texture icon;
+        if (!window || !perlin::resources::Read("perlin_icon.png", png) ||
+            !perlin::LoadTextureMemory(reinterpret_cast<const unsigned char*>(png.data()), png.size(), icon) || icon.width <= 0 || icon.height <= 0)
+            return;
+        if (SDL_Surface* surface = SDL_CreateSurfaceFrom(icon.width, icon.height, SDL_PIXELFORMAT_RGBA32, icon.pixels.data(), icon.width * 4)) {
+            SDL_SetWindowIcon(window, surface);
+            SDL_DestroySurface(surface);
+        }
+#else
+        (void)window;
+#endif
+    }
+
+#if defined(SDL_PLATFORM_LINUX) && !defined(SDL_PLATFORM_ANDROID)
+    void RegisterDesktopEntry() {
+        std::error_code ec;
+        const std::filesystem::path exe = std::filesystem::read_symlink("/proc/self/exe", ec);
+        if (ec || exe.empty())
+            return;
+        std::filesystem::path data;
+        if (const char* xdg = std::getenv("XDG_DATA_HOME"); xdg && *xdg)
+            data = xdg;
+        else if (const char* home = std::getenv("HOME"); home && *home)
+            data = std::filesystem::path(home) / ".local" / "share";
+        else
+            return;
+        const auto writeIfChanged = [&](const std::filesystem::path& path, const std::string& content) {
+            std::string current;
+            if (std::ifstream in(path, std::ios::binary); in)
+                current.assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
+            if (current == content)
+                return;
+            std::filesystem::create_directories(path.parent_path(), ec);
+            std::ofstream(path, std::ios::binary | std::ios::trunc) << content;
+        };
+        std::string png;
+        if (perlin::resources::Read("perlin_icon.png", png))
+            writeIfChanged(data / "icons" / "hicolor" / "256x256" / "apps" / "io.perlin.client.png", png);
+        std::string command = "\"";
+        for (const char c : exe.string()) {
+            if (c == '"' || c == '`' || c == '$' || c == '\\')
+                command += "\\\\";
+            if (c == '%')
+                command += '%';
+            command += c;
+        }
+        command += "\"";
+        writeIfChanged(data / "applications" / "io.perlin.client.desktop",
+                       "[Desktop Entry]\nType=Application\nName=Perlin\nExec=" + command +
+                           "\nIcon=io.perlin.client\nTerminal=false\nCategories=Game;\nStartupWMClass=io.perlin.client\n");
+    }
+#endif
 }
 
 #ifdef __EMSCRIPTEN__
@@ -406,6 +466,7 @@ bool AppPlatform_SDL::Initialize() {
     SDL_SetHint(SDL_HINT_MOUSE_TOUCH_EVENTS, "0");
     if (const char* t = std::getenv("PERLIN_TOUCH"))
         touchMode = touchMode || std::atoi(t) != 0;
+    SDL_SetAppMetadata("Perlin", nullptr, "io.perlin.client");
     if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS | SDL_INIT_GAMEPAD)) {
         std::cout << "[sdl] SDL_Init failed: " << SDL_GetError() << std::endl;
         return false;
@@ -429,6 +490,10 @@ bool AppPlatform_SDL::Initialize() {
         std::cout << "[sdl] window creation failed: " << SDL_GetError() << std::endl;
         return false;
     }
+    ApplyWindowIcon(window);
+#if defined(SDL_PLATFORM_LINUX) && !defined(SDL_PLATFORM_ANDROID)
+    RegisterDesktopEntry();
+#endif
 
 #ifdef __EMSCRIPTEN__
     SDL_SetWindowFillDocument(window, true);

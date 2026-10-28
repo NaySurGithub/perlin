@@ -712,9 +712,22 @@ if(ANDROID)
     add_library(Perlin SHARED ${PERLIN_SOURCES} ${PERLIN_EMBED_SOURCE} ${PERLIN_EMBED_NAMES_SOURCE} ${PERLIN_SHADER_OUTPUTS})
     set_target_properties(Perlin PROPERTIES OUTPUT_NAME main)
 elseif(WIN32)
-    add_executable(Perlin WIN32 ${PERLIN_SOURCES} ${PERLIN_EMBED_SOURCE} ${PERLIN_EMBED_NAMES_SOURCE} ${PERLIN_SHADER_OUTPUTS})
+    enable_language(RC)
+    set(PERLIN_ICON_RC "${CMAKE_CURRENT_BINARY_DIR}/perlin_icon.rc")
+    file(WRITE "${PERLIN_ICON_RC}" "101 ICON \"${CMAKE_CURRENT_SOURCE_DIR}/packaging/windows/perlin.ico\"\n")
+    set_source_files_properties("${PERLIN_ICON_RC}" PROPERTIES OBJECT_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/packaging/windows/perlin.ico")
+    add_executable(Perlin WIN32 ${PERLIN_SOURCES} ${PERLIN_EMBED_SOURCE} ${PERLIN_EMBED_NAMES_SOURCE} ${PERLIN_SHADER_OUTPUTS} "${PERLIN_ICON_RC}")
 elseif(APPLE)
-    add_executable(Perlin ${PERLIN_SOURCES} ${PERLIN_EMBED_SOURCE} ${PERLIN_EMBED_NAMES_SOURCE} ${PERLIN_SHADER_OUTPUTS})
+    set(PERLIN_ICNS "${CMAKE_CURRENT_SOURCE_DIR}/packaging/macos/Perlin.icns")
+    set_source_files_properties("${PERLIN_ICNS}" PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
+    add_executable(Perlin MACOSX_BUNDLE ${PERLIN_SOURCES} ${PERLIN_EMBED_SOURCE} ${PERLIN_EMBED_NAMES_SOURCE} ${PERLIN_SHADER_OUTPUTS} "${PERLIN_ICNS}")
+    set_target_properties(Perlin PROPERTIES
+        MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_SOURCE_DIR}/packaging/macos/Info.plist.in"
+        MACOSX_BUNDLE_BUNDLE_NAME "Perlin"
+        MACOSX_BUNDLE_GUI_IDENTIFIER "io.perlin.client"
+        MACOSX_BUNDLE_ICON_FILE "Perlin.icns"
+        MACOSX_BUNDLE_SHORT_VERSION_STRING "${PROJECT_VERSION}"
+        MACOSX_BUNDLE_BUNDLE_VERSION "${PROJECT_VERSION}")
 else()
     add_executable(Perlin ${PERLIN_SOURCES} ${PERLIN_EMBED_SOURCE} ${PERLIN_EMBED_NAMES_SOURCE} ${PERLIN_SHADER_OUTPUTS})
 endif()
@@ -905,7 +918,11 @@ if(PERLIN_IPO)
 endif()
 
 if(NOT ANDROID)
-    install(TARGETS Perlin RUNTIME DESTINATION .)
+    install(TARGETS Perlin RUNTIME DESTINATION . BUNDLE DESTINATION .)
+endif()
+if(UNIX AND NOT APPLE AND NOT ANDROID AND NOT EMSCRIPTEN)
+    install(FILES packaging/linux/io.perlin.client.desktop DESTINATION share/applications)
+    install(DIRECTORY packaging/linux/icons/ DESTINATION share/icons/hicolor)
 endif()
 if(MSVC)
     install(FILES "$<TARGET_PDB_FILE:Perlin>" DESTINATION . OPTIONAL)
