@@ -782,8 +782,9 @@ namespace perlin::ui {
                     text = t->Dump();
                 if (t && t->IsNull()) {
                     Json b;
+                    // A binding that resolved to nothing draws nothing: never the literal "null" on screen.
                     if (Lookup(n, "#text", vars, b))
-                        text = b.IsString() ? b.string : b.Dump();
+                        text = b.IsString() ? b.string : (b.IsNull() ? std::string() : b.Dump());
                 }
                 if (n.Bool("localize", true) && services.localize && !text.empty() && text.find(' ') == std::string::npos &&
                     text.find('.') != std::string::npos)
