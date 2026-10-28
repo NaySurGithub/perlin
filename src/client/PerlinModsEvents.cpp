@@ -359,7 +359,7 @@ namespace perlin {
 
     void Perlin::UpdateModLayer(ui::Hud& hud) {
         auto& mm = mods::ModManager::Instance();
-        // HUD layers show in game; layers named "screen:..." and buttons added with ScreenButtonAdd show over open screens.
+        // hud layers show in game; "screen:..." layers and ScreenButtonAdd buttons show over open screens
         const bool onScreen = CurrentScreen() != abi::Screen::None;
         const bool want = options.showHud && mm.HasPlugins() && !(replayCtl.Playing() && replayUi.hideHud);
         if (!want) {

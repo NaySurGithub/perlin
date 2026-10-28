@@ -153,8 +153,8 @@ namespace perlin::ui {
     }
 
     namespace {
-        // font/glyph_XX.png pages: vanilla first, then server packs from lowest to highest priority, so the pack the
-        // server lists first wins. Servers draw logos and icons in chat, titles and sidebars with these.
+        // font/glyph_XX.png: vanilla, then server packs low to high priority (first listed wins);
+        // servers draw logos/icons in chat, titles, sidebars with these
         void LoadGlyphPages(const std::string& vanillaRoot) {
             McFont& font = McFont::Instance();
             font.ClearGlyphPages();

@@ -50,11 +50,11 @@ namespace perlin::ui {
         bool WaitReady(int timeoutMs);
         bool Build(const FormModel& form, int guiW, int guiH, float scroll, std::string& rml, float& contentHeight, float& viewHeight);
         const std::string& Problem() const { return problem; }
-        // True when a server or resource pack (not just vanilla) defines the server_form screen.
-        // The server's ui files are still being read.
+        // server ui files still loading
         bool Building() const { return state.load() == 1; }
+        // a non-vanilla pack defines server_form
         bool ServerStyled() const { return Ready() && library.RootCount() > 3 && library.DefinedBefore("server_form", library.RootCount() - 3); }
-        // True while the last built form still has an animation running.
+        // last form still animating
         bool Animating() const { return anim.animating; }
 
     private:

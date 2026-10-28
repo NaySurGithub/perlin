@@ -30,7 +30,7 @@ namespace perlin::mods {
         bool hasSettings = false;
         uint32_t requested = 0;
         bool needsApproval = false;
-        int priority = 0;  // manifest "priority": higher runs first for every event
+        int priority = 0;  // manifest "priority": higher runs first
     };
 
     struct PluginCommand {
@@ -39,7 +39,7 @@ namespace perlin::mods {
 
     struct PluginKey {
         std::string plugin, id, label, binding;
-        bool ctrl = false, shift = false, alt = false;  // modifiers that must be held (KeyRegisterEx)
+        bool ctrl = false, shift = false, alt = false;  // required held modifiers (KeyRegisterEx)
         abi::KeyContext context = abi::KeyContext::InGame;
     };
 
@@ -119,7 +119,7 @@ namespace perlin::mods {
         void SettingsClosed(const std::string& plugin);
 
         void PostMain(std::function<void()> task);
-        // Thread-safe: hands an event to the main thread, which delivers it on the next Pump when a mod wants it.
+        // thread-safe: delivered on main thread at next Pump if a mod wants it
         void Queue(abi::Event event, abi::Writer payload);
         bool Wants(abi::Event event) const { return (wanted.load() >> static_cast<uint32_t>(event)) & 1; }
         void Pump();

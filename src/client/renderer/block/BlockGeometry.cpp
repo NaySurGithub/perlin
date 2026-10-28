@@ -274,8 +274,8 @@ namespace perlin {
         const json::View mi = comps["minecraft:material_instances"];
         if (mi.isObject()) {
             hasMaterials = true;
-            // Resource packs write instances directly ({"*": {...}, "up": {...}}); the server's block definitions
-            // (network NBT) nest them under "materials", with "mappings" naming which instance a face uses.
+            // resource packs write instances directly ({"*": {...}, "up": {...}}); server block definitions (network nbt)
+            // nest them under "materials", with "mappings" naming the instance per face
             const json::View table = mi["materials"].isObject() ? mi["materials"] : mi;
             for (const auto m : table.members()) {
                 if (!m.value.isObject())

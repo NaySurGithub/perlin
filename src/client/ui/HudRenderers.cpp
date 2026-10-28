@@ -141,8 +141,8 @@ namespace perlin::ui {
                 Tex(w, n, right - i * 8 - 9, n.ay, 9, i < full ? "bubble" : "bubble_pop");
         }
 
-        // The totem / omen activation: the icon rises from below the screen, swells past the crosshair and fades.
-        // Curve from Java's GameRenderer item activation.
+        // totem / omen activation: icon rises from below, swells past the crosshair, fades
+        // curve from java GameRenderer item activation
         void ScreenAnimation(const HudState& s, const LNode& n, RmlWriter& w) {
             if (s.screenAnimation < 0)
                 return;
@@ -548,7 +548,7 @@ namespace perlin::ui {
 
     void RegisterHudRenderers(RmlEmitter& emitter, const HudState& state, const UiServices&) {
         const HudState* s = &state;
-        // Every vanilla element goes through the mod filter, which can hide it or shift its node.
+        // every vanilla element goes through the mod filter: may hide it or shift its node
         const auto Reg = [&emitter](const char* name, std::function<void(const LNode&, RmlWriter&)> draw) {
             emitter.Register(name, [name, draw = std::move(draw)](const LNode& n, RmlWriter& w) {
                 float dx = 0, dy = 0;
@@ -558,7 +558,7 @@ namespace perlin::ui {
                     draw(n, w);
                     return;
                 }
-                // Nodes own their children and cannot be copied, so the node is shifted for this draw and put back.
+                // nodes own children, can't be copied: shift for this draw, put back
                 LNode& moved = const_cast<LNode&>(n);
                 moved.x += dx;
                 moved.ax += dx;

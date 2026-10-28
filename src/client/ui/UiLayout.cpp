@@ -255,8 +255,7 @@ namespace perlin::ui {
                 n->src = &node;
                 n->type = node.type;
                 n->id = node.name;
-                // collection_name on a plain control opens a collection for its descendants; a descendant's
-                // collection_index then binds it to one item of it, without a grid.
+                // collection_name on a plain control opens a collection for descendants; their collection_index binds one item, no grid
                 std::vector<Collection> scoped;
                 if (const Json* ci = node.props.Find("collection_index"); ci && ci->IsNumber()) {
                     scoped = outerCollections;
@@ -292,7 +291,7 @@ namespace perlin::ui {
                 bool visible = true;
                 if (const Json* v = n->p.Find("visible"))
                     visible = Truthy(*v) || (v->IsString() && v->string.empty());
-                // A #visible binding decides on its own; the "visible" property is only the default.
+                // #visible binding decides alone; "visible" property is only the default
                 if (const Json* v = n->bag.Find("#visible"))
                     visible = Truthy(*v);
                 n->visible = visible;
@@ -360,8 +359,7 @@ namespace perlin::ui {
                     int count = std::max(0, cols * rows);
                     if (!collection.empty())
                         count = std::min(count, data.CollectionSize(collection));
-                    // A rescaling grid holds #maximum_grid_items items (or the whole collection) and works out its own
-                    // rows and columns from the space it gets.
+                    // rescaling grid: holds #maximum_grid_items (or whole collection), rows/columns from the space it gets
                     if (const std::string rescale = n->Str("grid_rescaling_type"); rescale == "horizontal" || rescale == "vertical") {
                         int maxItems = -1;
                         if (const Json* m = n->bag.Find("#maximum_grid_items"); m && m->IsNumber())
@@ -385,9 +383,8 @@ namespace perlin::ui {
                     if (const Json* f = n->p.Find("factory"); f && f->IsObject())
                         if (const Json* fn = f->Find("name"); fn && fn->IsString())
                             name = fn->string;
-                    // A factory whose #collection_length is a list of control ids creates exactly those controls,
-                    // in order. Servers use this to pick one of several layouts from a binding.
-                    // A numeric #collection_length stamps the factory's control once per item of the panel's collection.
+                    // #collection_length as list of control ids: creates exactly those, in order (servers pick a layout from a binding)
+                    // numeric #collection_length: stamps the control once per item of the panel's collection
                     if (const Json* count = n->bag.Find("#collection_length"); count && count->IsNumber() && node.factoryControls.size() == 1) {
                         const std::string c = n->Str("collection_name");
                         const int total = std::clamp(static_cast<int>(count->number), 0, 1000);
@@ -452,7 +449,7 @@ namespace perlin::ui {
                 auto resolve = [&]() {
                     DimContext cw, ch;
                     cw.parent = pw; ch.parent = ph;
-                    // "%x"/"%y" name the parent's axes, whichever axis the control itself is measuring.
+                    // "%x"/"%y" name the parent's axes, whichever axis the control measures
                     cw.parentX = ch.parentX = pw;
                     cw.parentY = ch.parentY = ph;
                     cw.fill = fillW; ch.fill = fillH;
@@ -488,7 +485,7 @@ namespace perlin::ui {
                     maxW = sumW;
                     maxH = sumH;
                 } else {
-                    // Widgets show one state child at rest; the others (hover, pressed, locked...) take no space.
+                    // widgets show one state child at rest; others (hover, pressed, locked...) take no space
                     std::vector<std::string> resting;
                     if (n.type == "button") {
                         for (const char* key : {"hover_control", "pressed_control", "locked_control"})
@@ -519,7 +516,7 @@ namespace perlin::ui {
                     cw.sibling = sibW; ch.sibling = sibH;
                     cw.intrinsic = intrinsicW; ch.intrinsic = intrinsicH;
                     cw.childrenMax = maxW; ch.childrenMax = maxH;
-                    // "%c" is the sum of the visible children on that axis for every control; "%cm" is the largest.
+                    // "%c": sum of visible children on that axis, every control; "%cm": the largest
                     cw.children = sumW;
                     ch.children = sumH;
                     if (!Known(w) || needsChildrenW) { float t = kUnknown; if (EvalDim(wd, cw, t)) w = t; }
@@ -556,11 +553,11 @@ namespace perlin::ui {
                         live.push_back(k.get());
                 if (n.type == "stack_panel") {
                     const bool vertical = StackVertical(n);
-                    // Children sit at the start of the cross axis unless the stack opts into their own anchors.
+                    // children at cross-axis start unless the stack opts into their anchors
                     const bool childAnchors = n.Bool("use_child_anchors", false);
                     float cursor = 0;
                     for (LNode* k : live) {
-                        float ox = 0, oy = 0;  // stack children ignore their offset
+                        float ox = 0, oy = 0;  // stack children ignore offset
                         if (vertical) {
                             float cx = 0, cy = 0;
                             if (childAnchors)
@@ -606,8 +603,7 @@ namespace perlin::ui {
                 n.lines.clear();
                 if (n.text.empty())
                     return;
-                // Never break lines tighter than the size pass laid them out (its widest line is textWidth): a label
-                // sized to its text must keep the lines it was measured with.
+                // never break lines tighter than the size pass (widest line is textWidth): a label sized to its text keeps its lines
                 const float wrap = std::max(n.w, n.textWidth) + 0.01f;
                 WrapLines(n.text, scale, ten, wrap, n.lines);
                 (void)lines;
@@ -687,7 +683,7 @@ namespace perlin::ui {
 
             void ApplyBindings(LNode& n, const std::vector<Collection>& collections) {
                 byName[n.id] = &n;
-                // A control's property_bag seeds its binding values; bindings below may overwrite them.
+                // property_bag seeds binding values; bindings below may overwrite
                 if (const Json* bag = n.src->props.Find("property_bag"); bag && bag->IsObject())
                     for (const auto& member : bag->object)
                         if (!n.bag.Find(member.first))
@@ -718,8 +714,7 @@ namespace perlin::ui {
                             env.binding = [&](const std::string& name, Json& out) { return Lookup(*source, name, nullptr, out); };
                             EvalExpression(text, env, result);
                         }
-                        // A result naming another property ("#if_" + ... -> "#if_true") reads that property, the
-                        // indirection packs use to pick values out of a property_bag.
+                        // result naming another property ("#if_" + ... -> "#if_true") reads that property: packs' property_bag indirection
                         if (result.IsString() && result.string.size() > 1 && result.string[0] == '#' && result.string != target->string)
                             if (const Json* named = n.bag.Find(result.string))
                                 result = *named;
@@ -735,7 +730,7 @@ namespace perlin::ui {
                         target = o->string;
                     Json value;
                     bool have = false;
-                    // The collection row this binding reads, if it is a collection binding.
+                    // collection row this binding reads, if a collection binding
                     int row = -1;
                     std::string rowCollection;
                     if (type == "collection") {
@@ -748,7 +743,7 @@ namespace perlin::ui {
                             }
                     }
                     if (IsExpression(name)) {
-                        // In a collection binding, the names inside the expression are that row's values.
+                        // collection binding: names in the expression are that row's values
                         ExprEnv env;
                         env.binding = [&](const std::string& nm, Json& out) {
                             if (row >= 0 && data.CollectionValue(rowCollection, row, nm, out))
@@ -797,7 +792,7 @@ namespace perlin::ui {
                     text = t->Dump();
                 if (t && t->IsNull()) {
                     Json b;
-                    // A binding that resolved to nothing draws nothing: never the literal "null" on screen.
+                    // unresolved binding draws nothing: never a literal "null"
                     if (Lookup(n, "#text", vars, b))
                         text = b.IsString() ? b.string : (b.IsNull() ? std::string() : b.Dump());
                 }
@@ -959,7 +954,7 @@ namespace perlin::ui {
                     for (const Json& entry : list->array)
                         if (entry.IsString())
                             refs.push_back(entry.string);
-                // A property can name an animation directly: "size": "@ns.logo_in_anim", "offset": "@ns.slide".
+                // property can name an animation directly: "size": "@ns.logo_in_anim", "offset": "@ns.slide"
                 for (const auto& member : n.src->props.object) {
                     if (!member.second.IsString() || member.second.string.empty() || member.second.string[0] != '@')
                         continue;
@@ -1039,22 +1034,22 @@ namespace perlin::ui {
                 if (w.empty() || h.empty()) {
                     Term hundred{Term::Pct, 100, 1};
                     Term def{Term::Default, 0, 1};
-                    // With no size at all, only labels take their natural size; every other control (images too, as
-                    // in vanilla's dialog backgrounds) fills its parent. An explicit "default" still means natural size.
+                    // no size: labels take natural size, everything else (images too, like vanilla dialog backgrounds) fills parent
+                    // explicit "default" still means natural size
                     const bool intrinsic = n.type == "label";
                     (void)fill;
                     if (n.type == "grid") hundred.kind = Term::PctChildren;
                     if (w.empty()) w.push_back(intrinsic ? def : hundred);
                     if (h.empty()) h.push_back(intrinsic ? def : hundred);
                 }
-                // inherit_max_sibling_width/height grow the control to its widest/tallest sibling; Measure applies it.
+                // inherit_max_sibling_width/height: grow to widest/tallest sibling; applied in Measure
             }
 
             void Intrinsic(LNode& n, float pw, const Dim& wd, float& iw, float& ih) {
                 if (n.type == "label") {
                     float scale = FontScale(n);
                     const bool ten = TenLabel(n);
-                    // Measure the text as drawn: the font skips format codes itself and counts bold (§l) glyphs wider.
+                    // measure text as drawn: font skips format codes, bold (§l) glyphs wider
                     const std::string& plain = n.text;
                     float wrap = kUnknown;
                     DimContext c;
@@ -1112,7 +1107,7 @@ namespace perlin::ui {
                 return scale;
             }
 
-            // A label asking for font_type: MinecraftTen is measured with that face's metrics, not the 8 px bitmap font.
+            // font_type: MinecraftTen label measured with that face's metrics, not the 8 px bitmap font
             bool TenLabel(const LNode& n) const {
                 if (!IsTenFontType(n.Str("font_type")))
                     return false;
@@ -1266,8 +1261,8 @@ namespace perlin::ui {
                 return EvalDim(d, c, v);
             }
 
-            // Columns and rows for laying out `live`: grid_dimensions, or for a rescaling grid as many items as fit
-            // across `width` (horizontal) or down `height` (vertical), growing the other way to hold the rest.
+            // columns/rows for `live`: grid_dimensions, or for a rescaling grid as many as fit across `width` (horizontal)
+            // or down `height` (vertical), growing the other way for the rest
             void GridShape(const LNode& n, const std::vector<LNode*>& live, float width, float height, int& cols, int& rows) const {
                 GridDimensions(n, cols, rows);
                 const std::string rescale = n.Str("grid_rescaling_type");

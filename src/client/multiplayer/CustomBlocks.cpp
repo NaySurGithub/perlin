@@ -307,7 +307,7 @@ namespace perlin {
             ServerBlocks::Instance().Add(std::move(def));
         }
         palette.InsertCustomRuns(std::move(runs));
-        // The server's custom block definitions as received, for checking geometry and materials offline.
+        // raw server custom block defs, for offline geometry/material checks
         if (customDump.size() > 3) {
             customDump.resize(customDump.size() - 2);
             std::error_code ec;

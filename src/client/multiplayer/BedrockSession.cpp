@@ -448,7 +448,7 @@ namespace perlin {
 
     void BedrockSession::SetOutdated(int who) {
         const int theirs = net ? net->Info().advertisedProtocol : 0;
-        // A plain version mismatch doesn't say which side is behind; the protocol from the ping reply does.
+        // plain version mismatch doesn't say which side is behind; the ping reply's protocol does
         if (who == 0 && theirs > 0 && theirs != kBedrockProtocol)
             who = theirs > kBedrockProtocol ? 1 : 2;
         if (who == 0)

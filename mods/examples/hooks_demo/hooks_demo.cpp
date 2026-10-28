@@ -6,7 +6,7 @@
 
 using namespace perlin;
 
-// A tour of perlin/hooks.hpp. Press K (with Ctrl) to toggle the effects.
+// tour of perlin/hooks.hpp; Ctrl+K toggles the effects
 struct HooksDemo : Plugin {
     bool on = true;
     int clicks = 0, chunks = 0, blocks = 0;
@@ -64,7 +64,7 @@ struct HooksDemo : Plugin {
             (void)hooks::particle("minecraft:basic_flame_particle", e.x + 0.5, e.y + 0.5, e.z + 0.5, 6, 0.3f);
     }
     Flow onInteract(const abi::EventInteract& e) {
-        // Refuses to break bedrock-looking attempts at y below -60, as an example of cancelling.
+        // example of cancelling: refuse breaks below y -60
         return e.kind == abi::InteractKind::StartBreak && e.y < -60 ? Flow::cancel : Flow::pass;
     }
     void onServerPing(const abi::EventServerPing& e) { ctx().print("ping {}: {} players, {} ms", e.ok ? "ok" : "failed", e.players, static_cast<int>(e.latencyMs)); }
