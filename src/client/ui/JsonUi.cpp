@@ -725,15 +725,6 @@ namespace perlin::ui {
                                 node->factoryControls.emplace_back(member.first, std::move(template2));
                         }
                     }
-                    if (const Json* name2 = factory->Find("control_name"); name2 && name2->IsString() && node->type != "factory") {
-                        std::string refName = name2->string;
-                        if (!refName.empty() && refName[0] == '@') refName.erase(0, 1);
-                        const size_t dot = refName.find('.');
-                        const std::string simple = dot == std::string::npos ? refName : refName.substr(dot + 1);
-                        auto template2 = Build(simple + "@" + refName, Json::MakeObject(), ns, vars, node->path, depth + 1);
-                        if (template2)
-                            node->factoryControls.emplace_back(simple, std::move(template2));
-                    }
                 }
                 return node;
             }
