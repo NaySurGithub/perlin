@@ -463,6 +463,7 @@ namespace perlin {
 
         LaunchArgs args;
         AppPlatform* platform = nullptr;
+        void VibrateBlockBroken();
         Options options;
         std::string runningRenderer;
         Input input;

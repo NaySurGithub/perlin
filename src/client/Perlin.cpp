@@ -614,6 +614,12 @@ namespace perlin {
         mods::ModManager::Instance().Queue(abi::Event::ResourcesReloaded, {});
     }
 
+    // same moment and length as the game's touch vibration (ClientInputCallbacks::destroyVibrate, 24 ms)
+    void Perlin::VibrateBlockBroken() {
+        if (options.padVibration && platform && input.PadConnected())
+            platform->Vibrate(24);
+    }
+
     void Perlin::UnloadServerPacks() {
         if (!ServerPacks::Instance().HasServerPacks())
             return;
@@ -3653,6 +3659,7 @@ namespace perlin {
                     slider("Stick Dead Zone", percent(options.padDeadzone), options.padDeadzone / 0.6f,
                            [this](float f) { options.padDeadzone = std::round(std::clamp(f, 0.0f, 1.0f) * 60.0f) / 100.0f; });
                     toggle("Invert Look Y", options.padInvertY);
+                    toggle("Vibration", options.padVibration);
                     bindsRow("Controller Binds...", 1);
                 } else {
                     slider("Look Sensitivity", percent(options.touchSensitivity), options.touchSensitivity / 2.0f,
@@ -7621,6 +7628,7 @@ namespace perlin {
                                 live->SendPlayerAuthInputBlockAction(1, gAim.bx, gAim.by, gAim.bz, gAim.face);
                                 live->NetLevel().SetBlock(fx, fy, fz, 0);
                                 sounds.PlayBlockEvent(fireName, "break", glm::dvec3(fx + 0.5, fy + 0.5, fz + 0.5));
+                                VibrateBlockBroken();
                                 breakDelayTicks = 5;
                                 if (creative) creativeBreakReadyAt = MsNow() + 250;
                             } else {
@@ -7677,6 +7685,7 @@ namespace perlin {
                                     live->SendPlayerAuthInputBlockAction(2  , bkx, bky, bkz, bkFace);
                                 if (!blockName.empty())
                                     sounds.PlayBlockEvent(blockName, "break", glm::dvec3(bkx + 0.5, bky + 0.5, bkz + 0.5));
+                                VibrateBlockBroken();
                                 {
                                     bool loadedHere = false;
                                     const uint16_t oldId = live->NetLevel().GetBlock(bkx, bky, bkz, loadedHere);

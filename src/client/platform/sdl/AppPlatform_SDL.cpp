@@ -296,6 +296,11 @@ std::string AppPlatform_SDL::GetClipboard() {
     return text;
 }
 
+void AppPlatform_SDL::Vibrate(int milliseconds) {
+    if (gamepad)
+        SDL_RumbleGamepad(gamepad, 0xFFFF, 0xFFFF, static_cast<Uint32>(milliseconds));
+}
+
 bool AppPlatform_SDL::WindowFocused() const { return window && (SDL_GetWindowFlags(window) & SDL_WINDOW_INPUT_FOCUS) != 0; }
 
 bool AppPlatform_SDL::WindowMinimized() const { return window && (SDL_GetWindowFlags(window) & SDL_WINDOW_MINIMIZED) != 0; }

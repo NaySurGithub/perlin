@@ -46,6 +46,7 @@ private:
     std::string GetClipboard() override;
     double DisplayRefreshHz() override;
     bool WindowFocused() const override;
+    void Vibrate(int milliseconds) override;
     bool WindowMinimized() const override;
     void OpenUrl(const std::string& url) override;
     bool PickFile(const std::string& kind) override;
