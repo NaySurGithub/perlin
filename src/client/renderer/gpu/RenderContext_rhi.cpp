@@ -471,13 +471,20 @@ namespace perlin {
         // builtins that depend on the view and the model transform
         const glm::mat4 viewProj = vd.proj * vd.view;
         const glm::mat4 modelViewProj = modelIdentity ? viewProj : viewProj * model;
-        uni.Mat4("u_modelViewProj", glm::value_ptr(modelViewProj));
-        uni.Mat4("u_viewProj", glm::value_ptr(viewProj));
-        uni.Mat4("u_view", glm::value_ptr(vd.view));
-        uni.Mat4("u_proj", glm::value_ptr(vd.proj));
-        uni.Mat4("u_model", glm::value_ptr(model));
-        uni.Vec4("u_viewRect", static_cast<float>(vd.x), static_cast<float>(vd.y), static_cast<float>(vd.w), static_cast<float>(vd.h));
-        uni.Vec4("u_viewTexel", vd.w ? 1.0f / static_cast<float>(vd.w) : 0.0f, vd.h ? 1.0f / static_cast<float>(vd.h) : 0.0f, 0.0f, 0.0f);
+        if (builtinIds[0] < 0) {
+            static constexpr const char* names[kBuiltinCount] = {"u_modelViewProj", "u_viewProj", "u_view", "u_proj", "u_model", "u_viewRect", "u_viewTexel"};
+            for (int i = 0; i < kBuiltinCount; i++)
+                builtinIds[i] = uni.Id(names[i]);
+        }
+        uni.Mat4(builtinIds[0], glm::value_ptr(modelViewProj));
+        uni.Mat4(builtinIds[1], glm::value_ptr(viewProj));
+        uni.Mat4(builtinIds[2], glm::value_ptr(vd.view));
+        uni.Mat4(builtinIds[3], glm::value_ptr(vd.proj));
+        uni.Mat4(builtinIds[4], glm::value_ptr(model));
+        const float rect[4] = {static_cast<float>(vd.x), static_cast<float>(vd.y), static_cast<float>(vd.w), static_cast<float>(vd.h)};
+        uni.Set(builtinIds[5], rect, 4);
+        const float texel[4] = {vd.w ? 1.0f / static_cast<float>(vd.w) : 0.0f, vd.h ? 1.0f / static_cast<float>(vd.h) : 0.0f, 0.0f, 0.0f};
+        uni.Set(builtinIds[6], texel, 4);
 
         dc = {};
         dc.pipeline = pipeline;

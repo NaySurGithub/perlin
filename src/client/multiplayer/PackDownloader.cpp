@@ -235,6 +235,18 @@ namespace perlin {
     }
 
     PackDownloader::Result PackDownloader::Tick() {
+        // a chunk behind later ones that never shows up is asked for again
+        if (const auto cur = active.find(currentKey); cur != active.end() && !cur->second.early.empty() &&
+            std::chrono::steady_clock::now() - cur->second.gapSince > std::chrono::seconds(3)) {
+            Active& a = cur->second;
+            a.gapSince = std::chrono::steady_clock::now();
+            std::cout << "[packs] chunk " << a.next << " of " << a.packId << " is missing, asking again" << std::endl;
+            Result again;
+            again.step = Step::RequestChunk;
+            again.packId = a.packId;
+            again.chunks.push_back(a.next);
+            return again;
+        }
         if (!currentKey.empty() && !stallReported && std::chrono::steady_clock::now() - requestedAt > std::chrono::seconds(10)) {
             stallReported = true;
             std::cout << "[packs] no chunk for 10 s, still waiting" << std::endl;
@@ -249,14 +261,30 @@ namespace perlin {
         if (it == active.end())
             return r;
         Active& a = it->second;
-        if (chunk.chunkIndex != a.next) {
+        if (chunk.chunkIndex >= a.chunkCount) {
             r.step = Step::Failed;
-            r.message = "pack chunk " + std::to_string(chunk.chunkIndex) + " arrived, expected " + std::to_string(a.next);
+            r.message = "pack chunk " + std::to_string(chunk.chunkIndex) + " is past the end (" + std::to_string(a.chunkCount) + " chunks)";
+            return r;
+        }
+        if (chunk.chunkIndex < a.next)
+            return r; // a repeat of one already stored
+        if (chunk.chunkIndex != a.next) {
+            if (a.early.empty())
+                a.gapSince = std::chrono::steady_clock::now();
+            a.early.emplace(chunk.chunkIndex, std::vector<uint8_t>(chunk.payload.begin(), chunk.payload.end()));
             return r;
         }
         a.data.insert(a.data.end(), chunk.payload.begin(), chunk.payload.end());
         receivedBytes += chunk.payload.size();
         a.next++;
+        for (auto e = a.early.find(a.next); e != a.early.end(); e = a.early.find(a.next)) {
+            a.data.insert(a.data.end(), e->second.begin(), e->second.end());
+            receivedBytes += e->second.size();
+            a.early.erase(e);
+            a.next++;
+        }
+        if (!a.early.empty())
+            a.gapSince = std::chrono::steady_clock::now();
         requestedAt = std::chrono::steady_clock::now();
         stallReported = false;
         if (a.next < a.chunkCount) {

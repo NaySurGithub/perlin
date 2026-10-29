@@ -6,6 +6,7 @@
 #include "client/renderer/gpu/GpuCore.hpp"
 #include "client/renderer/gpu/UniformStore.hpp"
 
+#include <array>
 #include <glm/glm.hpp>
 
 #include <atomic>
@@ -391,6 +392,8 @@ namespace perlin {
         gpu::Gpu gpu;
         gpu::GpuSettings settings;
         gpu::UniformStore uni;
+        static constexpr int kBuiltinCount = 7;
+        std::array<int, kBuiltinCount> builtinIds = {-1, -1, -1, -1, -1, -1, -1};
         gpu::ChunkMeshStore meshes;
         AppPlatform* platform = nullptr;
         bool initialized = false;
