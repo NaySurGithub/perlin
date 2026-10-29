@@ -75,6 +75,7 @@ namespace perlin {
         void ClearChunkMeshes() override;
         void DrawChunkMeshes(const Frustum& frustum, float camX, float camZ) override;
         void SetChunkCullRadius(int chunks) override { chunkCullRadius = chunks; }
+        bool SectionReached(int sx, int sy, int sz) const override;
 
         void SaveScreenshotData(const std::string& path, uint32_t w, uint32_t h, uint32_t pitch,
                                 const uint8_t* bgra, bool yflip);

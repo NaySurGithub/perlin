@@ -1992,6 +1992,13 @@ namespace perlin::entity {
                     culled++;
                     continue;
                 }
+                // behind walls: no model; names still show through walls
+                if (in.sectionReached && !e.isSelf && !e.isPlayer && e.nameTag.empty() &&
+                    !in.sectionReached(static_cast<int>(std::floor(x)) >> 4, static_cast<int>(std::floor(y)) >> 4,
+                                       static_cast<int>(std::floor(z)) >> 4)) {
+                    culled++;
+                    continue;
+                }
             }
             if (in.blobShadows && !modelHidden && !e.Has(flag::Invisible) && e.type != "minecraft:cushion" && !(e.isSelf && in.firstPerson)) {
                 if (e.isItem) {
@@ -2760,6 +2767,10 @@ namespace perlin::entity {
                 continue;
             if (in.frustum && !in.frustum->Visible(static_cast<float>(d.origin.x) - 1.0f, static_cast<float>(d.origin.y) - 0.5f, static_cast<float>(d.origin.z) - 1.0f,
                                                    static_cast<float>(d.origin.x) + 2.0f, static_cast<float>(d.origin.y) + 1.5f, static_cast<float>(d.origin.z) + 2.0f))
+                continue;
+            if (in.sectionReached && !in.sectionReached(static_cast<int>(std::floor(d.origin.x)) >> 4,
+                                                        static_cast<int>(std::floor(d.origin.y)) >> 4,
+                                                        static_cast<int>(std::floor(d.origin.z)) >> 4))
                 continue;
             glm::vec3 light(1.0f);
             if (in.light)
