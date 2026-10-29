@@ -77,18 +77,15 @@ if(NOT TARGET perlin_rhi)
     endif()
 
     if(PERLIN_RHI_METAL)
-        get_property(perlin_langs GLOBAL PROPERTY ENABLED_LANGUAGES)
-        if(NOT "OBJCXX" IN_LIST perlin_langs)
-            enable_language(OBJCXX)
-        endif()
-        set(CMAKE_OBJCXX_STANDARD 23)
-        set(CMAKE_OBJCXX_STANDARD_REQUIRED ON)
-        set(CMAKE_OBJCXX_EXTENSIONS OFF)
         list(APPEND PERLIN_RHI_SOURCES
             metal/MetalConvert.mm
             metal/MetalDevice.mm
             metal/MetalCommands.mm
             metal/MetalInstance.mm)
+        # compiled as c++ with the objective-c++ dialect forced, so no separate OBJCXX language is needed: enabling that one
+        # leaves cmake without its compile and archive rules on the macos runners
+        set_source_files_properties(metal/MetalConvert.mm metal/MetalDevice.mm metal/MetalCommands.mm metal/MetalInstance.mm
+            PROPERTIES LANGUAGE CXX COMPILE_OPTIONS "-x;objective-c++;-fobjc-arc")
     endif()
 
     if(PERLIN_RHI_WEBGPU)
@@ -221,7 +218,6 @@ if(NOT TARGET perlin_rhi)
     endif()
 
     if(PERLIN_RHI_METAL)
-        target_compile_options(perlin_rhi PRIVATE $<$<COMPILE_LANGUAGE:OBJCXX>:-fobjc-arc>)
         target_link_libraries(perlin_rhi PUBLIC "-framework Metal" "-framework QuartzCore" "-framework Foundation" "-framework CoreGraphics")
     endif()
 
