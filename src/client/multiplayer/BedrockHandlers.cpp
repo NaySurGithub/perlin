@@ -534,6 +534,14 @@ namespace perlin {
         });
 
         On<ItemRegistryPacket>([this](const ItemRegistryPacket& p) {
+            // Some proxies follow the real registry with an empty one; it carries nothing, so it must not wipe the names.
+            if (p.itemstates.empty()) {
+                std::lock_guard lock(statusMutex);
+                if (!itemNames.empty()) {
+                    std::cout << "[items] ignoring an empty item registry" << std::endl;
+                    return;
+                }
+            }
             std::cout << "[items] server defines " << RegisterCustomItems(p.itemstates) << " custom items" << std::endl;
             {
                 std::lock_guard lock(statusMutex);
