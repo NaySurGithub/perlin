@@ -34,7 +34,7 @@ namespace rhi {
 
         uint64_t UsableMemory(const AdapterInfo& a) {
             // integrated parts share system memory; only part of it is realistically the gpu's
-            return a.type == AdapterType::Discrete ? a.dedicatedVram : std::max(a.dedicatedVram, a.sharedMemory / 2);
+            return a.type == AdapterType::Discrete ? a.dedicatedVram : (std::max)(a.dedicatedVram, a.sharedMemory / 2);
         }
 
         bool IsSoftware(const AdapterInfo& a) { return a.type == AdapterType::Cpu || a.type == AdapterType::Virtual; }
@@ -105,11 +105,11 @@ namespace rhi {
             level = 4;
         // integrated gpus have the memory but not the throughput
         if (a.type == AdapterType::Integrated)
-            level = std::min(level, 2);
+            level = (std::min)(level, 2);
         if (c.haveCaps) {
             const DeviceFeatures& f = c.caps.features;
             if (!f.multiDrawIndirect)
-                level = std::min(level, 1);
+                level = (std::min)(level, 1);
             // a discrete card with the newest hardware features is a recent one
             if (a.type == AdapterType::Discrete && level >= 3 && (f.meshShaders || f.cooperativeVector))
                 level = 4;
@@ -254,7 +254,7 @@ namespace rhi {
         p.renderDistance = t.render;
         p.lodDistance = t.lod;
         p.maxMeshBuildsPerFrame = t.builds;
-        p.maxAnisotropy = haveCaps ? std::min(t.anisotropy, std::max(1.0f, best.caps.limits.maxAnisotropy)) : t.anisotropy;
+        p.maxAnisotropy = haveCaps ? (std::min)(t.anisotropy, (std::max)(1.0f, best.caps.limits.maxAnisotropy)) : t.anisotropy;
         p.msaa = 1;
         p.lodMaxLevel = p.tier >= Tier::High ? 4 : 3;
 
