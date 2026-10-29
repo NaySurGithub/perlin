@@ -199,6 +199,7 @@ namespace perlin {
         AccountList accounts;
         void ApplyActiveAccount();
         std::string ActiveAuthPath() const;
+        void PrewarmSignIn();
         void StartAccountSignIn();
         void CancelAccountSignIn();
         std::mutex signInMutex;

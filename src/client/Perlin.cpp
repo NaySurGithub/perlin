@@ -357,6 +357,7 @@ namespace perlin {
             onlineThisRun = true;
             options.Save();
         }
+        PrewarmSignIn();
 
         renderer = platform->CreateRenderContext();
         if (!renderer)
@@ -511,7 +512,7 @@ namespace perlin {
         account.reset();
         if (onlineThisRun) {
             account = std::make_shared<xbox::Account>(ActiveAuthPath());
-            session->SetAccount(account);
+            session->SetAccount(account, ActiveAuthPath());
         }
         connectsInFlight++;
         std::string nameAccountId;
@@ -4605,6 +4606,16 @@ namespace perlin {
             accounts.SetSkin(a->id, options.skin, options.cape);
         }
         options.Save();
+        PrewarmSignIn();
+    }
+
+    // the Xbox Live / PlayFab / Minecraft token round trips take seconds: do them while the player is in the menus
+    void Perlin::PrewarmSignIn() {
+        if (!onlineThisRun || PERLIN_ENV("PERLIN_PREVIEW"))
+            return;
+        auto account = std::make_shared<xbox::Account>(ActiveAuthPath());
+        if (account->HasSavedLogin())
+            BedrockSession::PrewarmLogin(std::move(account), ActiveAuthPath());
     }
 
     std::string Perlin::ActiveAuthPath() const {
