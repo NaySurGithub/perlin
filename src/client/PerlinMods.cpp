@@ -1137,7 +1137,7 @@ namespace perlin {
             if (!modLive)
                 return Status::Unavailable;
             const float eye[3] = {camera.x, camera.y, camera.z};
-            modLive->SendUseItemInAir(eye);
+            modLive->SendUseItemInAir(eye, false);
             return Status::Ok;
         }, control);
 
