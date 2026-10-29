@@ -8310,7 +8310,7 @@ namespace perlin {
             {
                 camera.farPlane = std::max(static_cast<float>(options.renderDistance * 16) * 1.6f,
                                            static_cast<float>(GraphicsSettings::From(options).cloudRange * 16));
-                camera.nearPlane = std::clamp(0.05f + (camera.farPlane - 1500.0f) * 0.00004f, 0.05f, 0.25f);
+                camera.nearPlane = std::clamp(0.05f + (camera.farPlane - 1500.0f) * 0.00004f, 0.05f, camera.farPlane > 8000.0f ? 0.4f : 0.25f);
             }
             if (replayCtl.Playing()) {
                 if (replayUi.fovOverride > 0)

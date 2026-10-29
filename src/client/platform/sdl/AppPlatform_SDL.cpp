@@ -177,11 +177,30 @@ NativeWindowInfo AppPlatform_SDL::GetNativeWindowInfo() {
 
 namespace {
     LRESULT CALLBACK RenderSurfaceProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) {
-        // clicks, moves and the cursor all belong to the game window underneath
-        if (message == WM_NCHITTEST)
+        HWND parent = GetParent(hwnd);
+        switch (message) {
+        case WM_NCHITTEST:
+            // clicks, moves and the cursor all belong to the game window underneath
             return HTTRANSPARENT;
-        if (message == WM_ERASEBKGND)
+        case WM_ERASEBKGND:
             return 1;
+        case WM_MOUSEACTIVATE:
+            return MA_NOACTIVATE;
+        case WM_SETFOCUS:
+            if (parent)
+                SetFocus(parent);
+            return 0;
+        case WM_SETCURSOR:
+            if (parent)
+                return SendMessageW(parent, message, reinterpret_cast<WPARAM>(parent), lParam);
+            break;
+        default:
+            // should a driver or an odd window order route input here anyway, hand it straight to the game window
+            if (parent && ((message >= WM_MOUSEFIRST && message <= WM_MOUSELAST) || (message >= WM_KEYFIRST && message <= WM_KEYLAST) ||
+                           message == WM_MOUSEHWHEEL))
+                return SendMessageW(parent, message, wParam, lParam);
+            break;
+        }
         return DefWindowProcW(hwnd, message, wParam, lParam);
     }
 }
@@ -217,6 +236,9 @@ void AppPlatform_SDL::RenewRenderSurface() {
     SetWindowPos(child, HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
     renderSurface = child;
     native.window = child;
+    // creating a window must not move keyboard focus off the game window
+    if (GetFocus() != parent && GetForegroundWindow() == parent)
+        SetFocus(parent);
     std::cout << "[sdl] new render surface for the next backend" << std::endl;
 }
 

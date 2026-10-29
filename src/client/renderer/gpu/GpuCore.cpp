@@ -429,7 +429,21 @@ namespace perlin::gpu {
             out.index = 0;
             return true;
         }
-        return swapchain && swapchain->Acquire(out);
+        if (!swapchain) {
+            acquireFailures++;
+            return false;
+        }
+        if (!swapchain->Acquire(out)) {
+            acquireFailures++;
+            return false;
+        }
+        acquireFailures = 0;
+        // the chain may have settled on another size than asked for (clamping, a window that moved on): draw to what it really is
+        if (swapchain->Width() && swapchain->Height()) {
+            targetWidth = swapchain->Width();
+            targetHeight = swapchain->Height();
+        }
+        return true;
     }
 
     void Gpu::PresentImage() {
@@ -457,7 +471,14 @@ namespace perlin::gpu {
             textureStates.erase(offscreen.value);
             return true;
         }
-        return swapchain && swapchain->Resize(w, h);
+        if (!swapchain)
+            return false;
+        const bool ok = swapchain->Resize(w, h);
+        if (swapchain->Width() && swapchain->Height()) {
+            targetWidth = swapchain->Width();
+            targetHeight = swapchain->Height();
+        }
+        return ok;
     }
 
     bool Gpu::RecreateSurface(uint32_t w, uint32_t h) {

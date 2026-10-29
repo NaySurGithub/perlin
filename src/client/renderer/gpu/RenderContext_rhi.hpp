@@ -190,6 +190,8 @@ namespace perlin {
         struct ViewData {
             glm::mat4 view{1.0f};
             glm::mat4 proj{1.0f};
+            // scene passes use reversed depth (1 at the near plane, 0 at the far plane, cleared to 0); shadow maps stay conventional
+            bool reversedZ = true;
             uint32_t x = 0, y = 0, w = 0, h = 0;
             // attachments the draws of this view render into; the pipelines are built for them
             rhi::Format colorFormat = rhi::Format::BGRA8Unorm;
@@ -383,6 +385,9 @@ namespace perlin {
         gpu::PipelineKey KeyFor(const ViewData& view, const DrawState& state) const;
 
         void ConvertDepth(const float in[16], float out[16]) const;
+        static glm::mat4 ReverseDepth(const glm::mat4& clipFromWorld);
+        static rhi::CompareOp ReverseOp(rhi::CompareOp op);
+        static bool StageReversed(const Stage& stage);
         void UploadLightmap(const uint8_t* pixels);
         bool MakeTexture(TexRec& rec, uint32_t w, uint32_t h, uint32_t layers, uint32_t mips, rhi::Format format, gpu::SamplerKind sampler,
                          const char* name);
