@@ -440,6 +440,13 @@ namespace perlin::ui {
         return out;
     }
 
+    bool FormDismissDropdown(FormModel& form, const std::string& hoverId) {
+        if (form.openDropdown < 0 || hoverId.rfind("r:", 0) == 0 || hoverId.rfind("d:", 0) == 0)
+            return false;
+        form.openDropdown = -1;
+        return true;
+    }
+
     bool FormClick(FormModel& form, const std::string& id, std::string& response) {
         if (id.size() < 2)
             return false;

@@ -1012,8 +1012,10 @@ namespace perlin {
                 if (const char* clicks = PERLIN_ENV("PERLIN_PREVIEW_FORM_CLICKS")) {
                     std::stringstream list(clicks);
                     std::string ignored;
+                    // "-" clicks on nothing
                     for (std::string id; std::getline(list, id, ',');)
-                        ui::FormClick(formModel, id, ignored);
+                        if (!ui::FormDismissDropdown(formModel, id == "-" ? std::string() : id))
+                            ui::FormClick(formModel, id, ignored);
                 }
             std::cout << "[form] opened form " << sf.id << " '" << formModel.title << "'" << std::endl;
             {
@@ -1128,9 +1130,7 @@ namespace perlin {
                 closeForm();
                 return;
             }
-            // an open dropdown takes the next click: an option, or anywhere else to close it (dropdown_exit)
-            if (formModel.openDropdown >= 0 && hover.rfind("r:", 0) != 0 && hover.rfind("d:", 0) != 0) {
-                formModel.openDropdown = -1;
+            if (ui::FormDismissDropdown(formModel, hover)) {
                 formLeftDown = down;
                 return;
             }
