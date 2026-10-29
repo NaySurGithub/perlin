@@ -9,7 +9,8 @@
   ],
   "s_shadow": [
     2,
-    "2d"
+    "2d",
+    "unfilterable"
   ],
   "s_clouds": [
     3,
@@ -21,7 +22,8 @@
   ],
   "s_sceneDepth": [
     5,
-    "2d"
+    "2d",
+    "unfilterable"
   ],
   "s_tileFlags": [
     6,
@@ -33,7 +35,8 @@
   ],
   "s_shadowB": [
     8,
-    "2d"
+    "2d",
+    "unfilterable"
   ],
   "s_shadowTintB": [
     9,
@@ -41,7 +44,8 @@
   ],
   "s_shadowEnt": [
     10,
-    "2d"
+    "2d",
+    "unfilterable"
   ],
   "s_sky": [
     11,
@@ -69,7 +73,8 @@
   ],
   "s_depth": [
     17,
-    "2d"
+    "2d",
+    "unfilterable"
   ],
   "s_world": [
     18,

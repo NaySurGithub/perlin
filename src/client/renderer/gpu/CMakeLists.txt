@@ -19,6 +19,7 @@ if(NOT TARGET perlin_gpu)
         ChunkMeshStore.cpp
         RenderContext_rhi.cpp
         RenderContext_rhi_post.cpp
+        RenderContext_rhi_shadow.cpp
         RenderContext_rhi_ui.cpp
         RenderContext_rhi_world.cpp)
     target_include_directories(perlin_gpu PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/../../..")

@@ -65,6 +65,7 @@ private:
     perlin::TouchControls touch;
 
     SDL_Window* window = nullptr;
+    void* metalView = nullptr;
     NativeWindowInfo native;
     std::unique_ptr<perlin::Perlin> game;
     std::atomic<int> framebufferWidth{1280};

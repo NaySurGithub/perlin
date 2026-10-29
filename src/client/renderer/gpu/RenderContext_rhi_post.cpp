@@ -181,6 +181,7 @@ namespace perlin {
     void RenderContext_rhi::PlanPost(const FrameParams& params) {
         plan = PostPlan{};
         stages.clear();
+        shadowStages.clear();
         static const bool noUpscale = PERLIN_ENV("PERLIN_NO_UPSCALE") != nullptr;
         static const bool noSsr = PERLIN_ENV("PERLIN_NO_SSR") != nullptr;
         static const bool noBloom = PERLIN_ENV("PERLIN_NO_BLOOM") != nullptr;
@@ -541,12 +542,17 @@ namespace perlin {
     // -- execution --------------------------------------------------------------------------------------------------
 
     void RenderContext_rhi::ReadyForSampling(rhi::CommandList& list, rhi::TextureHandle except0, rhi::TextureHandle except1) {
-        for (rhi::TextureHandle t : postTextures) {
-            if (t == except0 || t == except1)
-                continue;
-            if (gpu.StateOf(t) != rhi::State::Undefined)
+        const auto ready = [&](rhi::TextureHandle t) {
+            if (t && t != except0 && t != except1 && gpu.StateOf(t) != rhi::State::Undefined)
                 gpu.Transition(list, t, rhi::State::ShaderRead);
+        };
+        for (rhi::TextureHandle t : postTextures)
+            ready(t);
+        for (const ShadowMap& m : shadow.maps) {
+            ready(m.color);
+            ready(m.tint);
         }
+        ready(shadow.entityColor);
     }
 
     void RenderContext_rhi::RunStage(rhi::CommandList& list, const Stage& stage) {

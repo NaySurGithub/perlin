@@ -68,6 +68,10 @@ namespace {
     }
 }
 
+namespace perlin {
+    void TestSetBundledPack(bool on);
+}
+
 int main(int argc, char** argv) {
     if (argc < 2) {
         std::fprintf(stderr, "usage: gpu_context_test <pack> [api]\n");
@@ -136,7 +140,9 @@ int main(int argc, char** argv) {
     }
 
     // everything on the gpu survives a device rebuild: mesh pages, atlas, lightmap
-    Check(ctx.RebuildDevice("vulkan"), "device rebuilt");
+    // rebuild onto another api when asked, so the frames after it prove the switch
+    const char* switchTo = std::getenv("PERLIN_TEST_SWITCH_TO");
+    Check(ctx.RebuildDevice(switchTo ? switchTo : rhi::ApiId(settings.api)), "device rebuilt");
     Check(Frame(ctx, MakeFrame({0, 3, 0}, {0, 0, 0}, {0, 0, -1}, 128, 96), rgba, w, h), "frame after rebuild");
     if (!rgba.empty()) {
         Check(Red(At(rgba, w, w - 20, h / 2)), "mesh and atlas restored");
@@ -150,9 +156,14 @@ int main(int argc, char** argv) {
         int upscaler;
         float bloom, blur, sharp;
     };
-    for (const PostCase& pc : {PostCase{"scaled bilinear", 0.5f, 1, 0, 0, 0}, PostCase{"scaled spatial sharpened", 0.5f, 2, 0, 0, 0.5f},
-                               PostCase{"bloom", 1.0f, 0, 0.6f, 0, 0}, PostCase{"motion blur", 1.0f, 0, 0, 0.5f, 0},
-                               PostCase{"temporal", 0.5f, 3, 0.4f, 0.3f, 0.3f}}) {
+    const PostCase cases[] = {PostCase{"scaled bilinear", 0.5f, 1, 0, 0, 0}, PostCase{"scaled spatial sharpened", 0.5f, 2, 0, 0, 0.5f},
+                              PostCase{"bloom", 1.0f, 0, 0.6f, 0, 0}, PostCase{"motion blur", 1.0f, 0, 0, 0.5f, 0},
+                              PostCase{"temporal", 0.5f, 3, 0.4f, 0.3f, 0.3f}};
+    for (const PostCase& pc : cases) {
+        // a blank frame first: a stale image from the previous case must not pass for this one
+        ctx.RemoveChunkMesh(0, 0);
+        Frame(ctx, MakeFrame({0, 3, 0}, {0, 0, 0}, {0, 0, -1}, 128, 96), rgba, w, h);
+        ctx.UpdateChunkMesh(0, 0, right, 20 + static_cast<uint64_t>(&pc - cases));
         bool got = true;
         for (int i = 0; i < 4 && got; i++) {
             FrameParams f = MakeFrame({0, 3, 0}, {0, 0, 0}, {0, 0, -1}, 128, 96);
@@ -167,7 +178,11 @@ int main(int argc, char** argv) {
         Check(got, (std::string("post frame: ") + pc.name).c_str());
         if (got && !rgba.empty()) {
             Check(w == 128 && h == 96, (std::string("post size: ") + pc.name).c_str());
-            Check(Red(At(rgba, w, w - 20, h / 2)), (std::string("post right quad: ") + pc.name).c_str());
+            if (!Red(At(rgba, w, w - 36, h / 2))) {
+                const auto p = At(rgba, w, w - 36, h / 2);
+                std::printf("     pixel %d %d %d\n", p.r, p.g, p.b);
+            }
+            Check(Red(At(rgba, w, w - 36, h / 2)), (std::string("post right quad: ") + pc.name).c_str());
             Check(!Red(At(rgba, w, 20, h / 2)), (std::string("post left empty: ") + pc.name).c_str());
         }
     }
@@ -175,7 +190,7 @@ int main(int argc, char** argv) {
         FrameParams f = MakeFrame({0, 3, 0}, {0, 0, 0}, {0, 0, -1}, 128, 96);
         Check(Frame(ctx, f, rgba, w, h), "direct frame after post");
         if (!rgba.empty())
-            Check(Red(At(rgba, w, w - 20, h / 2)), "direct path restored");
+            Check(Red(At(rgba, w, w - 36, h / 2)), "direct path restored");
     }
 
     // removing the mesh clears the image
@@ -183,6 +198,82 @@ int main(int argc, char** argv) {
     Check(Frame(ctx, MakeFrame({0, 3, 0}, {0, 0, 0}, {0, 0, -1}, 128, 96), rgba, w, h), "frame after removal");
     if (!rgba.empty())
         Check(Background(At(rgba, w, w / 2, h / 2)), "removed mesh is gone");
+
+    // sun shadows: a floating quad must darken the ground it covers, only with shadows on
+    perlin::TestSetBundledPack(true);
+    Check(ctx.ReloadShaders(), "bundled variant resolves");
+    {
+        Tessellator scene;
+        scene.Begin();
+        scene.EnterSection(0);
+        const float ground[4][3] = {{-3, 0, -3}, {3, 0, -3}, {3, 0, 3}, {-3, 0, 3}};
+        const float occl[4][3] = {{-1, 1.5f, -1}, {0.2f, 1.5f, -1}, {0.2f, 1.5f, 1}, {-1, 1.5f, 1}};
+        scene.AddQuad(ground, c, uv, false, 0.0f, 15.0f);
+        scene.AddQuad(occl, c, uv, false, 0.0f, 15.0f);
+        scene.End();
+        ctx.UpdateChunkMesh(0, 0, scene, 7);
+        std::vector<uint8_t> lit, dark;
+        const auto shot = [&](int quality, std::vector<uint8_t>& out) {
+            bool ok = true;
+            for (int i = 0; i < 3 && ok; i++) {
+                FrameParams f = MakeFrame({0.5f, 5, 5}, {0.5f, 0, 0}, {0, 1, 0}, 128, 96);
+                f.shadowQuality = quality;
+                f.shadowEntities = false;
+                f.sky.enabled = true;
+                f.waterTile = f.lavaTile = f.waterFlowTile = -1.0f;
+                f.sky.sunAngle = 0.6f;
+                // mid-range pack settings keep the lit ground away from the tonemap ceiling
+                for (float& v : f.packSettings)
+                    v = 0.5f;
+                f.timeSeconds = 2.0f + 0.5f * static_cast<float>(i);
+                ok = Frame(ctx, f, out, w, h);
+            }
+            return ok;
+        };
+        Check(shot(0, lit), "frame without shadows");
+        Check(shot(2, dark), "frame with shadows");
+        if (!lit.empty() && lit.size() == dark.size()) {
+            int darker = 0, brighter = 0;
+            for (size_t i = 0; i + 3 < lit.size(); i += 4) {
+                const int a = lit[i] + lit[i + 1] + lit[i + 2], b = dark[i] + dark[i + 1] + dark[i + 2];
+                darker += b < a - 6;
+                brighter += b > a + 6;
+            }
+            if (const char* dump = std::getenv("PERLIN_TEST_DUMP"))
+                for (int k = 0; k < 2; k++) {
+                    const std::string path = std::string(dump) + (k ? "_dark.ppm" : "_lit.ppm");
+                    if (FILE* fp = std::fopen(path.c_str(), "wb")) {
+                        std::fprintf(fp, "P6\n%u %u\n255\n", w, h);
+                        const std::vector<uint8_t>& img = k ? dark : lit;
+                        for (size_t i = 0; i + 3 < img.size(); i += 4)
+                            std::fwrite(&img[i], 1, 3, fp);
+                        std::fclose(fp);
+                    }
+                }
+            std::printf("     shadow pixels: %d darker, %d brighter\n", darker, brighter);
+            Check(darker > 40, "the occluder darkens the ground");
+        }
+
+        // scene copy: opaque pass, colour+depth copy, then translucent draws sampling the copy
+        {
+            bool ok = true;
+            for (int i = 0; i < 3 && ok; i++) {
+                FrameParams f = MakeFrame({0.5f, 5, 5}, {0.5f, 0, 0}, {0, 1, 0}, 128, 96);
+                f.shadowQuality = 2;
+                f.shadowEntities = false;
+                f.sky.enabled = true;
+                f.sky.sunAngle = 0.6f;
+                f.waterTile = f.lavaTile = f.waterFlowTile = -1.0f;
+                for (float& v : f.packSettings)
+                    v = 0.5f;
+                f.timeSeconds = 5.0f + static_cast<float>(i);
+                ok = Frame(ctx, f, rgba, w, h);
+            }
+            Check(ok, "frame with the scene copy");
+            if (ok && !rgba.empty())
+                Check(!Background(At(rgba, w, w / 2, h / 2)), "scene copy keeps the ground");
+        }
+    }
 
     ctx.Shutdown();
     std::printf("%d failure(s)\n", failures);

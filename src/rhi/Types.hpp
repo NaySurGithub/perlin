@@ -251,6 +251,8 @@ namespace rhi {
         uint32_t count = 1;
         // texture views seen by the shader; ignored for other types
         TextureDim viewDim = TextureDim::Tex2D;
+        // false: the texture holds depth or 32 bit float data and the paired sampler is nearest-only. only webgpu cares
+        bool filterable = true;
     };
 
     struct BindLayoutDesc {

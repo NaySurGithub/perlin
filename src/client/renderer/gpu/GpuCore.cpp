@@ -36,7 +36,7 @@ namespace perlin::gpu {
                  (u(blend) << 34) | (u(alphaToCoverage) << 35) | (u(depthOp) << 36) | (u(mask) << 40) | (u(color) << 48);
         out[1] = u(srcColor) | (u(dstColor) << 8) | (u(srcAlpha) << 16) | (u(dstAlpha) << 24) | (u(depth) << 32) |
                  (static_cast<uint64_t>(static_cast<uint16_t>(biasConstant)) << 48);
-        out[2] = static_cast<uint64_t>(static_cast<uint16_t>(biasSlope));
+        out[2] = static_cast<uint64_t>(static_cast<uint16_t>(biasSlope)) | (u(alphaOp) << 16);
         return out;
     }
 
@@ -245,8 +245,9 @@ namespace perlin::gpu {
         std::vector<BindLayoutEntry> textureEntries;
         for (const TextureSlot& s : library.TextureSlots()) {
             textureEntries.push_back({s.slot * 2, BindingType::SampledTexture, ShaderStage::Fragment | ShaderStage::Vertex, 1,
-                                      s.array ? TextureDim::Tex2DArray : TextureDim::Tex2D});
-            textureEntries.push_back({s.slot * 2 + 1, BindingType::Sampler, ShaderStage::Fragment | ShaderStage::Vertex, 1, TextureDim::Tex2D});
+                                      s.array ? TextureDim::Tex2DArray : TextureDim::Tex2D, !s.unfilterable});
+            textureEntries.push_back({s.slot * 2 + 1, BindingType::Sampler, ShaderStage::Fragment | ShaderStage::Vertex, 1, TextureDim::Tex2D,
+                                      !s.unfilterable});
         }
         BindLayoutDesc uld;
         uld.entries = uniformEntries;
@@ -327,6 +328,7 @@ namespace perlin::gpu {
             bt.dstColor = key.dstColor;
             bt.srcAlpha = key.srcAlpha;
             bt.dstAlpha = key.dstAlpha;
+            bt.alphaOp = key.alphaOp;
             bt.writeMask = key.mask;
             if (key.color != Format::Unknown) {
                 gd.colorFormats[0] = key.color;
@@ -402,6 +404,14 @@ namespace perlin::gpu {
         r.used = bytes;
         ringCursor[slot] = static_cast<uint32_t>(chunks.size() - 1);
         return {r.buffer, ringCursor[slot], 0, r.data};
+    }
+
+    void Gpu::FlushRings() {
+        if (rings.empty())
+            return;
+        for (RingChunk& r : rings[FrameSlot()])
+            if (r.used)
+                device->Flush(r.buffer, 0, r.used);
     }
 
     void Gpu::BeginFrame() {
@@ -697,6 +707,7 @@ namespace perlin::gpu {
             if (sources[i].buffer && device->GetDesc(sources[i].buffer))
                 list->CopyBuffer(readback, at[i], sources[i].buffer, 0, sources[i].bytes);
         list->Barrier({}, back);
+        FlushRings();
         device->Submit(QueueType::Graphics, list);
         device->WaitIdle();
         device->Invalidate(readback, 0, total);

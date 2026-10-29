@@ -25,6 +25,7 @@ if(NOT TARGET perlin_rhi)
         DeviceProfile.cpp
         vendor/Vendor.cpp
         common/StateValidator.cpp
+        common/ShaderReflect.cpp
         null/NullDevice.cpp)
 
     include(FetchContent)
@@ -68,6 +69,78 @@ if(NOT TARGET perlin_rhi)
         endif()
     endif()
 
+    if(PERLIN_RHI_D3D11)
+        list(APPEND PERLIN_RHI_SOURCES
+            d3d11/D3D11Instance.cpp
+            d3d11/D3D11Device.cpp
+            d3d11/D3D11Commands.cpp)
+    endif()
+
+    if(PERLIN_RHI_METAL)
+        get_property(perlin_langs GLOBAL PROPERTY ENABLED_LANGUAGES)
+        if(NOT "OBJCXX" IN_LIST perlin_langs)
+            enable_language(OBJCXX)
+        endif()
+        set(CMAKE_OBJCXX_STANDARD 23)
+        set(CMAKE_OBJCXX_STANDARD_REQUIRED ON)
+        set(CMAKE_OBJCXX_EXTENSIONS OFF)
+        list(APPEND PERLIN_RHI_SOURCES
+            metal/MetalConvert.mm
+            metal/MetalDevice.mm
+            metal/MetalCommands.mm
+            metal/MetalInstance.mm)
+    endif()
+
+    if(PERLIN_RHI_WEBGPU)
+        list(APPEND PERLIN_RHI_SOURCES
+            webgpu/WebGpuConvert.cpp
+            webgpu/WebGpuDevice.cpp
+            webgpu/WebGpuPipeline.cpp
+            webgpu/WebGpuCommands.cpp
+            webgpu/WebGpuInstance.cpp)
+        if(NOT EMSCRIPTEN)
+            # prebuilt wgpu-native: a directory holding include/webgpu and lib/, or the release archive for this platform
+            set(PERLIN_RHI_WGPU_DIR "" CACHE PATH "wgpu-native install (include/webgpu/webgpu.h, lib/)")
+            if(NOT PERLIN_RHI_WGPU_DIR AND PERLIN_RHI_DEPS_DIR AND EXISTS "${PERLIN_RHI_DEPS_DIR}/wgpu")
+                set(PERLIN_RHI_WGPU_DIR "${PERLIN_RHI_DEPS_DIR}/wgpu")
+            endif()
+            if(NOT PERLIN_RHI_WGPU_DIR)
+                set(wgpu_tag v25.0.2.2)
+                string(TOLOWER "${CMAKE_SYSTEM_PROCESSOR}" wgpu_cpu)
+                if(APPLE AND CMAKE_OSX_ARCHITECTURES)
+                    string(TOLOWER "${CMAKE_OSX_ARCHITECTURES}" wgpu_cpu)
+                endif()
+                if(ANDROID)
+                    set(wgpu_cpu "${ANDROID_ABI}")
+                endif()
+                if(wgpu_cpu MATCHES "aarch64|arm64")
+                    set(wgpu_arch aarch64)
+                elseif(wgpu_cpu MATCHES "armeabi|armv7")
+                    set(wgpu_arch armv7)
+                else()
+                    set(wgpu_arch x86_64)
+                endif()
+                if(WIN32)
+                    # the msvc archive carries the import library; the gnu one a static library
+                    if(MSVC OR CMAKE_CXX_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC")
+                        set(wgpu_name wgpu-windows-${wgpu_arch}-msvc-release)
+                    else()
+                        set(wgpu_name wgpu-windows-${wgpu_arch}-gnu-release)
+                    endif()
+                elseif(APPLE)
+                    set(wgpu_name wgpu-macos-${wgpu_arch}-release)
+                elseif(ANDROID)
+                    set(wgpu_name wgpu-android-${wgpu_arch}-release)
+                else()
+                    set(wgpu_name wgpu-linux-${wgpu_arch}-release)
+                endif()
+                FetchContent_Declare(wgpu_native URL https://github.com/gfx-rs/wgpu-native/releases/download/${wgpu_tag}/${wgpu_name}.zip)
+                FetchContent_MakeAvailable(wgpu_native)
+                set(PERLIN_RHI_WGPU_DIR "${wgpu_native_SOURCE_DIR}")
+            endif()
+        endif()
+    endif()
+
     if(PERLIN_RHI_STREAMLINE AND WIN32)
         perlin_rhi_dep(streamline Streamline https://github.com/NVIDIAGameWorks/Streamline.git 625db07d4bca5abc67d781c42af7e7fb0761f1b6)
         list(APPEND PERLIN_RHI_SOURCES vendor/Streamline.cpp)
@@ -104,6 +177,43 @@ if(NOT TARGET perlin_rhi)
         if(UNIX AND NOT APPLE)
             target_link_libraries(perlin_rhi PUBLIC ${CMAKE_DL_LIBS})
         endif()
+    endif()
+
+    if(PERLIN_RHI_WEBGPU)
+        if(EMSCRIPTEN)
+            # emdawnwebgpu supplies webgpu.h and the js glue
+            target_compile_options(perlin_rhi PUBLIC --use-port=emdawnwebgpu)
+            target_link_options(perlin_rhi PUBLIC --use-port=emdawnwebgpu)
+        else()
+            target_include_directories(perlin_rhi PUBLIC "${PERLIN_RHI_WGPU_DIR}/include" "${PERLIN_RHI_WGPU_DIR}/include/webgpu")
+            if(WIN32 AND (MSVC OR CMAKE_CXX_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC"))
+                # a static rust library would pull its own c runtime in next to ours: use the dll and its import library
+                find_library(PERLIN_WGPU_LIB NAMES wgpu_native.dll.lib HINTS "${PERLIN_RHI_WGPU_DIR}/lib" NO_DEFAULT_PATH)
+                set(PERLIN_RHI_RUNTIME_DLL "${PERLIN_RHI_WGPU_DIR}/lib/wgpu_native.dll" CACHE FILEPATH "dll to ship beside the executable" FORCE)
+            else()
+                # static on purpose: nothing but system libraries may be needed at run time
+                find_library(PERLIN_WGPU_LIB NAMES libwgpu_native.a HINTS "${PERLIN_RHI_WGPU_DIR}/lib" NO_DEFAULT_PATH)
+            endif()
+            if(NOT PERLIN_WGPU_LIB)
+                message(FATAL_ERROR "wgpu-native library not found under ${PERLIN_RHI_WGPU_DIR}/lib")
+            endif()
+            target_link_libraries(perlin_rhi PUBLIC "${PERLIN_WGPU_LIB}")
+            if(WIN32)
+                target_link_libraries(perlin_rhi PUBLIC ws2_32 userenv ntdll bcrypt d3dcompiler opengl32 gdi32 ole32 oleaut32 propsys runtimeobject)
+            elseif(APPLE)
+                target_link_libraries(perlin_rhi PUBLIC "-framework Metal" "-framework QuartzCore" "-framework Foundation"
+                    "-framework CoreFoundation" "-framework CoreGraphics" "-framework AppKit" "-framework IOSurface" "-framework Security" objc iconv)
+            elseif(ANDROID)
+                target_link_libraries(perlin_rhi PUBLIC android log m ${CMAKE_DL_LIBS})
+            elseif(UNIX)
+                target_link_libraries(perlin_rhi PUBLIC ${CMAKE_DL_LIBS} m pthread)
+            endif()
+        endif()
+    endif()
+
+    if(PERLIN_RHI_METAL)
+        target_compile_options(perlin_rhi PRIVATE $<$<COMPILE_LANGUAGE:OBJCXX>:-fobjc-arc>)
+        target_link_libraries(perlin_rhi PUBLIC "-framework Metal" "-framework QuartzCore" "-framework Foundation" "-framework CoreGraphics")
     endif()
 
     if(PERLIN_RHI_D3D12)

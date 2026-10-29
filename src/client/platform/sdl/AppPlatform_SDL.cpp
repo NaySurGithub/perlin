@@ -488,6 +488,9 @@ bool AppPlatform_SDL::Initialize() {
 #ifdef SDL_PLATFORM_ANDROID
     SDL_SetBooleanProperty(props, SDL_PROP_WINDOW_CREATE_FULLSCREEN_BOOLEAN, true);
 #endif
+#ifdef SDL_PLATFORM_MACOS
+    SDL_SetBooleanProperty(props, SDL_PROP_WINDOW_CREATE_METAL_BOOLEAN, true);
+#endif
     window = SDL_CreateWindowWithProperties(props);
     SDL_DestroyProperties(props);
     if (!window) {
@@ -511,7 +514,9 @@ bool AppPlatform_SDL::Initialize() {
 #elif defined(SDL_PLATFORM_WIN32)
     native.window = SDL_GetPointerProperty(wp, SDL_PROP_WINDOW_WIN32_HWND_POINTER, nullptr);
 #elif defined(SDL_PLATFORM_MACOS)
-    native.window = SDL_GetPointerProperty(wp, SDL_PROP_WINDOW_COCOA_WINDOW_POINTER, nullptr);
+    // metal and webgpu both draw into this layer
+    metalView = SDL_Metal_CreateView(window);
+    native.window = metalView ? SDL_Metal_GetLayer(static_cast<SDL_MetalView>(metalView)) : nullptr;
 #elif defined(SDL_PLATFORM_ANDROID)
     native.window = SDL_GetPointerProperty(wp, SDL_PROP_WINDOW_ANDROID_WINDOW_POINTER, nullptr);
     lastNativeWindow = native.window;
@@ -939,6 +944,10 @@ void AppPlatform_SDL::Shutdown() {
     if (game) {
         game->Shutdown();
         game.reset();
+    }
+    if (metalView) {
+        SDL_Metal_DestroyView(static_cast<SDL_MetalView>(metalView));
+        metalView = nullptr;
     }
     if (window) {
         SDL_DestroyWindow(window);

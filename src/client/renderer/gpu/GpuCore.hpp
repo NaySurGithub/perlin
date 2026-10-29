@@ -33,6 +33,8 @@ namespace perlin::gpu {
         rhi::BlendFactor srcColor = rhi::BlendFactor::One, dstColor = rhi::BlendFactor::Zero;
         rhi::BlendFactor srcAlpha = rhi::BlendFactor::One, dstAlpha = rhi::BlendFactor::Zero;
         rhi::ColorMask mask = rhi::ColorMask::All;
+        // min on alpha keeps the nearest depth when several layers write into one target
+        rhi::BlendOp alphaOp = rhi::BlendOp::Add;
         bool alphaToCoverage = false;
         rhi::Format color = rhi::Format::RGBA8Unorm;
         rhi::Format depth = rhi::Format::D32Float;
@@ -190,6 +192,8 @@ namespace perlin::gpu {
         rhi::TextureHandle CreateSampled(rhi::TextureDesc desc);
         void DestroyTexture(rhi::TextureHandle texture);
         void Flush(rhi::CommandList& list);
+        // makes this frame's ring writes visible to the device; call before every submit that reads ring memory
+        void FlushRings();
         bool HasPendingWrites() const { return !bufferWrites.empty() || !imageWrites.empty(); }
 
         // state tracking for textures the context transitions by hand

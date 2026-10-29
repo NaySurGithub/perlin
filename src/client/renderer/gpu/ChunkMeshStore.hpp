@@ -69,6 +69,7 @@ namespace perlin::gpu {
         size_t Pages() const { return pages.size(); }
         size_t Chunks() const { return chunks.size(); }
         size_t LodTiles() const { return lods.size(); }
+        const std::unordered_map<int64_t, Chunk>& ChunkMap() const { return chunks; }
         bool Empty() const { return chunks.empty() && lods.empty(); }
         uint64_t Generation() const { return generation; }
         uint64_t VertexBytes() const;

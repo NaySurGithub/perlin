@@ -6,7 +6,7 @@ into the block without a hand-written mirror of the struct.
 
 Pack layout (little endian):
   u32 magic 'PRSH', u32 version, u32 indexBytes, u32 programCount
-  index: u16 textureSlotCount, per slot: str name, u8 slot, u8 dim (0 = 2d, 1 = 2d array); then the programs
+  index: u16 textureSlotCount, per slot: str name, u8 slot, u8 flags (bit 0 = 2d array, bit 1 = point sampled only: depth and 32 bit float maps); then the programs
   per program: str name, u32 uniformBytes, u16 uniformCount, per uniform: str name, u32 offset, u32 bytes, u16 elements
                u8 stageCount, per stage: u8 stage, u8 targetCount, per target: u8 target, u32 offset, u32 bytes
   str = u16 length + utf-8 bytes; offsets are from the start of the data area, which follows the index
@@ -84,6 +84,10 @@ class Packer:
             if result.returncode != 0 or not out.exists():
                 raise RuntimeError(f'{program.name} {stage} {target}:\n{result.stdout}{result.stderr}')
             data = out.read_bytes()
+        # msl carries no workgroup size, and metal wants it at dispatch: leave it in a comment the backend reads
+        if stage == 'compute' and slang_target == 'metal':
+            size = self.reflect(program, stage)['entryPoints'][0]['threadGroupSize']
+            data = f'// perlin:threads {size[0]} {size[1]} {size[2]}\n'.encode() + data
         if cached:
             self.cache.mkdir(parents=True, exist_ok=True)
             cached.write_bytes(data)
@@ -147,8 +151,9 @@ def build(slangc, dirs, programs, targets, cache, out, env, slots):
     data = bytearray()
     index = bytearray()
     index += struct.pack('<H', len(slots))
-    for name, (slot, dim) in slots.items():
-        index += pack_str(name) + struct.pack('<BB', slot, 1 if dim == '2darray' else 0)
+    for name, (slot, dim, *flags) in slots.items():
+        bits = (1 if dim == '2darray' else 0) | (2 if 'unfilterable' in flags else 0)
+        index += pack_str(name) + struct.pack('<BB', slot, bits)
     index += struct.pack('<I', len(plan))
     for program, stages in plan:
         total, members = uniform_layout(reflected[program].result())

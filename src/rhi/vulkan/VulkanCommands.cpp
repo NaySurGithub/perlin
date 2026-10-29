@@ -210,7 +210,7 @@ namespace rhi::vk {
             VkBufferImageCopy c{};
             c.bufferOffset = r.bufferOffset;
             c.bufferRowLength = r.bufferRowPitch ? r.bufferRowPitch / fi.bytesPerBlock * fi.blockWidth : 0;
-            c.imageSubresource = {fi.depth ? VK_IMAGE_ASPECT_DEPTH_BIT : VK_IMAGE_ASPECT_COLOR_BIT, r.mip, r.layer, 1};
+            c.imageSubresource = {static_cast<VkImageAspectFlags>(fi.depth ? VK_IMAGE_ASPECT_DEPTH_BIT : VK_IMAGE_ASPECT_COLOR_BIT), r.mip, r.layer, 1};
             c.imageOffset = {static_cast<int32_t>(r.x), static_cast<int32_t>(r.y), static_cast<int32_t>(r.z)};
             c.imageExtent = {r.width, r.height, r.depth};
             copies.push_back(c);
@@ -237,7 +237,7 @@ namespace rhi::vk {
             VkBufferImageCopy c{};
             c.bufferOffset = r.bufferOffset;
             c.bufferRowLength = r.bufferRowPitch ? r.bufferRowPitch / fi.bytesPerBlock * fi.blockWidth : 0;
-            c.imageSubresource = {fi.depth ? VK_IMAGE_ASPECT_DEPTH_BIT : VK_IMAGE_ASPECT_COLOR_BIT, r.mip, r.layer, 1};
+            c.imageSubresource = {static_cast<VkImageAspectFlags>(fi.depth ? VK_IMAGE_ASPECT_DEPTH_BIT : VK_IMAGE_ASPECT_COLOR_BIT), r.mip, r.layer, 1};
             c.imageOffset = {static_cast<int32_t>(r.x), static_cast<int32_t>(r.y), static_cast<int32_t>(r.z)};
             c.imageExtent = {r.width, r.height, r.depth};
             copies.push_back(c);

@@ -9,7 +9,11 @@ namespace perlin {
         static ShaderPack pack;
         return pack;
     }
-    bool ShaderPack::Active() const { return false; }
-    bool ShaderPack::Bundled() const { return false; }
-    bool ShaderPack::Flag(const std::string&, bool fallback) const { return fallback; }
+    namespace {
+        bool gBundled = false;
+    }
+    void TestSetBundledPack(bool on) { gBundled = on; }
+    bool ShaderPack::Active() const { return gBundled; }
+    bool ShaderPack::Bundled() const { return gBundled; }
+    bool ShaderPack::Flag(const std::string& name, bool fallback) const { return name == "sceneCopy" && gBundled ? true : fallback; }
 }

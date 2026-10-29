@@ -73,7 +73,9 @@ namespace rhi {
             TextureSlot slot;
             slot.name = r.String();
             slot.slot = r.Read<uint8_t>();
-            slot.array = r.Read<uint8_t>() != 0;
+            const uint8_t flags = r.Read<uint8_t>();
+            slot.array = (flags & 1) != 0;
+            slot.unfilterable = (flags & 2) != 0;
             slots.push_back(std::move(slot));
         }
         const uint32_t count = r.Read<uint32_t>();

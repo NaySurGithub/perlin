@@ -23,6 +23,8 @@ namespace rhi {
         std::string name;
         uint32_t slot = 0;
         bool array = false;
+        // holds depth or 32 bit float data that webgpu can only sample with a nearest sampler
+        bool unfilterable = false;
     };
 
     struct ProgramInfo {

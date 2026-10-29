@@ -26,7 +26,8 @@ float4 vec4_splat(float x) { return float4(x, x, x, x); }
 #define fract frac
 #define inversesqrt rsqrt
 #define dFdx ddx
-#define dFdy ddy
+// framebuffer y points down on every backend here: flip so derivative-based normals match the original orientation
+#define dFdy(x) ddy(-(x))
 #define atan atan2
 #define UNIFORMS_BEGIN [[vk::binding(0, 0)]] cbuffer Uniforms : register(b0, space0) {
 #define UNIFORMS_END }

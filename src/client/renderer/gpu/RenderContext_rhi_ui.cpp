@@ -280,8 +280,17 @@ namespace perlin {
         if (!found)
             return;
         const UiMeshGpu& mesh = *found;
-        if (draw.shadowOnly)
-            return;
+
+        Source vertices, indices;
+        const uint32_t count = mesh.iCount;
+        if (mesh.transient) {
+            vertices = {mesh.tv.buffer, mesh.tv.offset};
+            indices = {mesh.ti.buffer, mesh.ti.offset};
+        } else {
+            const UiPage& page = uiPages[static_cast<size_t>(mesh.page)];
+            vertices = {page.vb.Buffer(), static_cast<uint64_t>(mesh.vFirst) * sizeof(UiVertex)};
+            indices = {page.ib.Buffer(), static_cast<uint64_t>(mesh.iFirst) * sizeof(uint32_t)};
+        }
 
         const TexRec* texture = nullptr;
         if (draw.texture != 0 && draw.texture <= uiTextures.size() && uiTextures[draw.texture - 1].used)
@@ -294,6 +303,23 @@ namespace perlin {
                         : layer == UiLayer::Top ? View::Top
                         : layer == UiLayer::Export ? View::ExportUi
                                                    : View::Gui;
+
+        // mobs and players write into the sun map; glint and blended passes would only double-draw them
+        if (layer == UiLayer::World && shadow.active && shadow.entities && !glint && draw.depth && draw.depthWrite && draw.blend != 2 &&
+            ProgramIndex(Program::EntityShadow) >= 0) {
+            SetTransform(glm::make_mat4(draw.model));
+            BindTexture("s_uiTex", texture ? texture->handle : gpu.White2D(), texture ? texture->sampler : gpu::SamplerKind::LinearRepeat);
+            SetMatrix(shadow.rasterE);
+            uni.Mat4("u_shadowMtx", shadow.sampleE);
+            DrawState ss = Base(Program::EntityShadow, true, true, rhi::CompareOp::Less);
+            ss.layout = gpu::VertexLayout::Ui;
+            ss.cull = rhi::CullMode::None;
+            ss.mask = rhi::ColorMask::All;
+            Submit(View::ShadowEntity, ss, vertices, &indices, rhi::IndexType::U32, 0, count);
+            SetMatrix(mvp);
+        }
+        if (draw.shadowOnly)
+            return;
 
         SetTransform(glm::make_mat4(draw.model));
         BindTexture("s_uiTex", texture ? texture->handle : gpu.White2D(), texture ? texture->sampler : gpu::SamplerKind::LinearRepeat);
@@ -372,16 +398,6 @@ namespace perlin {
             scissor = &rect;
         }
 
-        Source vertices, indices;
-        uint32_t count = mesh.iCount;
-        if (mesh.transient) {
-            vertices = {mesh.tv.buffer, mesh.tv.offset};
-            indices = {mesh.ti.buffer, mesh.ti.offset};
-        } else {
-            const UiPage& page = uiPages[static_cast<size_t>(mesh.page)];
-            vertices = {page.vb.Buffer(), static_cast<uint64_t>(mesh.vFirst) * sizeof(UiVertex)};
-            indices = {page.ib.Buffer(), static_cast<uint64_t>(mesh.iFirst) * sizeof(uint32_t)};
-        }
         Submit(view, state, vertices, &indices, rhi::IndexType::U32, 0, count, scissor);
     }
 

@@ -6,8 +6,9 @@
 
 #include <utility>
 
-#ifndef _MSC_VER
+#if !defined(_MSC_VER) && __has_include(<dxguids/dxguids.h>)
 #include <dxguids/dxguids.h>
+#define RHI_HAS_DXGUIDS 1
 #endif
 
 namespace winrt {
@@ -16,9 +17,11 @@ namespace winrt {
         GUID IidOf() {
 #ifndef _MSC_VER
             // directx-headers interfaces carry no declspec(uuid) off msvc: their ids come from dxguids.h
+#ifdef RHI_HAS_DXGUIDS
             if constexpr (requires { uuidof<T>(); })
                 return uuidof<T>();
             else
+#endif
                 return __mingw_uuidof<T>();
 #else
             return __uuidof(T);

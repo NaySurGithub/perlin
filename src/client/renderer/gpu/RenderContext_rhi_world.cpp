@@ -313,9 +313,11 @@ namespace perlin {
         if (!tileFlagsTex.used)
             UploadTileFlags({});
         BindTexture("s_tileFlags", tileFlagsTex.handle, gpu::SamplerKind::PointClamp);
-        uni.Vec4("u_shadowInfo", 0, 0, 0, 0);
-        uni.Vec4("u_shadowInfoB", 0, 0, 0, 0);
-        uni.Vec4("u_shadowInfoE", 0, 0, 0, 0);
+        BindShadowSampling();
+        if (ordered && post.sceneValid) {
+            BindTexture("s_sceneColor", post.sceneColor, gpu::SamplerKind::LinearClamp);
+            BindTexture("s_sceneDepth", post.sceneDepth, gpu::SamplerKind::PointClamp);
+        }
 
         DrawCall templ;
         if (!Prepare(view, state, templ)) {
@@ -358,6 +360,7 @@ namespace perlin {
             return;
         }
         meshes.Select(frustum, camX, frame.cameraPosition[1], camZ, chunkCullRadius, caveCulling, frame.timeSeconds);
+        RenderShadows(frame.cameraPosition[0], frame.cameraPosition[1], frame.cameraPosition[2]);
         DrawLayer(RenderLayer::Solid, Program::TerrainSolid, View::World);
         DrawLayer(RenderLayer::Cutout, Program::TerrainCutout, View::World);
         DrawLayer(RenderLayer::CutoutCull, Program::TerrainCutout, View::World);

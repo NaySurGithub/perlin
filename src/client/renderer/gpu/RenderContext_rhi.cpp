@@ -351,6 +351,9 @@ namespace perlin {
 
     void RenderContext_rhi::DestroyStaticResources() {
         auto& dev = gpu.Dev();
+        DestroyPostTargets();
+        post.failed = false;
+        DestroyShadows();
         for (rhi::BufferHandle* b : {&topSky, &bottomSky, &skyBox, &skyBoxIdx, &screenTri, &starVerts, &starIdx, &sunriseVerts, &sunriseIdx,
                                      &sunVerts, &moonVerts, &quadIdx, &fanIdx}) {
             if (*b) {
@@ -427,6 +430,7 @@ namespace perlin {
         k.srcAlpha = s.srcAlpha;
         k.dstAlpha = s.dstAlpha;
         k.mask = s.mask;
+        k.alphaOp = s.alphaOp;
         k.alphaToCoverage = s.alphaToCoverage;
         k.color = view.colorFormat;
         k.depth = view.depthFormat;
@@ -706,6 +710,12 @@ namespace perlin {
             cam.sizeH = height;
         }
         PlanPost(params);
+        if (shadowConfigDirty || params.shadowQuality != shadowQualityBuilt || params.shadowDistance != shadowDistanceBuilt) {
+            shadowConfigDirty = false;
+            shadowQualityBuilt = params.shadowQuality;
+            shadowDistanceBuilt = params.shadowDistance;
+            InitShadows(params.shadowQuality, params.shadowDistance);
+        }
 
         std::memcpy(mvp, params.viewProjection, sizeof(mvp));
         ConvertDepth(params.skyViewProjection, skyMvp);
@@ -735,8 +745,8 @@ namespace perlin {
     void RenderContext_rhi::EndFrame() {
         if (!initialized || !frameOpen)
             return;
-        frameOpen = false;
         RecordPost();
+        frameOpen = false;
         ExecuteFrame();
         gpu.Dev().EndFrame();
         for (ViewData& v : views)
@@ -767,12 +777,15 @@ namespace perlin {
                 if (!stage.useScreenDepth)
                     stage.target.depth = {};
             }
+        for (const Stage& stage : shadowStages)
+            RunStage(*list, stage);
         for (const Stage& stage : stages)
             RunStage(*list, stage);
 
         if (!pendingSinks.empty() || !pendingShots.empty())
             ResolveCapture(*list, screen);
         gpu.Transition(*list, image.texture, offscreen ? rhi::State::CopySrc : rhi::State::Present);
+        gpu.FlushRings();
         dev.Submit(rhi::QueueType::Graphics, list);
         gpu.PresentImage();
     }
@@ -1045,6 +1058,7 @@ namespace perlin {
         atlasTiles = 0;
 
         const auto bringUp = [&](const std::string& api) {
+            settings.api = rhi::ApiFromId(api);
             const bool started = offscreen ? gpu.Init(settings, pack, nullptr) : StartDevice(api, pack, true);
             if (!started) {
                 gpu.Shutdown();

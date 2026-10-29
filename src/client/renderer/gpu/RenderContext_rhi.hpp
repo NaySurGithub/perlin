@@ -177,6 +177,7 @@ namespace perlin {
             rhi::BlendFactor srcColor = rhi::BlendFactor::One, dstColor = rhi::BlendFactor::Zero;
             rhi::BlendFactor srcAlpha = rhi::BlendFactor::One, dstAlpha = rhi::BlendFactor::Zero;
             rhi::ColorMask mask = rhi::ColorMask::All;
+            rhi::BlendOp alphaOp = rhi::BlendOp::Add;
             bool alphaToCoverage = false;
         };
 
@@ -296,6 +297,39 @@ namespace perlin {
         void RunStage(rhi::CommandList& list, const Stage& stage);
         void ReadyForSampling(rhi::CommandList& list, rhi::TextureHandle except0, rhi::TextureHandle except1);
         std::vector<rhi::TextureHandle> postTextures;
+
+        // sun shadow maps: two are kept so a finished rebuild fades in over the old one
+        struct ShadowMap {
+            rhi::TextureHandle color, tint;
+            float sample[16] = {}, raster[16] = {}, info[4] = {};
+        };
+        struct ShadowState {
+            bool enabled = false, tintEnabled = false, active = false, entities = false, entityFailed = false;
+            bool building = false, fading = false, haveKey = false;
+            int size = 0;
+            float distance = 80.0f;
+            rhi::TextureHandle buildDepth, entityColor, entityDepth;
+            ShadowMap maps[2];
+            int front = -1;
+            int64_t key[6] = {};
+            int framesSince = 0;
+            double lastTime = 0.0, lastBuildAt = -100.0;
+            float fadeT = 0.0f, fadeWeight = 0.0f;
+            glm::vec3 buildRight{1, 0, 0}, buildUp{0, 1, 0}, buildFwd{0, 0, 1};
+            float buildCx = 0, buildCy = 0, buildCz = 0;
+            std::vector<std::pair<int64_t, uint8_t>> buildList;
+            size_t buildCursor = 0;
+            int buildSlice = 0, buildSlices = 1;
+            float sampleE[16] = {}, rasterE[16] = {}, infoE[4] = {};
+        } shadow;
+        std::vector<Stage> shadowStages;
+        int shadowQualityBuilt = -1, shadowDistanceBuilt = -1;
+        bool shadowConfigDirty = true;
+        void InitShadows(int quality, int distance);
+        void DestroyShadows();
+        bool EnsureEntityShadowMap();
+        void RenderShadows(float camX, float camY, float camZ);
+        void BindShadowSampling();
 
         // setup
         bool CreateStaticResources();
