@@ -8857,6 +8857,7 @@ namespace perlin {
                     ein.ownSwingTicks = fast >= 0 ? 6.0f - static_cast<float>(1 + fast) : slow >= 0 ? 6.0f + static_cast<float>((1 + slow) * 2) : 6.0f;
                 }
                 ein.frustum = &frustum;
+                ein.sectionReached = [this](int sx, int sy, int sz) { return renderer->SectionReached(sx, sy, sz); };
                 ein.cameraYaw = camera.yaw - 90.0f;
                 ein.cameraPitch = -camera.pitch;
                 if (camera.mode == PerspectiveMode::ThirdPersonFront) {

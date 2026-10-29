@@ -2560,6 +2560,16 @@ namespace perlin {
         bgfx::submit(kViewLate, shaders.Program(ShaderProgram::Cloud));
     }
 
+    bool RenderContext_bgfx::SectionReached(int sx, int sy, int sz) const {
+        if (!caveCulling)
+            return true;
+        const auto it = gpuChunks.find(ChunkKey(sx, sz));
+        if (it == gpuChunks.end() || it->second.secVis == ~0u)
+            return true;
+        const int bit = sy - it->second.visMin;
+        return bit < 0 || bit >= 32 || (it->second.secVis & (1u << bit)) != 0;
+    }
+
     void RenderContext_bgfx::UpdateCaveVisibility(float camX, float camY, float camZ) {
         const int ccx = (int)std::floor(camX / 16.0f), ccz = (int)std::floor(camZ / 16.0f);
         int csy = (int)std::floor(camY / 16.0f);

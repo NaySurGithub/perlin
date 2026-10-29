@@ -199,5 +199,7 @@ namespace perlin {
         virtual void ClearChunkMeshes() = 0;
         virtual void DrawChunkMeshes(const Frustum& frustum, float camX, float camZ) = 0;
         virtual void SetChunkCullRadius(int) {}
+        // section (16-block cube) reachable from the camera through open space, last frame
+        virtual bool SectionReached(int sx, int sy, int sz) const { return true; }
     };
 }

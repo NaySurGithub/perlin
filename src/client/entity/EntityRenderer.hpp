@@ -56,6 +56,7 @@ namespace perlin::entity {
             float cameraYaw = 0, cameraPitch = 0;
             double worldTicks = 0;
             const Frustum* frustum = nullptr;
+            std::function<bool(int, int, int)> sectionReached;
             bool outline = false;
             struct Crack {
                 int x = 0, y = 0, z = 0, stage = 0;
