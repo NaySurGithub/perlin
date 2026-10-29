@@ -805,17 +805,78 @@ if(PERLIN_BUILD_TESTS AND NOT EMSCRIPTEN AND NOT ANDROID)
         src/client/ui/HudRenderers.cpp src/client/ui/EffectData.cpp src/client/i18n/Lang.cpp src/client/resources/ServerPackRegistry.cpp src/client/i18n/BuiltinEnglish.cpp src/util/Resources.cpp src/util/Paths.cpp)
     target_include_directories(hud_dump PRIVATE src "${stb_SOURCE_DIR}")
     target_compile_features(hud_dump PRIVATE cxx_std_23)
+    add_test(NAME hud_boss_bindings COMMAND hud_dump --boss-selftest)
     add_executable(screen_dump tests/screen_dump.cpp src/client/ui/Json.cpp src/client/ui/UiExpr.cpp src/client/ui/JsonUi.cpp
         src/client/ui/UiLayout.cpp src/client/ui/McFont.cpp src/client/ui/TenFont.cpp src/client/ui/RmlEmit.cpp src/client/ui/FormatCodes.cpp src/client/ui/HudData.cpp src/client/ui/EffectData.cpp
         src/client/i18n/Lang.cpp src/client/resources/ServerPackRegistry.cpp src/client/i18n/BuiltinEnglish.cpp src/util/Resources.cpp src/util/Paths.cpp)
     target_include_directories(screen_dump PRIVATE src "${stb_SOURCE_DIR}")
     target_compile_features(screen_dump PRIVATE cxx_std_23)
+    foreach(size small normal large extra_large)
+        add_test(NAME ui_font_${size} COMMAND screen_dump "font_sizes.${size}_screen" 320 240
+            "${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/ui_font_sizes")
+        set_tests_properties(ui_font_${size} PROPERTIES ENVIRONMENT "SCREEN_TREE=1;SCREEN_RML=1")
+    endforeach()
+    set_tests_properties(ui_font_small PROPERTIES PASS_REGULAR_EXPRESSION "sample .*12.0x4.5")
+    set_tests_properties(ui_font_normal PROPERTIES PASS_REGULAR_EXPRESSION "sample .*24.0x9.0")
+    set_tests_properties(ui_font_large PROPERTIES PASS_REGULAR_EXPRESSION "sample .*48.0x18.0")
+    set_tests_properties(ui_font_extra_large PROPERTIES PASS_REGULAR_EXPRESSION "sample .*96.0x36.0")
+    add_test(NAME ui_bound_alpha COMMAND screen_dump font_sizes.alpha_screen 320 240
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/ui_font_sizes")
+    set_tests_properties(ui_bound_alpha PROPERTIES ENVIRONMENT "SCREEN_RML=1;SCREEN_VARS={\"#opacity\":0.3}"
+        PASS_REGULAR_EXPRESSION "alpha=\"0[.]30*\"")
+    add_test(NAME ui_repeated_routes COMMAND screen_dump routes.routing_screen 320 240
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/ui_routes")
+    set_tests_properties(ui_repeated_routes PROPERTIES ENVIRONMENT "SCREEN_TREE=1;SCREEN_VARS={\"#title_text\":\"middle\"}"
+        PASS_REGULAR_EXPRESSION "text=EXPECTED_MIDDLE_ROUTE"
+        FAIL_REGULAR_EXPRESSION "text=WRONG_FIRST_ROUTE;text=WRONG_LAST_ROUTE")
+    add_test(NAME ui_fractional_font COMMAND screen_dump font_sizes.fractional_screen 320 240
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/ui_font_sizes")
+    set_tests_properties(ui_fractional_font PROPERTIES ENVIRONMENT "SCREEN_RML=1"
+        PASS_REGULAR_EXPRESSION "font-family:minecraft-size-6[.]4")
+    add_test(NAME ui_stack_vertical COMMAND screen_dump stack_regression.vertical_screen 320 240
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/ui_stack")
+    set_tests_properties(ui_stack_vertical PROPERTIES ENVIRONMENT "SCREEN_TREE=1"
+        PASS_REGULAR_EXPRESSION "content.*320[.]0x221[.]0")
+    add_test(NAME ui_stack_horizontal COMMAND screen_dump stack_regression.horizontal_screen 320 240
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/ui_stack")
+    set_tests_properties(ui_stack_horizontal PROPERTIES ENVIRONMENT "SCREEN_TREE=1"
+        PASS_REGULAR_EXPRESSION "content.*301[.]0x240[.]0")
+    add_test(NAME ui_deferred_text COMMAND screen_dump regression.deferred_screen 320 240
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/ui_deferred")
+    set_tests_properties(ui_deferred_text PROPERTIES ENVIRONMENT "SCREEN_TREE=1"
+        PASS_REGULAR_EXPRESSION "text=deferred-label-correct")
+    add_executable(gpu_level_unload_selftest tests/gpu_context_test.cpp tests/gpu_context_stubs.cpp
+        src/client/renderer/Tessellator.cpp src/client/renderer/SkyGeometry.cpp src/client/renderer/MaterialDb.cpp
+        src/client/ui/Json.cpp src/util/Paths.cpp src/util/Resources.cpp)
+    target_include_directories(gpu_level_unload_selftest BEFORE PRIVATE tests/stubs src "${glm_SOURCE_DIR}")
+    target_link_libraries(gpu_level_unload_selftest PRIVATE perlin_gpu)
+    add_test(NAME gpu_level_unload_selftest COMMAND gpu_level_unload_selftest "${PERLIN_SHADER_PACK}")
+    set_tests_properties(gpu_level_unload_selftest PROPERTIES SKIP_RETURN_CODE 77)
+    add_executable(ten_font_metrics_selftest tests/ten_font_metrics_selftest.cpp
+        src/client/ui/TenFont.cpp src/client/ui/McFont.cpp)
+    target_include_directories(ten_font_metrics_selftest PRIVATE src "${stb_SOURCE_DIR}")
+    target_compile_features(ten_font_metrics_selftest PRIVATE cxx_std_23)
+    add_test(NAME ten_font_metrics_selftest COMMAND ten_font_metrics_selftest)
+    set_tests_properties(ten_font_metrics_selftest PROPERTIES SKIP_RETURN_CODE 77)
+    add_executable(font_cache_selftest tests/font_cache_selftest.cpp src/client/ui/McFont.cpp)
+    target_include_directories(font_cache_selftest PRIVATE src "${stb_SOURCE_DIR}")
+    target_compile_features(font_cache_selftest PRIVATE cxx_std_23)
+    add_test(NAME font_cache_selftest COMMAND font_cache_selftest)
+    add_executable(ui_library_selftest tests/ui_library_selftest.cpp src/client/ui/Json.cpp
+        src/client/ui/UiExpr.cpp src/client/ui/JsonUi.cpp)
+    target_include_directories(ui_library_selftest PRIVATE src)
+    target_compile_features(ui_library_selftest PRIVATE cxx_std_23)
+    add_test(NAME ui_library_selftest COMMAND ui_library_selftest)
     add_executable(ui_conformance tests/ui_conformance.cpp src/client/ui/Json.cpp src/client/ui/UiExpr.cpp src/client/ui/JsonUi.cpp
         src/client/ui/UiLayout.cpp src/client/ui/McFont.cpp src/client/ui/TenFont.cpp src/client/ui/RmlEmit.cpp
         src/client/ui/HudData.cpp src/client/ui/FormatCodes.cpp src/client/i18n/Lang.cpp
         src/client/i18n/BuiltinEnglish.cpp src/client/resources/ServerPackRegistry.cpp src/util/Resources.cpp src/util/Paths.cpp)
     target_include_directories(ui_conformance PRIVATE src "${stb_SOURCE_DIR}" "${glm_SOURCE_DIR}")
     target_compile_features(ui_conformance PRIVATE cxx_std_23)
+    add_test(NAME ui_screen_discovery COMMAND ui_conformance
+        "regression:${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/ui_deferred")
+    set_tests_properties(ui_screen_discovery PROPERTIES
+        PASS_REGULAR_EXPRESSION "screens=2 +built=2 +failed=0 +missing=0")
     add_executable(targeting_selftest tests/targeting_selftest.cpp)
     target_include_directories(targeting_selftest PRIVATE src "${glm_SOURCE_DIR}")
     target_compile_features(targeting_selftest PRIVATE cxx_std_23)
@@ -823,6 +884,8 @@ if(PERLIN_BUILD_TESTS AND NOT EMSCRIPTEN AND NOT ANDROID)
     add_executable(bridging_selftest
         tests/bridging_selftest.cpp
         src/client/player/Bridging.cpp
+        src/client/player/HeldBuild.cpp
+        src/client/player/PlayerPhysics.cpp
         src/client/player/BlockUse.cpp)
     target_include_directories(bridging_selftest PRIVATE src "${glm_SOURCE_DIR}")
     target_compile_features(bridging_selftest PRIVATE cxx_std_23)

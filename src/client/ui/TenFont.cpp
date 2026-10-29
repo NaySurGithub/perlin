@@ -19,7 +19,7 @@ namespace perlin::ui {
     struct TenFont::Impl {
         std::vector<unsigned char> data;
         stbtt_fontinfo info{};
-        float ascent = 0.99f, descent = 0.25f;  // fractions of the em, from hhea
+        float ascent = 0, descent = 0;
     };
 
     namespace {
@@ -124,12 +124,23 @@ namespace perlin::ui {
         return false;
     }
 
-    float TenFont::Ascent(float scale) const { return 6.0f * scale; }
-    float TenFont::Descent(float scale) const { return 3.0f * scale; }
+    float TenFont::Ascent(float scale) const { return impl ? impl->ascent * Em(scale) : 0.0f; }
+    float TenFont::Descent(float scale) const { return impl ? impl->descent * Em(scale) : 0.0f; }
+
+    float TenFont::XHeight(float scale) const {
+        if (!impl)
+            return 0.0f;
+        int x0 = 0, y0 = 0, x1 = 0, y1 = 0;
+        if (!stbtt_GetCodepointBox(&impl->info, 'x', &x0, &y0, &x1, &y1))
+            return 0.0f;
+        return static_cast<float>(y1 - y0) * stbtt_ScaleForMappingEmToPixels(&impl->info, Em(scale));
+    }
 
     float TenFont::Advance(uint32_t cp, float scale) const {
         if (!impl)
             return 0.0f;
+        if (cp < 32 || cp >= 0x180 || stbtt_FindGlyphIndex(&impl->info, static_cast<int>(cp)) == 0)
+            return static_cast<float>(McFont::Instance().Get(cp).advance) * Em(scale) / 8.0f;
         int advance = 0, bearing = 0;
         stbtt_GetCodepointHMetrics(&impl->info, static_cast<int>(cp), &advance, &bearing);
         return static_cast<float>(advance) * stbtt_ScaleForMappingEmToPixels(&impl->info, Em(scale));
@@ -152,7 +163,11 @@ namespace perlin::ui {
                 skip = true;
                 continue;
             }
-            width += Advance(cp, scale);
+            float adv = Advance(cp, scale);
+            // server icons have no heading-face advance: measure the bitmap fallback the draw uses
+            if (adv == 0.0f && cp != ' ')
+                adv = static_cast<float>(McFont::Instance().Get(cp).advance) * scale * (kEm / 8.0f);
+            width += adv;
         }
         return width;
     }
@@ -215,9 +230,9 @@ namespace perlin::ui {
             const int cy = static_cast<int>(i / static_cast<size_t>(across)) * cellH + 1;
             for (int y = 0; y < r.h; y++)
                 for (int x = 0; x < r.w; x++) {
-                    // pixel grid: harden edges to match bitmap font crispness
+                    // heading face stays smooth: keep truetype coverage as-is
                     const unsigned char a = r.alpha[static_cast<size_t>(y) * static_cast<size_t>(r.w) + static_cast<size_t>(x)];
-                    const uint8_t v = a >= 96 ? 255 : static_cast<uint8_t>(a * 255 / 96);
+                    const uint8_t v = a;
                     uint8_t* px = &page->rgba[(static_cast<size_t>(cy + y) * static_cast<size_t>(page->width) + static_cast<size_t>(cx + x)) * 4];
                     px[0] = px[1] = px[2] = 255;
                     px[3] = v;

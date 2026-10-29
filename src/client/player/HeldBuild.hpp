@@ -34,14 +34,14 @@ namespace perlin::heldbuild {
 
     class HeldBuild {
     public:
-        // fresh press (GameMode::startBuildBlock): forgets the previous block's kind and any line
-        void Start();
-        // use released (GameMode::stopBuildBlock)
+        // Fresh press (GameMode::startBuildBlock): forgets the previous block's kind and any line.
+        void Start(uint64_t nowMs, uint64_t simulationTick);
+        // Use released (GameMode::stopBuildBlock).
         void Stop();
 
-        // repeat to attempt now, or nothing; `canBuildOver(pos)`: placing on `pos` replaces it
-        // (tall grass, snow layer...); `posDelta`: this tick's movement in blocks
-        std::optional<Target> Next(const Hit& hit, glm::vec3 eye, glm::vec3 posDelta, bool sneaking, uint64_t nowMs,
+        // The repeat to attempt now, or nothing. `canBuildOver(pos)` says whether placing on `pos` replaces that
+        // block (tall grass, snow layer...). `posDelta` is this tick's movement in blocks.
+        std::optional<Target> Next(const Hit& hit, glm::vec3 eye, glm::vec3 posDelta, bool sneaking, uint64_t nowMs, uint64_t simulationTick,
                                    const std::function<bool(glm::ivec3)>& canBuildOver);
 
         // placement went through: click on `clicked` produced a block at `cell`; `snappable` / `interactive`
@@ -51,6 +51,8 @@ namespace perlin::heldbuild {
     private:
         uint64_t Delay(glm::vec3 posDelta, bool sneaking) const;
 
+        std::optional<uint64_t> lastAttemptTick;
+        bool active = false;
         bool lastInteractive = false;
         bool lastSnappable = false;
         bool hasDirection = false;

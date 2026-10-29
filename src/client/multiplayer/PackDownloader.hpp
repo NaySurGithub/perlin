@@ -61,6 +61,7 @@ namespace perlin {
             std::map<uint32_t, std::vector<uint8_t>> early;
             std::chrono::steady_clock::time_point gapSince{};
             std::string fileName;
+            std::map<uint32_t, std::vector<uint8_t>> held;
         };
         struct Offered {
             std::string fileName, uuid, key;

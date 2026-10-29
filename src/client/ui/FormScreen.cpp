@@ -112,9 +112,39 @@ namespace perlin::ui {
         std::map<std::string, std::string> gImages;
         std::set<std::string> gImagePending;
         std::atomic<uint32_t> gImageVersion{0};
+        uint64_t gImageEpoch = 0;
 
-        std::string ImageSource(const FormButton& b) {
-            if (b.imageData.empty())
+        // tab stops have no defined advance in the bitmap font: long runs push labels out of view,
+    // so server menus treat them as plain word separators
+    void NormalizeFormText(std::string& text) {
+        for (char& c : text)
+            if (c == '\t')
+                c = '\n';
+        std::string collapsed;
+        collapsed.reserve(text.size());
+        bool lastBreak = true;
+        for (const char c : text) {
+            if (c == '\n') {
+                if (lastBreak)
+                    continue;
+                lastBreak = true;
+                collapsed += c;
+                continue;
+            }
+            if (c == ' ') {
+                collapsed += c;
+                lastBreak = false;
+                continue;
+            }
+            lastBreak = false;
+            collapsed += c;
+        }
+        while (!collapsed.empty() && collapsed.back() == '\n')
+            collapsed.pop_back();
+        text = std::move(collapsed);
+    }
+
+    std::string ImageSource(const FormButton& b) {            if (b.imageData.empty())
                 return {};
             if (b.imageType == "path") {
                 std::string path = b.imageData;
@@ -130,19 +160,35 @@ namespace perlin::ui {
             return {};
         }
 
+        float ButtonHeight(const std::string& label, float w, float h) {
+            std::string shown = label;
+            NormalizeFormText(shown);
+            const int perLine = std::max(8, static_cast<int>(w / 5.2f));
+            const int lines = std::max(1, LineCount(shown, perLine));
+            return std::max(h, static_cast<float>(lines * 9 + 8));
+        }
+
         std::string Button(const std::string& id, const std::string& label, float x, float y, float w, float h) {
-            const std::string W = F(w), H = F(h);
+            // fallback-only display copy: tabs have no advance here, wrap them into lines
+            std::string shown = label;
+            NormalizeFormText(shown);
+            const int perLine = std::max(8, static_cast<int>(w / 5.2f));
+            const int lines = std::max(1, LineCount(shown, perLine));
+            const float hh = ButtonHeight(label, w, h);
+            const std::string W = F(w), H = F(hh);
             std::string s = "<div id=\"" + EscapeRml(id) + "\" class=\"btn\" style=\"left:" + F(x) + "px;top:" + F(y) + "px;width:" + W + "px;height:" + H + "px;\">";
-            s += "<div class=\"rim\" style=\"width:" + F(w - 3) + "px;height:" + F(h - 4) + "px;\"></div>";
-            s += "<div class=\"face\" style=\"width:" + F(w - 4) + "px;height:" + F(h - 5) + "px;\"></div>";
-            s += "<div class=\"shade\" style=\"top:" + F(h - 3) + "px;width:" + F(w - 2) + "px;height:2px;\"></div>";
-            s += "<div class=\"edge\" style=\"left:" + F(w - 2) + "px;width:1px;height:" + F(h - 4) + "px;\"></div>";
-            s += "<div class=\"lbl\" style=\"top:" + F((h - 9) / 2) + "px;width:" + W + "px;height:9px;\">" + Rich(label) + "</div></div>\n";
+            s += "<div class=\"rim\" style=\"width:" + F(w - 3) + "px;height:" + F(hh - 4) + "px;\"></div>";
+            s += "<div class=\"face\" style=\"width:" + F(w - 4) + "px;height:" + F(hh - 5) + "px;\"></div>";
+            s += "<div class=\"shade\" style=\"top:" + F(hh - 3) + "px;width:" + F(w - 2) + "px;height:2px;\"></div>";
+            s += "<div class=\"edge\" style=\"left:" + F(w - 2) + "px;width:1px;height:" + F(hh - 4) + "px;\"></div>";
+            s += "<div class=\"lbl\" style=\"top:" + F((hh - lines * 9) / 2) + "px;width:" + W + "px;height:" + F(static_cast<float>(lines * 9)) +
+                 "px;\">" + FormatCodesToRmlLines(shown) + "</div></div>\n";
             return s;
         }
     }
 
     bool FormImageBytes(const std::string& url, std::string& out) {
+        uint64_t epoch;
         {
             std::lock_guard lock(gImageMutex);
             const auto it = gImages.find(url);
@@ -154,13 +200,15 @@ namespace perlin::ui {
             }
             if (!gImagePending.insert(url).second)
                 return false;
+            epoch = gImageEpoch;
         }
         if (url.rfind("http", 0) != 0) {
             std::lock_guard lock(gImageMutex);
-            gImages[url] = {};
+            if (epoch == gImageEpoch)
+                gImages[url] = {};
             return false;
         }
-        std::thread([url]() {
+        std::thread([url, epoch]() {
             std::string body;
             try {
                 const http::Response r = http::GetUrl(url, {}, 20);
@@ -170,9 +218,12 @@ namespace perlin::ui {
             }
             {
                 std::lock_guard lock(gImageMutex);
+                // a download from the previous level cannot repopulate the cache
+                if (epoch != gImageEpoch)
+                    return;
                 gImages[url] = std::move(body);
+                gImageVersion++;
             }
-            gImageVersion++;
         }).detach();
         return false;
     }
@@ -313,9 +364,11 @@ namespace perlin::ui {
         std::string body;
         float y = 0.0f;
         const auto text = [&](const std::string& t, bool center) {
-            const int lines = LineCount(t, perLine);
+            std::string shown = t;
+            NormalizeFormText(shown);
+            const int lines = LineCount(shown, perLine);
             const float h = static_cast<float>(lines * 9);
-            body += "<div class=\"t" + std::string(center ? " c" : "") + "\" style=\"left:10px;top:" + F(y) + "px;width:" + F(inner) + "px;height:" + F(h) + "px;\">" + Rich(t) + "</div>\n";
+            body += "<div class=\"t" + std::string(center ? " c" : "") + "\" style=\"left:10px;top:" + F(y) + "px;width:" + F(inner) + "px;height:" + F(h) + "px;\">" + FormatCodesToRmlLines(shown) + "</div>\n";
             y += h + 4.0f;
         };
         if (!form.content.empty() && form.type != FormModel::Type::Custom)
@@ -323,7 +376,8 @@ namespace perlin::ui {
         if (form.type == FormModel::Type::Simple) {
             for (size_t i = 0; i < form.buttons.size(); i++) {
                 const std::string src = ImageSource(form.buttons[i]);
-                const float h = src.empty() ? 20.0f : 32.0f;
+                float h = src.empty() ? 20.0f : 32.0f;
+                h = ButtonHeight(form.buttons[i].text, inner, h);
                 std::string b = Button("b:" + std::to_string(i), form.buttons[i].text, 10, y, inner, h);
                 if (!src.empty()) {
                     const std::string img = "<mcimg src=\"" + EscapeRml(src) + "\" style=\"left:4px;top:4px;width:24px;height:24px;z-index:8;\"/>";
@@ -787,6 +841,25 @@ namespace perlin::ui {
             worker.join();
     }
 
+    void FormUi::Reset() {
+        if (worker.joinable())
+            worker.join();
+        state = 0;
+        key.clear();
+        tree.reset();
+        modalTree.reset();
+        library = UiLibrary{};
+        anim = AnimHost{};
+        animCache.clear();
+        problem.clear();
+        animStart = std::chrono::steady_clock::now();
+        std::lock_guard lock(gImageMutex);
+        ++gImageEpoch;
+        gImages.clear();
+        gImagePending.clear();
+        gImageVersion++;
+    }
+
     void FormUi::Warm(const std::vector<std::string>& packDirs) {
         std::string wanted;
         for (const std::string& d : packDirs)
@@ -843,6 +916,10 @@ namespace perlin::ui {
             modalTree = BuildTree(library, "popup_dialog.modal_dialog_popup", modalVars, modalReport);
             for (const std::string& missing : report.missingControls)
                 std::cout << "[form] missing control " << missing << std::endl;
+            for (const std::string& missing : modalReport.missingControls)
+                std::cout << "[form] modal missing control " << missing << std::endl;
+            if (!modalTree)
+                std::cout << "[form] modal tree is null" << std::endl;
             state = 2;
         });
     }
@@ -860,10 +937,15 @@ namespace perlin::ui {
         FormData data(form);
         const auto started = std::chrono::steady_clock::now();
         anim.now = std::chrono::duration<double>(started - animStart).count();
-        const Node& screen = form.type == FormModel::Type::Modal && modalTree ? *modalTree : *tree;
+        const bool wantModal = form.type == FormModel::Type::Modal;
+        const Node& screen = wantModal && modalTree ? *modalTree : *tree;
+        if (wantModal && !modalTree)
+            std::cout << "[form] modal requested but no modal tree, using simple screen" << std::endl;
         const std::unique_ptr<LNode> root = EvaluateTree(screen, data, services, static_cast<float>(guiW), static_cast<float>(guiH));
-        if (!root)
+        if (!root) {
+            std::cout << "[form] evaluate failed for '" << form.title << "'" << std::endl;
             return false;
+        }
         emitter.SetEditText([&form](const LNode& n, std::string& text, std::string& placeholder, bool& focused) {
             if (n.index < 0 || static_cast<size_t>(n.index) >= form.elements.size())
                 return false;
@@ -921,8 +1003,16 @@ namespace perlin::ui {
             }
         }
         const size_t buttons = form.type == FormModel::Type::Modal ? 2 : form.type == FormModel::Type::Custom ? 0 : form.buttons.size();
-        if (buttons > 0 && rml.find("id=\"fb:0\"") == std::string::npos) {
+        // metadata rows can hide index zero while later collection entries produce the interactive controls
+        if (buttons > 0 && rml.find("id=\"fb:") == std::string::npos) {
             problem = "form buttons were not produced by the ui files";
+            std::cout << "[form] no buttons in rml for '" << form.title << "' (modal=" << wantModal
+                      << " hasModalTree=" << (modalTree != nullptr) << "), rml head: " << rml.substr(0, 600) << std::endl;
+            {
+                std::error_code ec;
+                std::filesystem::create_directories(paths::DataDir() + "/ui_generated", ec);
+                std::ofstream(paths::DataDir() + "/ui_generated/last_form_json_failed.rml", std::ios::binary | std::ios::trunc) << rml;
+            }
             return false;
         }
         return true;

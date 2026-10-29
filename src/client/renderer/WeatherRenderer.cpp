@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstring>
 
 #include "client/renderer/RenderContext.hpp"
 #include "client/renderer/block/BiomeTints.hpp"
@@ -76,12 +77,24 @@ namespace perlin {
         if (found != blocking.end())
             return found->second;
         const std::string name = BlockPalette::Instance().Name(id);
+        // token match: substring "air" would also hit stairs, "rail" would hit grail-like names
+        auto hasToken = [&](const char* word) {
+            const size_t len = std::strlen(word);
+            for (size_t p = name.find(word); p != std::string::npos; p = name.find(word, p + 1)) {
+                const bool left = p == 0 || name[p - 1] == ':' || name[p - 1] == '_';
+                const bool right = p + len >= name.size() || name[p + len] == '_' || name[p + len] == '.';
+                if (left && right)
+                    return true;
+            }
+            return false;
+        };
         static const char* const kThrough[] = {"air",  "short_grass", "tallgrass", "tall_grass", "fern",   "flower", "poppy", "dandelion",
                                                "torch", "sapling",     "vine",      "sugar_cane", "wheat",  "rail",   "button", "lever",
-                                               "tripwire", "web",      "fire",      "mushroom",   "sweet_berry"};
+                                               "tripwire", "web",      "fire",      "mushroom",   "sweet_berry", "carpet",
+                                               "snow_layer", "sign", "painting", "button", "pressure_plate"};
         bool blocks = true;
         for (const char* word : kThrough)
-            if (name.find(word) != std::string::npos) {
+            if (hasToken(word)) {
                 blocks = false;
                 break;
             }
@@ -221,8 +234,10 @@ namespace perlin {
                     const float raw = -(static_cast<float>(gameTime & 131071) + static_cast<float>(mix) + partial) / 32.0f * speed;
                     vOffset = std::fmod(raw, 32.0f);
                 } else {
-                    uOffset = static_cast<float>(random.NextDouble() + static_cast<double>(time * 0.01f) * random.NextGaussian());
-                    const float drift = static_cast<float>(random.NextDouble() + static_cast<double>(time * static_cast<float>(random.NextGaussian())) * 0.001);
+                    // hash-seeded drift, stable per column instead of per-frame noise
+                    const uint32_t h = Hash(x, z);
+                    uOffset = static_cast<float>((h >> 5) & 255u) / 256.0f + time * 0.002f;
+                    const float drift = static_cast<float>((h & 255u)) / 255.0f * 0.05f;
                     vOffset = -(static_cast<float>(gameTime & 511) + partial) / 512.0f + drift;
                 }
                 constexpr float kVScale = 4.0f;

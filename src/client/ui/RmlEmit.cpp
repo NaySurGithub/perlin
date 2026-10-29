@@ -192,7 +192,11 @@ namespace perlin::ui {
         std::string cls = st.ten ? "t ten" : "t";
         if (st.outline) cls += " o";
         else if (st.shadow) cls += " s";
-        body += "  <div class=\"" + cls + "\" style=\"left:" + std::to_string(Px(ax)) + "px;top:" +
+        std::string family = st.ten ? "minecraft-ten" : "minecraft";
+        if (st.outline) family += "-outline";
+        else if (st.shadow) family += "-shadow";
+        family += "-size-" + Num(size);
+        body += "  <div class=\"" + cls + "\" style=\"font-family:" + family + ";left:" + std::to_string(Px(ax)) + "px;top:" +
                 std::to_string(Px(ay)) + "px;width:" + Num(std::max(w, 1.0f)) + "px;height:" + Num(h) + "px;z-index:" +
                 std::to_string(z) + ";font-size:" + Num(size) + "px;line-height:" + Num(lineHeight) + "px;text-align:" +
                 st.align + ";color:" + Hex(st.r, st.g, st.b, st.a) + ";\">";
@@ -302,9 +306,9 @@ namespace perlin::ui {
         TextStyle st;
         float scale = static_cast<float>(n.Num("font_scale_factor", 1.0));
         const std::string size = n.Str("font_size", "normal");
-        if (size == "small") scale *= 0.75f;
-        else if (size == "large") scale *= 1.5f;
-        else if (size == "extra_large") scale *= 2.0f;
+        if (size == "small") scale *= 0.5f;
+        else if (size == "large") scale *= 2.0f;
+        else if (size == "extra_large") scale *= 4.0f;
         st.scale = scale;
         float a = 1.0f;
         ReadColor(n.Get("color"), st.r, st.g, st.b, &a);
