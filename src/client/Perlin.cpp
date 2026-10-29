@@ -968,11 +968,19 @@ namespace perlin {
             if (!chat.IsOpen())
                 input.SetTextMode(false);
         };
-        if (!live) {
+        // PERLIN_PREVIEW_FORM=<form.json>: open a captured form without a server; answers go to the log
+        const char* previewForm = live ? nullptr : PERLIN_ENV("PERLIN_PREVIEW_FORM");
+        if (!live && !previewForm) {
             if (formShown)
                 closeForm();
             return;
         }
+        const auto respond = [&](const std::string* response) {
+            if (live)
+                live->SendFormResponse(formModel.id, response, false);
+            else
+                std::cout << "[form] preview answer: " << (response ? *response : std::string("closed")) << std::endl;
+        };
         {
             static auto lastWarm = Clock::time_point{};
             if (now - lastWarm > std::chrono::seconds(2)) {
@@ -980,21 +988,41 @@ namespace perlin {
                 formUi.Warm(ServerPacks::Instance().Directories());
             }
         }
-        if (live->TakeFormClosed() && formShown)
+        if (live && live->TakeFormClosed() && formShown)
             closeForm();
-        if (formShown && !formEngine && formUi.Ready() && (options.bedrockMenus || formUi.ServerStyled()))
+        if (formShown && !formEngine && formUi.Ready() && !formEngineFailed)
             formEngine = true;
         if (!formShown) {
             if (deathShown || invShown || pauseShown || chat.IsOpen())
                 return;
             BedrockSession::ServerForm sf;
-            if (!live->TakeServerForm(sf))
+            if (live && !live->TakeServerForm(sf))
                 return;
+            if (!live) {
+                static bool previewOpened = false;
+                if (previewOpened)
+                    return;
+                previewOpened = true;
+                std::ifstream in(previewForm, std::ios::binary);
+                sf.id = 1;
+                sf.json.assign(std::istreambuf_iterator<char>(in), {});
+            }
             if (!ui::ParseForm(sf.id, sf.json, formModel)) {
                 std::cout << "[form] cannot parse form " << sf.id << std::endl;
-                live->SendFormResponse(sf.id, nullptr, false);
+                if (live)
+                    live->SendFormResponse(sf.id, nullptr, false);
                 return;
             }
+            // PERLIN_PREVIEW_FORM_CLICKS="t:3,d:6": clicks applied as if made, to check each control's states
+            if (!live)
+                if (const char* clicks = PERLIN_ENV("PERLIN_PREVIEW_FORM_CLICKS")) {
+                    std::stringstream list(clicks);
+                    std::string ignored;
+                    // "-" clicks on nothing
+                    for (std::string id; std::getline(list, id, ',');)
+                        if (!ui::FormDismissDropdown(formModel, id == "-" ? std::string() : id))
+                            ui::FormClick(formModel, id, ignored);
+                }
             std::cout << "[form] opened form " << sf.id << " '" << formModel.title << "'" << std::endl;
             {
                 // kept to replay a server's form layout offline
@@ -1017,8 +1045,9 @@ namespace perlin {
             }
             formUi.Warm(ServerPacks::Instance().Directories());
             formUi.WaitReady(150);
-            // forms use the server's json ui only when it restyles them; else our java layout
-            formEngine = formUi.Ready() && (options.bedrockMenus || formUi.ServerStyled());
+            // forms draw with the game's own json ui; the built-in layout only if those files fail
+            formEngineFailed = false;
+            formEngine = formUi.Ready();
             formShown = true;
             formScroll = 0.0f;
             formContentH = formViewH = 0.0f;
@@ -1036,7 +1065,7 @@ namespace perlin {
         }
         formScroll = std::max(0.0f, formScroll - inputManager.Scroll() * 20.0f);
         if (cancel) {
-            live->SendFormResponse(formModel.id, nullptr, false);
+            respond(nullptr);
             closeForm();
             return;
         }
@@ -1047,7 +1076,8 @@ namespace perlin {
         const int guiW = static_cast<int>(std::ceil(static_cast<float>(fbW) / static_cast<float>(scale)));
         const int guiH = static_cast<int>(std::ceil(static_cast<float>(fbH) / static_cast<float>(scale)));
         formScroll = std::clamp(formScroll, 0.0f, std::max(0.0f, formContentH - formViewH));
-        const std::string signature = std::to_string(formModel.id) + "|" + std::to_string(formModel.focus) + "|" + ui::FormCustomResponse(formModel) + "|" + std::to_string(ui::FormImageVersion()) + "|" +
+        const std::string signature = std::to_string(formModel.id) + "|" + std::to_string(formModel.focus) + "|" + std::to_string(formModel.openDropdown) + "|" +
+                                      ui::FormCustomResponse(formModel) + "|" + std::to_string(ui::FormImageVersion()) + "|" +
                                       std::to_string(guiW) + "x" + std::to_string(guiH) + "|" + std::to_string(static_cast<int>(formScroll)) + "|" +
                                       (formEngine ? "e" : "b");
         // server pack menus slide in and cards fade; animations only advance on re-evaluation:
@@ -1064,6 +1094,7 @@ namespace perlin {
             if (formEngine && !formUi.Build(formModel, guiW, guiH, formScroll, formRml, contentH, viewH)) {
                 std::cout << "[form] json ui build failed: " << formUi.Problem() << ", using the built-in layout" << std::endl;
                 formEngine = false;
+                formEngineFailed = true;
             }
             if (!formEngine)
                 formRml = ui::BuildFormRml(formModel, guiW, guiH, formScroll, contentH, viewH);
@@ -1073,10 +1104,11 @@ namespace perlin {
                 std::cout << "[form] " << error << std::endl;
                 if (formEngine) {
                     formEngine = false;
+                    formEngineFailed = true;
                     formSignature.clear();
                     return;
                 }
-                live->SendFormResponse(formModel.id, nullptr, false);
+                respond(nullptr);
                 closeForm();
                 return;
             }
@@ -1099,16 +1131,23 @@ namespace perlin {
         if (!down && formLeftDown && now - formOpenedAt > std::chrono::milliseconds(200)) {
             const std::string hover = hud.Overlay().OverlayHover();
             if (hover == ui::kFormCloseId) {
-                live->SendFormResponse(formModel.id, nullptr, false);
+                respond(nullptr);
                 closeForm();
+                return;
+            }
+            if (ui::FormDismissDropdown(formModel, hover)) {
+                formLeftDown = down;
                 return;
             }
             std::string response;
             if (!hover.empty() && ui::FormClick(formModel, hover, response)) {
-                live->SendFormResponse(formModel.id, &response, false);
+                respond(&response);
                 closeForm();
                 return;
             }
+            // a click on another control leaves the text box
+            if (!hover.empty() && hover.rfind("i:", 0) != 0)
+                formModel.focus = -1;
         }
         formLeftDown = down;
     }

@@ -53,6 +53,17 @@ namespace perlin::ui {
                 }
                 pos += 11;
             }
+            // some packs put "namespace" last: read the whole file for its top-level key
+            in.clear();
+            in.seekg(0);
+            const std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+            if (text.size() <= head.size())
+                return {};
+            Json doc;
+            std::string error;
+            if (Json::Parse(text, doc, error) && doc.IsObject())
+                if (const Json* ns = doc.Find("namespace"); ns && ns->IsString())
+                    return ns->string;
             return {};
         }
 
@@ -581,8 +592,12 @@ namespace perlin::ui {
                             else
                                 MergeChildren(childList, member.second, layer.ns);
                         } else if (k == "bindings") {
-                            if (member.second.IsArray())
-                                for (const Json& b : member.second.array)
+                            // "bindings": "$text_bindings" passes a whole binding list through a variable
+                            const Json* list = &member.second;
+                            if (list->IsString() && !list->string.empty() && list->string[0] == '$')
+                                list = &substitutedLists.emplace_back(Sub(member.second, vars, &report.unresolvedVariables));
+                            if (list->IsArray())
+                                for (const Json& b : list->array)
                                     bindingList.push_back(&b);
                         } else {
                             auto existing = std::find_if(propRefs.begin(), propRefs.end(), [&](const auto& p) { return *p.first == k; });
@@ -594,6 +609,12 @@ namespace perlin::ui {
                     }
                 }
 
+                // "$dropdown_name@..." names the control after a variable: view bindings find it by that value
+                if (name.size() > 1 && name[0] == '$') {
+                    const Json resolved = Sub(Json(name), ownVars ? *ownVars : parentVars, nullptr);
+                    if (resolved.IsString() && !resolved.string.empty() && resolved.string.find('$') == std::string::npos)
+                        name = resolved.string;
+                }
                 auto node = std::make_unique<Node>();
                 node->name = name;
                 node->path = parentPath.empty() ? name : parentPath + "/" + name;
@@ -731,7 +752,10 @@ namespace perlin::ui {
             }
 
             // `chainDefaults`: names with only a "|default" from own inheritance chain; layers run base first: derived
-            // "|default" replaces base one; only parent-scope values or explicit assignments block a default
+            // "|default" replaces base one; a parent's "|default" doesn't block a child's either, only an explicit
+            // value does (option_generic's $label_offset [0, 0] vs one_line_layout's [34, 3])
+            static std::string DefaultMark(const std::string& name) { return std::string("\x01") + "default:" + name; }
+
             void AssignVariable(Vars& vars, const std::string& rawName, const Json& value,
                                 std::unordered_set<std::string>* chainDefaults = nullptr) {
                 std::string name = rawName;
@@ -742,12 +766,16 @@ namespace perlin::ui {
                     name = name.substr(0, bar);
                 }
                 if (onlyDefault) {
-                    if ((vars.count(name) || globals.count(name)) && !(chainDefaults && chainDefaults->count(name)))
+                    const bool explicitValue = vars.count(name) && !vars.count(DefaultMark(name));
+                    if ((explicitValue || globals.count(name)) && !(chainDefaults && chainDefaults->count(name)))
                         return;
                     if (chainDefaults)
                         chainDefaults->insert(name);
-                } else if (chainDefaults) {
-                    chainDefaults->erase(name);
+                    vars[DefaultMark(name)] = Json(true);
+                } else {
+                    if (chainDefaults)
+                        chainDefaults->erase(name);
+                    vars.erase(DefaultMark(name));
                 }
                 if (value.IsString() && value.string.find('$') != std::string::npos) {
                     vars[name] = Sub(value, vars, nullptr);

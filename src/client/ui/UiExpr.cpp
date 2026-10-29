@@ -316,7 +316,23 @@ namespace perlin::ui {
     }
 
     bool EvalExpression(std::string_view text, const ExprEnv& env, Json& out) {
-        Evaluator evaluator(text, env);
+        // the game reads past a ")" that closes nothing (packs ship such expressions): drop it
+        std::string balanced;
+        balanced.reserve(text.size());
+        int depth = 0;
+        bool quoted = false;
+        for (const char c : text) {
+            if (c == '\'')
+                quoted = !quoted;
+            else if (!quoted && c == '(')
+                depth++;
+            else if (!quoted && c == ')' && depth-- == 0) {
+                depth = 0;
+                continue;
+            }
+            balanced += c;
+        }
+        Evaluator evaluator(balanced, env);
         return evaluator.Run(out);
     }
 }

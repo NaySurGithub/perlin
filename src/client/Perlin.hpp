@@ -115,6 +115,7 @@ namespace perlin {
         ui::FormUi formUi;
         ui::ChestUi chestUi;
         bool formEngine = false;
+        bool formEngineFailed = false;  // the json ui could not draw this form: stay on the built-in layout
         std::string formSignature, serverLayerSignature;
         float formScroll = 0.0f, formContentH = 0.0f, formViewH = 0.0f;
         std::chrono::steady_clock::time_point formOpenedAt{};

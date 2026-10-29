@@ -37,6 +37,7 @@ namespace perlin::ui {
         std::vector<FormButton> buttons;
         std::vector<FormElement> elements;
         int focus = -1;
+        int openDropdown = -1;  // element whose option list is open
     };
 
     inline constexpr const char* kFormCloseId = "close";
@@ -59,7 +60,7 @@ namespace perlin::ui {
 
     private:
         UiLibrary library;
-        std::unique_ptr<Node> tree;
+        std::unique_ptr<Node> tree, modalTree;
         RmlEmitter emitter;
         UiServices services;
         AnimHost anim;
@@ -78,6 +79,8 @@ namespace perlin::ui {
     bool ParseForm(uint32_t id, const std::string& json, FormModel& out);
     std::string BuildFormRml(const FormModel& form, int guiW, int guiH, float scroll, float& contentHeight, float& viewHeight);
     bool FormClick(FormModel& form, const std::string& id, std::string& response);
+    // an open dropdown takes the next click: true when the click only closed it (dropdown_exit)
+    bool FormDismissDropdown(FormModel& form, const std::string& hoverId);
     std::string FormCustomResponse(const FormModel& form);
     bool FormEdit(FormModel& form, const InputManager::Typed& t);
 }
