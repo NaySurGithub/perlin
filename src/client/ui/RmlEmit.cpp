@@ -518,13 +518,14 @@ namespace perlin::ui {
             Shift(*kid, dx);
             const LNode* rest = FindKid(*kid, kid->Str("default_control", "default"));
             const LNode* hover = FindKid(*kid, kid->Str("hover_control", "hover"));
+            // state boxes take the box's own layer: at 0 they would sit under the bar
             if (rest) {
-                out.BeginBox(kid->ax, kid->ay, kid->w, kid->h, 0, hover && !command.empty() ? "df" : "", "", false);
+                out.BeginBox(kid->ax, kid->ay, kid->w, kid->h, kid->layer, hover && !command.empty() ? "df" : "", "", false);
                 Visit(*rest, out);
                 out.EndBox();
             }
             if (hover && !command.empty()) {
-                out.BeginBox(kid->ax, kid->ay, kid->w, kid->h, 0, "hv", "", false);
+                out.BeginBox(kid->ax, kid->ay, kid->w, kid->h, kid->layer, "hv", "", false);
                 Visit(*hover, out);
                 out.EndBox();
             }
