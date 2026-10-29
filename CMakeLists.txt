@@ -299,6 +299,18 @@ if(TARGET bgfx AND WIN32)
     endif()
 endif()
 
+# one drawable more than frames in flight: with as many, nextDrawable waits on the compositor and halves the frame rate
+if(TARGET bgfx AND APPLE)
+    set(PERLIN_BGFX_MTL "${bgfx_SOURCE_DIR}/bgfx/src/renderer_mtl.cpp")
+    file(READ "${PERLIN_BGFX_MTL}" perlin_mtl_src)
+    if(NOT perlin_mtl_src MATCHES "perlin drawable count")
+        string(REPLACE "maxFrameLatency != 0 ? maxFrameLatency : BGFX_CONFIG_MAX_FRAME_LATENCY\n\t\t\t\t, 2"
+                       "maxFrameLatency != 0 ? maxFrameLatency + 1 : BGFX_CONFIG_MAX_FRAME_LATENCY\n\t\t\t\t, 2" perlin_mtl_src "${perlin_mtl_src}")
+        string(APPEND perlin_mtl_src "\n// perlin drawable count\n")
+        file(WRITE "${PERLIN_BGFX_MTL}" "${perlin_mtl_src}")
+    endif()
+endif()
+
 # Java (OptiFine / Iris) shader packs: GLSL -> SPIR-V (glslang) -> GLSL / HLSL (SPIRV-Cross).
 # bgfx.cmake already owns targets named glslang / spirv-cross, so these are compiled here under their own names.
 CPMAddPackage(NAME glslang GITHUB_REPOSITORY KhronosGroup/glslang GIT_TAG e2bb10631198bc9d73daf752d9170608d5e2c8bd GIT_SHALLOW NO DOWNLOAD_ONLY YES)
