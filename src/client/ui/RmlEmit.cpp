@@ -336,6 +336,11 @@ namespace perlin::ui {
                     return "fb:" + std::to_string(std::max(0, n.index));
                 if (id == "button.submit_custom_form")
                     return "submit";
+                // modal form popup: first button answers true, the other false
+                if (id == "popup_dialog.left_button")
+                    return "fb:0";
+                if (id == "popup_dialog.rightcancel_button")
+                    return "fb:1";
                 if (id == "button.perlin_form_toggle")
                     return "t:" + std::to_string(std::max(0, n.index));
                 if (id == "button.perlin_form_dropdown")
@@ -421,6 +426,149 @@ namespace perlin::ui {
         out.EndBox();
     }
 
+    namespace {
+        // click target of a form control in a collection row: t toggle, r dropdown option, d dropdown, k slider, i text box
+        std::string WidgetCommand(const LNode& n) {
+            if (n.index < 0)
+                return {};
+            const std::string row = std::to_string(n.index);
+            if (n.type == "toggle")
+                return (n.Str("toggle_name") == "custom_dropdown_radio_toggle" ? "r:" : "t:") + row;
+            if (n.type == "dropdown")
+                return "d:" + row;
+            if (n.type == "slider")
+                return "k:" + row;
+            if (n.type == "edit_box")
+                return "i:" + row;
+            return {};
+        }
+
+        // nodes own their children: move a subtree for one draw, then put it back
+        void Shift(const LNode& n, float dx) {
+            LNode& m = const_cast<LNode&>(n);
+            m.ax += dx;
+            for (const auto& kid : m.kids)
+                Shift(*kid, dx);
+        }
+    }
+
+    void RmlEmitter::VisitToggle(const LNode& n, RmlWriter& out) {
+        bool on = n.Bool("toggle_default_state", false);
+        if (const Json* st = n.bag.Find("#toggle_state"); st && st->IsBool())
+            on = st->boolean;
+        const std::string rest = n.Str(on ? "checked_control" : "unchecked_control");
+        const std::string hover = n.Str(on ? "checked_hover_control" : "unchecked_hover_control");
+        std::vector<std::string> states;
+        for (const char* key : {"checked_control", "unchecked_control", "checked_hover_control", "unchecked_hover_control",
+                                "checked_locked_control", "unchecked_locked_control", "checked_locked_hover_control",
+                                "unchecked_locked_hover_control"})
+            if (std::string name = n.Str(key); !name.empty())
+                states.push_back(std::move(name));
+        const std::string command = WidgetCommand(n);
+        const bool hasHover = !hover.empty() && FindKid(n, hover) != nullptr && !command.empty();
+        out.BeginBox(n.ax, n.ay, n.w, n.h, n.layer, command.empty() ? "" : "bt", command, false);
+        for (const auto& kid : n.kids) {
+            if (!kid->visible)
+                continue;
+            if (!rest.empty() && kid->id == rest) {
+                out.BeginBox(n.ax, n.ay, n.w, n.h, 0, hasHover ? "df" : "", "", false);
+                Visit(*kid, out);
+                out.EndBox();
+            } else if (kid->id == hover) {
+                if (hasHover) {
+                    out.BeginBox(n.ax, n.ay, n.w, n.h, 0, "hv", "", false);
+                    Visit(*kid, out);
+                    out.EndBox();
+                }
+            } else if (std::find(states.begin(), states.end(), kid->id) == states.end()) {
+                Visit(*kid, out);
+            }
+        }
+        out.EndBox();
+    }
+
+    void RmlEmitter::VisitSlider(const LNode& n, RmlWriter& out) {
+        double steps = 1, value = 0;
+        if (const Json* st = n.bag.Find("#slider_steps"); st && st->IsNumber())
+            steps = st->number;
+        if (const Json* v = n.bag.Find("#slider_value"); v && v->IsNumber())
+            value = v->number;
+        // step sliders hold an index, smooth ones a 0..1 fraction
+        const float f = static_cast<float>(std::clamp(steps > 1 ? value / (steps - 1) : value, 0.0, 1.0));
+        const std::string boxName = n.Str("slider_box_control", "slider_box");
+        const LNode* box = FindKid(n, boxName);
+        const float boxW = box ? box->w : 0.0f;
+        const std::string command = WidgetCommand(n);
+        if (!command.empty())
+            sliderTracks[command] = {n.ax + boxW * 0.5f, std::max(1.0f, n.w - boxW)};
+        progressName = n.Str("progress_control", "slider_progress");
+        progressHoverName = n.Str("progress_hover_control", "slider_progress_hover");
+        progressLeft = n.ax;
+        progressWidth = boxW * 0.5f + f * (n.w - boxW);
+        out.BeginBox(n.ax, n.ay, n.w, n.h, n.layer, command.empty() ? "" : "bt", command, false);
+        const std::string barHover = n.Str("hover_control");
+        // the bar first: the box sits on top of it (its layer is above the bar's)
+        for (const auto& kid : n.kids)
+            if (kid->visible && kid->id != barHover && kid->id != boxName)
+                Visit(*kid, out);
+        for (const auto& kid : n.kids) {
+            if (!kid->visible || kid->id != boxName)
+                continue;
+            const float dx = n.ax + f * (n.w - boxW) - kid->ax;
+            Shift(*kid, dx);
+            const LNode* rest = FindKid(*kid, kid->Str("default_control", "default"));
+            const LNode* hover = FindKid(*kid, kid->Str("hover_control", "hover"));
+            if (rest) {
+                out.BeginBox(kid->ax, kid->ay, kid->w, kid->h, 0, hover && !command.empty() ? "df" : "", "", false);
+                Visit(*rest, out);
+                out.EndBox();
+            }
+            if (hover && !command.empty()) {
+                out.BeginBox(kid->ax, kid->ay, kid->w, kid->h, 0, "hv", "", false);
+                Visit(*hover, out);
+                out.EndBox();
+            }
+            Shift(*kid, -dx);
+        }
+        out.EndBox();
+        progressWidth = -1;
+    }
+
+    void RmlEmitter::VisitEditBox(const LNode& n, RmlWriter& out) {
+        std::string text, placeholder;
+        bool focused = false;
+        if (editText)
+            editText(n, text, placeholder, focused);
+        editTextName = n.Str("text_control", "display_text");
+        editShown = focused ? text + "_" : !text.empty() ? text : placeholder.empty() ? std::string() : "\xC2\xA7" "7" + placeholder;
+        const std::string command = WidgetCommand(n);
+        const std::string rest = n.Str("default_control", "default"), hover = n.Str("hover_control", "hover");
+        const std::string pressed = n.Str("pressed_control", "pressed"), locked = n.Str("locked_control", "locked");
+        const bool hasHover = FindKid(n, hover) != nullptr && !command.empty();
+        out.BeginBox(n.ax, n.ay, n.w, n.h, n.layer, command.empty() ? "" : "bt", command, false);
+        for (const auto& kid : n.kids) {
+            if (!kid->visible || kid->id == locked)
+                continue;
+            // a focused box draws its pressed look, like the game's selected text field
+            const bool shownRest = focused ? kid->id == pressed : kid->id == rest;
+            if (shownRest) {
+                out.BeginBox(n.ax, n.ay, n.w, n.h, 0, hasHover && !focused ? "df" : "", "", false);
+                Visit(*kid, out);
+                out.EndBox();
+            } else if (kid->id == hover) {
+                if (hasHover && !focused) {
+                    out.BeginBox(n.ax, n.ay, n.w, n.h, 0, "hv", "", false);
+                    Visit(*kid, out);
+                    out.EndBox();
+                }
+            } else if (kid->id != rest && kid->id != pressed) {
+                Visit(*kid, out);
+            }
+        }
+        out.EndBox();
+        editTextName.clear();
+    }
+
     void RmlEmitter::VisitScroll(const LNode& n, RmlWriter& out) {
         float content = 0;
         for (const auto& kid : n.kids)
@@ -474,22 +622,39 @@ namespace perlin::ui {
             VisitButton(n, out);
             return;
         }
-        if (n.type == "toggle") {
-            bool on = n.Bool("toggle_default_state", false);
-            if (const Json* s = n.bag.Find("#toggle_state"); s && s->IsBool())
-                on = s->boolean;
-            const std::string shown = on ? n.Str("checked_control") : n.Str("unchecked_control");
-            const std::string hidden = on ? n.Str("unchecked_control") : n.Str("checked_control");
-            const std::string hoverShown = on ? n.Str("checked_hover_control") : n.Str("unchecked_hover_control");
-            const std::string hoverHidden = on ? n.Str("unchecked_hover_control") : n.Str("checked_hover_control");
-            if (!shown.empty()) {
-                for (const auto& kid : n.kids) {
-                    if (kid->id == hidden || kid->id == hoverShown || kid->id == hoverHidden)
-                        continue;
-                    Visit(*kid, out);
-                }
+        if (n.type == "toggle" || n.type == "dropdown") {
+            VisitToggle(n, out);
+            return;
+        }
+        if (n.type == "slider") {
+            VisitSlider(n, out);
+            return;
+        }
+        if (n.type == "edit_box") {
+            VisitEditBox(n, out);
+            return;
+        }
+        if (progressWidth >= 0 && (n.id == progressName || n.id == progressHoverName)) {
+            // slider progress: only the filled part of the bar
+            out.BeginBox(n.ax, n.ay, std::max(0.0f, progressWidth - (n.ax - progressLeft)), n.h, n.layer, "", "", true);
+            const float saved = progressWidth;
+            progressWidth = -1;
+            Visit(n, out);
+            progressWidth = saved;
+            out.EndBox();
+            return;
+        }
+        // the text label is named "$text_edit_text_control" in the files; the game fills it, and shows the
+        // placeholder in its place while the box is empty
+        if (!editTextName.empty() && n.type == "label" && (n.id == editTextName || n.id == "$text_edit_text_control")) {
+            if (editShown.empty())
                 return;
-            }
+            LNode& shown = const_cast<LNode&>(n);
+            const std::vector<std::string> saved = shown.lines;
+            shown.lines = {editShown};
+            EmitLabel(shown, out);
+            shown.lines = saved;
+            return;
         }
         if (n.type == "scroll_view") {
             viewportName = n.Str("scrolling_view_port", "scrolling_view_port");
@@ -676,6 +841,7 @@ mcimg, mcitem { display: block; position: absolute; }
     }
 
     std::string RmlEmitter::Emit(const LNode& root, float guiW, float guiH, const std::string& extraRcss, bool comments) {
+        sliderTracks.clear();
         RmlWriter writer(comments);
         unknown.clear();
         viewportName.clear();

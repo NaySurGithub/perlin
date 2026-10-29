@@ -490,11 +490,11 @@ namespace perlin::ui {
                 } else {
                     // Widgets show one state child at rest; the others (hover, pressed, locked...) take no space.
                     std::vector<std::string> resting;
-                    if (n.type == "button") {
+                    if (n.type == "button" || n.type == "edit_box") {
                         for (const char* key : {"hover_control", "pressed_control", "locked_control"})
                             if (const std::string name = n.Str(key); !name.empty() && name != n.Str("default_control"))
                                 resting.push_back(name);
-                    } else if (n.type == "toggle") {
+                    } else if (n.type == "toggle" || n.type == "dropdown") {
                         for (const char* key : {"checked_control", "checked_hover_control", "unchecked_hover_control",
                                                 "checked_locked_control", "unchecked_locked_control", "checked_locked_hover_control",
                                                 "unchecked_locked_hover_control"})
@@ -696,7 +696,8 @@ namespace perlin::ui {
                     if (!b.IsObject())
                         continue;
                     const std::string type = b.Find("binding_type") ? b.Find("binding_type")->StringOr("global") : "global";
-                    if (type == "collection_details")
+                    // "none" isn't fed by data: the control keeps its own value
+                    if (type == "collection_details" || type == "none")
                         continue;
                     if (type == "view") {
                         const Json* expr = b.Find("source_property_name");
@@ -705,7 +706,13 @@ namespace perlin::ui {
                             continue;
                         const LNode* source = &n;
                         if (const Json* sc = b.Find("source_control_name"); sc && sc->IsString() && !sc->string.empty()) {
-                            auto it = byName.find(sc->string);
+                            // "($dropdown_name)" arrives as "(custom_dropdown)" or "('custom_dropdown')"
+                            std::string control = sc->string;
+                            while (!control.empty() && (control.front() == '(' || control.front() == '\'' || control.front() == ' '))
+                                control.erase(0, 1);
+                            while (!control.empty() && (control.back() == ')' || control.back() == '\'' || control.back() == ' '))
+                                control.pop_back();
+                            auto it = byName.find(control);
                             if (it != byName.end())
                                 source = it->second;
                         }
@@ -756,6 +763,11 @@ namespace perlin::ui {
                             return Lookup(n, nm, nullptr, out);
                         };
                         have = EvalExpression(name, env, value);
+                        // "('#' + $dropdown_name)" only builds the binding's name: read the binding it names
+                        if (have && value.IsString() && value.string.size() > 1 && value.string[0] == '#') {
+                            const std::string named = value.string;
+                            have = row >= 0 ? data.CollectionValue(rowCollection, row, named, value) : data.Global(named, value);
+                        }
                     } else if (type == "collection") {
                         const Json* c = b.Find("binding_collection_name");
                         const std::string collection = c && c->IsString() ? c->string : std::string();

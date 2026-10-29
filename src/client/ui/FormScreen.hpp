@@ -37,6 +37,7 @@ namespace perlin::ui {
         std::vector<FormButton> buttons;
         std::vector<FormElement> elements;
         int focus = -1;
+        int openDropdown = -1;  // element whose option list is open
     };
 
     inline constexpr const char* kFormCloseId = "close";
@@ -59,7 +60,7 @@ namespace perlin::ui {
 
     private:
         UiLibrary library;
-        std::unique_ptr<Node> tree;
+        std::unique_ptr<Node> tree, modalTree;
         RmlEmitter emitter;
         UiServices services;
         AnimHost anim;
