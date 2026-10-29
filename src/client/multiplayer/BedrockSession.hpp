@@ -11,6 +11,8 @@
 #include "util/ThreadPool.hpp"
 #include "network/PacketCipher.hpp"
 #include "network/PlayerConstants.hpp"
+
+typedef struct ec_key_st EC_KEY;
 #include "client/multiplayer/PackDownloader.hpp"
 
 #include "client/multiplayer/BlockEntities.hpp"
@@ -68,7 +70,13 @@ namespace perlin {
         void SetSkin(LoadedSkin loaded) { skin = std::move(loaded); }
         const LoadedSkin& Skin() const { return skin; }
         entity::EntityTracker& Entities() { return entities; }
-        void SetAccount(std::shared_ptr<xbox::Account> a) { account = std::move(a); }
+        // loginKey names the account (its auth file): logins are cached per account until the token expires
+        void SetAccount(std::shared_ptr<xbox::Account> a, std::string loginKey = {}) {
+            account = std::move(a);
+            accountKey = std::move(loginKey);
+        }
+        // signs in ahead of the join so connecting skips Xbox Live, PlayFab and the Minecraft token
+        static void PrewarmLogin(std::shared_ptr<xbox::Account> account, const std::string& loginKey);
         void SetChunkRadius(int r) { chunkRadius = r; }
         void RequestChunkRadiusNow() { SendRequestChunkRadius(); }
         void SetNearRadius(int r) { nearRadius = r; }
@@ -976,6 +984,8 @@ void RequestRespawn();
         std::shared_ptr<xbox::Account> account;
         std::shared_ptr<friendworld::Lease> friendLease;
         xbox::Credentials onlineCreds;
+        std::string accountKey;
+        std::shared_ptr<EC_KEY> swapKey;  // key pair of a background sign-in that finished during the connect
         std::string playerUuid;
         std::string serverAddress;
         std::string gameVersion;
