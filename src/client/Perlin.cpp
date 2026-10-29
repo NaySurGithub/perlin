@@ -960,7 +960,7 @@ namespace perlin {
             data.toastTitle = lastToastTitle;
             data.toastMessage = lastToastMessage;
         }
-        const bool jsonBossBars = hud.Ready() && (options.bedrockMenus || hud.Overrides("hud"));
+        const bool jsonBossBars = hud.Ready() && hud.Overrides("hud");
         if (!jsonBossBars)
             for (const auto& b : live->BossBars())
                 data.bars.push_back({b.title, b.progress, b.color, b.overlay});
@@ -8157,7 +8157,7 @@ namespace perlin {
             if (live) {
                 // sidebar is part of the json ui hud: server packs restyling scoreboards.json apply
                 const auto sb = live->Scoreboard();
-                // json ui sidebar when the server restyles it (or bedrock menus are on); else the java one
+                // json ui sidebar when the server restyles it; else the java one
                 hudState.sidebarVisible = sb.visible && !pauseShown && hud && hud->Overrides("scoreboard");
                 hudState.sidebarTitle = sb.title;
                 for (const auto& r : sb.rows)
