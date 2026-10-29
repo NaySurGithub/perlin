@@ -132,6 +132,15 @@ namespace perlin {
                     if (where == kSlots[i])
                         def.armorSlot = i;
             }
+            // use_modifiers in seconds, the older item_properties use_duration in ticks; food without either eats in 32
+            if (const ui::Json* mods = FindKey(nbt, "minecraft:use_modifiers"); mods && mods->IsObject())
+                if (const ui::Json* d = mods->Find("use_duration"); d && d->IsNumber())
+                    def.useTicks = static_cast<int>(d->NumberOr(0) * 20.0);
+            if (def.useTicks == 0)
+                if (const ui::Json* d = FindKey(nbt, "use_duration"); d && d->IsNumber())
+                    def.useTicks = static_cast<int>(d->NumberOr(0));
+            if (def.useTicks == 0 && FindKey(nbt, "minecraft:food"))
+                def.useTicks = 32;
             ServerBlocks::Instance().SetItem(std::move(def));
             count++;
         }

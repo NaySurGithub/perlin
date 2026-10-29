@@ -45,6 +45,7 @@
 #include "client/ui/CreativeScreen.hpp"
 #include "client/ui/DisconnectScreen.hpp"
 #include "client/ui/LoadingScreen.hpp"
+#include "client/resources/ServerBlocks.hpp"
 #include "network/Friends.hpp"
 #include "network/Http.hpp"
 #include "network/LanDiscovery.hpp"
@@ -7350,7 +7351,7 @@ namespace perlin {
                     }
                     if (use && eating && !aimInteracts && inputManager.Pressed(Action::Use) && !DispatchModInteract(abi::InteractKind::UseItem, 0, 0, 0, 0, 0)) {
                         const float eye[3] = {static_cast<float>(camera.x), static_cast<float>(camera.y), static_cast<float>(camera.z)};
-                        earlyItemUse = live->SendUseItemInAir(eye);
+                        earlyItemUse = live->SendUseItemInAir(eye, true);
                         usingItem = earlyItemUse;
                     }
                     if (!use && usingItem) {
@@ -7971,8 +7972,12 @@ namespace perlin {
                         }
                         if (usePressed && !earlyItemUse && !blockedFoodUse && live && holdsItem && use == blockuse::Use::Nothing && !interactedEntity &&
                             !DispatchModInteract(abi::InteractKind::UseItem, 0, 0, 0, 0, 0)) {
-                            live->SendUseItemInAir(eyeF);
-                            usingItem = true;
+                            CustomItemDef custom;
+                            const bool heldUse = ServerBlocks::Instance().Item(held.name, custom)
+                                                     ? custom.useTicks > 0
+                                                     : blockuse::VanillaUseTicks(held.name, HandRenderer::IsFood(held.name)) > 0;
+                            live->SendUseItemInAir(eyeF, heldUse);
+                            usingItem = heldUse;
                         }
                     }
                     if (!useHeld && live)

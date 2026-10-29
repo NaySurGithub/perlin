@@ -654,7 +654,7 @@ void RequestRespawn();
         bool PredictPlace(int x, int y, int z, int32_t heldRuntimeId);
         bool PredictBridgePlace(int x, int y, int z, int32_t heldRuntimeId, int face, const float click[3]);
         bool SendUseItemOnBlock(int bx, int by, int bz, int face, const float click[3], const float eye[3], int use, const int dest[3]);
-        bool SendUseItemInAir(const float eye[3]);
+        bool SendUseItemInAir(const float eye[3], bool held);
         bool SendReleaseItem(const float eye[3]);
         bool SendAttackEntity(uint64_t targetRuntimeId, const float eye[3], const float click[3]);
         bool SendInteractEntity(uint64_t targetRuntimeId, const float eye[3], const float click[3]);
