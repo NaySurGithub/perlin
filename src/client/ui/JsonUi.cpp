@@ -267,7 +267,7 @@ namespace perlin::ui {
                 if (member.first == "namespace" || !member.second.IsObject())
                     continue;
                 const std::string name = SplitName(member.first);
-                // "parent/child": a patch for a control nested inside another one, not a control of its own.
+                // "parent/child": patch for a nested control, not a control of its own
                 if (name.find('/') != std::string::npos) {
                     const size_t slash = name.find('/');
                     auto& list = ns.nested[name.substr(0, slash)];
@@ -298,10 +298,8 @@ namespace perlin::ui {
                     def.key = existing->second.key;
                 } else if (existing != ns.defs.end() &&
                            (member.first.find('@') == std::string::npos || member.first == existing->second.key)) {
-                    // A later file (a server pack over a vanilla screen) refines the control it named: properties
-                    // replace, "controls" is replaced only when the refinement lists its own. The same key with the same
-                    // template ("long_form@common_dialogs.main_panel_no_buttons" again) is the same JSON entry and merges
-                    // too; naming a different template ("name@other.control") replaces the control outright.
+                    // later file (server pack over vanilla) refines the named control: properties replace, "controls" only if listed;
+                    // same key + same template merges too; different template ("name@other.control") replaces outright
                     Json merged = *existing->second.json;
                     for (const auto& prop : member.second.object)
                         merged.Set(prop.first, prop.second);
@@ -353,8 +351,7 @@ namespace perlin::ui {
             switch (v.type) {
             case Json::Type::Bool: return v.boolean ? "true" : "false";
             case Json::Type::Number: return v.Dump();
-            // Inside an expression a variable holding a binding name ("#is_selected_slot") stands for that binding;
-            // any other string is a quoted literal.
+            // in expressions a variable holding a binding name ("#is_selected_slot") means that binding; other strings are literals
             case Json::Type::String:
                 return expression && !(v.string.size() > 1 && v.string[0] == '#') ? "'" + v.string + "'" : v.string;
             case Json::Type::Null: return expression ? "null" : "";
@@ -362,8 +359,7 @@ namespace perlin::ui {
             }
         }
 
-        // Variables visible to a control: its own scope, then the shared globals. Globals stay in one map instead of
-        // being copied into every control's scope, which made big server screens take seconds to build.
+        // visible vars: own scope, then shared globals; globals not copied per control: big server screens took seconds
         struct VarScope {
             const Vars& local;
             const Vars* globals = nullptr;
@@ -452,7 +448,7 @@ namespace perlin::ui {
 
         struct ChildEntry {
             std::string key;
-            const Json* value;  // points into the library, or into the owning Build's substituted lists
+            const Json* value;  // into the library or the owning Build's substituted lists
             std::string ns;
         };
 
@@ -479,8 +475,7 @@ namespace perlin::ui {
                     ResolveChain(ref, ns, layers, 0);
                 layers.push_back({&overrides, ns});
 
-                // "a/b/c" definitions patch a control nested inside another: a bare name lands on this node, a path is
-                // routed into the child it names when the children are built.
+                // "a/b/c" defs patch nested controls: bare name lands here, path routed to the named child at build
                 std::unordered_map<std::string, std::vector<std::pair<std::string, const Json*>>> childPatches;
                 const auto routePatch = [&](const std::string& rel, const Json* patch) {
                     const size_t slash = rel.find('/');
@@ -493,8 +488,7 @@ namespace perlin::ui {
                 if (pending)
                     for (const auto& entry : *pending)
                         routePatch(entry.first, entry.second);
-                // Path definitions live in the namespace that owns the control, which can differ from the namespace of
-                // the file that listed this child.
+                // path defs live in the control owner's namespace, not necessarily the listing file's
                 std::string defName = name;
                 std::string defNs = ns;
                 if (!ref.empty()) {
@@ -511,8 +505,7 @@ namespace perlin::ui {
                     if (found == nested->end())
                         return;
                     for (const auto& entry : found->second) {
-                        // The library key names the child itself: everything after the first "/" is handed down, an
-                        // empty remainder means "this child gets these properties".
+                        // key names the child: rest after first "/" handed down; empty rest = props for this child
                         const size_t slash = entry.first.find('/');
                         if (slash == std::string::npos)
                             childPatches[entry.first].emplace_back(std::string(), entry.second);
@@ -524,7 +517,7 @@ namespace perlin::ui {
                 if (defNs != ns)
                     applyNested(defNs);
 
-                // Most controls assign no variables; only copy the parent's scope when one does.
+                // copy parent scope only when the control assigns variables
                 std::optional<Vars> ownVars;
                 auto writable = [&]() -> Vars& {
                     if (!ownVars)
@@ -567,7 +560,7 @@ namespace perlin::ui {
                 }
                 const Vars& vars = ownVars ? *ownVars : parentVars;
 
-                // Properties by name, later layers replacing earlier ones; copied once, when substituted.
+                // props by name, later layers win; copied once on substitution
                 std::vector<std::pair<const std::string*, const Json*>> propRefs;
                 std::vector<const Json*> bindingList;
                 std::vector<ChildEntry> childList;
@@ -580,10 +573,9 @@ namespace perlin::ui {
                         if (k.empty() || k[0] == '$' || k == "variables" || k == "modifications" || k == "namespace")
                             continue;
                         if (k == "controls") {
-                            // A control that lists its own children replaces the inherited list entirely, as in the
-                            // game; adding to a template's children is what "modifications" are for.
+                            // own children replace the inherited list, as in the game; appending is what "modifications" are for
                             childList.clear();
-                            // "controls": "$row_controls" passes a whole child list through a variable.
+                            // "controls": "$row_controls": whole child list via a variable
                             if (member.second.IsString() && !member.second.string.empty() && member.second.string[0] == '$')
                                 MergeChildren(childList, substitutedLists.emplace_back(Sub(member.second, vars, &report.unresolvedVariables)), layer.ns);
                             else
@@ -645,7 +637,7 @@ namespace perlin::ui {
                     if (child)
                         node->children.push_back(std::move(child));
                 }
-                // A path patch for a child the parent never listed still defines that child.
+                // path patch for an unlisted child still defines it
                 for (const auto& entry : childPatches) {
                     const bool listed = std::any_of(childList.begin(), childList.end(),
                                                     [&](const ChildEntry& e) { return SplitName(e.key) == entry.first; });
@@ -696,7 +688,7 @@ namespace perlin::ui {
                     }
                 }
                 if (const Json* factory = node->props.Find("factory"); factory && factory->IsObject()) {
-                    // "factory": {"control_name": "ns.control"} stamps one control per collection item.
+                    // "factory": {"control_name": "ns.control"}: one control per collection item
                     if (const Json* name2 = factory->Find("control_name"); name2 && name2->IsString() && !name2->string.empty()) {
                         std::string refName = name2->string;
                         if (refName[0] == '@') refName.erase(0, 1);
@@ -738,9 +730,8 @@ namespace perlin::ui {
                 return SubstituteImpl(value, VarScope{vars, &globals}, unresolved, 0);
             }
 
-            // `chainDefaults` holds names that only have a "|default" value from this control's own inheritance
-            // chain. Layers run base first, so a more derived "|default" must still replace a base one: only values
-            // from the parent scope or an explicit assignment block a default.
+            // `chainDefaults`: names with only a "|default" from own inheritance chain; layers run base first: derived
+            // "|default" replaces base one; only parent-scope values or explicit assignments block a default
             void AssignVariable(Vars& vars, const std::string& rawName, const Json& value,
                                 std::unordered_set<std::string>* chainDefaults = nullptr) {
                 std::string name = rawName;

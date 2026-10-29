@@ -285,8 +285,7 @@ namespace perlin::ui {
         }
         out.type = FormModel::Type::Simple;
         out.content = Str(root.Find("content"));
-        // Classic simple forms list "buttons"; the newer format sends "elements" (buttons mixed with labels,
-        // headers and dividers).
+        // classic simple forms send "buttons"; newer format sends "elements" (buttons mixed with labels, headers, dividers)
         const Json* buttons = root.Find("buttons");
         if (!buttons || !buttons->IsArray())
             buttons = root.Find("elements");
@@ -449,7 +448,7 @@ namespace perlin::ui {
                 response = index == 0 ? "true" : "false";
                 return true;
             }
-            // The server numbers only the buttons; labels, headers and dividers between them do not count.
+            // server numbers only buttons; labels, headers, dividers between them don't count
             int buttonIndex = 0;
             for (int i = 0; i < index && i < static_cast<int>(form.buttons.size()); i++) {
                 const std::string& k = form.buttons[static_cast<size_t>(i)].kind;
@@ -631,7 +630,7 @@ namespace perlin::ui {
                     return true;
                 }
                 if (binding == "#form_button_texture") {
-                    // Web images report "loading" until downloaded, as the game does; packs show a spinner for it.
+                    // web images report "loading" until downloaded, as the game does; packs show a spinner
                     if (b.imageType == "url") {
                         std::string bytes;
                         out = Json(FormImageBytes(b.imageData, bytes) ? (bytes.empty() ? std::string() : "mcurl:" + b.imageData) : std::string("loading"));
@@ -892,8 +891,7 @@ namespace perlin::ui {
         rml = emitter.Emit(*root, static_cast<float>(guiW), static_cast<float>(guiH), std::string(), false);
         contentHeight = emitter.ContentHeight();
         viewHeight = emitter.ViewportHeight();
-        // A server's own form design may draw its text as images or decode it (CubeCraft packs flags into titles),
-        // so the text check only guards vanilla-only layouts.
+        // server form designs may draw text as images or encode data in titles: text check only guards vanilla-only layouts
         if (!ServerStyled()) {
             std::vector<std::string> samples;
             if (form.type == FormModel::Type::Modal) {

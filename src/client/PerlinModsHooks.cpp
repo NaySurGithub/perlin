@@ -12,7 +12,6 @@
 #include <filesystem>
 #include <thread>
 
-// Hooks into the client's own rendering, screens and systems.
 namespace perlin {
     namespace {
         using Clock = std::chrono::steady_clock;
@@ -23,7 +22,7 @@ namespace perlin {
         constexpr size_t kMaxMeshVertices = 60000;
         constexpr size_t kMaxEntityRules = 512;
 
-        // HUD renderer names, in abi::HudElement order.
+        // in abi::HudElement order
         constexpr const char* kHudRenderers[] = {"heart_renderer",        "armor_renderer",    "hunger_renderer",      "bubbles_renderer",
                                                  "hotbar_renderer",       "progress_bar_renderer", "debug_renderer",   "chat_renderer",
                                                  "mob_effects_renderer",  "locator_bar",       "fire_renderer",        "subtitle_renderer",
@@ -80,7 +79,7 @@ namespace perlin {
             return true;
         });
 
-        // Tooltips are rebuilt every frame while hovered, so each item asks the mods once and the answer is kept briefly.
+        // tooltips rebuilt every frame while hovered: ask mods once per item, cache briefly
         ui::SetTooltipExtender([this](const ui::HudItem& item) {
             static std::string lastKey;
             static std::vector<std::string> lastLines;
@@ -442,7 +441,7 @@ namespace perlin {
         if (Clock::now() >= until)
             return;
         if (!f.enabled) {
-            // "No fog": push every fog distance far past the render distance.
+            // "no fog": fog distances far past render distance
             fog.environmentalStart = fog.renderDistanceStart = 1e6f;
             fog.environmentalEnd = fog.renderDistanceEnd = 1e6f + 1.0f;
             return;
@@ -605,7 +604,6 @@ namespace perlin {
         }
         if (!renderer || ((t.color >> 24) == 0 && t.vignette <= 0.0f))
             return;
-        // A full-screen quad in the tint colour, then four edge gradients for the vignette.
         const float w = static_cast<float>(fbW), h = static_cast<float>(fbH);
         std::vector<UiVertex> v;
         std::vector<uint32_t> idx;
@@ -645,7 +643,6 @@ namespace perlin {
         auto& mm = mods::ModManager::Instance();
         const auto now = Clock::now();
 
-        // Drop everything a plugin set once it is no longer running.
         static Clock::time_point lastSweep{};
         if (now - lastSweep > std::chrono::seconds(1)) {
             lastSweep = now;
@@ -671,7 +668,6 @@ namespace perlin {
                     DropModHooks(owner);
         }
 
-        // Window focus.
         if (platform) {
             const bool focused = platform->WindowFocused(), minimized = platform->WindowMinimized();
             bool changed = false;
@@ -688,7 +684,7 @@ namespace perlin {
             }
         }
 
-        // Levels: loaded on joining and on every dimension change, unloaded on leaving and before a dimension change.
+        // level load: on join and each dimension change; unload: on leave and before dimension change
         static bool wasIn = false;
         static int wasDim = -1;
         const bool in = live && live->GetState() == BedrockSession::State::InGame;
@@ -703,7 +699,6 @@ namespace perlin {
         wasIn = in;
         wasDim = dim;
 
-        // Ping answers.
         std::vector<std::pair<std::string, abi::EventServerPing>> pings;
         std::vector<abi::ParticleRequest> particleQueue;
         std::vector<abi::AmbientSoundData> ambient;
@@ -720,7 +715,6 @@ namespace perlin {
             mm.DispatchTo(plugin, abi::Event::ServerPing, w);
         }
 
-        // Particles and ambient loops.
         static uint32_t seed = 0x9E3779B9u;
         const auto jitter = [&](float spread) {
             seed = seed * 1664525u + 1013904223u;
@@ -733,7 +727,6 @@ namespace perlin {
             if (!audioEngine.Playing(a.sound))
                 sounds.PlayNamed(a.sound, glm::dvec3(camera.x, camera.y, camera.z), a.volume, a.pitch, false);
 
-        // The mod's own screen closes on Escape.
         bool customOpen = false;
         std::string owner;
         {
@@ -752,7 +745,6 @@ namespace perlin {
                 input.SetTextMode(false);
         }
 
-        // Screen render event and mod buttons on the screen that is open.
         const abi::Screen screen = CurrentScreen();
         if (screen == abi::Screen::None)
             return;

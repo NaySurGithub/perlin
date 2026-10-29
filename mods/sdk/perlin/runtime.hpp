@@ -383,7 +383,7 @@ namespace perlin {
         void dispatch(abi::Event id, abi::Reader& r, uint32_t& flags);
         void run_unload();
 
-        // Bits 0-31 go out through perlin_subscriptions, bits 32-63 through perlin_subscriptions_hi.
+        // bits 0-31 go through perlin_subscriptions, 32-63 through perlin_subscriptions_hi
         uint64_t subscriptions() const {
             uint64_t mask = bit(abi::Event::HttpResponse) | bit(abi::Event::SettingChanged);
             for (const auto& entry : handlers)

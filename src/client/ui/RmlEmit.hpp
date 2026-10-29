@@ -18,7 +18,7 @@ namespace perlin::ui {
         float clipRatio = 1.0f;
         float r = 1, g = 1, b = 1, alpha = 1;
         bool keepRatio = false;
-        std::string id;  // element id, so the game can update this image without re-emitting the document
+        std::string id;  // lets the game update the image without re-emitting
     };
 
     struct TextStyle {
