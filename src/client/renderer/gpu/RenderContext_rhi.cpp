@@ -1065,6 +1065,22 @@ namespace perlin {
         atlasTiles = 0;
 
         const auto bringUp = [&](const std::string& api) {
+            // the old swapchain is gone; a window that presented through one api can keep showing its last frame under the next
+            if (!offscreen && platform) {
+                platform->RenewRenderSurface();
+                const NativeWindowInfo native = platform->GetNativeWindowInfo();
+                settings.window = {native.window, native.display, native.wayland};
+                nativeWindow = static_cast<uint64_t>(reinterpret_cast<uintptr_t>(native.window));
+                nativeDisplay = static_cast<uint64_t>(reinterpret_cast<uintptr_t>(native.display));
+                int fw = 0, fh = 0;
+                platform->GetFramebufferSize(fw, fh);
+                if (fw > 0 && fh > 0) {
+                    width = fw;
+                    height = fh;
+                    settings.width = static_cast<uint32_t>(fw);
+                    settings.height = static_cast<uint32_t>(fh);
+                }
+            }
             settings.api = rhi::ApiFromId(api);
             const bool started = offscreen ? gpu.Init(settings, pack, nullptr) : StartDevice(api, pack, true);
             if (!started) {
