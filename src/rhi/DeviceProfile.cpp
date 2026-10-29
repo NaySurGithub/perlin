@@ -267,7 +267,9 @@ namespace rhi {
         p.gpuCulling = !haveCaps ? p.tier >= Tier::Medium : (f.drawIndirectCount || f.multiDrawIndirect);
         p.asyncCompute = haveCaps && f.asyncCompute && best.adapter.type == AdapterType::Discrete;
         p.tearing = haveCaps && f.tearing;
-        p.hdr = haveCaps && f.hdrOutput;
+        // the game's shaders encode sdr gamma themselves and there is no hdr tonemap yet, so a float/linear swapchain would
+        // show oversaturated colours; stays off until that pass exists
+        p.hdr = false;
 
         // vendor upscalers first when the hardware vendor has one; fsr runs anywhere so it is always the fallback
         if (user.allowUpscaling && p.tier >= Tier::Low) {
