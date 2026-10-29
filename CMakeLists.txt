@@ -947,6 +947,12 @@ endif()
 # Windows CI installs a static build with vcpkg (see .github/workflows/build.yml) and passes -DFFMPEG_ROOT=...;
 # Linux/macOS use pkg-config. If nothing is found Perlin still builds and falls back to its built-in AVI encoder.
 option(PERLIN_LIBAV "Link FFmpeg libraries into Perlin for built-in video encoding" ON)
+# Windows skips FFmpeg entirely by default (slow to build/download; video export uses the built-in AVI encoder).
+option(PERLIN_WINDOWS_FFMPEG "Link/bundle FFmpeg on Windows" OFF)
+if(WIN32 AND NOT PERLIN_WINDOWS_FFMPEG)
+    set(PERLIN_LIBAV OFF)
+    set(PERLIN_BUNDLE_FFMPEG OFF CACHE BOOL "" FORCE)
+endif()
 set(PERLIN_LIBAV_FOUND OFF)
 if(PERLIN_LIBAV AND NOT EMSCRIPTEN AND NOT ANDROID)
     set(FFMPEG_ROOT "" CACHE PATH "Prefix containing include/libavcodec and lib/ with static FFmpeg libraries")
@@ -987,8 +993,13 @@ endif()
 # AVI/MJPEG encoder as a last resort and can download the full GPL build from the export dialog.
 if(WIN32 AND NOT EMSCRIPTEN AND NOT ANDROID AND NOT PERLIN_LIBAV_FOUND)
     option(PERLIN_BUNDLE_FFMPEG "Download an LGPL ffmpeg build and ship it next to Perlin.exe" ON)
+    # The download is kept in a fixed per-user cache so it happens once, not on every fresh build directory.
     if(PERLIN_BUNDLE_FFMPEG)
-        set(PERLIN_FFMPEG_DIR "${CMAKE_BINARY_DIR}/ffmpeg-bundle")
+        if(DEFINED ENV{LOCALAPPDATA})
+            set(PERLIN_FFMPEG_DIR "$ENV{LOCALAPPDATA}/PerlinBuildCache/ffmpeg-bundle")
+        else()
+            set(PERLIN_FFMPEG_DIR "${CMAKE_BINARY_DIR}/ffmpeg-bundle")
+        endif()
         if(NOT EXISTS "${PERLIN_FFMPEG_DIR}/ffmpeg.exe")
             set(_ff_zip "${CMAKE_BINARY_DIR}/ffmpeg-lgpl.zip")
             message(STATUS "Downloading ffmpeg (LGPL build) for bundling...")
