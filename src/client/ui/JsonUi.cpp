@@ -53,6 +53,17 @@ namespace perlin::ui {
                 }
                 pos += 11;
             }
+            // some packs put "namespace" last: read the whole file for its top-level key
+            in.clear();
+            in.seekg(0);
+            const std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+            if (text.size() <= head.size())
+                return {};
+            Json doc;
+            std::string error;
+            if (Json::Parse(text, doc, error) && doc.IsObject())
+                if (const Json* ns = doc.Find("namespace"); ns && ns->IsString())
+                    return ns->string;
             return {};
         }
 

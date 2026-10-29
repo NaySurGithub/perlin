@@ -394,6 +394,18 @@ namespace perlin::ui {
         }
     }
 
+    namespace {
+        // a wrapper box is a stacking context: it takes the top layer of what it holds, or the background of a
+        // parent panel would cover a button's label (layers are global in the game)
+        int TopLayer(const LNode& n) {
+            int z = n.layer;
+            for (const auto& kid : n.kids)
+                if (kid->visible)
+                    z = std::max(z, TopLayer(*kid));
+            return z;
+        }
+    }
+
     void RmlEmitter::VisitButton(const LNode& n, RmlWriter& out) {
         const std::string command = ButtonCommand(n);
         const std::string defName = n.Str("default_control"), hoverName = n.Str("hover_control"), pressedName = n.Str("pressed_control"),
@@ -403,7 +415,7 @@ namespace perlin::ui {
         if (const Json* sn = n.Get("sound_name"); sn && sn->IsString())
             soundAttrs = " snd=\"" + EscapeRml(sn->string) + "\" vol=\"" + Num(static_cast<float>(n.Num("sound_volume", 1.0))) +
                          "\" pit=\"" + Num(static_cast<float>(n.Num("sound_pitch", 1.0))) + "\"";
-        out.BeginBox(n.ax, n.ay, n.w, n.h, n.layer, "bt", command, false, 0.0f, soundAttrs);
+        out.BeginBox(n.ax, n.ay, n.w, n.h, TopLayer(n), "bt", command, false, 0.0f, soundAttrs);
         for (const auto& kid : n.kids) {
             if (!kid->visible)
                 continue;
@@ -466,7 +478,7 @@ namespace perlin::ui {
                 states.push_back(std::move(name));
         const std::string command = WidgetCommand(n);
         const bool hasHover = !hover.empty() && FindKid(n, hover) != nullptr && !command.empty();
-        out.BeginBox(n.ax, n.ay, n.w, n.h, n.layer, command.empty() ? "" : "bt", command, false);
+        out.BeginBox(n.ax, n.ay, n.w, n.h, TopLayer(n), command.empty() ? "" : "bt", command, false);
         for (const auto& kid : n.kids) {
             if (!kid->visible)
                 continue;
@@ -505,7 +517,7 @@ namespace perlin::ui {
         progressHoverName = n.Str("progress_hover_control", "slider_progress_hover");
         progressLeft = n.ax;
         progressWidth = boxW * 0.5f + f * (n.w - boxW);
-        out.BeginBox(n.ax, n.ay, n.w, n.h, n.layer, command.empty() ? "" : "bt", command, false);
+        out.BeginBox(n.ax, n.ay, n.w, n.h, TopLayer(n), command.empty() ? "" : "bt", command, false);
         const std::string barHover = n.Str("hover_control");
         // the bar first: the box sits on top of it (its layer is above the bar's)
         for (const auto& kid : n.kids)
@@ -546,7 +558,7 @@ namespace perlin::ui {
         const std::string rest = n.Str("default_control", "default"), hover = n.Str("hover_control", "hover");
         const std::string pressed = n.Str("pressed_control", "pressed"), locked = n.Str("locked_control", "locked");
         const bool hasHover = FindKid(n, hover) != nullptr && !command.empty();
-        out.BeginBox(n.ax, n.ay, n.w, n.h, n.layer, command.empty() ? "" : "bt", command, false);
+        out.BeginBox(n.ax, n.ay, n.w, n.h, TopLayer(n), command.empty() ? "" : "bt", command, false);
         for (const auto& kid : n.kids) {
             if (!kid->visible || kid->id == locked)
                 continue;
@@ -579,7 +591,7 @@ namespace perlin::ui {
         viewportHeight = n.h;
         const float maxScroll = std::max(0.0f, content - n.h);
         const float s = std::clamp(scroll, 0.0f, maxScroll);
-        out.BeginBox(n.ax, n.ay, n.w, n.h, n.layer, "", "", true, s);
+        out.BeginBox(n.ax, n.ay, n.w, n.h, TopLayer(n), "", "", true, s);
         for (const auto& kid : n.kids)
             Visit(*kid, out);
         out.EndBox();
@@ -590,7 +602,7 @@ namespace perlin::ui {
             return;
         if (slotNamer && !inSlot) {
             if (const std::string slot = slotNamer(n); !slot.empty()) {
-                out.BeginBox(n.ax, n.ay, n.w, n.h, n.layer, "slot", slot, false);
+                out.BeginBox(n.ax, n.ay, n.w, n.h, TopLayer(n), "slot", slot, false);
                 inSlot = true;
                 Visit(n, out);
                 inSlot = false;
@@ -637,7 +649,7 @@ namespace perlin::ui {
         }
         if (progressWidth >= 0 && (n.id == progressName || n.id == progressHoverName)) {
             // slider progress: only the filled part of the bar
-            out.BeginBox(n.ax, n.ay, std::max(0.0f, progressWidth - (n.ax - progressLeft)), n.h, n.layer, "", "", true);
+            out.BeginBox(n.ax, n.ay, std::max(0.0f, progressWidth - (n.ax - progressLeft)), n.h, TopLayer(n), "", "", true);
             const float saved = progressWidth;
             progressWidth = -1;
             Visit(n, out);
@@ -690,7 +702,7 @@ namespace perlin::ui {
             return;
         const bool clips = clipFlag;
         if (clips)
-            out.BeginBox(n.ax, n.ay, n.w, n.h, n.layer, "", "", true);
+            out.BeginBox(n.ax, n.ay, n.w, n.h, TopLayer(n), "", "", true);
         for (const auto& kid : n.kids)
             Visit(*kid, out);
         if (clips)
