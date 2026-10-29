@@ -129,7 +129,7 @@ namespace perlin::ui {
                             const std::string& extraAttrs) {
         count++;
         body += "  <div" + (cls.empty() ? std::string() : " class=\"" + cls + "\"") + (id.empty() ? std::string() : " id=\"" + EscapeRml(id) + "\"") + extraAttrs +
-                // Hover/default layers take display from the stylesheet, so an inline display must not override it.
+                // hover/default layers get display from the stylesheet: no inline display
                 " style=\"position:absolute;" + (cls == "hv" || cls == "df" ? "" : "display:block;") + "left:" + Num(ax - ox) + "px;top:" + Num(ay - oy) + "px;width:" + Num(w) + "px;height:" + Num(h) +
                 "px;z-index:" + std::to_string(z) + ";" + (clip ? "overflow:hidden;clip:always;" : "") + "\">\n";
         origins.emplace_back(ox, oy);
@@ -186,7 +186,7 @@ namespace perlin::ui {
         ax -= ox;
         ay -= oy;
         count++;
-        // MinecraftTen is a real font: 11 px em instead of the 8 px bitmap grid, and its own line height.
+        // MinecraftTen: real font, 11 px em vs 8 px bitmap grid, own line height
         const float size = (st.ten ? TenFont::kEm : 8.0f) * st.scale;
         const float lineHeight = (st.ten ? TenFont::Instance().LineHeight(st.scale) : 9.0f * st.scale) + st.linePadding;
         std::string cls = st.ten ? "t ten" : "t";
@@ -209,7 +209,7 @@ namespace perlin::ui {
 
     namespace {
         bool ReadColor(const Json* v, float& r, float& g, float& b, float* a = nullptr) {
-            // Colours can also be named ("black", "white", ...) or written as hex ("#RRGGBB").
+            // colours: named ("black", ...) or hex ("#RRGGBB")
             if (v && v->IsString()) {
                 static const std::pair<const char*, uint32_t> kNamed[] = {
                     {"white", 0xFFFFFF}, {"black", 0x000000}, {"red", 0xFF0000}, {"green", 0x00FF00}, {"blue", 0x0000FF},
@@ -354,8 +354,7 @@ namespace perlin::ui {
                 if (id == "button.menu_exit" || id == "button.menu_cancel" || id == "button.exit_dialog" || id.find("close") != std::string::npos)
                     return "close";
             }
-            // Container slots answer to the ids Perlin's inventory logic already understands: s<n> for the player's
-            // inventory (hotbar first) and k<n> for the open container.
+            // slot ids for our inventory logic: s<n> player inventory (hotbar first), k<n> open container
             for (const Json& m : maps->array) {
                 const Json* to = m.IsObject() ? m.Find("to_button_id") : nullptr;
                 if (!to || !to->IsString() || to->string != "button.container_take_all_place_all" || n.index < 0)
@@ -367,15 +366,14 @@ namespace perlin::ui {
                 if (n.collection == "hotbar_items")
                     return "s" + std::to_string(n.index);
             }
-            // Any other screen: hand the game the raw button id so it can route button.menu_play, button.menu_settings, ...
-            // Collection rows carry their index, as Bedrock's button handlers receive it.
+            // other screens: raw button id (button.menu_play, ...); collection rows carry their index, as bedrock handlers expect
             for (const Json& m : maps->array) {
                 const Json* to = m.IsObject() ? m.Find("to_button_id") : nullptr;
                 if (!to || !to->IsString() || to->string.empty() || to->string[0] == '$')
                     continue;
                 const Json* from = m.Find("from_button_id");
                 const Json* type = m.Find("mapping_type");
-                // Pure focus/controller mappings never fire from a mouse click.
+                // focus/controller-only mappings never fire on click
                 if (type && type->IsString() && type->string == "focused" && from && from->IsString() &&
                     from->string != "button.menu_select" && from->string != "button.menu_ok")
                     continue;
@@ -697,7 +695,7 @@ namespace perlin::ui {
             }
         }
         const bool clipFlag = n.Bool("clips_children", false) && n.type != "button" && !n.kids.empty();
-        // A clipping control with no area shows nothing (packs hide "font warmer" labels this way).
+        // clipping control with no area shows nothing (packs hide "font warmer" labels this way)
         if (clipFlag && (n.w <= 0 || n.h <= 0))
             return;
         const bool clips = clipFlag;
@@ -898,8 +896,7 @@ mcimg, mcitem { display: block; position: absolute; }
             ".link .ul { display: none; position: absolute; left: 0px; bottom: 0px; width: 100%; height: 1px; background-color: #ffff55; }\n"
             ".link:hover .ul { display: block; }\n"
             ".df { display: block; }\n.bt .hv { display: none; }\n.bt:hover .hv { display: block; }\n.bt:hover .df { display: none; }\n"
-            // Only interactive controls take the pointer, as in the game: decoration drawn over a button (sheens,
-            // borders, hover fills) must not swallow its clicks.
+            // only interactive controls take the pointer, as in the game: overlays (sheens, borders, hover fills) don't eat clicks
             "body * { pointer-events: none; }\n.bt, .bt *, .link, .link * { pointer-events: auto; }\n";
         if (const size_t at = doc.find("<style>"); at != std::string::npos)
             doc.insert(at + 7, kEngineCss);

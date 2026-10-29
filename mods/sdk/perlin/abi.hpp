@@ -150,7 +150,7 @@ namespace perlin::abi {
         PacketCounters = 0x0F51,
         PacketInject = 0x0F52,
 
-        // Hooks into the client's own rendering, screens and systems.
+        // hooks into the client's rendering, screens and systems
         HudElementSet = 0x1000,
         DebugLines = 0x1001,
         FogSet = 0x1002,
@@ -1023,7 +1023,7 @@ namespace perlin::abi {
 
     struct FogOverride {
         bool enabled = true;
-        uint32_t color = 0;  // 0 keeps the vanilla color, otherwise 0xAARRGGBB
+        uint32_t color = 0;  // 0 keeps vanilla color; else 0xAARRGGBB
         float start = -1, end = -1;  // blocks; negative keeps vanilla
         int32_t ticks = 2;
     };
@@ -1063,7 +1063,7 @@ namespace perlin::abi {
 
     struct FrameLimitData {
         int32_t fps = 0;           // 0 keeps the player's setting
-        int32_t unfocusedFps = 0;  // used while the window is unfocused or minimized; 0 keeps fps
+        int32_t unfocusedFps = 0;  // while unfocused or minimized; 0 keeps fps
     };
 
     struct WindowInfo {
@@ -1233,7 +1233,7 @@ namespace perlin::abi {
         float mouseX = 0, mouseY = 0;
     };
     struct EventSlotClick {
-        int32_t slot = 0;  // the same slot address InventoryClick takes
+        int32_t slot = 0;  // same slot address as InventoryClick
         bool right = false, shift = false;
     };
     struct EventInteract {

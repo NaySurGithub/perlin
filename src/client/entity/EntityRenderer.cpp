@@ -258,7 +258,7 @@ namespace perlin::entity {
 
     std::pair<float, float> EntityRenderer::HitBox(const Entity& e) const {
         const float scale = e.scale > 0.0f ? e.scale : 1.0f;
-        // The server's own bounding box wins: metadata BOUNDINGBOX_WIDTH/HEIGHT is what it collides and raycasts with.
+        // server's bounding box wins: metadata BOUNDINGBOX_WIDTH/HEIGHT is what it collides and raycasts with
         if (e.boxWidth > 0.0f && e.boxHeight > 0.0f)
             return {e.boxWidth * scale, e.boxHeight * scale};
         if (e.isPlayer)
@@ -1341,7 +1341,7 @@ namespace perlin::entity {
         std::stable_sort(ordered.begin(), ordered.end(), [](const Layer* a, const Layer* b) {
             return static_cast<int>(a->material.blend) < static_cast<int>(b->material.blend);
         });
-        // Invisibility hides the body (players and mobs alike); armor and held items stay, as in both editions.
+        // invisibility hides the body (players and mobs); armor and held items stay, as in both editions
         const bool hideBody = e.Has(flag::Invisible) && !v.fp && !dollModel;
         for (const Layer* layerPtr : ordered) {
             const Layer& layer = *layerPtr;
@@ -1972,8 +1972,8 @@ namespace perlin::entity {
             const glm::dvec3 delta = v.pos - in.camera;
             if (glm::dot(delta, delta) > static_cast<double>(in.maxDistance) * in.maxDistance)
                 continue;
-            // Server holograms hide the model but keep the name: an entity scaled to zero, or an invisible mob/armor stand
-            // with no gear (with armor or held items, only those show; Draw hides the body).
+            // server holograms hide the model, keep the name: entity scaled to zero, or invisible mob/armor stand with no gear
+            // (with armor or held items only those show; Draw hides the body)
             const bool gearless = e.mainHand.empty() && e.offHand.empty() &&
                                   std::all_of(std::begin(e.armor), std::end(e.armor), [](const std::string& a) { return a.empty(); });
             const bool modelHidden = !e.isPlayer && (e.scale == 0.0f || (e.Has(flag::Invisible) && gearless));
@@ -2001,10 +2001,10 @@ namespace perlin::entity {
                     DrawShadow(v.pos, std::min(hb.first, 1.4f) * 0.8f * (e.scale > 0 ? e.scale : 1.0f), 1.0f, in);
                 }
             }
-            // Invisible players hide their name; invisible holograms (armor stands, mobs) keep an always-shown name.
+            // invisible players hide their name; invisible holograms (armor stands, mobs) keep an always-shown name
             const bool nameHidden = e.Has(flag::Invisible) && (e.isPlayer || !e.Has(flag::AlwaysShowName));
-            // Bedrock shows a name only when the server allows it (can-show / always-show name flags); NPCs that are
-            // fake players leave both off. The shown text is the name tag, falling back to a player's username.
+            // name shown only when the server allows it (can-show / always-show flags); fake-player npcs leave both off
+            // text: name tag, falling back to a player's username
             const bool nameAllowed = e.isSelf || e.Has(flag::CanShowName) || e.Has(flag::AlwaysShowName) || !e.isPlayer;
             if (in.nametags && !e.isItem && !nameHidden && nameAllowed && !(e.isSelf && (in.firstPerson || !in.ownNametag))) {
                 const std::string& label = style && style->nameTag == 1 ? std::string() : style && style->nameTag == 2 ? style->nameText : !e.nameTag.empty() ? e.nameTag : e.isPlayer ? e.name : e.nameTag;

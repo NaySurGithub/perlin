@@ -289,8 +289,7 @@ namespace perlin {
         bool SendSettingsCommand(const std::string& command);
         bool SendSkinUpdate();
         std::string lastSentSkinName;
-        // Locally predicted XP orb pickup (TakeItemEntityPacket) to dedupe the
-        // server SoundOrb echo for the same pickup.
+        // predicted xp orb pickup (TakeItemEntityPacket): dedupe server SoundOrb echo
         uint64_t lastLocalOrbMs = 0;
         float lastOrbX = 0.0f, lastOrbY = 0.0f, lastOrbZ = 0.0f;
         uint32_t CommandsVersion() const { std::lock_guard<std::mutex> lk(commandMutex); return commandVersion; }
@@ -342,8 +341,8 @@ void RequestRespawn();
             // showNameTags is kept for completeness only: the game draws name tags whatever it says.
             bool noPvm = false, noMvp = false, immutableWorld = false, showNameTags = true, autoJump = true;
         };
-        // OnScreenTextureAnimation: the effect id to play (-1 = none) and when it arrived.
-        static constexpr int kTotemScreenAnimation = 1000;  // not an effect id: the totem item itself
+        // OnScreenTextureAnimation: effect id (-1 = none) and arrival time
+        static constexpr int kTotemScreenAnimation = 1000;  // not an effect id: totem item
         struct ScreenAnimation {
             int effect = -1;
             std::chrono::steady_clock::time_point started{};
@@ -352,7 +351,7 @@ void RequestRespawn();
             std::lock_guard<std::mutex> lk(worldMutex);
             return std::exchange(screenAnimation, ScreenAnimation{});
         }
-        // ShowCredits asks for the end-of-game credits; the server waits for status 1 before respawning us.
+        // ShowCredits: server waits for status 1 before respawning us
         bool TakeCreditsRequest() { return creditsRequested.exchange(false); }
         bool SendCreditsFinished();
         AdventureSettings Adventure() const {
@@ -369,7 +368,7 @@ void RequestRespawn();
             return it == permByUid.end() ? -1 : it->second;
         }
         int DimensionId() const { return dimensionId; }
-        // Tells mods a chunk column arrived or left (no-op when no mod listens).
+        // chunk column arrived/left for mods; no-op without listeners
         void NoteModChunk(bool loaded, int x, int z) const;
         bool DimensionChanging() const { return dimAckPending.load(); }
         uint32_t HurtCount() const { return hurtCounter.load(); }
@@ -485,7 +484,7 @@ void RequestRespawn();
             int reason = -1;
             std::string message;
             bool connectionLost = false;
-            // The versions don't match: 1 = Perlin is too old for the server, 2 = the server is too old for Perlin.
+            // version mismatch: 1 = we're too old, 2 = server too old
             int outdated = 0;
             std::string serverVersion;
             int serverProtocol = 0;
@@ -498,9 +497,9 @@ void RequestRespawn();
         int ServerProtocol() const { return serverProtocol; }
         bool MayFly() const { return mayFly; }
         bool IsFlying() const { return isFlying; }
-        // Entity flag 32 (gliding) as last reported by the server for the local player.
-        // Actor flag 75 (sleeping) lives in the extended flag word.
-        // The local player's invisibility (actor flag 5), from our own SetActorData.
+        // entity flag 32 (gliding), last from server for local player
+        // actor flag 75 (sleeping): extended flag word
+        // local invisibility (actor flag 5) from our SetActorData
         bool Invisible() const { std::lock_guard lock(attrMutex); return (ownFlagWords[0] & (1ull << 5)) != 0; }
         bool Sleeping() const { std::lock_guard lock(attrMutex); return (ownFlagWords[1] & proto::FlagsMetadataFlags2::Sleeping) != 0 || (ownPlayerFlags & 2) != 0; }
         bool SendStopSleeping() { return SendPlayerAction(6, 0, 0, 0, 0); }

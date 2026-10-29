@@ -799,7 +799,7 @@ namespace perlin::mods {
             if (!mod.instance->Call("perlin_subscriptions", {}, &subs, ignored))
                 return;
             uint64_t mask = static_cast<uint32_t>(subs);
-            // Events 32 and up come from a second export; plugins built before it only see the first 32.
+            // events 32+ come from a second export; plugins built before it only see the first 32
             uint64_t hi = 0;
             if (mod.instance->HasExport("perlin_subscriptions_hi") && mod.instance->Call("perlin_subscriptions_hi", {}, &hi, ignored))
                 mask |= static_cast<uint64_t>(static_cast<uint32_t>(hi)) << 32;
@@ -1248,7 +1248,7 @@ namespace perlin::mods {
         lastScan = now;
         Scan();
         RefreshWanted();
-        // ModsLoaded: once every enabled mod has finished loading, and again whenever that set changes.
+        // ModsLoaded: once every enabled mod finished loading, and again when that set changes
         size_t loaded = 0;
         bool pending = false;
         {
@@ -1893,7 +1893,7 @@ namespace perlin::mods {
             return abi::Status::Ok;
         });
 
-        // Mod to mod messages go through the main thread, after the sender's call returns.
+        // mod-to-mod messages go through the main thread, after the sender's call returns
         Register(abi::Op::ModSend, [this](CallContext& ctx, abi::Reader& r, abi::Writer&) {
             const abi::ModMessageData in = r.read<abi::ModMessageData>();
             if (!r.Ok() || in.channel.empty() || in.channel.size() > 128 || in.body.size() > (1u << 20))

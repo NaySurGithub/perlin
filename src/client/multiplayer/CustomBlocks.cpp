@@ -124,6 +124,14 @@ namespace perlin {
                 else if (const ui::Json* v = dn->Find("value"); v && v->IsString())
                     def.displayName = v->string;
             }
+            if (const ui::Json* wearable = FindKey(nbt, "minecraft:wearable")) {
+                const ui::Json* slot = wearable->IsObject() ? wearable->Find("slot") : nullptr;
+                const std::string where = slot && slot->IsString() ? slot->string : std::string();
+                static const char* const kSlots[] = {"slot.armor.head", "slot.armor.chest", "slot.armor.legs", "slot.armor.feet"};
+                for (int i = 0; i < 4; i++)
+                    if (where == kSlots[i])
+                        def.armorSlot = i;
+            }
             ServerBlocks::Instance().SetItem(std::move(def));
             count++;
         }
@@ -307,7 +315,7 @@ namespace perlin {
             ServerBlocks::Instance().Add(std::move(def));
         }
         palette.InsertCustomRuns(std::move(runs));
-        // The server's custom block definitions as received, for checking geometry and materials offline.
+        // raw server custom block defs, for offline geometry/material checks
         if (customDump.size() > 3) {
             customDump.resize(customDump.size() - 2);
             std::error_code ec;

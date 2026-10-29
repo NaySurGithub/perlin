@@ -48,9 +48,9 @@ namespace perlin::ui {
         const std::string& LastDocument() const { return lastRml; }
         size_t Rebuilds() const { return rebuilds; }
         void Reload() { reloadRequested = true; }
-        // Java style lays Perlin's Java-like overrides over the Bedrock HUD; Bedrock style draws the HUD as the packs define it.
+        // java style: java-like overrides over the bedrock hud; bedrock style: hud as packs define it
         void SetJavaStyle(bool java);
-        // True when a server or resource pack (not just vanilla/Perlin defaults) defines namespace `ns`.
+        // true when a server or resource pack (not just vanilla/our defaults) defines namespace `ns`
         bool Overrides(const std::string& ns) const { return tree && library.RootCount() > 3 && library.DefinedBefore(ns, library.RootCount() - 3); }
 
     private:

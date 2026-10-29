@@ -355,8 +355,7 @@ namespace perlin {
         } modAdv;
         void SetupModAdvanced();
         void ApplyModCamera(float& fov, glm::mat4& viewEffect);
-        // Hooks into rendering, screens and systems (PerlinModsHooks.cpp). Everything a plugin sets is keyed by plugin
-        // so it can be dropped when that plugin unloads.
+        // mod hooks (PerlinModsHooks.cpp): keyed by plugin, dropped on unload
         struct ModHooks {
             using TimePoint = std::chrono::steady_clock::time_point;
             std::mutex mutex;
@@ -415,7 +414,7 @@ namespace perlin {
         std::unordered_map<std::string, entity::EntityRenderer::FrameIn::ModStyle> modFrameTypeStyles;
         std::map<std::string, std::shared_ptr<const entity::SkinData>> modSkinCache;
         uint64_t modSkinCacheSerial = 0;
-        bool DispatchModInteract(abi::InteractKind kind, int x, int y, int z, int face, uint64_t entity);  // true = a mod cancelled it
+        bool DispatchModInteract(abi::InteractKind kind, int x, int y, int z, int face, uint64_t entity);  // true: a mod cancelled
         bool DispatchModSlotClick(int slot, bool right, bool shift);
         bool DispatchModToast(const std::string& title, const std::string& body);
         std::vector<std::string> ModTooltipLines(const ui::HudItem& item);
@@ -465,6 +464,7 @@ namespace perlin {
 
         LaunchArgs args;
         AppPlatform* platform = nullptr;
+        void VibrateBlockBroken();
         Options options;
         std::string runningRenderer;
         Input input;

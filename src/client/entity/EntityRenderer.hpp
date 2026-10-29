@@ -76,7 +76,7 @@ namespace perlin::entity {
                 float width = 1.0f;
             };
             const std::vector<ModLine>* modLines = nullptr;
-            // Mod overrides for one entity: hide, scale, tint, swap the main texture, hide or replace the name tag.
+            // mod overrides per entity: hide, scale, tint, swap main texture, hide or replace name tag
             struct ModStyle {
                 bool hidden = false;
                 glm::vec3 scale{1.0f};
@@ -86,7 +86,7 @@ namespace perlin::entity {
                 std::string nameText;
             };
             std::function<const ModStyle*(const Entity&)> modStyle;
-            // Mod triangles in the world; texture is a renderer texture id (0 for plain colour).
+            // mod world triangles; texture is a renderer texture id (0 for plain colour)
             struct ModMesh {
                 std::vector<UiVertex> vertices;  // relative to `origin`, three per triangle
                 glm::dvec3 origin{0.0};
@@ -137,7 +137,7 @@ namespace perlin::entity {
             float tint[4] = {1, 1, 1, 1};
             MaterialInfo material;
             uint32_t maskRgb = 0xFFFFFF;
-            // The entity's own model; invisibility hides these but keeps armor and attached items.
+            // entity's own model; invisibility hides it, keeps armor and attached items
             bool body = true;
         };
         bool Build(const Entity& e, View& v, const FrameIn& in, std::vector<Layer>& layers, float& scale);
