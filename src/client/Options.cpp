@@ -268,7 +268,7 @@ namespace perlin {
         o.guiScale = std::clamp(stored.guiScale, 0, 16);
         o.sound = stored.sound;
         o.menuBlur = std::clamp(stored.menuBlur, 0, 10);
-        o.renderer = stored.renderer == "d3d11" || stored.renderer == "vulkan" || stored.renderer == "opengl" || stored.renderer == "metal" ? stored.renderer : std::string("auto");
+        o.renderer = stored.renderer == "d3d12" || stored.renderer == "d3d11" || stored.renderer == "vulkan" || stored.renderer == "metal" || stored.renderer == "webgpu" ? stored.renderer : std::string("auto");
         o.capePhysics = stored.capePhysics == "off" || stored.capePhysics == "shoulder" ? stored.capePhysics : std::string("off");
         o.sprintMode = stored.sprintMode == "toggle" ? "toggle" : "hold";
         o.sneakMode = stored.sneakMode == "toggle" ? "toggle" : "hold";

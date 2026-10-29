@@ -5,6 +5,7 @@
 #include <malloc.h>
 #endif
 #include "client/CameraEffects.hpp"
+#include "rhi/Device.hpp"
 #include "client/entity/BlockEntityView.hpp"
 #include "client/ui/ItemTooltip.hpp"
 #include "client/SampleProfiler.hpp"
@@ -3462,13 +3463,8 @@ namespace perlin {
                 toggle("Better Grass", options.betterGrass);
                 {
                     std::vector<std::pair<std::string, std::string>> apis = {{"auto", "Auto"}};
-#if defined(_WIN32)
-                    apis.insert(apis.end(), {{"d3d11", "Direct3D 11"}, {"vulkan", "Vulkan"}, {"opengl", "OpenGL"}});
-#elif defined(__APPLE__)
-                    apis.push_back({"metal", "Metal"});
-#else
-                    apis.insert(apis.end(), {{"vulkan", "Vulkan"}, {"opengl", "OpenGL"}});
-#endif
+                    for (rhi::Api api : rhi::CompiledApis())
+                        apis.push_back({rhi::ApiId(api), rhi::ApiName(api)});
                     size_t at = 0;
                     for (size_t i = 0; i < apis.size(); i++)
                         if (apis[i].first == options.renderer)
@@ -7382,11 +7378,20 @@ namespace perlin {
             if (const char* g = PERLIN_ENV("PERLIN_GLASS"))
                 options.glass = g;
             {
-                if (options.renderer != runningRenderer && optionsDrag < 0) {
+                if (options.renderer != runningRenderer && optionsDrag < 0 && renderer) {
                     runningRenderer = options.renderer;
                     options.Save();
-                    if (perlin::RelaunchSelf(true))
-                        std::_Exit(0);
+                    if (!renderer->RequestRendererSwitch(options.renderer))
+                        chat.AddMessage("Renderer cannot be changed right now", hudAnim.ticks);
+                }
+                if (renderer && !renderer->RendererSwitchPending()) {
+                    // a switch that fell back to the old api must not leave the options claiming the new one
+                    const std::string active = renderer->ActiveRendererId();
+                    if (!active.empty() && options.renderer != "auto" && options.renderer != active && options.renderer == runningRenderer) {
+                        chat.AddMessage("Could not switch renderer; staying on " + renderer->RendererName(), hudAnim.ticks);
+                        options.renderer = runningRenderer = active;
+                        options.Save();
+                    }
                 }
             }
             {

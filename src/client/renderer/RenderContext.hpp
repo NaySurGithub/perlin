@@ -157,6 +157,11 @@ namespace perlin {
         virtual void SetJavaShaderPackDimension(const std::string& ) {}
         virtual bool PackShadowsActive() const { return false; }
         virtual void SetVsync(bool) {}
+        // switches the graphics api while the game keeps running; applied before the next frame, false when unsupported
+        virtual bool RequestRendererSwitch(const std::string&) { return false; }
+        virtual bool RendererSwitchPending() const { return false; }
+        // api id of the running renderer ("vulkan", "d3d12", ...), empty when it has none
+        virtual std::string ActiveRendererId() const { return {}; }
         virtual std::string RendererName() const { return {}; }
         virtual std::string GpuVendor() const { return {}; }
         virtual std::string GpuDescription() const { return {}; }
