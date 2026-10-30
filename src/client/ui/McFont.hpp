@@ -11,8 +11,10 @@ namespace perlin::ui {
     public:
         struct Glyph {
             float u0 = 0, v0 = 0, u1 = 0, v1 = 0;
-            int width = 0;
-            int advance = 0;
+            float width = 0;
+            float advance = 0;
+            float left = 0;
+            bool colored = false;
             int cell = 8;
             float top = 0;
             float height = 8;
@@ -36,6 +38,7 @@ namespace perlin::ui {
         // replaces any page already loaded for `page`
         void AddGlyphPage(uint32_t page, const std::vector<uint8_t>& rgba, int width, int height);
         void ClearGlyphPages();
+        void UnloadLevelResources();
         size_t TtfCount() const { return ttfs.size(); }
 
         const Glyph& Get(uint32_t codepoint) const;
@@ -79,6 +82,8 @@ namespace perlin::ui {
         std::string hexPath;
         std::unordered_map<uint32_t, Glyph> mapped;
         mutable std::unordered_map<uint32_t, Glyph> dyn;
+        bool ReserveGlyphCell(int w, int h, int& x, int& y) const;
+        mutable int glyphShelfX = 0, glyphShelfY = 0, glyphShelfHeight = 0, dynLimitY = 0;
         mutable int dynNext = 0;
         int dynY0 = 0;
         mutable uint32_t dynVersion = 0;

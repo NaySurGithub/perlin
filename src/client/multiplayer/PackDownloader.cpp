@@ -261,30 +261,27 @@ namespace perlin {
         if (it == active.end())
             return r;
         Active& a = it->second;
-        if (chunk.chunkIndex >= a.chunkCount) {
-            r.step = Step::Failed;
-            r.message = "pack chunk " + std::to_string(chunk.chunkIndex) + " is past the end (" + std::to_string(a.chunkCount) + " chunks)";
-            return r;
-        }
+        // chunks may arrive out of order: hold early ones, drain in order
         if (chunk.chunkIndex < a.next)
-            return r; // a repeat of one already stored
+            return r;
         if (chunk.chunkIndex != a.next) {
-            if (a.early.empty())
-                a.gapSince = std::chrono::steady_clock::now();
-            a.early.emplace(chunk.chunkIndex, std::vector<uint8_t>(chunk.payload.begin(), chunk.payload.end()));
+            if (chunk.chunkIndex < a.chunkCount)
+                a.held.emplace(chunk.chunkIndex, chunk.payload);
+            Refill(a, r);
             return r;
         }
         a.data.insert(a.data.end(), chunk.payload.begin(), chunk.payload.end());
         receivedBytes += chunk.payload.size();
         a.next++;
-        for (auto e = a.early.find(a.next); e != a.early.end(); e = a.early.find(a.next)) {
-            a.data.insert(a.data.end(), e->second.begin(), e->second.end());
-            receivedBytes += e->second.size();
-            a.early.erase(e);
+        while (true) {
+            auto held = a.held.find(a.next);
+            if (held == a.held.end())
+                break;
+            a.data.insert(a.data.end(), held->second.begin(), held->second.end());
+            receivedBytes += held->second.size();
+            a.held.erase(held);
             a.next++;
         }
-        if (!a.early.empty())
-            a.gapSince = std::chrono::steady_clock::now();
         requestedAt = std::chrono::steady_clock::now();
         stallReported = false;
         if (a.next < a.chunkCount) {

@@ -178,6 +178,7 @@ namespace perlin::ui {
         stamps.clear();
         watched.clear();
 
+        std::unordered_map<std::string, std::string> fileNamespaces;
         for (size_t r = roots.size(); r-- > 0;) {
             const fs::path root(roots[r]);
             std::error_code ec;
@@ -206,8 +207,14 @@ namespace perlin::ui {
                 if (file.rel == "_ui_defs.json")
                     continue;
                 file.ns = QuickNamespace(file.path);
-                if (file.ns.empty())
-                    continue;
+                if (file.ns.empty()) {
+                    // A namespace-less file refines the same file in a lower pack.
+                    const auto inherited = fileNamespaces.find(file.rel);
+                    if (inherited == fileNamespaces.end())
+                        continue;
+                    file.ns = inherited->second;
+                }
+                fileNamespaces[file.rel] = file.ns;
                 files.push_back(std::move(file));
             }
         }
@@ -791,17 +798,8 @@ namespace perlin::ui {
                     if (!element.IsObject())
                         continue;
                     for (const auto& member : element.object) {
-                        ChildEntry entry{member.first, &member.second, ns};
-                        const std::string name = SplitName(member.first);
-                        bool replaced = false;
-                        for (ChildEntry& existing : list)
-                            if (SplitName(existing.key) == name) {
-                                existing = entry;
-                                replaced = true;
-                                break;
-                            }
-                        if (!replaced)
-                            list.push_back(std::move(entry));
+                        // sibling names may repeat: each entry is a separate conditional route
+                        list.push_back({member.first, &member.second, ns});
                     }
                 }
             }

@@ -433,6 +433,9 @@ namespace perlin {
         loadingDone = false;
         loadingStartAt = {};
         loadingReadyArmed = false;
+        loadingChunkBase = 0;
+        lastDimId = -1;
+        portalTime = 0.0f;
         std::string host;
         uint16_t port = 0;
         std::string serverText = options.server;
@@ -623,19 +626,45 @@ namespace perlin {
             platform->Vibrate(24);
     }
 
-    void Perlin::UnloadServerPacks() {
-        if (!ServerPacks::Instance().HasServerPacks())
+    void Perlin::UnloadServerPacks(bool leavingLevel) {
+        if (!leavingLevel) {
+            if (ServerPacks::Instance().HasServerPacks())
+                levelUnloadPending = true;
             return;
+        }
         std::cout << "[packs] unloading the server's resource packs" << std::endl;
-        ServerPacks::Instance().Clear();
-        if (levelRenderer)
-            levelRenderer->ReloadResources();
-        entityRenderer.ClearCaches();
-        ui::UiAssets::Instance().ClearItemCache();
-        i18n::Lang::Get().Invalidate();
-        sounds.Reload();
+        // finish readers before freeing the definitions and textures they reference
+        formUi.Reset();
+        chestUi.Reset();
+        ui::JsonScreens::Instance().Reset();
         if (hud)
-            hud->Reload();
+            hud->UnloadLevelUi();
+        if (levelRenderer) {
+            levelRenderer->Stop();
+            levelRenderer.reset();
+        }
+        entityRenderer.ClearCaches();
+        handRenderer.UnloadLevelResources();
+        ServerPacks::Instance().Clear();
+        ServerBlocks::Instance().Reset();
+        ServerBlocks::Instance().ClearItems();
+        if (renderer) {
+            renderer->UnloadLevelResources();
+            levelRenderer = std::make_unique<LevelRenderer>(*renderer, options);
+        }
+        auto& assets = ui::UiAssets::Instance();
+        const std::string vanilla = assets.VanillaRoot();
+        assets.ClearLevelCache();
+        assets.Configure(vanilla, levelRenderer ? &levelRenderer->Blocks() : nullptr);
+        ui::McFont::Instance().UnloadLevelResources();
+        i18n::Lang::Get().Invalidate();
+        audioEngine.StopAll();
+        sounds.Configure({});
+        formModel = {};
+        formEngine = formEngineFailed = false;
+        formSignature.clear();
+        hudState = {};
+        gHeldBuild.Stop();
     }
 
     void Perlin::CommitTexturePacks() {
@@ -932,10 +961,13 @@ namespace perlin {
             data.toastTitle = lastToastTitle;
             data.toastMessage = lastToastMessage;
         }
-        for (const auto& b : live->BossBars())
-            data.bars.push_back({b.title, b.progress, b.color, b.overlay});
-        if (data.bars.size() > 4)
-            data.bars.resize(4);
+        const bool jsonBossBars = hud.Ready() && hud.Overrides("hud");
+        if (!jsonBossBars)
+            for (const auto& b : live->BossBars())
+                data.bars.push_back({b.title, b.progress, b.color, b.overlay});
+        // vanilla stacks all bars, no 4-cap
+        if (data.bars.size() > 8)
+            data.bars.resize(8);
         const auto sb = live->Scoreboard();
         if (sb.visible && !pauseShown && !(hud.Ready() && hud.Overrides("scoreboard"))) {
             data.scoreboard = true;
@@ -1104,6 +1136,12 @@ namespace perlin {
                 formRml = ui::BuildFormRml(formModel, guiW, guiH, formScroll, contentH, viewH);
             formContentH = contentH;
             formViewH = viewH;
+            {
+                // kept to inspect a server menu's built layout offline
+                std::error_code ec;
+                std::filesystem::create_directories(paths::DataDir() + "/ui_generated", ec);
+                std::ofstream(paths::DataDir() + "/ui_generated/last_form.rml", std::ios::binary | std::ios::trunc) << formRml;
+            }
             if (!hud.Overlay().SetOverlay(formRml, error)) {
                 std::cout << "[form] " << error << std::endl;
                 if (formEngine) {
@@ -1459,13 +1497,12 @@ namespace perlin {
             });
         }
         if (!root.empty())
-            sounds.Configure(root);
+            sounds.Configure(root, ServerPacks::Instance().Directories());
         audio::Volumes volumes;
         const SoundSettings& v = options.sound;
         volumes.v = {v.master, v.music, v.record, v.weather, v.block, v.hostile, v.neutral, v.player, v.ambient, v.voice};
         audioEngine.SetVolumes(volumes);
         audioEngine.SetListener({camera.x, camera.y, camera.z}, camera.yaw - 90.0f);
-        sounds.Tick(now);
 
         static double nextMusic = 0;
         if (live && options.sound.music > 0.0f) {
@@ -1484,7 +1521,7 @@ namespace perlin {
                 NoteModSound(r.name, r.x, r.y, r.z, r.volume, r.pitch);
                 switch (r.kind) {
                 case BedrockSession::SoundRequest::Kind::Named:
-                    sounds.PlayNamed(r.name, at, r.volume > 0.0f ? r.volume : 1.0f, r.pitch > 0.0f ? r.pitch : 1.0f, !r.global);
+                    sounds.PlayNamed(r.name, at, r.volume, r.pitch, !r.global);
                     break;
                 case BedrockSession::SoundRequest::Kind::Level:
                     sounds.PlayLevelSound(r.name, at, r.extra, r.entityType, r.baby, r.global);
@@ -5234,7 +5271,7 @@ namespace perlin {
         deathSignature.clear();
         if (chat.IsOpen())
             chat.Close();
-        UnloadServerPacks();
+        levelUnloadPending = true;
         titleActive = true;
         titleReturnToServers = true;
     }
@@ -6166,8 +6203,9 @@ namespace perlin {
             if (!loadingStartAt.time_since_epoch().count())
                 loadingStartAt = now;
             const int chunks = session->ChunksReceived();
+            const int freshChunks = chunks - loadingChunkBase;
             const bool assets = levelRenderer && levelRenderer->Blocks().Complete();
-            const bool enough = chunks >= 9 && assets;
+            const bool enough = freshChunks >= 9 && assets;
             if (enough) {
                 if (!loadingReadyArmed) {
                     loadingReadyArmed = true;
@@ -6182,7 +6220,7 @@ namespace perlin {
                 show = false;
             } else {
                 t.message = tr("progressScreen.message.building", "Building terrain");
-                const float fraction = std::min(1.0f, static_cast<float>(chunks) / 49.0f);
+                const float fraction = std::min(1.0f, static_cast<float>(freshChunks) / 49.0f);
                 t.progress = std::min(0.98f, fraction);
             }
         }
@@ -7028,6 +7066,11 @@ namespace perlin {
         PERLIN_WEB_PERSIST int handSky = 15, handBlock = 0;
 
         PERLIN_WEB_PERSIST auto frameStep = [&]() {
+            // previous-frame draws may still reference level textures until EndFrame
+            if (levelUnloadPending) {
+                levelUnloadPending = false;
+                UnloadServerPacks(true);
+            }
 #ifdef __EMSCRIPTEN__
             platform->PumpFrame();
 #endif
@@ -7759,8 +7802,10 @@ namespace perlin {
                         if (around)
                             aimAt(around->anchor, around->face, around->point);
                     }
-                    // held repeats follow the game's build rules (heldbuild::HeldBuild): direct crosshair hits only, repeat delay,
-                    // build line; reach-around only for fresh presses
+                    if (bedrockBuild && inputManager.Pressed(Action::Use))
+                        gHeldBuild.Start(MsNow(), player.TickCount());
+                    // Held repeats follow the game's build rules (heldbuild::HeldBuild): direct crosshair hits only, the
+                    // repeat delay, and the build line. Reach-around is for fresh presses.
                     bool heldRepeat = false;
                     if (bedrockBuild && inputManager.IsDown(Action::Use) && !inputManager.Pressed(Action::Use)) {
                         heldbuild::Hit hit;
@@ -7768,7 +7813,7 @@ namespace perlin {
                         hit.target = {{gAim.bx, gAim.by, gAim.bz}, gAim.face};
                         hit.point = hit.block ? glm::vec3(gAim.point) : buildEye + glm::normalize(camera.Direction()) * static_cast<float>(PickRange(creative, 1));
                         const glm::vec3 posDelta = buildVelocity / 20.0f;
-                        const auto chosen = gHeldBuild.Next(hit, buildEye, posDelta, player.Sneaking(), MsNow(), [&](glm::ivec3 p) {
+                        const auto chosen = gHeldBuild.Next(hit, buildEye, posDelta, player.Sneaking(), MsNow(), player.TickCount(), [&](glm::ivec3 p) {
                             if (!live)
                                 return false;
                             bool loaded = false;
@@ -7821,6 +7866,10 @@ namespace perlin {
                     const bool tooSoon = Clock::now() - lastUseSent < std::chrono::milliseconds(60);
                     // held building repeats only when build rules allow it this tick; other held use keeps the 200 ms repeat
                     const bool repeatReady = bedrockBuild && use == blockuse::Use::Place ? heldRepeat : useClock >= 0.2 && !tooSoon;
+                    // press and held repeat can fire on consecutive ticks for the same cell: drop the duplicate
+                    const bool sameCell = destination == lastBuildCell && useTime - lastBuildAt < 200;
+                    if (use == blockuse::Use::Place && holdsBlock && sameCell && useHeld && !usePressed)
+                        use = blockuse::Use::Nothing;
                     // never place a block into the player's own body
                     if (use == blockuse::Use::Place && holdsBlock) {
                         const auto& placed = LevelCollision::ShapeOf(BlockPalette::Instance().InternRuntime(static_cast<int32_t>(held.blockRuntimeId)));
@@ -7861,8 +7910,6 @@ namespace perlin {
                                 lastBuildAt = useTime;
                                 lastBuildCell = destination;
                                 if (sent && bedrockBuild) {
-                                    if (usePressed)
-                                        gHeldBuild.Start();
                                     const auto& placedShape = LevelCollision::ShapeOf(BlockPalette::Instance().InternRuntime(static_cast<int32_t>(held.blockRuntimeId)));
                                     gHeldBuild.Built({{useAim.bx, useAim.by, useAim.bz}, useAim.face}, destination,
                                                      heldbuild::IsSnappable(held.name, std::vector<physics::Box>(placedShape.boxes.begin(), placedShape.boxes.end())),
@@ -8028,6 +8075,7 @@ namespace perlin {
             }
             bool underwater = false;
             bool eyeInLava = false;
+            bool inPortalNow = false;
             std::string eyeBiome = "minecraft:plains";
             if (live) {
                 const glm::vec3 e = camera.EyePosition();
@@ -8048,13 +8096,40 @@ namespace perlin {
                     const float top = col.Query(bx, by + 1, bz).fluid == 2 ? 1.0f : cell.fluidLevel;
                     eyeInLava = e.y < static_cast<float>(by) + top;
                 }
-                if (underwater)
-                    eyeBiome = levelRenderer->Tints().NameForId(live->NetLevel().GetBiome(bx, by, bz));
+                eyeBiome = levelRenderer->Tints().NameForId(live->NetLevel().GetBiome(bx, by, bz));
+                {
+                    const int fy = static_cast<int>(std::floor(camera.y - 1.62f));
+                    const int fx = static_cast<int>(std::floor(e.x)), fz = static_cast<int>(std::floor(e.z));
+                    inPortalNow = cell.portal || col.Query(fx, fy, fz).portal;
+                }
             }
             static int waterVisionTime = 0;
 
             headUnderwater = underwater;
             headInLava = eyeInLava;
+            {
+                // Java-style nether portal overlay: ramps up over ~4 s inside a portal, fades fast outside.
+                const auto nowPortal = Clock::now();
+                static auto lastPortalAt = nowPortal;
+                float dt = std::min(0.1f, std::chrono::duration<float>(nowPortal - lastPortalAt).count());
+                lastPortalAt = nowPortal;
+                if (inPortalNow && (live || previewLevel))
+                    portalTime = std::min(1.0f, portalTime + dt * 0.25f);
+                else
+                    portalTime = std::max(0.0f, portalTime - dt * 1.0f);
+            }
+            if (live && session) {
+                const int dim = live->DimensionId();
+                if (lastDimId != -1 && dim != lastDimId) {
+                    // Dimension hop (portal, end gateway): show the loading screen until the
+                    // new dimension's terrain arrives instead of popping straight in.
+                    loadingDone = false;
+                    loadingStartAt = {};
+                    loadingReadyArmed = false;
+                    loadingChunkBase = session->ChunksReceived();
+                }
+                lastDimId = dim;
+            }
             if (!underwater)
                 waterSurfaceAbove = 0.0f;
             if ((live || previewLevel) && frameStart - handLightAt > std::chrono::milliseconds(200)) {
@@ -8072,12 +8147,18 @@ namespace perlin {
             if (hud)
                 hud->SetJavaStyle(true);
             FillHudState(hudState, live, preview);
+            hudState.bossBars.clear();
+            if (live)
+                for (const auto& b : live->BossBars()) {
+                    if (hudState.bossBars.size() == 8) break;
+                    hudState.bossBars.push_back({b.title, b.progress, b.color, b.overlay});
+                }
             hudState.sidebarVisible = false;
             hudState.sidebar.clear();
             if (live) {
                 // sidebar is part of the json ui hud: server packs restyling scoreboards.json apply
                 const auto sb = live->Scoreboard();
-                // json ui sidebar when the server restyles it (or bedrock menus are on); else the java one
+                // json ui sidebar when the server restyles it; else the java one
                 hudState.sidebarVisible = sb.visible && !pauseShown && hud && hud->Overrides("scoreboard");
                 hudState.sidebarTitle = sb.title;
                 for (const auto& r : sb.rows)
@@ -8387,6 +8468,19 @@ namespace perlin {
                     }
                     if (m.color)
                         fog.color = glm::vec4(*m.color, fog.color.w);
+                } else if (live && static_cast<Dimension>(std::clamp(live->DimensionId(), 0, 2)) == Dimension::Nether) {
+                    // no server fog pushed: fall back to per-biome nether haze
+                    const std::string bn = eyeBiome.rfind("minecraft:", 0) == 0 ? eyeBiome.substr(10) : eyeBiome;
+                    glm::vec3 tint(0.2f, 0.05f, 0.05f);
+                    if (bn == "crimson_forest")
+                        tint = glm::vec3(0.35f, 0.05f, 0.07f);
+                    else if (bn == "warped_forest")
+                        tint = glm::vec3(0.05f, 0.25f, 0.22f);
+                    else if (bn == "basalt_deltas")
+                        tint = glm::vec3(0.18f, 0.16f, 0.18f);
+                    else if (bn == "soul_sand_valley")
+                        tint = glm::vec3(0.15f, 0.12f, 0.14f);
+                    fog.color = glm::vec4(tint, fog.color.w);
                 }
             }
 
@@ -8527,6 +8621,7 @@ namespace perlin {
             params.screenTint[1] = 0.0f;
             params.screenTint[2] = 0.0f;
             params.screenTint[3] = options.damageTint ? damage.TintAlpha() : 0.0f;
+            params.portalOverlay = portalTime;
             if (sessionReady && session) {
                 const glm::vec4 fade = session->Camera().Tint();
                 if (fade.a > 0.0f) {
@@ -9034,6 +9129,7 @@ namespace perlin {
                     particleQuads.clear();
                     particles.Collect(static_cast<float>(particleClock / 0.05), pw, particleQuads);
                     if (const int fireTile = levelRenderer->Blocks().TileContaining("fire_1"); fireTile >= 0) {
+                        const int soulTile = levelRenderer->Blocks().TileContaining("soul_fire_1");
                         for (const entity::Entity& burner : entities) {
                             const bool selfBurning = burner.isSelf && hudState.burning;
                             if (!selfBurning && !(burner.flags & entity::flag::Onfire))
@@ -9042,13 +9138,26 @@ namespace perlin {
                                 continue;
                             const glm::dvec3 at = burner.pos;
                             const float scale = burner.scale;
+                            // blue flames when standing on soul soil/sand, matches the valley look
+                            int tile = fireTile;
+                            {
+                                bool loaded = false;
+                                const uint16_t below = live->NetLevel().GetBlock(
+                                    static_cast<int>(std::floor(at.x)), static_cast<int>(std::floor(at.y - 0.5)),
+                                    static_cast<int>(std::floor(at.z)), loaded);
+                                if (loaded && soulTile >= 0) {
+                                    const std::string bn = BlockPalette::Instance().Name(below);
+                                    if (bn == "soul_sand" || bn == "soul_soil")
+                                        tile = soulTile;
+                                }
+                            }
                             for (int k = 0; k < 6; k++) {
                                 const float a = static_cast<float>(k) * 1.0472f + 0.5f;
                                 const float h = 0.15f + 0.3f * static_cast<float>(k % 3);
                                 particle::Quad q;
                                 q.centre = at + glm::dvec3(std::cos(a) * 0.3 * scale, (h + 0.35f * (k / 3)) * scale, std::sin(a) * 0.3 * scale);
                                 q.half = 0.4f * scale;
-                                q.terrainTile = fireTile;
+                                q.terrainTile = tile;
                                 particleQuads.push_back(q);
                             }
                         }
