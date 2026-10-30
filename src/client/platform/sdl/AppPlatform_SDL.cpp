@@ -551,13 +551,6 @@ void AppPlatform_SDL::SetTouchMode(bool on) {
     }
 }
 
-// the pad drives the game directly: no on-screen controls, and no pointer to free
-void AppPlatform_SDL::LeaveTouchForPad() {
-    SetTouchMode(false);
-    if (game)
-        game->GetInput().SetCaptured(true);
-}
-
 void AppPlatform_SDL::DrawTouchOverlay(perlin::RenderContext& renderer) {
     if ((!touchMode && !touch.Editing()) || !game)
         return;
@@ -778,8 +771,6 @@ void AppPlatform_SDL::HandleEvent(const SDL_Event& e) {
         if (!input || !gamepad)
             break;
         const bool pressed = e.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN;
-        if (pressed && touchMode)
-            LeaveTouchForPad();
         const int code = e.gbutton.button;
         if (code < 0 || code >= 15)
             break;
@@ -843,9 +834,13 @@ void AppPlatform_SDL::HandleEvent(const SDL_Event& e) {
             }
             break;
         }
-        // a real mouse leaves touch mode on every platform; the touchscreen's own mouse events are dropped above
-        if (touchMode)
+        if (touchMode) {
+#ifdef SDL_PLATFORM_ANDROID
+            break;
+#else
             SetTouchMode(false);
+#endif
+        }
         if (input) {
             if (cursorCaptured)
                 input->OnMouseDelta(e.motion.xrel, e.motion.yrel);
@@ -862,9 +857,13 @@ void AppPlatform_SDL::HandleEvent(const SDL_Event& e) {
             touch.FingerDown(*input, 9999, e.button.x * d, e.button.y * d);
             break;
         }
-        // a real mouse leaves touch mode on every platform; the touchscreen's own mouse events are dropped above
-        if (touchMode)
+        if (touchMode) {
+#ifdef SDL_PLATFORM_ANDROID
+            break;
+#else
             SetTouchMode(false);
+#endif
+        }
         if (!cursorCaptured && !(input && (input->TextMode() || input->FreeCursor()))) {
             SetCursorCaptured(true);
             break;
@@ -962,8 +961,6 @@ void AppPlatform_SDL::PumpGamepad() {
         return;
     }
 
-    if (touchMode && (shape(lx) != 0.0f || shape(ly) != 0.0f || shape(rx) != 0.0f || shape(ry) != 0.0f || lt > 0.4f || rt > 0.4f))
-        LeaveTouchForPad();
     in.SetPadLook(shape(rx), shape(ry));
     struct Virtual { int code; bool on; };
     const float hi = 0.5f;

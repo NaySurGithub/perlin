@@ -39,7 +39,6 @@ private:
     void HandleEvent(const SDL_Event& event);
     void SetTouchMode(bool on);
     void PumpGamepad();
-    void LeaveTouchForPad();
     struct SDL_Gamepad* gamepad = nullptr;
     bool padState[64] = {};
     std::chrono::steady_clock::time_point padLast{};

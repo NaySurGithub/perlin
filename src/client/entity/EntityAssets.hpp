@@ -25,7 +25,6 @@ namespace perlin::entity {
         };
         std::vector<Animate> animate;
         ExprPtr scale;
-        ExprPtr scaleX, scaleY, scaleZ;  // scripts scalex/scaley/scalez, on top of scale
         struct Controller {
             std::string id;
             ExprPtr condition;

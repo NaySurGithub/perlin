@@ -234,58 +234,7 @@ namespace perlin::attachable {
                 ParseBones(*bones, g);
             geometries[g.id] = std::move(g);
         }
-        ExpandVanillaModels();
         Link();
-    }
-
-    // the dragon's file is a template the game's own model code assembles: tips and feet hang off their limbs with
-    // pivots relative to them, and one neck bone stands in for the 5 neck and 12 tail segments the animations move
-    void GeometryLibrary::ExpandVanillaModels() {
-        const auto found = geometries.find("geometry.dragon");
-        if (found == geometries.end())
-            return;
-        std::vector<Bone>& bones = found->second.bones;
-        const auto neck = std::find_if(bones.begin(), bones.end(), [](const Bone& b) { return b.name == "neck"; });
-        if (bones.size() != 21 || neck == bones.end())
-            return;
-        Bone segment = *neck;
-        segment.parentName = "root";
-        bones.erase(neck);
-        static constexpr std::pair<const char*, const char*> kParents[] = {
-            {"jaw", "head"}, {"wingtip", "wing"}, {"wingtip1", "wing1"}, {"rearlegtip", "rearleg"}, {"rearlegtip1", "rearleg1"},
-            {"frontlegtip", "frontleg"}, {"frontlegtip1", "frontleg1"}, {"rearfoot", "rearlegtip"}, {"rearfoot1", "rearlegtip1"},
-            {"frontfoot", "frontlegtip"}, {"frontfoot1", "frontlegtip1"}};
-        for (Bone& b : bones) {
-            for (const auto& [child, parent] : kParents)
-                if (b.name == child)
-                    b.parentName = parent;
-            if (b.name != "root" && b.parentName.empty())
-                b.parentName = "root";
-            if (b.name == "wing" || b.name == "wing1") {
-                b.rotation.y += 14.3f;
-                if (b.name == "wing1")
-                    b.rotation.z += 180.0f;
-            }
-        }
-        // parents first in the list above, so a foot moves with its already moved tip
-        for (const auto& [child, parent] : kParents) {
-            const auto owner = std::find_if(bones.begin(), bones.end(), [&](const Bone& b) { return b.name == parent; });
-            const auto piece = std::find_if(bones.begin(), bones.end(), [&](const Bone& b) { return b.name == child; });
-            if (owner == bones.end() || piece == bones.end())
-                continue;
-            const glm::vec3 offset(owner->pivot.x, owner->pivot.y - 24.0f, owner->pivot.z);
-            piece->pivot += offset;
-            for (Cube& c : piece->cubes) {
-                c.origin += offset;
-                c.pivot += offset;
-            }
-        }
-        for (const auto& [prefix, count] : {std::pair<const char*, int>{"neck", 5}, {"tail", 12}})
-            for (int i = 1; i <= count; i++) {
-                Bone part = segment;
-                part.name = prefix + std::to_string(i);
-                bones.push_back(std::move(part));
-            }
     }
 
     namespace {
