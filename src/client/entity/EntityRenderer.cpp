@@ -144,6 +144,7 @@ namespace perlin::entity {
 
     struct EntityRenderer::View {
         bool init = false;
+        glm::vec3 axisScale{1.0f};
         glm::dvec3 pos{0.0}, lastPos{0.0};
         struct Sample {
             double t = 0;
@@ -947,6 +948,12 @@ namespace perlin::entity {
         if (e.scale > 0.0f && !e.isPlayer)
             scale *= e.scale;
         outScale = scale;
+        // the wither scales x/z and y apart (2x, and its swell wobble)
+        const auto axis = [&](const ExprPtr& x) {
+            const float s = x ? static_cast<float>(x->Number(v.scope)) : 1.0f;
+            return s > 0.0f && std::isfinite(s) ? s : 1.0f;
+        };
+        v.axisScale = glm::vec3(axis(def->scaleX), axis(def->scaleY), axis(def->scaleZ));
 
         const attachable::GeometryLibrary* library = &assets.geometries;
         std::string playerGeometry;
@@ -1314,7 +1321,7 @@ namespace perlin::entity {
             const float spin = std::fmod(static_cast<float>((in.time - v.born) * 10800.0), 360.0f);
             model = glm::rotate(model, spin * kDeg, glm::vec3(1, 0, 0));
         }
-        model = glm::scale(model, glm::vec3(scale / 16.0f) * modScale);
+        model = glm::scale(model, glm::vec3(scale / 16.0f) * modScale * v.axisScale);
         glm::vec3 light(1.0f);
         if (in.light)
             light = in.light(v.pos + glm::dvec3(0.0, 1.0, 0.0));
