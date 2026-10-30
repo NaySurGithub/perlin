@@ -73,20 +73,11 @@ namespace perlin {
         void ApplyMetadata(entity::EntityTracker& tracker, uint64_t rid, const std::vector<MetadataDictionaryEntry>& metadata) {
             int variant = -1, mark = -1, color = -1;
             float boxWidth = 0.0f, boxHeight = 0.0f;
-            static const bool debugTags = std::getenv("PERLIN_DEBUG_NAMETAGS") != nullptr;
             for (const MetadataDictionaryEntry& m : metadata) {
                 if (m.key == MetadataDictionaryEntryKey::Nametag) {
                     if (const auto* inner = std::get_if<4>(&m.value))
-                        if (const auto* str = std::get_if<5>(inner)) {
+                        if (const auto* str = std::get_if<5>(inner))
                             tracker.SetNameTag(rid, *str);
-                            if (debugTags) {
-                                std::string flat = *str;
-                                for (char& c : flat)
-                                    if (c == '\n')
-                                        c = '|';
-                                std::cout << "[nametag] set rid=" << rid << " text=" << flat << std::endl;
-                            }
-                        }
                     continue;
                 }
                 double n = 0;
@@ -1085,13 +1076,6 @@ namespace perlin {
             // AddPlayer carries the feet position; move packets carry the eye
             entities.AddPlayer(p.runtimeId, p.uniqueId, UuidKey(p.uuid), p.username,
                                {p.position.x, p.position.y, p.position.z}, p.pitch, p.yaw, p.headYaw, MetaFlags(p.metadata), held);
-            if (std::getenv("PERLIN_DEBUG_NAMETAGS") != nullptr) {
-                std::string flat = p.username;
-                for (char& c : flat)
-                    if (c == '\n')
-                        c = '|';
-                std::cout << "[npcname] addplayer rid=" << p.runtimeId << " user=" << flat << std::endl;
-            }
             ApplyMetadata(entities, p.runtimeId, p.metadata);
             ApplyEntityProperties(p.runtimeId, "minecraft:player", p.properties);
         });
@@ -1151,7 +1135,7 @@ namespace perlin {
                     r.y = static_cast<float>(taken.pos.y);
                     r.z = static_cast<float>(taken.pos.z);
                     r.volume = 0.2f;
-                    r.pitch = 1.4f + (static_cast<float>(taken.runtimeId % 7) * 0.03f);
+                    r.pitch = 1.4f + (static_cast<float>(taken.runtimeId % 7) * 0.05f);
                     PushSound(std::move(r));
                 } else if (taken.type == "minecraft:xp_orb") {
                     // vanilla predicts the orb pickup sound locally; server echo (SoundOrb) suppressed below for the same pickup
@@ -1161,8 +1145,8 @@ namespace perlin {
                     r.x = static_cast<float>(taken.pos.x);
                     r.y = static_cast<float>(taken.pos.y);
                     r.z = static_cast<float>(taken.pos.z);
-                    r.volume = 0.35f;
-                    r.pitch = 1.0f + (static_cast<float>(taken.runtimeId % 5) * 0.03f);
+                    r.volume = 0.5f;
+                    r.pitch = 0.9f + (static_cast<float>(taken.runtimeId % 5) * 0.05f);
                     PushSound(std::move(r));
                     lastLocalOrbMs = nowMs;
                     lastOrbX = r.x;

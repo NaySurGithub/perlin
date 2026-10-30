@@ -137,6 +137,8 @@ namespace perlin::gpu {
         const rhi::ProgramInfo& ProgramInfo(int program) const { return library.Programs()[static_cast<size_t>(program)]; }
         bool PipelineReady(const PipelineKey& key);
         rhi::PipelineHandle Pipeline(const PipelineKey& key);
+        // every pipeline compiled so far: a renderer switch builds the same set on the new device before the first frame
+        std::vector<PipelineKey> PipelineKeys() const;
         // drops compiled pipelines (device reset, pack reload)
         void ClearPipelines();
 
@@ -171,6 +173,7 @@ namespace perlin::gpu {
         void ForgetTexture(rhi::TextureHandle texture);
         rhi::SamplerHandle Sampler(SamplerKind kind) const { return samplers[static_cast<size_t>(kind)]; }
         rhi::PipelineLayoutHandle Layout() const { return pipelineLayout; }
+        rhi::BindLayoutHandle UniformLayout() const { return uniformLayout; }
         rhi::TextureHandle White2D() const { return white2d; }
         rhi::TextureHandle WhiteArray() const { return whiteArray; }
 

@@ -1096,6 +1096,24 @@ namespace perlin::jshader {
             for (SamplerDecl& smp : r.samplers) smp.binding = samplerBindings.at(smp.name);
             std::string samplerText;
             for (const SamplerDecl& s : r.samplers) {
+                if (options.splitSamplers && !s.image) {
+                    // sampler2D -> texture2D, isampler2D -> itexture2D, sampler2DShadow -> texture2D + samplerShadow
+                    std::string texture = s.type;
+                    const bool shadow = texture.size() > 6 && texture.compare(texture.size() - 6, 6, "Shadow") == 0;
+                    if (shadow) texture.erase(texture.size() - 6);
+                    const size_t at = texture.find("sampler");
+                    if (at == std::string::npos) {
+                        r.ok = false;
+                        r.error = "unsupported sampler type '" + s.type + "'";
+                        continue;
+                    }
+                    texture.replace(at, 7, "texture");
+                    samplerText += "layout(set = 1, binding = " + std::to_string(s.binding * 2) + ") uniform " + texture + " " + s.name + "_iris_t;\n";
+                    samplerText += "layout(set = 1, binding = " + std::to_string(s.binding * 2 + 1) + ") uniform " + (shadow ? "samplerShadow " : "sampler ") +
+                                   s.name + "_iris_s;\n";
+                    samplerText += "#define " + s.name + " " + s.type + "(" + s.name + "_iris_t, " + s.name + "_iris_s)\n";
+                    continue;
+                }
                 samplerText += "layout(set = 0, binding = " + std::to_string(s.binding);
                 if (s.image && !s.imageFormat.empty()) samplerText += ", " + s.imageFormat;
                 samplerText += ") uniform " + s.type + " " + s.name + ";\n";
@@ -1206,11 +1224,11 @@ namespace perlin::jshader {
 
             std::string prelude;
             if (HasFlag(flagsSource, "SHADOW2D"))
-                prelude += "vec4 iris_shadow2D(sampler2DShadow s, vec3 c) { return vec4(texture(s, c)); }\n";
+                prelude += "#define iris_shadow2D(s, c) vec4(texture(s, c))\n";
             if (HasFlag(flagsSource, "SHADOW2DLOD"))
-                prelude += "vec4 iris_shadow2DLod(sampler2DShadow s, vec3 c, float l) { return vec4(textureLod(s, c, l)); }\n";
+                prelude += "#define iris_shadow2DLod(s, c, l) vec4(textureLod(s, c, l))\n";
             if (HasFlag(flagsSource, "SHADOW2DPROJ"))
-                prelude += "vec4 iris_shadow2DProj(sampler2DShadow s, vec4 c) { return vec4(textureProj(s, c)); }\n";
+                prelude += "#define iris_shadow2DProj(s, c) vec4(textureProj(s, c))\n";
             std::string fragCoord;
             std::string mainPrefix;
             if (options.flipFragCoordY && HasFlag(flagsSource, "FRAGCOORD")) {

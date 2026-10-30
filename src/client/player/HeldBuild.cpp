@@ -59,17 +59,13 @@ namespace perlin::heldbuild {
         return false;
     }
 
-    void HeldBuild::Start(uint64_t nowMs, uint64_t simulationTick) {
-        active = true;
-        lastAttemptTick = simulationTick;
-        lastBuildMs = nextBuildMs = nowMs;
+    void HeldBuild::Start() {
         lastInteractive = lastSnappable = false;
         hasDirection = hasLastBuilt = false;
         pendingLine = false;
     }
 
     void HeldBuild::Stop() {
-        active = false;
         hasDirection = hasLastBuilt = false;
         pendingLine = false;
     }
@@ -83,13 +79,10 @@ namespace perlin::heldbuild {
         return 200;
     }
 
-    std::optional<Target> HeldBuild::Next(const Hit& hit, glm::vec3 eye, glm::vec3 posDelta, bool sneaking, uint64_t nowMs, uint64_t simulationTick,
+    std::optional<Target> HeldBuild::Next(const Hit& hit, glm::vec3 eye, glm::vec3 posDelta, bool sneaking, uint64_t nowMs,
                                           const std::function<bool(glm::ivec3)>& canBuildOver) {
         pendingLine = false;
-        if (!active || lastAttemptTick == simulationTick)
-            return std::nullopt;
-        lastAttemptTick = simulationTick;
-        // Which block to click (ClientInstance::_tickBuildAction).
+        // which block to click (ClientInstance::_tickBuildAction)
         Target click;
         if (hasDirection && lastSnappable) {
             if (!SegmentHitsCell(eye, hit.point, nextBuild))

@@ -228,6 +228,7 @@ namespace perlin {
         }
         gpu.Dev().WaitIdle();
         FinishReadbacks();
+        jpack.reset();
         DestroyStaticResources();
         meshes.Shutdown();
         DestroyUi();
@@ -678,9 +679,38 @@ namespace perlin {
         uni.Vec4("u_chunk", 1.0f, 0.0f, 0.0f, 0.0f);
     }
 
-    void RenderContext_rhi::BeginFrame(const FrameParams& params) {
+    void RenderContext_rhi::BeginFrame(const FrameParams& paramsIn) {
         if (!initialized)
             return;
+        if (jpack && !jpackReady && !jpackError.size()) {
+            static uint32_t waitFrames = 0;
+            const int left = jpack->WarmUp();
+            if (left == 0 && !jpack->TerrainUsable()) {
+                jpackError = "the shader pack's terrain program failed to compile (see [jshader] lines above)";
+                std::cout << "[javapack] " << jpackError << std::endl;
+            } else if (left == 0) {
+                jpackReady = true;
+                std::cout << "[javapack] shaders ready" << std::endl;
+            } else if (++waitFrames % 120 == 1) {
+                std::cout << "[javapack] compiling shaders, " << left << " left (using the normal renderer meanwhile)" << std::endl;
+            }
+        }
+        // the pack does its own post processing, scaling and shadows
+        FrameParams packParams;
+        const FrameParams* chosen = &paramsIn;
+        if (PackRunning()) {
+            packParams = paramsIn;
+            packParams.renderScale = 1.0f;
+            packParams.upscaler = 0;
+            packParams.frameGen = 1;
+            packParams.motionBlur = 0.0f;
+            packParams.bloom = 0.0f;
+            packParams.menuBlur = 0.0f;
+            packParams.shadowQuality = 0;
+            chosen = &packParams;
+        }
+        const FrameParams& params = *chosen;
+        jpackGathered = false;
         {
             std::string request;
             {
@@ -840,6 +870,26 @@ namespace perlin {
                 if (!stage.useScreenDepth)
                     stage.target.depth = {};
             }
+        if (PackRunning() && jpackGathered) {
+            gpu::JavaPack::Output po;
+            po.color = image.texture;
+            po.colorFormat = gpu.TargetFormat();
+            po.depth = screenDepth;
+            po.width = gpu.TargetWidth();
+            po.height = gpu.TargetHeight();
+            po.lightmap = lightmap.handle;
+            // the pack wrote the whole picture and the depth: the world stage draws on top instead of clearing
+            const bool recorded = jpack->Record(*list, frame, po);
+            if (std::getenv("JSHADER_TRACE"))
+                std::fprintf(stderr, "[jshader] pack frame recorded: %d (stages %zu, first views %zu)\n", recorded ? 1 : 0, stages.size(),
+                             stages.empty() ? size_t{0} : stages[0].views.size());
+            if (recorded)
+                for (Stage& stage : stages)
+                    if (stage.toScreen && !stage.views.empty() && stage.views[0] == View::World) {
+                        stage.clearColor = stage.clearDepth = false;
+                        break;
+                    }
+        }
         for (const Stage& stage : shadowStages)
             RunStage(*list, stage);
         for (const Stage& stage : stages)
@@ -1078,7 +1128,12 @@ namespace perlin {
         gpu.Dev().WaitIdle();
         FinishReadbacks();
         ReleaseFrameMeshes();
+        // the pack holds device objects; it is built again on the new device (the meshes keep their extra stream)
+        const bool hadPack = jpack != nullptr;
+        jpack.reset();
+        jpackReady = false;
 
+        const std::vector<gpu::PipelineKey> warmKeys = gpu.PipelineKeys();
         gpu::ChunkMeshStore::Backup chunkBackup = meshes.Save();
         std::vector<gpu::Gpu::BufferSource> uiSources;
         for (UiPage& p : uiPages) {
@@ -1164,6 +1219,11 @@ namespace perlin {
 
         adapterName = gpu.Caps().adapter.name;
         rendererName = rhi::ApiName(gpu.Api());
+        // temporal filters must not reproject from the other device's frames, and the first frame must not stall on shader compiles
+        cam = CameraHistory{};
+        frameOpen = false;
+        for (const gpu::PipelineKey& key : warmKeys)
+            gpu.Pipeline(key);
         meshes.Load(std::move(chunkBackup));
         size_t blob = 0;
         for (UiPage& p : uiPages) {
@@ -1194,6 +1254,24 @@ namespace perlin {
             UploadCrosshair(iconSaved);
         if (lightmapWas)
             UploadLightmap(lightmapSaved);
+        if (hadPack && !jpackPath.empty()) {
+            auto pack = std::make_unique<gpu::JavaPack>(gpu, meshes);
+            gpu::JavaPack::Config config;
+            config.path = jpackPath;
+            for (const auto& kv : jpackOptions)
+                config.options[kv.first] = kv.second;
+            config.dimension = jpackDimension;
+            config.blockName = blockNames;
+            std::string why;
+            if (pack->Load(config, why)) {
+                pack->SetAtlas(atlasSource.data(), tileSize, atlasTiles);
+                jpack = std::move(pack);
+                AttachJavaPack();
+            } else {
+                jpackError = why;
+                std::cout << "[javapack] not available on " << rhi::ApiName(gpu.Api()) << ": " << why << std::endl;
+            }
+        }
         std::cout << "[render] now on " << rendererName << " (" << adapterName << ")" << std::endl;
         return true;
     }

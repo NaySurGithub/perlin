@@ -177,52 +177,28 @@ namespace perlin::ui {
         const bool hasExt = base.size() > 4 && base[base.size() - 4] == '.';
         const char* exts[] = {".png", ".tga"};
         auto& pack = TexturePack::Instance();
-        // Bedrock content is authored on case-insensitive filesystems; a pack asking for
-        // "textures/ui/White" means vanilla's "white.png" on Linux. Retry with a lowercased
-        // basename when the exact path misses.
-        std::string lowered;
-        {
-            const size_t slash = base.find_last_of("/\\");
-            const size_t start = slash == std::string::npos ? 0 : slash + 1;
-            lowered = base;
-            bool changed = false;
-            for (size_t i = start; i < lowered.size(); i++) {
-                const char folded = static_cast<char>(std::tolower(static_cast<unsigned char>(lowered[i])));
-                changed = changed || folded != lowered[i];
-                lowered[i] = folded;
-            }
-            if (!changed)
-                lowered.clear();
-        }
-        const auto tryBase = [&](const std::string& name) -> bool {
-            for (const std::string& dir : ServerPacks::Instance().Directories()) {
-                if (hasExt && LoadTexture(dir + "/" + name, out))
-                    return true;
-                if (!hasExt)
-                    for (const char* e : exts)
-                        if (LoadTexture(dir + "/" + name + e, out))
-                            return true;
-            }
-            if (pack.Active()) {
-                if (hasExt && pack.Load(name, out))
-                    return true;
+        for (const std::string& dir : ServerPacks::Instance().Directories()) {
+            if (hasExt && LoadTexture(dir + "/" + base, out))
+                return true;
+            if (!hasExt)
                 for (const char* e : exts)
-                    if (!hasExt && pack.Load(name + e, out))
+                    if (LoadTexture(dir + "/" + base + e, out))
                         return true;
-            }
-            if (root.empty())
-                return false;
-            if (hasExt)
-                return LoadTexture(root + "/" + name, out);
+        }
+        if (pack.Active()) {
+            if (hasExt && pack.Load(base, out))
+                return true;
             for (const char* e : exts)
-                if (LoadTexture(root + "/" + name + e, out))
+                if (!hasExt && pack.Load(base + e, out))
                     return true;
+        }
+        if (root.empty())
             return false;
-        };
-        if (tryBase(base))
-            return true;
-        if (!lowered.empty())
-            return tryBase(lowered);
+        if (hasExt)
+            return LoadTexture(root + "/" + base, out);
+        for (const char* e : exts)
+            if (LoadTexture(root + "/" + base + e, out))
+                return true;
         return false;
     }
 
@@ -786,15 +762,6 @@ namespace perlin::ui {
         stemIndexBuilt = false;
         itemTableLoaded = false;
         generation++;
-    }
-
-    void UiAssets::ClearLevelCache() {
-        ClearItemCache();
-        std::lock_guard lock(mutex);
-        // featured server logos belong to the menu, whose rows survive level exits
-        std::erase_if(heads, [](const auto& entry) { return entry.first.rfind("fs:", 0) != 0; });
-        lang.clear();
-        langLoaded = false;
     }
 
     bool UiAssets::HasHead(const std::string& key) {

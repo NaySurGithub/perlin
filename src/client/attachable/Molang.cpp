@@ -480,7 +480,6 @@ namespace perlin::molang {
                 }
                 return Value::Num(0);
             }
-            if (name == "query.key_frame_lerp_time") return Value::Num(s.keyFrameLerpTime);
             if (s.host && name.rfind("query.", 0) == 0) {
                 Value out;
                 if (s.host->Query(name.substr(6), args, out))
@@ -550,7 +549,6 @@ namespace perlin::molang {
                     return it != s.temps.end() ? it->second : Value::Num(0);
                 }
                 case Node::VQuery: {
-                    if (n.key == "key_frame_lerp_time") return Value::Num(s.keyFrameLerpTime);
                     if (!s.host)
                         return Value::Str(n.text);
                     if (s.cacheQueries) {

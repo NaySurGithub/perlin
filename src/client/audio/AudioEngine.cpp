@@ -119,7 +119,7 @@ namespace perlin::audio {
                 if (v.stopping || v.name != voice.name || nowMs - v.startedMs > 90u)
                     continue;
                 const glm::dvec3 d = v.position - voice.position;
-                if (glm::dot(d, d) < 1.0e-6)
+                if (glm::dot(d, d) < 2.25)
                     return v.id;
             }
         }

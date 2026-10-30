@@ -353,44 +353,24 @@ namespace perlin {
                                  size_t& consumed, const char** err) {
         out.clear();
         consumed = 0;
-        // some servers send fewer in the count than the payload holds: read the payload, not the count
-        if (slots < 0 || (count != 0 && (!data || size == 0))) {
+        if (slots < 0 || count > static_cast<uint32_t>(slots) || (count != 0 && (!data || size == 0))) {
             if (err) *err = "inline subchunk count exceeds dimension height";
             return false;
         }
         std::vector<std::pair<int, SubChunkData>> parsed;
         size_t offset = 0;
-        int nextY = firstSubY;
-        // some proxies declare a raised minY yet still ship the full vanilla span: accept indexes
-        // across the union of both so terrain below the declared floor still applies
-        const int loY = std::min(firstSubY, -4);
-        const int hiY = std::max(firstSubY + slots, 20);
-        while (offset < size && static_cast<int>(parsed.size()) < (hiY - loY)) {
-            // trailing block-entity nbt starts with a compound tag, never a sub-chunk version
-            const uint8_t version = data[offset];
-            if (version != 1 && version != 8 && version != 9)
-                break;
+        for (uint32_t i = 0; i < count; ++i) {
             SubChunkData sc;
             size_t used = 0;
             if (!ParseSubChunk(data + offset, size - offset, sc, used, err)) return false;
-            int64_t y;
-            if (sc.hasYIndex) {
-                y = sc.yIndex;
-                nextY = static_cast<int>(y) + 1;
-            } else {
-                y = nextY++;
+            const int64_t y = sc.hasYIndex ? sc.yIndex : static_cast<int64_t>(firstSubY) + i;
+            if (y > std::numeric_limits<int>::max() || y < firstSubY || y >= static_cast<int64_t>(firstSubY) + slots ||
+                std::any_of(parsed.begin(), parsed.end(), [y](const auto& entry) { return entry.first == y; })) {
+                if (err) *err = "invalid or repeated inline subchunk height";
+                return false;
             }
             offset += used;
-            // some proxies repeat or overshoot heights: skip the entry, keep the column
-            if (y > std::numeric_limits<int>::max() || y < loY || y >= static_cast<int64_t>(hiY))
-                continue;
-            if (std::any_of(parsed.begin(), parsed.end(), [y](const auto& entry) { return entry.first == y; }))
-                continue;
             parsed.emplace_back(static_cast<int>(y), std::move(sc));
-        }
-        if (parsed.empty() && count > 0) {
-            if (err) *err = "inline subchunk count exceeds dimension height";
-            return false;
         }
         out = std::move(parsed);
         consumed = offset;

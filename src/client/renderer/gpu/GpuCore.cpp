@@ -297,6 +297,15 @@ namespace perlin::gpu {
         return -1;
     }
 
+    std::vector<PipelineKey> Gpu::PipelineKeys() const {
+        std::vector<PipelineKey> keys;
+        keys.reserve(pipelines.size());
+        for (const auto& [key, handle] : pipelines)
+            if (handle.value != 0)
+                keys.push_back(key);
+        return keys;
+    }
+
     bool Gpu::PipelineReady(const PipelineKey& key) { return Pipeline(key).value != 0; }
 
     PipelineHandle Gpu::Pipeline(const PipelineKey& key) {

@@ -62,7 +62,6 @@ namespace perlin::ui {
     public:
         static JsonScreens& Instance();
         ~JsonScreens();
-        void Reset();
 
         // rescan on server/resource pack change; cheap otherwise
         void Warm(const std::vector<std::string>& serverPackDirs);

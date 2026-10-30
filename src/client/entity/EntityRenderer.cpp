@@ -18,8 +18,6 @@
 
 #include <algorithm>
 #include <map>
-#include <string>
-#include <unordered_set>
 #include <deque>
 #include <cmath>
 #include <cstdlib>
@@ -420,8 +418,8 @@ namespace perlin::entity {
         const float speed = static_cast<float>(std::sqrt(xd * xd + zd * zd)) / std::max(dt, 0.001f);
         v.bodyTickAcc += (speed - static_cast<float>(v.bodyTickAcc)) * std::min(1.0f, dt * 12.0f);
         const bool moving = v.bodyTickAcc > 0.35 || v.attackTime > 0.0f;
-        const float tau = moving ? 0.045f : 0.09f;
-        const float cap = moving ? 30.0f : 40.0f;
+        const float tau = moving ? 0.06f : 0.11f;
+        const float cap = moving ? 20.0f : 40.0f;
         float diff = WrapDegrees(look - v.body);
         v.body += diff * (1.0f - std::exp(-dt / tau));
         diff = WrapDegrees(look - v.body);
@@ -447,13 +445,7 @@ namespace perlin::entity {
             v.hurtSerial = e.hurtSerial;
             v.swingSerial = e.swingSerial;
         }
-        const bool projectile = e.type == "minecraft:arrow" || e.type == "minecraft:thrown_trident" ||
-                                        e.type == "minecraft:snowball" || e.type == "minecraft:egg" || e.type == "minecraft:ender_pearl" ||
-                                        e.type == "minecraft:splash_potion" || e.type == "minecraft:lingering_potion" ||
-                                        e.type == "minecraft:xp_bottle" || e.type == "minecraft:fireball" ||
-                                        e.type == "minecraft:wither_skull" || e.type == "minecraft:small_fireball" ||
-                                        e.type == "minecraft:shulker_bullet" || e.type == "minecraft:llama_spit" ||
-                                        e.type == "minecraft:dragon_fireball";
+        const bool projectile = e.type == "minecraft:arrow" || e.type == "minecraft:thrown_trident";
         const bool buffered = !e.isSelf && !projectile;
         const double follow = e.isSelf ? 1.0 : 1.0 - std::exp(-static_cast<double>(dt) / 0.06);
         v.lastPos = v.pos;
@@ -516,8 +508,7 @@ namespace perlin::entity {
             v.headYaw = turn(v.headYaw, e.headYaw);
             v.pitch = v.pitch + WrapDegrees(e.pitch - v.pitch) * static_cast<float>(follow);
         }
-        // velocity-aligned flight: arrows, tridents and lobbed bottles alike
-        if (projectile) {
+        if (e.type == "minecraft:arrow" || e.type == "minecraft:thrown_trident") {
             const double len = glm::length(d);
             if (len > 0.04) {
                 const float targetYaw = static_cast<float>(std::atan2(-d.x, d.z) * 180.0 / 3.14159265358979);
@@ -692,9 +683,16 @@ namespace perlin::entity {
                 return;
             if (const auto* controller = assets.animations.FindController(id)) {
                 auto& cs = v.ctrl[path + id];
-                attachable::StartController(*controller, scope, cs.state, cs.entered, cs.started, now);
+                if (!cs.started) {
+                    cs.started = true;
+                    cs.state = controller->initial;
+                    cs.entered = now;
+                }
                 std::string key;
-                if (const auto st = controller->states.find(cs.state); st != controller->states.end()) {
+                for (int guard = 0; guard < 4; guard++) {
+                    const auto st = controller->states.find(cs.state);
+                    if (st == controller->states.end())
+                        break;
                     host->animTime = static_cast<float>(now - cs.entered);
                     {
                         bool all = true, any = false;
@@ -716,7 +714,22 @@ namespace perlin::entity {
                         host->allFinished = all && !st->second.animations.empty();
                         host->anyFinished = any;
                     }
-                    attachable::AdvanceController(*controller, scope, cs.state, cs.entered, now);
+                    bool moved = false;
+                    for (const auto& [target, test] : st->second.transitions) {
+                        if (!test || !test->Eval(scope).Truthy())
+                            continue;
+                        for (const auto& s : st->second.onExit)
+                            s->Eval(scope);
+                        cs.state = target;
+                        cs.entered = now;
+                        if (const auto next = controller->states.find(target); next != controller->states.end())
+                            for (const auto& s : next->second.onEntry)
+                                s->Eval(scope);
+                        moved = true;
+                        break;
+                    }
+                    if (!moved)
+                        break;
                 }
                 const auto st = controller->states.find(cs.state);
                 if (st == controller->states.end())
@@ -1307,13 +1320,6 @@ namespace perlin::entity {
             model = glm::rotate(model, (90.0f + v.pitch) * kDeg, glm::vec3(1, 0, 0));
             model = glm::translate(model, glm::vec3(0.0f, -12.0f / 16.0f * scale, 0.0f));
         }
-        // lobbed items tumble around x/z instead of holding a fixed pose
-        if (e.type == "minecraft:xp_bottle" || e.type == "minecraft:splash_potion" ||
-            e.type == "minecraft:lingering_potion" || e.type == "minecraft:snowball" || e.type == "minecraft:egg" ||
-            e.type == "minecraft:ender_pearl") {
-            const float spin = std::fmod(static_cast<float>((in.time - v.born) * 10800.0), 360.0f);
-            model = glm::rotate(model, spin * kDeg, glm::vec3(1, 0, 0));
-        }
         model = glm::scale(model, glm::vec3(scale / 16.0f) * modScale);
         glm::vec3 light(1.0f);
         if (in.light)
@@ -1807,7 +1813,7 @@ namespace perlin::entity {
                     continue;
                 const ui::McFont::Glyph& g = font.Get(cp);
                 if (g.width > 0)
-                    quad(textV, textI, pen + g.left, rowY + g.top, pen + g.left + g.width, rowY + g.top + g.height, g.u0, g.v0, g.u1, g.v1, PackColor(g.colored ? glm::vec3(1.0f) : col));
+                    quad(textV, textI, pen, rowY + g.top, pen + static_cast<float>(g.width), rowY + g.top + g.height, g.u0, g.v0, g.u1, g.v1, PackColor(col));
                 pen += static_cast<float>(g.advance) + (bold ? 1.0f : 0.0f);
             }
             }
@@ -2011,21 +2017,6 @@ namespace perlin::entity {
                 const std::string& label = style && style->nameTag == 1 ? std::string() : style && style->nameTag == 2 ? style->nameText : !e.nameTag.empty() ? e.nameTag : e.isPlayer ? e.name : e.nameTag;
                 const double d2 = glm::dot(delta, delta);
                 if (!label.empty() && d2 < (e.isPlayer ? 64.0 * 64.0 : 16.0 * 16.0)) {
-                    if (std::getenv("PERLIN_DEBUG_NAMETAGS") != nullptr) {
-                        static std::unordered_set<std::string> seen;
-                        if (seen.size() > 20000)
-                            seen.clear();
-                        std::string key = std::to_string(e.runtimeId) + "|" + label;
-                        if (seen.insert(key).second) {
-                            std::string flat = label;
-                            for (char& c : flat)
-                                if (c == '\n')
-                                    c = '|';
-                            std::cout << "[nametag] draw rid=" << e.runtimeId << " type=" << e.type
-                                      << (e.isPlayer ? " player" : "") << " taglen=" << e.nameTag.size()
-                                      << " text=" << flat << std::endl;
-                        }
-                    }
                     const auto hb = HitBox(e);
                     Tag t;
                     t.text = label;
@@ -2977,9 +2968,9 @@ namespace perlin::entity {
                             continue;
                         const ui::McFont::Glyph& g = font.Get(cp);
                         if (g.width > 0) {
-                            const uint32_t color = PackColor(g.colored ? glm::vec3(1.0f) : col * lit);
+                            const uint32_t color = PackColor(col * lit);
                             for (int pass = 0; pass < (bold ? 2 : 1); pass++) {
-                                const float gx0 = pen + g.left + static_cast<float>(pass), gx1 = gx0 + static_cast<float>(g.width);
+                                const float gx0 = pen + static_cast<float>(pass), gx1 = gx0 + static_cast<float>(g.width);
                                 const auto corner = [&](float gx, float gy) {
                                     float ox, oz;
                                     const float lx = 0.5f + rx * gx * scale, lz = planeZ + dir * 0.0f;

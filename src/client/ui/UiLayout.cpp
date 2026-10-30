@@ -322,7 +322,7 @@ namespace perlin::ui {
                     }
                 }
                 if (const Json* a = n->bag.Find("#alpha"); a && a->IsNumber())
-                    alpha = static_cast<float>(a->number);
+                    alpha *= static_cast<float>(a->number);
                 n->alpha = propagateAlpha ? alpha * parentAlpha : alpha;
                 const bool propagate = n->Bool("propagate_alpha", false) ||
                                        (n->bag.Find("#propagateAlpha") && Truthy(*n->bag.Find("#propagateAlpha")));
@@ -340,10 +340,6 @@ namespace perlin::ui {
                     addKid(Instantiate(*child, collections, factoryVars, n->layer, n->alpha, propagate));
                 if (deferredView) {
                     ApplyBindings(*n, collections);
-                    // The source may be a child instantiated above. Resolve label text
-                    // again after its view binding has received that child's value.
-                    if (n->type == "label")
-                        n->text = ResolveText(*n, vars);
                     bool nowVisible = true;
                     if (const Json* v = n->p.Find("visible"))
                         nowVisible = Truthy(*v) || (v->IsString() && v->string.empty());
@@ -1057,11 +1053,6 @@ namespace perlin::ui {
                     if (n.type == "grid") hundred.kind = Term::PctChildren;
                     if (w.empty()) w.push_back(intrinsic ? def : hundred);
                     if (h.empty()) h.push_back(intrinsic ? def : hundred);
-                    // unsized stacks wrap children on their stacking axis, leaving room for fill siblings
-                    if (n.type == "stack_panel" && !size) {
-                        Dim& main = StackVertical(n) ? h : w;
-                        main = {Term{Term::PctChildren, 100, 1}};
-                    }
                 }
                 // inherit_max_sibling_width/height: grow to widest/tallest sibling; applied in Measure
             }
@@ -1122,9 +1113,9 @@ namespace perlin::ui {
             float FontScale(const LNode& n) const {
                 float scale = static_cast<float>(n.Num("font_scale_factor", 1.0));
                 const std::string size = n.Str("font_size", "normal");
-                if (size == "small") scale *= 0.5f;
-                else if (size == "large") scale *= 2.0f;
-                else if (size == "extra_large") scale *= 4.0f;
+                if (size == "small") scale *= 0.75f;
+                else if (size == "large") scale *= 1.5f;
+                else if (size == "extra_large") scale *= 2.0f;
                 return scale;
             }
 

@@ -6,10 +6,14 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
 
+#include <chrono>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
+#include <filesystem>
 #include <fstream>
 #include <iterator>
+#include <thread>
 
 using namespace perlin;
 
@@ -70,6 +74,63 @@ namespace {
 
 namespace perlin {
     void TestSetBundledPack(bool on);
+}
+
+namespace {
+    void WriteText(const std::filesystem::path& file, const std::string& text) {
+        std::filesystem::create_directories(file.parent_path());
+        std::ofstream(file, std::ios::binary) << text;
+    }
+
+    // smallest useful optifine pack: terrain into colortex0, a composite that swaps red and green, a final that copies it out
+    std::filesystem::path WriteSyntheticPack() {
+        const std::filesystem::path root = std::filesystem::temp_directory_path() / "perlin_synthetic_pack";
+        std::filesystem::remove_all(root);
+        const std::string vertexTerrain =
+            "#version 120\nvarying vec2 texcoord;\nvarying vec4 glcolor;\nattribute vec4 mc_Entity;\n"
+            "void main() { gl_Position = ftransform(); texcoord = (gl_TextureMatrix[0] * gl_MultiTexCoord0).xy; glcolor = gl_Color; }\n";
+        const std::string fragmentTerrain =
+            "#version 120\nuniform sampler2D texture;\nvarying vec2 texcoord;\nvarying vec4 glcolor;\n/* DRAWBUFFERS:0 */\n"
+            "void main() { gl_FragData[0] = texture2D(texture, texcoord) * glcolor; }\n";
+        const std::string vertexScreen =
+            "#version 120\nvarying vec2 texcoord;\nvoid main() { gl_Position = ftransform(); texcoord = gl_MultiTexCoord0.xy; }\n";
+        const std::string fragmentComposite =
+            "#version 120\nuniform sampler2D colortex0;\nvarying vec2 texcoord;\n/* DRAWBUFFERS:0 */\n"
+            "void main() { vec4 c = texture2D(colortex0, texcoord); gl_FragData[0] = vec4(c.g, c.r, c.b, 1.0); }\n";
+        const std::string fragmentFinal =
+            "#version 120\nuniform sampler2D colortex0;\nvarying vec2 texcoord;\n"
+            "void main() { gl_FragColor = texture2D(colortex0, texcoord); }\n";
+        WriteText(root / "shaders/gbuffers_terrain.vsh", vertexTerrain);
+        WriteText(root / "shaders/gbuffers_terrain.fsh", fragmentTerrain);
+        WriteText(root / "shaders/composite.vsh", vertexScreen);
+        WriteText(root / "shaders/composite.fsh", fragmentComposite);
+        WriteText(root / "shaders/final.vsh", vertexScreen);
+        WriteText(root / "shaders/final.fsh", fragmentFinal);
+        return root;
+    }
+
+    // same pack with a shadow map: the terrain shader shows what the shadow comparison says (green lit, black in shadow)
+    std::filesystem::path WriteShadowPack() {
+        const std::filesystem::path root = WriteSyntheticPack();
+        WriteText(root / "shaders/shadow.vsh",
+                  "#version 120\nvarying vec2 texcoord;\nvoid main() { gl_Position = ftransform(); texcoord = (gl_TextureMatrix[0] * gl_MultiTexCoord0).xy; }\n");
+        WriteText(root / "shaders/shadow.fsh",
+                  "#version 120\nuniform sampler2D texture;\nvarying vec2 texcoord;\n"
+                  "void main() { gl_FragData[0] = texture2D(texture, texcoord); }\n");
+        WriteText(root / "shaders/gbuffers_terrain.vsh",
+                  "#version 120\nvarying vec3 viewPos;\nvoid main() { vec4 v = gl_ModelViewMatrix * gl_Vertex; viewPos = v.xyz; gl_Position = gl_ProjectionMatrix * v; }\n");
+        WriteText(root / "shaders/gbuffers_terrain.fsh",
+                  "#version 120\nuniform sampler2DShadow shadowtex0;\nuniform mat4 gbufferModelViewInverse;\nuniform mat4 shadowModelView;\n"
+                  "uniform mat4 shadowProjection;\nvarying vec3 viewPos;\n/* DRAWBUFFERS:0 */\n"
+                  "void main() {\n"
+                  "    vec4 feet = gbufferModelViewInverse * vec4(viewPos, 1.0);\n"
+                  "    vec4 sp = shadowProjection * (shadowModelView * feet);\n"
+                  "    sp.xyz = sp.xyz * 0.5 + 0.5;\n"
+                  "    float lit = shadow2D(shadowtex0, vec3(sp.xy, sp.z - 0.003)).r;\n"
+                  "    gl_FragData[0] = vec4(0.0, lit, 0.0, 1.0);\n"
+                  "}\n");
+        return root;
+    }
 }
 
 int main(int argc, char** argv) {
@@ -333,19 +394,116 @@ int main(int argc, char** argv) {
         }
     }
 
-    TestSetBundledPack(false);
-    ctx.ReloadShaders();
-    ctx.UnloadLevelResources();
-    ctx.UnloadLevelResources();
-    const auto afterLeave = MakeFrame({0, 3, 0}, {0, 0, 0}, {0, 0, -1}, 128, 96);
-    Check(Frame(ctx, afterLeave, rgba, w, h), "frame after leaving the level");
-    if (!rgba.empty())
-        Check(Background(At(rgba, w, w / 2, h / 2)), "previous level mesh is gone");
-    ctx.UploadAtlas(tile.data(), 16, 1);
-    ctx.UpdateChunkMesh(0, 0, tess, 100);
-    Check(Frame(ctx, afterLeave, rgba, w, h), "frame after loading the next level");
-    if (!rgba.empty())
-        Check(Red(At(rgba, w, w / 2, h / 2)), "next level atlas and mesh draw correctly");
+    // java shader pack: terrain through the pack's gbuffers, composite and final
+    {
+        const std::filesystem::path root = WriteSyntheticPack();
+        ctx.SetBlockNameLookup([](uint16_t) { return std::string("stone"); });
+        std::string why;
+        if (!ctx.SetJavaShaderPack(root.string(), {}, why)) {
+            std::printf("skip java pack: %s\n", why.c_str());
+        } else {
+            Check(ctx.JavaShaderPackActive(), "java pack loaded");
+            Tessellator packTess;
+            packTess.Begin();
+            packTess.EnterSection(0);
+            const float pv[4][3] = {{-2, 0, -2}, {2, 0, -2}, {2, 0, 2}, {-2, 0, 2}};
+            const float pc[4][3] = {{1, 1, 1}, {1, 1, 1}, {1, 1, 1}, {1, 1, 1}};
+            const float puv[4][2] = {{0, 0}, {0.01f, 0}, {0.01f, 0.01f}, {0, 0.01f}};
+            packTess.AddQuad(pv, pc, puv, false, 15.0f, 15.0f);
+            packTess.End();
+            ctx.UpdateChunkMesh(0, 0, packTess, 1);
+            bool ready = false;
+            for (int i = 0; i < 400 && !ready; i++) {
+                ready = Frame(ctx, MakeFrame({0, 3, 0}, {0, 0, 0}, {0, 0, -1}, 128, 96), rgba, w, h) && ctx.JavaPackReady();
+                if (!ready)
+                    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+            }
+            Check(ready, "java pack programs compiled");
+            if (ready) {
+                bool drawn = false;
+                for (int i = 0; i < 3; i++)
+                    drawn = Frame(ctx, MakeFrame({0, 3, 0}, {0, 0, 0}, {0, 0, -1}, 128, 96), rgba, w, h);
+                Check(drawn, "frame through the java pack");
+                if (!rgba.empty()) {
+                    const Pixel mid = At(rgba, w, w / 2, h / 2), corner = At(rgba, w, 1, 1);
+                    std::printf("     pack pixels: centre %d,%d,%d corner %d,%d,%d\n", mid.r, mid.g, mid.b, corner.r, corner.g, corner.b);
+                    Check(mid.g > 150 && mid.r < 90 && mid.b < 90, "composite ran (red tile comes out green)");
+                    Check(Background(corner), "clear colour survives the pack");
+                    if (const char* dump = std::getenv("PERLIN_TEST_DUMP"))
+                        if (FILE* fp = std::fopen((std::string(dump) + "_pack.ppm").c_str(), "wb")) {
+                            std::fprintf(fp, "P6\n%u %u\n255\n", w, h);
+                            for (size_t i = 0; i + 3 < rgba.size(); i += 4)
+                                std::fwrite(&rgba[i], 1, 3, fp);
+                            std::fclose(fp);
+                        }
+                }
+            }
+            ctx.ClearJavaShaderPack();
+            Check(!ctx.JavaShaderPackActive(), "java pack cleared");
+        }
+    }
+
+    // java pack with shadows: an occluder above the ground has to darken it through the pack's shadow pass
+    {
+        const std::filesystem::path root = WriteShadowPack();
+        std::string why;
+        if (!ctx.SetJavaShaderPack(root.string(), {}, why)) {
+            std::printf("skip java pack shadows: %s\n", why.c_str());
+        } else {
+            Tessellator scene;
+            scene.Begin();
+            scene.EnterSection(0);
+            const float white[4][3] = {{1, 1, 1}, {1, 1, 1}, {1, 1, 1}, {1, 1, 1}};
+            const float uvs[4][2] = {{0, 0}, {0.01f, 0}, {0.01f, 0.01f}, {0, 0.01f}};
+            const float ground[4][3] = {{-6, 0, -6}, {6, 0, -6}, {6, 0, 6}, {-6, 0, 6}};
+            const float roof[4][3] = {{-1.5f, 2, -1.5f}, {1.5f, 2, -1.5f}, {1.5f, 2, 1.5f}, {-1.5f, 2, 1.5f}};
+            scene.AddQuad(ground, white, uvs, false, 15.0f, 15.0f);
+            scene.AddQuad(roof, white, uvs, false, 15.0f, 15.0f);
+            scene.End();
+            ctx.UpdateChunkMesh(0, 0, scene, 1);
+            bool ready = false;
+            for (int i = 0; i < 400 && !ready; i++) {
+                ready = Frame(ctx, MakeFrame(std::getenv("PERLIN_TEST_TOP") ? glm::vec3(0, 6, 7) : glm::vec3(0, 1.2f, 9), std::getenv("PERLIN_TEST_TOP") ? glm::vec3(0, 0, 0) : glm::vec3(0, 0.4f, 0), {0, 1, 0}, 128, 96), rgba, w, h) && ctx.JavaPackReady();
+                if (!ready)
+                    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+            }
+            Check(ready, "java pack with shadows compiled");
+            if (ready) {
+                bool drawn = false;
+                for (int i = 0; i < 3; i++) {
+                    FrameParams f = MakeFrame(std::getenv("PERLIN_TEST_TOP") ? glm::vec3(0, 6, 7) : glm::vec3(0, 1.2f, 9), std::getenv("PERLIN_TEST_TOP") ? glm::vec3(0, 0, 0) : glm::vec3(0, 0.4f, 0), {0, 1, 0}, 128, 96);
+                    f.sky.enabled = true;
+                    f.sky.sunAngle = 0.0f;
+                    drawn = Frame(ctx, f, rgba, w, h);
+                }
+                Check(drawn, "frame through the java pack with shadows");
+                int lit = 0, dark = 0;
+                for (uint32_t y = 0; y < h && !rgba.empty(); y++)
+                    for (uint32_t x = 0; x < w; x++) {
+                        const Pixel px = At(rgba, w, x, y);
+                        if (Background(px))
+                            continue;
+                        // the pack's composite swaps red and green, so lit ground comes out red
+                        if (px.r > 200)
+                            lit++;
+                        else if (px.r < 40 && px.g < 40)
+                            dark++;
+                    }
+                std::printf("     pack shadow pixels: %d lit, %d dark\n", lit, dark);
+                Check(lit > 300, "pack terrain is lit by the sun");
+                Check(dark > 30, "the occluder casts a shadow in the pack");
+                if (const char* dump = std::getenv("PERLIN_TEST_DUMP"))
+                    if (FILE* fp = std::fopen((std::string(dump) + "_packshadow.ppm").c_str(), "wb")) {
+                        std::fprintf(fp, "P6\n%u %u\n255\n", w, h);
+                        for (size_t i = 0; i + 3 < rgba.size(); i += 4)
+                            std::fwrite(&rgba[i], 1, 3, fp);
+                        std::fclose(fp);
+                    }
+            }
+            ctx.ClearJavaShaderPack();
+        }
+    }
+
     ctx.Shutdown();
     std::printf("%d failure(s)\n", failures);
     return failures ? 1 : 0;

@@ -12,7 +12,8 @@
 namespace perlin::ui {
     class TenFont {
     public:
-        // json ui uses a ten-pixel em; baseline metrics come from the installed font
+        // em size the game measures against: at font_scale_factor 1 caps are 7 gui pixels, line 9, same box as
+        // the bitmap font: packs sized for the game's fonts fit
         static constexpr float kEm = 10.0f;
 
         static TenFont& Instance();
@@ -29,7 +30,6 @@ namespace perlin::ui {
         float Em(float scale) const { return kEm * scale; }
         float Ascent(float scale) const;
         float Descent(float scale) const;
-        float XHeight(float scale) const;
         float LineHeight(float scale) const { return 9.0f * scale; }
         float Advance(uint32_t cp, float scale) const;
         float Width(const std::string& utf8, float scale) const;

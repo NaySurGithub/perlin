@@ -126,7 +126,6 @@ namespace perlin {
         bool crosshair = false;
         int guiScale = 0;
         float screenTint[4];
-        float portalOverlay = 0.0f;
         uint32_t frameIndex;
         float handProjection[16] = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
         int dynMode = 0;
@@ -156,6 +155,8 @@ namespace perlin {
         virtual bool JavaShaderPackActive() const { return false; }
         virtual std::string JavaShaderPackError() const { return {}; }
         virtual void SetJavaShaderPackDimension(const std::string& ) {}
+        // block name of a palette id, which packs map to their own block ids
+        virtual void SetBlockNameLookup(std::function<std::string(uint16_t)>) {}
         virtual bool PackShadowsActive() const { return false; }
         virtual void SetVsync(bool) {}
         // switches the graphics api while the game keeps running; applied before the next frame, false when unsupported
@@ -203,7 +204,6 @@ namespace perlin {
         virtual void UpdateLodTile(int tx, int tz, int size, const Tessellator& tess, uint64_t version) = 0;
         virtual void RemoveLodTile(int tx, int tz) = 0;
         virtual void ClearChunkMeshes() = 0;
-        virtual void UnloadLevelResources() { ClearChunkMeshes(); }
         virtual void DrawChunkMeshes(const Frustum& frustum, float camX, float camZ) = 0;
         virtual void SetChunkCullRadius(int) {}
         // section (16-block cube) reachable from the camera through open space, last frame

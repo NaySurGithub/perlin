@@ -16,10 +16,39 @@ namespace perlin::gpu {
             return;
         for (Page& p : pages) {
             p.vb.Destroy(gpu->Dev());
+            p.ext.Destroy(gpu->Dev());
             for (Arena& a : p.ib)
                 a.Destroy(gpu->Dev());
         }
         pages.clear();
+    }
+
+    void ChunkMeshStore::SetExtension(uint32_t bytesPerVertex, ExtendFn convert) {
+        if (bytesPerVertex == extBytes && static_cast<bool>(convert) == static_cast<bool>(extConvert)) {
+            extConvert = std::move(convert);
+            return;
+        }
+        chunks.clear();
+        lods.clear();
+        lodGroups.clear();
+        visible.clear();
+        visibleSections.clear();
+        if (gpu) {
+            gpu->Dev().WaitIdle();
+            for (Page& p : pages) {
+                if (!p.live)
+                    continue;
+                p.vb.Destroy(gpu->Dev());
+                p.ext.Destroy(gpu->Dev());
+                for (Arena& a : p.ib)
+                    a.Destroy(gpu->Dev());
+                p.live = false;
+            }
+        }
+        pages.clear();
+        extBytes = bytesPerVertex;
+        extConvert = std::move(convert);
+        generation++;
     }
 
     void ChunkMeshStore::Clear() {
@@ -45,6 +74,8 @@ namespace perlin::gpu {
             if (!p.live)
                 continue;
             sources.push_back({p.vb.Buffer(), p.vb.BarrierState(), p.vb.Bytes()});
+            if (extBytes)
+                sources.push_back({p.ext.Buffer(), p.ext.BarrierState(), p.ext.Bytes()});
             for (Arena& a : p.ib)
                 sources.push_back({a.Buffer(), a.BarrierState(), a.Bytes()});
         }
@@ -65,6 +96,8 @@ namespace perlin::gpu {
             if (!p.live)
                 continue;
             drop(p.vb);
+            if (extBytes)
+                drop(p.ext);
             for (Arena& a : p.ib)
                 drop(a);
         }
@@ -87,6 +120,8 @@ namespace perlin::gpu {
             if (!p.live)
                 continue;
             restore(p.vb);
+            if (extBytes)
+                restore(p.ext);
             for (Arena& a : p.ib)
                 restore(a);
         }
@@ -96,11 +131,14 @@ namespace perlin::gpu {
     int ChunkMeshStore::CreatePage(uint32_t vCap, const std::array<uint32_t, kRenderLayerCount>& iCap) {
         Page p;
         bool ok = p.vb.Create(gpu->Dev(), vCap, sizeof(Vertex), rhi::BufferUsage::Vertex | rhi::BufferUsage::Storage, "chunk vertices");
+        if (ok && extBytes)
+            ok = p.ext.Create(gpu->Dev(), vCap, extBytes, rhi::BufferUsage::Vertex, "chunk vertex extras");
         for (size_t l = 0; l < kRenderLayerCount && ok; l++)
             ok = p.ib[l].Create(gpu->Dev(), std::max(1u, iCap[l]), sizeof(uint32_t), rhi::BufferUsage::Index | rhi::BufferUsage::Storage,
                                 "chunk indices");
         if (!ok) {
             p.vb.Destroy(gpu->Dev());
+            p.ext.Destroy(gpu->Dev());
             for (Arena& a : p.ib)
                 a.Destroy(gpu->Dev());
             return -1;
@@ -164,6 +202,7 @@ namespace perlin::gpu {
             if (++p.emptyFrames < 600)
                 continue;
             p.vb.Destroy(gpu->Dev());
+            p.ext.Destroy(gpu->Dev());
             for (Arena& a : p.ib)
                 a.Destroy(gpu->Dev());
             p.live = false;
@@ -270,6 +309,13 @@ namespace perlin::gpu {
         Page& pg = pages[static_cast<size_t>(g.page)];
 
         gpu->WriteBuffer(pg.vb, static_cast<uint64_t>(g.vOff) * sizeof(Vertex), verts.data(), static_cast<uint64_t>(g.vCount) * sizeof(Vertex));
+        if (extBytes && extConvert && pg.ext.Buffer()) {
+            static thread_local std::vector<uint8_t> extra;
+            extra.clear();
+            extConvert(tess, extra);
+            if (extra.size() == static_cast<size_t>(g.vCount) * extBytes)
+                gpu->WriteBuffer(pg.ext, static_cast<uint64_t>(g.vOff) * extBytes, extra.data(), extra.size());
+        }
         static thread_local std::vector<uint32_t> shifted;
         for (size_t l = 0; l < kRenderLayerCount; l++) {
             const auto& list = tess.Indices(static_cast<RenderLayer>(l));

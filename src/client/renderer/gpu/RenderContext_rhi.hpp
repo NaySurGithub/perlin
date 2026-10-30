@@ -3,6 +3,7 @@
 #include "client/renderer/SkyGeometry.hpp"
 #include "client/renderer/Tessellator.hpp"
 #include "client/renderer/gpu/ChunkMeshStore.hpp"
+#include "client/renderer/gpu/JavaPack.hpp"
 #include "client/renderer/gpu/GpuCore.hpp"
 #include "client/renderer/gpu/UniformStore.hpp"
 
@@ -99,6 +100,13 @@ namespace perlin {
         void SetVsync(bool enabled) override;
         bool ReloadShaders() override;
         bool PackShadowsActive() const override { return packActive; }
+        bool SetJavaShaderPack(const std::string& path, const std::map<std::string, std::string>& options, std::string& error) override;
+        void ClearJavaShaderPack() override;
+        bool JavaShaderPackActive() const override { return jpack != nullptr; }
+        bool JavaPackReady() const { return PackRunning(); }
+        std::string JavaShaderPackError() const override { return jpackError; }
+        void SetJavaShaderPackDimension(const std::string& folder) override;
+        void SetBlockNameLookup(std::function<std::string(uint16_t)> lookup) override { blockNames = std::move(lookup); }
 
         void BeginFrame(const FrameParams& params) override;
         void EndFrame() override;
@@ -132,7 +140,6 @@ namespace perlin {
         void UpdateLodTile(int tx, int tz, int size, const Tessellator& tess, uint64_t version) override;
         void RemoveLodTile(int tx, int tz) override;
         void ClearChunkMeshes() override;
-        void UnloadLevelResources() override;
         void DrawChunkMeshes(const Frustum& frustum, float camX, float camZ) override;
         void SetChunkCullRadius(int chunks) override { chunkCullRadius = chunks; }
         bool SectionReached(int sx, int sy, int sz) const override { return meshes.SectionReached(sx, sy, sz, caveCulling); }
@@ -421,6 +428,16 @@ namespace perlin {
         int chunkCullRadius = 0;
         bool frameOpen = false;
         bool packActive = false;
+
+        // java shader pack: loaded as soon as it is set, drawn once its programs have compiled
+        std::unique_ptr<gpu::JavaPack> jpack;
+        std::string jpackPath, jpackError, jpackDimension = "world0";
+        std::map<std::string, std::string> jpackOptions;
+        bool jpackReady = false;
+        bool jpackGathered = false;
+        std::function<std::string(uint16_t)> blockNames;
+        bool PackRunning() const { return jpack && jpackReady; }
+        bool AttachJavaPack();
         bool ResolvePrograms();
         std::array<int, static_cast<size_t>(Program::Count)> programIds{};
         std::array<gpu::VertexLayout, static_cast<size_t>(Program::Count)> programLayouts{};
