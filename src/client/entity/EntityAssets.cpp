@@ -109,6 +109,12 @@ namespace perlin::entity {
                     }
                 if (const Json* s = scripts->Find("scale"))
                     d.scale = ParseValue(*s);
+                if (const Json* s = scripts->Find("scalex"))
+                    d.scaleX = ParseValue(*s);
+                if (const Json* s = scripts->Find("scaley"))
+                    d.scaleY = ParseValue(*s);
+                if (const Json* s = scripts->Find("scalez"))
+                    d.scaleZ = ParseValue(*s);
             }
             if (d.animate.empty())
                 if (const Json* acs = desc->Find("animation_controllers"); acs && acs->IsArray())
