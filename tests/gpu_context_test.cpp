@@ -154,6 +154,20 @@ int main(int argc, char** argv) {
         return 77;
     }
 
+    for (bool diagonal : {false, true}) {
+        Tessellator tess;
+        const float top[4][3] = {{0, 1, 0}, {1, 1, 0}, {1, 1, 1}, {0, 1, 1}};
+        const float colors[4][3] = {{1, 1, 1}, {1, 1, 1}, {1, 1, 1}, {1, 1, 1}};
+        const float uv[4][2] = {{0, 0}, {0.01f, 0}, {0.01f, 0.01f}, {0, 0.01f}};
+        tess.Begin();
+        tess.AddQuad(top, colors, uv, diagonal, 0, 15);
+        tess.End();
+        bool upward = true;
+        for (const Vertex& vertex : tess.Vertices())
+            upward &= ((vertex.normal >> 8) & 255) == 255;
+        Check(upward, diagonal ? "alternate triangle diagonal preserves upward normals" : "top face normal points upward");
+    }
+
     std::vector<uint8_t> tile(16 * 16 * 4);
     for (size_t i = 0; i < tile.size(); i += 4) {
         tile[i] = 255;
@@ -394,6 +408,19 @@ int main(int argc, char** argv) {
         }
     }
 
+    TestSetBundledPack(false);
+    ctx.ReloadShaders();
+    ctx.UnloadLevelResources();
+    ctx.UnloadLevelResources();
+    const auto afterLeave = MakeFrame({0, 3, 0}, {0, 0, 0}, {0, 0, -1}, 128, 96);
+    Check(Frame(ctx, afterLeave, rgba, w, h), "frame after leaving the level");
+    if (!rgba.empty())
+        Check(Background(At(rgba, w, w / 2, h / 2)), "previous level mesh is gone");
+    ctx.UploadAtlas(tile.data(), 16, 1);
+    ctx.UpdateChunkMesh(0, 0, tess, 100);
+    Check(Frame(ctx, afterLeave, rgba, w, h), "frame after loading the next level");
+    if (!rgba.empty())
+        Check(Red(At(rgba, w, w / 2, h / 2)), "next level atlas and mesh draw correctly");
     // java shader pack: terrain through the pack's gbuffers, composite and final
     {
         const std::filesystem::path root = WriteSyntheticPack();

@@ -48,13 +48,25 @@ class Preproc:
         def num(m):
             name = m.group(0)
             self.used.add(name)
-            v = self.macros.get(name, "0").strip()
-            if re.fullmatch(r"[0-9]+", v):
-                return v
+            # resolve alias chains (LIGHTSHAFT_QUALI -> LIGHTSHAFT_QUALI_DEFINE -> 2)
+            v: str = name
+            seen: set[str] = set()
+            for _ in range(32):
+                if v in seen:
+                    break
+                seen.add(v)
+                nv = self.macros.get(v, "0").strip()
+                if re.fullmatch(r"-?[0-9]+(\.[0-9]+)?", nv):
+                    return nv
+                if re.fullmatch(r"[A-Za-z_]\w*", nv):
+                    v = nv
+                    continue
+                return "0"
             return "0"
 
         e = re.sub(r"[A-Za-z_]\w*", num, e)
-        e = e.replace("&&", " and ").replace("||", " or ").replace("!", " not ")
+        e = e.replace("!=", " NEQ ").replace("&&", " and ").replace("||", " or ").replace("!", " not ").replace(
+            " NEQ ", " != ")
         try:
             return 1 if eval(e, {"__builtins__": {}}, {}) else 0
         except Exception:
@@ -241,6 +253,8 @@ def main() -> int:
                     help="pack option macro override, e.g. -DRAIN_PUDDLES=2 (repeatable)")
     ap.add_argument("--check", action="store_true",
                     help="validate stage bodies with glslangValidator via a GLSL harness")
+    ap.add_argument("--fullscreen", action="store_true",
+                    help="position-only VsIn for composite/deferred/final passes; uvs derive from the fullscreen triangle")
     args = ap.parse_args()
 
     pack = Path(args.pack)
@@ -278,7 +292,7 @@ def main() -> int:
     if args.emit:
         import json as _json
         rep = emit_program(pack, args.program, args.world, Path(args.emit),
-                           dict(d.split("=", 1) for d in (args.define or [])))
+                           dict(d.split("=", 1) for d in (args.define or [])), fullscreen=args.fullscreen)
         print("--- emission report ---")
         print(_json.dumps(rep, indent=1)[:4000])
     return 0
@@ -303,10 +317,37 @@ VERTEX_INPUTS = [
     ("float", "a_mcChunkFade", 11, ["mc_chunkFade"]),
 ]
 
+# packed engine feed: the RHI terrain vertex carries java attribs packed to
+# keep the stride small. member -> (packed slang type, packed VsIn name,
+# location, unpack statements with {src} = input member).
+PACKED_INPUTS = {
+    "a_normal": ("float4", "a_nPacked", 1, [
+        "vs_stage::a_normal = normalize({src}.xyz * 2.0 - 1.0);",
+    ]),
+    "a_mcEntity": ("float", "a_ePacked", 8, [
+        "vs_stage::a_mcEntity = float4({src}, 0.0, 0.0, 0.0);",
+    ]),
+    "a_mcMidTexCoord": ("float2", "a_mPacked", 9, [
+        "vs_stage::a_mcMidTexCoord = float4({src}, 0.0, 0.0);",
+    ]),
+    # tangent axis index 0..5 (+x,-x,+y,-y,+z,-z), handedness in the low bit
+    "a_atTangent": ("float", "a_tPacked", 10, [
+        "{ float ti = floor({src}); float ix = floor(ti * 0.5); float hd = (ti - ix * 2.0) * 2.0 - 1.0;",
+        "  float3 ax = ix < 0.5 ? float3(1.0, 0.0, 0.0) : ix < 1.5 ? float3(-1.0, 0.0, 0.0) :",
+        "      ix < 2.5 ? float3(0.0, 1.0, 0.0) : ix < 3.5 ? float3(0.0, -1.0, 0.0) :",
+        "      ix < 4.5 ? float3(0.0, 0.0, 1.0) : float3(0.0, 0.0, -1.0);",
+        "  vs_stage::a_atTangent = float4(ax, hd); }",
+    ]),
+    # chunk load fade is cosmetic: engine feeds a constant until meshing animates it
+    "a_mcChunkFade": (None, None, None, [
+        "vs_stage::a_mcChunkFade = 1.0;",
+    ]),
+}
+
 SAMPLER_SLOTS = {
-    # tex is the pack's plain 2D block atlas; RHI s_atlas is an array, so the
-    # port gets its own 2D slot until the engine binds a matching view.
-    "tex": "s_javaAtlas",
+    # tex is the block atlas; the RHI keeps it as an array, so tex taps are
+    # rewritten to array samples with the tile layer from a_texcoord1 (see below)
+    "tex": "s_atlas",
     "lightmap": "s_lightmap",
     "shadowtex0": "s_shadow",
     "shadowtex1": "s_shadowB",
@@ -314,6 +355,12 @@ SAMPLER_SLOTS = {
     "shadowcolor1": "s_shadowTintB",
     "depthtex0": "s_sceneDepth",
     "depthtex1": "s_depth",
+    "noisetex": "s_noise",
+    "normals": "s_normals",
+    "specular": "s_specular",
+    "gaux2": "s_gaux2",
+    "gaux4": "s_gaux4",
+    **{f"colortex{i}": f"s_colortex{i}" for i in range(16)},
 }
 
 GLSL_TO_SLANG_TYPE = {
@@ -341,12 +388,13 @@ def _strip_global_decl(line: str, depth: int):
     if depth != 0:
         return None
     m = re.match(
-        r"\s*(flat\s+|centroid\s+)?(attribute|varying|uniform)\s+"
+        r"\s*((?:smooth|flat|noperspective|invariant|centroid|sample|patch)\s+)?(attribute|varying|uniform)\s+"
         r"(sampler\w+|image\w+|void|bool|int|uint|float|vec[234]|ivec[234]|uvec[234]|bvec[234]|mat[234]|mat[234]x[234])\s+([^;]+);",
         line)
     if m:
         return ("decl", m.group(2), m.group(3), m.group(4).strip())
-    m = re.match(r"\s*(flat\s+|centroid\s+)?(in|out)\s+(\w+)\s+([^;]+);", line)
+    m = re.match(r"\s*((?:smooth|flat|noperspective|invariant|centroid|sample|patch)\s+)?(in|out)\s+(\w+)\s+([^;]+);",
+                 line)
     if m and m.group(3) in GLSL_TO_SLANG_TYPE:
         return ("io", m.group(2), m.group(3), m.group(4).strip(), (m.group(1) or "").strip())
     if re.match(r"\s*precision\s+\w+\s+\w+\s*;", line):
@@ -458,7 +506,19 @@ def _rename_builtins(body: str, needed_matrices: dict[str, str]) -> str:
     sub(r"\bgl_Normal\b", "a_normal")
     sub(r"\bgl_Color\b", "a_color0")
     sub(r"\bgl_MultiTexCoord0\b", "vec4(a_texcoord0, 0.0, 1.0)")
-    sub(r"\bgl_MultiTexCoord1\b", "a_texcoord1")
+    # engine light bytes are 0..15 in a_texcoord1.xy; the pack wants 0..1
+    sub(r"\bgl_MultiTexCoord1\b", "javaLightCoord(a_texcoord1)")
+    # fixed-function transform: projection * modelview * vertex
+    if re.search(r"\bftransform\s*\(\s*\)", body):
+        needed_matrices["gl_ProjectionMatrix"] = LEGACY_MATRIX["gl_ProjectionMatrix"]
+        needed_matrices["gl_ModelViewMatrix"] = LEGACY_MATRIX["gl_ModelViewMatrix"]
+        sub(r"\bftransform\s*\(\s*\)", "(u_jProjectionMatrix * u_jModelViewMatrix * vec4(a_position, 1.0))")
+    # sampler params arrive as legacy types; the global slot with the same
+    # name supplies the sampler state (see depthtex below)
+    sub(r"\bsampler2D\b", "Texture2D")
+    # fixed-function fog: engine feeds start/scale (see FeedJavaUniforms)
+    sub(r"\bgl_Fog\.start\b", "u_jFogStart")
+    sub(r"\bgl_Fog\.scale\b", "u_jFogScale")
     for java, member in LEGACY_MATRIX.items():
         base = java.replace("gl_TextureMatrix", "gl_TextureMatrix")
         if base.startswith("gl_TextureMatrix"):
@@ -517,24 +577,48 @@ def _slang_ctors(body: str) -> str:
 
 
 def _slang_globals(body: str) -> str:
-    """Slang rejects writable namespace-scope variables: prefix static.
-    Slang-only (plain GLSL forbids static there, so the check harness skips)."""
+    """Keep namespace globals writable without modifying function parameters."""
+    clean = re.sub(r"/\*.*?\*/|//[^\n]*", lambda m: "\n" * m.group().count("\n"), body, flags=re.S)
     out = []
-    depth = 0
-    for raw in body.splitlines():
-        stripped = raw.strip()
-        if (depth == 0 and not stripped.startswith("static")
-                and re.match(r"(const\s+)?(bool|int|uint|float|vec[234]|ivec[234]|uvec[234]|bvec[234]|mat[234]|mat[234]x[234]|float[234]x[234])\s+[A-Za-z_]\w*\b",
-                             stripped)):
+    depth = parens = 0
+    for raw, code in zip(body.splitlines(), clean.splitlines()):
+        stripped = code.strip()
+        if depth == 0 and parens == 0 and re.match(
+                r"(const\s+)?(bool|int|uint|float|vec[234]|ivec[234]|uvec[234]|bvec[234]|mat[234]|mat[234]x[234]|float[234]x[234])\s+[A-Za-z_]\w*\b", stripped):
             head = stripped.split("=", 1)[0].split(";")[0]
             if "(" not in head:
-                # top of the line gets static; keep original indent out (slang is ws-insensitive)
-                out.append("static " + stripped)
-                depth += raw.count("{") - raw.count("}")
-                continue
+                raw = "static " + raw.lstrip()
         out.append(raw)
-        depth += raw.count("{") - raw.count("}")
+        depth += code.count("{") - code.count("}")
+        parens += code.count("(") - code.count(")")
     return "\n".join(out)
+
+
+def _defer_global_initializers(body: str) -> str:
+    """Pack globals depend on uniforms assigned by the entry-point wrapper."""
+    assignments = []
+    pattern = r"^static (bool|int|uint|float|vec[234]|ivec[234]|uvec[234]|bvec[234]|mat[234]|float[234](?:x[234])?)\s+(\w+(?:\[[^\]]*\])?\s*=[^;]+);"
+    def rewrite(match):
+        parts, start, depth = [], 0, 0
+        text = match.group(2)
+        for i, char in enumerate(text):
+            if char in "([{": depth += 1
+            elif char in ")]}": depth -= 1
+            elif char == "," and depth == 0:
+                parts.append(text[start:i]); start = i + 1
+        parts.append(text[start:])
+        decls = []
+        for part in parts:
+            if "=" in part:
+                lhs, rhs = part.split("=", 1)
+                name = lhs.strip().split("[")[0]
+                assignments.append(f"    {name} = {rhs.strip()};")
+                decls.append(lhs.strip())
+            else:
+                decls.append(part.strip())
+        return "static " + match.group(1) + " " + ", ".join(decls) + ";"
+    body = re.sub(pattern, rewrite, body, flags=re.M)
+    return body.replace("void stageMain() {", "void stageMain() {\n" + "\n".join(assignments), 1)
 
 
 def _rename_samplers(body: str, sampler_map: dict[str, str]) -> str:
@@ -548,8 +632,319 @@ def _rename_samplers(body: str, sampler_map: dict[str, str]) -> str:
     return body
 
 
+def _in_spans(spans: list[tuple[int, int]], pos: int) -> bool:
+    return any(a <= pos < b for a, b in spans)
+
+
+def _rewrite_atlas_taps(body: str) -> str:
+    """tex taps became s_atlas (a 2D array): resample with the tile layer.
+    jLayer is a generated varying decoded from a_texcoord1 (see emission)."""
+    spans = _comment_spans(body)
+    out: list[str] = []
+    i = 0
+    pat = re.compile(r"\btexture2DLod\s*\(\s*s_atlas\s*,|\btexture2D\s*\(\s*s_atlas\s*,")
+    while True:
+        m = pat.search(body, i)
+        if not m:
+            out.append(body[i:])
+            break
+        if _in_spans(spans, m.start()):
+            out.append(body[i:m.end()])
+            i = m.end()
+            continue
+        out.append(body[i:m.start()])
+        name = "texture2DArrayLod" if m.group(0).startswith("texture2DLod") else "texture2DArray"
+        j = m.end()
+        depth = 1
+        args: list[str] = []
+        cur = ""
+        while j < len(body) and depth:
+            ch = body[j]
+            if ch == "(":
+                depth += 1
+                cur += ch
+            elif ch == ")":
+                depth -= 1
+                if depth:
+                    cur += ch
+            elif ch == "," and depth == 1:
+                args.append(cur)
+                cur = ""
+            else:
+                cur += ch
+            j += 1
+        args.append(cur)
+        uv = args[0].strip()
+        if name == "texture2DArrayLod":
+            out.append(f"texture2DArrayLod(s_atlas, float3({uv}, jLayer), {args[1].strip()})")
+        else:
+            out.append(f"texture2DArray(s_atlas, float3({uv}, jLayer))")
+        i = j
+    return "".join(out)
+
+
+def _comment_spans(body: str) -> list[tuple[int, int]]:
+    spans: list[tuple[int, int]] = []
+    i = 0
+    while i < len(body):
+        if body.startswith("/*", i):
+            j = body.find("*/", i + 2)
+            j = len(body) if j < 0 else j + 2
+            spans.append((i, j))
+            i = j
+        elif body.startswith("//", i):
+            j = body.find("\n", i)
+            j = len(body) if j < 0 else j
+            spans.append((i, j))
+            i = j
+        elif body[i] in "\"'":
+            q = body[i]
+            j = i + 1
+            while j < len(body) and body[j] != q:
+                j += 2 if body[j] == "\\" else 1
+            spans.append((i, min(j + 1, len(body))))
+            i = min(j + 1, len(body))
+        else:
+            i += 1
+    return spans
+
+
+def _split_top(body: str, start: int) -> tuple[list[str], int]:
+    """Split a parenthesized argument list starting at '(' (balanced scan).
+    Returns (args, index just past ')')."""
+    assert body[start] == "("
+    args: list[str] = []
+    cur = ""
+    depth = 0
+    j = start
+    while j < len(body):
+        ch = body[j]
+        if ch == "(":
+            depth += 1
+            if depth > 1:
+                cur += ch
+        elif ch == ")":
+            depth -= 1
+            if not depth:
+                args.append(cur)
+                return args, j + 1
+            cur += ch
+        elif ch == "," and depth == 1:
+            args.append(cur)
+            cur = ""
+        else:
+            cur += ch
+        j += 1
+    return args, j
+
+
+def _rewrite_calls(body: str) -> str:
+    """Fix call shapes slang rejects but Iris accepts: sampler params need an
+    explicit sampler (dual-param form), lessThan needs an operator, and
+    vector ==/!= in conditions needs all()/any()."""
+    # lessThan(a, b) -> ((a) < (b)); greaterThan likewise
+    out: list[str] = []
+    i = 0
+    spans = _comment_spans(body)
+    pat = re.compile(r"\b(lessThan|greaterThan)\s*\(")
+    while True:
+        m = pat.search(body, i)
+        if not m:
+            out.append(body[i:])
+            break
+        if _in_spans(spans, m.start()):
+            out.append(body[i:m.end()])
+            i = m.end()
+            continue
+        out.append(body[i:m.start()])
+        args, j = _split_top(body, m.end() - 1)
+        op = "<" if m.group(1) == "lessThan" else ">"
+        if len(args) == 2:
+            out.append(f"(({args[0].strip()}){op}({args[1].strip()}))")
+        else:
+            out.append(m.group(0))
+        i = j
+    body = "".join(out)
+    # textureSize(t, lod) has no HLSL expression form; route a helper instead
+    out = []
+    i = 0
+    spans = _comment_spans(body)
+    pat = re.compile(r"\btextureSize\s*\(")
+    while True:
+        m = pat.search(body, i)
+        if not m:
+            out.append(body[i:])
+            break
+        if _in_spans(spans, m.start()):
+            out.append(body[i:m.end()])
+            i = m.end()
+            continue
+        out.append(body[i:m.start()])
+        args, j = _split_top(body, m.end() - 1)
+        if len(args) == 2:
+            out.append(f"javaTextureSize({args[0].strip()}, {args[1].strip()})")
+        else:
+            out.append(m.group(0))
+            j = m.end()
+        i = j
+    body = "".join(out)
+    # sampler params: Texture2D p (no global sampler) takes SamplerState p_s;
+    # call sites gain the matching global sampler argument
+    sampler_funcs: dict[str, list[int]] = {}
+    spans = _comment_spans(body)
+    for m in re.finditer(r"[A-Za-z_]\w*(?:\s+[A-Za-z_]\w*)*\s+([A-Za-z_]\w*)\s*\(([^;{}]*)\)\s*\{", body):
+        # the greedy return-type prefix can reach into a preceding comment:
+        # test the function name itself
+        if _in_spans(spans, m.start(1)):
+            continue
+        fname = m.group(1)
+        if fname.startswith("java"):
+            continue
+        parts, _ = _split_top("(" + m.group(2) + ")", 0)
+        idx = [k for k, a in enumerate(parts) if re.search(r"\bTexture2D\s+[A-Za-z_]\w*\s*$", a.strip())]
+        if idx:
+            sampler_funcs[fname] = idx
+    if sampler_funcs:
+        names = sorted(sampler_funcs, key=len, reverse=True)
+        call = re.compile(r"(?<![A-Za-z0-9_])(" + "|".join(map(re.escape, names)) + r")\s*\(")
+        chunks: list[str] = []
+        k = 0
+        for m in call.finditer(body):
+            if _in_spans(spans, m.start()):
+                continue
+            chunks.append(body[k:m.start()])
+            k = m.start()
+            # definition, not a call, when a return type precedes the name
+            before = body[max(0, m.start() - 64):m.start()]
+            is_def = bool(re.search(r"[A-Za-z_]\w*\s+$", before))
+            args, j = _split_top(body, m.end() - 1)
+            if is_def:
+                parts = [a.strip() for a in args]
+                extra = []
+                for n in sampler_funcs[m.group(1)]:
+                    pname = parts[n].split()[-1]
+                    extra.append(f"SamplerState {pname}_s")
+                chunks.append(m.group(1) + "(" + ", ".join(parts + extra) + ")")
+            else:
+                extra = []
+                for n in sampler_funcs[m.group(1)]:
+                    if n < len(args) and re.fullmatch(r"[A-Za-z_]\w*", args[n].strip()):
+                        extra.append(args[n].strip() + "_s")
+                chunks.append(m.group(0) + ", ".join(args + extra) + ")")
+            k = j
+        chunks.append(body[k:])
+        body = "".join(chunks)
+    return body
+
+
+def _scan_balanced(body: str, start: int, spans: list[tuple[int, int]] | None = None) -> tuple[str, int]:
+    """Text inside the parens opening at start, plus the index just past the
+    matching close. Unlike _split_top this keeps commas intact."""
+    assert body[start] == "("
+    depth = 0
+    j = start
+    while j < len(body):
+        if spans is not None and _in_spans(spans, j):
+            j += 1
+            continue
+        ch = body[j]
+        if ch == "(":
+            depth += 1
+        elif ch == ")":
+            depth -= 1
+            if not depth:
+                return body[start + 1:j], j + 1
+        j += 1
+    return body[start + 1:j], j
+
+
+def _wrap_cond_equality(body: str) -> str:
+    """`if (a == b)` over vectors is a bvec in slang: wrap top-level ==/!= in
+    all()/any(). Scalars are unaffected (all/any are identity there)."""
+    out: list[str] = []
+    i = 0
+    spans = _comment_spans(body)
+    pat = re.compile(r"\b(if|while)\s*\(")
+    while True:
+        m = pat.search(body, i)
+        if not m:
+            out.append(body[i:])
+            break
+        if _in_spans(spans, m.start()):
+            out.append(body[i:m.end()])
+            i = m.end()
+            continue
+        out.append(body[i:m.end()])
+        cond, j = _scan_balanced(body, m.end() - 1, spans)
+        rebuilt = " || ".join(" && ".join(_wrap_one_cmp(seg) for seg in _split_logic(part, "&&"))
+                               for part in _split_logic(cond, "||"))
+        out.append(rebuilt + ")")
+        i = j
+    return "".join(out)
+
+
+def _split_logic(cond: str, op: str) -> list[str]:
+    parts: list[str] = []
+    cur = ""
+    depth = 0
+    k = 0
+    while k < len(cond):
+        ch = cond[k]
+        if ch in "([":
+            depth += 1
+            cur += ch
+        elif ch in ")]":
+            depth = max(0, depth - 1)
+            cur += ch
+        elif depth == 0 and cond.startswith(op, k):
+            parts.append(cur)
+            cur = ""
+            k += len(op)
+            continue
+        else:
+            cur += ch
+        k += 1
+    parts.append(cur)
+    return parts
+
+
+def _looks_vector(expr: str) -> bool:
+    e = expr.strip()
+    # multi-char swizzle or vector constructor strongly suggests vector type.
+    # single-char swizzles and plain identifiers stay untouched: slang
+    # all()/any() need vectors, and scalar == is already fine.
+    if re.search(r"\.[xyzwrgbastpq]{2,4}\b", e):
+        return True
+    if re.search(r"\b(vec[234]|ivec[234]|uvec[234]|bvec[234]|float[234]|int[234]|uint[234])\s*\(", e):
+        return True
+    return False
+
+
+def _wrap_one_cmp(seg: str) -> str:
+    depth = 0
+    k = 0
+    while k < len(seg):
+        ch = seg[k]
+        if ch in "([":
+            depth += 1
+        elif ch in ")]":
+            depth = max(0, depth - 1)
+        elif depth == 0 and seg.startswith("==", k):
+            a, b = seg[:k], seg[k + 2:]
+            if _looks_vector(a) or _looks_vector(b):
+                return f"all(({a.strip()}) == ({b.strip()}))"
+            return seg
+        elif depth == 0 and seg.startswith("!=", k):
+            a, b = seg[:k], seg[k + 2:]
+            if _looks_vector(a) or _looks_vector(b):
+                return f"any(({a.strip()}) != ({b.strip()}))"
+            return seg
+        k += 1
+    return seg
+
+
 def emit_program(pack: Path, program: str, world: str, out: Path,
-                 extra_defines: dict[str, str] | None = None):
+                 extra_defines: dict[str, str] | None = None, fullscreen: bool = False):
     srcs, pps = {}, {}
     for stage in ("vertex", "fragment"):
         src, pp = preprocess_stage(pack, world, program, stage)
@@ -594,10 +989,14 @@ def emit_program(pack: Path, program: str, world: str, out: Path,
             if re.search(r"(?<![A-Za-z0-9_])" + re.escape(name) + r"(?![A-Za-z0-9_])", bodies[stage]):
                 samp.add(name)
 
-    v_outs = [(q if q in ("flat", "centroid") else "", t, n)
+    v_outs = [(q if q in ("flat", "centroid", "noperspective") else "", t, n)
               for (q, st, t, n) in vary["vertex"] if st in ("varying", "out")]
-    f_ins = [(q if q in ("flat", "centroid") else "", t, n)
+    f_ins = [(q if q in ("flat", "centroid", "noperspective") else "", t, n)
              for (q, st, t, n) in vary["fragment"] if st in ("varying", "in")]
+    # generated tile-layer varying for atlas array taps (decoded in vsMain);
+    # fullscreen passes sample no atlas
+    if not fullscreen:
+        v_outs.append(("", "float", "jLayer"))
 
     v_names = {n for _, _, n in v_outs}
     missing = [n for _, _, n in f_ins if n not in v_names]
@@ -609,22 +1008,52 @@ def emit_program(pack: Path, program: str, world: str, out: Path,
     emitted_macros: set[str] = set()
     for stage in ("vertex", "fragment"):
         bodies[stage] = _rename_builtins(bodies[stage], needed_matrices)
+    # engine-fed fixed-function fog (renamed above, after stripping)
+    if any("u_jFogStart" in bodies[stage] or "u_jFogScale" in bodies[stage] for stage in ("vertex", "fragment")):
+        uni.setdefault("FogStart", ("float", ""))
+        uni.setdefault("FogScale", ("float", ""))
     # sampler map: known slots renamed, unknown keep name (unbound decls)
     smap = {s: SAMPLER_SLOTS.get(s, s) for s in samp}
     for stage in ("vertex", "fragment"):
         bodies[stage] = _rename_samplers(bodies[stage], smap)
+        bodies[stage] = _rewrite_atlas_taps(bodies[stage])
+        bodies[stage] = _rewrite_calls(bodies[stage])
+        bodies[stage] = _wrap_cond_equality(bodies[stage])
         head = render_defines(pps[stage], emitted_macros)
         if head:
             bodies[stage] = head + "\n" + bodies[stage]
         bodies[stage] = _size_global_arrays(bodies[stage])
         bodies[stage] = _slang_globals(bodies[stage])
         bodies[stage] = _slang_ctors(bodies[stage])
+        bodies[stage] = _defer_global_initializers(bodies[stage])
+        matrices = set(re.findall(r"\b(?:mat[234]|float[234]x[234])\s+(\w+)", bodies[stage]))
+        matrices.update(needed_matrices.values())
+        matrices.update(name for name, (ty, _) in uni.items() if ty.startswith("mat"))
+        matrix_names = "(?:" + "|".join(re.escape(name) for name in sorted(matrices, key=len, reverse=True)) + ")"
+        bodies[stage] = re.sub(r"\b(" + matrix_names + r")\s*\*\s*(" + matrix_names + r")\b",
+                               r"mul(\1, \2)", bodies[stage])
+        bodies[stage] = re.sub(r"\b(" + matrix_names + r")\s*\[([^\]]+)\]",
+                               r"transpose(\1)[\2]", bodies[stage])
+        bodies[stage] = bodies[stage].replace("(m)[3].xyz", "transpose(m)[3].xyz")
+        bodies[stage] = bodies[stage].replace("shadowPos.xy /= distortFactor;", "")
+        bodies[stage] = bodies[stage].replace("shadowPos.z *= 0.2;", "")
+        bodies[stage] = bodies[stage].replace("shadowpos.xy *= 1.0 / distortFactor;", "")
+        bodies[stage] = bodies[stage].replace("shadowpos.z = shadowpos.z * 0.2;", "")
+        bodies[stage] = bodies[stage].replace("vec3(vec2(wpos.xy / distortFactor), wpos.z * 0.2)", "wpos")
 
     import json as _json
     try:
-        _known_slots = set(_json.loads((Path(__file__).resolve().parent.parent / "src/shaders/slang/texture_slots.json").read_text()))
+        _slot_nums = {k: v[0] for k, v in _json.loads(
+            (Path(__file__).resolve().parent.parent / "src/shaders/slang/texture_slots.json").read_text()).items()}
     except Exception:
-        _known_slots = set()
+        _slot_nums = {}
+    _known_slots = set(_slot_nums)
+    try:
+        _vv = (Path(__file__).resolve().parent.parent / "src/shaders/slang/vv_resources.slang").read_text()
+        _vv_declared = set(re.findall(r"SAMPLER2D(ARRAY)?\((\w+)", _vv))
+        _vv_declared = {m[1] if isinstance(m, tuple) else m for m in _vv_declared}
+    except Exception:
+        _vv_declared = set()
     unmapped_samplers = sorted(s for s in samp
                                if s not in SAMPLER_SLOTS or SAMPLER_SLOTS[s] not in _known_slots)
     targets = sorted({int(m) for stage in ("vertex", "fragment")
@@ -635,26 +1064,32 @@ def emit_program(pack: Path, program: str, world: str, out: Path,
     lines.append(f"// Converted from Java shaderpack program {program} ({world}).")
     lines.append("// v1 converter output: uniform feed + renderer wiring still needed, see report.")
     lines.append('#include "compat.slang"')
-    lines.append('#include "vv_resources.slang"')
+
     lines.append("")
     lines.append("// Iris uniforms: engine must feed these each frame/draw.")
-    lines.append("cbuffer JavaUniforms")
-    lines.append("{")
+    lines.append("#define PERLIN_JAVA_UNIFORMS " + "\\")
     for name in sorted(uni):
         ty, arr = uni[name]
         st = GLSL_TO_SLANG_TYPE.get(ty, f"/* UNKNOWN:{ty} */ float4")
         lines.append(f"    {st} u_j{name};{f' // [{arr}]' if arr else ''}" if False else
-                     f"    {st} u_j{name}" + (f"[{arr}]" if arr else "") + ";")
+                     f"    {st} u_j{name}" + (f"[{arr}]" if arr else "") + "; " + "\\")
     for java, member in sorted(needed_matrices.values() and needed_matrices.items()):
         _ = java
         mty = "float3x3" if "Normal" in member else "float4x4"
-        lines.append(f"    {mty} {member};")
-    lines.append("};")
+        lines.append(f"    {mty} {member}; " + "\\")
+    lines.append("")
+    lines.append('#include "vv_resources.slang"')
+    lines.append("#undef PERLIN_JAVA_UNIFORMS")
     lines.append("")
     for s in sorted(samp):
         slot = SAMPLER_SLOTS.get(s, s)
-        if slot in _known_slots:
+        if slot in _known_slots and slot in _vv_declared:
             lines.append(f"// java sampler {s} -> RHI slot {slot} (see vv_resources.slang)")
+        elif slot in _known_slots:
+            # post-chain slots live in each program, not the shared header
+            n = _slot_nums[slot]
+            lines.append(f"// java sampler {s} -> RHI slot {slot} (declared here)")
+            lines.append(f"SAMPLER2D({slot}, {n * 2}, {n * 2 + 1});")
         else:
             lines.append(f"// TODO(java): sampler {s} has no RHI slot yet: left unbound below")
             lines.append(f"Texture2D {slot};")
@@ -664,21 +1099,30 @@ def emit_program(pack: Path, program: str, world: str, out: Path,
     loc = {n: i for i, (_, _, n) in enumerate(v_outs)}
     lines.append("struct VsIn")
     lines.append("{")
-    for ty, nm, lc, _ in VERTEX_INPUTS:
-        lines.append(f"    [[vk::location({lc})]] {GLSL_TO_SLANG_TYPE.get(ty, ty)} {nm} : TEXCOORD{lc};")
+    # fullscreen passes derive uvs from the triangle; only position is fed
+    vin = [e for e in VERTEX_INPUTS if not fullscreen or e[1] == "a_position"]
+    for ty, nm, lc, _ in vin:
+        if nm in PACKED_INPUTS:
+            pty, pnm, plc, _stmts = PACKED_INPUTS[nm]
+            # constant-fed inputs (chunk fade): no vertex channel at all
+            if pty is None:
+                continue
+            lines.append(f"    [[vk::location({plc})]] {GLSL_TO_SLANG_TYPE.get(pty, pty)} {pnm} : TEXCOORD{plc};")
+        else:
+            lines.append(f"    [[vk::location({lc})]] {GLSL_TO_SLANG_TYPE.get(ty, ty)} {nm} : TEXCOORD{lc};")
     lines.append("};")
     lines.append("struct VsOut")
     lines.append("{")
     lines.append("    float4 clipPosition : SV_Position;")
     for _q, t, n in v_outs:
-        flat = "nointerpolation " if _q == "flat" else ""
+        flat = ("nointerpolation " if _q == "flat" else "noperspective " if _q == "noperspective" else "centroid " if _q == "centroid" else "")
         lines.append(f"    [[vk::location({loc[n]})]] {flat}{GLSL_TO_SLANG_TYPE.get(t, t)} v_{n} : TEXCOORD{loc[n]};")
     lines.append("};")
     lines.append("struct FsIn")
     lines.append("{")
     lines.append("    float4 fragCoord : SV_Position;")
     for _q, t, n in v_outs:
-        flat = "nointerpolation " if _q == "flat" else ""
+        flat = ("nointerpolation " if _q == "flat" else "noperspective " if _q == "noperspective" else "centroid " if _q == "centroid" else "")
         lines.append(f"    [[vk::location({loc[n]})]] {flat}{GLSL_TO_SLANG_TYPE.get(t, t)} v_{n} : TEXCOORD{loc[n]};")
     lines.append("};")
     lines.append("struct FsOut")
@@ -726,25 +1170,53 @@ def emit_program(pack: Path, program: str, world: str, out: Path,
     lines.append("// manual depth compare keeps the pack's own PCF taps; works with the")
     lines.append("// existing non-comparison depth samplers until an RHI compare sampler exists.")
     lines.append("float4 javaShadow2D(Texture2D t, SamplerState s, float3 uvw)")
-    lines.append("{ return float4(step(uvw.z, t.Sample(s, uvw.xy).r)); }")
+    lines.append("{ if (u_shadowInfo.w <= 0.0 || any(uvw.xyz < 0.0) || any(uvw.xyz > 1.0)) return float4(1.0); return float4(step(uvw.z, t.Sample(s, uvw.xy).r)); }")
     lines.append("float4 javaShadow2D(Texture2D t, SamplerState s, float4 uvw)")
-    lines.append("{ return float4(step(uvw.z, t.Sample(s, uvw.xy).r)); }")
+    lines.append("{ if (u_shadowInfo.w <= 0.0 || any(uvw.xyz < 0.0) || any(uvw.xyz > 1.0)) return float4(1.0); return float4(step(uvw.z, t.Sample(s, uvw.xy).r)); }")
     lines.append("float javaShadow2DProj(Texture2D t, SamplerState s, float4 uvw)")
     lines.append("{ float w = max(uvw.w, 1e-6); return step(uvw.z / w, t.Sample(s, uvw.xy / w).r); }")
     lines.append("float javaTextureProj(Texture2D t, SamplerState s, float4 uvw)")
     lines.append("{ float w = max(uvw.w, 1e-6); return t.Sample(s, uvw.xy / w).r; }")
+    lines.append("int2 javaTextureSize(Texture2D t, int lod) { uint w = 0, h = 0, n = 0; t.GetDimensions(uint(lod), w, h, n); return int2(w, h); }")
+    lines.append("")
+    lines.append("// engine light bytes are 0..15 levels; the pack wants 0..1")
+    lines.append("float4 javaLightCoord(float4 t) { return float4((t.xy * 255.0 + 8.0) / 256.0, t.zw); }")
     lines.append("")
     lines.append("VsOut vsMain(VsIn input)")
     lines.append("{")
+    # packed java attribs: unpack lines use a literal {src} marker (not
+    # str.format: unpack code itself contains slang braces).
+    # fullscreen passes feed position only; uvs derive from the triangle.
+    fs_pre = {
+        "a_texcoord0": "vs_stage::a_texcoord0 = vec2(input.a_position.x * 0.5 + 0.5, 0.5 - input.a_position.y * 0.5);",
+        "a_texcoord1": "vs_stage::a_texcoord1 = vec4(0.5, 0.5, 0.0, 1.0);",
+    }
     for _ty, nm, _lc, _ in VERTEX_INPUTS:
-        lines.append(f"    vs_stage::{nm} = input.{nm};")
+        if fullscreen and nm not in ("a_position", "a_texcoord0", "a_texcoord1"):
+            continue
+        if nm in fs_pre and fullscreen:
+            lines.append(f"    {fs_pre[nm]}")
+        elif nm in PACKED_INPUTS:
+            _pty, pnm, _plc, stmts = PACKED_INPUTS[nm]
+            for st in stmts:
+                lines.append(f"    {st.replace('{src}', 'input.' + pnm) if pnm else st}")
+        else:
+            lines.append(f"    vs_stage::{nm} = input.{nm};")
+    if program in ("gbuffers_terrain", "gbuffers_water"):
+        lines.append("    { float ao = fract(input.a_tPacked) * 16.0; ao = ao > 0.0 ? ao : 1.0;")
+        lines.append("      vs_stage::a_color0.rgb /= max(ao * input.a_nPacked.w, 1.0 / 255.0); vs_stage::a_color0.a = ao; }")
+    if program in ("gbuffers_terrain", "gbuffers_water", "shadow"):
+        lines.append("    { int id = int(input.a_ePacked + 0.5); vs_stage::a_mcEntity.x = texelFetch(s_javaMaterials, int2(id & 255, id >> 8), 0).r; }")
     for name in sorted(uni):
         lines.append(f"    vs_stage::{name} = u_j{name};")
     for _java, member in sorted(needed_matrices.items()):
         lines.append(f"    vs_stage::{member} = {member};")
+    # tile layer for atlas array taps, before the pack body samples anything
+    if not fullscreen:
+        lines.append("    vs_stage::jLayer = floor(input.a_texcoord1.z * 255.0 + 0.5) + floor(input.a_texcoord1.w * 255.0 + 0.5) * 256.0;")
     lines.append("    vs_stage::stageMain();")
     lines.append("    VsOut output;")
-    lines.append("    output.clipPosition = vs_stage::gl_Position;")
+    lines.append("    output.clipPosition = float4(input.a_position.xy, 0.0, 1.0);" if fullscreen else "    output.clipPosition = vs_stage::gl_Position;")
     for _q, _t, n in v_outs:
         lines.append(f"    output.v_{n} = vs_stage::{n};")
     lines.append("    return output;")
@@ -768,7 +1240,7 @@ def emit_program(pack: Path, program: str, world: str, out: Path,
     lines.append("}")
     lines.append("")
 
-    out.write_text("\n".join(lines), encoding="utf-8")
+    out.write_text("\n".join(line.rstrip() for line in lines), encoding="utf-8")
     return {
         "program": program, "world": world,
         "varyings": [(t, n) for _, t, n in v_outs],

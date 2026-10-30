@@ -4,6 +4,7 @@
 #include "client/platform/AppPlatform.hpp"
 #include "client/resources/ShaderPack.hpp"
 #include "client/renderer/MaterialDb.hpp"
+#include "client/renderer/Tessellator.hpp"
 #include "rhi/DeviceProfile.hpp"
 #include "util/Env.hpp"
 #include "util/Paths.hpp"
@@ -28,13 +29,15 @@ namespace perlin {
             // shader pack variant; null when the pack does not replace it
             const char* pack;
             gpu::VertexLayout layout;
+            // converted java program used when a java pack is active
+            const char* java = nullptr;
         };
 
         constexpr ProgramName kPrograms[static_cast<size_t>(Program::Count)] = {
-            {"terrain_solid", "vv_terrain_solid", gpu::VertexLayout::Terrain},
-            {"terrain_cutout", "vv_terrain_cutout", gpu::VertexLayout::Terrain},
-            {"terrain_translucent", "vv_terrain_translucent", gpu::VertexLayout::Terrain},
-            {"sky", "vv_sky", gpu::VertexLayout::Position},
+            {"terrain_solid", "vv_terrain_solid", gpu::VertexLayout::Terrain, "java_gbuffers_terrain"},
+            {"terrain_cutout", "vv_terrain_cutout", gpu::VertexLayout::Terrain, "java_gbuffers_terrain"},
+            {"terrain_translucent", "vv_terrain_translucent", gpu::VertexLayout::Terrain, "java_gbuffers_water"},
+            {"sky", "vv_sky", gpu::VertexLayout::Terrain, "java_gbuffers_skybasic"},
             {"star", "vv_star", gpu::VertexLayout::Position},
             {"sunrise", "vv_sunrise", gpu::VertexLayout::Color},
             {"celestial", "vv_celestial", gpu::VertexLayout::Texture},
@@ -42,9 +45,9 @@ namespace perlin {
             {"screen", nullptr, gpu::VertexLayout::Position},
             {"ui", nullptr, gpu::VertexLayout::Ui},
             {"post", nullptr, gpu::VertexLayout::Position},
-            {nullptr, "vv_shadow", gpu::VertexLayout::Terrain},
-            {nullptr, "vv_shadow_cutout", gpu::VertexLayout::Terrain},
-            {nullptr, "vv_shadow_glass", gpu::VertexLayout::Terrain},
+            {nullptr, "vv_shadow", gpu::VertexLayout::Terrain, "vv_shadow"},
+            {nullptr, "vv_shadow_cutout", gpu::VertexLayout::Terrain, "vv_shadow_cutout"},
+            {nullptr, "vv_shadow_glass", gpu::VertexLayout::Terrain, "vv_shadow_glass"},
             {"celestial", nullptr, gpu::VertexLayout::Texture},
             {"entity_shadow", nullptr, gpu::VertexLayout::Ui},
             {"bloom", nullptr, gpu::VertexLayout::Position},
@@ -60,6 +63,15 @@ namespace perlin {
             {"weather", nullptr, gpu::VertexLayout::Ui},
             {"cracks", nullptr, gpu::VertexLayout::Ui},
             {"nametag", nullptr, gpu::VertexLayout::Ui},
+            {nullptr, nullptr, gpu::VertexLayout::Position, "java_deferred1"},
+            {nullptr, nullptr, gpu::VertexLayout::Position, "java_composite"},
+            {nullptr, nullptr, gpu::VertexLayout::Position, "java_composite1"},
+            {nullptr, nullptr, gpu::VertexLayout::Position, "java_composite3"},
+            {nullptr, nullptr, gpu::VertexLayout::Position, "java_composite4"},
+            {nullptr, nullptr, gpu::VertexLayout::Position, "java_composite5"},
+            {nullptr, nullptr, gpu::VertexLayout::Position, "java_composite6"},
+            {nullptr, nullptr, gpu::VertexLayout::Position, "java_composite7"},
+            {nullptr, nullptr, gpu::VertexLayout::Position, "java_final"},
         };
 
         bool LoadPackBytes(std::vector<uint8_t>& out) {
@@ -275,7 +287,8 @@ namespace perlin {
     bool RenderContext_rhi::ResolvePrograms() {
         for (size_t i = 0; i < programIds.size(); i++) {
             const ProgramName& n = kPrograms[i];
-            const char* name = packActive && n.pack ? n.pack : n.builtin;
+            // java pack replaces terrain with the converted program
+            const char* name = javaActive && n.java ? n.java : (packActive && n.pack ? n.pack : n.builtin);
             programIds[i] = name ? gpu.Program(name) : -1;
             programLayouts[i] = n.layout;
         }
@@ -315,8 +328,28 @@ namespace perlin {
             return gpu.CreateStatic(indices.data(), indices.size() * sizeof(uint16_t), rhi::BufferUsage::Index, name);
         };
         const std::vector<PositionVertex> topSkyV = BuildSkyDisc(16.0f);
-        topSky = upload(topSkyV, "sky top");
-        bottomSky = upload(BuildSkyDisc(-16.0f), "sky bottom");
+        // sky discs ride the terrain layout so converted java sky programs
+        // see valid inputs; vv sky only reads position
+        const auto toTerrain = [](const std::vector<PositionVertex>& in) {
+            std::vector<Vertex> out;
+            out.reserve(in.size());
+            const uint32_t bright = PackLight(15.0f, 15.0f);
+            for (const PositionVertex& p : in) {
+                const float l = std::sqrt(p.x * p.x + p.y * p.y + p.z * p.z);
+                const float inv = l > 1e-6f ? 1.0f / l : 0.0f;
+                Vertex v{};
+                v.x = p.x;
+                v.y = p.y;
+                v.z = p.z;
+                v.rgba = 0xFFFFFFFFu;
+                v.light = bright;
+                v.normal = PackColor(p.x * inv * 0.5f + 0.5f, p.y * inv * 0.5f + 0.5f, p.z * inv * 0.5f + 0.5f);
+                out.push_back(v);
+            }
+            return out;
+        };
+        topSky = upload(toTerrain(topSkyV), "sky top");
+        bottomSky = upload(toTerrain(BuildSkyDisc(-16.0f)), "sky bottom");
         {
             std::vector<PositionVertex> box;
             for (int i = 0; i < 8; i++)
@@ -370,8 +403,10 @@ namespace perlin {
         cloudIb.Destroy(dev);
         cloudVertexCapacity = cloudIndexCapacity = 0;
         cloudBuilt = false;
-        for (TexRec* t : {&atlas, &lightmap, &sunTex, &moonTex, &cloudMapTex, &tileFlagsTex, &crosshair})
+        for (TexRec* t : {&atlas, &lightmap, &sunTex, &moonTex, &cloudMapTex, &tileFlagsTex, &crosshair, &javaNoise, &javaNormalDef, &javaSpecDef, &javaBlack, &javaCloudWater, &javaMaterials})
             FreeTexture(*t);
+        javaTexReady = false;
+        javaMaterialCount = 0;
         DestroyScreenTargets();
     }
 
@@ -438,6 +473,9 @@ namespace perlin {
         k.alphaToCoverage = s.alphaToCoverage;
         k.color = view.colorFormat;
         k.depth = view.depthFormat;
+        k.colorCount = static_cast<uint8_t>(view.colorCount);
+        k.color1 = view.colorFormat1;
+        k.color2 = view.colorFormat2;
         return k;
     }
 
@@ -680,6 +718,8 @@ namespace perlin {
         const float tiles[4] = {params.waterTile, params.lavaTile, params.waterFlowTile, 0.0f};
         uni.Set("u_tiles", tiles, 4);
         uni.Vec4("u_chunk", 1.0f, 0.0f, 0.0f, 0.0f);
+        if (javaActive)
+            FeedJavaUniforms(params);
     }
 
     void RenderContext_rhi::BeginFrame(const FrameParams& paramsIn) {
@@ -797,12 +837,13 @@ namespace perlin {
 
         ConvertDepth(params.viewProjection, mvp);
         ConvertDepth(params.skyViewProjection, skyMvp);
+        // sky at infinity: jitter shimmers clouds against unjittered sky
         if (plan.temporal) {
-            for (float* m : {mvp, skyMvp})
-                for (int col = 0; col < 4; col++) {
-                    m[col * 4 + 0] += plan.jitter[0] * m[col * 4 + 3];
-                    m[col * 4 + 1] += plan.jitter[1] * m[col * 4 + 3];
-                }
+            float* m = mvp;
+            for (int col = 0; col < 4; col++) {
+                m[col * 4 + 0] += plan.jitter[0] * m[col * 4 + 3];
+                m[col * 4 + 1] += plan.jitter[1] * m[col * 4 + 3];
+            }
         }
         SetFrameUniforms(params);
         uni.Vec4("u_cloudMap", 0.0f, 3.96f, 1.0f / 3072.0f, 1.0f / 3072.0f);

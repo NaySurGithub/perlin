@@ -15,7 +15,7 @@ namespace perlin::gpu {
 
     struct VertexLayoutInfo {
         uint32_t stride;
-        std::array<rhi::VertexAttributeDesc, 4> attributes;
+        std::array<rhi::VertexAttributeDesc, 8> attributes;
         uint32_t attributeCount;
     };
     const VertexLayoutInfo& LayoutInfo(VertexLayout layout);
@@ -38,11 +38,15 @@ namespace perlin::gpu {
         bool alphaToCoverage = false;
         rhi::Format color = rhi::Format::RGBA8Unorm;
         rhi::Format depth = rhi::Format::D32Float;
+        // second color attachment (java gbuffers MRT); count stays 1 unless set
+        uint8_t colorCount = 1;
+        rhi::Format color1 = rhi::Format::RGBA8Unorm;
+        rhi::Format color2 = rhi::Format::RGBA8Unorm;
         // fixed point (x100) so the key stays hashable
         int16_t biasConstant = 0;
         int16_t biasSlope = 0;
         // padding makes a raw compare unreliable, so keys are compared through their packed form
-        std::array<uint64_t, 3> Pack() const;
+        std::array<uint64_t, 4> Pack() const;
         bool operator==(const PipelineKey& o) const { return Pack() == o.Pack(); }
     };
 
@@ -52,7 +56,7 @@ namespace perlin::gpu {
 
     enum class SamplerKind : uint8_t { PointClamp, PointRepeat, LinearClamp, LinearRepeat, LinearMipRepeat, PointMipClamp, Count };
 
-    constexpr uint32_t kTextureSlots = 24;
+    constexpr uint32_t kTextureSlots = 48;
 
     // what is bound at set 1; one entry per global texture slot
     struct TextureSet {

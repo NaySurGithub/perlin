@@ -1,167 +1,134 @@
 // Converted from Java shaderpack program gbuffers_terrain (world0).
 // v1 converter output: uniform feed + renderer wiring still needed, see report.
 #include "compat.slang"
-#include "vv_resources.slang"
 
 // Iris uniforms: engine must feed these each frame/draw.
-cbuffer JavaUniforms
-{
-    float u_jaspectRatio;
-    int2 u_jatlasSize;
-    float u_jblindness;
-    int u_jblockEntityId;
-    float3 u_jcameraPosition;
-    float3 u_jcameraPositionFract;
-    int3 u_jcameraPositionInt;
-    float u_jcloudHeight;
-    int u_jcurrentRenderedItemId;
-    float u_jdarknessFactor;
-    float u_jdarknessLightFactor;
-    float4 u_jentityColor;
-    int u_jentityId;
-    float u_jeyeAltitude;
-    int2 u_jeyeBrightness;
-    float u_jeyeBrightnessM;
-    float u_jeyeBrightnessM2;
-    float3 u_jeyePosition;
-    float u_jfar;
-    float3 u_jfogColor;
-    int u_jframeCounter;
-    float u_jframeTime;
-    float u_jframeTimeCounter;
-    float u_jframeTimeSmooth;
-    float u_jframemod2;
-    float u_jframemod4;
-    float u_jframemod600;
-    float u_jframemod8;
-    float4x4 u_jgbufferModelView;
-    float4x4 u_jgbufferModelViewInverse;
-    float4x4 u_jgbufferPreviousModelView;
-    float4x4 u_jgbufferPreviousProjection;
-    float4x4 u_jgbufferProjection;
-    float4x4 u_jgbufferProjectionInverse;
-    bool u_jheavyFog;
-    int u_jheldBlockLightValue;
-    int u_jheldBlockLightValue2;
-    int u_jheldItemId;
-    int u_jheldItemId2;
-    float u_jinBasaltDeltas;
-    float u_jinCrimsonForest;
-    float u_jinDry;
-    float u_jinNetherWastes;
-    float u_jinPaleGarden;
-    float u_jinRainy;
-    float u_jinSnowy;
-    float u_jinSoulValley;
-    float u_jinSulfurCaves;
-    float u_jinWarpedForest;
-    bool u_jisElytraFlying;
-    float u_jisEyeInCave;
-    int u_jisEyeInWater;
-    float4 u_jlightningBoltPosition;
-    float u_jmaxBlindnessDarkness;
-    int u_jmoonPhase;
-    float u_jnear;
-    float u_jnightVision;
-    float3 u_jplayerLookVector;
-    float u_jplayerMood;
-    float3 u_jpreviousCameraPosition;
-    float3 u_jpreviousCameraPositionFract;
-    int3 u_jpreviousCameraPositionInt;
-    float u_jrainFactor;
-    float u_jrainStrength;
-    float3 u_jrelativeEyePosition;
-    float u_jscreenBrightness;
-    float4x4 u_jshadowModelView;
-    float4x4 u_jshadowModelViewInverse;
-    float4x4 u_jshadowProjection;
-    float4x4 u_jshadowProjectionInverse;
-    float3 u_jskyColor;
-    float u_jstarter;
-    float u_jsunAngle;
-    float u_jvelocity;
-    float u_jviewHeight;
-    float u_jviewWidth;
-    float u_jwetness;
-    int u_jworldDay;
-    int u_jworldTime;
-    float4x4 u_jModelViewMatrix;
-    float3x3 u_jNormalMatrix;
-    float4x4 u_jProjectionMatrix;
-    float4x4 u_jTextureMatrix0;
-    float4x4 u_jTextureMatrix1;
-};
+#define PERLIN_JAVA_UNIFORMS \
+    float u_jaspectRatio; \
+    int2 u_jatlasSize; \
+    float u_jblindness; \
+    int u_jblockEntityId; \
+    float3 u_jcameraPosition; \
+    float3 u_jcameraPositionFract; \
+    int3 u_jcameraPositionInt; \
+    float u_jcloudHeight; \
+    int u_jcurrentRenderedItemId; \
+    float u_jdarknessFactor; \
+    float u_jdarknessLightFactor; \
+    float4 u_jentityColor; \
+    int u_jentityId; \
+    float u_jeyeAltitude; \
+    int2 u_jeyeBrightness; \
+    float u_jeyeBrightnessM; \
+    float u_jeyeBrightnessM2; \
+    float3 u_jeyePosition; \
+    float u_jfar; \
+    float3 u_jfogColor; \
+    int u_jframeCounter; \
+    float u_jframeTime; \
+    float u_jframeTimeCounter; \
+    float u_jframeTimeSmooth; \
+    float u_jframemod2; \
+    float u_jframemod4; \
+    float u_jframemod600; \
+    float u_jframemod8; \
+    float4x4 u_jgbufferModelView; \
+    float4x4 u_jgbufferModelViewInverse; \
+    float4x4 u_jgbufferPreviousModelView; \
+    float4x4 u_jgbufferPreviousProjection; \
+    float4x4 u_jgbufferProjection; \
+    float4x4 u_jgbufferProjectionInverse; \
+    bool u_jheavyFog; \
+    int u_jheldBlockLightValue; \
+    int u_jheldBlockLightValue2; \
+    int u_jheldItemId; \
+    int u_jheldItemId2; \
+    float u_jinBasaltDeltas; \
+    float u_jinCrimsonForest; \
+    float u_jinDry; \
+    float u_jinNetherWastes; \
+    float u_jinPaleGarden; \
+    float u_jinRainy; \
+    float u_jinSnowy; \
+    float u_jinSoulValley; \
+    float u_jinSulfurCaves; \
+    float u_jinWarpedForest; \
+    bool u_jisElytraFlying; \
+    float u_jisEyeInCave; \
+    int u_jisEyeInWater; \
+    float4 u_jlightningBoltPosition; \
+    float u_jmaxBlindnessDarkness; \
+    int u_jmoonPhase; \
+    float u_jnear; \
+    float u_jnightVision; \
+    float3 u_jplayerLookVector; \
+    float u_jplayerMood; \
+    float3 u_jpreviousCameraPosition; \
+    float3 u_jpreviousCameraPositionFract; \
+    int3 u_jpreviousCameraPositionInt; \
+    float u_jrainFactor; \
+    float u_jrainStrength; \
+    float3 u_jrelativeEyePosition; \
+    float u_jscreenBrightness; \
+    float4x4 u_jshadowModelView; \
+    float4x4 u_jshadowModelViewInverse; \
+    float4x4 u_jshadowProjection; \
+    float4x4 u_jshadowProjectionInverse; \
+    float3 u_jskyColor; \
+    float u_jstarter; \
+    float u_jsunAngle; \
+    float u_jvelocity; \
+    float u_jviewHeight; \
+    float u_jviewWidth; \
+    float u_jwetness; \
+    int u_jworldDay; \
+    int u_jworldTime; \
+    float4x4 u_jModelViewMatrix; \
+    float3x3 u_jNormalMatrix; \
+    float4x4 u_jProjectionMatrix; \
+    float4x4 u_jTextureMatrix0; \
+    float4x4 u_jTextureMatrix1; \
 
-// TODO(java): sampler colortex0 has no RHI slot yet: left unbound below
-Texture2D colortex0;
-SamplerState colortex0_s;
-// TODO(java): sampler colortex1 has no RHI slot yet: left unbound below
-Texture2D colortex1;
-SamplerState colortex1_s;
-// TODO(java): sampler colortex12 has no RHI slot yet: left unbound below
-Texture2D colortex12;
-SamplerState colortex12_s;
-// TODO(java): sampler colortex13 has no RHI slot yet: left unbound below
-Texture2D colortex13;
-SamplerState colortex13_s;
-// TODO(java): sampler colortex2 has no RHI slot yet: left unbound below
-Texture2D colortex2;
-SamplerState colortex2_s;
-// TODO(java): sampler colortex3 has no RHI slot yet: left unbound below
-Texture2D colortex3;
-SamplerState colortex3_s;
-// TODO(java): sampler colortex4 has no RHI slot yet: left unbound below
-Texture2D colortex4;
-SamplerState colortex4_s;
-// TODO(java): sampler colortex5 has no RHI slot yet: left unbound below
-Texture2D colortex5;
-SamplerState colortex5_s;
-// TODO(java): sampler colortex6 has no RHI slot yet: left unbound below
-Texture2D colortex6;
-SamplerState colortex6_s;
-// TODO(java): sampler colortex7 has no RHI slot yet: left unbound below
-Texture2D colortex7;
-SamplerState colortex7_s;
-// TODO(java): sampler colortex8 has no RHI slot yet: left unbound below
-Texture2D colortex8;
-SamplerState colortex8_s;
-// java sampler depthtex0 -> RHI slot s_sceneDepth (see vv_resources.slang)
-// java sampler depthtex1 -> RHI slot s_depth (see vv_resources.slang)
-// TODO(java): sampler gaux2 has no RHI slot yet: left unbound below
-Texture2D gaux2;
-SamplerState gaux2_s;
-// TODO(java): sampler gaux4 has no RHI slot yet: left unbound below
-Texture2D gaux4;
-SamplerState gaux4_s;
+#include "vv_resources.slang"
+#undef PERLIN_JAVA_UNIFORMS
+
+// java sampler colortex0 -> RHI slot s_colortex0 (see vv_resources.slang)
+// java sampler colortex1 -> RHI slot s_colortex1 (see vv_resources.slang)
+// java sampler colortex12 -> RHI slot s_colortex12 (see vv_resources.slang)
+// java sampler colortex13 -> RHI slot s_colortex13 (see vv_resources.slang)
+// java sampler colortex2 -> RHI slot s_colortex2 (see vv_resources.slang)
+// java sampler colortex3 -> RHI slot s_colortex3 (see vv_resources.slang)
+// java sampler colortex4 -> RHI slot s_colortex4 (see vv_resources.slang)
+// java sampler colortex5 -> RHI slot s_colortex5 (see vv_resources.slang)
+// java sampler colortex6 -> RHI slot s_colortex6 (see vv_resources.slang)
+// java sampler colortex7 -> RHI slot s_colortex7 (see vv_resources.slang)
+// java sampler colortex8 -> RHI slot s_colortex8 (see vv_resources.slang)
+// java sampler depthtex0 -> RHI slot s_sceneDepth (declared here)
+SAMPLER2D(s_sceneDepth, 10, 11);
+// java sampler depthtex1 -> RHI slot s_depth (declared here)
+SAMPLER2D(s_depth, 34, 35);
+// java sampler gaux2 -> RHI slot s_gaux2 (see vv_resources.slang)
+// java sampler gaux4 -> RHI slot s_gaux4 (see vv_resources.slang)
 // java sampler lightmap -> RHI slot s_lightmap (see vv_resources.slang)
-// TODO(java): sampler noisetex has no RHI slot yet: left unbound below
-Texture2D noisetex;
-SamplerState noisetex_s;
-// TODO(java): sampler normals has no RHI slot yet: left unbound below
-Texture2D normals;
-SamplerState normals_s;
+// java sampler noisetex -> RHI slot s_noise (see vv_resources.slang)
+// java sampler normals -> RHI slot s_normals (see vv_resources.slang)
 // java sampler shadowcolor0 -> RHI slot s_shadowTint (see vv_resources.slang)
 // java sampler shadowcolor1 -> RHI slot s_shadowTintB (see vv_resources.slang)
 // java sampler shadowtex0 -> RHI slot s_shadow (see vv_resources.slang)
 // java sampler shadowtex1 -> RHI slot s_shadowB (see vv_resources.slang)
-// TODO(java): sampler specular has no RHI slot yet: left unbound below
-Texture2D specular;
-SamplerState specular_s;
-// TODO(java): sampler tex has no RHI slot yet: left unbound below
-Texture2D s_javaAtlas;
-SamplerState s_javaAtlas_s;
+// java sampler specular -> RHI slot s_specular (see vv_resources.slang)
+// java sampler tex -> RHI slot s_atlas (see vv_resources.slang)
 
 struct VsIn
 {
     [[vk::location(0)]] float3 a_position : TEXCOORD0;
-    [[vk::location(1)]] float3 a_normal : TEXCOORD1;
+    [[vk::location(1)]] float4 a_nPacked : TEXCOORD1;
     [[vk::location(2)]] float4 a_color0 : TEXCOORD2;
     [[vk::location(4)]] float2 a_texcoord0 : TEXCOORD4;
     [[vk::location(5)]] float4 a_texcoord1 : TEXCOORD5;
-    [[vk::location(8)]] float4 a_mcEntity : TEXCOORD8;
-    [[vk::location(9)]] float4 a_mcMidTexCoord : TEXCOORD9;
-    [[vk::location(10)]] float4 a_atTangent : TEXCOORD10;
-    [[vk::location(11)]] float a_mcChunkFade : TEXCOORD11;
+    [[vk::location(8)]] float a_ePacked : TEXCOORD8;
+    [[vk::location(9)]] float2 a_mPacked : TEXCOORD9;
+    [[vk::location(10)]] float a_tPacked : TEXCOORD10;
 };
 struct VsOut
 {
@@ -175,6 +142,7 @@ struct VsOut
     [[vk::location(6)]] float3 v_normal : TEXCOORD6;
     [[vk::location(7)]] float3 v_vertexPos : TEXCOORD7;
     [[vk::location(8)]] float4 v_glColorRaw : TEXCOORD8;
+    [[vk::location(9)]] float v_jLayer : TEXCOORD9;
 };
 struct FsIn
 {
@@ -188,11 +156,13 @@ struct FsIn
     [[vk::location(6)]] float3 v_normal : TEXCOORD6;
     [[vk::location(7)]] float3 v_vertexPos : TEXCOORD7;
     [[vk::location(8)]] float4 v_glColorRaw : TEXCOORD8;
+    [[vk::location(9)]] float v_jLayer : TEXCOORD9;
 };
 struct FsOut
 {
     float4 t0 : SV_Target0;
     float4 t1 : SV_Target1;
+    float4 t2 : SV_Target2;
 };
 
 namespace vs_stage
@@ -216,6 +186,7 @@ static float2 midCoord;
 static float3 normal;
 static float3 vertexPos;
 static float4 glColorRaw;
+static float jLayer;
 static float aspectRatio;
 static int2 atlasSize;
 static float blindness;
@@ -482,22 +453,22 @@ static const int shadowMapResolution = 2048;
 -----------------------------------------------------------------------------*/
 
 
-static float tAmin     = fract(sunAngle - 0.033333333);
-static float tAlin     = tAmin < 0.433333333 ? tAmin * 1.15384615385 : tAmin * 0.882352941176 + 0.117647058824;
-static float hA        = tAlin > 0.5 ? 1.0 : 0.0;
-static float tAfrc     = fract(tAlin * 2.0);
-static float tAfrs     = tAfrc*tAfrc*(3.0-2.0*tAfrc);
-static float tAmix     = hA < 0.5 ? 0.3 : -0.1;
-static float timeAngle = (tAfrc * (1.0-tAmix) + tAfrs * tAmix + hA) * 0.5;
+static float tAmin;
+static float tAlin;
+static float hA;
+static float tAfrc;
+static float tAfrs;
+static float tAmix;
+static float timeAngle;
 
 // @included "/lib/util/commonFunctions.glsl"
 // Do these via macro as Apple otherwise complains
 
-static float overworldAngleRaw = fract(timeAngle - 0.25);
-static float overworldAngle = (overworldAngleRaw + (cos(overworldAngleRaw * 3.14159265358979) * -0.5 + 0.5 - overworldAngleRaw) / 3.0) * 6.28318530717959;
+static float overworldAngleRaw;
+static float overworldAngle;
 
     vec2 GetLightMapCoordinates() {
-        vec2 lmCoord = (u_jTextureMatrix1 * a_texcoord1).xy;
+        vec2 lmCoord = (u_jTextureMatrix1 * javaLightCoord(a_texcoord1)).xy;
         return clamp((lmCoord - 0.03125) * 1.06667, 0.0, 1.0);
     }
 
@@ -547,13 +518,14 @@ float Noise3D(vec3 p) {
     float fz = fract(p.z);
     vec2 a_off = vec2(23.0, 29.0) * (iz) / 128.0;
     vec2 b_off = vec2(23.0, 29.0) * (iz + 1.0) / 128.0;
-    float a = texture2DLod(noisetex, p.xy + a_off, 0.0).r;
-    float b = texture2DLod(noisetex, p.xy + b_off, 0.0).r;
+    float a = texture2DLod(s_noise, p.xy + a_off, 0.0).r;
+    float b = texture2DLod(s_noise, p.xy + b_off, 0.0).r;
     return mix(a, b, fz);
 }
 
 float GetSkyLightFactor(vec2 lmCoordM, vec3 shadowMult) {
-            float skyLightFactor = lmCoordM.y;
+            float skyLightFactor = max(lmCoordM.y - 0.7, 0.0) * 3.33333;
+                  skyLightFactor *= skyLightFactor;
 
 
 
@@ -777,33 +749,33 @@ vec3 hsv2rgb(vec3 c)
     return c.z * mix(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);
 }
 
-static float renderDistance = far;
+static float renderDistance;
 
 static const float shadowMapBias = 1.0 - 25.6 / shadowDistance;
-static float noonFactorRaw = max(sin(timeAngle * 6.28318530718), 0.0);
-static float noonFactor = sqrt(noonFactorRaw);
-static float nightFactor = max(sin(timeAngle * (-6.28318530718)), 0.0);
-static float invNightFactor = 1.0 - nightFactor;
-static float rainFactor2 = rainFactor * rainFactor;
-static float invRainFactor = 1.0 - rainFactor;
-static float invNoonFactor = 1.0 - noonFactor;
-static float invNoonFactor2 = invNoonFactor * invNoonFactor;
+static float noonFactorRaw;
+static float noonFactor;
+static float nightFactor;
+static float invNightFactor;
+static float rainFactor2;
+static float invRainFactor;
+static float invNoonFactor;
+static float invNoonFactor2;
 
-static float vsBrightness = clamp(screenBrightness, 0.0, 1.0);
+static float vsBrightness;
 
-static float nightVisionWithAddedSupport = screenBrightness > 1.0 ? 1.0 : nightVision; // Add support for fullbright mods
+static float nightVisionWithAddedSupport; // Add support for fullbright mods
 
-static int modifiedWorldDay = int(mod(worldDay, 100) + 5.0);
-static float syncedTime = (worldTime + modifiedWorldDay * 24000) * 0.05;
+static int modifiedWorldDay;
+static float syncedTime;
 
 static const float pi = 3.14159265359;
 static const float goldenRatio = 1.61803398875;
 
 static const float oceanAltitude = 61.9;
 
-static ivec3 cameraPositionBestInt = ivec3(floor(cameraPosition));
-static vec3 cameraPositionBestFract = fract(cameraPosition);
-static vec3 previousCameraPositionBestFract = fract(previousCameraPosition);
+static ivec3 cameraPositionBestInt;
+static vec3 cameraPositionBestFract;
+static vec3 previousCameraPositionBestFract;
 
 // @included "/lib/colors/blocklightColors.glsl"
 void AddSpecialLightDetail(inout vec3 light, vec3 albedo, float emission) {
@@ -814,17 +786,17 @@ void AddSpecialLightDetail(inout vec3 light, vec3 albedo, float emission) {
 	light += pow2(lightM / (albedo + 0.1));
 }
 
-static vec3 blocklightCol = vec3(0.1775, 0.104, 0.077) * vec3(1.00, 1.00, 1.00);
+static vec3 blocklightCol;
 
-static vec3 fireSpecialLightColorBase = vec3(2.25, 0.83, 0.27) * 3.7;
-static vec3 fireSpecialLightColor = fireSpecialLightColorBase;
+static vec3 fireSpecialLightColorBase;
+static vec3 fireSpecialLightColor;
 
-static vec3 lavaSpecialLightColor = vec3(3.25, 0.9, 0.2) * 3.9;
-static vec3 netherPortalSpecialLightColor = vec3(1.8, 0.4, 2.2) * 0.8;
-static vec3 redstoneSpecialLightColor = vec3(4.0, 0.1, 0.1);
-static vec4 soulFireSpecialColor = vec4(vec3(0.3, 2.0, 2.2) * 1.0, 0.3);
-static float candleColorMult = 2.0;
-static float candleExtraLight = 0.004;
+static vec3 lavaSpecialLightColor;
+static vec3 netherPortalSpecialLightColor;
+static vec3 redstoneSpecialLightColor;
+static vec4 soulFireSpecialColor;
+static float candleColorMult;
+static float candleExtraLight;
 
 vec4 GetSpecialBlocklightColor(int mat) {
 	/* Please note that these colors do not determine the intensity of the
@@ -1071,24 +1043,16 @@ static const vec3 specialTintColor[20] = {
 };;
 
 static const vec3 caveFogColorRaw = vec3(0.13, 0.13, 0.15);
-static vec3 caveFogColorRaw2 = caveFogColorRaw * (0.7 + 0.3 * vsBrightness); // Default
-static vec3 caveFogColor = caveFogColorRaw2;
+static vec3 caveFogColorRaw2; // Default
+static vec3 caveFogColor;
 
-static vec3 underwaterColorM1 = pow(fogColor, vec3(0.33, 0.21, 0.26));
-static vec3 underwaterColorM2 = underwaterColorM1;
-static vec3 waterFogColor = underwaterColorM2 * vec3(0.2 + 0.1 * vsBrightness);
+static vec3 underwaterColorM1;
+static vec3 underwaterColorM2;
+static vec3 waterFogColor;
 
-static float netherColorMixer = inNetherWastes + inCrimsonForest + inWarpedForest + inBasaltDeltas + inSoulValley;
-static vec3 netherColor = mix(
-            fogColor * 0.6 + 0.2 * normalize(fogColor + 0.0001),
-            (
-                inNetherWastes * vec3(0.4, 0.14, 0.06) + inCrimsonForest * vec3(0.36, 0.07, 0.05) +
-                inWarpedForest * vec3(0.18, 0.1, 0.25) + inBasaltDeltas * vec3(0.25, 0.235, 0.23) +
-                inSoulValley * vec3(0.1, vec2(0.24))
-            ),
-            netherColorMixer
-        );
-static vec3 lavaLightColor = vec3(0.15, 0.06, 0.01);
+static float netherColorMixer;
+static vec3 netherColor;
+static vec3 lavaLightColor;
 
 static const vec3 endSkyColor = vec3(0.095, 0.07, 0.15) * 1.65;
 
@@ -1096,11 +1060,10 @@ static const float rainTexOpacity = 0.25;
 static const float snowTexOpacity = 0.5;
 
 
-static float cloudHeightM = isnan(cloudHeight) ? 192.0 : cloudHeight; // iris returns "nan" if there are no clouds
-static float cloudHeightOffset = cloudHeightM - 192.0
-    ;
-static int cloudAlt1i = int(192 + cloudHeightOffset); // Old setting files can send float values
-static int cloudAlt2i = int(288 + cloudHeightOffset);
+static float cloudHeightM; // iris returns "nan" if there are no clouds
+static float cloudHeightOffset;
+static int cloudAlt1i; // Old setting files can send float values
+static int cloudAlt2i;
 
 static const float OSIEBCA = 1.0 / 255.0; // One Step In Eight Bit Color Attachment
     /* materialMask steps
@@ -1127,8 +1090,8 @@ static const float OSIEBCA = 1.0 / 255.0; // One Step In Eight Bit Color Attachm
 
         OSIEBCA * 251.0 = No SSAO, Reduce Reflection
         OSIEBCA * 252.0 = Versatile Selection Outline
-        OSIEBCA * 253.0 = Reduced Edge TAA (Leaves)
-        OSIEBCA * 254.0 = No SSAO, No TAA, Reduce Reflection
+        OSIEBCA * 253.0 = Reduced Edge 1 (Leaves)
+        OSIEBCA * 254.0 = No SSAO, No 1, Reduce Reflection
         OSIEBCA * 255.0 = *Unused as 1.0 is the clear color*
     */
 
@@ -1150,11 +1113,20 @@ static const float OSIEBCA = 1.0 / 255.0; // One Step In Eight Bit Color Attachm
 
 
 //Common Variables//
-static vec4 glColor = vec4(1.0);
+static vec4 glColor;
 
 //Common Functions//
 
 //Includes//
+// @included "/lib/antialiasing/jitter.glsl"
+// Jitter offset from Chocapic13
+static vec2 jitterOffsets[8];
+
+vec2 TAAJitter(vec2 coord, float w) {
+        vec2 offset = jitterOffsets[int(framemod8)] * (w / vec2(viewWidth, viewHeight));
+            offset *= 0.125;
+        return coord + offset;
+}
 
 // @included "/lib/materials/materialMethods/wavingBlocks.glsl"
 
@@ -1241,7 +1213,7 @@ void DoWave(inout vec3 playerPos, int mat) {
 
             if (mat == 10005 // Grounded Foliage
             ) {
-                if (vec4(a_texcoord0, 0.0, 1.0).y < a_mcMidTexCoord.y || fract(worldPos.y + 0.21) > 0.26)
+                if (vec4(a_texcoord0, 0.0, 1.0).y < a_mcMidTexCoord.y  ||  fract(worldPos.y + 0.21) > 0.26)
                 DoWave_Foliage(playerPos.xyz, worldPos, 1.0);
             }
 
@@ -1274,6 +1246,71 @@ void DoWave(inout vec3 playerPos, int mat) {
 
 //Program//
 void stageMain() {
+    tAmin = fract(sunAngle - 0.033333333);
+    tAlin = tAmin < 0.433333333 ? tAmin * 1.15384615385 : tAmin * 0.882352941176 + 0.117647058824;
+    hA = tAlin > 0.5 ? 1.0 : 0.0;
+    tAfrc = fract(tAlin * 2.0);
+    tAfrs = tAfrc*tAfrc*(3.0-2.0*tAfrc);
+    tAmix = hA < 0.5 ? 0.3 : -0.1;
+    timeAngle = (tAfrc * (1.0-tAmix) + tAfrs * tAmix + hA) * 0.5;
+    overworldAngleRaw = fract(timeAngle - 0.25);
+    overworldAngle = (overworldAngleRaw + (cos(overworldAngleRaw * 3.14159265358979) * -0.5 + 0.5 - overworldAngleRaw) / 3.0) * 6.28318530717959;
+    renderDistance = far;
+    noonFactorRaw = max(sin(timeAngle * 6.28318530718), 0.0);
+    noonFactor = sqrt(noonFactorRaw);
+    nightFactor = max(sin(timeAngle * (-6.28318530718)), 0.0);
+    invNightFactor = 1.0 - nightFactor;
+    rainFactor2 = rainFactor * rainFactor;
+    invRainFactor = 1.0 - rainFactor;
+    invNoonFactor = 1.0 - noonFactor;
+    invNoonFactor2 = invNoonFactor * invNoonFactor;
+    vsBrightness = clamp(screenBrightness, 0.0, 1.0);
+    nightVisionWithAddedSupport = screenBrightness > 1.0 ? 1.0 : nightVision;
+    modifiedWorldDay = int(mod(worldDay, 100) + 5.0);
+    syncedTime = (worldTime + modifiedWorldDay * 24000) * 0.05;
+    cameraPositionBestInt = ivec3(floor(cameraPosition));
+    cameraPositionBestFract = fract(cameraPosition);
+    previousCameraPositionBestFract = fract(previousCameraPosition);
+    blocklightCol = vec3(0.1775, 0.104, 0.077) * vec3(1.00, 1.00, 1.00);
+    fireSpecialLightColorBase = vec3(2.25, 0.83, 0.27) * 3.7;
+    fireSpecialLightColor = fireSpecialLightColorBase;
+    lavaSpecialLightColor = vec3(3.25, 0.9, 0.2) * 3.9;
+    netherPortalSpecialLightColor = vec3(1.8, 0.4, 2.2) * 0.8;
+    redstoneSpecialLightColor = vec3(4.0, 0.1, 0.1);
+    soulFireSpecialColor = vec4(vec3(0.3, 2.0, 2.2) * 1.0, 0.3);
+    candleColorMult = 2.0;
+    candleExtraLight = 0.004;
+    caveFogColorRaw2 = caveFogColorRaw * (0.7 + 0.3 * vsBrightness);
+    caveFogColor = caveFogColorRaw2;
+    underwaterColorM1 = pow(fogColor, vec3(0.33, 0.21, 0.26));
+    underwaterColorM2 = underwaterColorM1;
+    waterFogColor = underwaterColorM2 * vec3(0.2 + 0.1 * vsBrightness);
+    netherColorMixer = inNetherWastes + inCrimsonForest + inWarpedForest + inBasaltDeltas + inSoulValley;
+    netherColor = mix(
+            fogColor * 0.6 + 0.2 * normalize(fogColor + 0.0001),
+            (
+                inNetherWastes * vec3(0.4, 0.14, 0.06) + inCrimsonForest * vec3(0.36, 0.07, 0.05) +
+                inWarpedForest * vec3(0.18, 0.1, 0.25) + inBasaltDeltas * vec3(0.25, 0.235, 0.23) +
+                inSoulValley * vec3(0.1, vec2(0.24))
+            ),
+            netherColorMixer
+        );
+    lavaLightColor = vec3(0.15, 0.06, 0.01);
+    cloudHeightM = isnan(cloudHeight) ? 192.0 : cloudHeight;
+    cloudHeightOffset = cloudHeightM - 192.0;
+    cloudAlt1i = int(192 + cloudHeightOffset);
+    cloudAlt2i = int(288 + cloudHeightOffset);
+    glColor = vec4(1.0);
+    jitterOffsets = vec2[8](
+    vec2( 0.125,-0.375),
+    vec2(-0.125, 0.375),
+    vec2( 0.625, 0.125),
+    vec2( 0.375,-0.625),
+    vec2(-0.625, 0.625),
+    vec2(-0.875,-0.125),
+    vec2( 0.375,-0.875),
+    vec2( 0.875, 0.875)
+);
     texCoord = (u_jTextureMatrix0 * vec4(a_texcoord0, 0.0, 1.0)).xy;
     lmCoord  = GetLightMapCoordinates();
 
@@ -1290,15 +1327,16 @@ void stageMain() {
 
     mat = int(a_mcEntity.x + 0.5);
 
-    vec4 position = gbufferModelViewInverse * u_jModelViewMatrix * vec4(a_position, 1.0);
+    vec4 position = mul(gbufferModelViewInverse, u_jModelViewMatrix) * vec4(a_position, 1.0);
     vertexPos = position.xyz;
 
         DoWave(position.xyz, mat);
 
-    gl_Position = u_jProjectionMatrix * gbufferModelView * position;
+    gl_Position = mul(u_jProjectionMatrix, gbufferModelView) * position;
 
         if (mat == 10257) gl_Position.z -= 0.00001; // Iron Bars
 
+        gl_Position.xy = TAAJitter(gl_Position.xy, gl_Position.w);
 
 
 
@@ -1311,6 +1349,7 @@ namespace fs_stage
 static float4 gl_FragCoord;
 static float4 gl_FragData0;
 static float4 gl_FragData1;
+static float4 gl_FragData2;
 static int mat;
 static float2 texCoord;
 static float2 lmCoord;
@@ -1320,6 +1359,7 @@ static float2 midCoord;
 static float3 normal;
 static float3 vertexPos;
 static float4 glColorRaw;
+static float jLayer;
 static float aspectRatio;
 static int2 atlasSize;
 static float blindness;
@@ -1405,7 +1445,7 @@ static float4x4 u_jProjectionMatrix;
 static float4x4 u_jTextureMatrix0;
 static float4x4 u_jTextureMatrix1;
 #define diagonal3(m) vec3((m)[0].x, (m)[1].y, m[2].z)
-#define projMAD(m, v) (diagonal3(m) * (v) + (m)[3].xyz)
+#define projMAD(m, v) (diagonal3(m) * (v) + transpose(m)[3].xyz)
 
 
 // @included "/program/gbuffers_terrain.glsl"
@@ -1586,19 +1626,19 @@ static const int shadowMapResolution = 2048;
 -----------------------------------------------------------------------------*/
 
 
-static float tAmin     = fract(sunAngle - 0.033333333);
-static float tAlin     = tAmin < 0.433333333 ? tAmin * 1.15384615385 : tAmin * 0.882352941176 + 0.117647058824;
-static float hA        = tAlin > 0.5 ? 1.0 : 0.0;
-static float tAfrc     = fract(tAlin * 2.0);
-static float tAfrs     = tAfrc*tAfrc*(3.0-2.0*tAfrc);
-static float tAmix     = hA < 0.5 ? 0.3 : -0.1;
-static float timeAngle = (tAfrc * (1.0-tAmix) + tAfrs * tAmix + hA) * 0.5;
+static float tAmin;
+static float tAlin;
+static float hA;
+static float tAfrc;
+static float tAfrs;
+static float tAmix;
+static float timeAngle;
 
 // @included "/lib/util/commonFunctions.glsl"
 // Do these via macro as Apple otherwise complains
 
-static float overworldAngleRaw = fract(timeAngle - 0.25);
-static float overworldAngle = (overworldAngleRaw + (cos(overworldAngleRaw * 3.14159265358979) * -0.5 + 0.5 - overworldAngleRaw) / 3.0) * 6.28318530717959;
+static float overworldAngleRaw;
+static float overworldAngle;
 
 
 float GetLuminance(vec3 color) {
@@ -1647,13 +1687,14 @@ float Noise3D(vec3 p) {
     float fz = fract(p.z);
     vec2 a_off = vec2(23.0, 29.0) * (iz) / 128.0;
     vec2 b_off = vec2(23.0, 29.0) * (iz + 1.0) / 128.0;
-    float a = texture2DLod(noisetex, p.xy + a_off, 0.0).r;
-    float b = texture2DLod(noisetex, p.xy + b_off, 0.0).r;
+    float a = texture2DLod(s_noise, p.xy + a_off, 0.0).r;
+    float b = texture2DLod(s_noise, p.xy + b_off, 0.0).r;
     return mix(a, b, fz);
 }
 
 float GetSkyLightFactor(vec2 lmCoordM, vec3 shadowMult) {
-            float skyLightFactor = lmCoordM.y;
+            float skyLightFactor = max(lmCoordM.y - 0.7, 0.0) * 3.33333;
+                  skyLightFactor *= skyLightFactor;
 
 
 
@@ -1877,33 +1918,33 @@ vec3 hsv2rgb(vec3 c)
     return c.z * mix(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);
 }
 
-static float renderDistance = far;
+static float renderDistance;
 
 static const float shadowMapBias = 1.0 - 25.6 / shadowDistance;
-static float noonFactorRaw = max(sin(timeAngle * 6.28318530718), 0.0);
-static float noonFactor = sqrt(noonFactorRaw);
-static float nightFactor = max(sin(timeAngle * (-6.28318530718)), 0.0);
-static float invNightFactor = 1.0 - nightFactor;
-static float rainFactor2 = rainFactor * rainFactor;
-static float invRainFactor = 1.0 - rainFactor;
-static float invNoonFactor = 1.0 - noonFactor;
-static float invNoonFactor2 = invNoonFactor * invNoonFactor;
+static float noonFactorRaw;
+static float noonFactor;
+static float nightFactor;
+static float invNightFactor;
+static float rainFactor2;
+static float invRainFactor;
+static float invNoonFactor;
+static float invNoonFactor2;
 
-static float vsBrightness = clamp(screenBrightness, 0.0, 1.0);
+static float vsBrightness;
 
-static float nightVisionWithAddedSupport = screenBrightness > 1.0 ? 1.0 : nightVision; // Add support for fullbright mods
+static float nightVisionWithAddedSupport; // Add support for fullbright mods
 
-static int modifiedWorldDay = int(mod(worldDay, 100) + 5.0);
-static float syncedTime = (worldTime + modifiedWorldDay * 24000) * 0.05;
+static int modifiedWorldDay;
+static float syncedTime;
 
 static const float pi = 3.14159265359;
 static const float goldenRatio = 1.61803398875;
 
 static const float oceanAltitude = 61.9;
 
-static ivec3 cameraPositionBestInt = ivec3(floor(cameraPosition));
-static vec3 cameraPositionBestFract = fract(cameraPosition);
-static vec3 previousCameraPositionBestFract = fract(previousCameraPosition);
+static ivec3 cameraPositionBestInt;
+static vec3 cameraPositionBestFract;
+static vec3 previousCameraPositionBestFract;
 
 // @included "/lib/colors/blocklightColors.glsl"
 void AddSpecialLightDetail(inout vec3 light, vec3 albedo, float emission) {
@@ -1914,17 +1955,17 @@ void AddSpecialLightDetail(inout vec3 light, vec3 albedo, float emission) {
 	light += pow2(lightM / (albedo + 0.1));
 }
 
-static vec3 blocklightCol = vec3(0.1775, 0.104, 0.077) * vec3(1.00, 1.00, 1.00);
+static vec3 blocklightCol;
 
-static vec3 fireSpecialLightColorBase = vec3(2.25, 0.83, 0.27) * 3.7;
-static vec3 fireSpecialLightColor = fireSpecialLightColorBase;
+static vec3 fireSpecialLightColorBase;
+static vec3 fireSpecialLightColor;
 
-static vec3 lavaSpecialLightColor = vec3(3.25, 0.9, 0.2) * 3.9;
-static vec3 netherPortalSpecialLightColor = vec3(1.8, 0.4, 2.2) * 0.8;
-static vec3 redstoneSpecialLightColor = vec3(4.0, 0.1, 0.1);
-static vec4 soulFireSpecialColor = vec4(vec3(0.3, 2.0, 2.2) * 1.0, 0.3);
-static float candleColorMult = 2.0;
-static float candleExtraLight = 0.004;
+static vec3 lavaSpecialLightColor;
+static vec3 netherPortalSpecialLightColor;
+static vec3 redstoneSpecialLightColor;
+static vec4 soulFireSpecialColor;
+static float candleColorMult;
+static float candleExtraLight;
 
 vec4 GetSpecialBlocklightColor(int mat) {
 	/* Please note that these colors do not determine the intensity of the
@@ -2171,37 +2212,28 @@ static const vec3 specialTintColor[20] = {
 };;
 
 static const vec3 caveFogColorRaw = vec3(0.13, 0.13, 0.15);
-static vec3 caveFogColorRaw2 = caveFogColorRaw * (0.7 + 0.3 * vsBrightness); // Default
-static vec3 caveFogColor = caveFogColorRaw2;
+static vec3 caveFogColorRaw2; // Default
+static vec3 caveFogColor;
 
-static vec3 underwaterColorM1 = pow(fogColor, vec3(0.33, 0.21, 0.26));
-static vec3 underwaterColorM2 = underwaterColorM1;
-static vec3 waterFogColor = underwaterColorM2 * vec3(0.2 + 0.1 * vsBrightness);
+static vec3 underwaterColorM1;
+static vec3 underwaterColorM2;
+static vec3 waterFogColor;
 
-static float netherColorMixer = inNetherWastes + inCrimsonForest + inWarpedForest + inBasaltDeltas + inSoulValley;
-static vec3 netherColor = mix(
-            fogColor * 0.6 + 0.2 * normalize(fogColor + 0.0001),
-            (
-                inNetherWastes * vec3(0.4, 0.14, 0.06) + inCrimsonForest * vec3(0.36, 0.07, 0.05) +
-                inWarpedForest * vec3(0.18, 0.1, 0.25) + inBasaltDeltas * vec3(0.25, 0.235, 0.23) +
-                inSoulValley * vec3(0.1, vec2(0.24))
-            ),
-            netherColorMixer
-        );
-static vec3 lavaLightColor = vec3(0.15, 0.06, 0.01);
+static float netherColorMixer;
+static vec3 netherColor;
+static vec3 lavaLightColor;
 
 static const vec3 endSkyColor = vec3(0.095, 0.07, 0.15) * 1.65;
 
 static const float rainTexOpacity = 0.25;
 static const float snowTexOpacity = 0.5;
 
-static ivec2 texelCoord = ivec2(gl_FragCoord.xy);
+static ivec2 texelCoord;
 
-static float cloudHeightM = isnan(cloudHeight) ? 192.0 : cloudHeight; // iris returns "nan" if there are no clouds
-static float cloudHeightOffset = cloudHeightM - 192.0
-    ;
-static int cloudAlt1i = int(192 + cloudHeightOffset); // Old setting files can send float values
-static int cloudAlt2i = int(288 + cloudHeightOffset);
+static float cloudHeightM; // iris returns "nan" if there are no clouds
+static float cloudHeightOffset;
+static int cloudAlt1i; // Old setting files can send float values
+static int cloudAlt2i;
 
 static const float OSIEBCA = 1.0 / 255.0; // One Step In Eight Bit Color Attachment
     /* materialMask steps
@@ -2228,8 +2260,8 @@ static const float OSIEBCA = 1.0 / 255.0; // One Step In Eight Bit Color Attachm
 
         OSIEBCA * 251.0 = No SSAO, Reduce Reflection
         OSIEBCA * 252.0 = Versatile Selection Outline
-        OSIEBCA * 253.0 = Reduced Edge TAA (Leaves)
-        OSIEBCA * 254.0 = No SSAO, No TAA, Reduce Reflection
+        OSIEBCA * 253.0 = Reduced Edge 1 (Leaves)
+        OSIEBCA * 254.0 = No SSAO, No 1, Reduce Reflection
         OSIEBCA * 255.0 = *Unused as 1.0 is the clear color*
     */
 
@@ -2248,26 +2280,26 @@ static const float OSIEBCA = 1.0 / 255.0; // One Step In Eight Bit Color Attachm
 //Pipeline Constants//
 
 //Common Variables//
-static vec3 upVec = normalize(gbufferModelView[1].xyz);
-static vec3 eastVec = normalize(gbufferModelView[0].xyz);
-static vec3 northVec = normalize(gbufferModelView[2].xyz);
+static vec3 upVec;
+static vec3 eastVec;
+static vec3 northVec;
 
-static vec3 sunVec = GetSunVector();
+static vec3 sunVec;
 
-static float NdotU = dot(normal, upVec);
-static float geoNdotU = NdotU;
-static float NdotUmax0 = max(NdotU, 0.0);
-static float SdotU = dot(sunVec, upVec);
-static float sunFactor = SdotU < 0.0 ? clamp(SdotU + 0.375, 0.0, 0.75) / 0.75 : clamp(SdotU + 0.03125, 0.0, 0.0625) / 0.0625;
-static float sunVisibility = clamp(SdotU + 0.0625, 0.0, 0.125) / 0.125;
-static float sunVisibility2 = sunVisibility * sunVisibility;
-static float shadowTimeVar1 = abs(sunVisibility - 0.5) * 2.0;
-static float shadowTimeVar2 = shadowTimeVar1 * shadowTimeVar1;
-static float shadowTime = shadowTimeVar2 * shadowTimeVar2;
+static float NdotU;
+static float geoNdotU;
+static float NdotUmax0;
+static float SdotU;
+static float sunFactor;
+static float sunVisibility;
+static float sunVisibility2;
+static float shadowTimeVar1;
+static float shadowTimeVar2;
+static float shadowTime;
 
-static vec4 glColor = glColorRaw;
+static vec4 glColor;
 
-static vec3 lightVec = sunVec * ((timeAngle < 0.5325 || timeAngle > 0.9675) ? 1.0 : -1.0);
+static vec3 lightVec;
 
 
 //Common Functions//
@@ -2296,21 +2328,21 @@ void DoOceanBlockTweaks(inout float smoothnessD) {
 // @included "/lib/util/spaceConversion.glsl"
 
 vec3 ScreenToView(vec3 pos) {
-    vec4 iProjDiag = vec4(gbufferProjectionInverse[0].x,
-                          gbufferProjectionInverse[1].y,
-                          gbufferProjectionInverse[2].zw);
+    vec4 iProjDiag = vec4(transpose(gbufferProjectionInverse)[0].x,
+                          transpose(gbufferProjectionInverse)[1].y,
+                          transpose(gbufferProjectionInverse)[2].zw);
     vec3 p3 = pos * 2.0 - 1.0;
-    vec4 viewPos = iProjDiag * p3.xyzz + gbufferProjectionInverse[3];
+    vec4 viewPos = iProjDiag * p3.xyzz + transpose(gbufferProjectionInverse)[3];
     return viewPos.xyz / viewPos.w;
 }
 
 
 vec3 ViewToPlayer(vec3 pos) {
-    return mat3(gbufferModelViewInverse) * pos + gbufferModelViewInverse[3].xyz;
+    return mat3(gbufferModelViewInverse) * pos + transpose(gbufferModelViewInverse)[3].xyz;
 }
 
 vec3 PlayerToShadow(vec3 pos) {
-    vec3 shadowpos = mat3(shadowModelView) * pos + shadowModelView[3].xyz;
+    vec3 shadowpos = mat3(shadowModelView) * pos + transpose(shadowModelView)[3].xyz;
     return projMAD(shadowProjection, shadowpos);
 }
 
@@ -2325,41 +2357,38 @@ vec3 ShadowViewToPlayer(vec3 pos) {
 //Lighting Includes//
 // @included "/lib/colors/lightAndAmbientColors.glsl"
 
-static vec3 noonClearLightColor = vec3(0.65, 0.55, 0.375) * 2.05; //ground and cloud color
-static vec3 noonClearAmbientColor = pow(skyColor, vec3(0.75)) * 0.85;
+static vec3 noonClearLightColor; //ground and cloud color
+static vec3 noonClearAmbientColor;
 
-static vec3 sunsetClearLightColor = pow(vec3(0.64, 0.45, 0.3), vec3(1.5 + invNoonFactor)) * 5.0; //ground and cloud color
-static vec3 sunsetClearAmbientColor   = noonClearAmbientColor * vec3(1.21, 0.92, 0.76) * 0.95;
+static vec3 sunsetClearLightColor; //ground and cloud color
+static vec3 sunsetClearAmbientColor;
 
-static vec3 nightClearLightColor = 0.9 * vec3(0.15, 0.14, 0.20) * (0.4 + vsBrightness * 0.4); //ground color
-static vec3 nightClearAmbientColor   = 0.9 * vec3(0.09, 0.12, 0.17) * (1.55 + vsBrightness * 0.77);
+static vec3 nightClearLightColor; //ground color
+static vec3 nightClearAmbientColor;
 
-static vec3 drlcSnowM = inSnowy * vec3(-0.06, 0.0, 0.04);
-static vec3 drlcDryM = inDry * vec3(0.01, -0.035, -0.06);
-static vec3 drlcRainM = vec3(0.0);
-static vec3 dayRainLightColor   = vec3(0.21, 0.16, 0.13) * 0.85 + noonFactor * vec3(0.0, 0.02, 0.06)
-                                 + drlcRainM + drlcSnowM + drlcDryM;
-static vec3 dayRainAmbientColor = vec3(0.2, 0.2, 0.25) * (1.8 + 0.5 * vsBrightness);
+static vec3 drlcSnowM;
+static vec3 drlcDryM;
+static vec3 drlcRainM;
+static vec3 dayRainLightColor;
+static vec3 dayRainAmbientColor;
 
-static vec3 nightRainLightColor   = vec3(0.03, 0.035, 0.05) * (0.5 + 0.5 * vsBrightness);
-static vec3 nightRainAmbientColor = vec3(0.16, 0.20, 0.3) * (0.75 + 0.6 * vsBrightness);
+static vec3 nightRainLightColor;
+static vec3 nightRainAmbientColor;
 
-static float noonFactorDM = noonFactor; //ground and cloud factor
-static vec3 dayLightColor   = mix(sunsetClearLightColor, noonClearLightColor, noonFactorDM);
-static vec3 dayAmbientColor = mix(sunsetClearAmbientColor, noonClearAmbientColor, noonFactorDM);
+static float noonFactorDM; //ground and cloud factor
+static vec3 dayLightColor;
+static vec3 dayAmbientColor;
 
-static vec3 clearLightColor   = mix(nightClearLightColor, dayLightColor, sunVisibility2);
-static vec3 clearAmbientColor = mix(nightClearAmbientColor, dayAmbientColor, sunVisibility2);
+static vec3 clearLightColor;
+static vec3 clearAmbientColor;
 
-static float rainShadowVisReduce = 0.0
-                    + 0.2 * inSnowy + 0.2 * inDry
-        ;
+static float rainShadowVisReduce;
 
-static vec3 rainLightColor   = mix(nightRainLightColor, dayRainLightColor * (1.0 - rainShadowVisReduce), sunVisibility2) * 2.5;
-static vec3 rainAmbientColor = mix(nightRainAmbientColor, dayRainAmbientColor * (1.0 + rainShadowVisReduce), sunVisibility2);
+static vec3 rainLightColor;
+static vec3 rainAmbientColor;
 
-static vec3 lightColor   = mix(clearLightColor, rainLightColor, rainFactor);
-static vec3 ambientColor = mix(clearAmbientColor, rainAmbientColor, rainFactor);
+static vec3 lightColor;
+static vec3 ambientColor;
 
 // @included "/lib/lighting/ggx.glsl"
 // GGX area light approximation from Horizon Zero Dawn
@@ -2413,10 +2442,10 @@ float GGX(vec3 normalM, vec3 viewPos, vec3 lightVec, float NdotLmax0, float smoo
     float F = exp2((-5.55473 * dotLH - 6.98316) * dotLH) * (1.0 - f0) + f0;
 
     float NdotLmax0M = sqrt3(NdotLmax0 * max0(dot(normal, lightVec)));
-    float specular = max0(NdotLmax0M * D * F / pow2(dotLH));
-    specular = specular / (0.125 * specular + 1.0);
+    float s_specular = max0(NdotLmax0M * D * F / pow2(dotLH));
+    s_specular = s_specular / (0.125 * s_specular + 1.0);
 
-    return specular;
+    return s_specular;
 }
 // @included "/lib/lighting/minimumLighting.glsl"
 vec3 GetMinimumLighting(float lightmapYM) {
@@ -2434,8 +2463,8 @@ vec3 GetShadowPos(vec3 playerPos) {
     vec3 shadowPos = PlayerToShadow(playerPos);
     float distb = sqrt(shadowPos.x * shadowPos.x + shadowPos.y * shadowPos.y);
     float distortFactor = distb * shadowMapBias + (1.0 - shadowMapBias);
-    shadowPos.xy /= distortFactor;
-    shadowPos.z *= 0.2;
+    
+    
     return shadowPos * 0.5 + 0.5;
 }
 
@@ -2460,7 +2489,7 @@ vec3 GetShadowPos(vec3 playerPos) {
 
     float InterleavedGradientNoiseForShadows() {
         float n = 52.9829189 * fract(0.06711056 * gl_FragCoord.x + 0.00583715 * gl_FragCoord.y);
-            return fract(n);
+            return fract(n + goldenRatio * mod(float(frameCounter), 3600.0));
     }
 
     vec2 offsetDist(float x, int s) {
@@ -2487,11 +2516,7 @@ vec3 GetShadowPos(vec3 playerPos) {
         return shadow;
     }
 
-static vec2 shadowOffsets[4] = vec2[4](
-        vec2( 1.0, 0.0),
-        vec2( 0.0, 1.0),
-        vec2(-1.0, 0.0),
-        vec2( 0.0,-1.0));
+static vec2 shadowOffsets[4];
 
     vec3 SampleFilteredShadow(vec3 shadowPos, float offset, float colorMult, float colorPow) {
         vec3 shadow = vec3(0.0);
@@ -2526,7 +2551,7 @@ static vec2 shadowOffsets[4] = vec2[4](
         float colorPow = mix(1.5 + 0.5 * float(isEyeInWater == 0), 0.5, lightmapY4);
 
 
-            vec3 shadow = SampleFilteredShadow(shadowPos, offset, colorMult, colorPow);
+            vec3 shadow = SampleTAAFilteredShadow(shadowPos, offset, shadowSamples, leaves, colorMult, colorPow);
 
         return shadow;
     }
@@ -2560,20 +2585,23 @@ vec3 GetHeldLighting(vec3 playerPos, vec3 color, float emission) {
 
 // @included "/lib/colors/moonPhaseInfluence.glsl"
 
-static float moonPhaseInfluence = mix(
-                1.0,
-                moonPhase == 0 ? 1.00 : moonPhase != 4 ? 0.85 : 0.60,
-                1.0 - sunVisibility2
-            );
+static float moonPhaseFactor;
+
+static float halfCheck;
+static float firstHalf;
+static float secondHalf;
+
+static float moonPhaseFactor2;
+static float moonPhaseInfluence;
 
 
 
-static vec3 highlightColor = normalize(pow(lightColor, vec3(0.37))) * (0.3 + 1.5 * sunVisibility2) * (1.0 - 0.85 * rainFactor);
+static vec3 highlightColor;
 
 //Lighting//
 void DoLighting(inout vec4 color, inout vec3 shadowMult, vec3 playerPos, vec3 viewPos, float lViewPos, vec3 geoNormal, vec3 normalM, float dither,
-static vec3 worldGeoNormal, vec2 s_lightmap, bool noSmoothLighting, bool noDirectionalShading, bool noVanillaAO,
-static bool centerShadowBias, int subsurfaceMode, float smoothnessG, float highlightMult, float emission) {
+                vec3 worldGeoNormal, vec2 s_lightmap, bool noSmoothLighting, bool noDirectionalShading, bool noVanillaAO,
+                bool centerShadowBias, int subsurfaceMode, float smoothnessG, float highlightMult, float emission) {
 
     float NdotN = dot(normalM, northVec);
     float absNdotN = abs(NdotN);
@@ -2618,7 +2646,7 @@ static bool centerShadowBias, int subsurfaceMode, float smoothnessG, float highl
 
 
                         // Fix light leaking in caves //
-                            if (centerShadowBias || subsurfaceMode == 1) {
+                            if (centerShadowBias  ||  subsurfaceMode == 1) {
                                     playerPosM = mix(centerPlayerPos, playerPosM, 0.5 + 0.5 * lightmapYM);
                             } else {
                                 float centerFactor = max(glColor.a, lightmapYM);
@@ -2830,22 +2858,31 @@ static bool centerShadowBias, int subsurfaceMode, float smoothnessG, float highl
     float Bayer128(vec2 c) { return 0.25 * Bayer64 (0.5 * c) + Bayer2(c); }
     float Bayer256(vec2 c) { return 0.25 * Bayer128(0.5 * c) + Bayer2(c); }
 
+// @included "/lib/antialiasing/jitter.glsl"
+// Jitter offset from Chocapic13
+static vec2 jitterOffsets[8];
+
+vec2 TAAJitter(vec2 coord, float w) {
+        vec2 offset = jitterOffsets[int(framemod8)] * (w / vec2(viewWidth, viewHeight));
+            offset *= 0.125;
+        return coord + offset;
+}
 
 // @included "/lib/util/miplevel.glsl"
-static vec2 midCoordPos = absMidCoordPos * signMidCoordPos;
+static vec2 midCoordPos;
 
 // @included "/lib/util/dFdxdFdy.glsl"
 
-static vec2 dcdx = dFdx(texCoord.xy);
-static vec2 dcdy = dFdy(texCoord.xy);
+static vec2 dcdx;
+static vec2 dcdy;
 
-static vec2 mipx = dcdx / absMidCoordPos * 8.0;
-static vec2 mipy = dcdy / absMidCoordPos * 8.0;
+static vec2 mipx;
+static vec2 mipy;
 
-static float mipDelta = max(dot(mipx, mipx), dot(mipy, mipy));
-static float miplevel = max(0.5 * log2(mipDelta), 0.0);
+static float mipDelta;
+static float miplevel;
 
-static vec2 atlasSizeM = atlasSize;
+static vec2 atlasSizeM;
 
 
 
@@ -2880,7 +2917,133 @@ float GetDistantLightBokehMix(float lViewPos) {
 
 //Program//
 void stageMain() {
-        vec4 color = texture2D(s_javaAtlas, texCoord);
+    tAmin = fract(sunAngle - 0.033333333);
+    tAlin = tAmin < 0.433333333 ? tAmin * 1.15384615385 : tAmin * 0.882352941176 + 0.117647058824;
+    hA = tAlin > 0.5 ? 1.0 : 0.0;
+    tAfrc = fract(tAlin * 2.0);
+    tAfrs = tAfrc*tAfrc*(3.0-2.0*tAfrc);
+    tAmix = hA < 0.5 ? 0.3 : -0.1;
+    timeAngle = (tAfrc * (1.0-tAmix) + tAfrs * tAmix + hA) * 0.5;
+    overworldAngleRaw = fract(timeAngle - 0.25);
+    overworldAngle = (overworldAngleRaw + (cos(overworldAngleRaw * 3.14159265358979) * -0.5 + 0.5 - overworldAngleRaw) / 3.0) * 6.28318530717959;
+    renderDistance = far;
+    noonFactorRaw = max(sin(timeAngle * 6.28318530718), 0.0);
+    noonFactor = sqrt(noonFactorRaw);
+    nightFactor = max(sin(timeAngle * (-6.28318530718)), 0.0);
+    invNightFactor = 1.0 - nightFactor;
+    rainFactor2 = rainFactor * rainFactor;
+    invRainFactor = 1.0 - rainFactor;
+    invNoonFactor = 1.0 - noonFactor;
+    invNoonFactor2 = invNoonFactor * invNoonFactor;
+    vsBrightness = clamp(screenBrightness, 0.0, 1.0);
+    nightVisionWithAddedSupport = screenBrightness > 1.0 ? 1.0 : nightVision;
+    modifiedWorldDay = int(mod(worldDay, 100) + 5.0);
+    syncedTime = (worldTime + modifiedWorldDay * 24000) * 0.05;
+    cameraPositionBestInt = ivec3(floor(cameraPosition));
+    cameraPositionBestFract = fract(cameraPosition);
+    previousCameraPositionBestFract = fract(previousCameraPosition);
+    blocklightCol = vec3(0.1775, 0.104, 0.077) * vec3(1.00, 1.00, 1.00);
+    fireSpecialLightColorBase = vec3(2.25, 0.83, 0.27) * 3.7;
+    fireSpecialLightColor = fireSpecialLightColorBase;
+    lavaSpecialLightColor = vec3(3.25, 0.9, 0.2) * 3.9;
+    netherPortalSpecialLightColor = vec3(1.8, 0.4, 2.2) * 0.8;
+    redstoneSpecialLightColor = vec3(4.0, 0.1, 0.1);
+    soulFireSpecialColor = vec4(vec3(0.3, 2.0, 2.2) * 1.0, 0.3);
+    candleColorMult = 2.0;
+    candleExtraLight = 0.004;
+    caveFogColorRaw2 = caveFogColorRaw * (0.7 + 0.3 * vsBrightness);
+    caveFogColor = caveFogColorRaw2;
+    underwaterColorM1 = pow(fogColor, vec3(0.33, 0.21, 0.26));
+    underwaterColorM2 = underwaterColorM1;
+    waterFogColor = underwaterColorM2 * vec3(0.2 + 0.1 * vsBrightness);
+    netherColorMixer = inNetherWastes + inCrimsonForest + inWarpedForest + inBasaltDeltas + inSoulValley;
+    netherColor = mix(
+            fogColor * 0.6 + 0.2 * normalize(fogColor + 0.0001),
+            (
+                inNetherWastes * vec3(0.4, 0.14, 0.06) + inCrimsonForest * vec3(0.36, 0.07, 0.05) +
+                inWarpedForest * vec3(0.18, 0.1, 0.25) + inBasaltDeltas * vec3(0.25, 0.235, 0.23) +
+                inSoulValley * vec3(0.1, vec2(0.24))
+            ),
+            netherColorMixer
+        );
+    lavaLightColor = vec3(0.15, 0.06, 0.01);
+    texelCoord = ivec2(gl_FragCoord.xy);
+    cloudHeightM = isnan(cloudHeight) ? 192.0 : cloudHeight;
+    cloudHeightOffset = cloudHeightM - 192.0;
+    cloudAlt1i = int(192 + cloudHeightOffset);
+    cloudAlt2i = int(288 + cloudHeightOffset);
+    upVec = normalize(transpose(gbufferModelView)[1].xyz);
+    eastVec = normalize(transpose(gbufferModelView)[0].xyz);
+    northVec = normalize(transpose(gbufferModelView)[2].xyz);
+    sunVec = GetSunVector();
+    NdotU = dot(normal, upVec);
+    geoNdotU = NdotU;
+    NdotUmax0 = max(NdotU, 0.0);
+    SdotU = dot(sunVec, upVec);
+    sunFactor = SdotU < 0.0 ? clamp(SdotU + 0.375, 0.0, 0.75) / 0.75 : clamp(SdotU + 0.03125, 0.0, 0.0625) / 0.0625;
+    sunVisibility = clamp(SdotU + 0.0625, 0.0, 0.125) / 0.125;
+    sunVisibility2 = sunVisibility * sunVisibility;
+    shadowTimeVar1 = abs(sunVisibility - 0.5) * 2.0;
+    shadowTimeVar2 = shadowTimeVar1 * shadowTimeVar1;
+    shadowTime = shadowTimeVar2 * shadowTimeVar2;
+    glColor = glColorRaw;
+    lightVec = sunVec * ((timeAngle < 0.5325 || timeAngle > 0.9675) ? 1.0 : -1.0);
+    noonClearLightColor = vec3(0.65, 0.55, 0.375) * 2.05;
+    noonClearAmbientColor = pow(skyColor, vec3(0.75)) * 0.85;
+    sunsetClearLightColor = pow(vec3(0.64, 0.45, 0.3), vec3(1.5 + invNoonFactor)) * 5.0;
+    sunsetClearAmbientColor = noonClearAmbientColor * vec3(1.21, 0.92, 0.76) * 0.95;
+    nightClearLightColor = 0.9 * vec3(0.15, 0.14, 0.20) * (0.4 + vsBrightness * 0.4);
+    nightClearAmbientColor = 0.9 * vec3(0.09, 0.12, 0.17) * (1.55 + vsBrightness * 0.77);
+    drlcSnowM = inSnowy * vec3(-0.06, 0.0, 0.04);
+    drlcDryM = inDry * vec3(0.01, -0.035, -0.06);
+    drlcRainM = vec3(0.0);
+    dayRainLightColor = vec3(0.21, 0.16, 0.13) * 0.85 + noonFactor * vec3(0.0, 0.02, 0.06)
+                                 + drlcRainM + drlcSnowM + drlcDryM;
+    dayRainAmbientColor = vec3(0.2, 0.2, 0.25) * (1.8 + 0.5 * vsBrightness);
+    nightRainLightColor = vec3(0.03, 0.035, 0.05) * (0.5 + 0.5 * vsBrightness);
+    nightRainAmbientColor = vec3(0.16, 0.20, 0.3) * (0.75 + 0.6 * vsBrightness);
+    noonFactorDM = noonFactor;
+    dayLightColor = mix(sunsetClearLightColor, noonClearLightColor, noonFactorDM);
+    dayAmbientColor = mix(sunsetClearAmbientColor, noonClearAmbientColor, noonFactorDM);
+    clearLightColor = mix(nightClearLightColor, dayLightColor, sunVisibility2);
+    clearAmbientColor = mix(nightClearAmbientColor, dayAmbientColor, sunVisibility2);
+    rainShadowVisReduce = 0.0
+                    + 0.2 * inSnowy + 0.2 * inDry;
+    rainLightColor = mix(nightRainLightColor, dayRainLightColor * (1.0 - rainShadowVisReduce), sunVisibility2) * 2.5;
+    rainAmbientColor = mix(nightRainAmbientColor, dayRainAmbientColor * (1.0 + rainShadowVisReduce), sunVisibility2);
+    lightColor = mix(clearLightColor, rainLightColor, rainFactor);
+    ambientColor = mix(clearAmbientColor, rainAmbientColor, rainFactor);
+    shadowOffsets = vec2[4](
+        vec2( 1.0, 0.0),
+        vec2( 0.0, 1.0),
+        vec2(-1.0, 0.0),
+        vec2( 0.0,-1.0));
+    moonPhaseFactor = abs(moonPhase - 4.0) * 0.25;
+    halfCheck = step(0.5, moonPhaseFactor);
+    firstHalf = mix(0.60, 0.85, smoothstep(0.0, 0.5, moonPhaseFactor));
+    secondHalf = mix(0.85, 1.00, smoothstep(0.5, 1.0, moonPhaseFactor));
+    moonPhaseFactor2 = mix(firstHalf, secondHalf, halfCheck);
+    moonPhaseInfluence = mix(1.0, moonPhaseFactor2, 1.0 - sunVisibility2);
+    highlightColor = normalize(pow(lightColor, vec3(0.37))) * (0.3 + 1.5 * sunVisibility2) * (1.0 - 0.85 * rainFactor);
+    jitterOffsets = vec2[8](
+    vec2( 0.125,-0.375),
+    vec2(-0.125, 0.375),
+    vec2( 0.625, 0.125),
+    vec2( 0.375,-0.625),
+    vec2(-0.625, 0.625),
+    vec2(-0.875,-0.125),
+    vec2( 0.375,-0.875),
+    vec2( 0.875, 0.875)
+);
+    midCoordPos = absMidCoordPos * signMidCoordPos;
+    dcdx = dFdx(texCoord.xy);
+    dcdy = dFdy(texCoord.xy);
+    mipx = dcdx / absMidCoordPos * 8.0;
+    mipy = dcdy / absMidCoordPos * 8.0;
+    mipDelta = max(dot(mipx, mipx), dot(mipy, mipy));
+    miplevel = max(0.5 * log2(mipDelta), 0.0);
+    atlasSizeM = atlasSize;
+        vec4 color = texture2DArray(s_atlas, float3(texCoord, jLayer));
 
     float smoothnessD = 0.0, materialMask = 0.0;
 
@@ -2891,12 +3054,13 @@ void stageMain() {
         color.rgb *= glColor.rgb;
 
     vec3 screenPos = vec3(gl_FragCoord.xy / vec2(viewWidth, viewHeight), gl_FragCoord.z);
-        vec3 viewPos = ScreenToView(screenPos);
+        vec3 viewPos = ScreenToView(vec3(TAAJitter(screenPos.xy, -0.5), screenPos.z));
     float lViewPos = length(viewPos);
     vec3 nViewPos = normalize(viewPos);
     vec3 playerPos = vertexPos;
 
     float dither = Bayer64(gl_FragCoord.xy);
+        dither = fract(dither + goldenRatio * mod(float(frameCounter), 3600.0));
 
     int subsurfaceMode = 0;
     bool noSmoothLighting = false, noDirectionalShading = false, noVanillaAO = false, centerShadowBias = false, noGeneratedNormals = false, doTileRandomisation = true;
@@ -2933,7 +3097,7 @@ if (mat < 11024) {
 // @included "/lib/materials/specificMaterials/terrain/leaves.glsl"
 subsurfaceMode = 2;
 
-    materialMask = OSIEBCA * 253.0; // Reduced Edge TAA (Leaves)
+    materialMask = OSIEBCA * 253.0; // Reduced Edge 1 (Leaves)
 
 
     float factor = min1(pow2(color.g - 0.15 * (color.r + color.b)) * 2.5);
@@ -2988,10 +3152,10 @@ smoothnessD = color.r;
                                 }
                             } else {
                                 if (mat < 10044) { // Rails
-                                    color = texture2DLod(s_javaAtlas, texCoord, 0);
+                                    color = texture2DArrayLod(s_atlas, float3(texCoord, jLayer), 0);
 
                                     noSmoothLighting = true;
-                                    if (color.r > 0.1 && color.g + color.b < 0.1) { // Redstone Parts
+                                    if (color.r > 0.1  &&  color.g + color.b < 0.1) { // Redstone Parts
                                         noSmoothLighting = true; noDirectionalShading = true;
                                         lmCoordM.x = min(lmCoordM.x * 0.9, 0.77);
 
@@ -3058,7 +3222,7 @@ smoothnessD = color.r;
                                     vec3 fractPos = fract(worldPos.xyz);
                                     vec2 coordM = abs(fractPos.xz - 0.5);
                                     bool cauldronInteriorCheck = max(coordM.x, coordM.y) < 0.375 && fractPos.y > 0.3;
-                                    if (cauldronInteriorCheck && NdotU > 0.9) {
+                                    if (cauldronInteriorCheck  &&  NdotU > 0.9) {
                                             vec3 colorP = color.rgb / glColor.rgb;
                                             smoothnessG = min(pow2(pow2(dot(colorP.rgb, colorP.rgb) * 0.4)), 1.0);
                                             highlightMult = 3.25;
@@ -3088,7 +3252,7 @@ smoothnessD = color.r;
                                     vec3 fractPos = fract(worldPos.xyz);
                                     vec2 coordM = abs(fractPos.xz - 0.5);
                                     bool cauldronInteriorCheck = max(coordM.x, coordM.y) < 0.375 && fractPos.y > 0.3;
-                                    if (cauldronInteriorCheck && NdotU > 0.9) {
+                                    if (cauldronInteriorCheck  &&  NdotU > 0.9) {
 
 // @included "/lib/materials/specificMaterials/terrain/snow.glsl"
 smoothnessG = (1.0 - pow(color.g, 64.0) * 0.3) * 0.4;
@@ -3114,7 +3278,7 @@ smoothnessD = color.r;
                                     vec3 fractPos = fract(worldPos.xyz);
                                     vec2 coordM = abs(fractPos.xz - 0.5);
                                     bool cauldronInteriorCheck = max(coordM.x, coordM.y) < 0.375 && fractPos.y > 0.3;
-                                    if (cauldronInteriorCheck && NdotU > 0.9) {
+                                    if (cauldronInteriorCheck  &&  NdotU > 0.9) {
 
 // @included "/lib/materials/specificMaterials/terrain/lava.glsl"
 color.rgb *= 0.84;
@@ -3327,7 +3491,7 @@ smoothnessD = smoothnessG;
                         } else {
                             if (mat < 10152) {
                                 if (mat < 10148) { // Warped Nylium, Warped Wart Block
-                                    if (color.g == color.b && color.g > 0.0001) { // Warped Nylium:Netherrack Part
+                                    if (color.g == color.b  &&  color.g > 0.0001) { // Warped Nylium:Netherrack Part
 // @included "/lib/materials/specificMaterials/terrain/netherrack.glsl"
     smoothnessG = color.r * 0.4 + 0.2;
 smoothnessD = smoothnessG;
@@ -3338,7 +3502,7 @@ smoothnessD = smoothnessG;
                                     }
                                 }
                                 else /*if (mat < 10152)*/ { // Crimson Nylium, Nether Wart Block
-                                    if (color.g == color.b && color.g > 0.0001 && color.r < 0.522) { // Crimson Nylium:Netherrack Part
+                                    if (color.g == color.b  &&  color.g > 0.0001  &&  color.r < 0.522) { // Crimson Nylium:Netherrack Part
 // @included "/lib/materials/specificMaterials/terrain/netherrack.glsl"
     smoothnessG = color.r * 0.4 + 0.2;
 smoothnessD = smoothnessG;
@@ -3367,8 +3531,8 @@ smoothnessD = smoothnessG;
                         if (mat < 10176) {
                             if (mat < 10168) {
                                 if (mat < 10164) { // Oak Log, Oak Wood
-                                    if (color.g > 0.48 ||
-                                        CheckForColor(color.rgb, vec3(126, 98, 55)) ||
+                                    if (color.g > 0.48  || 
+                                        CheckForColor(color.rgb, vec3(126, 98, 55))  || 
                                         CheckForColor(color.rgb, vec3(150, 116, 65))) { // Oak Log:Clean Part
 // @included "/lib/materials/specificMaterials/planks/oakPlanks.glsl"
 smoothnessG = pow2(dot(color.rgb, color.rgb)) * 0.105;
@@ -3477,7 +3641,7 @@ smoothnessD = smoothnessG;
                                 }
                             } else {
                                 if (mat < 10204) { // Dark Oak Log, Dark Oak Wood
-                                    if (color.r - color.g > 0.08 ||
+                                    if (color.r - color.g > 0.08  || 
                                         CheckForColor(color.rgb, vec3(48, 30, 14))) { // Dark Oak Log:Clean Part
 // @included "/lib/materials/specificMaterials/planks/darkOakPlanks.glsl"
 smoothnessG = dot(color.rgb, vec3(0.2));
@@ -3539,7 +3703,7 @@ smoothnessD = smoothnessG;
                             if (mat < 10232) {
                                 if (mat < 10228) { // Warped Stem, Warped Hyphae
                                     //if (color.r < 0.12 || color.r + color.g * 3.0 < 3.4 * color.b) { // Emissive Part
-                                    if (color.r < 0.37 * color.b || color.r + color.g * 3.0 < 3.4 * color.b) { // Emissive Part
+                                    if (color.r < 0.37 * color.b  ||  color.r + color.g * 3.0 < 3.4 * color.b) { // Emissive Part
                                         emission = pow2(color.g + 0.2 * color.b) * 4.5 + 0.15;
                                     } else { // Flat Part
 // @included "/lib/materials/specificMaterials/planks/warpedPlanks.glsl"
@@ -3745,7 +3909,7 @@ smoothnessG = pow2(pow2(color.g));
 smoothnessD = 0.5 * (smoothnessG + color.b);
                                 }
                                 else /*if (mat < 10304)*/ { // Gold Ore
-                                    if ((color.g - color.b > 0.15 || color.r > 0.99) && (color.r + color.g > 1.9 || color.r + color.g + color.b < 1.9)) { // Gold Ore:Raw Gold Part
+                                    if ((color.g - color.b > 0.15 || color.r > 0.99)  &&  (color.r + color.g > 1.9 || color.r + color.g + color.b < 1.9)) { // Gold Ore:Raw Gold Part
 // @included "/lib/materials/specificMaterials/terrain/rawGoldBlock.glsl"
 materialMask = OSIEBCA * 3.0; // Gold Fresnel
 smoothnessG = pow2(pow2(color.g));
@@ -3762,7 +3926,7 @@ smoothnessD = smoothnessG;
                         } else {
                             if (mat < 10312) {
                                 if (mat < 10308) { // Deepslate Gold Ore
-                                    if (color.r != color.g || color.r > 0.99) { // Deepslate Gold Ore:Raw Gold Part
+                                    if (color.r != color.g  ||  color.r > 0.99) { // Deepslate Gold Ore:Raw Gold Part
 // @included "/lib/materials/specificMaterials/terrain/rawGoldBlock.glsl"
 materialMask = OSIEBCA * 3.0; // Gold Fresnel
 smoothnessG = pow2(pow2(color.g));
@@ -3832,7 +3996,7 @@ color.rgb *= 0.7 + 0.4 * GetLuminance(color.rgb);
                         if (mat < 10336) {
                             if (mat < 10328) {
                                 if (mat < 10324) { // Diamond Ore
-                                    if (color.b / color.r > 1.5 || color.b > 0.8) { // Diamond Ore:Diamond Part
+                                    if (color.b / color.r > 1.5  ||  color.b > 0.8) { // Diamond Ore:Diamond Part
 // @included "/lib/materials/specificMaterials/terrain/diamondBlock.glsl"
 materialMask = OSIEBCA; // Intense Fresnel
 
@@ -3859,7 +4023,7 @@ smoothnessD = smoothnessG;
                                     }
                                 }
                                 else /*if (mat < 10328)*/ { // Deepslate Diamond Ore
-                                    if (color.b / color.r > 1.5 || color.b > 0.8) { // Deepslate Diamond Ore:Diamond Part
+                                    if (color.b / color.r > 1.5  ||  color.b > 0.8) { // Deepslate Diamond Ore:Diamond Part
 // @included "/lib/materials/specificMaterials/terrain/diamondBlock.glsl"
 materialMask = OSIEBCA; // Intense Fresnel
 
@@ -3942,7 +4106,7 @@ smoothnessD = factor4 * 0.75;
                                 }
                                 else /*if (mat < 10344)*/ { // Emerald Ore
                                     float dif = GetMaxColorDif(color.rgb);
-                                    if (dif > 0.4 || color.b > 0.85) { // Emerald Ore:Emerald Part
+                                    if (dif > 0.4  ||  color.b > 0.85) { // Emerald Ore:Emerald Part
 // @included "/lib/materials/specificMaterials/terrain/emeraldBlock.glsl"
 materialMask = OSIEBCA; // Intense Fresnel
 
@@ -3966,7 +4130,7 @@ smoothnessD = smoothnessG;
                             } else {
                                 if (mat < 10348) { // Deepslate Emerald Ore
                                     float dif = GetMaxColorDif(color.rgb);
-                                    if (dif > 0.4 || color.b > 0.85) { // Deepslate Emerald Ore:Emerald Part
+                                    if (dif > 0.4  ||  color.b > 0.85) { // Deepslate Emerald Ore:Emerald Part
 // @included "/lib/materials/specificMaterials/terrain/emeraldBlock.glsl"
 materialMask = OSIEBCA; // Intense Fresnel
 
@@ -4165,7 +4329,7 @@ smoothnessG = color.g * 0.25;
                                 else /*if (mat < 10408)*/ { // Sea Pickle:Waterlogged
                                     noSmoothLighting = true;
 
-                                        color = texture2DLod(s_javaAtlas, texCoord, 0);
+                                        color = texture2DArrayLod(s_atlas, float3(texCoord, jLayer), 0);
 
                                     if (color.b > 0.5) { // Sea Pickle:Emissive Part
                                             color.g *= 1.1;
@@ -4294,7 +4458,7 @@ smoothnessD = smoothnessG;
                                 }
                             } else {
                                 if (mat < 10460) { // Command Block+
-                                        color = texture2DLod(s_javaAtlas, texCoord, 0);
+                                        color = texture2DArrayLod(s_atlas, float3(texCoord, jLayer), 0);
 
                                     vec2 coord = signMidCoordPos;
                                     float blockRes = absMidCoordPos.x * atlasSize.x;
@@ -4304,13 +4468,13 @@ smoothnessD = smoothnessG;
                                     float dif = GetMaxColorDif(color.rgb);
 
                                     if ( // This mess exists because Iris' midCoord is slightly inaccurate
-                                        dif > 0.1 && maxCoord < 0.375 &&
-                                        !CheckForColor(color.rgb, vec3(111, 73, 43)) &&
-                                        !CheckForColor(color.rgb, vec3(207, 166, 139)) &&
-                                        !CheckForColor(color.rgb, vec3(155, 139, 207)) &&
-                                        !CheckForColor(color.rgb, vec3(161, 195, 180)) &&
-                                        !CheckForColor(color.rgb, vec3(201, 143, 107)) &&
-                                        !CheckForColor(color.rgb, vec3(135, 121, 181)) &&
+                                        dif > 0.1  &&  maxCoord < 0.375  && 
+                                        !CheckForColor(color.rgb, vec3(111, 73, 43))  && 
+                                        !CheckForColor(color.rgb, vec3(207, 166, 139))  && 
+                                        !CheckForColor(color.rgb, vec3(155, 139, 207))  && 
+                                        !CheckForColor(color.rgb, vec3(161, 195, 180))  && 
+                                        !CheckForColor(color.rgb, vec3(201, 143, 107))  && 
+                                        !CheckForColor(color.rgb, vec3(135, 121, 181))  && 
                                         !CheckForColor(color.rgb, vec3(131, 181, 145))
                                     ) {
                                         emission = 6.0;
@@ -4489,11 +4653,11 @@ smoothnessG = color.r * 0.1 + 0.1;
                         if (mat < 10528) {
                             if (mat < 10520) {
                                 if (mat < 10516) { // Chorus Flower:Dead
-                                        vec3 checkColor = texture2DLod(s_javaAtlas, texCoord, 0).rgb;
+                                        vec3 checkColor = texture2DArrayLod(s_atlas, float3(texCoord, jLayer), 0).rgb;
 
-                                    if (CheckForColor(checkColor, vec3(164, 157, 126)) ||
-                                        CheckForColor(checkColor, vec3(201, 197, 176)) ||
-                                        CheckForColor(checkColor, vec3(226, 221, 188)) ||
+                                    if (CheckForColor(checkColor, vec3(164, 157, 126))  || 
+                                        CheckForColor(checkColor, vec3(201, 197, 176))  || 
+                                        CheckForColor(checkColor, vec3(226, 221, 188))  || 
                                         CheckForColor(checkColor, vec3(153, 142, 95))
                                     ) {
                                         emission = min(GetLuminance(color.rgb), 0.75) / 0.75;
@@ -4548,7 +4712,7 @@ smoothnessG = max(smoothnessG, 0.3 * color.g * float(color.g > color.b * 1.5));
 
                                 }
                                 else /*if (mat < 10536)*/ { // Brown Mushroom Block
-                                    if (color.r > color.g && color.g > color.b && color.b > 0.37) {
+                                    if (color.r > color.g  &&  color.g > color.b  &&  color.b > 0.37) {
 // @included "/lib/materials/specificMaterials/terrain/cobblestone.glsl"
 smoothnessG = dot(color.rgb, color.rgb) * 0.17;
 smoothnessD = smoothnessG;
@@ -4563,7 +4727,7 @@ smoothnessG = max(smoothnessG, 0.3 * color.g * float(color.g > color.b * 1.5));
                                 }
                             } else {
                                 if (mat < 10540) { // Red Mushroom Block
-                                    if (color.r > color.g && color.g > color.b && color.b > 0.37) {
+                                    if (color.r > color.g  &&  color.g > color.b  &&  color.b > 0.37) {
 // @included "/lib/materials/specificMaterials/terrain/cobblestone.glsl"
 smoothnessG = dot(color.rgb, color.rgb) * 0.17;
 smoothnessD = smoothnessG;
@@ -4577,7 +4741,7 @@ smoothnessG = max(smoothnessG, 0.3 * color.g * float(color.g > color.b * 1.5));
                                     }
                                 }
                                 else /*if (mat < 10544)*/ { // Mushroom Stem,
-                                    if (color.r > color.g && color.g > color.b && color.b < 0.6) {
+                                    if (color.r > color.g  &&  color.g > color.b  &&  color.b < 0.6) {
 // @included "/lib/materials/specificMaterials/terrain/cobblestone.glsl"
 smoothnessG = dot(color.rgb, color.rgb) * 0.17;
 smoothnessD = smoothnessG;
@@ -4609,7 +4773,7 @@ smoothnessG = max(smoothnessG, 0.3 * color.g * float(color.g > color.b * 1.5));
                                 }
                                 else /*if (mat < 10552)*/ { // Enchanting Table:Base
                                     float dotColor = dot(color.rgb, color.rgb);
-                                    if (dotColor < 0.19 && color.r < color.b) {
+                                    if (dotColor < 0.19  &&  color.r < color.b) {
 // @included "/lib/materials/specificMaterials/terrain/obsidian.glsl"
 materialMask = OSIEBCA; // Intense Fresnel
 
@@ -4686,7 +4850,7 @@ smoothnessD = 0.45;
                                         } else {
                                             float minCoord = min(absCoord.x, absCoord.y);
                                             if (CheckForColor(color.rgb, vec3(153, 198, 147))
-                                            && minCoord > 0.25) { // End Portal Frame:Emissive Corner Bits
+                                             &&  minCoord > 0.25) { // End Portal Frame:Emissive Corner Bits
                                                 emission = 1.4;
                                                 color.rgb = vec3(0.45, 1.0, 0.6);
                                             }
@@ -4747,7 +4911,7 @@ smoothnessD = color.b;
                                     lmCoordM.x *= 0.95;
 
                                     float dotColor = dot(color.rgb, color.rgb);
-                                    if (color.r > color.b * 2.0 && dotColor > 0.7) {
+                                    if (color.r > color.b * 2.0  &&  dotColor > 0.7) {
                                         emission = 2.5 * dotColor;
                                         color.r *= 1.5;
                                     } else {
@@ -4761,7 +4925,7 @@ smoothnessG = max(smoothnessG, 0.3 * color.g * float(color.g > color.b * 1.5));
                                     lmCoordM.x *= 0.95;
 
                                     float dotColor = dot(color.rgb, color.rgb);
-                                    if (color.r > color.b * 2.0 && dotColor > 0.7) {
+                                    if (color.r > color.b * 2.0  &&  dotColor > 0.7) {
                                         emission = pow2(color.g) * (20.0 - 13.7 * float(color.b > 0.25));
                                         color.r *= 1.5;
                                     } else {
@@ -4835,7 +4999,7 @@ color.r *= 1.15;
 maRecolor = vec3(factor0 * min(max0(factor1 * 0.7 - 0.1) * 1.3, 0.5));
 
                                     vec2 absCoord = abs(signMidCoordPos);
-                                    if (NdotU > 0.9 && max(absCoord.x, absCoord.y) < 0.754) { // Portal
+                                    if (NdotU > 0.9  &&  max(absCoord.x, absCoord.y) < 0.754) { // Portal
                                         highlightMult = 0.0;
                                         smoothnessD = 0.0;
                                         emission = pow2(color.r) * color.r * 16.0;
@@ -4879,7 +5043,7 @@ smoothnessD = factor * 0.5 + 0.1;
                                     lmCoordM.x = min(lmCoordM.x * 0.9, 0.77);
 
 // @included "/lib/materials/specificMaterials/terrain/redstoneTorch.glsl"
-if (color.r > 0.65 && abs(color.g - color.b) < 0.1) {
+if (color.r > 0.65  &&  abs(color.g - color.b) < 0.1) {
     emission = (3.5 - 2.25 * color.g) * 0.97;
     color.rgb *= color.rgb;
 
@@ -5055,11 +5219,11 @@ materialMask = OSIEBCA; // Intense Fresnel
 
                                     vec3 absDif = abs(vec3(color.r - color.g, color.g - color.b, color.r - color.b));
                                     float maxDif = max(absDif.r, max(absDif.g, absDif.b));
-                                    if (maxDif > 0.125 || color.b > 0.99) { // Redstone Parts
-                                        if (color.r < 0.999 && color.b > 0.4) color.gb *= 0.5;  // Comparator:Emissive Wire
+                                    if (maxDif > 0.125  ||  color.b > 0.99) { // Redstone Parts
+                                        if (color.r < 0.999  &&  color.b > 0.4) color.gb *= 0.5;  // Comparator:Emissive Wire
 
 // @included "/lib/materials/specificMaterials/terrain/redstoneTorch.glsl"
-if (color.r > 0.65 && abs(color.g - color.b) < 0.1) {
+if (color.r > 0.65  &&  abs(color.g - color.b) < 0.1) {
     emission = (3.5 - 2.25 * color.g) * 0.97;
     color.rgb *= color.rgb;
 
@@ -5095,12 +5259,12 @@ if (color.r > 0.65 && abs(color.g - color.b) < 0.1) {
                                         lmCoordM.x = pow2(pow2(smoothstep1(1.0 - 0.4 * dot(fractPos.xz, fractPos.xz))));
 
                                     float dotColor = dot(color.rgb, color.rgb);
-                                    if (color.r > color.b && color.r - color.g < 0.15 && dotColor < 1.4) {
+                                    if (color.r > color.b  &&  color.r - color.g < 0.15  &&  dotColor < 1.4) {
 // @included "/lib/materials/specificMaterials/terrain/oakWood.glsl"
 smoothnessG = pow2(pow2(color.g)) * 2.5;
 smoothnessG = min1(smoothnessG);
 smoothnessD = smoothnessG;
-                                    } else if (color.r > color.b || dotColor > 2.9) {
+                                    } else if (color.r > color.b  ||  dotColor > 2.9) {
                                         noDirectionalShading = true;
                                         emission = 3.5;
                                         color.rgb *= sqrt1(GetLuminance(color.rgb));
@@ -5118,7 +5282,7 @@ smoothnessD = smoothnessG;
 smoothnessG = pow2(pow2(color.g)) * 2.5;
 smoothnessG = min1(smoothnessG);
 smoothnessD = smoothnessG;
-                                    } else if (color.g - color.r > 0.1 || dotColor > 2.9) {
+                                    } else if (color.g - color.r > 0.1  ||  dotColor > 2.9) {
                                         noDirectionalShading = true;
                                         emission = 2.1;
                                         color.rgb *= sqrt1(GetLuminance(color.rgb));
@@ -5137,9 +5301,9 @@ smoothnessD = smoothnessG;
                                 }
                             } else {
                                 if (mat < 10668) { // Observer
-                                    if (color.r > 0.1 && color.g + color.b < 0.1) {
+                                    if (color.r > 0.1  &&  color.g + color.b < 0.1) {
 // @included "/lib/materials/specificMaterials/terrain/redstoneTorch.glsl"
-if (color.r > 0.65 && abs(color.g - color.b) < 0.1) {
+if (color.r > 0.65  &&  abs(color.g - color.b) < 0.1) {
     emission = (3.5 - 2.25 * color.g) * 0.97;
     color.rgb *= color.rgb;
 
@@ -5259,7 +5423,7 @@ materialMask = OSIEBCA; // Intense Fresnel
                                             vec2 bpos = floor(playerPos.xz + cameraPosition.xz + 0.501)
                                                     + floor(playerPos.y + cameraPosition.y + 0.501);
                                             bpos = bpos * 0.01 + 0.003 * frameTimeCounter;
-                                            emission *= pow2(texture2DLod(noisetex, bpos, 0.0).r * pow1_5(texture2DLod(noisetex, bpos * 0.5, 0.0).r));
+                                            emission *= pow2(texture2DLod(s_noise, bpos, 0.0).r * pow1_5(texture2DLod(s_noise, bpos * 0.5, 0.0).r));
                                             emission *= 6.0;
                                     }
 
@@ -5380,15 +5544,15 @@ smoothnessD = color.b;
                                 if (mat < 10756) { // Bamboo
                                         vec4 checkColor = color;
                                     if (
-                                        CheckForColor(checkColor.rgb, vec3(55, 90, 21)) ||
-                                        CheckForColor(checkColor.rgb, vec3(47, 69, 23)) ||
-                                        CheckForColor(checkColor.rgb, vec3(82, 137, 25)) ||
-                                        CheckForColor(checkColor.rgb, vec3(103, 161, 36)) ||
-                                        CheckForColor(checkColor.rgb, vec3(69, 118, 22)) ||
-                                        CheckForColor(checkColor.rgb, vec3(43, 62, 22)) ||
-                                        CheckForColor(checkColor.rgb, vec3(105, 144, 34)) ||
-                                        CheckForColor(checkColor.rgb, vec3(80, 117, 22)) ||
-                                        CheckForColor(checkColor.rgb, vec3(148, 187, 79)) ||
+                                        CheckForColor(checkColor.rgb, vec3(55, 90, 21))  || 
+                                        CheckForColor(checkColor.rgb, vec3(47, 69, 23))  || 
+                                        CheckForColor(checkColor.rgb, vec3(82, 137, 25))  || 
+                                        CheckForColor(checkColor.rgb, vec3(103, 161, 36))  || 
+                                        CheckForColor(checkColor.rgb, vec3(69, 118, 22))  || 
+                                        CheckForColor(checkColor.rgb, vec3(43, 62, 22))  || 
+                                        CheckForColor(checkColor.rgb, vec3(105, 144, 34))  || 
+                                        CheckForColor(checkColor.rgb, vec3(80, 117, 22))  || 
+                                        CheckForColor(checkColor.rgb, vec3(148, 187, 79))  || 
                                         CheckForColor(checkColor.rgb, vec3(86, 129, 18))
                                     ) {
                                         subsurfaceMode = 1, noSmoothLighting = true, noDirectionalShading = true;
@@ -5481,7 +5645,7 @@ subsurfaceMode = 1, noSmoothLighting = true, noDirectionalShading = true;
                             if (mat < 10792) {
                                 if (mat < 10788) { // Calibrated Sculk Sensor:Unlit
                                         vec4 checkColor = color;
-                                    if (checkColor.r + checkColor.b > checkColor.g * 2.2 || checkColor.r > 0.99) { // Amethyst Part
+                                    if (checkColor.r + checkColor.b > checkColor.g * 2.2  ||  checkColor.r > 0.99) { // Amethyst Part
                                                 vec2 absCoord = abs(signMidCoordPos);
                                                 float maxBlockPos = max(absCoord.x, absCoord.y);
                                                 emission = pow2(max0(1.0 - maxBlockPos) * color.g) * 5.4 + 1.2 * color.g;
@@ -5503,7 +5667,7 @@ subsurfaceMode = 1, noSmoothLighting = true, noDirectionalShading = true;
                                     lmCoordM = vec2(0.0, 0.0);
 
                                         vec4 checkColor = color;
-                                    if (checkColor.r + checkColor.b > checkColor.g * 2.2 || checkColor.r > 0.99) { // Amethyst Part
+                                    if (checkColor.r + checkColor.b > checkColor.g * 2.2  ||  checkColor.r > 0.99) { // Amethyst Part
                                         lmCoordM.x = 1.0;
 
                                                 vec2 absCoord = abs(signMidCoordPos);
@@ -5619,7 +5783,7 @@ smoothnessD = smoothnessG;
                                         float cLength = dot(coordM, coordM) * 1.3333333;
                                         cLength = pow2(1.0 - cLength);
 
-                                        if (color.r + color.g > color.b * 3.0 && max(coordM.x, coordM.z) < 0.07) {
+                                        if (color.r + color.g > color.b * 3.0  &&  max(coordM.x, coordM.z) < 0.07) {
                                             emission = 2.5 * pow1_5(cLength);
                                         } else {
                                             lmCoordM.x = max(lmCoordM.x * 0.9, cLength);
@@ -5658,7 +5822,7 @@ smoothnessG = max(smoothnessG, 0.3 * color.g * float(color.g > color.b * 1.5));
 noSmoothLighting = true;
 
 vec3 hsvColor = rgb2hsv(color.rgb);
-if (abs(hsvColor.r - 0.09722) < 0.04305 && hsvColor.b > 0.7) { // Active Light Part
+if (abs(hsvColor.r - 0.09722) < 0.04305  &&  hsvColor.b > 0.7) { // Active Light Part
     smoothnessG = 0.75;
     smoothnessD = 0.35;
 
@@ -5689,7 +5853,7 @@ color.rgb *= min1(0.6 + 0.7 * GetLuminance(color.rgb));
 noSmoothLighting = true;
 
 vec3 hsvColor = rgb2hsv(color.rgb);
-if (abs(hsvColor.r - 0.09722) < 0.04305 && hsvColor.b > 0.7) { // Active Light Part
+if (abs(hsvColor.r - 0.09722) < 0.04305  &&  hsvColor.b > 0.7) { // Active Light Part
     smoothnessG = 0.75;
     smoothnessD = 0.35;
 
@@ -5890,6 +6054,11 @@ smoothnessD = smoothnessG;
     DoBrightBlockTweaks(color.rgb, 0.5, shadowMult, highlightMult);
 
 
+                                        float snowFadeOut = 0.0;
+                                        snowFadeOut = clamp01((playerPos.y) * 0.1);
+                                        snowFadeOut *= clamp01((lViewPos - 64.0) * 0.01);
+
+                                        if (dither + 0.25 < snowFadeOut) discard;
                                 }
                                 else /*if (mat < 10960)*/ { // Target Block: Inactive
                                     smoothnessG = pow2(color.r) * 0.5;
@@ -5942,7 +6111,7 @@ subsurfaceMode = 1, noSmoothLighting = true, noDirectionalShading = true;
     DoFoliageColorTweaks(color.rgb, shadowMult, snowMinNdotU, viewPos, nViewPos, lViewPos, dither);
 
 
-if (color.r > 0.7 && color.r > color.g * 1.2 && color.g > color.b * 2.0) { // Emissive Part
+if (color.r > 0.7  &&  color.r > color.g * 1.2  &&  color.g > color.b * 2.0) { // Emissive Part
     lmCoordM.x = 0.5;
     emission = 5.0 * color.g;
     color.rgb *= color.rgb;
@@ -5959,7 +6128,7 @@ subsurfaceMode = 1, noSmoothLighting = true, noDirectionalShading = true;
     DoFoliageColorTweaks(color.rgb, shadowMult, snowMinNdotU, viewPos, nViewPos, lViewPos, dither);
 
 
-if (color.r > 0.7 && color.r > color.g * 1.2 && color.g > color.b * 2.0) { // Emissive Part
+if (color.r > 0.7  &&  color.r > color.g * 1.2  &&  color.g > color.b * 2.0) { // Emissive Part
     lmCoordM.x = 0.5;
     emission = 5.0 * color.g;
     color.rgb *= color.rgb;
@@ -5972,7 +6141,7 @@ if (color.r > 0.7 && color.r > color.g * 1.2 && color.g > color.b * 2.0) { // Em
 
                                     float lum = GetLuminance(color.rgb);
 
-                                    if (color.g - color.r > 0.22 || lum > 0.99) {
+                                    if (color.g - color.r > 0.22  ||  lum > 0.99) {
                                         noSmoothLighting = true;
                                         lmCoordM.x = 1.0;
                                             emission = 2.95;
@@ -6001,7 +6170,7 @@ smoothnessD = smoothnessG;
 color.rgb *= min1(0.6 + 0.7 * GetLuminance(color.rgb));
 
 
-                                    if (color.g - color.r > 0.2 && abs(color.r - color.b) < 0.1 || lum > 0.8) {
+                                    if (color.g - color.r > 0.2  &&  abs(color.r - color.b) < 0.1  ||  lum > 0.8) {
                                         emission = 4.0 * lum;
                                     }
 
@@ -6086,7 +6255,7 @@ if (blockEntityId < 5028) {
             if (blockEntityId == 5004) { // Signs
                 noSmoothLighting = true;
 
-                if (glColor.r + glColor.g + glColor.b <= 2.99 || lmCoord.x > 0.999) { // Sign Text
+                if (glColor.r + glColor.g + glColor.b <= 2.99  ||  lmCoord.x > 0.999) { // Sign Text
 // @included "/lib/materials/specificMaterials/others/signText.glsl"
 normalM = upVec;
 
@@ -6111,7 +6280,7 @@ color.rgb *= 5.0;
                 float factor = min(pow2(color.g), 0.25);
                 smoothnessG = factor * 2.0;
 
-                if (color.g > color.r || color.b > color.g)
+                if (color.g > color.r  ||  color.b > color.g)
                     emission = pow2(factor) * 20.0;
                 emission += 0.35;
 
@@ -6144,7 +6313,8 @@ vec3[8] colors = vec3[](
 color.rgb = vec3(0.421, 0.7, 1.6) * 0.14;
 
 float dither = Bayer64(gl_FragCoord.xy);
-    int repeat = 8;
+    dither = fract(dither + goldenRatio * mod(float(frameCounter), 3600.0));
+    int repeat = 4;
 float dismult = 0.5;
 for (int j = 0; j < repeat; j++) {
     float add = float(j + dither) * 0.0625 / float(repeat);
@@ -6181,7 +6351,7 @@ for (int j = 0; j < repeat; j++) {
         vec2 coord = float2x2(Cos, Sin, -Sin, Cos) * pos + wind;
         if (mod(float(i), 4) < 1.5) coord = coord.yx + vec2(-1.0, 1.0) * wind.y;
 
-        vec3 psample = pow(texture2D(s_javaAtlas, coord).rgb, vec3(0.85)) * colors[i-1] * colormult;
+        vec3 psample = pow(texture2DArray(s_atlas, float3(coord, jLayer)).rgb, vec3(0.85)) * colors[i-1] * colormult;
         color.rgb += psample * length(psample.rgb) * (3000.0 / repeat);
     }
 }
@@ -6250,7 +6420,7 @@ color.rgb *= min1(0.6 + 0.7 * GetLuminance(color.rgb));
             } else if (blockEntityId == 10548) { // Enchanting Table:Book
                 smoothnessG = pow2(color.g) * 0.35;
 
-                if (color.b < 0.0001 && color.r > color.g) {
+                if (color.b < 0.0001  &&  color.r > color.g) {
                     emission = color.g * 3.5;
                 }
             }
@@ -6281,10 +6451,9 @@ color.rgb *= min1(0.6 + 0.7 * GetLuminance(color.rgb));
     gl_FragData0 = color;
     gl_FragData1 = vec4(smoothnessD, materialMask, skyLightFactor, 1.0);
 
+        /* DRAWBUFFERS:064 */
+        gl_FragData2 = vec4(mat3(gbufferModelViewInverse) * normalM, 1.0);
 }
-
-
-//////////Vertex Shader//////////Vertex Shader//////////Vertex Shader//////////
 }
 
 // the pack spells matrix math M * v; slang only defines mul():
@@ -6302,25 +6471,36 @@ float4x4 operator*(float4x4 a, float4x4 b) { return mul(a, b); }
 // manual depth compare keeps the pack's own PCF taps; works with the
 // existing non-comparison depth samplers until an RHI compare sampler exists.
 float4 javaShadow2D(Texture2D t, SamplerState s, float3 uvw)
-{ return float4(step(uvw.z, t.Sample(s, uvw.xy).r)); }
+{ if (u_shadowInfo.w <= 0.0 || any(uvw.xyz < 0.0) || any(uvw.xyz > 1.0)) return float4(1.0); return float4(step(uvw.z, t.Sample(s, uvw.xy).r)); }
 float4 javaShadow2D(Texture2D t, SamplerState s, float4 uvw)
-{ return float4(step(uvw.z, t.Sample(s, uvw.xy).r)); }
+{ if (u_shadowInfo.w <= 0.0 || any(uvw.xyz < 0.0) || any(uvw.xyz > 1.0)) return float4(1.0); return float4(step(uvw.z, t.Sample(s, uvw.xy).r)); }
 float javaShadow2DProj(Texture2D t, SamplerState s, float4 uvw)
 { float w = max(uvw.w, 1e-6); return step(uvw.z / w, t.Sample(s, uvw.xy / w).r); }
 float javaTextureProj(Texture2D t, SamplerState s, float4 uvw)
 { float w = max(uvw.w, 1e-6); return t.Sample(s, uvw.xy / w).r; }
+int2 javaTextureSize(Texture2D t, int lod) { uint w = 0, h = 0, n = 0; t.GetDimensions(uint(lod), w, h, n); return int2(w, h); }
+
+// engine light bytes are 0..15 levels; the pack wants 0..1
+float4 javaLightCoord(float4 t) { return float4((t.xy * 255.0 + 8.0) / 256.0, t.zw); }
 
 VsOut vsMain(VsIn input)
 {
     vs_stage::a_position = input.a_position;
-    vs_stage::a_normal = input.a_normal;
+    vs_stage::a_normal = normalize(input.a_nPacked.xyz * 2.0 - 1.0);
     vs_stage::a_color0 = input.a_color0;
     vs_stage::a_texcoord0 = input.a_texcoord0;
     vs_stage::a_texcoord1 = input.a_texcoord1;
-    vs_stage::a_mcEntity = input.a_mcEntity;
-    vs_stage::a_mcMidTexCoord = input.a_mcMidTexCoord;
-    vs_stage::a_atTangent = input.a_atTangent;
-    vs_stage::a_mcChunkFade = input.a_mcChunkFade;
+    vs_stage::a_mcEntity = float4(input.a_ePacked, 0.0, 0.0, 0.0);
+    vs_stage::a_mcMidTexCoord = float4(input.a_mPacked, 0.0, 0.0);
+    { float ti = floor(input.a_tPacked); float ix = floor(ti * 0.5); float hd = (ti - ix * 2.0) * 2.0 - 1.0;
+      float3 ax = ix < 0.5 ? float3(1.0, 0.0, 0.0) : ix < 1.5 ? float3(-1.0, 0.0, 0.0) :
+          ix < 2.5 ? float3(0.0, 1.0, 0.0) : ix < 3.5 ? float3(0.0, -1.0, 0.0) :
+          ix < 4.5 ? float3(0.0, 0.0, 1.0) : float3(0.0, 0.0, -1.0);
+      vs_stage::a_atTangent = float4(ax, hd); }
+    vs_stage::a_mcChunkFade = 1.0;
+    { float ao = fract(input.a_tPacked) * 16.0; ao = ao > 0.0 ? ao : 1.0;
+      vs_stage::a_color0.rgb /= max(ao * input.a_nPacked.w, 1.0 / 255.0); vs_stage::a_color0.a = ao; }
+    { int id = int(input.a_ePacked + 0.5); vs_stage::a_mcEntity.x = texelFetch(s_javaMaterials, int2(id & 255, id >> 8), 0).r; }
     vs_stage::aspectRatio = u_jaspectRatio;
     vs_stage::atlasSize = u_jatlasSize;
     vs_stage::blindness = u_jblindness;
@@ -6405,6 +6585,7 @@ VsOut vsMain(VsIn input)
     vs_stage::u_jProjectionMatrix = u_jProjectionMatrix;
     vs_stage::u_jTextureMatrix0 = u_jTextureMatrix0;
     vs_stage::u_jTextureMatrix1 = u_jTextureMatrix1;
+    vs_stage::jLayer = floor(input.a_texcoord1.z * 255.0 + 0.5) + floor(input.a_texcoord1.w * 255.0 + 0.5) * 256.0;
     vs_stage::stageMain();
     VsOut output;
     output.clipPosition = vs_stage::gl_Position;
@@ -6417,6 +6598,7 @@ VsOut vsMain(VsIn input)
     output.v_normal = vs_stage::normal;
     output.v_vertexPos = vs_stage::vertexPos;
     output.v_glColorRaw = vs_stage::glColorRaw;
+    output.v_jLayer = vs_stage::jLayer;
     return output;
 }
 
@@ -6433,6 +6615,7 @@ FsOut fsMain(FsIn input)
     fs_stage::normal = input.v_normal;
     fs_stage::vertexPos = input.v_vertexPos;
     fs_stage::glColorRaw = input.v_glColorRaw;
+    fs_stage::jLayer = input.v_jLayer;
     fs_stage::aspectRatio = u_jaspectRatio;
     fs_stage::atlasSize = u_jatlasSize;
     fs_stage::blindness = u_jblindness;
@@ -6521,5 +6704,6 @@ FsOut fsMain(FsIn input)
     FsOut output;
     output.t0 = fs_stage::gl_FragData0;
     output.t1 = fs_stage::gl_FragData1;
+    output.t2 = fs_stage::gl_FragData2;
     return output;
 }

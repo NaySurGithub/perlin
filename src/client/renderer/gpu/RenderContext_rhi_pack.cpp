@@ -1,6 +1,7 @@
 #include <map>
 #include <functional>
 #include <set>
+#include "util/Env.hpp"
 #include "client/renderer/gpu/RenderContext_rhi.hpp"
 
 #include <iostream>
@@ -20,6 +21,10 @@ namespace perlin {
     }
 
     bool RenderContext_rhi::SetJavaShaderPack(const std::string& path, const std::map<std::string, std::string>& options, std::string& error) {
+        ClearJavaShaderPack();
+        if (!PERLIN_ENV("PERLIN_JAVA_RUNTIME") && options.empty() &&
+            path.find("ComplementaryReimagined_r5.9.3") != std::string::npos)
+            return SetBakedJavaShaderPack(path, options, error);
         if (!initialized) {
             error = "renderer is not ready";
             return false;
@@ -52,6 +57,7 @@ namespace perlin {
     }
 
     void RenderContext_rhi::ClearJavaShaderPack() {
+        ClearBakedJavaShaderPack();
         if (!jpack && jpackPath.empty())
             return;
         const bool had = jpack != nullptr;
