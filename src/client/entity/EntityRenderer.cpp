@@ -2033,9 +2033,9 @@ namespace perlin::entity {
                                       << " text=" << flat << std::endl;
                         }
                     }
-                    // HitBox is already scaled; without a server box the drawn model's top beats the 1-block guess
+                    // box already scaled; a model taller than its box (often the player default) keeps the tag above it
                     float height = HitBox(e).second;
-                    if (!e.isPlayer && (e.boxWidth <= 0.0f || e.boxHeight <= 0.0f) && v.modelHeight > 0.0f)
+                    if (!e.isPlayer && v.modelHeight > height)
                         height = v.modelHeight;
                     Tag t;
                     t.text = label;
