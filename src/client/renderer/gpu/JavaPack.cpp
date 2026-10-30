@@ -12,12 +12,193 @@
 #include <stb_image.h>
 
 #include <algorithm>
+#include <cctype>
 #include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <filesystem>
+#include <fstream>
+#include <iterator>
 #include <regex>
+
+
+namespace perlin::gpu {
+    namespace {
+        // converted programs are kept on disk: glslang, the cross compiler and fxc take seconds per program for a big pack,
+        // and nothing about them changes between runs
+        constexpr uint32_t kCacheMagic = 0x4a504b33u;
+        constexpr int kCacheVersion = 4;
+
+        struct CachedProgram {
+            std::vector<jshader::UniformDecl> uniforms;
+            std::vector<int> drawBuffers;
+            std::vector<jshader::RhiSampler> samplers;
+            int uniformRegs = 0;
+            std::vector<uint8_t> vertex, fragment;
+        };
+
+        uint64_t HashBytes(uint64_t h, const void* data, size_t n) {
+            const unsigned char* p = static_cast<const unsigned char*>(data);
+            for (size_t i = 0; i < n; i++) {
+                h ^= p[i];
+                h *= 1099511628211ull;
+            }
+            return h;
+        }
+        uint64_t HashString(uint64_t h, const std::string& s) {
+            h = HashBytes(h, s.data(), s.size());
+            const uint64_t n = s.size();
+            return HashBytes(h, &n, sizeof(n));
+        }
+
+        std::filesystem::path CacheFile(const jshader::ExpandedSource& vs, const jshader::ExpandedSource& fs, const jshader::TransformOptions& o, int kind,
+                                        const std::string& name) {
+            uint64_t h = 1469598103934665603ull;
+            h = HashString(h, vs.text);
+            h = HashString(h, fs.text);
+            for (const auto& m : o.macros) {
+                h = HashString(h, m.first);
+                h = HashString(h, m.second);
+            }
+            const int flags[] = {kCacheVersion, kind, o.flipVertexY, o.flipFragCoordY, o.zeroToOneDepth, o.splitSamplers, o.explicitLod,
+                                 static_cast<int>(o.availableAttribs)};
+            h = HashBytes(h, flags, sizeof(flags));
+            h = HashString(h, __DATE__ " " __TIME__);
+            try {
+                const std::filesystem::path dir = std::filesystem::temp_directory_path() / "perlin_javapack_cache";
+                std::filesystem::create_directories(dir);
+                char file[64];
+                std::snprintf(file, sizeof(file), "%016llx.prog", static_cast<unsigned long long>(h));
+                (void)name;
+                return dir / file;
+            } catch (...) {
+                return {};
+            }
+        }
+
+        template <class T>
+        void Put(std::string& out, const T& v) {
+            out.append(reinterpret_cast<const char*>(&v), sizeof(T));
+        }
+        void PutString(std::string& out, const std::string& s) {
+            Put<uint32_t>(out, static_cast<uint32_t>(s.size()));
+            out += s;
+        }
+        struct Reader {
+            const std::string& d;
+            size_t at = 0;
+            bool ok = true;
+            template <class T>
+            T Get() {
+                T v{};
+                if (at + sizeof(T) > d.size()) {
+                    ok = false;
+                    return v;
+                }
+                std::memcpy(&v, d.data() + at, sizeof(T));
+                at += sizeof(T);
+                return v;
+            }
+            std::string Str() {
+                const uint32_t n = Get<uint32_t>();
+                if (!ok || at + n > d.size()) {
+                    ok = false;
+                    return {};
+                }
+                std::string s = d.substr(at, n);
+                at += n;
+                return s;
+            }
+        };
+
+        void SaveCache(const std::filesystem::path& file, const CachedProgram& c) {
+            if (file.empty())
+                return;
+            std::string out;
+            Put<uint32_t>(out, kCacheMagic);
+            Put<int32_t>(out, c.uniformRegs);
+            Put<uint32_t>(out, static_cast<uint32_t>(c.uniforms.size()));
+            for (const auto& u : c.uniforms) {
+                PutString(out, u.name);
+                PutString(out, u.type);
+                PutString(out, u.arraySize);
+                Put<int32_t>(out, u.arrayCount);
+                Put<int32_t>(out, u.reg);
+                Put<int32_t>(out, u.regs);
+                Put<int32_t>(out, u.regsPerElement);
+                Put<int32_t>(out, u.components);
+            }
+            Put<uint32_t>(out, static_cast<uint32_t>(c.drawBuffers.size()));
+            for (int b : c.drawBuffers)
+                Put<int32_t>(out, b);
+            Put<uint32_t>(out, static_cast<uint32_t>(c.samplers.size()));
+            for (const auto& s : c.samplers) {
+                PutString(out, s.name);
+                Put<int32_t>(out, s.slot);
+                Put<uint8_t>(out, s.shadow ? 1 : 0);
+            }
+            PutString(out, std::string(c.vertex.begin(), c.vertex.end()));
+            PutString(out, std::string(c.fragment.begin(), c.fragment.end()));
+            try {
+                const std::filesystem::path tmp = file.string() + ".tmp";
+                {
+                    std::ofstream f(tmp, std::ios::binary | std::ios::trunc);
+                    f.write(out.data(), static_cast<std::streamsize>(out.size()));
+                }
+                std::filesystem::rename(tmp, file);
+            } catch (...) {
+            }
+        }
+
+        bool LoadCache(const std::filesystem::path& file, CachedProgram& c) {
+            if (file.empty())
+                return false;
+            std::string data;
+            try {
+                std::ifstream f(file, std::ios::binary);
+                if (!f)
+                    return false;
+                data.assign((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+            } catch (...) {
+                return false;
+            }
+            Reader r{data};
+            if (r.Get<uint32_t>() != kCacheMagic)
+                return false;
+            c.uniformRegs = r.Get<int32_t>();
+            const uint32_t nu = r.Get<uint32_t>();
+            for (uint32_t i = 0; i < nu && r.ok; i++) {
+                jshader::UniformDecl u;
+                u.name = r.Str();
+                u.type = r.Str();
+                u.arraySize = r.Str();
+                u.arrayCount = r.Get<int32_t>();
+                u.reg = r.Get<int32_t>();
+                u.regs = r.Get<int32_t>();
+                u.regsPerElement = r.Get<int32_t>();
+                u.components = r.Get<int32_t>();
+                c.uniforms.push_back(std::move(u));
+            }
+            const uint32_t nb = r.Get<uint32_t>();
+            for (uint32_t i = 0; i < nb && r.ok; i++)
+                c.drawBuffers.push_back(r.Get<int32_t>());
+            const uint32_t ns = r.Get<uint32_t>();
+            for (uint32_t i = 0; i < ns && r.ok; i++) {
+                jshader::RhiSampler s;
+                s.name = r.Str();
+                s.slot = r.Get<int32_t>();
+                s.shadow = r.Get<uint8_t>() != 0;
+                c.samplers.push_back(std::move(s));
+            }
+            const std::string vs = r.Str(), fs = r.Str();
+            c.vertex.assign(vs.begin(), vs.end());
+            c.fragment.assign(fs.begin(), fs.end());
+            return r.ok && !c.vertex.empty() && !c.fragment.empty();
+        }
+    }
+}
 
 namespace perlin::gpu {
     namespace {
@@ -454,29 +635,49 @@ namespace perlin::gpu {
             if (!src || !src->found)
                 continue;
             for (const jshader::ExpandedSource* s : {&src->vertex, &src->fragment}) {
-                for (auto it = std::sregex_iterator(s->text.begin(), s->text.end(), re); it != std::sregex_iterator(); ++it) {
-                    const std::smatch& m = *it;
-                    const std::string whole = m.str(0);
-                    if (m[1].matched) {
-                        const int idx = std::atoi(m.str(2).c_str());
-                        if (m.str(1) == "colortex" && idx < jshader::kMaxColorTex)
-                            bufs[static_cast<size_t>(idx)].used = true;
-                        else if (m.str(1) == "gaux" && idx >= 1 && idx <= 4)
-                            bufs[static_cast<size_t>(3 + idx)].used = true;
-                        else if (m.str(1) == "shadowcolor" && idx < 2) {
-                            shadowColorUsed[idx] = true;
+                // identifiers only: a regex over a pack's megabytes of expanded source took seconds
+                const std::string& t = s->text;
+                const size_t n = t.size();
+                for (size_t i = 0; i < n;) {
+                    const unsigned char c = static_cast<unsigned char>(t[i]);
+                    if (!(std::isalpha(c) || c == '_')) {
+                        i++;
+                        continue;
+                    }
+                    size_t e = i + 1;
+                    while (e < n && (std::isalnum(static_cast<unsigned char>(t[e])) || t[e] == '_'))
+                        e++;
+                    const size_t len = e - i;
+                    if (len >= 5 && len <= 12) {
+                        const char* w = t.data() + i;
+                        const auto digits = [&](size_t prefix) { return len > prefix && std::all_of(w + prefix, w + len, [](char d) { return d >= '0' && d <= '9'; }); };
+                        if (len > 8 && std::strncmp(w, "colortex", 8) == 0 && digits(8)) {
+                            const int idx = std::atoi(std::string(w + 8, len - 8).c_str());
+                            if (idx < jshader::kMaxColorTex)
+                                bufs[static_cast<size_t>(idx)].used = true;
+                        } else if (len == 5 && std::strncmp(w, "gaux", 4) == 0 && w[4] >= '1' && w[4] <= '4') {
+                            bufs[static_cast<size_t>(3 + (w[4] - '0'))].used = true;
+                        } else if (len > 11 && std::strncmp(w, "shadowcolor", 11) == 0 && digits(11)) {
+                            const int idx = std::atoi(std::string(w + 11, len - 11).c_str());
+                            if (idx < 2) {
+                                shadowColorUsed[idx] = true;
+                                shadowUsed = true;
+                            }
+                        } else if (len == 6 && std::strncmp(w, "gcolor", 6) == 0) {
+                            bufs[0].used = true;
+                        } else if (len == 6 && std::strncmp(w, "gdepth", 6) == 0) {
+                            bufs[1].used = true;
+                        } else if (len == 11 && std::strncmp(w, "shadowcolor", 11) == 0) {
+                            shadowColorUsed[0] = true;
+                            shadowUsed = true;
+                        } else if ((len == 9 && std::strncmp(w, "shadowtex", 9) == 0) || (len == 10 && std::strncmp(w, "shadowtex", 9) == 0 && (w[9] == '0' || w[9] == '1')) ||
+                                   (len == 6 && std::strncmp(w, "shadow", 6) == 0) || (len == 12 && std::strncmp(w, "watershadow", 11) == 0)) {
                             shadowUsed = true;
                         }
-                    } else if (whole == "gcolor") {
-                        bufs[0].used = true;
-                    } else if (whole == "gdepth") {
-                        bufs[1].used = true;
-                    } else if (whole == "shadowcolor") {
-                        shadowColorUsed[0] = true;
-                        shadowUsed = true;
-                    } else {
+                    } else if (len == 6 && std::strncmp(t.data() + i, "shadow", 6) == 0) {
                         shadowUsed = true;
                     }
+                    i = e;
                 }
             }
             for (int b : src->drawBuffers)
@@ -555,6 +756,12 @@ namespace perlin::gpu {
             lastError = error;
             return false;
         }
+        const auto t0 = std::chrono::steady_clock::now();
+        const auto lap = [&](const char* what) {
+            if (std::getenv("JSHADER_TRACE"))
+                std::fprintf(stderr, "[jshader] load %s: %lld ms\n", what,
+                             static_cast<long long>(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - t0).count()));
+        };
         auto source = jshader::OpenPack(cfg.path);
         if (!source) {
             error = "could not open shader pack '" + cfg.path + "'";
@@ -565,9 +772,11 @@ namespace perlin::gpu {
         blockName = cfg.blockName;
         instance = std::make_shared<jshader::ShaderPackInstance>(std::shared_ptr<jshader::PackSource>(std::move(source)), cfg.options,
                                                                   jshader::EngineMacros(260300, false));
+        lap("opened");
         instance->SetDimension(cfg.dimension);
         name = instance->Name().empty() ? cfg.path : instance->Name();
         config = jshader::ParsePipelineConfig(*instance);
+        lap("parsed config");
         custom.Load(config.customUniformProps);
         table.SetCustom(&custom);
         pool.Start(static_cast<int>(std::max(2u, std::min(6u, std::thread::hardware_concurrency() > 2 ? std::thread::hardware_concurrency() - 1 : 2u))));
@@ -576,9 +785,13 @@ namespace perlin::gpu {
             lastError = error;
             return false;
         }
+        lap("layouts");
         ScanUsage();
+        lap("scanned");
         CreateStatic();
+        lap("static");
         BuildBlockMap();
+        lap("blocks");
         return true;
     }
 
@@ -931,9 +1144,26 @@ namespace perlin::gpu {
             const jshader::RhiShaderKind kind = api == rhi::Api::Vulkan ? jshader::RhiShaderKind::SpirV
                                                 : api == rhi::Api::D3D12 ? jshader::RhiShaderKind::Dxbc
                                                                          : jshader::RhiShaderKind::Hlsl;
+            const jshader::RhiShaderKind kindUsed = std::getenv("JSHADER_FORCE_HLSL") ? jshader::RhiShaderKind::Hlsl : kind; // conversion check without a d3d device
             const jshader::DxbcCompiler dxbc = jshader::SystemDxbcCompiler();
-            auto fut = pool.Submit([vertex = std::move(vertex), fragment = std::move(fragment), opts, kind, dxbc]() {
+            const std::filesystem::path cacheFile = CacheFile(vertex, fragment, opts, static_cast<int>(kind), progName);
+            auto fut = pool.Submit([vertex = std::move(vertex), fragment = std::move(fragment), opts, kind = kindUsed, dxbc, cacheFile]() {
                 auto c = std::make_shared<Converted>();
+                CachedProgram cached;
+                if (LoadCache(cacheFile, cached)) {
+                    c->transform.uniforms = std::move(cached.uniforms);
+                    c->transform.fragment.drawBuffers = std::move(cached.drawBuffers);
+                    c->program.ok = true;
+                    c->program.kind = kind;
+                    c->program.vertex = std::move(cached.vertex);
+                    c->program.fragment = std::move(cached.fragment);
+                    c->program.samplers = std::move(cached.samplers);
+                    c->program.uniformRegs = cached.uniformRegs;
+                    c->ok = true;
+                    if (std::getenv("JSHADER_TRACE"))
+                        std::fprintf(stderr, "[jshader] program loaded from the cache\n");
+                    return c;
+                }
                 c->transform = jshader::TransformProgram(vertex, fragment, opts);
                 if (!c->transform.ok()) {
                     c->error = c->transform.vertex.ok ? c->transform.fragment.error : c->transform.vertex.error;
@@ -941,8 +1171,24 @@ namespace perlin::gpu {
                 }
                 c->program = jshader::BuildRhiProgram(c->transform, kind, dxbc);
                 c->ok = c->program.ok;
-                if (!c->ok)
+                if (const char* dumpName = std::getenv("JSHADER_DUMP_HLSL")) {
+                    // writes the converted hlsl of every program next to the given prefix
+                    const std::string base = dumpName;
+                    std::ofstream(base + std::to_string(std::hash<std::string>()(fragment.text)) + ".ps.hlsl") << c->program.fragmentSource;
+                    std::ofstream(base + std::to_string(std::hash<std::string>()(fragment.text)) + ".vs.hlsl") << c->program.vertexSource;
+                }
+                if (!c->ok) {
                     c->error = c->program.error;
+                } else {
+                    CachedProgram save;
+                    save.uniforms = c->transform.uniforms;
+                    save.drawBuffers = c->transform.fragment.drawBuffers;
+                    save.samplers = c->program.samplers;
+                    save.uniformRegs = c->program.uniformRegs;
+                    save.vertex = c->program.vertex;
+                    save.fragment = c->program.fragment;
+                    SaveCache(cacheFile, save);
+                }
                 return c;
             });
             it = pending.emplace(key, fut).first;
@@ -1271,8 +1517,8 @@ namespace perlin::gpu {
         s.dimensionEnd = instance && instance->Dimension() == "world1";
         s.heavyFog = s.dimensionNether ? 1.0f : 0.0f;
         s.cloudHeight = params.cloud.height;
-        s.viewWidth = static_cast<int>(out.width);
-        s.viewHeight = static_cast<int>(out.height);
+        s.viewWidth = static_cast<int>(width);
+        s.viewHeight = static_cast<int>(height);
         s.dimensionId = instance->Dimension() == "world-1" ? -1 : (instance->Dimension() == "world1" ? 1 : 0);
 
         // the shadow camera sits on the light and snaps to whole shadow texels so the map does not swim while the player moves
@@ -1681,10 +1927,14 @@ namespace perlin::gpu {
     bool JavaPack::Record(rhi::CommandList& list, const FrameParams& params, const Output& out) {
         if (!instance || !out.color || out.width == 0 || out.height == 0)
             return false;
-        if (width != out.width || height != out.height || !depth[0]) {
+        // the pack renders at the engine's render scale and its final pass scales up to the screen
+        const float scale = std::max(0.4f, std::min(1.0f, out.scale));
+        const uint32_t iw = std::max(1u, static_cast<uint32_t>(static_cast<float>(out.width) * scale));
+        const uint32_t ih = std::max(1u, static_cast<uint32_t>(static_cast<float>(out.height) * scale));
+        if (width != iw || height != ih || !depth[0]) {
             gpu.Dev().WaitIdle();
             DestroyTargets();
-            if (!CreateTargets(out.width, out.height)) {
+            if (!CreateTargets(iw, ih)) {
                 lastError = "could not create the shader pack's render targets";
                 DestroyTargets();
                 return false;

@@ -446,7 +446,11 @@ int main(int argc, char** argv) {
     // a real pack from disk (PERLIN_TEST_PACK=<folder or zip>): compiles every program and renders the scene once
     if (const char* packPath = std::getenv("PERLIN_TEST_PACK")) {
         std::string why;
-        if (!ctx.SetJavaShaderPack(packPath, {}, why)) {
+        const auto loadStart = std::chrono::steady_clock::now();
+        const bool loadedPack = ctx.SetJavaShaderPack(packPath, {}, why);
+        std::printf("     real pack load took %lld ms\n",
+                    static_cast<long long>(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - loadStart).count()));
+        if (!loadedPack) {
             std::printf("FAIL real pack load: %s\n", why.c_str());
             failures++;
         } else {
@@ -462,6 +466,7 @@ int main(int argc, char** argv) {
             scene.End();
             ctx.UpdateChunkMesh(0, 0, scene, 1);
             bool ready = false;
+            const auto started = std::chrono::steady_clock::now();
             for (int i = 0; i < 1200 && !ready; i++) {
                 FrameParams f = MakeFrame({0, 3, 9}, {0, 1, 0}, {0, 1, 0}, 128, 96);
                 f.sky.enabled = true;
@@ -469,6 +474,8 @@ int main(int argc, char** argv) {
                 if (!ready)
                     std::this_thread::sleep_for(std::chrono::milliseconds(50));
             }
+            std::printf("     real pack ready after %lld ms\n",
+                        static_cast<long long>(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - started).count()));
             Check(ready, "real pack compiled");
             if (ready) {
                 for (int i = 0; i < 3; i++) {

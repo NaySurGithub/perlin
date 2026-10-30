@@ -700,6 +700,7 @@ namespace perlin {
         const FrameParams* chosen = &paramsIn;
         if (PackRunning()) {
             packParams = paramsIn;
+            jpackScale = paramsIn.renderScale;
             packParams.renderScale = 1.0f;
             packParams.upscaler = 0;
             packParams.frameGen = 1;
@@ -877,6 +878,7 @@ namespace perlin {
             po.depth = screenDepth;
             po.width = gpu.TargetWidth();
             po.height = gpu.TargetHeight();
+            po.scale = jpackScale;
             po.lightmap = lightmap.handle;
             // the pack wrote the whole picture and the depth: the world stage draws on top instead of clearing
             const bool recorded = jpack->Record(*list, frame, po);

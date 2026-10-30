@@ -435,6 +435,7 @@ namespace perlin {
         std::map<std::string, std::string> jpackOptions;
         bool jpackReady = false;
         bool jpackGathered = false;
+        float jpackScale = 1.0f;
         std::function<std::string(uint16_t)> blockNames;
         bool PackRunning() const { return jpack && jpackReady; }
         bool AttachJavaPack();

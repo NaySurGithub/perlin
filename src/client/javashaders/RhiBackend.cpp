@@ -1,4 +1,5 @@
 #include <cstdio>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
@@ -103,6 +104,17 @@ namespace perlin::jshader {
                 result.error = std::string(fragment ? "fragment" : "vertex") + " shader conversion failed: " + err;
                 return result;
             }
+            // packs ask for every loop to be unrolled (optionNV unroll all); fxc fails on the big ones, so it decides itself
+            int unrolled = 0;
+            for (size_t at = hlsl.find("[unroll]"); at != std::string::npos; at = hlsl.find("[unroll]", at)) {
+                hlsl.replace(at, 8, "");
+                unrolled++;
+            }
+            if (unrolled && std::getenv("JSHADER_TRACE"))
+                std::fprintf(stderr, "[jshader] dropped %d unroll attributes from the %s shader\n", unrolled, fragment ? "pixel" : "vertex");
+            // shadow maps have no mips, and a comparison sample with implicit derivatives inside a loop makes fxc unroll it
+            for (size_t at = hlsl.find(".SampleCmp("); at != std::string::npos; at = hlsl.find(".SampleCmp(", at))
+                hlsl.replace(at, 11, ".SampleCmpLevelZero(");
             *sources[i] = hlsl;
             if (kind == RhiShaderKind::Hlsl) {
                 outputs[i]->assign(hlsl.begin(), hlsl.end());
@@ -161,10 +173,10 @@ namespace perlin::jshader {
                 } catch (...) {
                 }
             };
-            const auto run = [&](UINT flags, std::string& err) -> bool {
+            const auto run = [&](const std::string& text, UINT flags, std::string& err) -> bool {
                 ID3DBlob* code = nullptr;
                 ID3DBlob* messages = nullptr;
-                const HRESULT hr = compile(hlsl.data(), hlsl.size(), "javapack", nullptr, nullptr, "main", fragment ? "ps_5_1" : "vs_5_1", flags, 0,
+                const HRESULT hr = compile(text.data(), text.size(), "javapack", nullptr, nullptr, "main", fragment ? "ps_5_1" : "vs_5_1", flags, 0,
                                            &code, &messages);
                 if (FAILED(hr) || !code) {
                     err = messages ? std::string(static_cast<const char*>(messages->GetBufferPointer()), messages->GetBufferSize()) : "D3DCompile failed";
@@ -197,18 +209,33 @@ namespace perlin::jshader {
                     messages->Release();
                 return true;
             };
-            std::string first;
-            if (run(D3DCOMPILE_OPTIMIZATION_LEVEL1, first)) {
+            // loops stay loops: fxc otherwise tries to unroll the long ones with dynamic counts and gives up
+            std::string looped;
+            looped.reserve(hlsl.size() + 4096);
+            for (size_t at = 0; at < hlsl.size();) {
+                const size_t nl = hlsl.find('\n', at);
+                const size_t end = nl == std::string::npos ? hlsl.size() : nl + 1;
+                const size_t first = hlsl.find_first_not_of(" \t", at);
+                if (first != std::string::npos && first < end &&
+                    (hlsl.compare(first, 5, "for (") == 0 || hlsl.compare(first, 7, "while (") == 0))
+                    looped.append(hlsl, at, first - at).append("[loop] ");
+                else
+                    looped.append(hlsl, at, first == std::string::npos || first >= end ? end - at : first - at);
+                if (first != std::string::npos && first < end)
+                    looped.append(hlsl, first, end - first);
+                at = end;
+            }
+            std::string first, second, third;
+            if (run(looped, D3DCOMPILE_OPTIMIZATION_LEVEL1, first) || run(hlsl, D3DCOMPILE_OPTIMIZATION_LEVEL1, second)) {
                 store();
                 return true;
             }
-            // loops with texture reads sometimes need flow control unrolled away
-            std::string second;
-            if (run(D3DCOMPILE_OPTIMIZATION_LEVEL1 | D3DCOMPILE_AVOID_FLOW_CONTROL, second)) {
+            // the optimizer gives up on some very large shaders: try again without it
+            if (run(hlsl, D3DCOMPILE_SKIP_OPTIMIZATION, third)) {
                 store();
                 return true;
             }
-            error = first + (second.empty() || second == first ? "" : "\n(retry without flow control) " + second);
+            error = first + (second.empty() || second == first ? "" : "\n(without loop hints) " + second) + (third.empty() ? "" : "\n(without optimization) " + third);
             return false;
         };
 #else

@@ -1519,7 +1519,7 @@ namespace perlin::jshader {
 
             std::string prelude;
             if (HasFlag(flagsSource, "SHADOW2D"))
-                prelude += "#define iris_shadow2D(s, c) vec4(texture(s, c))\n";
+                prelude += options.explicitLod ? "#define iris_shadow2D(s, c) vec4(textureLod(s, c, 0.0))\n" : "#define iris_shadow2D(s, c) vec4(texture(s, c))\n";
             if (HasFlag(flagsSource, "SHADOW2DLOD"))
                 prelude += "#define iris_shadow2DLod(s, c, l) vec4(textureLod(s, c, l))\n";
             if (HasFlag(flagsSource, "SHADOW2DPROJ"))

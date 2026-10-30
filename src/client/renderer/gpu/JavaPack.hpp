@@ -43,6 +43,7 @@ namespace perlin::gpu {
             rhi::Format colorFormat = rhi::Format::BGRA8Unorm;
             rhi::TextureHandle depth;
             uint32_t width = 0, height = 0;
+            float scale = 1.0f; // internal resolution against width / height
             rhi::TextureHandle lightmap;
         };
 
