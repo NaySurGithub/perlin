@@ -299,7 +299,8 @@ namespace perlin {
     }
 
     bool Perlin::AcceptEula() {
-        if (options.eulaAccepted)
+        // previews never stop on the dialog, and never store an answer
+        if (options.eulaAccepted || PERLIN_ENV("PERLIN_PREVIEW"))
             return true;
         if (args.acceptEula) {
             options.eulaAccepted = true;
@@ -1752,7 +1753,7 @@ namespace perlin {
         invWorkbench = live ? live->WorkbenchOpen() : (preview && PERLIN_ENV("PERLIN_PREVIEW_WORKBENCH") != nullptr);
         invHorse = live && live->HorseOpen();
         const char* previewChest = preview ? PERLIN_ENV("PERLIN_PREVIEW_CHEST") : nullptr;
-        invChest = (live && live->ChestOpen()) || previewChest;
+        invChest = (live && live->ChestOpen()) || previewChest || (preview && PERLIN_ENV("PERLIN_PREVIEW_CONTAINER"));
         static bool bookInit = false;
         if (preview && !bookInit && PERLIN_ENV("PERLIN_PREVIEW_BOOK")) {
             bookInit = true;
@@ -1776,6 +1777,12 @@ namespace perlin {
             if (!t.character && t.key == Key::Escape)
                 close = true;
             else if (searching && ui::TextEdit::Focused().Apply(t, creativeSearch, ui::TextLimits{50})) {
+            }
+            else if (anvilFocused && invChest) {
+                const std::string before = anvilName;
+                ui::TextEdit::Focused().Apply(t, anvilName, ui::TextLimits{50});
+                if (live && anvilName != before)
+                    live->InvAnvilName(anvilName);
             }
             else if (typedIs(t, Action::Inventory) && !searching)
                 close = true;
@@ -1828,11 +1835,44 @@ namespace perlin {
             for (int i = 0; i < 17; i++)
                 v.horseItems[static_cast<size_t>(i)] = ToHudItem(inv.horse[i]);
             if (inv.chestOpen) {
-                v.chestRows = inv.chestSlots > 27 ? 6 : 3;
+                v.container = static_cast<int>(inv.kind);
                 for (int i = 0; i < 54; i++)
                     v.chestItems[static_cast<size_t>(i)] = ToHudItem(inv.chest[i]);
-                v.title = i18n::Tr(v.chestRows == 6 && inv.chestTitle == "container.chest" ? "container.chestDouble" : inv.chestTitle);
-                invChestScreen = ui::ChestScreenName(inv.chestTitle, v.chestRows);
+                if (v.container != invContainerSeen) {
+                    invContainerSeen = v.container;
+                    anvilFocused = false;
+                    beaconPrimary = beaconSecondary = 0;
+                }
+                if (v.container <= 1) {
+                    v.chestRows = inv.chestSlots > 27 ? 6 : 3;
+                    v.title = i18n::Tr(v.chestRows == 6 && inv.chestTitle == "container.chest" ? "container.chestDouble" : inv.chestTitle);
+                    invChestScreen = ui::ChestScreenName(inv.chestTitle, v.chestRows);
+                } else {
+                    v.title = i18n::Tr(inv.chestTitle);
+                    invChestScreen = ui::ContainerScreenName(v.container);
+                }
+                // the name field follows the item until the player edits it
+                if (inv.kind == BedrockSession::ContainerKind::Anvil && !inv.anvilNameEdited)
+                    anvilName = inv.chest[0].Empty() ? std::string() : !inv.chest[0].customName.empty() ? inv.chest[0].customName
+                                                                                                     : ui::PrettyItemName(inv.chest[0].name);
+                v.resultCell = inv.resultCell;
+                std::copy(std::begin(inv.props), std::end(inv.props), v.props.begin());
+                v.level = inv.level;
+                v.creative = inv.creative;
+                v.anvilName = anvilName;
+                v.anvilFocused = anvilFocused;
+                v.anvilCost = inv.anvilCost;
+                for (const auto& e : inv.enchants)
+                    v.enchants.push_back({e.cost, e.name});
+                for (const auto& s : inv.stones)
+                    v.stones.push_back(ToHudItem(s.out));
+                v.patterns = inv.patterns;
+                v.stationPick = inv.stationPick;
+                v.beaconLevel = inv.beaconLevel;
+                v.beaconPrimary = beaconPrimary;
+                v.beaconSecondary = beaconSecondary;
+            } else {
+                invContainerSeen = 0;
             }
             v.offhand = ToHudItem(inv.offhand);
             v.output = ToHudItem(inv.output);
@@ -1856,6 +1896,44 @@ namespace perlin {
                 }
                 v.title = i18n::Tr(v.chestRows == 6 ? "container.chestDouble" : "container.chest");
                 invChestScreen = ui::ChestScreenName("container.chest", v.chestRows);
+            }
+            if (const char* pc = PERLIN_ENV("PERLIN_PREVIEW_CONTAINER")) {
+                // offline station screens with stand-in contents
+                v.container = std::atoi(pc);
+                invChestScreen = ui::ContainerScreenName(v.container);
+                static const char* const kTitles[] = {"", "", "container.hopper", "container.dispenser", "container.dropper", "container.furnace",
+                                                      "tile.blast_furnace.name", "tile.smoker.name", "container.brewing", "container.repair",
+                                                      "container.grindstone_title", "container.smithing_table", "container.enchant",
+                                                      "container.stonecutter", "container.loom", "container.beacon"};
+                v.title = i18n::Tr(v.container >= 0 && v.container < 16 ? kTitles[v.container] : "");
+                const auto put = [&](int cell, const char* name, int count) {
+                    v.chestItems[static_cast<size_t>(cell)].name = name;
+                    v.chestItems[static_cast<size_t>(cell)].count = count;
+                };
+                v.props = {120, 900, 1600, 0, 0, 0, 0, 0};
+                v.level = 30;
+                switch (v.container) {
+                case 2: put(0, "minecraft:iron_ingot", 12); put(3, "minecraft:bread", 4); break;
+                case 3: case 4: put(0, "minecraft:arrow", 32); put(4, "minecraft:tnt", 2); break;
+                case 5: case 6: case 7: put(0, "minecraft:iron_ore", 8); put(1, "minecraft:coal", 5); put(2, "minecraft:iron_ingot", 3); break;
+                case 8: put(0, "minecraft:nether_wart", 3); put(1, "minecraft:potion", 1); put(2, "minecraft:potion", 1); put(4, "minecraft:blaze_powder", 2); v.props = {300, 12, 20, 0, 0, 0, 0, 0}; break;
+                case 9: put(0, "minecraft:diamond_sword", 1); put(1, "minecraft:diamond", 2); put(2, "minecraft:diamond_sword", 1); v.resultCell = 2; v.anvilName = anvilName.empty() ? "Diamond Sword" : anvilName; v.anvilFocused = anvilFocused; v.anvilCost = 3; break;
+                case 10: put(0, "minecraft:iron_pickaxe", 1); put(2, "minecraft:iron_pickaxe", 1); v.resultCell = 2; break;
+                case 11: put(0, "minecraft:netherite_upgrade_smithing_template", 1); put(1, "minecraft:diamond_chestplate", 1); put(2, "minecraft:netherite_ingot", 1); put(3, "minecraft:netherite_chestplate", 1); v.resultCell = 3; break;
+                case 12: put(0, "minecraft:diamond_pickaxe", 1); put(1, "minecraft:lapis_lazuli", 3); v.enchants = {{3, "Efficiency I"}, {14, "Unbreaking II"}, {30, "Fortune III"}}; break;
+                case 13:
+                    put(0, "minecraft:stone", 16); put(1, "minecraft:normal_stone_slab", 2); v.resultCell = 1; v.stationPick = 1;
+                    for (const char* n : {"minecraft:stone_bricks", "minecraft:normal_stone_slab", "minecraft:normal_stone_stairs", "minecraft:chiseled_stone_bricks"}) {
+                        ui::HudItem it;
+                        it.name = n;
+                        it.count = 1;
+                        v.stones.push_back(it);
+                    }
+                    break;
+                case 14: put(0, "minecraft:banner", 1); put(1, "minecraft:red_dye", 4); put(3, "minecraft:banner", 1); v.resultCell = 3; v.patterns = {"bs", "ts", "ls", "rs", "cs", "ms", "drs", "dls"}; v.stationPick = 2; break;
+                case 15: put(0, "minecraft:iron_ingot", 1); v.beaconLevel = 4; v.beaconPrimary = beaconPrimary ? beaconPrimary : 1; v.beaconSecondary = beaconSecondary; break;
+                default: break;
+                }
             }
         }
 
@@ -1973,10 +2051,20 @@ namespace perlin {
         for (const auto& it : v.armor) sig(it);
         for (const auto& it : v.craft) sig(it);
         for (const auto& it : v.work) sig(it);
-        if (v.chestRows) {
+        if (v.chestRows || v.container > 1) {
             chestUi.Warm(ServerPacks::Instance().Directories());
-            signature += "K" + std::to_string(v.chestRows) + v.title + (chestUi.Ready() ? "J" : "j");
+            // a preview capture must show the built screen, not the fallback drawn while it builds
+            if (preview && PERLIN_ENV("PERLIN_PREVIEW_SHOT"))
+                chestUi.WaitReady(20000);
+            signature += "K" + std::to_string(v.chestRows) + "/" + std::to_string(v.container) + v.title + (chestUi.Ready() ? "J" : "j");
             for (const auto& it : v.chestItems) sig(it);
+            for (int p : v.props) signature += std::to_string(p) + ",";
+            signature += v.anvilName + (v.anvilFocused ? "F" : "f") + std::to_string(v.anvilCost) + "|" + std::to_string(v.level) + "|" +
+                         std::to_string(v.stationPick) + "|" + std::to_string(v.beaconLevel) + ":" + std::to_string(v.beaconPrimary) + ":" +
+                         std::to_string(v.beaconSecondary);
+            for (const auto& e : v.enchants) signature += std::to_string(e.cost) + e.name;
+            for (const auto& it : v.stones) sig(it);
+            for (const auto& p : v.patterns) signature += p;
         }
         if (v.horse) { signature += "H" + std::to_string(v.horseChest); for (const auto& it : v.horseItems) sig(it); }
         for (const auto& c : v.recipes) { signature += c.craftable ? "c" : "n"; sig(c.out); }
@@ -1987,8 +2075,9 @@ namespace perlin {
             invSignature = signature;
             std::string error;
             std::string chestRml;
-            invJsonPanel = v.chestRows > 0 && chestUi.Build(v, invChestScreen, guiW, guiH, chestRml, invPanel);
-            if (v.chestRows > 0 && !invJsonPanel && chestUi.Problem() != invChestProblem) {
+            const bool containerUi = v.chestRows > 0 || v.container > 1;
+            invJsonPanel = containerUi && chestUi.Build(v, invChestScreen, guiW, guiH, chestRml, invPanel);
+            if (containerUi && !invJsonPanel && chestUi.Problem() != invChestProblem) {
                 invChestProblem = chestUi.Problem();
                 if (!invChestProblem.empty())
                     std::cout << "[chest] json ui: " << invChestProblem << ", using the built-in layout" << std::endl;
@@ -2027,8 +2116,35 @@ namespace perlin {
                                                   : gx < px || gy < py || gx > px + ui::kInvPanelW || gy > py + panelH;
                 const bool isRight = !leftEdge;
                 const bool overBook = invBook && gx >= (guiW - 147) / 2 - 86 && gx < (guiW - 147) / 2 + 61;
+                if (invHoverId != "anvil_name")
+                    anvilFocused = false;
                 if (invHoverId == "close") {
                     invCloseClicked = true;
+                } else if (invHoverId == "anvil_name") {
+                    anvilFocused = true;
+                } else if (invHoverId.rfind("b:", 0) == 0) {
+                    // station buttons: b:<collection>:<index>
+                    const size_t colon = invHoverId.rfind(':');
+                    const std::string collection = invHoverId.substr(2, colon - 2);
+                    const int index = std::atoi(invHoverId.c_str() + colon + 1);
+                    static const char* const kBeacon[] = {"speed", "haste", "resist", "jump", "strength", "regen", "extra", "confirm"};
+                    static const int kEffects[] = {1, 3, 11, 8, 5, 10};
+                    if (collection == "stones" || collection == "patterns")
+                        live->InvStationPick(index);
+                    else if (collection == "#enchant_buttons")
+                        live->InvEnchant(index);
+                    for (int b = 0; b < 8; b++) {
+                        if (collection != kBeacon[b])
+                            continue;
+                        if (b < 5)
+                            beaconPrimary = kEffects[b];
+                        else if (b == 5)
+                            beaconSecondary = 10;
+                        else if (b == 6)
+                            beaconSecondary = beaconPrimary;
+                        else if (beaconPrimary != 0)
+                            live->InvBeacon(beaconPrimary, beaconSecondary);
+                    }
                 } else if (invHoverId == "rb") {
                     invBook = !invBook;
                     invRecipeAt = {};
@@ -8798,7 +8914,9 @@ namespace perlin {
                 { ProfScope p(2); levelRenderer->Render(frustum, camera.x, camera.z); }
                 if (!previewShot.empty() && previewShotFrames < 0) {
                     const size_t meshed = levelRenderer->MeshedChunks();
-                    if (meshed != previewLastMeshed) {
+                    // a container screen covers the world: no need to wait for its meshing
+                    static const bool screenOnly = PERLIN_ENV("PERLIN_PREVIEW_CONTAINER") != nullptr;
+                    if (meshed != previewLastMeshed && !screenOnly) {
                         previewLastMeshed = meshed;
                         previewReadyAt = frameStart;
                     }
