@@ -166,8 +166,7 @@ namespace perlin::ui {
         Image(ax, ay, w, h, z, "mc:white", st);
     }
 
-    void RmlWriter::Item(float ax, float ay, float w, float h, int z, const std::string& itemKey, float alpha, bool glint, int damage,
-                         int maxDamage) {
+    void RmlWriter::Item(float ax, float ay, float w, float h, int z, const std::string& itemKey, float alpha, bool glint) {
         ax -= ox;
         ay -= oy;
         count++;
@@ -177,7 +176,6 @@ namespace perlin::ui {
             body += " alpha=\"" + Num(alpha) + "\"";
         if (glint)
             body += " glint=\"1\"";
-        body += DurabilityAttrs(damage, maxDamage);
         body += "/>\n";
     }
 

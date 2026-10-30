@@ -159,11 +159,6 @@ namespace perlin {
         float invPanel[4] = {};
         bool invJsonPanel = false, invCloseClicked = false;
         std::string invChestScreen, invChestProblem;
-        // station screen state the server never sees until confirmed
-        std::string anvilName;
-        bool anvilFocused = false;
-        int beaconPrimary = 0, beaconSecondary = 0;
-        int invContainerSeen = 0;
         uint64_t invTemplateVersion = 0;
         void UpdatePauseScreen(ui::Hud& hud, BedrockSession* live, int fbW, int fbH);
         void CenterCursorForGui() {
