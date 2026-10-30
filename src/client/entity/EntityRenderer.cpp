@@ -144,6 +144,7 @@ namespace perlin::entity {
 
     struct EntityRenderer::View {
         bool init = false;
+        float modelHeight = 0;  // top of the last built model, in blocks
         glm::dvec3 pos{0.0}, lastPos{0.0};
         uint32_t sampledSerial = 0;
         struct Sample {
@@ -1271,6 +1272,12 @@ namespace perlin::entity {
             }
         }
         v.scope.host = nullptr;
+        float top = 0;
+        for (const Layer& l : layers)
+            for (const attachable::Quad& q : l.quads)
+                for (const glm::vec3& p : q.p)
+                    top = std::max(top, p.y);
+        v.modelHeight = top / 16.0f * outScale;
         return !layers.empty();
     }
 
@@ -2037,10 +2044,13 @@ namespace perlin::entity {
                                       << " text=" << flat << std::endl;
                         }
                     }
-                    const auto hb = HitBox(e);
+                    // box already scaled; a model taller than its box (often the player default) keeps the tag above it
+                    float height = HitBox(e).second;
+                    if (!e.isPlayer && v.modelHeight > height)
+                        height = v.modelHeight;
                     Tag t;
                     t.text = label;
-                    t.at = v.pos + glm::dvec3(0.0, static_cast<double>(hb.second * (e.scale > 0 ? e.scale : 1.0f)) + 0.5, 0.0);
+                    t.at = v.pos + glm::dvec3(0.0, static_cast<double>(height) + 0.5, 0.0);
                     t.sneaking = e.Has(flag::Sneaking);
                     tags.push_back(std::move(t));
                 }

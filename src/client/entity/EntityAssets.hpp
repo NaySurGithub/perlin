@@ -73,6 +73,7 @@ namespace perlin::entity {
         void LoadDirectory(const std::string& dir, bool overlay);
         uint32_t overlayGeneration = 0;
         size_t overlaysLoaded = 0;
+        std::vector<std::string> overlayDirs;
         std::string root;
         bool loaded = false;
         std::unordered_map<std::string, ClientEntityDef> entities;
