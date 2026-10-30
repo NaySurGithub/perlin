@@ -950,6 +950,10 @@ namespace perlin::gpu {
         std::shared_ptr<Converted> c = it->second.get();
         if (!c->ok) {
             std::fprintf(stderr, "[jshader] program %s failed: %.1500s\n", progName.c_str(), c->error.c_str());
+            if (const char* dump = std::getenv("JSHADER_DUMP"))
+                if (progName == dump)
+                    std::fprintf(stderr, "---- %s vertex (failed)\n%s\n---- fragment (failed)\n%s\n", progName.c_str(), c->transform.vertex.glsl.c_str(),
+                                 c->transform.fragment.glsl.c_str());
             lastError = c->error;
             programs[key] = std::make_unique<Program>();
             return nullptr;

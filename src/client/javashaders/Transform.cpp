@@ -221,6 +221,267 @@ namespace perlin::jshader {
             bool compat = false;
         };
 
+
+        // a pack's local variable, parameter or struct member can share a name with one of its samplers (`float specular`
+        // next to `uniform sampler2D specular`). the sampler names are macros here, so the other uses get renamed first
+        void RenameShadowedSamplers(std::vector<Tok>& t) {
+            std::set<std::string> names;
+            std::set<size_t> declTokens;
+            for (size_t i = 0; i < t.size(); i++) {
+                if (t[i].kind != Tok::Ident || t[i].text != "uniform")
+                    continue;
+                bool opaque = false;
+                for (size_t k = i + 1; k < t.size() && t[k].text != ";"; k++) {
+                    if (t[k].kind != Tok::Ident)
+                        continue;
+                    if (IsOpaqueType(t[k].text)) {
+                        opaque = true;
+                        continue;
+                    }
+                    if (opaque && !IsQualifier(t[k].text) && !IsType(t[k].text)) {
+                        names.insert(t[k].text);
+                        declTokens.insert(k);
+                    }
+                }
+            }
+            if (names.empty())
+                return;
+            std::set<std::string> structs;
+            for (size_t i = 0; i + 1 < t.size(); i++)
+                if (t[i].text == "struct" && t[i + 1].kind == Tok::Ident)
+                    structs.insert(t[i + 1].text);
+            const auto typeLike = [&](size_t k) {
+                return t[k].kind == Tok::Ident && !IsOpaqueType(t[k].text) && (IsType(t[k].text) || structs.count(t[k].text));
+            };
+            const auto rename = [&](const std::string& n) { return "iris_local_" + n; };
+            // members are always reached through '.', and a sampler never has any
+            for (size_t i = 1; i < t.size(); i++)
+                if (t[i].kind == Tok::Ident && names.count(t[i].text) && t[i - 1].text == ".")
+                    t[i].text = rename(t[i].text);
+
+            struct Scope {
+                size_t begin, end;
+                std::string name;
+            };
+            std::vector<Scope> scopes;
+            size_t headerStart = 0;
+            int paren = 0;
+            size_t i = 0;
+            while (i < t.size()) {
+                const std::string& x = t[i].text;
+                if (t[i].kind == Tok::Directive) {
+                    if (paren == 0)
+                        headerStart = i + 1;
+                    i++;
+                    continue;
+                }
+                if (x == "(") paren++;
+                else if (x == ")") paren--;
+                if (x == "{" && paren == 0) {
+                    int depth = 0;
+                    size_t k = i;
+                    for (; k < t.size(); k++) {
+                        if (t[k].text == "{") depth++;
+                        else if (t[k].text == "}" && --depth == 0) break;
+                    }
+                    const size_t end = std::min(k + 1, t.size());
+                    for (size_t j = headerStart; j < end; j++) {
+                        if (t[j].kind != Tok::Ident || !names.count(t[j].text) || declTokens.count(j) || t[j].text.compare(0, 11, "iris_local_") == 0)
+                            continue;
+                        bool declares = j > 0 && typeLike(j - 1);
+                        if (!declares && j > 0 && t[j - 1].text == ",") {
+                            // `float a, specular;` : the statement starts with a type
+                            size_t b = j;
+                            int d = 0;
+                            while (b > headerStart) {
+                                const std::string& y = t[b - 1].text;
+                                if (y == ")" || y == "]") d++;
+                                else if (y == "(" || y == "[") { if (d == 0) break; d--; }
+                                else if (d == 0 && (y == ";" || y == "{" || y == "}")) break;
+                                b--;
+                            }
+                            while (b < j && t[b].kind == Tok::Ident && IsQualifier(t[b].text))
+                                b++;
+                            declares = b < j && typeLike(b);
+                        }
+                        if (declares)
+                            scopes.push_back({headerStart, end, t[j].text});
+                    }
+                    headerStart = end;
+                    i = end;
+                    continue;
+                }
+                if (x == ";" && paren == 0)
+                    headerStart = i + 1;
+                i++;
+            }
+            for (const Scope& sc : scopes)
+                for (size_t j = sc.begin; j < sc.end; j++)
+                    if (t[j].kind == Tok::Ident && t[j].text == sc.name && !declTokens.count(j))
+                        t[j].text = rename(sc.name);
+            // declarations outside any block (globals, function names): rename everywhere but the uniform declaration
+            for (size_t j = 1; j < t.size(); j++) {
+                if (t[j].kind != Tok::Ident || !names.count(t[j].text) || declTokens.count(j) || !typeLike(j - 1))
+                    continue;
+                int depth = 0;
+                for (size_t k = 0; k < j; k++) {
+                    if (t[k].text == "{") depth++;
+                    else if (t[k].text == "}") depth--;
+                }
+                if (depth != 0)
+                    continue;
+                int open = 0;
+                for (size_t k = j; k-- > 0 && t[k].text != ";" && t[k].text != "}" && t[k].text != "{";) {
+                    if (t[k].text == ")") open--;
+                    else if (t[k].text == "(") open++;
+                }
+                if (open > 0)
+                    continue; // a parameter: its scope is the function, handled above
+                const std::string n = t[j].text;
+                for (size_t k = 0; k < t.size(); k++)
+                    if (t[k].kind == Tok::Ident && t[k].text == n && !declTokens.count(k))
+                        t[k].text = rename(n);
+            }
+        }
+
+
+        // glslang refuses a sampler built from a texture and a sampler as a function argument, so user functions that take a
+        // sampler get the two halves as separate parameters and their callers pass both
+        void SplitSamplerParams(std::vector<Tok>& t) {
+            std::set<std::string> globals;
+            for (size_t i = 0; i < t.size(); i++) {
+                if (t[i].kind != Tok::Ident || t[i].text != "uniform")
+                    continue;
+                bool opaque = false;
+                for (size_t k = i + 1; k < t.size() && t[k].text != ";"; k++) {
+                    if (t[k].kind != Tok::Ident)
+                        continue;
+                    if (IsOpaqueType(t[k].text) && t[k].text.compare(0, 5, "image") != 0)
+                        opaque = true;
+                    else if (opaque && !IsQualifier(t[k].text) && !IsType(t[k].text) && t[k].text != "texture")
+                        globals.insert(t[k].text);
+                }
+            }
+            const auto samplerType = [](const std::string& x) { return IsOpaqueType(x) && x.find("sampler") != std::string::npos; };
+            struct Fn {
+                std::vector<int> params; // indexes of the sampler parameters
+            };
+            std::map<std::string, Fn> fns;
+            std::set<std::string> paramNames;
+            struct Def {
+                size_t open, close, bodyEnd;
+                std::vector<std::pair<size_t, size_t>> params; // type token, name token
+            };
+            std::vector<Def> defs;
+            int brace = 0;
+            for (size_t i = 0; i + 1 < t.size(); i++) {
+                if (t[i].text == "{") brace++;
+                else if (t[i].text == "}") brace--;
+                if (brace != 0 || t[i].kind != Tok::Ident || t[i + 1].text != "(" || i == 0 || !(IsType(t[i - 1].text) || t[i - 1].text == "void"))
+                    continue;
+                // a function declaration or definition at file scope
+                Def d{i + 1, 0, 0, {}};
+                int depth = 0, index = 0;
+                size_t k = i + 1;
+                bool any = false;
+                std::vector<int> positions;
+                size_t typeTok = 0;
+                for (; k < t.size(); k++) {
+                    if (t[k].text == "(") depth++;
+                    else if (t[k].text == ")" && --depth == 0) break;
+                    else if (depth == 1 && t[k].text == ",") index++;
+                    else if (depth == 1 && t[k].kind == Tok::Ident && samplerType(t[k].text)) {
+                        typeTok = k;
+                        if (k + 1 < t.size() && t[k + 1].kind == Tok::Ident) {
+                            d.params.push_back({k, k + 1});
+                            positions.push_back(index);
+                            any = true;
+                        }
+                    }
+                }
+                (void)typeTok;
+                if (!any)
+                    continue;
+                d.close = k;
+                size_t e = k + 1;
+                if (e < t.size() && t[e].text == "{") {
+                    int b = 0;
+                    for (; e < t.size(); e++) {
+                        if (t[e].text == "{") b++;
+                        else if (t[e].text == "}" && --b == 0) break;
+                    }
+                    e++;
+                }
+                d.bodyEnd = std::min(e, t.size());
+                fns[t[i].text].params = positions;
+                for (const auto& pr : d.params)
+                    paramNames.insert(t[pr.second].text);
+                defs.push_back(d);
+            }
+            if (defs.empty())
+                return;
+            // callers first: the argument at a sampler position becomes the texture and sampler pair
+            for (size_t i = 0; i + 1 < t.size(); i++) {
+                if (t[i].kind != Tok::Ident || t[i + 1].text != "(")
+                    continue;
+                const auto it = fns.find(t[i].text);
+                if (it == fns.end() || (i > 0 && (IsType(t[i - 1].text) || t[i - 1].text == "void")))
+                    continue;
+                int depth = 0, index = 0;
+                size_t argStart = i + 2;
+                for (size_t k = i + 1; k < t.size(); k++) {
+                    const bool last = t[k].text == ")" && depth == 1;
+                    if (t[k].text == "(" || t[k].text == "[") depth++;
+                    else if ((t[k].text == ")" || t[k].text == "]") && --depth == 0) {
+                        if (std::find(it->second.params.begin(), it->second.params.end(), index) != it->second.params.end() && k == argStart + 1) {
+                            Tok& a = t[argStart];
+                            if (a.kind == Tok::Ident && (globals.count(a.text) || paramNames.count(a.text)))
+                                a.text = a.text + "_iris_t, " + a.text + "_iris_s";
+                        }
+                        break;
+                    }
+                    if (depth == 1 && (t[k].text == "," || last)) {
+                        if (std::find(it->second.params.begin(), it->second.params.end(), index) != it->second.params.end() && k == argStart + 1) {
+                            Tok& a = t[argStart];
+                            if (a.kind == Tok::Ident && (globals.count(a.text) || paramNames.count(a.text)))
+                                a.text = a.text + "_iris_t, " + a.text + "_iris_s";
+                        }
+                        index++;
+                        argStart = k + 1;
+                    }
+                }
+            }
+            for (const Def& d : defs) {
+                for (const auto& pr : d.params) {
+                    const std::string type = t[pr.first].text, name = t[pr.second].text;
+                    std::string texture = type;
+                    const bool shadow = texture.size() > 6 && texture.compare(texture.size() - 6, 6, "Shadow") == 0;
+                    if (shadow) texture.erase(texture.size() - 6);
+                    texture.replace(texture.find("sampler"), 7, "texture");
+                    // uses inside the body (not the ones the callers pass on, those were already split)
+                    for (size_t k = d.close; k < d.bodyEnd; k++)
+                        if (t[k].kind == Tok::Ident && t[k].text == name)
+                            t[k].text = type + "(" + name + "_iris_t, " + name + "_iris_s)";
+                    t[pr.first].text = texture;
+                    t[pr.second].text = name + "_iris_t, " + std::string(shadow ? "samplerShadow " : "sampler ") + name + "_iris_s";
+                }
+            }
+        }
+
+        // moves the struct definitions the body collected to the front
+        std::string HoistStructs(std::string& body) {
+            std::string structs;
+            for (;;) {
+                const size_t a = body.find("/*STRUCT_BEGIN*/");
+                if (a == std::string::npos) break;
+                const size_t b = body.find("/*STRUCT_END*/", a);
+                if (b == std::string::npos) break;
+                structs += body.substr(a + 16, b - a - 16) + "\n";
+                body.erase(a, b + 14 - a);
+            }
+            return structs;
+        }
+
         std::vector<Statement> SplitStatements(const std::vector<Tok>& t) {
             std::vector<Statement> out;
             size_t i = 0;
@@ -523,6 +784,9 @@ namespace perlin::jshader {
                     }
                 }
             }
+            RenameShadowedSamplers(tokens);
+            if (options.splitSamplers)
+                SplitSamplerParams(tokens);
             const std::vector<Statement> statements = SplitStatements(tokens);
 
             StageContext ctx;
@@ -739,6 +1003,11 @@ namespace perlin::jshader {
                 }
                 if (tokens[st.begin].kind == Tok::Directive) {
                     bodyText += out[st.begin];
+                    continue;
+                }
+                if (tokens[st.begin].text == "struct" && !st.function) {
+                    // varyings can be struct typed, so the definitions have to come before the interface declarations
+                    bodyText += "/*STRUCT_BEGIN*/" + emitRange(st.begin, st.end) + "/*STRUCT_END*/";
                     continue;
                 }
                 const DeclInfo d = ParseDeclaration(tokens, st.begin, st.end);
@@ -1170,7 +1439,8 @@ namespace perlin::jshader {
             if (options.flipVertexY) footer += "    gl_Position.y = -gl_Position.y;\n";
             if (options.zeroToOneDepth) footer += "    gl_Position.z = (gl_Position.z + gl_Position.w) * 0.5;\n";
             footer += "}\n";
-            r.glsl = head + attrs + varyings + samplerText + prelude + body + footer;
+            const std::string structs = HoistStructs(body);
+            r.glsl = head + structs + attrs + varyings + samplerText + prelude + body + footer;
         }
         {
             StageResult& r = program.fragment;
@@ -1236,7 +1506,8 @@ namespace perlin::jshader {
                 mainPrefix = "    iris_FragCoord = vec4(gl_FragCoord.x, iris_ViewHeight - gl_FragCoord.y, gl_FragCoord.z, gl_FragCoord.w);\n";
             }
             std::string footer = "\nvoid main() {\n" + mainPrefix + "    iris_user_main();\n}\n";
-            r.glsl = head + varyings + outs + samplerText + prelude + fragCoord + body + footer;
+            const std::string structs = HoistStructs(body);
+            r.glsl = head + structs + varyings + outs + samplerText + prelude + fragCoord + body + footer;
             if (!mainPrefix.empty() && r.glsl.find("IrisGlobals") == std::string::npos) {
                 r.ok = false;
                 r.error = "internal: iris_ViewHeight requested without uniform block";

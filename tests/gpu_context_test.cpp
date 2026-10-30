@@ -443,6 +443,51 @@ int main(int argc, char** argv) {
         }
     }
 
+    // a real pack from disk (PERLIN_TEST_PACK=<folder or zip>): compiles every program and renders the scene once
+    if (const char* packPath = std::getenv("PERLIN_TEST_PACK")) {
+        std::string why;
+        if (!ctx.SetJavaShaderPack(packPath, {}, why)) {
+            std::printf("FAIL real pack load: %s\n", why.c_str());
+            failures++;
+        } else {
+            Tessellator scene;
+            scene.Begin();
+            scene.EnterSection(0);
+            const float white[4][3] = {{1, 1, 1}, {1, 1, 1}, {1, 1, 1}, {1, 1, 1}};
+            const float uvs[4][2] = {{0, 0}, {0.01f, 0}, {0.01f, 0.01f}, {0, 0.01f}};
+            const float ground[4][3] = {{-6, 0, -6}, {6, 0, -6}, {6, 0, 6}, {-6, 0, 6}};
+            const float roof[4][3] = {{-1.5f, 2, -1.5f}, {1.5f, 2, -1.5f}, {1.5f, 2, 1.5f}, {-1.5f, 2, 1.5f}};
+            scene.AddQuad(ground, white, uvs, false, 15.0f, 15.0f);
+            scene.AddQuad(roof, white, uvs, false, 15.0f, 15.0f);
+            scene.End();
+            ctx.UpdateChunkMesh(0, 0, scene, 1);
+            bool ready = false;
+            for (int i = 0; i < 1200 && !ready; i++) {
+                FrameParams f = MakeFrame({0, 3, 9}, {0, 1, 0}, {0, 1, 0}, 128, 96);
+                f.sky.enabled = true;
+                ready = Frame(ctx, f, rgba, w, h) && ctx.JavaPackReady();
+                if (!ready)
+                    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+            }
+            Check(ready, "real pack compiled");
+            if (ready) {
+                for (int i = 0; i < 3; i++) {
+                    FrameParams f = MakeFrame({0, 3, 9}, {0, 1, 0}, {0, 1, 0}, 128, 96);
+                    f.sky.enabled = true;
+                    Frame(ctx, f, rgba, w, h);
+                }
+                if (const char* dump = std::getenv("PERLIN_TEST_DUMP"))
+                    if (FILE* fp = std::fopen((std::string(dump) + "_realpack.ppm").c_str(), "wb")) {
+                        std::fprintf(fp, "P6\n%u %u\n255\n", w, h);
+                        for (size_t i = 0; i + 3 < rgba.size(); i += 4)
+                            std::fwrite(&rgba[i], 1, 3, fp);
+                        std::fclose(fp);
+                    }
+            }
+            ctx.ClearJavaShaderPack();
+        }
+    }
+
     // java pack with shadows: an occluder above the ground has to darken it through the pack's shadow pass
     {
         const std::filesystem::path root = WriteShadowPack();
