@@ -11,6 +11,8 @@
 #include <chrono>
 #include <cmath>
 #include <cstdio>
+#include <random>
+#include <filesystem>
 #include <sstream>
 #include <stdexcept>
 #include <thread>
@@ -49,6 +51,26 @@ namespace perlin::server {
             error = "unknown generator '" + config.generator + "' (\"flat\" or \"vanilla\")";
             return false;
         }
+        if (config.transport == "raknet" && !config.loopbackOnly) {
+            error = "transport=raknet: this server only speaks NetherNet, set transport=nethernet";
+            return false;
+        }
+        if (config.randomSeed) {
+            std::random_device device;
+            config.seed = (static_cast<uint64_t>(device()) << 32) ^ device();
+            config.randomSeed = false;
+            LogInfo("level-seed is empty: random seed " + std::to_string(static_cast<int64_t>(config.seed)));
+        }
+        if (config.compressionAlgorithm == "snappy") {
+            LogWarn("compression-algorithm=snappy is not built; using zlib");
+            config.compressionAlgorithm = "zlib";
+        }
+        if (config.udpPublicBegin != 0 || !config.udpPublicAddress.empty())
+            LogWarn("server-udp-ports: the public side of the mapping is not announced to clients (webrtc picks the candidate address); forward the same port numbers");
+        if (!config.blockNetworkIdsAreHashes) {
+            LogWarn("block-network-ids-are-hashes=false is not supported; block ids stay hashes");
+            config.blockNetworkIdsAreHashes = true;
+        }
         {
             BlockCatalog& catalog = BlockCatalog::Instance();
             std::string catalogError;
@@ -71,7 +93,7 @@ namespace perlin::server {
             return false;
         }
         LogInfo("terrain: " + std::string(choice.backend->Name()) + (choice.note.empty() ? "" : " (" + choice.note + ")"));
-        chunks = std::make_unique<ChunkManager>(std::move(choice.backend));
+        chunks = std::make_unique<ChunkManager>(std::move(choice.backend), config.maxThreads);
 
         RegisterBuiltins();
 
@@ -98,16 +120,29 @@ namespace perlin::server {
         }
         {
             const bool persist = !config.loopbackOnly;
-            opsList.Load(persist ? config.dataDir + "/ops.json" : std::string());
-            whitelistList.Load(persist ? config.dataDir + "/whitelist.json" : std::string());
+            allowList.Load(persist ? AllowlistPath() : std::string());
+            const std::string permissionsPath = PermissionsPath();
+            const bool fresh = persist && !std::filesystem::exists(permissionsPath);
+            permissionList.Load(persist ? permissionsPath : std::string());
+            if (fresh) {
+                // ops.json from before the bds file names: its entries become operators once
+                AccessList legacyOps;
+                legacyOps.Load(config.dataDir + "/ops.json");
+                for (const AccessEntry& e : legacyOps.Entries())
+                    permissionList.SetPermission(e.name, e.xuid, "operator");
+                if (!legacyOps.Entries().empty())
+                    LogInfo("imported " + std::to_string(legacyOps.Entries().size()) + " operators from ops.json into permissions.json");
+            }
             // the old operators key in server.json still counts
             for (const std::string& o : config.operators)
-                opsList.Add(o, std::string());
+                permissionList.SetPermission(o, std::string(), "operator");
             if (persist) {
                 // written out on first run so there is a file to edit
-                opsList.Save();
-                whitelistList.Save();
+                permissionList.Save();
+                allowList.Save();
             }
+            if (config.whitelist && !config.loopbackOnly)
+                LogInfo("allow-list is on: " + std::to_string(allowList.Entries().size()) + " entries in " + allowList.Path());
         }
         plugins->LoadDirectory(config.pluginDir);
         started = true;
@@ -466,28 +501,48 @@ namespace perlin::server {
         return nullptr;
     }
 
+    std::string Server::AllowlistPath() const {
+        // bds: a whitelist.json that exists is used instead of allowlist.json
+        const std::string legacy = config.dataDir + "/whitelist.json";
+        std::error_code ec;
+        return std::filesystem::exists(legacy, ec) ? legacy : config.dataDir + "/allowlist.json";
+    }
+
+    std::string Server::PermissionsPath() const { return config.dataDir + "/permissions.json"; }
+
+    std::string Server::PermissionOf(const std::string& name, const std::string& xuid) const {
+        if (const AccessEntry* e = permissionList.Find(name, xuid))
+            if (e->permission == "operator" || e->permission == "member" || e->permission == "visitor")
+                return e->permission;
+        return config.defaultPermission;
+    }
+
+    bool Server::IgnoresPlayerLimit(const std::string& name, const std::string& xuid) const {
+        const AccessEntry* e = allowList.Find(name, xuid);
+        return e && e->ignoresPlayerLimit;
+    }
+
     bool Server::IsOperatorName(const std::string& name) const {
         // embedded singleplayer: the one player owns the world
-        return config.loopbackOnly || opsList.Contains(name, std::string());
+        return config.loopbackOnly || PermissionOf(name, std::string()) == "operator";
     }
 
     bool Server::IsOperator(const std::string& name, const std::string& xuid) const {
-        return config.loopbackOnly || opsList.Contains(name, xuid);
+        return config.loopbackOnly || PermissionOf(name, xuid) == "operator";
     }
 
     std::string Server::SetOperator(const std::string& name, bool op) {
         Session* online = FindByName(name);
         const std::string shown = online ? online->Name() : name;
-        if (op) {
-            const bool added = opsList.Add(shown, online ? online->Xuid() : std::string());
-            if (online)
-                online->SetOperator(true);
-            return added ? "Opped " + shown : shown + " is already an operator";
-        }
-        const bool removed = opsList.Remove(shown) || (online && !online->Xuid().empty() && opsList.Remove(online->Xuid()));
+        const std::string xuid = online ? online->Xuid() : std::string();
+        const bool already = PermissionOf(shown, xuid) == "operator";
+        // bds: op writes "operator", deop writes "member" (so it also overrides a default of operator)
+        permissionList.SetPermission(shown, xuid, op ? "operator" : "member");
         if (online)
-            online->SetOperator(false);
-        return removed ? "De-opped " + shown : shown + " is not an operator";
+            online->SetOperator(op);
+        if (op)
+            return already ? shown + " is already an operator" : "Opped " + shown;
+        return already ? "De-opped " + shown : shown + " is not an operator";
     }
 
     bool Server::Full() const {
@@ -752,42 +807,71 @@ namespace perlin::server {
                 reply(from, "Gave " + std::to_string(count - left) + " " + shown + " to " + s->Name() + (left ? " (inventory full)" : ""));
             }
         }, "player item [amount]");
-        add("whitelist", "Manage the whitelist", true, [this, reply](Session* from, const std::string& args) {
+        const auto allowlistCommand = [this, reply](Session* from, const std::string& args) {
             std::istringstream in(args);
             std::string sub, who;
             in >> sub;
             std::getline(in, who);
             who = Trim(who);
+            // bds: a name with spaces is quoted
+            if (who.size() >= 2 && who.front() == '"' && who.back() == '"')
+                who = who.substr(1, who.size() - 2);
             sub = Lower(sub);
             const auto persist = [this] {
-                if (!config.loopbackOnly)
-                    config.Save(config.dataDir + "/server.json");
+                if (config.loopbackOnly)
+                    return;
+                // keep to the format the directory already uses, so a server.json setup does not grow a second config that overrides it
+                std::error_code ec;
+                const std::string legacy = config.dataDir + "/server.json";
+                if (!std::filesystem::exists(config.dataDir + "/server.properties", ec) && std::filesystem::exists(legacy, ec))
+                    config.Save(legacy);
+                else
+                    config.SaveProperties(config.dataDir + "/server.properties");
             };
             if (sub == "on" || sub == "off") {
                 config.whitelist = sub == "on";
                 persist();
-                reply(from, std::string("Whitelist is ") + (config.whitelist ? "on" : "off"));
+                reply(from, std::string("The allowlist is ") + (config.whitelist ? "on" : "off"));
             } else if (sub == "add" && !who.empty()) {
                 Session* online = FindByName(who);
-                const bool added = whitelistList.Add(online ? online->Name() : who, online ? online->Xuid() : std::string());
-                reply(from, added ? "Added " + who + " to the whitelist" : who + " is already whitelisted");
+                const bool added = allowList.Add(online ? online->Name() : who, online ? online->Xuid() : std::string());
+                reply(from, added ? "Added " + who + " to the allowlist" : who + " is already on the allowlist");
             } else if (sub == "remove" && !who.empty()) {
                 Session* online = FindByName(who);
-                const bool removed = whitelistList.Remove(who) || (online && whitelistList.Remove(online->Xuid()));
-                reply(from, removed ? "Removed " + who + " from the whitelist" : who + " is not whitelisted");
+                const bool removed = allowList.Remove(who) || (online && allowList.Remove(online->Xuid()));
+                reply(from, removed ? "Removed " + who + " from the allowlist" : who + " is not on the allowlist");
             } else if (sub == "list") {
-                std::string out = std::string("Whitelist is ") + (config.whitelist ? "on" : "off") + ", " + std::to_string(whitelistList.Entries().size()) + " entries:";
-                for (const AccessEntry& e : whitelistList.Entries())
+                std::string out = std::string("The allowlist is ") + (config.whitelist ? "on" : "off") + ", " + std::to_string(allowList.Entries().size()) + " entries:";
+                for (const AccessEntry& e : allowList.Entries())
                     out += "\n" + (e.name.empty() ? e.xuid : e.name);
                 reply(from, out);
             } else if (sub == "reload") {
-                whitelistList.Load(config.dataDir + "/whitelist.json");
-                opsList.Load(config.dataDir + "/ops.json");
-                reply(from, "Reloaded whitelist.json and ops.json");
+                allowList.Load(AllowlistPath());
+                reply(from, "Reloaded " + AllowlistPath());
             } else {
-                reply(from, "§cUsage: /whitelist <on|off|add|remove|list|reload> [player]");
+                reply(from, "§cUsage: /allowlist <on|off|add|remove|list|reload> [player]");
             }
-        }, "action [player]");
+        };
+        add("allowlist", "Manage the allowlist", true, allowlistCommand, "action [player]");
+        // the name this command had before bds renamed it
+        add("whitelist", "Manage the allowlist (old name)", true, allowlistCommand, "action [player]");
+        add("permission", "List or reload permissions.json", true, [this, reply](Session* from, const std::string& args) {
+            const std::string sub = Lower(Trim(args));
+            if (sub == "list") {
+                std::string out = "Permissions (default " + config.defaultPermission + "), " + std::to_string(permissionList.Entries().size()) + " entries:";
+                for (const AccessEntry& e : permissionList.Entries())
+                    out += "\n" + (e.name.empty() ? e.xuid : e.name) + ": " + e.permission;
+                reply(from, out);
+            } else if (sub == "reload") {
+                permissionList.Load(PermissionsPath());
+                // players already in keep working with what they had until they rejoin; operators are refreshed now
+                for (Session* s : InGamePlayers())
+                    s->SetOperator(IsOperator(s->Name(), s->Xuid()));
+                reply(from, "Reloaded " + PermissionsPath());
+            } else {
+                reply(from, "§cUsage: /permission <list|reload>");
+            }
+        }, "list|reload");
         add("tick", "Query or control the game's tick rate", true, [this](Session* from, const std::string& args) { RunTickCommand(from, args); },
             "query|rate|freeze|unfreeze|step|sprint");
         add("stop", "Stop the server", true, [this](Session*, const std::string&) { RequestStop(); });

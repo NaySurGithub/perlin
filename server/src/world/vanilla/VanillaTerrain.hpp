@@ -4,6 +4,18 @@
 
 namespace perlin::server::vanilla {
 
+    // what both backends share: block ids from a column of densities, then the placeholder surface
+    class VanillaBlocks {
+    public:
+        VanillaBlocks();
+        // density[(x * 16 + z) * kHeight + y], y counted from the world floor
+        void Fill(const float* density, ChunkColumn& column) const;
+
+    private:
+        uint16_t stone, deepslate, bedrock, water, grass, dirt, sand, gravel;
+        int seaLevel = 63;
+    };
+
     // java terrain on the cpu: the overworld's final_density decides stone against air, sea level fills the rest with water.
     // surfaces are a placeholder until the material rules are ported (the ground is stone with a grass/dirt or sand/gravel skin)
     class VanillaCpuBackend final : public TerrainBackend {
@@ -24,7 +36,6 @@ namespace perlin::server::vanilla {
         std::unique_ptr<DataPack> pack;
         std::unique_ptr<DensityGraph> graph;
         DfPtr finalDensity;
-        uint16_t stone = 0, deepslate = 0, bedrock = 0, water = 0, grass = 0, dirt = 0, sand = 0, gravel = 0;
-        int seaLevel = 63;
+        std::unique_ptr<VanillaBlocks> blocks;
     };
 }

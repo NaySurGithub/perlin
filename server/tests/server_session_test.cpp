@@ -165,8 +165,8 @@ int main(int argc, char** argv) {
     config.operators = {"Alice"};
     config.dataDir = (fs::temp_directory_path() / "perlin_session_data").string();
     fs::create_directories(config.dataDir);
-    fs::remove(config.dataDir + "/ops.json");
-    fs::remove(config.dataDir + "/whitelist.json");
+    for (const char* f : {"/ops.json", "/whitelist.json", "/allowlist.json", "/permissions.json"})
+        fs::remove(config.dataDir + f);
     Server server(config);
     std::string error;
     CHECK(server.Start(error));
@@ -501,14 +501,20 @@ int main(int argc, char** argv) {
         run("/tick query");
         lines = alice.Take<proto::TextPacket>();
         CHECK(!lines.empty() && lines[0].message.find("running normally") != std::string::npos);
-        // ops and the whitelist live in their own files
+        // permissions and the allowlist live in the files bds uses
         server.RunConsoleCommand("op Bob");
         CHECK(server.IsOperator("Bob", ""));
+        CHECK(server.PermissionOf("Bob", "") == "operator");
         server.RunConsoleCommand("deop Bob");
         CHECK(!server.IsOperator("Bob", ""));
-        server.RunConsoleCommand("whitelist add Bob");
+        CHECK(server.PermissionOf("Bob", "") == "member");
+        server.RunConsoleCommand("allowlist add Bob");
         CHECK(server.IsWhitelisted("bob", ""));
-        CHECK(fs::exists(config.dataDir + "/ops.json") && fs::exists(config.dataDir + "/whitelist.json"));
+        // the old command name still works
+        server.RunConsoleCommand("whitelist add Carol");
+        CHECK(server.IsWhitelisted("carol", ""));
+        CHECK(fs::exists(config.dataDir + "/permissions.json") && fs::exists(config.dataDir + "/allowlist.json"));
+        CHECK(!fs::exists(config.dataDir + "/ops.json") && !fs::exists(config.dataDir + "/whitelist.json"));
     }
 
     server.Stop();

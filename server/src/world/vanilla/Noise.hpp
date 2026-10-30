@@ -15,6 +15,7 @@ namespace perlin::server::vanilla {
 
         // the lattice walk shared with the smeared variant: `smoothY` drives the y blend, `fy` the gradient offset
         float SampleAndLerp(int ix, int iy, int iz, float fx, float fy, float fz, float smoothY) const;
+        const std::array<uint8_t, 256>& Perms() const { return perms; }
         double OffsetX() const { return offsetX; }
         double OffsetY() const { return offsetY; }
         double OffsetZ() const { return offsetZ; }
@@ -30,6 +31,7 @@ namespace perlin::server::vanilla {
     public:
         SmearedPerlinNoise(Xoroshiro& random, double fudgeYScale) : PerlinNoise(random), fudgeYScale(fudgeYScale) {}
         float Get(double x, double y, double z) const;
+        double FudgeYScale() const { return fudgeYScale; }
 
     private:
         double fudgeYScale;
@@ -41,12 +43,20 @@ namespace perlin::server::vanilla {
         BlendedNoise(double xzScale, double yScale, double xzFactor, double yFactor, double smearScaleMultiplier, Xoroshiro random);
         float Get(int x, int y, int z) const;
 
-    private:
         struct Layer {
             SmearedPerlinNoise noise;
             double frequency;
             float amplitude;
         };
+        const std::vector<Layer>& MinLimit() const { return minLimit; }
+        const std::vector<Layer>& MaxLimit() const { return maxLimit; }
+        const std::vector<Layer>& Main() const { return main; }
+        double XzMultiplier() const { return xzMultiplier; }
+        double YMultiplier() const { return yMultiplier; }
+        double XzFactor() const { return xzFactor; }
+        double YFactor() const { return yFactor; }
+
+    private:
         static std::vector<Layer> Fbm(Xoroshiro& random, int firstOctave, double smearScale, double amplitude);
         static float Sum(const std::vector<Layer>& stack, double x, double y, double z);
         std::vector<Layer> minLimit, maxLimit, main;
@@ -69,12 +79,14 @@ namespace perlin::server::vanilla {
         NormalNoise(const NoiseParameters& parameters, Xoroshiro random);
         float Get(double x, double y, double z) const;
 
-    private:
         struct Layer {
             PerlinNoise noise;
             double frequency;
             float amplitude;
         };
+        const std::vector<Layer>& Layers() const { return layers; }
+
+    private:
         std::vector<Layer> layers;
     };
 }

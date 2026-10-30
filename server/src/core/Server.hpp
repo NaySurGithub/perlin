@@ -70,9 +70,19 @@ namespace perlin::server {
         bool IsOperatorName(const std::string& name) const;
         // operators may be listed by name or by xuid; with xbox_auth only an xuid is a safe key
         bool IsOperator(const std::string& name, const std::string& xuid) const;
-        bool IsWhitelisted(const std::string& name, const std::string& xuid) const { return whitelistList.Contains(name, xuid); }
-        AccessList& Ops() { return opsList; }
-        AccessList& Whitelist() { return whitelistList; }
+        // allowlist.json (bds name; whitelist.json is read instead when it exists)
+        bool IsWhitelisted(const std::string& name, const std::string& xuid) const { return allowList.Contains(name, xuid); }
+        // "visitor", "member" or "operator": the permissions.json entry, else default-player-permission-level
+        std::string PermissionOf(const std::string& name, const std::string& xuid) const;
+        AccessList& Permissions() { return permissionList; }
+        AccessList& Whitelist() { return allowList; }
+        // where the allowlist is read and written
+        std::string AllowlistPath() const;
+        std::string PermissionsPath() const;
+        // true when the player is on the allowlist with ignoresPlayerLimit
+        bool IgnoresPlayerLimit(const std::string& name, const std::string& xuid) const;
+        // the loopback test and old callers: the same list as Permissions()
+        AccessList& Ops() { return permissionList; }
         // grants or removes operator by name (online or not); returns a one-line result for the caller
         std::string SetOperator(const std::string& name, bool op);
         bool Full() const;
@@ -118,7 +128,7 @@ namespace perlin::server {
         std::unique_ptr<LoopbackListener> loopback;
         std::unique_ptr<Listener> nethernet;
         EventQueue events;
-        AccessList opsList, whitelistList;
+        AccessList permissionList{AccessList::Kind::Permissions}, allowList{AccessList::Kind::Allowlist};
 
         std::unordered_map<uint64_t, std::unique_ptr<Session>> sessions;
         uint64_t nextRuntimeId = 1;

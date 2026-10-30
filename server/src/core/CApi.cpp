@@ -51,7 +51,7 @@ PS_API ps_server* ps_create(const ps_options* options) {
         ServerConfig config;
         std::string dir = options && options->data_dir ? options->data_dir : ".";
         std::string error;
-        config = ServerConfig::Load(dir + "/server.json", &error);
+        config = ServerConfig::LoadDirectory(dir, &error);
         if (!error.empty())
             LogWarn(error);
         config.dataDir = dir;

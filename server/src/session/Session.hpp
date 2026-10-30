@@ -48,6 +48,7 @@ namespace perlin::server {
         bool InGame() const { return state == State::InGame; }
         bool IsClosed() const { return state == State::Closed; }
         bool Operator() const { return isOperator; }
+        bool Visitor() const { return isVisitor; }
         double X() const { return posX; }
         double Y() const { return posY; }
         double Z() const { return posZ; }
@@ -136,6 +137,8 @@ namespace perlin::server {
         std::array<uint8_t, 16> uuid{};
         std::unique_ptr<proto2225::Skin> skin;
         bool isOperator = false;
+        // permissions.json "visitor": no building, breaking, fighting or opening things
+        bool isVisitor = false;
         bool creative = false;
         int gameMode = 0;
         PlayerInventory inventory;
@@ -149,6 +152,8 @@ namespace perlin::server {
         bool moved = false;
         std::unordered_set<ChunkPos, ChunkPosHash> sent;
         std::chrono::steady_clock::time_point lastPacket = std::chrono::steady_clock::now();
+        // last time the player moved, looked, acted or chatted (player-idle-timeout)
+        std::chrono::steady_clock::time_point lastActive = std::chrono::steady_clock::now();
         std::chrono::steady_clock::time_point lastHeartbeat = std::chrono::steady_clock::now();
         std::chrono::steady_clock::time_point stateSince = std::chrono::steady_clock::now();
     };

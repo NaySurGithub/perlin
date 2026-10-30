@@ -278,13 +278,13 @@ namespace perlin::server {
             return;
         }
         proto::NetworkSettingsPacket settings;
-        settings.compressionThreshold = 256;
+        settings.compressionThreshold = server.Config().compressionThreshold;
         settings.compressionAlgorithm = proto::NetworkSettingsPacketCompressionAlgorithm::Deflate;
         std::vector<uint8_t> out;
         net::EncodeChecked(settings, out);
         // the settings reply itself is the last uncompressed batch
         SendImmediate(proto::NetworkSettingsPacket::kId, out);
-        codec.EnableCompression(256);
+        codec.EnableCompression(server.Config().compressionThreshold);
         state = State::AwaitLogin;
         stateSince = std::chrono::steady_clock::now();
     }
@@ -344,15 +344,17 @@ namespace perlin::server {
         uuid = ParseUuid(uuidText, runtimeId);
         *skin = SkinFromClientData(haveClient ? clientData : json::Value{}, name);
         isOperator = server.IsOperator(name, xuid);
+        isVisitor = !server.Config().loopbackOnly && !isOperator && server.PermissionOf(name, xuid) == "visitor";
         gameMode = server.Config().gameMode;
         creative = gameMode == 1;
 
         if (server.Config().whitelist && !server.Config().loopbackOnly && !server.IsWhitelisted(name, xuid)) {
-            LogInfo(name + " refused: not on the whitelist");
-            Kick("You are not whitelisted on this server");
+            LogInfo(name + " refused: not on the allowlist");
+            // the client translates this key (bds sends the same one)
+            Kick("disconnectionScreen.notAllowed");
             return;
         }
-        if (server.Full()) {
+        if (server.Full() && !server.IgnoresPlayerLimit(name, xuid)) {
             proto::PlayStatusPacket p;
             p.status = proto::PlayStatusPacketStatus::FailedServerFull;
             Send(p);
@@ -423,10 +425,10 @@ namespace perlin::server {
         g.biomeType = 0;
         g.biomeName = "plains";
         g.dimension = proto::StartGamePacketDimension::Overworld;
-        // 2 = flat in the generator enum; informational for the client
-        g.generator = 2;
+        // generator enum: 1 infinite, 2 flat; informational for the client
+        g.generator = cfg.generator == "vanilla" ? 1 : 2;
         g.worldGamemode = static_cast<proto::GameMode>(cfg.gameMode);
-        g.difficulty = 1;
+        g.difficulty = cfg.difficulty;
         g.spawnPosition = {0, static_cast<int32_t>(std::floor(server.SpawnY())), 0};
         g.achievementsDisabled = true;
         g.rainLevel = 0;
@@ -434,8 +436,11 @@ namespace perlin::server {
         g.isMultiplayer = true;
         g.broadcastToLan = false;
         g.enableCommands = true;
-        g.permissionLevel = isOperator ? proto::PermissionLevel::Operator : proto::PermissionLevel::Member;
-        g.serverChunkTickRange = 4;
+        g.permissionLevel = isOperator ? proto::PermissionLevel::Operator : isVisitor ? proto::PermissionLevel::Visitor : proto::PermissionLevel::Member;
+        g.serverChunkTickRange = static_cast<int32_t>(cfg.tickDistance);
+        g.chatRestrictionLevel = cfg.chatRestriction == "Disabled" ? proto::StartGamePacketChatRestrictionLevel::Disabled
+                                 : cfg.chatRestriction == "Dropped" ? proto::StartGamePacketChatRestrictionLevel::Dropped
+                                                                   : proto::StartGamePacketChatRestrictionLevel::None;
         g.gameVersion = "*";
         g.levelId = cfg.levelName;
         g.worldName = cfg.name;
@@ -531,16 +536,18 @@ namespace perlin::server {
     void Session::SendAbilities() {
         namespace F = proto::FlagsAbilitySet;
         uint32_t enabled = 0;
-        if (gameMode != 2)
-            enabled |= F::Build | F::Mine;
-        enabled |= F::DoorsAndSwitches | F::OpenContainers | F::AttackPlayers | F::AttackMobs;
+        if (!isVisitor) {
+            if (gameMode != 2)
+                enabled |= F::Build | F::Mine;
+            enabled |= F::DoorsAndSwitches | F::OpenContainers | F::AttackPlayers | F::AttackMobs;
+        }
         if (gameMode == 1)
             enabled |= F::InstantBuild | F::MayFly | F::Invulnerable;
         if (isOperator)
             enabled |= F::OperatorCommands;
         proto::UpdateAbilitiesPacket p;
         p.entityUniqueId = static_cast<int64_t>(runtimeId);
-        p.permissionLevel = isOperator ? proto::PermissionLevel::Operator : proto::PermissionLevel::Member;
+        p.permissionLevel = isOperator ? proto::PermissionLevel::Operator : isVisitor ? proto::PermissionLevel::Visitor : proto::PermissionLevel::Member;
         p.commandPermission = isOperator ? proto::CommandPermissionLevel::Operator : proto::CommandPermissionLevel::Normal;
         proto::AbilityLayers layer;
         layer.type = proto::AbilityLayersType::Base;
@@ -571,6 +578,8 @@ namespace perlin::server {
         if (isOperator == op)
             return;
         isOperator = op;
+        if (op)
+            isVisitor = false;
         if (state != State::InGame)
             return;
         SendAbilities();
@@ -723,11 +732,16 @@ namespace perlin::server {
         switch (a.action) {
         // creative breaks on the first message; survival waits for the stop, since the dig time is the client's to count here
         case proto::Action::StartBreak:
+            if (isVisitor)
+                break;
             if (creative)
                 server.PlayerBreak(*this, pos.x, pos.y, pos.z);
             break;
         case proto::Action::StopBreak:
         case proto::Action::CreativePlayerDestroyBlock:
+            if (isVisitor)
+                break;
+            lastActive = std::chrono::steady_clock::now();
             server.PlayerBreak(*this, pos.x, pos.y, pos.z);
             break;
         default:
@@ -747,6 +761,9 @@ namespace perlin::server {
         if (use->hotbarSlot >= 0 && use->hotbarSlot < PlayerInventory::kHotbar)
             inventory.selected = use->hotbarSlot;
         const auto& at = use->blockPosition;
+        if (isVisitor)
+            return;
+        lastActive = std::chrono::steady_clock::now();
         switch (use->actionType) {
         case proto::TransactionUseItemActionType::BreakBlock:
             server.PlayerBreak(*this, at.x, at.y, at.z);
@@ -869,6 +886,7 @@ namespace perlin::server {
         std::string message = t.message;
         if (message.size() > 512)
             message.resize(512);
+        lastActive = std::chrono::steady_clock::now();
         server.HandleChat(*this, message);
     }
 
@@ -948,6 +966,7 @@ namespace perlin::server {
         proto::CommandRequestPacket c;
         if (!Decode(body, c) || state != State::InGame)
             return;
+        lastActive = std::chrono::steady_clock::now();
         server.RunPlayerCommand(*this, c.command);
     }
 
@@ -957,7 +976,10 @@ namespace perlin::server {
         // far outside any sane world: ignore rather than let a bad value drive chunk loading
         if (std::abs(x) > 3.0e7 || std::abs(z) > 3.0e7 || std::abs(y) > 1.0e5)
             return;
-        moved = moved || x != posX || y != posY || z != posZ || p != pitch || yawValue != yaw;
+        const bool changed = x != posX || y != posY || z != posZ || p != pitch || yawValue != yaw;
+        if (changed)
+            lastActive = std::chrono::steady_clock::now();
+        moved = moved || changed;
         posX = x;
         posY = y;
         posZ = z;
@@ -1030,7 +1052,7 @@ namespace perlin::server {
         add.headYaw = other.yaw;
         add.gamemode = static_cast<proto::GameMode>(other.gameMode);
         add.uniqueId = static_cast<int64_t>(other.runtimeId);
-        add.permissionLevel = other.isOperator ? proto::PermissionLevel::Operator : proto::PermissionLevel::Member;
+        add.permissionLevel = other.isOperator ? proto::PermissionLevel::Operator : other.isVisitor ? proto::PermissionLevel::Visitor : proto::PermissionLevel::Member;
         add.commandPermission = other.isOperator ? proto::CommandPermissionLevel::Operator : proto::CommandPermissionLevel::Normal;
         Send(add);
     }
@@ -1111,6 +1133,13 @@ namespace perlin::server {
             (state != State::InGame && now - stateSince > kLoginTimeout)) {
             LogInfo((name.empty() ? connection->Describe() : name) + " timed out");
             Close();
+            return;
+        }
+        // player-idle-timeout (minutes): bds kicks players who have not moved, acted or chatted for that long
+        const uint32_t idleMinutes = server.Config().idleTimeoutMinutes;
+        if (idleMinutes > 0 && state == State::InGame && !server.Config().loopbackOnly && now - lastActive > std::chrono::minutes(idleMinutes)) {
+            LogInfo(name + " kicked: idle for " + std::to_string(idleMinutes) + " minutes");
+            Kick("disconnectionScreen.idleTimeout");
             return;
         }
         if (state == State::Loading || state == State::InGame)

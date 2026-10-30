@@ -23,7 +23,8 @@ namespace perlin::server {
     // owns loaded columns; generation runs on a worker so the tick never waits for terrain
     class ChunkManager {
     public:
-        explicit ChunkManager(std::unique_ptr<TerrainBackend> backend);
+        // maxThreads caps the generation workers (max-threads); 0 = from the core count
+        explicit ChunkManager(std::unique_ptr<TerrainBackend> backend, size_t maxThreads = 0);
         ~ChunkManager();
 
         const char* BackendName() const { return backend->Name(); }

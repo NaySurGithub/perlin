@@ -244,8 +244,15 @@ namespace perlin::server {
                     }
                     if (!config.iceBindAddress.empty())
                         rc.bindAddress = config.iceBindAddress;
-                    // one udp port for every peer: a single forwarded port is enough
-                    if (config.iceUdpMux) {
+                    if (config.udpPortsSet) {
+                        // server-udp-ports: one shared port, a range spread over connections, or (0) whatever the os gives
+                        if (config.udpPortBegin != 0) {
+                            rc.portRangeBegin = config.udpPortBegin;
+                            rc.portRangeEnd = config.udpPortEnd;
+                            rc.enableIceUdpMux = config.udpPortBegin == config.udpPortEnd;
+                        }
+                    } else if (config.iceUdpMux) {
+                        // one udp port for every peer: a single forwarded port is enough
                         rc.enableIceUdpMux = true;
                         rc.portRangeBegin = config.port;
                         rc.portRangeEnd = config.port;

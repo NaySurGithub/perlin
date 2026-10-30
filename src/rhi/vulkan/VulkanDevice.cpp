@@ -189,6 +189,7 @@ namespace rhi::vk {
         ef.depthClamp = sf.depthClamp;
         ef.depthBiasClamp = sf.depthBiasClamp;
         ef.shaderInt64 = sf.shaderInt64;
+        ef.shaderFloat64 = sf.shaderFloat64;
         ef.imageCubeArray = sf.imageCubeArray;
         ef.sampleRateShading = sf.sampleRateShading;
         ef.fragmentStoresAndAtomics = sf.fragmentStoresAndAtomics;
@@ -357,6 +358,7 @@ namespace rhi::vk {
         caps.features.textureCompressionBC = ef.textureCompressionBC;
         caps.features.shaderFloat16 = en12.shaderFloat16;
         caps.features.shaderInt64 = ef.shaderInt64;
+        caps.features.shaderFloat64 = ef.shaderFloat64;
         caps.features.depthClipControl = depthClipEnable;
         caps.features.bindless = en12.runtimeDescriptorArray && en12.descriptorBindingPartiallyBound && en12.shaderSampledImageArrayNonUniformIndexing;
         caps.features.enhancedBarriers = true;

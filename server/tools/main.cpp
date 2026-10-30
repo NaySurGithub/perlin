@@ -40,21 +40,29 @@ int main(int argc, char** argv) {
         else if (a == "--port" && i + 1 < argc) port = std::atoi(argv[++i]);
         else if (a == "--help" || a == "-h") {
             std::cout << "perlin-server [--data <dir>] [--port <n>]\n"
-                         "  reads <dir>/server.json (written with defaults on first run), plugins from <dir>/plugins\n";
+                         "  reads <dir>/server.properties (written with defaults on first run; the bds file format), allowlist.json,\n"
+                         "  permissions.json and plugins from <dir>/plugins\n";
             return 0;
         }
     }
     std::filesystem::create_directories(dir);
-    const std::string configPath = dir + "/server.json";
+    // bds reads server.properties from its working directory; a server.json from before that is still read when there is no .properties
+    const std::string propsPath = dir + "/server.properties";
+    const bool hadProps = std::filesystem::exists(propsPath);
+    const bool hadLegacy = std::filesystem::exists(dir + "/server.json");
     std::string error;
-    ServerConfig config = ServerConfig::Load(configPath, &error);
+    ServerConfig config = ServerConfig::LoadDirectory(dir, &error);
     if (!error.empty()) {
         LogError(error);
         return 2;
     }
-    if (!std::filesystem::exists(configPath)) {
-        config.Save(configPath);
-        LogInfo("wrote default " + configPath);
+    if (!hadProps && !hadLegacy) {
+        // first run: a random seed, and the file written out so there is something to edit
+        config.randomSeed = true;
+        config.udpPortsSet = true;
+        config.udpPortBegin = config.udpPortEnd = config.port;
+        config.SaveProperties(propsPath);
+        LogInfo("wrote default " + propsPath);
     }
     config.dataDir = dir;
     // a packaged server carries its block tables in resources/ next to the executable

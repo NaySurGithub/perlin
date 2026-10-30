@@ -4,17 +4,27 @@ Server software that lives inside the Perlin tree but builds on its own. One cod
 
 | Target | What it is |
 | --- | --- |
-| `perlin-server` | Dedicated server, like Bedrock Dedicated Server. Reads `server.json`, loads plugins, takes console commands on stdin. |
+| `perlin-server` | Dedicated server, like Bedrock Dedicated Server. Reads `server.properties` (the same keys as BDS), `allowlist.json` and `permissions.json`, loads plugins, takes console commands on stdin. |
 | `perlin_server` (`.dll` / `.so` / `.dylib`) | The same server behind a small C API (`include/perlin/server.h`) for singleplayer inside the client. |
 | `perlin_server_core` | Static library both of the above are made from. |
 
 ```
 cmake -S server -B build-server && cmake --build build-server -j
-./build-server/perlin-server --data run        # writes run/server.json on first start
+./build-server/perlin-server --data run        # writes run/server.properties, allowlist.json and permissions.json on first start
 ctest --test-dir build-server
 ```
 
 From the root tree the server is built by default (`PERLIN_BUILD_SERVER`, on for desktop, off for web and Android): the client build also produces `perlin_server` beside the executable, which is what the Singleplayer button loads, and `perlin-server`; `cmake --install` puts both in the package (the library goes inside the app bundle on macOS), with the block tables in `resources/`. Needs a C++23 compiler, Python 3 (the Bedrock packet codecs are generated from `protocol/` by the client's own `tools/protogen`, so the server speaks exactly what the client decodes), and network access for the first configure (libdatachannel, cpp-httplib, miniz, wasm3 through FetchContent). Options: `PERLIN_SERVER_NETHERNET` (default ON), `PERLIN_SERVER_GPU` (OFF, see below), `PERLIN_SERVER_BUILD_SHARED`, `PERLIN_SERVER_BUILD_EXE`.
+
+## Configuration
+
+`server.properties` is the BDS file: same keys, same order, same defaults (written in full on first start), plus a few `perlin-*` keys for what BDS does not have (`perlin-generator` flat or vanilla, `perlin-java-data`, `perlin-terrain-backend`, `perlin-plugin-dir`, `perlin-block-data-dir`, `perlin-flat-layers`, ICE settings). Keys this server does not act on are kept when it rewrites the file. A directory with only the old `server.json` still loads, and `server.properties` wins when both exist.
+
+Applied: `server-name`, `gamemode`, `difficulty`, `max-players`, `online-mode`, `allow-list`, `server-port`, `server-ip`, `server-udp-ports` (a shared port, a range, or `public:local`; see below), `transport`, `enable-lan-visibility`, `view-distance`, `tick-distance`, `player-idle-timeout`, `max-threads`, `level-name`, `level-seed` (empty is random, a number is used as is, other text is hashed like Java's `String.hashCode`), `default-player-permission-level`, `compression-threshold` (default 1, as BDS), `chat-restriction`.
+
+Read and kept, not acted on yet: `force-gamemode` and `allow-cheats` (nothing is saved to apply them to), `server-portv6`, the `server-authoritative-*` and position thresholds, ticking-area limits, content log, script debugging, `disable-persona`, `disable-custom-skins`, `enable-packet-rate-limiter` (and `packetlimitconfig.json`), `server-build-radius-ratio`.
+
+Differences from BDS that are deliberate or forced: `transport=raknet` is refused (NetherNet only); `compression-algorithm=snappy` falls back to zlib with a warning; `block-network-ids-are-hashes=false` is ignored; `client-side-chunk-generation-enabled` is read but the server always sends it off, since the client would generate its own terrain outside the server's radius; the public half of a `server-udp-ports` mapping is parsed but WebRTC does not announce it, so forward the same port numbers; `online-mode` defaults to false and `allow-list` to false here, where BDS defaults both to true.
 
 ## Transport: NetherNet only
 
@@ -33,10 +43,10 @@ The in-process `LoopbackListener` skips the network entirely and is what singlep
 ## What works
 
 - Bedrock 1.26.60 (protocol 2225) login: network settings, login, resource pack negotiation (no packs offered), start game, chunk radius, chunk streaming, spawn.
-- Flat world (`flat_layers` in `server.json`, default bedrock / 2 dirt / grass, surface at y -60), sections that are one block are stored and sent as a single value.
+- Flat world (`perlin-flat-layers` in `server.properties`, default bedrock / 2 dirt / grass, surface at y -60), sections that are one block are stored and sent as a single value.
 - Multiplayer: any number of sessions, player list, other players appear with their own skin, movement is relayed, join and leave messages.
 - Chat (`Text`) and commands, one chat line per line of output: `/help /list /say /tp /kick /plugins /stop`, plus `/give <player> <item> [amount]`, `/gamemode <survival|creative|adventure> [player]`, `/op`, `/deop`, `/whitelist <on|off|add|remove|list|reload> [player]` and `/tick <query|rate|freeze|unfreeze|step|sprint>` with the same syntax as Java's. `@s`, `@p` and `@a` work as targets.
-- Operators and the whitelist live in `ops.json` and `whitelist.json` next to `server.json`: `[{"name": "Steve", "xuid": "2535..."}]`. An entry matches by Xbox id when both sides have one, otherwise by name. The whitelist is off by default (`"whitelist": true` or `/whitelist on`). The old `operators` key in `server.json` is still read. In embedded singleplayer the one player is an operator automatically but keeps the world's game mode (survival by default).
+- Permissions and the allowlist use BDS's files and formats. `permissions.json` is `[{"permission": "operator", "xuid": "2535..."}]` with `operator`, `member` or `visitor`; players not listed get `default-player-permission-level`. `allowlist.json` is `[{"ignoresPlayerLimit": false, "name": "Steve", "xuid": "2535..."}]`, used when `allow-list=true` (off by default here; BDS ships it on). As in BDS, a `whitelist.json` that exists is read instead of `allowlist.json`, and an old `ops.json` is imported into `permissions.json` once. An entry matches by Xbox id when both sides have one, otherwise by name; a name-only entry gets its xuid filled in on the first join. `/allowlist <on|off|add|remove|list|reload>` (`/whitelist` still works), `/permission <list|reload>`, `/op` and `/deop` (which write `operator` and `member`) manage them. Visitors cannot build, break, fight or open things. In embedded singleplayer the one player is an operator automatically but keeps the world's game mode (survival by default).
 - Creative inventory with every block item, grouped into the vanilla tabs; survival attributes (health, hunger, experience) so the client's HUD has something to show; arm swings, emotes, skin changes and sounds are relayed to other players.
 - Building: the creative menu (every block the client knows, from its own `block_states.json`), placing, breaking, pick block, the 36-slot inventory with cursor, hotbar selection, swap / take / place / drop / destroy through the server-authoritative item stack requests (with stack ids and atomic rollback). Reach is checked, plugins can cancel a place or break, and a refused action sends the real block back so the client undoes its guess. In survival, placing spends one item and breaking pays the block straight into the inventory; bedrock does not break.
 - WASM plugins.
@@ -46,12 +56,12 @@ Not modelled on purpose: entities other than players, so no item entities (a dro
 
 ## Xbox authentication
 
-`"xbox_auth": true` in `server.json` makes the server accept only Xbox Live identities. Every login's certificate chain is always checked (ES384 signatures, each link signed by the key the previous link named, expiry, the client data signed by the last key); `xbox_auth` decides what a valid chain is worth:
+`online-mode=true` in `server.properties` (`"xbox_auth": true` in the older `server.json`) makes the server accept only Xbox Live identities. Every login's certificate chain is always checked (ES384 signatures, each link signed by the key the previous link named, expiry, the client data signed by the last key); `xbox_auth` decides what a valid chain is worth:
 
 - **off (default):** the chain only proves the player holds the key it names. The name is a label anyone can pick; no Xbox id is trusted.
 - **on:** the chain must pass through a trusted root key (Mojang's, or the keys in `auth_root_keys`), the name and Xbox id come from the links after the root's signature only, and over NetherNet the offer's `a=identity` assertion must be signed by the player's key and cover this connection's DTLS fingerprints, so a captured login cannot be replayed from another machine. Anything else is disconnected with "not authenticated" (the client words it as needing an Xbox login).
 
-Operators can then be listed by Xbox id (`"operators": ["2535412345678"]`); with `xbox_auth` on, a name in the list no longer counts, since names are not unique to an account.
+Operators can then be listed by Xbox id (an xuid in `permissions.json`); with `online-mode` on, a name in the list no longer counts, since names are not unique to an account.
 
 Checked with locally generated keys against a custom root, including a forged self-signed link, tampering, expiry and a replayed login. **Not checked against a real Microsoft-issued chain**: the built-in Mojang root keys are two constants (current and pre-2020); they parse as valid P-384 keys, but I could not confirm the current one against a live login. If real players are refused, set `auth_root_keys` to the key the client's chain is signed with. The newer OpenID `Token` is not verified; the client still sends the certificate chain, which is what is checked.
 
@@ -73,7 +83,7 @@ It is part of the normal build; configure with `-DPERLIN_BUILD_SERVER=OFF` to le
 
 World generation goes through `TerrainBackend` (`src/world/Generator.hpp`): a batch of chunk positions in, columns out, same result for the same seed and position. `ChunkManager` runs it on a worker thread and asks for `PreferredBatch()` positions at a time.
 
-`terrain_backend` in `server.json`: `cpu`, `gpu`, or `auto`. The GPU backend (`src/gpu/GpuTerrainRhi.cpp` and `src/gpu/shaders/terrain_flat.slang`) runs a compute pass on the client's RHI: one thread per cell for up to 16 chunks per dispatch, one readback, the block a function of (x, y, z, seed). `auto` takes it only if it starts on a hardware device **and** matches the CPU reference on a probe batch; otherwise it falls back and logs why.
+`perlin-terrain-backend` in `server.properties` (`terrain_backend` in `server.json`): `cpu`, `gpu`, or `auto`. The GPU backend (`src/gpu/GpuTerrainRhi.cpp` and `src/gpu/shaders/terrain_flat.slang`) runs a compute pass on the client's RHI: one thread per cell for up to 16 chunks per dispatch, one readback, the block a function of (x, y, z, seed). `auto` takes it only if it starts on a hardware device **and** matches the CPU reference on a probe batch; otherwise it falls back and logs why.
 
 Build it with `-DPERLIN_SERVER_GPU=ON` (needs `slangc`, fetched unless `PERLIN_SLANGC` is set). Only the Vulkan shader is compiled; D3D12 and Metal need their shader targets added to the pack and their bindings checked.
 

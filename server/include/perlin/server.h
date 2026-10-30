@@ -29,9 +29,9 @@ typedef struct ps_server ps_server;
 typedef struct ps_conn ps_conn;
 
 typedef struct ps_options {
-    /* directory holding server.json, plugins/ and world data; NULL = current directory */
+    /* directory holding server.properties (or the older server.json), plugins/ and world data; NULL = current directory */
     const char* data_dir;
-    /* json text overriding server.json (same keys); NULL = none */
+    /* json text overriding the config file (server.json keys); NULL = none */
     const char* config_json;
     /* embedded singleplayer: no nethernet listener, the one local player is an operator */
     int loopback_only;
