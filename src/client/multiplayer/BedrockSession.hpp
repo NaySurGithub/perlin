@@ -239,11 +239,6 @@ namespace perlin {
             std::lock_guard lock(attrMutex);
             return (ownFlagWords[0] & proto::FlagsMetadataFlags1::Swimming) != 0;
         }
-        // the name tag the server gives us, ranks and colours included; empty until it sends one
-        std::string OwnNameTag() const {
-            std::lock_guard lk(attrMutex);
-            return ownNameTag;
-        }
         std::array<float, 2> ActorSize() const {
             std::lock_guard lock(attrMutex);
             return {ownWidth * ownScale, ownHeight * ownScale};
@@ -1028,7 +1023,6 @@ void RequestRespawn();
         std::optional<proto::PlayerAttributesEntry> movementAttribute;
         int64_t ownPlayerFlags = 0;
         float ownScale = 1.0f, ownWidth = 0.6f, ownHeight = 1.8f;
-        std::string ownNameTag;
         int predictionSyncCountdown = -1;
         bool flying = false;
         bool initializedSent = false;

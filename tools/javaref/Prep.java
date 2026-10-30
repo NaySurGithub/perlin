@@ -4,6 +4,9 @@ import java.util.stream.*;
 
 public class Prep {
     static boolean isNeutral(String o) {
+        // the biome table dump needs a working Pair (helper/ has one); everything else in the data-fixer library stays a no-op
+        if (o.equals("com/mojang/datafixers/util/Pair"))
+            return false;
         return o.startsWith("com/mojang/serialization/") || o.startsWith("com/mojang/datafixers/") || o.startsWith("com/mojang/brigadier/") || o.startsWith("com/mojang/authlib/")
             || o.startsWith("io/netty/") || o.startsWith("com/mojang/jtracy/") || o.startsWith("com/mojang/logging/") && false;
     }

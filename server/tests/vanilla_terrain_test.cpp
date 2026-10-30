@@ -1,4 +1,4 @@
-// the vanilla backend fills chunks from the real density graph; needs PERLIN_JAVA_JAR
+// the vanilla backend fills chunks from the real density graph
 #include "core/Config.hpp"
 #include "world/BlockCatalog.hpp"
 #include "world/vanilla/VanillaTerrain.hpp"
@@ -10,14 +10,8 @@
 using namespace perlin::server;
 
 int main() {
-    const char* jar = std::getenv("PERLIN_JAVA_JAR");
-    if (!jar) {
-        std::printf("skipped: set PERLIN_JAVA_JAR\n");
-        return 0;
-    }
     BlockCatalog::Instance().LoadBuiltin();
     ServerConfig config;
-    config.javaData = jar;
     config.seed = 12345;
     std::string error;
     auto backend = vanilla::VanillaCpuBackend::Create(config, error);

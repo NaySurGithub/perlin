@@ -87,7 +87,11 @@ set(PS_SOURCES
     src/world/vanilla/DataPack.cpp
     src/world/vanilla/DensityFunction.cpp
     src/world/vanilla/Noise.cpp
-    src/world/vanilla/VanillaTerrain.cpp)
+    src/world/vanilla/VanillaTerrain.cpp
+    src/world/vanilla/OverworldShapeData.cpp
+    src/world/vanilla/BiomeData.cpp
+    src/world/vanilla/VanillaSurface.cpp
+    src/gpu/VanillaGpuProgram.cpp)
 
 # wasm runtime: wasm3 through the client's own wrapper (WasmRuntimeWasm3.cpp), so plugins behave the same.
 # it is plain c with no dependencies, which keeps it safe to link into a shared library next to the client's WasmEdge
@@ -130,7 +134,7 @@ else()
 endif()
 
 if(PERLIN_SERVER_GPU)
-    list(APPEND PS_SOURCES src/gpu/GpuTerrainRhi.cpp "${CMAKE_CURRENT_BINARY_DIR}/gpu/terrain_pack.cpp")
+    list(APPEND PS_SOURCES src/gpu/GpuTerrainRhi.cpp src/gpu/GpuVanillaRhi.cpp "${CMAKE_CURRENT_BINARY_DIR}/gpu/terrain_pack.cpp")
     # the rhi (vulkan / d3d12 / metal behind one interface) is the client's own
     if(NOT TARGET perlin_rhi)
         set(PERLIN_RHI_D3D12 OFF CACHE BOOL "" FORCE)
@@ -167,9 +171,10 @@ if(PERLIN_SERVER_GPU)
         COMMAND "${Python3_EXECUTABLE}" -I "${PERLIN_ROOT}/tools/pack_shaders.py" --slangc "${PERLIN_SLANGC}"
                 --slots "${CMAKE_CURRENT_BINARY_DIR}/gpu/slots.json" --targets spirv
                 -o "${CMAKE_CURRENT_BINARY_DIR}/gpu/terrain.pack" "${CMAKE_CURRENT_SOURCE_DIR}/src/gpu/shaders/terrain_flat.slang"
+                "${CMAKE_CURRENT_SOURCE_DIR}/src/gpu/shaders/terrain_vanilla.slang"
         COMMAND "${Python3_EXECUTABLE}" -I "${CMAKE_CURRENT_SOURCE_DIR}/tools/embed_bytes.py" "${CMAKE_CURRENT_BINARY_DIR}/gpu/terrain.pack"
                 "${CMAKE_CURRENT_BINARY_DIR}/gpu/terrain_pack.cpp" kTerrainShaderPack
-        DEPENDS src/gpu/shaders/terrain_flat.slang tools/embed_bytes.py "${PERLIN_ROOT}/tools/pack_shaders.py"
+        DEPENDS src/gpu/shaders/terrain_flat.slang src/gpu/shaders/terrain_vanilla.slang tools/embed_bytes.py "${PERLIN_ROOT}/tools/pack_shaders.py"
         COMMENT "Compiling the terrain compute shader" VERBATIM)
 else()
     list(APPEND PS_SOURCES src/gpu/GpuTerrainStub.cpp)
@@ -214,7 +219,8 @@ endif()
 
 # float results must match java's strict ieee arithmetic bit for bit: no fused multiply-add
 if(NOT MSVC)
-    set_source_files_properties(src/world/vanilla/Noise.cpp src/world/vanilla/DensityFunction.cpp src/world/vanilla/VanillaTerrain.cpp PROPERTIES COMPILE_OPTIONS "-ffp-contract=off")
+    set_source_files_properties(src/world/vanilla/Noise.cpp src/world/vanilla/DensityFunction.cpp src/world/vanilla/VanillaTerrain.cpp src/world/vanilla/VanillaSurface.cpp
+    src/gpu/VanillaGpuProgram.cpp PROPERTIES COMPILE_OPTIONS "-ffp-contract=off")
 endif()
 
 if(PERLIN_SERVER_BUILD_SHARED)
@@ -279,6 +285,14 @@ if(PERLIN_SERVER_BUILD_TESTS)
     target_include_directories(vanilla_density_test PRIVATE src)
     target_link_libraries(vanilla_density_test PRIVATE perlin_server_core miniz OpenSSL::Crypto Threads::Threads)
     add_test(NAME vanilla_density_test COMMAND vanilla_density_test "${PERLIN_ROOT}/tools/javaref/reference_seed12345.txt")
+    add_executable(vanilla_biome_test tests/vanilla_biome_test.cpp)
+    target_include_directories(vanilla_biome_test PRIVATE src)
+    target_link_libraries(vanilla_biome_test PRIVATE perlin_server_core miniz OpenSSL::Crypto Threads::Threads)
+    add_test(NAME vanilla_biome_test COMMAND vanilla_biome_test "${PERLIN_ROOT}/tools/javaref/biome_lookup_ref.txt")
+    add_executable(vanilla_gpu_test tests/vanilla_gpu_test.cpp)
+    target_include_directories(vanilla_gpu_test PRIVATE src "${PERLIN_ROOT}/src")
+    target_link_libraries(vanilla_gpu_test PRIVATE perlin_server_core miniz OpenSSL::Crypto Threads::Threads)
+    add_test(NAME vanilla_gpu_test COMMAND vanilla_gpu_test)
 
     add_executable(server_selftest tests/server_selftest.cpp ${PS_CLIENT_CHUNK_CODEC})
     target_include_directories(server_selftest PRIVATE src "${PERLIN_ROOT}/src")

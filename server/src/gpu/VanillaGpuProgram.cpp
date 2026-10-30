@@ -1,5 +1,6 @@
 #include "gpu/VanillaGpuProgram.hpp"
 
+#include <algorithm>
 #include <cstring>
 #include <map>
 #include <set>
@@ -63,6 +64,14 @@ namespace perlin::server::vanilla {
                 }
                 count = static_cast<uint32_t>(list.size());
                 return Layers(list, fudge);
+            }
+
+            static uint32_t Depth(const SplineNode& s) {
+                uint32_t d = 0;
+                for (const auto& nested : s.nested)
+                    if (nested)
+                        d = std::max(d, Depth(*nested) + 1);
+                return d;
             }
 
             uint32_t Spline(const SplineNode& s, std::vector<uint32_t>& deps) {
@@ -143,9 +152,13 @@ namespace perlin::server::vanilla {
                     break;
                 }
                 case O::Spline:
+                    if (Depth(*n.spline) >= GpuProgram::kMaxSplineDepth)
+                        error = "spline nested " + std::to_string(Depth(*n.spline)) + " deep: the kernel has " + std::to_string(GpuProgram::kMaxSplineDepth) + " levels";
                     rec[6] = Spline(*n.spline, deps);
                     break;
                 case O::Interpolated:
+                    if (n.cellXz != static_cast<int>(GpuProgram::kCellXz) || n.cellY != static_cast<int>(GpuProgram::kCellY))
+                        error = "interpolated node with cell size " + std::to_string(n.cellXz) + "x" + std::to_string(n.cellY) + ": the kernel's corner grid is 4x8";
                     rec[1] = Visit(*n.in[0]); deps = {rec[1]};
                     rec[6] = static_cast<uint32_t>(p.interpolatedInputs.size());
                     p.interpolatedInputs.push_back(rec[1]);
@@ -172,16 +185,27 @@ namespace perlin::server::vanilla {
                 const uint32_t id = static_cast<uint32_t>(p.nodes.size() / GpuProgram::kNodeStride);
                 p.nodes.insert(p.nodes.end(), rec, rec + GpuProgram::kNodeStride);
                 children.push_back(deps);
+                p.source.push_back(&n);
                 index[&n] = id;
                 return id;
             }
         };
     }
 
-    std::unique_ptr<GpuProgram> GpuProgram::Build(const DfPtr& rootNode, std::string& error) {
+    std::unique_ptr<GpuProgram> GpuProgram::Build(const DfPtr& rootNode, const std::array<DfPtr, 6>& climate, std::string& error) {
         auto p = std::make_unique<GpuProgram>();
         Builder b{*p, {}, {}, {}, {}};
         p->root = b.Visit(*rootNode);
+        const size_t interpolatedBefore = p->interpolatedInputs.size();
+        for (size_t i = 0; i < 6; i++) {
+            if (!climate[i]) {
+                error = "a climate function is missing";
+                return nullptr;
+            }
+            p->climateRoots[i] = b.Visit(*climate[i]);
+        }
+        if (p->interpolatedInputs.size() != interpolatedBefore && b.error.empty())
+            b.error = "the climate functions contain an interpolated node (they are sampled at single points)";
         if (!b.error.empty()) {
             error = b.error;
             return nullptr;
@@ -219,6 +243,19 @@ namespace perlin::server::vanilla {
             for (uint32_t c : b.children[n])
                 stack.push_back(c);
         }
+        // the climate closure: every node the six functions need, in dependency order
+        std::set<uint32_t> climateSet;
+        for (uint32_t r : p->climateRoots)
+            stack.push_back(r);
+        while (!stack.empty()) {
+            const uint32_t n = stack.back();
+            stack.pop_back();
+            if (!climateSet.insert(n).second)
+                continue;
+            for (uint32_t c : b.children[n])
+                stack.push_back(c);
+        }
+        p->climateOrder.assign(climateSet.begin(), climateSet.end());
         for (uint32_t n : inner)
             p->order.push_back(n);
         p->innerCount = static_cast<uint32_t>(inner.size());
@@ -226,5 +263,48 @@ namespace perlin::server::vanilla {
             p->order.push_back(n);
         p->outerCount = static_cast<uint32_t>(outer.size());
         return p;
+    }
+
+    std::vector<uint32_t> GpuProgram::Pack() const {
+        std::vector<uint32_t> out(kHeaderWords, 0);
+        const auto append = [&](size_t slot, const std::vector<uint32_t>& table) {
+            out[slot] = static_cast<uint32_t>(out.size());
+            out.insert(out.end(), table.begin(), table.end());
+        };
+        append(HNodes, nodes);
+        append(HAux, aux);
+        append(HNoises, noises);
+        append(HLayers, layers);
+        append(HPerms, perms);
+        append(HBlends, blends);
+        append(HOrder, order);
+        append(HInterp, interpolatedInputs);
+        std::vector<uint32_t> climate;
+        climate.push_back(static_cast<uint32_t>(climateOrder.size()));
+        climate.insert(climate.end(), climateOrder.begin(), climateOrder.end());
+        climate.insert(climate.end(), climateRoots.begin(), climateRoots.end());
+        append(HClimate, climate);
+        return out;
+    }
+
+    std::vector<uint32_t> PackTables(const GpuProgram& program, const VanillaSurface& surface) {
+        std::vector<uint32_t> out = program.Pack();
+        out[GpuProgram::HBiomes] = static_cast<uint32_t>(out.size());
+        out.push_back(static_cast<uint32_t>(kBiomePointCount));
+        for (int i = 0; i < kBiomePointCount; i++) {
+            for (int k = 0; k < kBiomePointStride; k++)
+                out.push_back(static_cast<uint32_t>(static_cast<int32_t>(kBiomePointData[static_cast<size_t>(i) * kBiomePointStride + static_cast<size_t>(k)])));
+            out.push_back(kBiomePointBiome[i]);
+        }
+        out[GpuProgram::HMaterials] = static_cast<uint32_t>(out.size());
+        for (uint32_t id : {uint32_t(surface.Stone()), uint32_t(surface.Deepslate()), uint32_t(surface.Bedrock()), uint32_t(surface.Dirt()), uint32_t(surface.GrassBlock()), 0xFFFFu,
+                            0xFFFFu, 0xFFFFu})
+            out.push_back(id);
+        for (const SurfaceMaterial& m : surface.Materials()) {
+            for (uint32_t w : {static_cast<uint32_t>(m.top), static_cast<uint32_t>(m.mid), static_cast<uint32_t>(m.foundation), static_cast<uint32_t>(m.seaFloor),
+                               static_cast<uint32_t>(m.sea), static_cast<uint32_t>(m.seaFloorDepth), static_cast<uint32_t>(m.builder), 0u})
+                out.push_back(w);
+        }
+        return out;
     }
 }

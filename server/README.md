@@ -18,7 +18,7 @@ From the root tree the server is built by default (`PERLIN_BUILD_SERVER`, on for
 
 ## Configuration
 
-`server.properties` is the BDS file: same keys, same order, same defaults (written in full on first start), plus a few `perlin-*` keys for what BDS does not have (`perlin-generator` flat or vanilla, `perlin-java-data`, `perlin-terrain-backend`, `perlin-plugin-dir`, `perlin-block-data-dir`, `perlin-flat-layers`, ICE settings). Keys this server does not act on are kept when it rewrites the file. A directory with only the old `server.json` still loads, and `server.properties` wins when both exist.
+`server.properties` is the BDS file: same keys, same order, same defaults (written in full on first start), plus a few `perlin-*` keys for what BDS does not have (`perlin-generator` flat or vanilla, `perlin-terrain-backend`, `perlin-plugin-dir`, `perlin-block-data-dir`, `perlin-flat-layers`, ICE settings). Keys this server does not act on are kept when it rewrites the file. A directory with only the old `server.json` still loads, and `server.properties` wins when both exist.
 
 Applied: `server-name`, `gamemode`, `difficulty`, `max-players`, `online-mode`, `allow-list`, `server-port`, `server-ip`, `server-udp-ports` (a shared port, a range, or `public:local`; see below), `transport`, `enable-lan-visibility`, `view-distance`, `tick-distance`, `player-idle-timeout`, `max-threads`, `level-name`, `level-seed` (empty is random, a number is used as is, other text is hashed like Java's `String.hashCode`), `default-player-permission-level`, `compression-threshold` (default 1, as BDS), `chat-restriction`.
 
@@ -91,15 +91,38 @@ Build it with `-DPERLIN_SERVER_GPU=ON` (needs `slangc`, fetched unless `PERLIN_S
 
 **For a flat world the GPU does not help**: the CPU fills a whole uniform section with one store, so dispatch, readback and copy-out only add time (on SwiftShader, 127 ms against 0.5 ms for the same 108 chunks). That is why `auto` keeps flat terrain on the CPU. The backend exists for generators that do real work per block (noise, caves); `terrain_backend: "gpu"` forces it, and `BackendsAgree` is the check every future generator has to pass against its CPU twin.
 
+**Vanilla terrain** (`perlin-generator=vanilla`) needs no files and no setting: its data is compiled in. Where each part comes from (looked up in this order: bedrock-samples, the dedicated server package, then Java):
+
+- **bedrock-samples**: what each biome is made of (`behavior_pack/biomes/*.biome.json`, `minecraft:surface_builder`: top, mid, foundation and sea floor materials, sea floor depth, builder type), with Mojang's documentation for what those fields mean. Baked in by `tools/gen_biome_tables.py`.
+- **the dedicated server package**: nothing usable for terrain. It has features and feature rules (not used yet) but no terrain noise, density or placement data.
+- **Java 26.3**, hardcoded: the shape of the overworld (density functions, noises, noise settings, 49 KB deflated, `tools/gen_overworld_shape.py`) and where biomes go (the 7,594 climate boxes of `OverworldBiomeBuilder`, dumped by `tools/javaref/BiomeDump.java`, which runs the game's own class). Neither bedrock-samples nor the server package has these; Bedrock's own live inside the closed binary. Java's biome names are mapped to Bedrock's (56 biomes, `tools/gen_biome_tables.py`). These generated files hold Mojang's data, so check the Minecraft EULA before redistributing builds that contain them.
+
+The pipeline has four stages, each with a GPU implementation (`src/gpu/shaders/terrain_vanilla.slang`, host in `src/gpu/GpuVanillaRhi.cpp`, `VanillaGpuProgram.*`) and a CPU reference (`src/world/vanilla`):
+
+1. **density**: `final_density`, in two passes per batch of up to 16 chunks: the 214 expensive nodes at every cell corner (5 x 5 x 49 per chunk), then the 17 per-block nodes with the trilinear blend from those corners.
+2. **biome**: per column, the ground height from the densities, the six climate functions at the column's quart cell at that height, and the nearest of the 7,594 boxes.
+3. **surface**: per block, the block id from the biome's Bedrock materials: top block, 3 of the mid material, then the foundation (stone, deepslate below y 0), bedrock at the floor, water to sea level 63; under water the sea floor material replaces the skin past `sea_floor_depth` below the surface of the water, and grass becomes dirt.
+4. the host turns block ids into chunk sections.
+
+The kernel is float32 for values and float64 for coordinates (as Java), every float operation is `precise` (checked in the compiled SPIR-V: no multiply can fuse with an add), and divisions go through double so they round exactly (Vulkan allows 2.5 ulp for a float divide). It needs a device with 64-bit shader floats, which many integrated GPUs lack. The graph must fit the kernel (at most 512 nodes, splines nested at most 7 deep, 4 x 8 cells); the overworld's is 233.
+
+**GPU first, CPU when a stage can't.** `perlin-terrain-backend`: `auto` and `gpu` try the GPU, `cpu` forces the reference. At start the GPU backend generates five probe chunks (including (-2048, 2047) and (100000, -100000)) and checks each stage against the CPU on its own: densities bit for bit (chunk (0,0) in full, the rest sampled), then every column's ground height and biome, then every block. A stage that disagrees or cannot run drops to the CPU while the earlier stages stay on the GPU, and the log says which (`gpu: density, biome; cpu: surface`). If even the density stage fails, or there is no device, `auto` uses the CPU entirely and logs why, and `gpu` refuses to start. If the device stops answering mid-run (30 s per submit) everything falls back to the CPU for the rest of the session.
+
+**What was verified, and what was not.**
+- The CPU biome search matches Java's own `findValueBruteForce` on all 30,000 reference samples (`tools/javaref/biome_lookup_ref.txt`, half placed on box edges), and the density graph matches the real engine on all reference values.
+- The kernel source was compiled by Slang to C++ and run against the CPU reference on 8 chunks (including far ones) for 10 seeds: 0 differences in 126,304 density positions, 2,048 columns (ground height and biome) and 786,432 blocks per seed. That checks the algorithm, the table packing and the four-phase scheme (`tools/kernel_on_cpu/run.sh` repeats it).
+- It was **not run on a GPU**: this build environment has no Vulkan device with 64-bit shader floats (SwiftShader does not). The buffer upload, barriers, push constants and readback of the host code, and the float behaviour of real hardware (fused operations, denormals, divide), are untested; the per-stage start-up check exists to catch exactly that. Speed on a real GPU is unmeasured. Only the Vulkan shader is in the pack.
+
+**Where it departs from Bedrock and Java** (so nobody mistakes it for either):
+- Terrain shape is Java's, which Bedrock's resembles but does not reproduce for the same seed.
+- Java's R-tree breaks ties between climate boxes by what it found last on that thread, so exact edge hits can't be matched; the first box in the table wins here. Real noise values rarely land exactly on an edge.
+- Java blends biomes at block level with a seeded jitter; here each column reads the biome of its 4x4 cell, so biome borders are straight.
+- Surface depth is a flat 1 + 3 layers, not Bedrock's or Java's noise-varied depth; badlands have no terracotta strata; `surface_material_adjustments`, mountain parameters and the frozen-ocean icebergs from the biome files are not applied; there are no aquifers, ores, carvers, caves features, trees or structures.
+
 ## Not done / known limits
 
 - LAN discovery (UDP 7551, so the world shows up in a vanilla client's Friends tab) is not implemented: its packet layout is only partly documented and could not be checked against a real client here.
-- Terrain: `generator: "flat"` (default) or `"vanilla"`, the Java terrain port. It needs `java_data` set to the Java Edition 26.3 client jar (or a folder holding
-  `data/minecraft`); the jar is not shipped. What is ported and checked bit for bit against the real engine (`tools/javaref`, `tests/vanilla_*`): the Xoroshiro
-  random sources, the noise stack (every worldgen/noise definition), and the density function graph (climate, depth spline, blended noise, cell interpolation), so
-  `final_density` equals Java's at all 216 reference positions. The `vanilla` generator turns that into stone/air with water at sea level, with a placeholder
-  surface (grass/dirt on land, sand/gravel under water). Not ported yet: biomes, the material rules (real surfaces, aquifers, ore veins), carvers, features and the
-  GPU evaluation of the graph. Threading: CPU generation uses a pool of worker threads (cores minus one); the GPU backend keeps one submitting thread.
+- Terrain: `perlin-generator` is `flat` (default) or `vanilla` (above). The shape of the overworld is Java's, checked bit for bit against the real engine; the biome and surface stages are new (above). Not ported: Bedrock's own terrain (closed), biome blending, aquifers, ore veins, carvers, features and structures.
 
 - No world persistence: chunks are regenerated each run, edits are lost.
 - Resource packs are not served; `BiomeDefinitionList` and `AvailableEntityIdentifiers` are sent empty. Everything is tested against the client's own packet codecs and chunk decoder, **not against the running Perlin client or a vanilla Bedrock client in a game**.

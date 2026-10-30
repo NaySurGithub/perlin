@@ -1,5 +1,6 @@
 #pragma once
-// reads the java edition worldgen data (data/minecraft/worldgen/...) from a client jar or an extracted folder
+// the overworld shape data (data/minecraft/worldgen/...) as compiled into the server: see tools/gen_overworld_shape.py.
+// the terrain shape is not in bedrock-samples or the dedicated server package, so these values come from Java's data pack and are hardcoded
 #include <map>
 #include <memory>
 #include <string>
@@ -10,8 +11,8 @@ namespace perlin::server::vanilla {
     class DataPack {
     public:
         ~DataPack();
-        // a .jar / .zip, or a directory that holds data/minecraft/...
-        static std::unique_ptr<DataPack> Open(const std::string& path, std::string& error);
+        // the built-in data; never fails
+        static std::unique_ptr<DataPack> Embedded();
         // "worldgen/noise/continentalness.json" (relative to data/minecraft/); empty when missing
         std::string Read(const std::string& relative) const;
         bool Has(const std::string& relative) const;

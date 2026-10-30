@@ -1,23 +1,12 @@
 #pragma once
 #include "world/Generator.hpp"
 #include "world/vanilla/DensityFunction.hpp"
+#include "world/vanilla/VanillaSurface.hpp"
 
 namespace perlin::server::vanilla {
 
-    // what both backends share: block ids from a column of densities, then the placeholder surface
-    class VanillaBlocks {
-    public:
-        VanillaBlocks();
-        // density[(x * 16 + z) * kHeight + y], y counted from the world floor
-        void Fill(const float* density, ChunkColumn& column) const;
-
-    private:
-        uint16_t stone, deepslate, bedrock, water, grass, dirt, sand, gravel;
-        int seaLevel = 63;
-    };
-
-    // java terrain on the cpu: the overworld's final_density decides stone against air, sea level fills the rest with water.
-    // surfaces are a placeholder until the material rules are ported (the ground is stone with a grass/dirt or sand/gravel skin)
+    // java terrain on the cpu, and the reference every gpu stage is checked against: final_density decides stone against air, the climate where the ground is
+    // picks a biome from Java's placement table, and the biome's Bedrock surface materials (bedrock-samples) make the blocks; sea level fills the rest with water
     class VanillaCpuBackend final : public TerrainBackend {
     public:
         // null with `error` set when the data cannot be read
@@ -30,12 +19,20 @@ namespace perlin::server::vanilla {
 
         // block density > 0 means solid; exposed for tests
         float Density(int x, int y, int z) const { return finalDensity->Eval(x, y, z); }
+        // the graph and the block rules, for the gpu backend that shares both
+        const DfPtr& FinalDensity() const { return finalDensity; }
+        const VanillaClimate& Climate() const { return *climate; }
+        const VanillaSurface& Surface() const { return *surface; }
+        DensityGraph& Graph() const { return *graph; }
+        // the biome stage on its own: one biome index per column [x * 16 + z] from a chunk's densities
+        void BiomesOf(const float* density, int chunkX, int chunkZ, uint8_t* biomes) const;
 
     private:
         VanillaCpuBackend() = default;
         std::unique_ptr<DataPack> pack;
         std::unique_ptr<DensityGraph> graph;
         DfPtr finalDensity;
-        std::unique_ptr<VanillaBlocks> blocks;
+        std::unique_ptr<VanillaClimate> climate;
+        std::unique_ptr<VanillaSurface> surface;
     };
 }

@@ -48,12 +48,10 @@ int main() {
             }
         }
     }
-    // every noise definition in the jar, against the real engine's values (needs the 26.3 client jar: PERLIN_JAVA_JAR=...)
-    if (const char* jar = std::getenv("PERLIN_JAVA_JAR")) {
-        std::string error;
-        auto pack = DataPack::Open(jar, error);
-        CHECK(pack != nullptr);
-        if (pack) {
+    // the built-in noise definitions, against the real engine's values
+    {
+        auto pack = DataPack::Embedded();
+        {
             struct Ref { const char* name; uint32_t expect[6]; };
             static const Ref refs[] = {
                 {"continentalness", {0xbece23a6, 0x3f01a0f8, 0xbd6b554b, 0xbd6c10e3, 0xbf6d4f25, 0xbece27c2}},

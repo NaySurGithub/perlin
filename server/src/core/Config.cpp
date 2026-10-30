@@ -55,7 +55,6 @@ namespace perlin::server {
         c.iceUdpMux = root["ice_udp_mux"].Bool(c.iceUdpMux);
         c.iceBindAddress = root["ice_bind_address"].String(c.iceBindAddress);
         c.generator = root["generator"].String(c.generator);
-        c.javaData = root["java_data"].String(c.javaData);
         c.terrainBackend = root["terrain_backend"].String(c.terrainBackend);
         if (root["flat_layers"].IsArray()) {
             c.flatLayers.clear();
@@ -89,7 +88,6 @@ namespace perlin::server {
             << "  \"ice_udp_mux\": " << (iceUdpMux ? "true" : "false") << ",\n"
             << "  \"ice_bind_address\": \"" << json::Escape(iceBindAddress) << "\",\n"
             << "  \"generator\": \"" << json::Escape(generator) << "\",\n"
-            << "  \"java_data\": \"" << json::Escape(javaData) << "\",\n"
             << "  \"terrain_backend\": \"" << json::Escape(terrainBackend) << "\",\n"
             << "  \"operators\": [";
         for (size_t i = 0; i < operators.size(); i++)
@@ -461,7 +459,6 @@ namespace perlin::server {
         }
         // this server's own keys
         if (key == "perlin-generator") { generator = lower; return true; }
-        if (key == "perlin-java-data") { javaData = v; return true; }
         if (key == "perlin-terrain-backend") { terrainBackend = lower; return true; }
         if (key == "perlin-plugin-dir") { pluginDir = v; return true; }
         if (key == "perlin-block-data-dir") { blockDataDir = v; return true; }
@@ -586,9 +583,8 @@ namespace perlin::server {
             written.push_back(k.key);
         }
         // keys of ours and anything unknown that was read
-        out << "# perlin additions: the terrain generator (flat or vanilla), where the java data pack is, gpu or cpu terrain, plugin and block data folders\n";
+        out << "# perlin additions: the terrain generator (flat or vanilla), gpu or cpu terrain, plugin and block data folders\n";
         out << "perlin-generator=" << generator << "\n";
-        out << "perlin-java-data=" << javaData << "\n";
         out << "perlin-terrain-backend=" << terrainBackend << "\n";
         out << "perlin-plugin-dir=" << pluginDir << "\n";
         out << "perlin-block-data-dir=" << blockDataDir << "\n";
