@@ -257,6 +257,8 @@ namespace perlin::ui {
                     binding == "#is_item_locked" || binding == "#item_lock_cell_image_visible")
                     return set(Json(false));
                 if (binding == "#item_storage_total_amount" || binding == "#item_storage_current_amount") return set(Json(0.0));
+                // 0 picks the plain cell image (the furnace's cells choose theirs from this)
+                if (binding == "#container_item_background") return set(Json(0.0));
                 return false;
             }
 
