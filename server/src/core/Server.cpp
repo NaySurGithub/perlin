@@ -10,7 +10,9 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <cstdio>
 #include <sstream>
+#include <stdexcept>
 #include <thread>
 
 namespace perlin::server {
@@ -33,6 +35,7 @@ namespace perlin::server {
     }
 
     Server::Server(ServerConfig cfg) : config(std::move(cfg)) {
+        tickRateTarget = std::max<uint32_t>(1, config.tickRate);
         loopback = std::make_unique<LoopbackListener>();
         plugins = std::make_unique<PluginHost>(*this);
     }
@@ -92,6 +95,19 @@ namespace perlin::server {
                 return false;
             LogInfo("nethernet signalling on " + config.bindAddress + ":" + std::to_string(config.port));
         }
+        {
+            const bool persist = !config.loopbackOnly;
+            opsList.Load(persist ? config.dataDir + "/ops.json" : std::string());
+            whitelistList.Load(persist ? config.dataDir + "/whitelist.json" : std::string());
+            // the old operators key in server.json still counts
+            for (const std::string& o : config.operators)
+                opsList.Add(o, std::string());
+            if (persist) {
+                // written out on first run so there is a file to edit
+                opsList.Save();
+                whitelistList.Save();
+            }
+        }
         plugins->LoadDirectory(config.pluginDir);
         started = true;
         LogInfo("server '" + config.name + "' ready");
@@ -114,11 +130,10 @@ namespace perlin::server {
 
     void Server::Run() {
         using clock = std::chrono::steady_clock;
-        const auto period = std::chrono::nanoseconds(1'000'000'000ll / std::max<uint32_t>(1, config.tickRate));
         auto next = clock::now();
         while (!stopRequested) {
             Tick();
-            next += period;
+            next += TickDelay();
             const auto now = clock::now();
             if (next < now) {
                 // fell behind: drop the backlog instead of spiralling
@@ -129,14 +144,27 @@ namespace perlin::server {
         }
     }
 
+    std::chrono::nanoseconds Server::TickDelay() const {
+        if (sprintRemaining > 0 || (frozen && stepRemaining > 0))
+            return std::chrono::nanoseconds(0);
+        return std::chrono::nanoseconds(static_cast<int64_t>(1'000'000'000.0 / tickRateTarget));
+    }
+
     void Server::Tick() {
-        tick++;
+        const auto began = std::chrono::steady_clock::now();
         chunks->Pump();
         Pump();
-        if (plugins->AnyoneListens(PS_EVENT_TICK)) {
-            PayloadWriter w;
-            w.U64(tick);
-            plugins->Dispatch(PS_EVENT_TICK, w.bytes);
+        // frozen: the game clock holds still but the network, chat and commands keep working; a step lets single ticks through
+        const bool advance = !frozen || stepRemaining > 0 || sprintRemaining > 0;
+        if (advance) {
+            tick++;
+            if (frozen && stepRemaining > 0)
+                stepRemaining--;
+            if (plugins->AnyoneListens(PS_EVENT_TICK)) {
+                PayloadWriter w;
+                w.U64(tick);
+                plugins->Dispatch(PS_EVENT_TICK, w.bytes);
+            }
         }
         // position broadcast: once per tick for players that moved is plenty at 20 Hz
         std::vector<Session*> players = InGamePlayers();
@@ -148,6 +176,136 @@ namespace perlin::server {
         for (auto& [id, session] : sessions)
             session->Tick(tick);
         ReapClosed();
+        if (advance) {
+            tickMillis.push_back(std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - began).count());
+            if (tickMillis.size() > 100)
+                tickMillis.pop_front();
+            if (sprintRemaining > 0 && --sprintRemaining == 0) {
+                const double seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - sprintStarted).count();
+                char report[160];
+                std::snprintf(report, sizeof report, "Sprint completed with %.1f ticks per second, or %.2f ms per tick",
+                              seconds > 0 ? static_cast<double>(sprintTotal) / seconds : 0.0, sprintTotal > 0 ? seconds * 1000.0 / static_cast<double>(sprintTotal) : 0.0);
+                Broadcast(report);
+            }
+        }
+    }
+
+    std::string Server::TickQuery() const {
+        char line[200];
+        std::string out = sprintRemaining > 0 ? "The game is sprinting" : frozen ? "The game is frozen" : "The game is running normally";
+        std::snprintf(line, sizeof line, "\nTarget tick rate: %.1f per second.", tickRateTarget);
+        out += line;
+        if (!tickMillis.empty()) {
+            std::vector<double> sorted(tickMillis.begin(), tickMillis.end());
+            std::sort(sorted.begin(), sorted.end());
+            double sum = 0;
+            for (double v : sorted)
+                sum += v;
+            const auto pct = [&](double p) { return sorted[std::min(sorted.size() - 1, static_cast<size_t>(p * static_cast<double>(sorted.size())))]; };
+            std::snprintf(line, sizeof line, "\nAverage time per tick: %.1fms (Target: %.1fms)", sum / static_cast<double>(sorted.size()), 1000.0 / tickRateTarget);
+            out += line;
+            std::snprintf(line, sizeof line, "\nPercentiles: P50: %.1fms P95: %.1fms P99: %.1fms, sample: %zu", pct(0.5), pct(0.95), pct(0.99), sorted.size());
+            out += line;
+        }
+        return out;
+    }
+
+    void Server::RunTickCommand(Session* from, const std::string& args) {
+        const auto reply = [&](const std::string& text) {
+            if (from)
+                from->SendRaw(text);
+            else
+                LogInfo(text);
+        };
+        std::istringstream in(args);
+        std::string sub, arg;
+        in >> sub >> arg;
+        sub = Lower(sub);
+        // a time is ticks, or a number with t (ticks), s (seconds) or d (days) after it
+        const auto parseTime = [](std::string text, int64_t& ticks) {
+            if (text.empty())
+                return false;
+            double unit = 1;
+            const char suffix = static_cast<char>(std::tolower(static_cast<unsigned char>(text.back())));
+            if (suffix == 't' || suffix == 's' || suffix == 'd') {
+                unit = suffix == 's' ? 20.0 : suffix == 'd' ? 24000.0 : 1.0;
+                text.pop_back();
+            }
+            try {
+                size_t used = 0;
+                const double v = std::stod(text, &used);
+                if (used != text.size() || v < 1 || v * unit > 10'000'000)
+                    return false;
+                ticks = static_cast<int64_t>(v * unit);
+                return true;
+            } catch (...) {
+                return false;
+            }
+        };
+        if (sub == "query") {
+            reply(TickQuery());
+        } else if (sub == "rate") {
+            try {
+                size_t used = 0;
+                const double v = std::stod(arg, &used);
+                if (arg.empty() || used != arg.size() || v < 1.0 || v > 10000.0)
+                    throw std::invalid_argument("range");
+                tickRateTarget = v;
+                char text[96];
+                std::snprintf(text, sizeof text, "Set the target tick rate to %.1f per second", v);
+                reply(text);
+            } catch (...) {
+                reply("§cUsage: /tick rate <1.0 - 10000.0>");
+            }
+        } else if (sub == "freeze") {
+            frozen = true;
+            reply("The game is frozen");
+        } else if (sub == "unfreeze") {
+            frozen = false;
+            stepRemaining = 0;
+            reply("The game is running normally");
+        } else if (sub == "step") {
+            if (arg == "stop") {
+                if (stepRemaining > 0) {
+                    stepRemaining = 0;
+                    reply("Stopped tick stepping");
+                } else {
+                    reply("§cNo tick stepping in progress");
+                }
+                return;
+            }
+            int64_t n = 1;
+            if (!arg.empty() && !parseTime(arg, n)) {
+                reply("§cUsage: /tick step [time]");
+                return;
+            }
+            if (!frozen) {
+                reply("§cCannot step while the game is running; use /tick freeze first");
+                return;
+            }
+            stepRemaining = n;
+            reply("Stepping " + std::to_string(n) + " tick(s)");
+        } else if (sub == "sprint") {
+            if (arg == "stop") {
+                if (sprintRemaining > 0) {
+                    sprintRemaining = 0;
+                    reply("Interrupted the current tick sprint");
+                } else {
+                    reply("§cNo tick sprint in progress");
+                }
+                return;
+            }
+            int64_t n = 0;
+            if (!parseTime(arg, n)) {
+                reply("§cUsage: /tick sprint <time|stop>");
+                return;
+            }
+            sprintRemaining = sprintTotal = n;
+            sprintStarted = std::chrono::steady_clock::now();
+            reply("Sprinting " + std::to_string(n) + " tick(s)");
+        } else {
+            reply("§cUsage: /tick <query|rate|freeze|unfreeze|step|sprint>");
+        }
     }
 
     void Server::Pump() {
@@ -205,21 +363,26 @@ namespace perlin::server {
 
     bool Server::IsOperatorName(const std::string& name) const {
         // embedded singleplayer: the one player owns the world
-        if (config.loopbackOnly)
-            return true;
-        return std::find_if(config.operators.begin(), config.operators.end(), [&](const std::string& o) { return Lower(o) == Lower(name); }) != config.operators.end();
+        return config.loopbackOnly || opsList.Contains(name, std::string());
     }
 
     bool Server::IsOperator(const std::string& name, const std::string& xuid) const {
-        if (config.loopbackOnly)
-            return true;
-        for (const std::string& o : config.operators) {
-            if (!xuid.empty() && o == xuid)
-                return true;
-            if (!config.xboxAuth && Lower(o) == Lower(name))
-                return true;
+        return config.loopbackOnly || opsList.Contains(name, xuid);
+    }
+
+    std::string Server::SetOperator(const std::string& name, bool op) {
+        Session* online = FindByName(name);
+        const std::string shown = online ? online->Name() : name;
+        if (op) {
+            const bool added = opsList.Add(shown, online ? online->Xuid() : std::string());
+            if (online)
+                online->SetOperator(true);
+            return added ? "Opped " + shown : shown + " is already an operator";
         }
-        return false;
+        const bool removed = opsList.Remove(shown) || (online && !online->Xuid().empty() && opsList.Remove(online->Xuid()));
+        if (online)
+            online->SetOperator(false);
+        return removed ? "De-opped " + shown : shown + " is not an operator";
     }
 
     bool Server::Full() const {
@@ -327,10 +490,12 @@ namespace perlin::server {
             else
                 LogInfo(text);
         };
-        const auto add = [this](const char* name, const char* description, bool op, std::function<void(Session*, const std::string&)> fn) {
+        const auto add = [this](const char* name, const char* description, bool op, std::function<void(Session*, const std::string&)> fn,
+                                const char* usage = "") {
             CommandDef d;
             d.name = name;
             d.description = description;
+            d.usage = usage;
             d.operatorOnly = op;
             d.run = std::move(fn);
             commands[name] = std::move(d);
@@ -353,8 +518,8 @@ namespace perlin::server {
         add("say", "Broadcast a message", true, [this](Session*, const std::string& args) {
             if (!args.empty())
                 Broadcast("§d[Server] " + args);
-        });
-        add("tp", "Teleport yourself: /tp <x> <y> <z>", true, [reply](Session* from, const std::string& args) {
+        }, "message");
+        add("tp", "Teleport yourself", true, [reply](Session* from, const std::string& args) {
             if (!from) {
                 reply(from, "only players can teleport");
                 return;
@@ -367,8 +532,8 @@ namespace perlin::server {
             }
             // y is feet height; the protocol position is the eyes
             from->Teleport(x, y + 1.62, z);
-        });
-        add("kick", "Kick a player: /kick <name> [reason]", true, [this, reply](Session* from, const std::string& args) {
+        }, "x y z");
+        add("kick", "Kick a player", true, [this, reply](Session* from, const std::string& args) {
             std::istringstream in(args);
             std::string who;
             in >> who;
@@ -381,13 +546,143 @@ namespace perlin::server {
                 return;
             }
             target->Kick(reason.empty() ? "Kicked by an operator" : reason);
-        });
+        }, "player [reason]");
         add("plugins", "List loaded plugins", false, [this, reply](Session* from, const std::string&) {
             std::string out = "Plugins:";
             for (const auto& p : plugins->List())
                 out += "\n" + p.name + (p.version.empty() ? "" : " " + p.version) + (p.enabled ? "" : " (disabled: " + p.error + ")");
             reply(from, out);
         });
+        // targets: a name, @s (the sender), @p (nearest = the sender, else the first player) or @a (everyone)
+        const auto targets = [this](Session* from, const std::string& who) {
+            std::vector<Session*> out;
+            if (who == "@a") {
+                out = InGamePlayers();
+            } else if (who == "@s" || who == "@p" || who == "@r") {
+                if (from)
+                    out.push_back(from);
+                else if (auto all = InGamePlayers(); !all.empty())
+                    out.push_back(all.front());
+            } else if (Session* s = FindByName(who); s && s->InGame()) {
+                out.push_back(s);
+            }
+            return out;
+        };
+        add("op", "Make a player an operator", true, [this, reply](Session* from, const std::string& args) {
+            if (args.empty()) {
+                reply(from, "§cUsage: /op <player>");
+                return;
+            }
+            reply(from, SetOperator(args, true));
+        }, "player");
+        add("deop", "Remove a player's operator status", true, [this, reply](Session* from, const std::string& args) {
+            if (args.empty()) {
+                reply(from, "§cUsage: /deop <player>");
+                return;
+            }
+            reply(from, SetOperator(args, false));
+        }, "player");
+        add("gamemode", "Change a player's game mode", true, [this, reply, targets](Session* from, const std::string& args) {
+            std::istringstream in(args);
+            std::string mode, who;
+            in >> mode >> who;
+            const std::string m = Lower(mode);
+            int value = -1;
+            if (m == "survival" || m == "s" || m == "0") value = 0;
+            else if (m == "creative" || m == "c" || m == "1") value = 1;
+            else if (m == "adventure" || m == "a" || m == "2") value = 2;
+            if (value < 0) {
+                reply(from, "§cUsage: /gamemode <survival|creative|adventure> [player]");
+                return;
+            }
+            if (who.empty())
+                who = "@s";
+            const auto list = targets(from, who);
+            if (list.empty()) {
+                reply(from, "§cNo such player: " + who);
+                return;
+            }
+            static const char* const names[] = {"Survival", "Creative", "Adventure"};
+            for (Session* s : list) {
+                s->SetGameMode(value);
+                if (s != from)
+                    s->SendRaw(std::string("Your game mode was set to ") + names[value]);
+                reply(from, "Set " + s->Name() + "'s game mode to " + names[value]);
+            }
+        }, "mode [player]");
+        add("give", "Give a player an item", true, [this, reply, targets](Session* from, const std::string& args) {
+            std::istringstream in(args);
+            std::string who, item;
+            int count = 1;
+            in >> who >> item;
+            if (!(in >> count))
+                count = 1;
+            // "/give <item> [amount]" from a player gives to themselves
+            if (!item.empty() && from && !FindByName(who) && who[0] != '@' && BlockCatalog::Instance().ItemByName(FullBlockName(Lower(who)))) {
+                try { count = std::stoi(item); } catch (...) { count = 1; }
+                item = who;
+                who = "@s";
+            }
+            if (who.empty() || item.empty()) {
+                reply(from, "§cUsage: /give <player> <item> [amount]");
+                return;
+            }
+            count = std::clamp(count, 1, 2304);
+            const CatalogItem* found = BlockCatalog::Instance().ItemByName(FullBlockName(Lower(item)));
+            if (!found) {
+                reply(from, "§cUnknown item: " + item);
+                return;
+            }
+            const auto list = targets(from, who);
+            if (list.empty()) {
+                reply(from, "§cNo such player: " + who);
+                return;
+            }
+            for (Session* s : list) {
+                const int left = s->Inventory().Give(found->networkId, count);
+                s->SendInventory();
+                const std::string shown = found->name.substr(found->name.find(':') + 1);
+                reply(from, "Gave " + std::to_string(count - left) + " " + shown + " to " + s->Name() + (left ? " (inventory full)" : ""));
+            }
+        }, "player item [amount]");
+        add("whitelist", "Manage the whitelist", true, [this, reply](Session* from, const std::string& args) {
+            std::istringstream in(args);
+            std::string sub, who;
+            in >> sub;
+            std::getline(in, who);
+            who = Trim(who);
+            sub = Lower(sub);
+            const auto persist = [this] {
+                if (!config.loopbackOnly)
+                    config.Save(config.dataDir + "/server.json");
+            };
+            if (sub == "on" || sub == "off") {
+                config.whitelist = sub == "on";
+                persist();
+                reply(from, std::string("Whitelist is ") + (config.whitelist ? "on" : "off"));
+            } else if (sub == "add" && !who.empty()) {
+                Session* online = FindByName(who);
+                const bool added = whitelistList.Add(online ? online->Name() : who, online ? online->Xuid() : std::string());
+                reply(from, added ? "Added " + who + " to the whitelist" : who + " is already whitelisted");
+            } else if (sub == "remove" && !who.empty()) {
+                Session* online = FindByName(who);
+                const bool removed = whitelistList.Remove(who) || (online && whitelistList.Remove(online->Xuid()));
+                reply(from, removed ? "Removed " + who + " from the whitelist" : who + " is not whitelisted");
+            } else if (sub == "list") {
+                std::string out = std::string("Whitelist is ") + (config.whitelist ? "on" : "off") + ", " + std::to_string(whitelistList.Entries().size()) + " entries:";
+                for (const AccessEntry& e : whitelistList.Entries())
+                    out += "\n" + (e.name.empty() ? e.xuid : e.name);
+                reply(from, out);
+            } else if (sub == "reload") {
+                whitelistList.Load(config.dataDir + "/whitelist.json");
+                opsList.Load(config.dataDir + "/ops.json");
+                reply(from, "Reloaded whitelist.json and ops.json");
+            } else {
+                reply(from, "§cUsage: /whitelist <on|off|add|remove|list|reload> [player]");
+            }
+        }, "action [player]");
+        add("tick", "Query or control the game's tick rate", true, [this](Session* from, const std::string& args) { RunTickCommand(from, args); },
+            "query|rate|freeze|unfreeze|step|sprint");
         add("stop", "Stop the server", true, [this](Session*, const std::string&) { RequestStop(); });
     }
 
@@ -566,13 +861,76 @@ namespace perlin::server {
         return left;
     }
 
+    namespace {
+        struct GroupDef {
+            proto2225::CreativeContentPacketGroupsEntryCategory category;
+            const char* name;
+            // block name fragments that put an item in this group; the first group to match wins
+            std::vector<const char*> words;
+        };
+
+        const std::vector<GroupDef>& Groups() {
+            using C = proto2225::CreativeContentPacketGroupsEntryCategory;
+            static const std::vector<GroupDef> groups = {
+                {C::Construction, "itemGroup.name.planks", {"_planks"}},
+                {C::Construction, "itemGroup.name.stairs", {"_stairs"}},
+                {C::Construction, "itemGroup.name.slab", {"_slab"}},
+                {C::Construction, "itemGroup.name.walls", {"_wall"}},
+                {C::Construction, "itemGroup.name.fence", {"_fence"}},
+                {C::Construction, "itemGroup.name.fenceGate", {"_fence_gate"}},
+                {C::Construction, "itemGroup.name.door", {"_door"}},
+                {C::Construction, "itemGroup.name.trapdoor", {"_trapdoor"}},
+                {C::Construction, "itemGroup.name.glass", {"glass"}},
+                {C::Construction, "itemGroup.name.wool", {"_wool"}},
+                {C::Construction, "itemGroup.name.concrete", {"concrete"}},
+                {C::Construction, "itemGroup.name.glazedTerracotta", {"glazed_terracotta"}},
+                {C::Construction, "itemGroup.name.stainedClay", {"terracotta"}},
+                {C::Construction, "itemGroup.name.copper", {"copper"}},
+                {C::Construction, "itemGroup.name.stoneBrick", {"brick", "stone", "cobble", "deepslate", "tuff", "blackstone", "basalt", "andesite", "diorite", "granite", "prismarine", "purpur", "quartz", "sandstone"}},
+                {C::Nature, "itemGroup.name.log", {"_log", "_wood", "_stem", "_hyphae"}},
+                {C::Nature, "itemGroup.name.leaves", {"_leaves", "azalea_leaves"}},
+                {C::Nature, "itemGroup.name.sapling", {"sapling", "propagule"}},
+                {C::Nature, "itemGroup.name.flower", {"flower", "tulip", "orchid", "allium", "azure", "daisy", "cornflower", "lily", "rose", "peony", "lilac", "dandelion", "poppy", "sunflower"}},
+                {C::Nature, "itemGroup.name.ore", {"_ore", "raw_", "ancient_debris"}},
+                {C::Nature, "itemGroup.name.mineral", {"coal_block", "iron_block", "gold_block", "diamond_block", "emerald_block", "lapis_block", "netherite_block", "redstone_block"}},
+                {C::Nature, "itemGroup.name.sand", {"sand", "gravel"}},
+                {C::Nature, "itemGroup.name.dirt", {"dirt", "grass", "mycelium", "podzol", "farmland", "mud", "clay", "moss", "soul_soil", "path"}},
+                {C::Nature, "itemGroup.name.ice", {"ice", "snow"}},
+                {C::Nature, "itemGroup.name.mushroom", {"mushroom"}},
+                {C::Nature, "itemGroup.name.coral", {"coral"}},
+                {C::Nature, "itemGroup.name.seed", {"vine", "kelp", "seagrass", "fern", "bush", "cactus", "bamboo", "sugar_cane", "pumpkin", "melon", "hay", "crop", "wheat", "carrots", "potatoes", "beetroot"}},
+                {C::Nature, "itemGroup.name.netherWartBlock", {"nether", "warped", "crimson", "shroomlight", "glowstone", "soul_"}},
+                {C::Items, "itemGroup.name.rail", {"rail"}},
+                {C::Items, "itemGroup.name.chest", {"chest", "barrel", "shulker"}},
+                {C::Items, "itemGroup.name.lamp", {"lamp", "lantern", "torch", "candle", "campfire", "froglight"}},
+                {C::Items, "itemGroup.name.sign", {"_sign"}},
+                {C::Items, "itemGroup.name.bed", {"_bed"}},
+                {C::Items, "itemGroup.name.banner", {"banner", "carpet"}},
+                {C::Items, "itemGroup.name.redstone", {"redstone", "piston", "dispenser", "dropper", "observer", "repeater", "comparator", "lever", "button", "pressure_plate", "hopper", "tnt", "target", "sculk"}},
+            };
+            return groups;
+        }
+    }
+
     void Server::BuildItemPackets() {
         const BlockCatalog& catalog = BlockCatalog::Instance();
         proto2225::ItemRegistryPacket registry;
         proto2225::CreativeContentPacket creative;
-        proto2225::CreativeContentPacketGroupsEntry group;
-        group.category = proto2225::CreativeContentPacketGroupsEntryCategory::Construction;
-        group.name = "itemGroup.name.construction";
+        const std::vector<GroupDef>& defs = Groups();
+        // one extra catch-all group at the end for blocks no fragment matched
+        std::vector<proto2225::CreativeContentPacketGroupsEntry> groups(defs.size() + 1);
+        for (size_t i = 0; i < defs.size(); i++) {
+            groups[i].category = defs[i].category;
+            groups[i].name = defs[i].name;
+        }
+        groups.back().category = proto2225::CreativeContentPacketGroupsEntryCategory::Items;
+        groups.back().name = "itemGroup.name.miscFood";
+
+        struct Placed {
+            proto2225::ItemLegacy legacy;
+            size_t group;
+        };
+        std::vector<Placed> placed;
         for (const CatalogItem& item : catalog.Items()) {
             proto2225::ItemstatesEntry entry;
             entry.name = item.name;
@@ -585,15 +943,35 @@ namespace perlin::server {
             legacy.networkId = item.networkId;
             legacy.count = 1;
             legacy.blockRuntimeId = item.blockHash;
-            if (group.iconItem.networkId == 0)
-                group.iconItem = legacy;
+            // the wire always carries the extra-data frame; leaving the variant empty writes none and the client cannot decode the packet
+            legacy.extra = proto2225::ItemExtraDataWithoutBlockingTick{};
+            size_t group = defs.size();
+            const std::string shortName = item.name.substr(item.name.find(':') + 1);
+            for (size_t g = 0; g < defs.size() && group == defs.size(); g++)
+                for (const char* w : defs[g].words)
+                    if (shortName.find(w) != std::string::npos) {
+                        group = g;
+                        break;
+                    }
+            placed.push_back({legacy, group});
+        }
+        // groups with nothing in them are left out; the client lists a tab per group
+        std::vector<int> remap(groups.size(), -1);
+        for (const Placed& p : placed)
+            if (remap[p.group] < 0) {
+                remap[p.group] = static_cast<int>(creative.groups.size());
+                groups[p.group].iconItem = p.legacy;
+                creative.groups.push_back(groups[p.group]);
+            }
+        // creative order: by group, the way the vanilla menu lists them
+        std::stable_sort(placed.begin(), placed.end(), [&](const Placed& a, const Placed& b) { return remap[a.group] < remap[b.group]; });
+        for (const Placed& p : placed) {
             proto2225::CreativeContentPacketItemsEntry e;
-            e.entryId = static_cast<uint32_t>(item.networkId);
-            e.item = legacy;
-            e.groupIndex = 0;
+            e.entryId = static_cast<uint32_t>(p.legacy.networkId);
+            e.item = p.legacy;
+            e.groupIndex = static_cast<uint32_t>(remap[p.group]);
             creative.items.push_back(std::move(e));
         }
-        creative.groups.push_back(std::move(group));
         net::EncodeChecked(registry, itemRegistryBody);
         net::EncodeChecked(creative, creativeBody);
     }

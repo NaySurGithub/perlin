@@ -467,6 +467,8 @@ namespace perlin {
                 haveStartPos = true;
             }
             clientGen = p.clientSideGeneration;
+            // generator 2 is the flat type
+            flatWorld = p.generator == 2;
             serverAuthBreaking = p.serverAuthoritativeBlockBreaking;
             std::cout << "[bedrock] serverAuthoritativeBlockBreaking=" << (p.serverAuthoritativeBlockBreaking ? "true" : "false") << std::endl;
             std::cout << "[bedrock] serverAuthoritativeInventory=" << (p.serverAuthoritativeInventory ? "true" : "false") << std::endl;

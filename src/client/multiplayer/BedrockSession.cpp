@@ -851,9 +851,10 @@ namespace perlin {
         if (!replayMode && state == State::InGame && !transferring && !transferRequested && !diagLostLogged &&
             lastPacketMs.load() != 0 && net && !net->HasLivenessTimeout()) {
             const int64_t nowMs = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
-            if (nowMs - lastPacketMs.load() > 30000) {
+            // a quiet server legitimately sends nothing for a while (a flat empty world, a plugin server): wait a full two minutes
+            if (nowMs - lastPacketMs.load() > 120000) {
                 diagLostLogged = true;
-                std::string why = "The server stopped responding (no data for 30 seconds).";
+                std::string why = "The server stopped responding (no data for 2 minutes).";
                 {
                     std::lock_guard<std::mutex> lk(disconnectMutex);
                     if (!lastViolation.empty())

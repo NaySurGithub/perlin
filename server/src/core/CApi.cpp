@@ -16,6 +16,9 @@ struct ps_server {
     std::unique_ptr<Server> server;
     std::thread thread;
     std::atomic<bool> asyncRunning{false};
+    // the tick thread ended: a stop was asked for, or the server threw and shut itself down
+    std::atomic<bool> finished{false};
+    std::atomic<bool> crashed{false};
 };
 
 struct ps_conn {
@@ -95,9 +98,23 @@ PS_API int ps_start(ps_server* s) {
 PS_API int ps_run_async(ps_server* s) {
     if (!s || s->asyncRunning.exchange(true))
         return -1;
-    s->thread = std::thread([s] { s->server->Run(); });
+    s->thread = std::thread([s] {
+        try {
+            s->server->Run();
+        } catch (const std::exception& e) {
+            // a bug in one tick must not take the host down with it: log it and let the host see the server is gone
+            LogError(std::string("server crashed: ") + e.what());
+            s->crashed = true;
+        } catch (...) {
+            LogError("server crashed");
+            s->crashed = true;
+        }
+        s->finished = true;
+    });
     return 0;
 }
+
+PS_API int ps_is_running(ps_server* s) { return s && s->asyncRunning && !s->finished ? 1 : 0; }
 
 PS_API void ps_tick(ps_server* s) {
     if (s)

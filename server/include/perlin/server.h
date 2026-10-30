@@ -49,6 +49,8 @@ PS_API const char* ps_last_error(void);
 PS_API int ps_start(ps_server* server);
 /* ticks on an internal thread until ps_stop */
 PS_API int ps_run_async(ps_server* server);
+/* 1 while the internal thread is ticking; 0 once it stopped or the server crashed (then ps_destroy it and start a new one) */
+PS_API int ps_is_running(ps_server* server);
 /* one tick on the caller's thread, for hosts with their own loop (not with ps_run_async) */
 PS_API void ps_tick(ps_server* server);
 PS_API void ps_stop(ps_server* server);

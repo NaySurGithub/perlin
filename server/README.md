@@ -26,7 +26,7 @@ There is no RakNet in the server. A player joins the way the client's direct joi
 
 DTLS already secures the channel, so the Bedrock encryption handshake is not used (the client replies to `ServerToClientHandshake` without encryption on NetherNet). Compression is raw deflate with a 256 byte threshold.
 
-Reachability: forward one port, TCP for the signalling and UDP for WebRTC, both `port` (default 19133). `ice_udp_mux` (default on) puts every player on that one UDP port. `ice_servers` takes `stun:host:port` / `turn:` URLs, or `["none"]` for LAN only. `ice_bind_address` pins the interface (needed on hosts without IPv6).
+Reachability: forward one port, TCP for the signalling and UDP for WebRTC, both `port` (default 19132). `ice_udp_mux` (default on) puts every player on that one UDP port. `ice_servers` takes `stun:host:port` / `turn:` URLs, or `["none"]` for LAN only. `ice_bind_address` pins the interface (needed on hosts without IPv6).
 
 The in-process `LoopbackListener` skips the network entirely and is what singleplayer uses.
 
@@ -35,7 +35,9 @@ The in-process `LoopbackListener` skips the network entirely and is what singlep
 - Bedrock 1.26.60 (protocol 2225) login: network settings, login, resource pack negotiation (no packs offered), start game, chunk radius, chunk streaming, spawn.
 - Flat world (`flat_layers` in `server.json`, default bedrock / 2 dirt / grass, surface at y -60), sections that are one block are stored and sent as a single value.
 - Multiplayer: any number of sessions, player list, other players appear with their own skin, movement is relayed, join and leave messages.
-- Chat (`Text`), commands (`/help /list /say /tp /kick /plugins /stop`), command list sent to the client. Operators are listed in `operators` (names, or Xbox ids); in embedded singleplayer the one player is an operator.
+- Chat (`Text`) and commands, one chat line per line of output: `/help /list /say /tp /kick /plugins /stop`, plus `/give <player> <item> [amount]`, `/gamemode <survival|creative|adventure> [player]`, `/op`, `/deop`, `/whitelist <on|off|add|remove|list|reload> [player]` and `/tick <query|rate|freeze|unfreeze|step|sprint>` with the same syntax as Java's. `@s`, `@p` and `@a` work as targets.
+- Operators and the whitelist live in `ops.json` and `whitelist.json` next to `server.json`: `[{"name": "Steve", "xuid": "2535..."}]`. An entry matches by Xbox id when both sides have one, otherwise by name. The whitelist is off by default (`"whitelist": true` or `/whitelist on`). The old `operators` key in `server.json` is still read. In embedded singleplayer the one player is an operator automatically but keeps the world's game mode (survival by default).
+- Creative inventory with every block item, grouped into the vanilla tabs; survival attributes (health, hunger, experience) so the client's HUD has something to show; arm swings, emotes, skin changes and sounds are relayed to other players.
 - Building: the creative menu (every block the client knows, from its own `block_states.json`), placing, breaking, pick block, the 36-slot inventory with cursor, hotbar selection, swap / take / place / drop / destroy through the server-authoritative item stack requests (with stack ids and atomic rollback). Reach is checked, plugins can cancel a place or break, and a refused action sends the real block back so the client undoes its guess. In survival, placing spends one item and breaking pays the block straight into the inventory; bedrock does not break.
 - WASM plugins.
 - Xbox authentication (see below), GPU terrain (see below).
@@ -80,6 +82,9 @@ Build it with `-DPERLIN_SERVER_GPU=ON` (needs `slangc`, fetched unless `PERLIN_S
 **For a flat world the GPU does not help**: the CPU fills a whole uniform section with one store, so dispatch, readback and copy-out only add time (on SwiftShader, 127 ms against 0.5 ms for the same 108 chunks). That is why `auto` keeps flat terrain on the CPU. The backend exists for generators that do real work per block (noise, caves); `terrain_backend: "gpu"` forces it, and `BackendsAgree` is the check every future generator has to pass against its CPU twin.
 
 ## Not done / known limits
+
+- LAN discovery (UDP 7551, so the world shows up in a vanilla client's Friends tab) is not implemented: its packet layout is only partly documented and could not be checked against a real client here.
+- Only the flat generator exists. The Java-style noise generator (density functions, aquifers, surface rules; GPU evaluated) is planned, not started.
 
 - No world persistence: chunks are regenerated each run, edits are lost.
 - Resource packs are not served; `BiomeDefinitionList` and `AvailableEntityIdentifiers` are sent empty. Everything is tested against the client's own packet codecs and chunk decoder, **not against the running Perlin client or a vanilla Bedrock client in a game**.

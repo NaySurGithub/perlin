@@ -68,7 +68,7 @@ static void TestFlatGeneration() {
     gen.Generate(pos, cols);
     BlockRegistry& r = BlockRegistry::Instance();
     for (const ChunkColumn& col : cols) {
-        CHECK(col.Get(3, -64, 9) == r.Find("minecraft:bedrock"));
+        CHECK(col.Get(3, -64, 9) == BlockCatalog::Instance().DefaultBlock("minecraft:bedrock"));
         CHECK(col.Get(0, -63, 0) == r.Find("minecraft:dirt"));
         CHECK(col.Get(15, -62, 15) == r.Find("minecraft:dirt"));
         CHECK(col.Get(7, -61, 7) == r.Find("minecraft:grass_block"));
@@ -110,7 +110,7 @@ static void TestChunkEncodingDecodesWithClientCodec() {
         if (y == kMinY >> 4) {
             // section 0 holds y -64..-49
             CHECK(cells[perlin::server::CellIndex(2, 3, 3)] == r.Hash(r.Find("minecraft:stone")));
-            CHECK(cells[perlin::server::CellIndex(0, 0, 0)] == r.Hash(r.Find("minecraft:bedrock")));
+            CHECK(cells[perlin::server::CellIndex(0, 0, 0)] == r.Hash(BlockCatalog::Instance().DefaultBlock("minecraft:bedrock")));
             CHECK(cells[perlin::server::CellIndex(8, 15, 8)] == r.Hash(0));
         }
     }

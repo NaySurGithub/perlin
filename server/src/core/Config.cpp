@@ -36,6 +36,8 @@ namespace perlin::server {
         c.tickRate = static_cast<uint32_t>(std::clamp<int64_t>(root["tick_rate"].Int(c.tickRate), 1, 200));
         c.gameMode = static_cast<int>(std::clamp<int64_t>(root["gamemode"].Int(c.gameMode), 0, 2));
         c.seed = static_cast<uint64_t>(root["seed"].Int(static_cast<int64_t>(c.seed)));
+        c.whitelist = root["whitelist"].Bool(c.whitelist);
+        c.lanDiscovery = root["lan_discovery"].Bool(c.lanDiscovery);
         c.nethernet = root["nethernet"].Bool(c.nethernet);
         c.port = static_cast<uint16_t>(std::clamp<int64_t>(root["port"].Int(c.port), 1, 65535));
         c.bindAddress = root["bind_address"].String(c.bindAddress);
@@ -87,6 +89,8 @@ namespace perlin::server {
             out << (i ? ", " : "") << "\"" << json::Escape(operators[i]) << "\"";
         out << "],\n"
             << "  \"xbox_auth\": " << (xboxAuth ? "true" : "false") << ",\n"
+            << "  \"whitelist\": " << (whitelist ? "true" : "false") << ",\n"
+            << "  \"lan_discovery\": " << (lanDiscovery ? "true" : "false") << ",\n"
             << "  \"plugin_dir\": \"" << json::Escape(pluginDir) << "\",\n"
             << "  \"block_data_dir\": \"" << json::Escape(blockDataDir) << "\",\n"
             << "  \"flat_layers\": [";

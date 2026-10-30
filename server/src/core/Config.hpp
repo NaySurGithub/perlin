@@ -26,13 +26,19 @@ namespace perlin::server {
         uint32_t maxPlayers = 20;
         uint32_t viewDistance = 12;
         uint32_t tickRate = 20;
-        int gameMode = 1;
+        // 0 survival, 1 creative, 2 adventure
+        int gameMode = 0;
         uint64_t seed = 0;
+        // legacy list of operator names or xuids; ops.json is the real list now and is merged with this one
         std::vector<std::string> operators;
+        // only players listed in whitelist.json (by name or xuid) may join; off by default
+        bool whitelist = false;
+        // answer lan discovery broadcasts (udp 7551) so the world shows up in the Friends tab of vanilla clients on the same network
+        bool lanDiscovery = true;
 
         // nethernet signalling: http on this port, webrtc data channels behind it
         bool nethernet = true;
-        uint16_t port = 19133;
+        uint16_t port = 19132;
         std::string bindAddress = "0.0.0.0";
         std::vector<std::string> iceServers;
         // one udp port for every player (needs one forwarded port); off = a port per connection from `port` upward

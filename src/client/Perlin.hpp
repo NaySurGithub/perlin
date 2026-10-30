@@ -692,6 +692,8 @@ namespace perlin {
         std::unique_ptr<EmbeddedServer> singleplayerServer;
 #endif
         std::unique_ptr<Transport> pendingSingleplayer;
+        // the current session is the embedded server: leaving it goes to the title screen, not the server list
+        bool inSingleplayer = false;
         std::shared_ptr<xbox::Account> account;
         std::mutex statusMutex;
         std::string statusHint;

@@ -34,7 +34,8 @@ namespace perlin::server {
 
         template <class P> void Send(const P& packet);
         void SendText(uint8_t type, const std::string& source, const std::string& message);
-        void SendRaw(const std::string& message) { SendText(0, {}, message); }
+        // one chat line per line of text: the client draws a newline inside a message as a single odd-looking row
+        void SendRaw(const std::string& message);
         void Kick(const std::string& reason);
         void Teleport(double x, double y, double z);
         void Close();
@@ -63,6 +64,11 @@ namespace perlin::server {
         bool HasSent(ChunkPos pos) const { return sent.count(pos) != 0; }
         PlayerInventory& Inventory() { return inventory; }
         bool Creative() const { return creative; }
+        int GameMode() const { return gameMode; }
+        // 0 survival, 1 creative, 2 adventure; tells the client so its abilities (flying, instant break) follow
+        void SetGameMode(int mode);
+        // permission changes take effect without rejoining: the client gets its abilities and command list again
+        void SetOperator(bool op);
         // whole inventory again, e.g. after the server changed it
         void SendInventory();
         void SendSlot(int slot);
@@ -95,8 +101,18 @@ namespace perlin::server {
         void OnPickBlock(std::span<const uint8_t> body);
         void OnInteract(std::span<const uint8_t> body);
         void OnContainerClose(std::span<const uint8_t> body);
+        void OnAnimate(std::span<const uint8_t> body);
+        void OnPlayerSkin(std::span<const uint8_t> body);
+        void OnTickSync(std::span<const uint8_t> body);
+        void OnLatency(std::span<const uint8_t> body);
+        void OnEmote(std::span<const uint8_t> body);
+        void OnSound(std::span<const uint8_t> body);
+        void OnRespawn(std::span<const uint8_t> body);
 
         void SendStartGame();
+        void SendAbilities();
+        void SendAttributes();
+        void SendCommands();
         void SendWorldSetup();
         void StreamChunks();
         void PublishCenter(bool force);
@@ -113,7 +129,8 @@ namespace perlin::server {
         std::array<uint8_t, 16> uuid{};
         std::unique_ptr<proto2225::Skin> skin;
         bool isOperator = false;
-        bool creative = true;
+        bool creative = false;
+        int gameMode = 0;
         PlayerInventory inventory;
 
         double posX = 0.5, posY = 0, posZ = 0.5;
@@ -125,6 +142,7 @@ namespace perlin::server {
         bool moved = false;
         std::unordered_set<ChunkPos, ChunkPosHash> sent;
         std::chrono::steady_clock::time_point lastPacket = std::chrono::steady_clock::now();
+        std::chrono::steady_clock::time_point lastHeartbeat = std::chrono::steady_clock::now();
         std::chrono::steady_clock::time_point stateSince = std::chrono::steady_clock::now();
     };
 }

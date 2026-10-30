@@ -3,6 +3,11 @@
 #include "core/Log.hpp"
 #include "core/Server.hpp"
 
+#ifdef _WIN32
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#endif
+
 #include <atomic>
 #include <csignal>
 #include <cstring>
@@ -23,6 +28,10 @@ namespace {
 }
 
 int main(int argc, char** argv) {
+#ifdef _WIN32
+    // player names and plugin output are utf-8
+    SetConsoleOutputCP(CP_UTF8);
+#endif
     std::string dir = ".";
     int port = 0;
     for (int i = 1; i < argc; i++) {
@@ -86,7 +95,6 @@ int main(int argc, char** argv) {
     console.detach();
 
     using clock = std::chrono::steady_clock;
-    const auto period = std::chrono::nanoseconds(1'000'000'000ll / std::max<uint32_t>(1, config.tickRate));
     auto next = clock::now();
     while (!server.StopRequested()) {
         {
@@ -99,7 +107,7 @@ int main(int argc, char** argv) {
                 server.RunConsoleCommand(l);
         }
         server.Tick();
-        next += period;
+        next += server.TickDelay();
         const auto now = clock::now();
         if (next < now)
             next = now;

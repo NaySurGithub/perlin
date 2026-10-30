@@ -271,6 +271,8 @@ namespace rhi::d3d12 {
         PipelineLayoutHandle layoutHandle;
         bool havePipeline = false;
         bool inRendering = false;
+        // a pass whose attachments no longer exist: it is recorded as empty (draws are dropped) instead of handing the driver null views
+        bool passBroken = false;
         std::array<BindGroupHandle, kMaxBindGroups> groups{};
         std::array<std::array<uint32_t, kMaxDynamicOffsets>, kMaxBindGroups> dynamicOffsets{};
         std::array<uint32_t, kMaxBindGroups> dynamicCounts{};

@@ -245,6 +245,7 @@ namespace perlin {
         constexpr float kDefaultFrameDelta = 0.016f;
         constexpr float kNoonTick = 6000.0f;
         constexpr float kHorizonHeight = 63.0f;
+        constexpr float kFlatHorizonHeight = -64.0f;
         constexpr auto kTitleInterval = std::chrono::milliseconds(500);
         constexpr auto kAnimationStep = std::chrono::milliseconds(200);
 
@@ -461,6 +462,7 @@ namespace perlin {
         NetherNet::SetSecureSignaling(secureSignaling);
         if (!args.stun.empty())
             NetherNet::SetIceServers(args.stun);
+        inSingleplayer = !friendLease && pendingSingleplayer != nullptr;
         if (friendLease) {
             host = friendLease->worldName.empty() ? "friend" : friendLease->worldName;
             port = 0;
@@ -5389,7 +5391,8 @@ namespace perlin {
             chat.Close();
         levelUnloadPending = true;
         titleActive = true;
-        titleReturnToServers = true;
+        titleReturnToServers = !inSingleplayer;
+        inSingleplayer = false;
     }
 
     int Perlin::FrameGenMultiplier() {
@@ -8533,6 +8536,9 @@ namespace perlin {
             fogInput.cloudRangeChunks = graphics.cloudRange;
             fogInput.forward = camera.Direction();
             fogInput.cameraY = eye.y;
+            // java scales the void darkening down to one block above the floor in flat worlds (clear colour scale 1 instead of 1/32)
+            if (session && session->FlatWorld())
+                fogInput.voidDarknessOnsetRange = 1.0f;
             fogInput.rain = rain;
             fogInput.thunder = thunder;
             fogInput.underwater = underwater;
@@ -8721,7 +8727,8 @@ namespace perlin {
             params.sky.starBrightness = env.starBrightness;
             std::copy_n(glm::value_ptr(env.sunriseColor), 4, params.sky.sunrise);
             params.sky.moonPhase = env.moonPhase;
-            params.sky.darkDisc = eye.y < kHorizonHeight;
+            // the sky turns dark below the horizon: sea level in a normal world, the world floor in a flat one
+            params.sky.darkDisc = eye.y < (session && session->FlatWorld() ? kFlatHorizonHeight : kHorizonHeight);
 
             const glm::vec4 cloudColor = glm::round(glm::clamp(env.cloudColor, 0.0f, 1.0f) * 255.0f) / 255.0f;
             params.cloud.enabled = graphics.clouds && cloudColor.w > 0.0f;

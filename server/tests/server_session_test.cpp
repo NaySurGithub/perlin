@@ -154,6 +154,8 @@ int main(int argc, char** argv) {
         fs::copy_file(argv[1], plugins / "hello_server.wasm");
 
     ServerConfig config;
+    // creative by default for these tests; the survival cases below override it
+    config.gameMode = 1;
     config.loopbackOnly = false;
     config.nethernet = false;
     // PS_TEST_BACKEND=gpu runs the whole session on the gpu backend
@@ -161,6 +163,10 @@ int main(int argc, char** argv) {
     config.pluginDir = plugins.string();
     config.viewDistance = 6;
     config.operators = {"Alice"};
+    config.dataDir = (fs::temp_directory_path() / "perlin_session_data").string();
+    fs::create_directories(config.dataDir);
+    fs::remove(config.dataDir + "/ops.json");
+    fs::remove(config.dataDir + "/whitelist.json");
     Server server(config);
     std::string error;
     CHECK(server.Start(error));
@@ -455,6 +461,55 @@ int main(int argc, char** argv) {
     CHECK(alice.Take<proto::RemoveEntityPacket>().size() == 1);
     CHECK(server.InGamePlayers().size() == 1);
 
+
+    // ---- commands: gamemode, give, op/deop, tick, whitelist
+    {
+        const auto run = [&](const std::string& line) {
+            alice.inbox.clear();
+            proto::CommandRequestPacket c;
+            c.command = line;
+            alice.Send(c);
+            alice.Settle();
+        };
+        run("/gamemode survival");
+        const auto mode = alice.Take<proto::SetPlayerGameTypePacket>();
+        CHECK(mode.size() == 1 && mode[0].gamemode == proto::GameMode::Survival);
+        CHECK(alice.Take<proto::UpdateAbilitiesPacket>().size() == 1);
+        run("/give Alice stone 5");
+        auto lines = alice.Take<proto::TextPacket>();
+        CHECK(!lines.empty() && lines[0].message.find("Gave 5 stone to Alice") == 0);
+        CHECK(!alice.Take<proto::InventoryContentPacket>().empty());
+        run("/help");
+        // one chat line per command, not one message with newlines in it
+        lines = alice.Take<proto::TextPacket>();
+        bool noNewlines = lines.size() > 5;
+        for (const auto& l : lines)
+            noNewlines = noNewlines && l.message.find('\n') == std::string::npos;
+        CHECK(noNewlines);
+        run("/tick freeze");
+        const uint64_t frozenAt = server.TickCount();
+        server.Tick();
+        server.Tick();
+        CHECK(server.TickCount() == frozenAt);
+        run("/tick step 3");
+        server.Tick();
+        server.Tick();
+        server.Tick();
+        server.Tick();
+        CHECK(server.TickCount() == frozenAt + 3);
+        run("/tick unfreeze");
+        run("/tick query");
+        lines = alice.Take<proto::TextPacket>();
+        CHECK(!lines.empty() && lines[0].message.find("running normally") != std::string::npos);
+        // ops and the whitelist live in their own files
+        server.RunConsoleCommand("op Bob");
+        CHECK(server.IsOperator("Bob", ""));
+        server.RunConsoleCommand("deop Bob");
+        CHECK(!server.IsOperator("Bob", ""));
+        server.RunConsoleCommand("whitelist add Bob");
+        CHECK(server.IsWhitelisted("bob", ""));
+        CHECK(fs::exists(config.dataDir + "/ops.json") && fs::exists(config.dataDir + "/whitelist.json"));
+    }
 
     server.Stop();
 

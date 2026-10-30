@@ -90,6 +90,8 @@ namespace perlin {
         void SetPackDirectory(const std::string& dir) { packs.SetDirectory(dir); }
         std::vector<PackDownloader::PackFile> ServerPackFiles() const { return packs.Files(); }
         bool Transferring() const { return transferring; }
+        // the server says its overworld is a flat one: the sky's horizon sits at the world floor instead of sea level
+        bool FlatWorld() const { return flatWorld; }
 
         void Update();
 
@@ -816,6 +818,7 @@ void RequestRespawn();
         void UpdateColumnLod();
         void FillUnstreamedColumns();
         bool clientGen = false;
+        bool flatWorld = false;
         int maxViewDistance = 32;
         std::atomic<int> grantedRadius{0};
         std::atomic<int64_t> lastColumnMs{0};

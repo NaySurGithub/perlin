@@ -589,7 +589,7 @@ if(MSVC)
                                -Wno-language-extension-token -Wno-c++98-compat -Wno-pragma-pack)
     endif()
     target_compile_options(Perlin PRIVATE /Zi)
-    target_link_options(Perlin PRIVATE /DEBUG /OPT:REF /OPT:ICF /MAP)
+    target_link_options(Perlin PRIVATE /DEBUG /OPT:REF /OPT:ICF)
     string(REGEX REPLACE "[/-]RTC1" "" CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG}")
     set_property(TARGET Perlin PROPERTY MSVC_RUNTIME_CHECKS "")
     file(GLOB_RECURSE PERLIN_HOT_SOURCES
@@ -653,10 +653,6 @@ if(UNIX AND NOT APPLE AND NOT ANDROID AND NOT EMSCRIPTEN)
     install(FILES packaging/linux/io.perlin.client.desktop DESTINATION share/applications)
     install(DIRECTORY packaging/linux/icons/ DESTINATION share/icons/hicolor)
 endif()
-if(MSVC)
-    install(FILES "$<TARGET_PDB_FILE:Perlin>" DESTINATION . OPTIONAL)
-    install(FILES "$<TARGET_FILE_DIR:Perlin>/Perlin.map" DESTINATION . OPTIONAL)
-endif()
 # FFmpeg libraries compiled straight into Perlin: video export then needs no ffmpeg program at all.
 # Windows CI installs a static build with vcpkg (see .github/workflows/build.yml) and passes -DFFMPEG_ROOT=...;
 # Linux/macOS use pkg-config. If nothing is found Perlin still builds and falls back to its built-in AVI encoder.
@@ -702,11 +698,11 @@ if(PERLIN_LIBAV AND NOT EMSCRIPTEN AND NOT ANDROID)
     endif()
 endif()
 
-# Ship ffmpeg next to Perlin.exe on Windows so video export works with nothing to install.
+# Ship ffmpeg next to perlin.exe on Windows so video export works with nothing to install.
 # The LGPL build is used (no GPL obligations on redistribution); Perlin also has a built-in
 # AVI/MJPEG encoder as a last resort and can download the full GPL build from the export dialog.
 if(WIN32 AND NOT EMSCRIPTEN AND NOT ANDROID AND NOT PERLIN_LIBAV_FOUND)
-    option(PERLIN_BUNDLE_FFMPEG "Download an LGPL ffmpeg build and ship it next to Perlin.exe" ON)
+    option(PERLIN_BUNDLE_FFMPEG "Download an LGPL ffmpeg build and ship it next to perlin.exe" ON)
     # The download is kept in a fixed per-user cache so it happens once, not on every fresh build directory.
     if(PERLIN_BUNDLE_FFMPEG)
         if(DEFINED ENV{LOCALAPPDATA})

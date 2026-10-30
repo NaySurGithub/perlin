@@ -34,6 +34,9 @@ namespace perlin::server {
 
         // registry id of the block with this network hash; 0 (air) when the hash is not a known block
         uint16_t RegistryId(int32_t hash) const;
+        // the default state of a block by name ("stone" or "minecraft:stone"); falls back to the bare name when the catalog does not know it.
+        // a block with required states (bedrock, logs, slabs) only exists to the client under one of its real states
+        uint16_t DefaultBlock(const std::string& name) const;
         bool KnownHash(int32_t hash) const { return states.count(hash) != 0; }
         size_t StateCount() const { return states.size(); }
 
@@ -48,6 +51,7 @@ namespace perlin::server {
         void BuildItems(const std::vector<std::string>& names, const std::unordered_map<std::string, int32_t>& defaultHash);
         std::unordered_map<int32_t, State> states;
         std::vector<CatalogItem> items;
+        std::unordered_map<std::string, int32_t> defaultByName;
         std::unordered_map<int16_t, size_t> byId;
         std::unordered_map<int32_t, size_t> byHash;
         std::unordered_map<std::string, size_t> byName;

@@ -54,6 +54,13 @@ namespace perlin::server {
         return BlockRegistry::Instance().Intern(it->second.name, it->second.list);
     }
 
+    uint16_t BlockCatalog::DefaultBlock(const std::string& name) const {
+        const std::string full = name.find(':') == std::string::npos ? "minecraft:" + name : name;
+        if (const auto it = defaultByName.find(full); it != defaultByName.end())
+            return RegistryId(it->second);
+        return BlockRegistry::Instance().Intern(full);
+    }
+
     void BlockCatalog::BuildItems(const std::vector<std::string>& names, const std::unordered_map<std::string, int32_t>& defaultHash) {
         items.clear();
         byId.clear();
@@ -138,6 +145,7 @@ namespace perlin::server {
             for (const auto& [n, h] : defaultHash)
                 names.push_back(n.substr(10));
         }
+        defaultByName = defaultHash;
         BuildItems(names, defaultHash);
         fromFiles = true;
         return !items.empty();
@@ -162,6 +170,7 @@ namespace perlin::server {
             defaultHash.emplace(full, hash);
             names.push_back(n);
         }
+        defaultByName = defaultHash;
         BuildItems(names, defaultHash);
         fromFiles = false;
     }

@@ -172,7 +172,7 @@ namespace perlin::server {
 
             bool Start(EventQueue& q, std::string& error) override {
                 queue = &q;
-                rtc::InitLogger(std::getenv("PS_RTC_LOG") ? rtc::LogLevel::Debug : rtc::LogLevel::Warning);
+                rtc::InitLogger(std::getenv("PS_RTC_LOG") ? rtc::LogLevel::Debug : rtc::LogLevel::Error);
 
                 http.Get("/v1/join", [this](const httplib::Request&, httplib::Response& res) {
                     res.set_content(infoJson(), "application/json");

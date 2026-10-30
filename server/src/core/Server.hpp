@@ -1,4 +1,5 @@
 #pragma once
+#include "core/Access.hpp"
 #include "core/Config.hpp"
 #include "net/Connection.hpp"
 #include "net/LoopbackListener.hpp"
@@ -8,6 +9,8 @@
 #include "world/ChunkManager.hpp"
 
 #include <atomic>
+#include <chrono>
+#include <deque>
 #include <functional>
 #include <map>
 #include <memory>
@@ -20,6 +23,8 @@ namespace perlin::server {
     struct CommandDef {
         std::string name;
         std::string description;
+        // shown in the client's command hint, e.g. "player item [amount]"
+        std::string usage;
         // plugin that owns it, empty for built-ins
         std::string plugin;
         bool operatorOnly = false;
@@ -50,6 +55,8 @@ namespace perlin::server {
         ChunkManager& Chunks() { return *chunks; }
         PluginHost& Plugins() { return *plugins; }
         uint64_t TickCount() const { return tick; }
+        // how long the host loop should wait after a tick: the target rate's period, or nothing while sprinting or stepping
+        std::chrono::nanoseconds TickDelay() const;
         const std::map<std::string, CommandDef>& Commands() const { return commands; }
 
         // session callbacks
@@ -63,6 +70,11 @@ namespace perlin::server {
         bool IsOperatorName(const std::string& name) const;
         // operators may be listed by name or by xuid; with xbox_auth only an xuid is a safe key
         bool IsOperator(const std::string& name, const std::string& xuid) const;
+        bool IsWhitelisted(const std::string& name, const std::string& xuid) const { return whitelistList.Contains(name, xuid); }
+        AccessList& Ops() { return opsList; }
+        AccessList& Whitelist() { return whitelistList; }
+        // grants or removes operator by name (online or not); returns a one-line result for the caller
+        std::string SetOperator(const std::string& name, bool op);
         bool Full() const;
         double SpawnY() const;
 
@@ -101,12 +113,23 @@ namespace perlin::server {
         std::unique_ptr<LoopbackListener> loopback;
         std::unique_ptr<Listener> nethernet;
         EventQueue events;
+        AccessList opsList, whitelistList;
 
         std::unordered_map<uint64_t, std::unique_ptr<Session>> sessions;
         uint64_t nextRuntimeId = 1;
         std::map<std::string, CommandDef> commands;
         std::vector<uint8_t> itemRegistryBody, creativeBody;
         uint64_t tick = 0;
+        // /tick: the game clock can be slowed, sped up, frozen and stepped. networking keeps running while frozen
+        double tickRateTarget = 20.0;
+        bool frozen = false;
+        int64_t stepRemaining = 0;
+        int64_t sprintRemaining = 0;
+        int64_t sprintTotal = 0;
+        std::chrono::steady_clock::time_point sprintStarted;
+        std::deque<double> tickMillis;
+        std::string TickQuery() const;
+        void RunTickCommand(Session* from, const std::string& args);
         std::atomic<bool> stopRequested{false};
         bool started = false;
     };

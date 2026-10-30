@@ -65,6 +65,7 @@ foreach(dep perlin_protocol miniz)
 endforeach()
 
 set(PS_SOURCES
+    src/core/Access.cpp
     src/core/Auth.cpp
     src/core/CApi.cpp
     src/core/Config.cpp
@@ -228,6 +229,15 @@ if(PERLIN_SERVER_BUILD_SHARED)
             COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:perlin_server> $<TARGET_FILE_DIR:Perlin>
             VERBATIM)
     endif()
+endif()
+
+# release builds on Linux carry no symbol tables
+if(UNIX AND NOT APPLE)
+    foreach(t perlin_server perlin-server)
+        if(TARGET ${t})
+            target_link_options(${t} PRIVATE $<$<CONFIG:Release>:-s>)
+        endif()
+    endforeach()
 endif()
 
 if(PERLIN_SERVER_BUILD_EXE)

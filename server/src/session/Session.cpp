@@ -22,7 +22,8 @@ namespace perlin::server {
         constexpr double kEyeHeight = 1.62;
         // chunks sent per tick to one player; keeps a join from flooding the data channel
         constexpr int kChunksPerTick = 6;
-        constexpr auto kIdleTimeout = std::chrono::seconds(30);
+        constexpr auto kIdleTimeout = std::chrono::seconds(60);
+        constexpr auto kHeartbeat = std::chrono::seconds(5);
         constexpr auto kLoginTimeout = std::chrono::seconds(60);
 
         template <class P> bool Decode(std::span<const uint8_t> body, P& packet) {
@@ -93,6 +94,52 @@ namespace perlin::server {
             s.premium = c["PremiumSkin"].Bool();
             s.persona = c["PersonaSkin"].Bool();
             s.capeOnClassic = c["CapeOnClassicSkin"].Bool();
+            // "#aarrggbb" or "#rrggbb"
+            if (const std::string color = c["SkinColor"].String(); color.size() > 1 && color[0] == '#') {
+                try {
+                    const uint32_t v = static_cast<uint32_t>(std::stoul(color.substr(1), nullptr, 16));
+                    s.skinColor = static_cast<int32_t>(color.size() <= 7 ? (0xFF000000u | v) : v);
+                } catch (...) {
+                }
+            }
+            for (const json::Value& a : c["AnimatedImageData"].items) {
+                proto::SkinAnimationsEntry anim;
+                anim.skinImage.width = ImageSide(a, "ImageWidth", 0);
+                anim.skinImage.height = ImageSide(a, "ImageHeight", 0);
+                const std::string frames = json::Base64UrlDecode(a["Image"].String());
+                if (frames.size() != static_cast<size_t>(anim.skinImage.width) * static_cast<size_t>(anim.skinImage.height) * 4)
+                    continue;
+                anim.skinImage.data.assign(frames.begin(), frames.end());
+                anim.animationType = static_cast<uint32_t>(a["Type"].Int());
+                anim.animationFrames = static_cast<float>(a["Frames"].Number());
+                anim.expressionType = static_cast<uint32_t>(a["AnimationExpression"].Int());
+                s.animations.push_back(std::move(anim));
+            }
+            static const char* const kPieceNames[] = {"", "persona_skeleton", "persona_body", "persona_skin", "persona_bottom", "persona_feet", "persona_dress",
+                                                      "persona_top", "persona_high_pants", "persona_hands", "persona_outerwear", "persona_facial_hair",
+                                                      "persona_mouth", "persona_eyes", "persona_hair", "persona_hood"};
+            for (const json::Value& piece : c["PersonaPieces"].items) {
+                proto::SkinPersonalPiecesEntry e;
+                e.pieceId = piece["PieceId"].String();
+                const std::string type = piece["PieceType"].String();
+                for (size_t i = 1; i < std::size(kPieceNames); i++)
+                    if (type == kPieceNames[i])
+                        e.pieceType = static_cast<proto::PersonaPieceType>(i);
+                e.packId.bytes = ParseUuid(piece["PackId"].String(), 0);
+                e.isDefaultPiece = piece["IsDefault"].Bool();
+                e.productId = piece["ProductId"].String();
+                s.personalPieces.push_back(std::move(e));
+            }
+            for (const json::Value& tint : c["PieceTintColors"].items) {
+                proto::SkinPieceTintColorsEntry e;
+                e.pieceType = tint["PieceType"].String();
+                for (size_t i = 0; i < 4 && i < tint["Colors"].items.size(); i++) {
+                    const std::string col = tint["Colors"].items[i].String();
+                    if (col.size() > 1 && col[0] == '#')
+                        try { e.colors[i] = static_cast<int32_t>(std::stoul(col.substr(1), nullptr, 16)); } catch (...) {}
+                }
+                s.pieceTintColors.push_back(std::move(e));
+            }
             s.trusted = "true";
             (void)playerName;
             return s;
@@ -200,6 +247,13 @@ namespace perlin::server {
         case proto::BlockPickRequestPacket::kId: OnPickBlock(body); break;
         case proto::InteractPacket::kId: OnInteract(body); break;
         case proto::ContainerClosePacket::kId: OnContainerClose(body); break;
+        case proto::AnimatePacket::kId: OnAnimate(body); break;
+        case proto::PlayerSkinPacket::kId: OnPlayerSkin(body); break;
+        case proto::TickSyncPacket::kId: OnTickSync(body); break;
+        case proto::NetworkStackLatencyPacket::kId: OnLatency(body); break;
+        case proto::EmotePacket::kId: OnEmote(body); break;
+        case proto::LevelSoundEventPacket::kId: OnSound(body); break;
+        case proto::RespawnPacket::kId: OnRespawn(body); break;
         case proto::ClientToServerHandshakePacket::kId:
         case proto::ClientCacheStatusPacket::kId:
         default: break; // everything else a client may send is ignored for now
@@ -290,8 +344,14 @@ namespace perlin::server {
         uuid = ParseUuid(uuidText, runtimeId);
         *skin = SkinFromClientData(haveClient ? clientData : json::Value{}, name);
         isOperator = server.IsOperator(name, xuid);
-        creative = server.Config().gameMode == 1;
+        gameMode = server.Config().gameMode;
+        creative = gameMode == 1;
 
+        if (server.Config().whitelist && !server.Config().loopbackOnly && !server.IsWhitelisted(name, xuid)) {
+            LogInfo(name + " refused: not on the whitelist");
+            Kick("You are not whitelisted on this server");
+            return;
+        }
         if (server.Full()) {
             proto::PlayStatusPacket p;
             p.status = proto::PlayStatusPacketStatus::FailedServerFull;
@@ -356,7 +416,7 @@ namespace perlin::server {
         proto::StartGamePacket g;
         g.entityId = static_cast<int64_t>(runtimeId);
         g.runtimeEntityId = runtimeId;
-        g.playerGamemode = static_cast<proto::GameMode>(cfg.gameMode);
+        g.playerGamemode = static_cast<proto::GameMode>(gameMode);
         g.playerPosition = {static_cast<float>(posX), static_cast<float>(posY), static_cast<float>(posZ)};
         g.rotation = {0.0f, 0.0f};
         g.seed = cfg.seed;
@@ -399,6 +459,28 @@ namespace perlin::server {
         t.time = 6000;
         Send(t);
 
+        {
+            // the client lists itself too, which is how it finds its own skin
+            proto::PlayerListPacket self;
+            proto::PlayerRecord rec;
+            rec.type = proto::PlayerRecordType::Add;
+            rec.uuid.bytes = uuid;
+            rec.entityUniqueId = static_cast<int64_t>(runtimeId);
+            rec.username = name;
+            rec.xboxUserId = xuid;
+            rec.skinData = *skin;
+            rec.playerColor = -1;
+            rec.isHost = false;
+            self.records.push_back(std::move(rec));
+            Send(self);
+        }
+        SendCommands();
+        SendAbilities();
+        SendAttributes();
+        SendInventory();
+    }
+
+    void Session::SendCommands() {
         proto::AvailableCommandsPacket commands;
         for (const auto& [cmdName, def] : server.Commands()) {
             if (def.operatorOnly && !isOperator)
@@ -410,7 +492,7 @@ namespace perlin::server {
             e.alias = -1;
             proto::AvailableCommandsPacketCommandDataEntryOverloadsEntry overload;
             proto::AvailableCommandsPacketCommandDataEntryOverloadsEntryParametersEntry arg;
-            arg.parameterName = "args";
+            arg.parameterName = def.usage.empty() ? "args" : def.usage;
             arg.valueType = proto::AvailableCommandsPacketCommandDataEntryOverloadsEntryParametersEntryValueType::RawText;
             arg.enumType = proto::AvailableCommandsPacketCommandDataEntryOverloadsEntryParametersEntryEnumType::Valid;
             arg.optional = true;
@@ -419,7 +501,92 @@ namespace perlin::server {
             commands.commandData.push_back(std::move(e));
         }
         Send(commands);
-        SendInventory();
+    }
+
+    void Session::SendAttributes() {
+        proto::UpdateAttributesPacket p;
+        p.runtimeEntityId = runtimeId;
+        p.tick = server.TickCount();
+        const auto add = [&](const char* attribute, float min, float max, float current, float fallback) {
+            proto::PlayerAttributesEntry a;
+            a.name = attribute;
+            a.min = a.defaultMin = min;
+            a.max = a.defaultMax = max;
+            a.current = current;
+            a.default_ = fallback;
+            p.attributes.push_back(std::move(a));
+        };
+        // what a survival client's hud reads: without these it shows no hearts, hunger or experience
+        add("minecraft:health", 0.0f, 20.0f, 20.0f, 20.0f);
+        add("minecraft:player.hunger", 0.0f, 20.0f, 20.0f, 20.0f);
+        add("minecraft:player.saturation", 0.0f, 20.0f, 5.0f, 5.0f);
+        add("minecraft:player.exhaustion", 0.0f, 4.0f, 0.0f, 0.0f);
+        add("minecraft:player.level", 0.0f, 24791.0f, 0.0f, 0.0f);
+        add("minecraft:player.experience", 0.0f, 1.0f, 0.0f, 0.0f);
+        add("minecraft:absorption", 0.0f, 16.0f, 0.0f, 0.0f);
+        add("minecraft:movement", 0.0f, 3.4028235e38f, 0.1f, 0.1f);
+        Send(p);
+    }
+
+    void Session::SendAbilities() {
+        namespace F = proto::FlagsAbilitySet;
+        uint32_t enabled = 0;
+        if (gameMode != 2)
+            enabled |= F::Build | F::Mine;
+        enabled |= F::DoorsAndSwitches | F::OpenContainers | F::AttackPlayers | F::AttackMobs;
+        if (gameMode == 1)
+            enabled |= F::InstantBuild | F::MayFly | F::Invulnerable;
+        if (isOperator)
+            enabled |= F::OperatorCommands;
+        proto::UpdateAbilitiesPacket p;
+        p.entityUniqueId = static_cast<int64_t>(runtimeId);
+        p.permissionLevel = isOperator ? proto::PermissionLevel::Operator : proto::PermissionLevel::Member;
+        p.commandPermission = isOperator ? proto::CommandPermissionLevel::Operator : proto::CommandPermissionLevel::Normal;
+        proto::AbilityLayers layer;
+        layer.type = proto::AbilityLayersType::Base;
+        // every ability the game knows may be granted by this layer; `enabled` says which are on
+        layer.allowed = F::Count - 1;
+        layer.enabled = enabled;
+        layer.flySpeed = 0.05f;
+        layer.verticalFlySpeed = 1.0f;
+        layer.walkSpeed = 0.1f;
+        p.abilities.push_back(layer);
+        Send(p);
+    }
+
+    void Session::SetGameMode(int mode) {
+        if (mode < 0 || mode > 2)
+            return;
+        gameMode = mode;
+        creative = mode == 1;
+        if (state != State::InGame)
+            return;
+        proto::SetPlayerGameTypePacket p;
+        p.gamemode = static_cast<proto::GameMode>(mode);
+        Send(p);
+        SendAbilities();
+    }
+
+    void Session::SetOperator(bool op) {
+        if (isOperator == op)
+            return;
+        isOperator = op;
+        if (state != State::InGame)
+            return;
+        SendAbilities();
+        SendCommands();
+    }
+
+    void Session::SendRaw(const std::string& message) {
+        size_t from = 0;
+        while (from <= message.size()) {
+            const size_t nl = message.find('\n', from);
+            const std::string line = message.substr(from, nl == std::string::npos ? std::string::npos : nl - from);
+            SendText(0, {}, line);
+            if (nl == std::string::npos)
+                break;
+            from = nl + 1;
+        }
     }
 
     void Session::SendInventory() {
@@ -702,6 +869,78 @@ namespace perlin::server {
         server.HandleChat(*this, message);
     }
 
+    void Session::OnAnimate(std::span<const uint8_t> body) {
+        proto::AnimatePacket p;
+        if (!Decode(body, p) || state != State::InGame)
+            return;
+        // arm swings: everyone else sees this player's swing
+        p.runtimeEntityId = runtimeId;
+        for (Session* other : server.InGamePlayers())
+            if (other != this)
+                other->Send(p);
+    }
+
+    void Session::OnPlayerSkin(std::span<const uint8_t> body) {
+        proto::PlayerSkinPacket p;
+        if (!Decode(body, p) || state != State::InGame)
+            return;
+        *skin = p.skin;
+        p.uuid.bytes = uuid;
+        for (Session* other : server.InGamePlayers())
+            if (other != this)
+                other->Send(p);
+    }
+
+    void Session::OnTickSync(std::span<const uint8_t> body) {
+        proto::TickSyncPacket p;
+        if (!Decode(body, p))
+            return;
+        // the client uses the round trip to line its clock up with ours
+        p.responseTime = static_cast<int64_t>(server.TickCount());
+        Send(p);
+    }
+
+    void Session::OnLatency(std::span<const uint8_t> body) {
+        proto::NetworkStackLatencyPacket p;
+        if (!Decode(body, p) || !p.needsResponse)
+            return;
+        p.needsResponse = 0;
+        Send(p);
+    }
+
+    void Session::OnEmote(std::span<const uint8_t> body) {
+        proto::EmotePacket p;
+        if (!Decode(body, p) || state != State::InGame)
+            return;
+        p.entityId = runtimeId;
+        p.xuid = xuid;
+        for (Session* other : server.InGamePlayers())
+            if (other != this)
+                other->Send(p);
+    }
+
+    void Session::OnSound(std::span<const uint8_t> body) {
+        proto::LevelSoundEventPacket p;
+        if (!Decode(body, p) || state != State::InGame)
+            return;
+        // footsteps, block breaking and placing, swings: the client announces them, the others hear them
+        for (Session* other : server.InGamePlayers())
+            if (other != this)
+                other->Send(p);
+    }
+
+    void Session::OnRespawn(std::span<const uint8_t> body) {
+        proto::RespawnPacket p;
+        if (!Decode(body, p) || state != State::InGame)
+            return;
+        // state 2 is the client saying it is ready after a respawn; there is no death here yet, so it only needs the spawn point back
+        proto::RespawnPacket reply;
+        reply.position = {static_cast<float>(posX), static_cast<float>(posY), static_cast<float>(posZ)};
+        reply.state = 1;
+        reply.runtimeEntityId = runtimeId;
+        Send(reply);
+    }
+
     void Session::OnCommand(std::span<const uint8_t> body) {
         proto::CommandRequestPacket c;
         if (!Decode(body, c) || state != State::InGame)
@@ -786,7 +1025,7 @@ namespace perlin::server {
         add.pitch = other.pitch;
         add.yaw = other.yaw;
         add.headYaw = other.yaw;
-        add.gamemode = static_cast<proto::GameMode>(server.Config().gameMode);
+        add.gamemode = static_cast<proto::GameMode>(other.gameMode);
         add.uniqueId = static_cast<int64_t>(other.runtimeId);
         add.permissionLevel = other.isOperator ? proto::PermissionLevel::Operator : proto::PermissionLevel::Member;
         add.commandPermission = other.isOperator ? proto::CommandPermissionLevel::Operator : proto::CommandPermissionLevel::Normal;
@@ -842,6 +1081,13 @@ namespace perlin::server {
         }
         if (state == State::Loading || state == State::InGame)
             StreamChunks();
+        // a quiet world sends nothing, and a client that hears nothing for a while assumes the server is gone: say hello now and then
+        if (state == State::InGame && now - lastHeartbeat > kHeartbeat) {
+            lastHeartbeat = now;
+            proto::SetTimePacket t;
+            t.time = 6000;
+            Send(t);
+        }
         Flush();
     }
 
