@@ -17,6 +17,8 @@ namespace perlin::server {
         virtual void Generate(std::span<const ChunkPos> positions, std::span<ChunkColumn> out) = 0;
         // largest batch worth submitting at once
         virtual size_t PreferredBatch() const { return 1; }
+        // Generate may be called from several threads at once (cpu backends); the gpu backend owns a device queue and is not
+        virtual bool ThreadSafe() const { return false; }
     };
 
     // flat layers on the cpu: also the reference the gpu backend is checked against
@@ -25,7 +27,8 @@ namespace perlin::server {
         explicit FlatCpuBackend(const ServerConfig& config);
         const char* Name() const override { return "flat/cpu"; }
         void Generate(std::span<const ChunkPos> positions, std::span<ChunkColumn> out) override;
-        size_t PreferredBatch() const override { return 8; }
+        size_t PreferredBatch() const override { return 4; }
+        bool ThreadSafe() const override { return true; }
 
         // block id per world y from the floor up; air above the last layer
         const std::vector<uint16_t>& Profile() const { return profile; }

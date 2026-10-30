@@ -1,6 +1,7 @@
 #include "core/Log.hpp"
 #include "gpu/GpuTerrain.hpp"
 #include "world/Generator.hpp"
+#include "world/vanilla/VanillaTerrain.hpp"
 
 namespace perlin::server {
 
@@ -27,6 +28,12 @@ namespace perlin::server {
 
     BackendChoice CreateTerrainBackend(const ServerConfig& config) {
         BackendChoice out;
+        if (config.generator == "vanilla") {
+            std::string error;
+            out.backend = vanilla::VanillaCpuBackend::Create(config, error);
+            out.note = out.backend ? "java terrain port, shape only; the density graph is evaluated on the cpu, a gpu path is not written yet" : error;
+            return out;
+        }
         auto cpu = std::make_unique<FlatCpuBackend>(config);
         if (config.terrainBackend == "cpu") {
             out.backend = std::move(cpu);

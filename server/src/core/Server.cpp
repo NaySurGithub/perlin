@@ -45,8 +45,8 @@ namespace perlin::server {
     bool Server::Start(std::string& error) {
         if (started)
             return true;
-        if (config.generator != "flat") {
-            error = "unknown generator '" + config.generator + "' (only \"flat\" exists yet)";
+        if (config.generator != "flat" && config.generator != "vanilla") {
+            error = "unknown generator '" + config.generator + "' (\"flat\" or \"vanilla\")";
             return false;
         }
         {
@@ -54,7 +54,8 @@ namespace perlin::server {
             std::string catalogError;
             const std::string states = BlockCatalog::FindFile(config.blockDataDir, "block_states.json");
             const std::string names = BlockCatalog::FindFile(config.blockDataDir, "block_destroy.tsv");
-            if (states.empty() || !catalog.Load(states, names, catalogError)) {
+            const std::string extra = BlockCatalog::FindFile(config.blockDataDir, "extra_items.txt");
+            if (states.empty() || !catalog.Load(states, names, catalogError, extra)) {
                 catalog.LoadBuiltin();
                 LogWarn("block data not found" + (catalogError.empty() ? std::string() : " (" + catalogError + ")") +
                         ": using the built-in list of " + std::to_string(catalog.Items().size()) +
@@ -160,6 +161,7 @@ namespace perlin::server {
             tick++;
             if (frozen && stepRemaining > 0)
                 stepRemaining--;
+            TickItems();
             if (plugins->AnyoneListens(PS_EVENT_TICK)) {
                 PayloadWriter w;
                 w.U64(tick);
@@ -308,6 +310,109 @@ namespace perlin::server {
         }
     }
 
+    void Server::SpawnItem(const ItemStack& stack, double x, double y, double z, double vx, double vy, double vz, int pickupDelay) {
+        if (stack.Empty())
+            return;
+        ItemEntity item;
+        item.id = nextEntityId++;
+        item.stack = stack;
+        item.stack.stackId = 0;
+        item.x = x;
+        item.y = y;
+        item.z = z;
+        item.vx = vx;
+        item.vy = vy;
+        item.vz = vz;
+        item.pickupDelay = pickupDelay;
+        itemEntities.push_back(item);
+        for (Session* s : InGamePlayers())
+            s->ShowItem(itemEntities.back());
+    }
+
+    void Server::DropFromPlayer(Session& by, const ItemStack& stack) {
+        // thrown from the eyes, the way the game does: a short arc in the direction the player faces
+        const double yaw = static_cast<double>(by.Yaw()) * 3.14159265358979323846 / 180.0;
+        const double dx = -std::sin(yaw), dz = std::cos(yaw);
+        SpawnItem(stack, by.X() + dx * 0.3, by.Y() - 0.3, by.Z() + dz * 0.3, dx * 0.3, 0.2, dz * 0.3, 40);
+    }
+
+    void Server::TickItems() {
+        if (itemEntities.empty())
+            return;
+        const auto solid = [&](double x, double y, double z) {
+            const int bx = static_cast<int>(std::floor(x)), by = static_cast<int>(std::floor(y)), bz = static_cast<int>(std::floor(z));
+            if (by < kMinY)
+                return true;
+            if (!chunks->Peek({bx >> 4, bz >> 4}))
+                return true;
+            return chunks->GetBlock(bx, by, bz) != BlockRegistry::kAir;
+        };
+        const std::vector<Session*> players = InGamePlayers();
+        for (size_t i = 0; i < itemEntities.size();) {
+            ItemEntity& it = itemEntities[i];
+            it.age++;
+            const double ox = it.x, oy = it.y, oz = it.z;
+            // gravity, then drag; resting on a block stops the fall and slows the slide
+            it.vy -= 0.04;
+            double ny = it.y + it.vy;
+            it.onGround = false;
+            if (it.vy < 0 && solid(it.x, ny, it.z)) {
+                ny = std::floor(ny) + 1.0;
+                it.vy = 0;
+                it.onGround = true;
+            }
+            it.y = ny;
+            const double nx = it.x + it.vx, nz = it.z + it.vz;
+            if (!solid(nx, it.y + 0.1, it.z))
+                it.x = nx;
+            else
+                it.vx = 0;
+            if (!solid(it.x, it.y + 0.1, nz))
+                it.z = nz;
+            else
+                it.vz = 0;
+            const double friction = it.onGround ? 0.6 * 0.98 : 0.98;
+            it.vx *= friction;
+            it.vz *= friction;
+            it.vy *= 0.98;
+            if (it.age > 6000) {
+                for (Session* s : players)
+                    s->HideItem(it.id);
+                itemEntities.erase(itemEntities.begin() + static_cast<std::ptrdiff_t>(i));
+                continue;
+            }
+            if (std::abs(it.x - ox) + std::abs(it.y - oy) + std::abs(it.z - oz) > 0.001)
+                for (Session* s : players)
+                    s->MoveItem(it);
+            bool gone = false;
+            if (it.age >= it.pickupDelay)
+                for (Session* s : players) {
+                    const double dx = it.x - s->X(), dy = it.y - (s->Y() - 0.9), dz = it.z - s->Z();
+                    if (dx * dx + dy * dy + dz * dz > 1.5 * 1.5)
+                        continue;
+                    const int left = s->Inventory().Give(it.stack.networkId, it.stack.count);
+                    if (left == it.stack.count)
+                        continue;
+                    s->SendInventory();
+                    for (Session* o : players)
+                        o->TakeItem(it.id, s->Id());
+                    if (left == 0) {
+                        for (Session* o : players)
+                            o->HideItem(it.id);
+                        gone = true;
+                    } else {
+                        // part of the stack fit: the rest stays where it lies
+                        it.stack.count = static_cast<uint16_t>(left);
+                    }
+                    break;
+                }
+            if (gone)
+                itemEntities.erase(itemEntities.begin() + static_cast<std::ptrdiff_t>(i));
+            else
+                i++;
+        }
+    }
+
     void Server::Pump() {
         std::vector<NetEvent> batch;
         events.Drain(batch);
@@ -403,6 +508,8 @@ namespace perlin::server {
             other->ShowPlayer(joined);
             joined.ShowPlayer(*other);
         }
+        for (const ItemEntity& item : itemEntities)
+            joined.ShowItem(item);
         PayloadWriter w;
         w.U64(joined.Id());
         w.Str(joined.Name());
@@ -765,7 +872,7 @@ namespace perlin::server {
         // by name means the default state; a block with no item is not one the catalog can place
         const CatalogItem* item = BlockCatalog::Instance().ItemByName(FullBlockName(block));
         const bool air = FullBlockName(block) == "minecraft:air";
-        if (!item && !air)
+        if ((!item || !item->block) && !air)
             return PS_ERR_BAD_ARGUMENTS;
         if (!chunks->Peek({x >> 4, z >> 4}))
             return PS_ERR_NOT_LOADED;
@@ -807,11 +914,15 @@ namespace perlin::server {
             }
         }
         ApplyBlock(x, y, z, BlockRegistry::kAir);
-        // no item entities yet: a survival player gets the block straight into the inventory
+        // survival: the block leaves an item where it stood, to be picked up
         if (!by.Creative())
             if (const CatalogItem* item = BlockCatalog::Instance().ItemByName(name)) {
-                by.Inventory().Give(item->networkId, 1);
-                by.SendInventory();
+                ItemStack drop;
+                drop.networkId = item->networkId;
+                drop.count = 1;
+                // a little sideways kick so stacked drops do not sit on one point
+                const double kick = static_cast<double>((x * 7 + z * 13 + y * 3) & 7) / 7.0 - 0.5;
+                SpawnItem(drop, x + 0.5, y + 0.25, z + 0.5, kick * 0.1, 0.2, -kick * 0.1, 10);
             }
         return true;
     }
@@ -828,7 +939,7 @@ namespace perlin::server {
         const int tx = x + kFaceOffset[face][0], ty = y + kFaceOffset[face][1], tz = z + kFaceOffset[face][2];
         const ItemStack& held = by.Inventory().Held();
         const CatalogItem* item = held.Empty() ? nullptr : BlockCatalog::Instance().ItemById(held.networkId);
-        if (!item || ty < kMinY || ty >= kMinY + kHeight || !by.InReach(tx, ty, tz) || !chunks->Peek({tx >> 4, tz >> 4}) ||
+        if (!item || !item->block || ty < kMinY || ty >= kMinY + kHeight || !by.InReach(tx, ty, tz) || !chunks->Peek({tx >> 4, tz >> 4}) ||
             chunks->GetBlock(tx, ty, tz) != BlockRegistry::kAir)
             return reject(tx, ty, tz);
         if (plugins->AnyoneListens(PS_EVENT_BLOCK_PLACE)) {
@@ -931,6 +1042,13 @@ namespace perlin::server {
             size_t group;
         };
         std::vector<Placed> placed;
+        // two more groups after the catch-all: gear and everything else that is not a block
+        groups.resize(defs.size() + 3);
+        const size_t equipmentGroup = defs.size() + 1, itemsGroup = defs.size() + 2;
+        groups[equipmentGroup].category = proto2225::CreativeContentPacketGroupsEntryCategory::Equipment;
+        groups[equipmentGroup].name = "itemGroup.name.sword";
+        groups[itemsGroup].category = proto2225::CreativeContentPacketGroupsEntryCategory::Items;
+        groups[itemsGroup].name = "itemGroup.name.miscFood";
         for (const CatalogItem& item : catalog.Items()) {
             proto2225::ItemstatesEntry entry;
             entry.name = item.name;
@@ -942,11 +1060,19 @@ namespace perlin::server {
             proto2225::ItemLegacy legacy;
             legacy.networkId = item.networkId;
             legacy.count = 1;
-            legacy.blockRuntimeId = item.blockHash;
+            legacy.blockRuntimeId = item.block ? item.blockHash : 0;
             // the wire always carries the extra-data frame; leaving the variant empty writes none and the client cannot decode the packet
             legacy.extra = proto2225::ItemExtraDataWithoutBlockingTick{};
             size_t group = defs.size();
             const std::string shortName = item.name.substr(item.name.find(':') + 1);
+            if (!item.block) {
+                const auto has = [&](const char* w) { return shortName.find(w) != std::string::npos; };
+                const bool gear = has("_sword") || has("_pickaxe") || has("_axe") || has("_shovel") || has("_hoe") || has("_helmet") || has("_chestplate") || has("_leggings") ||
+                                  has("_boots") || shortName == "bow" || shortName == "crossbow" || shortName == "shield" || shortName == "trident" || shortName == "mace" ||
+                                  has("_horse_armor") || shortName == "elytra" || shortName == "turtle_helmet" || has("wolf_armor");
+                placed.push_back({legacy, gear ? equipmentGroup : itemsGroup});
+                continue;
+            }
             for (size_t g = 0; g < defs.size() && group == defs.size(); g++)
                 for (const char* w : defs[g].words)
                     if (shortName.find(w) != std::string::npos) {

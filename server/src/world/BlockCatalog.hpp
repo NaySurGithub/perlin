@@ -13,6 +13,8 @@ namespace perlin::server {
         std::string name;
         int16_t networkId = 0;
         int32_t blockHash = 0;
+        // false for tools, food and materials: they exist in inventories but cannot be placed
+        bool block = true;
     };
 
     // every block state the game knows (the client's own block_states.json), plus the item list built from it
@@ -21,7 +23,7 @@ namespace perlin::server {
         static BlockCatalog& Instance();
 
         // block_states.json: [[hash, name, {state: [type, value]}, bool], ...]; block_destroy.tsv picks which blocks become items
-        bool Load(const std::string& blockStatesPath, const std::string& itemNamesPath, std::string& error);
+        bool Load(const std::string& blockStatesPath, const std::string& itemNamesPath, std::string& error, const std::string& extraItemsPath = {});
         // no data files: a short list of blocks that have no states, enough to build with
         void LoadBuiltin();
         bool Loaded() const { return !items.empty(); }

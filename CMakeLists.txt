@@ -1365,6 +1365,6 @@ if(PERLIN_BUILD_SERVER AND NOT EMSCRIPTEN AND NOT ANDROID)
     # the dedicated server ships beside the client with the block tables it reads
     if(TARGET perlin-server)
         install(TARGETS perlin-server RUNTIME DESTINATION .)
-        install(FILES resources/block_states.json resources/block_destroy.tsv DESTINATION resources)
+        install(FILES resources/block_states.json resources/block_destroy.tsv resources/extra_items.txt DESTINATION resources)
     endif()
 endif()

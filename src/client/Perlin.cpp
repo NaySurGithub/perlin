@@ -4821,7 +4821,7 @@ namespace perlin {
             const std::string dir = paths::DataDir() + "/singleplayer";
             paths::EnsureDir(dir);
             // the server reads its block tables from files: write the copies the client carries
-            for (const char* name : {"block_states.json", "block_destroy.tsv"}) {
+            for (const char* name : {"block_states.json", "block_destroy.tsv", "extra_items.txt"}) {
                 std::string bytes;
                 const std::string path = dir + "/" + name;
                 std::error_code ec;

@@ -3,6 +3,7 @@
 #include "net/Batch.hpp"
 #include "net/Connection.hpp"
 #include "world/Chunk.hpp"
+#include "world/ItemEntity.hpp"
 
 #include <chrono>
 #include <memory>
@@ -58,6 +59,12 @@ namespace perlin::server {
         void ShowPlayer(const Session& other);
         void HidePlayer(const Session& other);
         void SendBlockUpdate(int x, int y, int z, int32_t networkId);
+        // items lying in the world
+        void ShowItem(const ItemEntity& item);
+        void HideItem(uint64_t id);
+        void MoveItem(const ItemEntity& item);
+        void TakeItem(uint64_t itemId, uint64_t takerRuntimeId);
+        float Yaw() const { return yaw; }
         void SendMove(const Session& other, uint8_t mode);
         // sends a chunk to the player if inside their radius and not already sent
         bool WantsChunk(ChunkPos pos) const;

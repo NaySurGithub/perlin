@@ -82,6 +82,10 @@ namespace perlin::server {
         bool PlayerBreak(Session& by, int x, int y, int z);
         bool PlayerPlace(Session& by, int x, int y, int z, int face);
         void SendBlockTo(Session& to, int x, int y, int z);
+        // items in the world: a player throws a stack, a broken block leaves one; Tick moves them and lets players pick them up
+        void DropFromPlayer(Session& by, const ItemStack& stack);
+        void SpawnItem(const ItemStack& stack, double x, double y, double z, double vx, double vy, double vz, int pickupDelay);
+        const std::vector<ItemEntity>& Items() const { return itemEntities; }
         const std::vector<uint8_t>& ItemRegistryBody() const { return itemRegistryBody; }
         const std::vector<uint8_t>& CreativeContentBody() const { return creativeBody; }
 
@@ -105,6 +109,7 @@ namespace perlin::server {
         // writes a block into the world and sends the change to every player who has that column
         void ApplyBlock(int x, int y, int z, uint16_t block);
         void Pump();
+        void TickItems();
         void ReapClosed();
 
         ServerConfig config;
@@ -119,6 +124,8 @@ namespace perlin::server {
         uint64_t nextRuntimeId = 1;
         std::map<std::string, CommandDef> commands;
         std::vector<uint8_t> itemRegistryBody, creativeBody;
+        std::vector<ItemEntity> itemEntities;
+        uint64_t nextEntityId = 1'000'000;
         uint64_t tick = 0;
         // /tick: the game clock can be slowed, sped up, frozen and stepped. networking keeps running while frozen
         double tickRateTarget = 20.0;

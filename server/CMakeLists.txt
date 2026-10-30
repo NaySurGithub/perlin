@@ -83,7 +83,11 @@ set(PS_SOURCES
     src/world/Blocks.cpp
     src/world/Chunk.cpp
     src/world/ChunkManager.cpp
-    src/world/Generator.cpp)
+    src/world/Generator.cpp
+    src/world/vanilla/DataPack.cpp
+    src/world/vanilla/DensityFunction.cpp
+    src/world/vanilla/Noise.cpp
+    src/world/vanilla/VanillaTerrain.cpp)
 
 # wasm runtime: wasm3 through the client's own wrapper (WasmRuntimeWasm3.cpp), so plugins behave the same.
 # it is plain c with no dependencies, which keeps it safe to link into a shared library next to the client's WasmEdge
@@ -208,6 +212,11 @@ else()
     target_compile_options(perlin_server_core PRIVATE -Wall -Wextra -Wno-unused-parameter)
 endif()
 
+# float results must match java's strict ieee arithmetic bit for bit: no fused multiply-add
+if(NOT MSVC)
+    set_source_files_properties(src/world/vanilla/Noise.cpp src/world/vanilla/DensityFunction.cpp src/world/vanilla/VanillaTerrain.cpp PROPERTIES COMPILE_OPTIONS "-ffp-contract=off")
+endif()
+
 if(PERLIN_SERVER_BUILD_SHARED)
     add_library(perlin_server SHARED src/core/ShimExports.cpp)
     target_link_libraries(perlin_server PRIVATE perlin_server_core)
@@ -256,6 +265,20 @@ if(PERLIN_SERVER_BUILD_TESTS)
         DEPENDS examples/hello_server/hello_server.c sdk/perlin_server.h examples/hello_server/build.sh
         COMMENT "Building the example plugin" VERBATIM)
     add_custom_target(server_example_plugin DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/hello_server.wasm")
+
+    # the java terrain port: checked number for number against the real engine's output (tools/javaref)
+    add_executable(vanilla_noise_test tests/vanilla_noise_test.cpp)
+    target_include_directories(vanilla_noise_test PRIVATE src)
+    target_link_libraries(vanilla_noise_test PRIVATE perlin_server_core miniz OpenSSL::Crypto Threads::Threads)
+    add_test(NAME vanilla_noise_test COMMAND vanilla_noise_test)
+    add_executable(vanilla_terrain_test tests/vanilla_terrain_test.cpp)
+    target_include_directories(vanilla_terrain_test PRIVATE src)
+    target_link_libraries(vanilla_terrain_test PRIVATE perlin_server_core miniz OpenSSL::Crypto Threads::Threads)
+    add_test(NAME vanilla_terrain_test COMMAND vanilla_terrain_test)
+    add_executable(vanilla_density_test tests/vanilla_density_test.cpp)
+    target_include_directories(vanilla_density_test PRIVATE src)
+    target_link_libraries(vanilla_density_test PRIVATE perlin_server_core miniz OpenSSL::Crypto Threads::Threads)
+    add_test(NAME vanilla_density_test COMMAND vanilla_density_test "${PERLIN_ROOT}/tools/javaref/reference_seed12345.txt")
 
     add_executable(server_selftest tests/server_selftest.cpp ${PS_CLIENT_CHUNK_CODEC})
     target_include_directories(server_selftest PRIVATE src "${PERLIN_ROOT}/src")

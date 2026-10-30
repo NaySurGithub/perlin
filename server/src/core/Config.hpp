@@ -47,7 +47,10 @@ namespace perlin::server {
         std::string iceBindAddress;
 
         // "flat" only for now; later vanilla once the terrain is replicated
+        // "flat", or "vanilla" for the Java terrain port (needs java_data)
         std::string generator = "flat";
+        // the Java Edition 26.3 client jar (or a folder with data/minecraft) the vanilla generator reads its worldgen data from
+        std::string javaData;
         // bottom to top from the dimension floor
         std::vector<FlatLayer> flatLayers = {{"minecraft:bedrock", 1}, {"minecraft:dirt", 2}, {"minecraft:grass_block", 1}};
         // auto = gpu when a device starts and passes its self check, else cpu

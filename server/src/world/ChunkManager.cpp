@@ -5,7 +5,14 @@
 namespace perlin::server {
 
     ChunkManager::ChunkManager(std::unique_ptr<TerrainBackend> b) : backend(std::move(b)) {
-        worker = std::thread([this] { Worker(); });
+        size_t threads = 1;
+        if (backend->ThreadSafe()) {
+            const unsigned hw = std::thread::hardware_concurrency();
+            // leave a core for the tick and network threads
+            threads = std::clamp<size_t>(hw > 2 ? hw - 1 : 1, 1, 16);
+        }
+        for (size_t i = 0; i < threads; i++)
+            workers.emplace_back([this] { Worker(); });
     }
 
     ChunkManager::~ChunkManager() {
@@ -14,8 +21,9 @@ namespace perlin::server {
             stopping = true;
         }
         wake.notify_all();
-        if (worker.joinable())
-            worker.join();
+        for (std::thread& w : workers)
+            if (w.joinable())
+                w.join();
     }
 
     void ChunkManager::Worker() {

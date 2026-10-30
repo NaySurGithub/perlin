@@ -55,6 +55,7 @@ namespace perlin::server {
         std::deque<ChunkPos> queue;
         std::vector<std::pair<ChunkPos, std::shared_ptr<ChunkEntry>>> done;
         bool stopping = false;
-        std::thread worker;
+        // chunk generation scales with cores for cpu backends; a gpu backend keeps a single submitting thread
+        std::vector<std::thread> workers;
     };
 }

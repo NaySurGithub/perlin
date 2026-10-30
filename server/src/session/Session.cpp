@@ -645,6 +645,9 @@ namespace perlin::server {
         for (const proto::ItemStackRequest& r : p.requests) {
             const RequestResult result = ApplyStackRequest(inventory, r, creative);
             reply.responses.push_back(MakeResponse(inventory, r.requestId, result));
+            if (result.ok)
+                for (const ItemStack& thrown : result.dropped)
+                    server.DropFromPlayer(*this, thrown);
         }
         if (!reply.responses.empty())
             Send(reply);
@@ -1053,6 +1056,37 @@ namespace perlin::server {
         m.headYaw = other.yaw;
         m.mode = static_cast<proto::MovePlayerPacketMode>(mode);
         Send(m);
+    }
+
+    void Session::ShowItem(const ItemEntity& item) {
+        proto::AddItemEntityPacket p;
+        p.entityIdSelf = static_cast<int64_t>(item.id);
+        p.runtimeEntityId = item.id;
+        p.item = ToWire(item.stack);
+        p.position = {static_cast<float>(item.x), static_cast<float>(item.y), static_cast<float>(item.z)};
+        p.velocity = {static_cast<float>(item.vx), static_cast<float>(item.vy), static_cast<float>(item.vz)};
+        Send(p);
+    }
+
+    void Session::HideItem(uint64_t id) {
+        proto::RemoveEntityPacket p;
+        p.entityIdSelf = static_cast<int64_t>(id);
+        Send(p);
+    }
+
+    void Session::MoveItem(const ItemEntity& item) {
+        proto::MoveEntityPacket p;
+        p.runtimeEntityId = item.id;
+        p.flags = item.onGround ? 1 : 0;
+        p.position = {static_cast<float>(item.x), static_cast<float>(item.y), static_cast<float>(item.z)};
+        Send(p);
+    }
+
+    void Session::TakeItem(uint64_t itemId, uint64_t takerRuntimeId) {
+        proto::TakeItemEntityPacket p;
+        p.runtimeEntityId = takerRuntimeId;
+        p.target = itemId;
+        Send(p);
     }
 
     void Session::SendBlockUpdate(int x, int y, int z, int32_t networkId) {

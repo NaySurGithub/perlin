@@ -50,6 +50,7 @@ namespace perlin::server {
         c.iceUdpMux = root["ice_udp_mux"].Bool(c.iceUdpMux);
         c.iceBindAddress = root["ice_bind_address"].String(c.iceBindAddress);
         c.generator = root["generator"].String(c.generator);
+        c.javaData = root["java_data"].String(c.javaData);
         c.terrainBackend = root["terrain_backend"].String(c.terrainBackend);
         if (root["flat_layers"].IsArray()) {
             c.flatLayers.clear();
@@ -83,6 +84,7 @@ namespace perlin::server {
             << "  \"ice_udp_mux\": " << (iceUdpMux ? "true" : "false") << ",\n"
             << "  \"ice_bind_address\": \"" << json::Escape(iceBindAddress) << "\",\n"
             << "  \"generator\": \"" << json::Escape(generator) << "\",\n"
+            << "  \"java_data\": \"" << json::Escape(javaData) << "\",\n"
             << "  \"terrain_backend\": \"" << json::Escape(terrainBackend) << "\",\n"
             << "  \"operators\": [";
         for (size_t i = 0; i < operators.size(); i++)

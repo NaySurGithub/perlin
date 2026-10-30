@@ -84,7 +84,12 @@ Build it with `-DPERLIN_SERVER_GPU=ON` (needs `slangc`, fetched unless `PERLIN_S
 ## Not done / known limits
 
 - LAN discovery (UDP 7551, so the world shows up in a vanilla client's Friends tab) is not implemented: its packet layout is only partly documented and could not be checked against a real client here.
-- Only the flat generator exists. The Java-style noise generator (density functions, aquifers, surface rules; GPU evaluated) is planned, not started.
+- Terrain: `generator: "flat"` (default) or `"vanilla"`, the Java terrain port. It needs `java_data` set to the Java Edition 26.3 client jar (or a folder holding
+  `data/minecraft`); the jar is not shipped. What is ported and checked bit for bit against the real engine (`tools/javaref`, `tests/vanilla_*`): the Xoroshiro
+  random sources, the noise stack (every worldgen/noise definition), and the density function graph (climate, depth spline, blended noise, cell interpolation), so
+  `final_density` equals Java's at all 216 reference positions. The `vanilla` generator turns that into stone/air with water at sea level, with a placeholder
+  surface (grass/dirt on land, sand/gravel under water). Not ported yet: biomes, the material rules (real surfaces, aquifers, ore veins), carvers, features and the
+  GPU evaluation of the graph. Threading: CPU generation uses a pool of worker threads (cores minus one); the GPU backend keeps one submitting thread.
 
 - No world persistence: chunks are regenerated each run, edits are lost.
 - Resource packs are not served; `BiomeDefinitionList` and `AvailableEntityIdentifiers` are sent empty. Everything is tested against the client's own packet codecs and chunk decoder, **not against the running Perlin client or a vanilla Bedrock client in a game**.
