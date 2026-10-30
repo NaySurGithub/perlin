@@ -819,6 +819,24 @@ namespace perlin::jshader {
 
             std::map<std::string, std::string> constInts;
             std::vector<std::string> out(tokens.size());
+            std::set<size_t> lodClose;
+            const auto closeOf = [&](size_t open) {
+                int depth = 0;
+                for (size_t k = open; k < tokens.size(); k++) {
+                    if (tokens[k].text == "(") depth++;
+                    else if (tokens[k].text == ")" && --depth == 0) return k;
+                }
+                return tokens.size() - 1;
+            };
+            const auto lodArgs = [&](size_t name) {
+                int depth = 0, args = 1;
+                for (size_t k = name + 1; k < tokens.size(); k++) {
+                    if (tokens[k].text == "(" || tokens[k].text == "[") depth++;
+                    else if (tokens[k].text == ")" || tokens[k].text == "]") { if (--depth == 0) return args; }
+                    else if (depth == 1 && tokens[k].text == ",") args++;
+                }
+                return 0;
+            };
             for (size_t i = 0; i < tokens.size(); i++) {
                 Tok& tk = tokens[i];
                 if (tk.kind != Tok::Ident) {
@@ -953,6 +971,11 @@ namespace perlin::jshader {
                 } else if (id == "shadow2DProj" && nextCall) {
                     ctx.use.shadow2DProj = true;
                     rep = "iris_shadow2DProj";
+                } else if (options.explicitLod && stage == Stage::Fragment && nextCall && !ctx.userFunctions.count(id) &&
+                           (id == "texture2D" || (id == "texture" && !userDefinesTexture)) && lodArgs(i) == 2) {
+                    // full screen passes read buffers without mips: a fixed level avoids implicit derivatives inside loops
+                    rep = "textureLod";
+                    lodClose.insert(closeOf(i + 1));
                 } else if (TextureFunctionMap().count(id) && nextCall && !ctx.userFunctions.count(id)) {
                     rep = TextureFunctionMap().at(id);
                 } else if (id == "texture" && !nextCall && !userDefinesTexture) {
@@ -972,6 +995,8 @@ namespace perlin::jshader {
                 }
                 out[i] = tk.ws + rep;
             }
+            for (size_t k : lodClose)
+                out[k] = ", 0.0" + out[k];
 
             std::string bodyText;
             std::map<std::string, int> arrayConsts;

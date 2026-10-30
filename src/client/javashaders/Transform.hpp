@@ -66,6 +66,8 @@ namespace perlin::jshader {
         // the rhi binds textures and samplers separately (set 1: texture 2n, sampler 2n+1): declare them that way and
         // let the pack's sampler names stand for the combined pair
         bool splitSamplers = false;
+        // sample plain texture() / texture2D() calls at level 0 (full screen passes whose buffers have no mips)
+        bool explicitLod = false;
     };
 
     struct ProgramResult {

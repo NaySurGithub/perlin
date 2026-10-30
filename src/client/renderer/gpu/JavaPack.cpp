@@ -570,7 +570,7 @@ namespace perlin::gpu {
         config = jshader::ParsePipelineConfig(*instance);
         custom.Load(config.customUniformProps);
         table.SetCustom(&custom);
-        pool.Start(3);
+        pool.Start(static_cast<int>(std::max(2u, std::min(6u, std::thread::hardware_concurrency() > 2 ? std::thread::hardware_concurrency() - 1 : 2u))));
         if (!CreateLayouts()) {
             error = "could not create the shader pack's bind layouts";
             lastError = error;
@@ -922,6 +922,8 @@ namespace perlin::gpu {
             opts.availableAttribs = AttribMask();
             opts.zeroToOneDepth = true;
             opts.splitSamplers = true;
+            opts.explicitLod = progName.compare(0, 8, "gbuffers") != 0 && progName.compare(0, 6, "shadow") != 0 && progName.compare(0, 4, "hand") != 0 &&
+                               progName.compare(0, 6, "entity") != 0;
             // offscreen targets are stored upside down against the screen so the pack's opengl uv convention holds
             opts.flipVertexY = !toBackbuffer;
             opts.flipFragCoordY = toBackbuffer;

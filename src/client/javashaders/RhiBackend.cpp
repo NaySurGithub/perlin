@@ -1,3 +1,7 @@
+#include <cstdio>
+#include <filesystem>
+#include <fstream>
+#include <iterator>
 #include "client/javashaders/RhiBackend.hpp"
 
 #include "client/javashaders/GlslangBridge.hpp"
@@ -123,6 +127,40 @@ namespace perlin::jshader {
                 error = "d3dcompiler_47.dll is not available";
                 return false;
             }
+            // compiling a big pack takes minutes: finished shaders are kept on disk keyed by their source
+            std::filesystem::path cacheFile;
+            try {
+                uint64_t h = 1469598103934665603ull;
+                for (unsigned char c : hlsl) {
+                    h ^= c;
+                    h *= 1099511628211ull;
+                }
+                h ^= fragment ? 0x9e3779b97f4a7c15ull : 0x517cc1b727220a95ull;
+                char name[48];
+                std::snprintf(name, sizeof(name), "%016llx_%zx.dxbc", static_cast<unsigned long long>(h), hlsl.size());
+                const std::filesystem::path dir = std::filesystem::temp_directory_path() / "perlin_dxbc_cache";
+                std::filesystem::create_directories(dir);
+                cacheFile = dir / name;
+                std::ifstream in(cacheFile, std::ios::binary);
+                if (in) {
+                    std::vector<uint8_t> bytes((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+                    if (bytes.size() > 32) {
+                        dxbc = std::move(bytes);
+                        return true;
+                    }
+                }
+            } catch (...) {
+                cacheFile.clear();
+            }
+            const auto store = [&]() {
+                if (cacheFile.empty())
+                    return;
+                try {
+                    std::ofstream out(cacheFile, std::ios::binary | std::ios::trunc);
+                    out.write(reinterpret_cast<const char*>(dxbc.data()), static_cast<std::streamsize>(dxbc.size()));
+                } catch (...) {
+                }
+            };
             const auto run = [&](UINT flags, std::string& err) -> bool {
                 ID3DBlob* code = nullptr;
                 ID3DBlob* messages = nullptr;
@@ -130,8 +168,22 @@ namespace perlin::jshader {
                                            &code, &messages);
                 if (FAILED(hr) || !code) {
                     err = messages ? std::string(static_cast<const char*>(messages->GetBufferPointer()), messages->GetBufferSize()) : "D3DCompile failed";
-                    if (err.size() > 600)
-                        err.resize(600);
+                    // warnings (pow of a possibly negative value and the like) can fill the log before the actual errors do
+                    std::string errors;
+                    size_t at = 0;
+                    while (at < err.size()) {
+                        size_t end = err.find('\n', at);
+                        if (end == std::string::npos)
+                            end = err.size();
+                        const std::string line = err.substr(at, end - at);
+                        if (line.find("error") != std::string::npos && errors.size() < 1200)
+                            errors += line + "\n";
+                        at = end + 1;
+                    }
+                    if (!errors.empty())
+                        err = errors;
+                    if (err.size() > 1200)
+                        err.resize(1200);
                     if (messages)
                         messages->Release();
                     if (code)
@@ -146,13 +198,17 @@ namespace perlin::jshader {
                 return true;
             };
             std::string first;
-            if (run(D3DCOMPILE_OPTIMIZATION_LEVEL1, first))
+            if (run(D3DCOMPILE_OPTIMIZATION_LEVEL1, first)) {
+                store();
                 return true;
+            }
             // loops with texture reads sometimes need flow control unrolled away
             std::string second;
-            if (run(D3DCOMPILE_OPTIMIZATION_LEVEL1 | D3DCOMPILE_AVOID_FLOW_CONTROL, second))
+            if (run(D3DCOMPILE_OPTIMIZATION_LEVEL1 | D3DCOMPILE_AVOID_FLOW_CONTROL, second)) {
+                store();
                 return true;
-            error = first;
+            }
+            error = first + (second.empty() || second == first ? "" : "\n(retry without flow control) " + second);
             return false;
         };
 #else
