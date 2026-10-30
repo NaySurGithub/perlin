@@ -13,8 +13,13 @@ namespace perlin {
         uint32_t rgba;
         float u, v;
         uint32_t light;
+        // java pack feed, computed in AddQuad so call sites stay unchanged
+        uint32_t normal;
+        float entity;
+        float midU, midV;
+        float tangent;
     };
-    static_assert(sizeof(Vertex) == 28, "Vertex layout must match the GPU vertex layout");
+    static_assert(sizeof(Vertex) == 48, "Vertex layout must match the GPU vertex layout");
 
     struct MeshSection {
         int sy;
@@ -73,7 +78,7 @@ namespace perlin {
         std::vector<SpecialBlock>& Specials() { return specials; }
 
         void AddQuad(const float v[4][3], const float c[4][3], const float uv[4][2], bool flip,
-                     const float light[4][2]);
+                     const float light[4][2], const float* ao = nullptr, float shade = 1.0f);
         void AddQuad(const float v[4][3], const float c[4][3], const float uv[4][2], bool flip, float block,
                      float sky);
 

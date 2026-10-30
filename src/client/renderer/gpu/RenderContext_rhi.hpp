@@ -52,6 +52,15 @@ namespace perlin {
         Weather,
         Cracks,
         Nametag,
+        JavaDeferred,
+        JavaComposite,
+        JavaComposite1,
+        JavaComposite3,
+        JavaComposite4,
+        JavaComposite5,
+        JavaComposite6,
+        JavaComposite7,
+        JavaFinal,
         Count
     };
 
@@ -79,6 +88,15 @@ namespace perlin {
         Bloom6,
         Up0,
         Up1,
+        JavaDeferred,
+        JavaComposite,
+        JavaComposite1,
+        JavaComposite3,
+        JavaComposite4,
+        JavaComposite5,
+        JavaComposite6,
+        JavaComposite7,
+        JavaFinal,
         Count
     };
 
@@ -99,10 +117,10 @@ namespace perlin {
         std::string GpuDescription() const override;
         void SetVsync(bool enabled) override;
         bool ReloadShaders() override;
-        bool PackShadowsActive() const override { return packActive; }
+        bool PackShadowsActive() const override { return packActive || javaActive; }
         bool SetJavaShaderPack(const std::string& path, const std::map<std::string, std::string>& options, std::string& error) override;
         void ClearJavaShaderPack() override;
-        bool JavaShaderPackActive() const override { return jpack != nullptr; }
+        bool JavaShaderPackActive() const override { return javaActive || jpack != nullptr; }
         std::vector<JavaPackOption> JavaShaderPackOptions() const override;
         bool JavaPackReady() const { return PackRunning(); }
         std::string JavaShaderPackError() const override { return jpackError; }
@@ -141,6 +159,7 @@ namespace perlin {
         void UpdateLodTile(int tx, int tz, int size, const Tessellator& tess, uint64_t version) override;
         void RemoveLodTile(int tx, int tz) override;
         void ClearChunkMeshes() override;
+        void UnloadLevelResources() override;
         void DrawChunkMeshes(const Frustum& frustum, float camX, float camZ) override;
         void SetChunkCullRadius(int chunks) override { chunkCullRadius = chunks; }
         bool SectionReached(int sx, int sy, int sz) const override { return meshes.SectionReached(sx, sy, sz, caveCulling); }
@@ -205,12 +224,20 @@ namespace perlin {
             // attachments the draws of this view render into; the pipelines are built for them
             rhi::Format colorFormat = rhi::Format::BGRA8Unorm;
             rhi::Format depthFormat = rhi::Format::D32Float;
+            // second MRT attachment for java gbuffer passes; 1 keeps single-target
+            uint32_t colorCount = 1;
+            rhi::Format colorFormat1 = rhi::Format::RGBA8Unorm;
+            rhi::Format colorFormat2 = rhi::Format::RGBA8Unorm;
             std::vector<DrawCall> draws;
         };
 
         struct Target {
             rhi::TextureHandle color;
             rhi::TextureHandle depth;
+            // optional second MRT color attachment (java colortex1)
+            rhi::TextureHandle color1;
+            // optional third MRT color attachment (java deferred colortex4)
+            rhi::TextureHandle color2;
             uint32_t w = 0, h = 0;
             rhi::Format colorFormat = rhi::Format::RGBA8Unorm;
         };
@@ -295,6 +322,14 @@ namespace perlin {
             rhi::TextureHandle sceneColor, sceneDepth;
             bool sceneValid = false;
             bool failed = false;
+            // second MRT attachment for java gbuffer passes (colortex1 content)
+            rhi::TextureHandle javaAux;
+            // java composite chain ping-pong buffers (colortex1-5,7) and
+            // temps; colortex0 is worldColor, colortex6 is javaAux
+            rhi::TextureHandle javaC1, javaC2, javaC3, javaC4, javaC5, javaC7;
+            rhi::TextureHandle javaTempA, javaTempB, javaTempC;
+            bool javaChainClear = false;
+            uint32_t javaChainW = 0, javaChainH = 0;
         } post;
         void PlanPost(const FrameParams& params);
         bool EnsureWorldTargets(uint32_t w, uint32_t h, bool sampledDepth, bool history);
@@ -429,6 +464,31 @@ namespace perlin {
         int chunkCullRadius = 0;
         bool frameOpen = false;
         bool packActive = false;
+        // converted java pack drives terrain through the baked java programs
+        bool javaActive = false;
+        std::string javaPackPath;
+        // generated/default java samplers (noise, pbr fallbacks, cleared buffers)
+        TexRec javaNoise, javaNormalDef, javaSpecDef, javaBlack, javaCloudWater, javaMaterials;
+        struct JavaMaterialRule {
+            int id = 0;
+            std::vector<std::pair<std::string, std::string>> states;
+        };
+        std::unordered_map<std::string, std::vector<JavaMaterialRule>> javaMaterialRules;
+        size_t javaMaterialCount = 0;
+        bool SetBakedJavaShaderPack(const std::string& path, const std::map<std::string, std::string>& options, std::string& error);
+        void ClearBakedJavaShaderPack();
+        bool EnsureJavaMaterials();
+        bool javaTexReady = false;
+        bool EnsureJavaSamplers();
+        void FeedJavaUniforms(const FrameParams& params);
+        void BindJavaExtras();
+        // full java chain (deferred + composite + final); false when any
+        // converted program is missing, and only terrain+sky run instead
+        bool JavaChainReady() const;
+        bool EnsureJavaChainTargets(uint32_t w, uint32_t h);
+        void BuildJavaChainStages();
+        void RecordJavaChain();
+        void JavaChainBinds();
 
         // java shader pack: loaded as soon as it is set, drawn once its programs have compiled
         std::unique_ptr<gpu::JavaPack> jpack;

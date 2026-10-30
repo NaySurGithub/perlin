@@ -48,6 +48,13 @@ int main(int argc, char** argv) {
         LogInfo("wrote default " + configPath);
     }
     config.dataDir = dir;
+    // a packaged server carries its block tables in resources/ next to the executable
+    if (config.blockDataDir.empty() && argc > 0) {
+        std::error_code ec;
+        const std::filesystem::path beside = std::filesystem::path(argv[0]).parent_path() / "resources";
+        if (std::filesystem::exists(beside / "block_states.json", ec))
+            config.blockDataDir = beside.string();
+    }
     if (config.pluginDir.empty())
         config.pluginDir = dir + "/plugins";
     if (port > 0)

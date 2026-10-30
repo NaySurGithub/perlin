@@ -207,6 +207,9 @@ set(NO_TESTS ON CACHE BOOL "" FORCE)
 set(LIBSRTP_TEST_APPS OFF CACHE BOOL "" FORCE)
 set(ENABLE_WARNINGS_AS_ERRORS OFF CACHE BOOL "" FORCE)
 set(BUILD_SHARED_LIBS ON CACHE BOOL "" FORCE)
+# position independent: the static library is also linked into the singleplayer server library
+set(PERLIN_SAVED_PIC "${CMAKE_POSITION_INDEPENDENT_CODE}")
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 CPMAddPackage(
     NAME libdatachannel
     GITHUB_REPOSITORY paullouisageneau/libdatachannel
@@ -214,6 +217,7 @@ CPMAddPackage(
     EXCLUDE_FROM_ALL YES
     OPTIONS "USE_GNUTLS OFF" "USE_NICE OFF" "NO_TESTS ON" "NO_EXAMPLES ON"
 )
+set(CMAKE_POSITION_INDEPENDENT_CODE "${PERLIN_SAVED_PIC}")
 set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
 endif()
 
@@ -815,10 +819,17 @@ if(PERLIN_BUILD_TESTS AND NOT EMSCRIPTEN AND NOT ANDROID)
     add_executable(gpu_level_unload_selftest tests/gpu_context_test.cpp tests/gpu_context_stubs.cpp
         src/client/renderer/Tessellator.cpp src/client/renderer/SkyGeometry.cpp src/client/renderer/MaterialDb.cpp
         src/client/ui/Json.cpp src/util/Paths.cpp src/util/Resources.cpp)
+    target_sources(gpu_level_unload_selftest PRIVATE
+        src/client/javashaders/PackSource.cpp src/client/javashaders/PackSourceZip.cpp
+        src/client/javashaders/Properties.cpp src/client/javashaders/Cond.cpp
+        src/client/resources/TextureLoader.cpp src/world/level/block/BlockPalette.cpp src/util/Json.cpp)
+    target_include_directories(gpu_level_unload_selftest PRIVATE "${stb_SOURCE_DIR}")
+    target_link_libraries(gpu_level_unload_selftest PRIVATE glaze::glaze miniz)
     target_include_directories(gpu_level_unload_selftest BEFORE PRIVATE tests/stubs src "${glm_SOURCE_DIR}")
     target_link_libraries(gpu_level_unload_selftest PRIVATE perlin_gpu)
     add_test(NAME gpu_level_unload_selftest COMMAND gpu_level_unload_selftest "${PERLIN_SHADER_PACK}")
     set_tests_properties(gpu_level_unload_selftest PROPERTIES SKIP_RETURN_CODE 77)
+    add_test(NAME java_to_slang_selftest COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/java_to_slang_selftest.py")
     add_executable(ten_font_metrics_selftest tests/ten_font_metrics_selftest.cpp
         src/client/ui/TenFont.cpp src/client/ui/McFont.cpp)
     target_include_directories(ten_font_metrics_selftest PRIVATE src "${stb_SOURCE_DIR}")
@@ -1338,7 +1349,9 @@ foreach(PERLIN_LOCAL_TARGET IN LISTS PERLIN_LOCAL_TARGETS)
 endforeach()
 
 # perlin server: dedicated exe, shared library for singleplayer, plugins; see server/README.md
-option(PERLIN_BUILD_SERVER "Build the Perlin server (dedicated executable and perlin_server library)" OFF)
+# on by default: the title screen's Singleplayer button loads perlin_server from beside the executable.
+# not built for the web or android (no processes or shared libraries to load there); the button then says so
+option(PERLIN_BUILD_SERVER "Build the Perlin server and singleplayer (dedicated executable and perlin_server library)" ON)
 if(PERLIN_BUILD_SERVER AND NOT EMSCRIPTEN AND NOT ANDROID)
     add_subdirectory(server)
     # singleplayer: the client loads perlin_server beside the executable and joins it in process
@@ -1347,8 +1360,15 @@ if(PERLIN_BUILD_SERVER AND NOT EMSCRIPTEN AND NOT ANDROID)
         target_include_directories(Perlin PRIVATE server/client_bridge server/include)
         target_compile_definitions(Perlin PRIVATE PERLIN_SINGLEPLAYER=1 PERLIN_SERVER_STATIC)
         add_dependencies(Perlin perlin_server)
-        add_custom_command(TARGET perlin_server POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:perlin_server> $<TARGET_FILE_DIR:Perlin>
-            VERBATIM)
+        target_link_libraries(Perlin PRIVATE ${CMAKE_DL_LIBS})
+        # next to the executable in the package (on macOS the copy above already sits inside the app bundle)
+        if(NOT APPLE)
+            install(TARGETS perlin_server RUNTIME DESTINATION . LIBRARY DESTINATION .)
+        endif()
+    endif()
+    # the dedicated server ships beside the client with the block tables it reads
+    if(TARGET perlin-server)
+        install(TARGETS perlin-server RUNTIME DESTINATION .)
+        install(FILES resources/block_states.json resources/block_destroy.tsv DESTINATION resources)
     endif()
 endif()

@@ -14,7 +14,7 @@ cmake -S server -B build-server && cmake --build build-server -j
 ctest --test-dir build-server
 ```
 
-From the root tree: `-DPERLIN_BUILD_SERVER=ON`. Needs a C++23 compiler, Python 3 (the Bedrock packet codecs are generated from `protocol/` by the client's own `tools/protogen`, so the server speaks exactly what the client decodes), and network access for the first configure (libdatachannel, cpp-httplib, miniz, wasm3 through FetchContent). Options: `PERLIN_SERVER_NETHERNET` (default ON), `PERLIN_SERVER_GPU` (OFF, see below), `PERLIN_SERVER_BUILD_SHARED`, `PERLIN_SERVER_BUILD_EXE`.
+From the root tree the server is built by default (`PERLIN_BUILD_SERVER`, on for desktop, off for web and Android): the client build also produces `perlin_server` beside the executable, which is what the Singleplayer button loads, and `perlin-server`; `cmake --install` puts both in the package (the library goes inside the app bundle on macOS), with the block tables in `resources/`. Needs a C++23 compiler, Python 3 (the Bedrock packet codecs are generated from `protocol/` by the client's own `tools/protogen`, so the server speaks exactly what the client decodes), and network access for the first configure (libdatachannel, cpp-httplib, miniz, wasm3 through FetchContent). Options: `PERLIN_SERVER_NETHERNET` (default ON), `PERLIN_SERVER_GPU` (OFF, see below), `PERLIN_SERVER_BUILD_SHARED`, `PERLIN_SERVER_BUILD_EXE`.
 
 ## Transport: NetherNet only
 
@@ -55,7 +55,7 @@ Checked with locally generated keys against a custom root, including a forged se
 
 ## Plugins
 
-Same shape as client plugins: a `.wasm` in `plugins/` (optional `name.json` with `name`, `version`, `author`, `description`), the same engine (`WasmRuntime`), one import `perlin.call(op, in, in_len, out, out_cap)` and the exports `perlin_alloc`, `perlin_free`, `perlin_subscriptions`, `perlin_event`. The contract is `sdk/perlin_server.h`: events (enable, disable, tick, join, quit, chat, command, block change, block break, block place) and ops (log, broadcast, message, kick, register command, players, teleport, set/get block, give item, server info).
+Same shape as client plugins: a `.wasm` in `plugins/` (optional `name.json` with `name`, `version`, `author`, `description`), the same wrapper the client uses, on wasm3 (the client itself runs plugins on WasmEdge on desktop; both load the same modules), one import `perlin.call(op, in, in_len, out, out_cap)` and the exports `perlin_alloc`, `perlin_free`, `perlin_subscriptions`, `perlin_event`. The contract is `sdk/perlin_server.h`: events (enable, disable, tick, join, quit, chat, command, block change, block break, block place) and ops (log, broadcast, message, kick, register command, players, teleport, set/get block, give item, server info).
 
 `examples/hello_server` is a complete plugin in freestanding C: welcome message, a chat filter that cancels a message, and a `/hello` command. `examples/hello_server/build.sh` needs only clang with the wasm32 target and `wasm-ld`.
 
@@ -65,7 +65,7 @@ A plugin that traps is disabled and logged; the server keeps running.
 
 The title screen has a **Singleplayer** button. Hovering it shows a note that singleplayer is in very early development and not playable yet. Clicking it starts the server inside the client (`client_bridge/EmbeddedServer` loads `perlin_server` from the folder of the executable, loopback only, you are the operator), then joins it through `BedrockSession` over an in-process transport. The client writes its own `block_states.json` and `block_destroy.tsv` into `<data dir>/singleplayer/` for the server to read.
 
-Build it with `-DPERLIN_BUILD_SERVER=ON` on the root; without it the button explains that this build has no singleplayer. The bridge and the shared library are tested end to end (`server_embed_test`); the button itself and the full client join were **not run**, only compiled.
+It is part of the normal build; configure with `-DPERLIN_BUILD_SERVER=OFF` to leave it out, and the button then explains that this build has no singleplayer. The bridge and the shared library are tested end to end (`server_embed_test`); the button itself and the full client join were **not run**, only compiled.
 
 ## Terrain backends and the GPU
 

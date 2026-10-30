@@ -1311,6 +1311,7 @@ namespace perlin {
                 hud.Overlay().ClearOverlay();
                 deathShown = false;
                 deathSignature.clear();
+                platform->SetCursorCaptured(true);
             }
             if (deathTextMode) {
                 deathTextMode = false;
@@ -1323,6 +1324,7 @@ namespace perlin {
         if (!deathShown) {
             deathShown = true;
             deathAt = now;
+            platform->SetCursorCaptured(false);
             std::cout << "[ui] death screen shown: health=" << state.health << " pending=" << (live && live->DeathPending())
                       << " cause='" << (live ? live->DeathCause() : std::string()) << "' hud=" << state.visible << std::endl;
         }
@@ -8706,6 +8708,8 @@ namespace perlin {
             {
                 const glm::mat4 handProjection = HandRenderer::Projection(70.0f, camera.aspect, camera.farPlane);
                 std::copy_n(glm::value_ptr(handProjection), 16, params.handProjection);
+                params.cameraNear = camera.nearPlane;
+                params.cameraFar = camera.farPlane;
             }
 
             params.sky.enabled = input.dimension == Dimension::Overworld;
@@ -8772,6 +8776,18 @@ namespace perlin {
             }
             params.timeSeconds = std::chrono::duration<float>(frameStart - startedAt).count();
             params.frameIndex = static_cast<uint32_t>(frameCounter++);
+            {
+                int64_t day = -1;
+                int tick = -1;
+                if (sessionReady && session && session->GetWorldTime(day, tick)) {
+                    params.worldDay = static_cast<int>(day);
+                    params.worldTick = tick;
+                } else {
+                    // preview/offline: renderer clock stands in for session time
+                    params.worldDay = static_cast<int>(worldTicks / 24000.0);
+                    params.worldTick = static_cast<int>(std::fmod(worldTicks, 24000.0));
+                }
+            }
 
             LightmapParams lightmap;
             lightmap.blockFactor = blockLight.Value() + 1.4f;
@@ -9318,7 +9334,7 @@ namespace perlin {
                 }
             }
             if ((live || preview) && (!replayCtl.Playing() || replayCtl.cameraMode == replay::CameraMode::Follow) && camera.mode == PerspectiveMode::FirstPerson && options.showHud &&
-                hudState.mode != ui::GameMode::Spectator && ui::UiAssets::Instance().VanillaRoot().size()) {
+                hudState.mode != ui::GameMode::Spectator && !deathShown && ui::UiAssets::Instance().VanillaRoot().size()) {
                 HandRenderer::FrameIn handFrame;
                 handFrame.partial = partial;
                 handFrame.yaw = camera.yaw - 90.0f;

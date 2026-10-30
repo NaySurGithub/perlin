@@ -11,6 +11,7 @@
 #include <cmath>
 #include <cstring>
 #include <iostream>
+#include <cstdio>
 
 namespace perlin {
     namespace {
@@ -253,6 +254,19 @@ namespace perlin {
             meshes.Remove(true, tx, tz);
     }
 
+    void RenderContext_rhi::UnloadLevelResources() {
+        ClearChunkMeshes();
+        for (TexRec* texture : {&atlas, &sunTex, &moonTex, &cloudMapTex, &tileFlagsTex, &crosshair})
+            FreeTexture(*texture);
+        animatedTiles.clear();
+        std::vector<uint8_t>().swap(atlasSource);
+        std::vector<uint8_t>().swap(tileFlagData);
+        sunSource = moonSource = cloudSource = iconSource = Texture{};
+        cloudTexture = {};
+        cloudBuilt = false;
+        atlasLayers = atlasTiles = crosshairPx = 0;
+    }
+
     void RenderContext_rhi::ClearChunkMeshes() {
         if (initialized)
             meshes.Clear();
@@ -303,6 +317,11 @@ namespace perlin {
             return;
         const bool ordered = layer == RenderLayer::Translucent || layer == RenderLayer::TranslucentCull;
         meshes.CollectRuns(layer, ordered, runs);
+        if (javaActive && PERLIN_ENV("PERLIN_JAVA_DBG")) {
+            static int m = 0;
+            if (m++ < 10)
+                std::fprintf(stderr, "[javadbg] runs layer=%d count=%zu\n", static_cast<int>(layer), runs.size());
+        }
         if (runs.empty())
             return;
         DrawState state = PassState(layer);
@@ -318,6 +337,14 @@ namespace perlin {
             UploadTileFlags({});
         BindTexture("s_tileFlags", tileFlagsTex.handle, gpu::SamplerKind::PointClamp);
         BindShadowSampling();
+        if (javaActive)
+            BindJavaExtras();
+        if (javaActive && ordered && post.sceneValid) {
+            BindTexture("s_gaux2", post.javaC5, gpu::SamplerKind::PointClamp);
+            BindTexture("s_colortex0", post.sceneColor, gpu::SamplerKind::LinearClamp);
+            BindTexture("s_sceneDepth", post.sceneDepth, gpu::SamplerKind::PointClamp);
+            BindTexture("s_depth", post.sceneDepth, gpu::SamplerKind::PointClamp);
+        }
         if (ordered && post.sceneValid) {
             BindTexture("s_sceneColor", post.sceneColor, gpu::SamplerKind::LinearClamp);
             BindTexture("s_sceneDepth", post.sceneDepth, gpu::SamplerKind::PointClamp);
@@ -325,13 +352,32 @@ namespace perlin {
 
         DrawCall templ;
         if (!Prepare(view, state, templ)) {
+            if (javaActive && PERLIN_ENV("PERLIN_JAVA_DBG"))
+                std::fprintf(stderr, "[javadbg] prepare failed layer=%d prog=%d\n", static_cast<int>(layer),
+                             static_cast<int>(program));
             ResetBindings();
             return;
+        }
+        if (javaActive && PERLIN_ENV("PERLIN_JAVA_DBG")) {
+            static int n = 0;
+            if (n++ % 300 == 0)
+                std::fprintf(stderr, "[javadbg] draw layer=%d prog=%d runs=%zu pid=%d\n", static_cast<int>(layer),
+                             static_cast<int>(program), runs.size(), ProgramIndex(program));
         }
         for (const gpu::ChunkMeshStore::Run& r : runs) {
             const Source vertices{meshes.Vertices(r.page), 0};
             const Source indices{meshes.Indices(r.page, layer), 0};
             Push(view, templ, vertices, &indices, rhi::IndexType::U32, r.first, r.count);
+        }
+        if (javaActive && PERLIN_ENV("PERLIN_JAVA_DBG") && layer == RenderLayer::Solid && !runs.empty()) {
+            static int q = 0;
+            if (q++ < 3) {
+                std::string msg = "[javadbg] solid runs=" + std::to_string(runs.size());
+                for (size_t i = 0; i < runs.size() && i < 6; i++)
+                    msg += " (p" + std::to_string(runs[i].page) + " f" + std::to_string(runs[i].first) + " c" +
+                           std::to_string(runs[i].count) + ")";
+                std::fprintf(stderr, "%s\n", msg.c_str());
+            }
         }
         ResetBindings();
     }
@@ -367,6 +413,18 @@ namespace perlin {
             DrawClouds();
             DrawScreenTint();
             return;
+        }
+        if (javaActive && PERLIN_ENV("PERLIN_JAVA_DBG")) {
+            static int c = 0;
+            if (c++ % 300 == 0) {
+                size_t solidChunks = 0, total = 0;
+                for (const auto& [key, g] : meshes.ChunkMap()) {
+                    total++;
+                    if (g.page >= 0 && g.layerCount[0])
+                        solidChunks++;
+                }
+                std::fprintf(stderr, "[javadbg] census chunks=%zu solid=%zu\n", total, solidChunks);
+            }
         }
         meshes.Select(frustum, camX, frame.cameraPosition[1], camZ, chunkCullRadius, caveCulling, frame.timeSeconds);
         if (pack) {
@@ -414,12 +472,21 @@ namespace perlin {
         uni.Vec4("u_modulator", sky.skyColor[0], sky.skyColor[1], sky.skyColor[2], 1.0f);
         if (cloudMapTex.used)
             BindTexture("s_clouds", cloudMapTex.handle, gpu::SamplerKind::PointRepeat);
+        if (javaActive) {
+            BindShadowSampling();
+            BindJavaExtras();
+            Submit(View::World, drawState(Program::Sky, gpu::VertexLayout::Position), {screenTri, 0}, nullptr,
+                   rhi::IndexType::U32, 0, 3);
+            ResetBindings();
+            return;
+        }
         {
             const Source indices{fanIdx, 0};
-            Submit(View::World, drawState(Program::Sky, gpu::VertexLayout::Position), {topSky, 0}, &indices, rhi::IndexType::U16, 0, skyFanIndexCount);
+            Submit(View::World, drawState(Program::Sky, gpu::VertexLayout::Terrain), {topSky, 0}, &indices, rhi::IndexType::U16, 0, skyFanIndexCount);
         }
 
-        if (sky.sunrise[3] > 0.001f) {
+        // converted pack draws its own horizon glow
+        if (!javaActive && sky.sunrise[3] > 0.001f) {
             glm::mat4 pose = glm::rotate(view, kHalfPi, glm::vec3(1.0f, 0.0f, 0.0f));
             const float flip = std::sin(sky.sunAngle) < 0.0f ? 3.14159265358979323846f : 0.0f;
             pose = glm::rotate(pose, flip + kHalfPi, glm::vec3(0.0f, 0.0f, 1.0f));
@@ -443,7 +510,7 @@ namespace perlin {
             return glm::scale(pose, glm::vec3(scale, 1.0f, scale));
         };
         const Source quad{quadIdx, 0};
-        if (sunTex.used) {
+        if (!javaActive && sunTex.used) {
             matrix(body(sky.sunAngle, 30.0f));
             uni.Vec4("u_modulator", 1.0f, 1.0f, 1.0f, sky.rainBrightness);
             BindTexture("s_sky", sunTex.handle, gpu::SamplerKind::PointClamp);
@@ -451,7 +518,7 @@ namespace perlin {
             ApplyMaterial(s, "sun_moon");
             Submit(View::World, s, {sunVerts, 0}, &quad, rhi::IndexType::U16, 0, 6);
         }
-        if (moonTex.used) {
+        if (!javaActive && moonTex.used) {
             matrix(body(sky.moonAngle, 20.0f));
             uni.Vec4("u_modulator", 1.0f, 1.0f, 1.0f, sky.rainBrightness);
             BindTexture("s_sky", moonTex.handle, gpu::SamplerKind::PointClamp);
@@ -459,7 +526,7 @@ namespace perlin {
             ApplyMaterial(s, "sun_moon");
             Submit(View::World, s, {moonVerts, static_cast<uint64_t>(sky.moonPhase) * 4 * sizeof(TextureVertex)}, &quad, rhi::IndexType::U16, 0, 6);
         }
-        if (sky.starBrightness > 0.0f) {
+        if (!javaActive && sky.starBrightness > 0.0f) {
             matrix(glm::rotate(celestial, sky.starAngle, glm::vec3(1.0f, 0.0f, 0.0f)));
             uni.Vec4("u_modulator", sky.starBrightness, sky.starBrightness, sky.starBrightness, sky.starBrightness);
             DrawState s = drawState(Program::Star, gpu::VertexLayout::Position);
@@ -471,12 +538,14 @@ namespace perlin {
             matrix(glm::translate(view, glm::vec3(0.0f, 12.0f, 0.0f)));
             uni.Vec4("u_modulator", 0.0f, 0.0f, 0.0f, 1.0f);
             const Source indices{fanIdx, 0};
-            Submit(View::World, drawState(Program::Sky, gpu::VertexLayout::Position), {bottomSky, 0}, &indices, rhi::IndexType::U16, 0, skyFanIndexCount);
+            Submit(View::World, drawState(Program::Sky, gpu::VertexLayout::Terrain), {bottomSky, 0}, &indices, rhi::IndexType::U16, 0, skyFanIndexCount);
         }
         SetMatrix(mvp);
     }
 
     void RenderContext_rhi::DrawClouds() {
+        if (javaActive)
+            return;
         const CloudDraw& clouds = frame.cloud;
         material::Registry::Instance().Configure(clouds.fancy);
         if (!clouds.enabled || cloudTexture.solid.empty())
