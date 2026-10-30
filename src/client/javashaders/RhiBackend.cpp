@@ -195,7 +195,7 @@ namespace perlin::jshader {
                 h ^= fragment ? 0x9e3779b97f4a7c15ull : 0x517cc1b727220a95ull;
                 char name[48];
                 std::snprintf(name, sizeof(name), "%016llx_%zx.dxbc", static_cast<unsigned long long>(h), hlsl.size());
-                const std::filesystem::path dir = std::filesystem::temp_directory_path() / "perlin_dxbc_cache";
+                const std::filesystem::path dir = std::filesystem::temp_directory_path() / "perlin_dxbc_cache2";
                 std::filesystem::create_directories(dir);
                 cacheFile = dir / name;
                 std::ifstream in(cacheFile, std::ios::binary);
@@ -271,16 +271,19 @@ namespace perlin::jshader {
                 at = end;
             }
             std::string first, second, third;
-            if (run(looped, D3DCOMPILE_OPTIMIZATION_LEVEL1, first) || run(hlsl, D3DCOMPILE_OPTIMIZATION_LEVEL1, second)) {
+            // fully optimised first (the pack is the whole frame, so shader quality is frame time); the cache keeps this a one time cost
+            if (run(hlsl, D3DCOMPILE_OPTIMIZATION_LEVEL3, first) || run(looped, D3DCOMPILE_OPTIMIZATION_LEVEL3, second) ||
+                run(looped, D3DCOMPILE_OPTIMIZATION_LEVEL1, third)) {
                 store();
                 return true;
             }
             // the optimizer gives up on some very large shaders: try again without it
-            if (run(hlsl, D3DCOMPILE_SKIP_OPTIMIZATION, third)) {
+            std::string fourth;
+            if (run(hlsl, D3DCOMPILE_SKIP_OPTIMIZATION, fourth)) {
                 store();
                 return true;
             }
-            error = first + (second.empty() || second == first ? "" : "\n(without loop hints) " + second) + (third.empty() ? "" : "\n(without optimization) " + third);
+            error = first + (second.empty() || second == first ? "" : "\n(without loop hints) " + second) + (third.empty() ? "" : "\n(level 1) " + third) + (fourth.empty() ? "" : "\n(without optimization) " + fourth);
             return false;
         };
 #else

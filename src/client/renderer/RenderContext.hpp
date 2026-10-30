@@ -140,6 +140,13 @@ namespace perlin {
         uint8_t lightmap[kLightmapBytes];
     };
 
+    struct JavaPackOption {
+        std::string name, label, comment, group;
+        bool toggle = false;
+        std::string current;
+        std::vector<std::string> values;
+    };
+
     class RenderContext {
     public:
         virtual ~RenderContext() = default;
@@ -154,6 +161,7 @@ namespace perlin {
         }
         virtual void ClearJavaShaderPack() {}
         virtual bool JavaShaderPackActive() const { return false; }
+        virtual std::vector<JavaPackOption> JavaShaderPackOptions() const { return {}; }
         virtual std::string JavaShaderPackError() const { return {}; }
         virtual void SetJavaShaderPackDimension(const std::string& ) {}
         // block name of a palette id, which packs map to their own block ids

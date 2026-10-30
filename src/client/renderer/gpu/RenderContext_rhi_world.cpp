@@ -373,7 +373,8 @@ namespace perlin {
             // the pack draws terrain, sky and shadows itself when the frame executes
             jpack->GatherGeometry(camX, camZ);
             jpackGathered = true;
-            DrawClouds();
+            if (jpack->VanillaClouds())
+                DrawClouds();
             DrawScreenTint();
             return;
         }

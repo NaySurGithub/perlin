@@ -30,6 +30,8 @@ namespace perlin::gpu {
     // deferred / composite chains and final, then the pack's depth goes back to the engine for what draws after it
     class JavaPack {
     public:
+        const std::shared_ptr<jshader::ShaderPackInstance>& Instance() const { return instance; }
+        bool VanillaClouds() const { return config.clouds != "off"; }
         struct Config {
             std::string path;
             jshader::OptionValues options;
@@ -45,6 +47,7 @@ namespace perlin::gpu {
             uint32_t width = 0, height = 0;
             float scale = 1.0f; // internal resolution against width / height
             rhi::TextureHandle lightmap;
+            rhi::TextureHandle sun, moon;
         };
 
         JavaPack(Gpu& gpu, ChunkMeshStore& meshes);
@@ -186,6 +189,10 @@ namespace perlin::gpu {
         void RunChain(rhi::CommandList& list, const char* base);
         void ClearBuffers(rhi::CommandList& list, const FrameParams& params);
         void DrawShadows(rhi::CommandList& list);
+        void DrawSky(rhi::CommandList& list);
+        void DrawSkyObjects(rhi::CommandList& list, const char* program, int stage, rhi::BufferHandle vb, uint32_t first, uint32_t count, rhi::BufferHandle ring,
+                            uint64_t ringOffset, const float* modelView, rhi::TextureHandle texture, bool additive);
+        void DrawTranslucent(rhi::CommandList& list);
         void DrawTerrain(rhi::CommandList& list);
         bool DrawLayers(rhi::CommandList& list, const char* program, const std::vector<RenderLayer>& layers, bool translucent, bool shadow);
         void DepthToEngine(rhi::CommandList& list, const Output& out);
@@ -216,6 +223,9 @@ namespace perlin::gpu {
         rhi::PipelineLayoutHandle pipelineLayout;
         std::array<rhi::SamplerHandle, 16> samplers{};
         rhi::BufferHandle quad;
+        rhi::BufferHandle skyStatic;
+        uint32_t starVertexCount = 0;
+        rhi::TextureHandle textureOverride, skySunTex, skyMoonTex;
 
         std::array<Buffer, jshader::kMaxColorTex> bufs;
         rhi::TextureHandle depth[3];

@@ -883,6 +883,8 @@ namespace perlin {
             po.height = gpu.TargetHeight();
             po.scale = jpackScale;
             po.lightmap = lightmap.handle;
+            po.sun = sunTex.handle;
+            po.moon = moonTex.handle;
             // the pack wrote the whole picture and the depth: the world stage draws on top instead of clearing
             const bool recorded = jpack->Record(*list, frame, po);
             if (std::getenv("JSHADER_TRACE"))

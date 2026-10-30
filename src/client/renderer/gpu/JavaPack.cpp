@@ -472,6 +472,11 @@ namespace perlin::gpu {
             dev.Destroy(textureLayout);
         pipelineLayout = {};
         textureLayout = {};
+        if (skyStatic) {
+            gpu.ForgetBuffer(skyStatic);
+            dev.Destroy(skyStatic);
+            skyStatic = {};
+        }
         if (quad) {
             gpu.ForgetBuffer(quad);
             dev.Destroy(quad);
@@ -984,6 +989,11 @@ namespace perlin::gpu {
             const float mid[2] = {(au[0] + au[1] + au[2] + au[3]) * 0.25f, (av[0] + av[1] + av[2] + av[3]) * 0.25f};
             const uint16_t normal[4] = {ToHalf(n.x), ToHalf(n.y), ToHalf(n.z), 0};
             const uint16_t tang[4] = {ToHalf(tangent.x), ToHalf(tangent.y), ToHalf(tangent.z), ToHalf(1.0f)};
+            if (layerType > 0.5f && std::getenv("JSHADER_WATERDBG")) {
+                static int shown = 0;
+                if (shown++ < 6)
+                    std::fprintf(stderr, "[jshader] translucent quad block=%u name='%s' packId=%d rgba=%08x\n", block, blockName ? blockName(block).c_str() : "?", packId, v[0].rgba);
+            }
             const float entity[2] = {static_cast<float>(packId), layerType};
             for (int i = 0; i < 4; i++) {
                 uint8_t* o = out.data() + (q + static_cast<size_t>(i)) * kPackVertexBytes;
@@ -1412,7 +1422,9 @@ namespace perlin::gpu {
                 smp = SLinearRepeat;
                 break;
             case Kind::Atlas:
-                if (atlas)
+                if (textureOverride)
+                    t = textureOverride;
+                else if (atlas)
                     t = atlas;
                 smp = SAtlas;
                 break;
@@ -1744,7 +1756,7 @@ namespace perlin::gpu {
             PipeState ls = st;
             const bool blendLayer = !shadow && translucent;
             ls.blend = blendLayer;
-            ls.depthWrite = !blendLayer;
+            ls.depthWrite = true; // depthtex0 holds the translucent surfaces too
             if (blendLayer) {
                 ls.src = rhi::BlendFactor::SrcAlpha;
                 ls.dst = rhi::BlendFactor::InvSrcAlpha;
@@ -1793,7 +1805,186 @@ namespace perlin::gpu {
 
     void JavaPack::DrawTerrain(rhi::CommandList& list) {
         DrawLayers(list, "gbuffers_terrain", {RenderLayer::Solid, RenderLayer::Cutout, RenderLayer::CutoutCull}, false, false);
+    }
+
+    void JavaPack::DrawTranslucent(rhi::CommandList& list) {
         DrawLayers(list, "gbuffers_water", {RenderLayer::Translucent, RenderLayer::TranslucentCull}, true, false);
+    }
+
+    namespace {
+        struct SkyBuilder {
+            std::vector<uint8_t> bytes;
+            uint32_t count = 0;
+            void Vertex(float x, float y, float z, const uint8_t rgba[4], float u, float v) {
+                uint8_t px[kPackVertexBytes] = {};
+                const float pos[3] = {x, y, z};
+                std::memcpy(px + kPos, pos, 12);
+                std::memcpy(px + kColor, rgba, 4);
+                const float uv[2] = {u, v}, light[2] = {240.0f, 240.0f};
+                std::memcpy(px + kUv, uv, 8);
+                std::memcpy(px + kLight, light, 8);
+                const uint16_t n[4] = {0, 0x3C00, 0, 0};
+                std::memcpy(px + kNormal, n, 8);
+                bytes.insert(bytes.end(), px, px + kPackVertexBytes);
+                count++;
+            }
+            // quad around a centre in the plane spanned by right and up
+            void Quad(const glm::vec3& c, const glm::vec3& r, const glm::vec3& u, const uint8_t rgba[4], float u0, float v0, float u1, float v1) {
+                const glm::vec3 p0 = c - r - u, p1 = c + r - u, p2 = c + r + u, p3 = c - r + u;
+                Vertex(p0.x, p0.y, p0.z, rgba, u0, v1);
+                Vertex(p1.x, p1.y, p1.z, rgba, u1, v1);
+                Vertex(p2.x, p2.y, p2.z, rgba, u1, v0);
+                Vertex(p0.x, p0.y, p0.z, rgba, u0, v1);
+                Vertex(p2.x, p2.y, p2.z, rgba, u1, v0);
+                Vertex(p3.x, p3.y, p3.z, rgba, u0, v0);
+            }
+        };
+    }
+
+    void JavaPack::DrawSkyObjects(rhi::CommandList& list, const char* programName, int stage, rhi::BufferHandle vb, uint32_t first, uint32_t count,
+                                  rhi::BufferHandle ring, uint64_t ringOffset, const float* modelView, rhi::TextureHandle texture, bool additive) {
+        Program* p = GetProgram(programName, false);
+        if (!p || count == 0)
+            return;
+        std::vector<rhi::TextureHandle> colors;
+        for (int idx : p->attachments) {
+            if (idx < 0 || idx >= jshader::kMaxColorTex)
+                idx = 0;
+            Buffer& b = bufs[static_cast<size_t>(idx)];
+            b.used = true;
+            colors.push_back(b.tex[b.cur] ? b.tex[b.cur] : bufs[0].tex[bufs[0].cur]);
+        }
+        if (colors.empty())
+            return;
+        textureOverride = texture;
+        std::vector<rhi::TextureHandle> attached = colors;
+        attached.push_back(depth[0]);
+        const rhi::BindGroupHandle textures = Textures(list, *p, attached);
+        textureOverride = {};
+        if (!textures)
+            return;
+        PipeState st;
+        st.colorCount = static_cast<uint32_t>(colors.size());
+        for (size_t i = 0; i < colors.size(); i++) {
+            const rhi::TextureDesc* td = gpu.Dev().GetDesc(colors[i]);
+            st.colors[i] = td ? td->format : rhi::Format::RGBA8Unorm;
+        }
+        st.depth = rhi::Format::D32Float;
+        st.depthTest = false;
+        st.depthWrite = false;
+        const jshader::ProgramConfig* pc = config.Find(programName);
+        st.blend = additive || stage == 5;
+        st.src = rhi::BlendFactor::SrcAlpha;
+        st.dst = additive ? rhi::BlendFactor::One : rhi::BlendFactor::InvSrcAlpha;
+        st.srcA = rhi::BlendFactor::One;
+        st.dstA = rhi::BlendFactor::InvSrcAlpha;
+        if (pc && pc->blend.set) {
+            st.blend = !pc->blend.off;
+            if (st.blend) {
+                st.src = GlFactor(pc->blend.src);
+                st.dst = GlFactor(pc->blend.dst);
+                st.srcA = GlFactor(pc->blend.srcA);
+                st.dstA = GlFactor(pc->blend.dstA);
+            }
+        }
+        const rhi::PipelineHandle pipe = PipelineFor(*p, st);
+        if (!pipe)
+            return;
+        BeginPass(list, colors, depth[0], width, height, false, nullptr, "pack sky");
+        jshader::PackDrawState d = TerrainDraw();
+        std::memcpy(d.modelView, modelView, sizeof(d.modelView));
+        d.renderStage = stage;
+        if (!BindUniforms(list, *p, d)) {
+            list.EndRendering();
+            return;
+        }
+        list.SetBindGroup(1, textures);
+        list.SetPipeline(pipe);
+        list.SetVertexBuffer(0, ring ? ring : vb, ring ? ringOffset : static_cast<uint64_t>(first) * kPackVertexBytes);
+        list.Draw(count, 1, 0, 0);
+        list.EndRendering();
+    }
+
+    void JavaPack::DrawSky(rhi::CommandList& list) {
+        if (!instance)
+            return;
+        const float rot[16] = {frameState.modelView[0], frameState.modelView[1], frameState.modelView[2], frameState.modelView[3],
+                               frameState.modelView[4], frameState.modelView[5], frameState.modelView[6], frameState.modelView[7],
+                               frameState.modelView[8], frameState.modelView[9], frameState.modelView[10], frameState.modelView[11],
+                               0, 0, 0, 1};
+        const double a = frame.sky.sunAngle;
+        const glm::mat4 spin = glm::rotate(glm::mat4(1.0f), static_cast<float>(a), glm::vec3(0, 0, 1));
+        float spun[16];
+        FromMat(ToMat(rot) * spin, spun);
+
+        if (!skyStatic) {
+            // stars first, then the sun quad (the moon changes with the phase, so it goes through the ring)
+            SkyBuilder sb;
+            const uint8_t white[4] = {255, 255, 255, 255};
+            uint32_t seed = 10842u;
+            const auto rnd = [&]() {
+                seed = seed * 1664525u + 1013904223u;
+                return static_cast<float>((seed >> 8) & 0xFFFFFF) / 16777216.0f;
+            };
+            for (int i = 0; i < 1500; i++) {
+                const float z = rnd() * 2.0f - 1.0f, t = rnd() * 6.2831853f, r = std::sqrt(std::max(0.0f, 1.0f - z * z));
+                const glm::vec3 dir(r * std::cos(t), z, r * std::sin(t));
+                const glm::vec3 right = glm::normalize(glm::cross(dir, std::fabs(dir.y) > 0.99f ? glm::vec3(1, 0, 0) : glm::vec3(0, 1, 0)));
+                const glm::vec3 up = glm::cross(dir, right);
+                const float size = 0.15f + rnd() * 0.1f;
+                sb.Quad(dir * 100.0f, right * size, up * size, white, 0, 0, 1, 1);
+            }
+            starVertexCount = sb.count;
+            sb.Quad(glm::vec3(0, 100, 0), glm::vec3(0, 0, 30), glm::vec3(30, 0, 0), white, 0, 0, 1, 1);
+            skyStatic = gpu.CreateStatic(sb.bytes.data(), sb.bytes.size(), rhi::BufferUsage::Vertex, "java pack sky");
+        }
+        if (!skyStatic)
+            return;
+
+        // dome around the camera, tinted with the sky colour
+        {
+            SkyBuilder sb;
+            const uint8_t sc[4] = {static_cast<uint8_t>(std::clamp(frameState.skyColor[0], 0.0f, 1.0f) * 255.0f),
+                                   static_cast<uint8_t>(std::clamp(frameState.skyColor[1], 0.0f, 1.0f) * 255.0f),
+                                   static_cast<uint8_t>(std::clamp(frameState.skyColor[2], 0.0f, 1.0f) * 255.0f), 255};
+            constexpr int kLat = 12, kLon = 24;
+            const auto point = [](int la, int lo) {
+                const float phi = (static_cast<float>(la) / kLat - 0.5f) * 3.14159265f, th = static_cast<float>(lo) / kLon * 6.2831853f;
+                return glm::vec3(std::cos(phi) * std::cos(th), std::sin(phi), std::cos(phi) * std::sin(th)) * 100.0f;
+            };
+            for (int la = 0; la < kLat; la++)
+                for (int lo = 0; lo < kLon; lo++) {
+                    const glm::vec3 p00 = point(la, lo), p10 = point(la + 1, lo), p11 = point(la + 1, lo + 1), p01 = point(la, lo + 1);
+                    sb.Vertex(p00.x, p00.y, p00.z, sc, 0, 0);
+                    sb.Vertex(p10.x, p10.y, p10.z, sc, 0, 0);
+                    sb.Vertex(p11.x, p11.y, p11.z, sc, 0, 0);
+                    sb.Vertex(p00.x, p00.y, p00.z, sc, 0, 0);
+                    sb.Vertex(p11.x, p11.y, p11.z, sc, 0, 0);
+                    sb.Vertex(p01.x, p01.y, p01.z, sc, 0, 0);
+                }
+            const gpu::RingSlice slice = gpu.Ring(sb.bytes.size(), 16);
+            if (slice.data) {
+                std::memcpy(slice.data, sb.bytes.data(), sb.bytes.size());
+                DrawSkyObjects(list, "gbuffers_skybasic", 1, {}, 0, sb.count, slice.buffer, slice.offset, rot, {}, false);
+            }
+        }
+        // stars rotate with the sun
+        DrawSkyObjects(list, "gbuffers_skybasic", 6, skyStatic, 0, starVertexCount, {}, 0, spun, {}, false);
+        // sun
+        DrawSkyObjects(list, "gbuffers_skytextured", 4, skyStatic, starVertexCount, 6, {}, 0, spun, skySunTex, true);
+        // moon: opposite the sun, one phase cell of the 4x2 sheet
+        {
+            SkyBuilder sb;
+            const uint8_t white[4] = {255, 255, 255, 255};
+            const int phase = static_cast<int>(std::floor(frame.sky.moonPhase)) & 7;
+            const float u0 = static_cast<float>(phase % 4) / 4.0f, v0 = static_cast<float>(phase / 4) / 2.0f;
+            sb.Quad(glm::vec3(0, -100, 0), glm::vec3(0, 0, 20), glm::vec3(20, 0, 0), white, u0, v0, u0 + 0.25f, v0 + 0.5f);
+            const gpu::RingSlice slice = gpu.Ring(sb.bytes.size(), 16);
+            if (slice.data) {
+                std::memcpy(slice.data, sb.bytes.data(), sb.bytes.size());
+                DrawSkyObjects(list, "gbuffers_skytextured", 5, {}, 0, sb.count, slice.buffer, slice.offset, spun, skyMoonTex, false);
+            }
+        }
     }
 
     bool JavaPack::RunPass(rhi::CommandList& list, const std::string& passName, bool toBackbuffer, const Output& out) {
@@ -1948,19 +2139,34 @@ namespace perlin::gpu {
         ClearBuffers(list, params);
         RunChain(list, "begin");
         DrawShadows(list);
-        DrawTerrain(list);
-        CopyDepth(list, depth[0], depth[2]);
-        CopyDepth(list, depth[0], depth[1]);
         RunChain(list, "shadowcomp");
         RunChain(list, "prepare");
-        RunChain(list, "deferred");
-        RunChain(list, "composite");
+        skySunTex = out.sun;
+        skyMoonTex = out.moon;
+        DrawSky(list);
+        DrawTerrain(list);
+        // depthtex1 / depthtex2 hold the opaque world: water and glass are drawn after the copy
+        CopyDepth(list, depth[0], depth[2]);
+        CopyDepth(list, depth[0], depth[1]);
+        static const char* const debugTex = std::getenv("PERLIN_PACK_DEBUG_TEX");
+        if (debugTex)
+            DrawTranslucent(list);
+        if (!debugTex) {
+            RunChain(list, "deferred");
+            // translucent terrain lands on the lit opaque picture, as in Iris
+            DrawTranslucent(list);
+            RunChain(list, "composite");
+        }
 
         bool done = false;
-        if (instance->ProgramExists("final"))
+        if (!debugTex && instance->ProgramExists("final"))
             done = RunPass(list, "final", true, out);
         if (!done) {
-            static const jshader::ExpandedSource vs = MakeSource(kFullscreenVertex), fs = MakeSource(kCopyColorFragment);
+            std::string copySrc = kCopyColorFragment;
+            if (debugTex)
+                for (size_t at = copySrc.find("colortex0"); at != std::string::npos; at = copySrc.find("colortex0", at + 1))
+                    copySrc.replace(at, 9, std::string("colortex") + debugTex);
+            static const jshader::ExpandedSource vs = MakeSource(kFullscreenVertex), fs = MakeSource(copySrc.c_str());
             Program* p = GetProgram("builtin_copy_color", true, &vs, &fs);
             if (!p)
                 return false;

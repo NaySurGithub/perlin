@@ -103,6 +103,7 @@ namespace perlin {
         bool SetJavaShaderPack(const std::string& path, const std::map<std::string, std::string>& options, std::string& error) override;
         void ClearJavaShaderPack() override;
         bool JavaShaderPackActive() const override { return jpack != nullptr; }
+        std::vector<JavaPackOption> JavaShaderPackOptions() const override;
         bool JavaPackReady() const { return PackRunning(); }
         std::string JavaShaderPackError() const override { return jpackError; }
         void SetJavaShaderPackDimension(const std::string& folder) override;

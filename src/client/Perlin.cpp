@@ -3870,6 +3870,63 @@ namespace perlin {
                                              mods::ModManager::Instance().ResetSettings(owner);
                                      }});
                 }
+            } else if (optionsPage == 10 && renderer && renderer->JavaShaderPackActive()) {
+                title = tr("perlin.shaders.settings.title", "Shader Pack Settings");
+                static std::map<std::string, std::string> javaEdits;
+                static std::string javaEditsPack;
+                static bool javaDirty = false;
+                if (javaEditsPack != options.shaderPack) {
+                    javaEditsPack = options.shaderPack;
+                    javaEdits.clear();
+                    javaDirty = false;
+                }
+                const std::string packPath = paths::DataDir() + "/shaderpacks/" + options.shaderPack;
+                model.push_back({javaDirty ? "Apply Changes (reloads shaders)" : "Reload Shaders", "", -1.0f, [this, packPath](float, bool click) {
+                                     if (!click)
+                                         return;
+                                     javaDirty = false;
+                                     javaPackPending = packPath;
+                                 }});
+                model.push_back({"Reset All to Defaults", "", -1.0f, [this, packPath](float, bool click) {
+                                     if (!click)
+                                         return;
+                                     javaEdits.clear();
+                                     jshader::WriteJavaPackOptions(packPath, {});
+                                     javaDirty = true;
+                                     javaPackPending = packPath;
+                                 }});
+                std::string lastGroup = "\x01";
+                for (const JavaPackOption& o : renderer->JavaShaderPackOptions()) {
+                    if (o.group != lastGroup) {
+                        lastGroup = o.group;
+                        OptRow h{o.group.empty() ? std::string("Shader Options") : o.group, "", -1.0f, [](float, bool) {}};
+                        h.header = true;
+                        model.push_back(h);
+                    }
+                    const auto edited = javaEdits.find(o.name);
+                    const std::string current = edited != javaEdits.end() ? edited->second : o.current;
+                    std::string shown = current;
+                    if (o.toggle)
+                        shown = current == "true" ? tr("options.on", "ON") : tr("options.off", "OFF");
+                    model.push_back({o.label, shown, -1.0f, [this, o, current, packPath](float, bool click) {
+                                         if (!click || o.values.empty())
+                                             return;
+                                         size_t at = 0;
+                                         for (size_t i = 0; i < o.values.size(); i++)
+                                             if (o.values[i] == current)
+                                                 at = i;
+                                         javaEdits[o.name] = o.values[(at + 1) % o.values.size()];
+                                         auto all = jshader::ReadJavaPackOptions(packPath);
+                                         for (const auto& kv : javaEdits)
+                                             all[kv.first] = kv.second;
+                                         jshader::WriteJavaPackOptions(packPath, all);
+                                         javaDirty = true;
+                                     }});
+                    if (!o.comment.empty()) {
+                        modRowTips.resize(model.size());
+                        modRowTips[model.size() - 1] = o.comment;
+                    }
+                }
             } else if (optionsPage == 10) {
                 title = tr("perlin.shaders.settings.title", "Shader Pack Settings");
                 const std::vector<ShaderSetting>& list = CachedPackSettings(options.shaderPack);
