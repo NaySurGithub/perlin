@@ -70,6 +70,7 @@ namespace perlin::attachable {
 
     private:
         void Link();
+        void ExpandVanillaModels();
         std::unordered_map<std::string, Geometry> geometries;
     };
 
