@@ -880,8 +880,9 @@ namespace perlin::jshader {
                     ctx.vin.uv0 = true;
                     rep = "vec4(iris_UV0, 0.0, 1.0)";
                 } else if (id == "gl_MultiTexCoord1") {
-                    ctx.vin.uv1 = true;
-                    rep = "vec4(iris_UV1, 0.0, 1.0)";
+                    // texture unit 1 is the lightmap in OptiFine/Iris
+                    ctx.vin.uv2 = true;
+                    rep = "vec4(iris_UV2, 0.0, 1.0)";
                 } else if (id == "gl_MultiTexCoord2") {
                     ctx.vin.uv2 = true;
                     rep = "vec4(iris_UV2, 0.0, 1.0)";
