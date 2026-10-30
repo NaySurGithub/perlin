@@ -187,6 +187,7 @@ namespace perlin::entity {
         root = newRoot;
         loaded = false;
         overlaysLoaded = 0;
+        overlayDirs.clear();
         overlayGeneration = 0;
         entities.clear();
         controllers.clear();
@@ -205,7 +206,9 @@ namespace perlin::entity {
         if (gen == overlayGeneration)
             return;
         const std::vector<std::string> dirs = ServerPacks::Instance().Directories();
-        if (dirs.size() < overlaysLoaded) {
+        // another server's packs, even as many as before: start over, or the last server's entities stay and these never load
+        const bool extends = dirs.size() >= overlayDirs.size() && std::equal(overlayDirs.begin(), overlayDirs.end(), dirs.begin());
+        if (!extends) {
             const std::string keep = root;
             loaded = false;
             root.clear();
@@ -218,6 +221,7 @@ namespace perlin::entity {
             LoadDirectory(dirs[i], true);
         }
         overlaysLoaded = dirs.size();
+        overlayDirs = dirs;
     }
 
     namespace {
