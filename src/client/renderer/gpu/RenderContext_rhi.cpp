@@ -130,6 +130,7 @@ namespace perlin {
         if (!StartDevice(forced, pack, false))
             return false;
         packData = std::move(pack);
+        offscreen = gpu.OffscreenTexture().value != 0 || settings.offscreen;
 
         initialized = true;
         nativeWindow = static_cast<uint64_t>(reinterpret_cast<uintptr_t>(native.window));
@@ -180,6 +181,8 @@ namespace perlin {
             s.api = api;
             s.adapterIndex = adapter;
             s.validation = PERLIN_ENV("PERLIN_GPU_VALIDATION") != nullptr;
+            // renders into an owned image instead of a window (software rasteriser captures, offline previews)
+            s.offscreen = PERLIN_ENV("PERLIN_OFFSCREEN") != nullptr;
             s.window = {native.window, native.display, native.wayland};
             s.width = static_cast<uint32_t>(std::max(1, width));
             s.height = static_cast<uint32_t>(std::max(1, height));

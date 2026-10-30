@@ -1,4 +1,5 @@
 #include <cstdio>
+#include <sstream>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
@@ -20,6 +21,7 @@
 #endif
 
 namespace perlin::jshader {
+    void MatchStageInterface(std::string& vs, std::string& ps);
     namespace {
         bool CrossHlsl(const std::vector<uint32_t>& spirv, Stage stage, std::string& out, std::string& error) {
             try {
@@ -116,18 +118,61 @@ namespace perlin::jshader {
             for (size_t at = hlsl.find(".SampleCmp("); at != std::string::npos; at = hlsl.find(".SampleCmp(", at))
                 hlsl.replace(at, 11, ".SampleCmpLevelZero(");
             *sources[i] = hlsl;
-            if (kind == RhiShaderKind::Hlsl) {
-                outputs[i]->assign(hlsl.begin(), hlsl.end());
-                continue;
-            }
-            std::string cerr;
-            if (!dxbc(hlsl, fragment, *outputs[i], cerr)) {
-                result.error = std::string(fragment ? "pixel" : "vertex") + " shader: HLSL compile failed: " + cerr;
-                return result;
+        }
+        if (kind != RhiShaderKind::SpirV) {
+            MatchStageInterface(result.vertexSource, result.fragmentSource);
+            for (int i = 0; i < 2; i++) {
+                const bool fragment = i == 1;
+                if (kind == RhiShaderKind::Hlsl) {
+                    outputs[i]->assign(sources[i]->begin(), sources[i]->end());
+                    continue;
+                }
+                std::string cerr;
+                if (!dxbc(*sources[i], fragment, *outputs[i], cerr)) {
+                    result.error = std::string(fragment ? "pixel" : "vertex") + " shader: HLSL compile failed: " + cerr;
+                    return result;
+                }
             }
         }
         result.ok = true;
         return result;
+    }
+
+    // D3D rejects a pipeline whose pixel shader reads a varying the vertex shader never writes (packs
+    // declare some under ifdefs); give the vertex shader the missing outputs, zero filled.
+    void MatchStageInterface(std::string& vs, std::string& ps) {
+        auto body = [](const std::string& src, const char* structName, size_t& b, size_t& e) {
+            b = src.find(std::string("struct ") + structName);
+            if (b == std::string::npos) return false;
+            b = src.find('{', b);
+            e = src.find("};", b);
+            return b != std::string::npos && e != std::string::npos;
+        };
+        size_t pb, pe, vb, ve;
+        if (!body(ps, "SPIRV_Cross_Input", pb, pe) || !body(vs, "SPIRV_Cross_Output", vb, ve)) return;
+        std::string vsBody = vs.substr(vb, ve - vb);
+        std::string add, init;
+        std::istringstream in(ps.substr(pb + 1, pe - pb - 1));
+        std::string line;
+        while (std::getline(in, line)) {
+            size_t colon = line.find(" : TEXCOORD");
+            if (colon == std::string::npos) continue;
+            std::string sem = line.substr(colon + 3);
+            while (!sem.empty() && (sem.back() == ';' || sem.back() == '\r' || sem.back() == ' ')) sem.pop_back();
+            if (vsBody.find(" : " + sem + ";") != std::string::npos) continue;
+            size_t t0 = line.find_first_not_of(" \t");
+            std::string decl = line.substr(t0, colon - t0);
+            size_t sp = decl.rfind(' ');
+            if (sp == std::string::npos) continue;
+            add += "    " + decl + " : " + sem + ";\n";
+            init += "    stage_output." + decl.substr(sp + 1) + " = (" + decl.substr(0, sp) + ")0;\n";
+        }
+        if (add.empty()) return;
+        vs.insert(ve, add);
+        size_t ret = vs.rfind("return stage_output;");
+        if (ret == std::string::npos) ret = vs.rfind("return ");
+        if (ret != std::string::npos) vs.insert(ret, init);
+        if (std::getenv("JSHADER_TRACE")) std::fprintf(stderr, "[jshader] vertex shader padded with missing pixel inputs\n");
     }
 
     DxbcCompiler SystemDxbcCompiler() {
