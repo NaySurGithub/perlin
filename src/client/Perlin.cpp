@@ -8907,6 +8907,8 @@ namespace perlin {
                     if (live && live->Invisible())
                         self.flags |= entity::flag::Invisible;
                     self.name = live ? live->PlayerName() : std::string("Perlin");
+                    if (live)
+                        self.nameTag = live->OwnNameTag();
                     self.pos = {camera.x, camera.y - (live ? static_cast<double>(player.EyeOffset()) : entity::kPlayerEye), camera.z};
                     self.yaw = self.headYaw = camera.yaw - 90.0f;
                     self.pitch = -camera.pitch;

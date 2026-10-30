@@ -1212,6 +1212,12 @@ namespace perlin {
                 std::lock_guard lk(attrMutex);
                 for (const MetadataDictionaryEntry& m : p.metadata) {
                     int64_t integer = 0;
+                    if (m.key == MetadataDictionaryEntryKey::Nametag) {
+                        if (const auto* inner = std::get_if<4>(&m.value))
+                            if (const auto* str = std::get_if<5>(inner))
+                                ownNameTag = *str;
+                        continue;
+                    }
                     if (m.key == MetadataDictionaryEntryKey::Flags || m.key == MetadataDictionaryEntryKey::FlagsExtended) {
                         if (MetaInt(m, integer)) {
                             const size_t word = m.key == MetadataDictionaryEntryKey::Flags ? 0 : 1;
