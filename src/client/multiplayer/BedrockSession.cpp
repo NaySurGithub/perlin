@@ -634,6 +634,8 @@ namespace perlin {
             useRak = false;
         } else if (transfer && transportMode == "auto") {
             useRak = usedRak;
+        } else if (injectedTransport) {
+            useRak = false;
         } else if (transportMode == "auto") {
             NetherNetServerInfo probe;
             std::string probeError;
@@ -641,7 +643,11 @@ namespace perlin {
             std::cout << "[perlin] transport: " << (useRak ? "raknet (no NetherNet endpoint found)" : "nethernet")
                       << std::endl;
         }
-        if (!useRak) {
+        if (injectedTransport) {
+            if (!finishAuth())
+                return false;
+            net = std::move(injectedTransport);
+        } else if (!useRak) {
             if (!finishAuth())
                 return false;
             auto nether = std::make_unique<NetherNet>();

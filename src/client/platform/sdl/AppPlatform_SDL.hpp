@@ -53,6 +53,8 @@ private:
     bool PickFile(const std::string& kind) override;
     bool TakeSurfaceChanged() override { return surfaceChanged.exchange(false); }
     void SetCursorCaptured(bool captured) override;
+    void SetFullscreen(bool fullscreen) override;
+    bool IsFullscreen() const override;
     bool cursorCaptured = false;
     bool textActive = false;
     bool keyboardShown = false;

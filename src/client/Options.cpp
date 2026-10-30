@@ -88,6 +88,8 @@ namespace perlin {
             float touchScale = 1.0f;
             float touchOpacity = 0.85f;
             std::map<std::string, TouchPlace> touchLayout;
+            bool fullscreen = false;
+            bool centerCursor = true;
         };
     }
 
@@ -322,6 +324,8 @@ namespace perlin {
         o.touchScale = std::clamp(stored.touchScale, 0.5f, 1.8f);
         o.touchOpacity = std::clamp(stored.touchOpacity, 0.2f, 1.0f);
         o.touchLayout = stored.touchLayout;
+        o.fullscreen = stored.fullscreen;
+        o.centerCursor = stored.centerCursor;
         return o;
     }
 
@@ -404,6 +408,8 @@ namespace perlin {
         stored.touchScale = touchScale;
         stored.touchOpacity = touchOpacity;
         stored.touchLayout = touchLayout;
+        stored.fullscreen = fullscreen;
+        stored.centerCursor = centerCursor;
 
         std::string out;
         if (glz::write<glz::opts{.prettify = true}>(stored, out))

@@ -658,6 +658,24 @@ bool AppPlatform_SDL::Initialize() {
     return true;
 }
 
+void AppPlatform_SDL::SetFullscreen(bool fullscreen) {
+#ifdef SDL_PLATFORM_ANDROID
+    (void)fullscreen;
+#else
+    if (!window || args.hidden || touchMode)
+        return;
+    SDL_SetWindowFullscreen(window, fullscreen);
+#endif
+}
+
+bool AppPlatform_SDL::IsFullscreen() const {
+#ifdef SDL_PLATFORM_ANDROID
+    return false;
+#else
+    return window && !args.hidden && (SDL_GetWindowFlags(window) & SDL_WINDOW_FULLSCREEN) != 0;
+#endif
+}
+
 void AppPlatform_SDL::SetCursorCaptured(bool captured) {
     if (args.hidden) {
         cursorCaptured = captured && args.controlPort != 0;
@@ -1017,6 +1035,12 @@ void AppPlatform_SDL::PumpFrame() {
                     SetCursorCaptured(true);
                 recaptureAfterText = false;
             }
+        }
+        // after the grab is released above: warping while captured does nothing
+        if (in.TakeCursorCenter() && !cursorCaptured && !touchMode && !args.hidden) {
+            int w = 0, h = 0;
+            SDL_GetWindowSize(window, &w, &h);
+            SDL_WarpMouseInWindow(window, static_cast<float>(w) * 0.5f, static_cast<float>(h) * 0.5f);
         }
         if (touchMode) {
             const bool keyboard = in.Keyboard();

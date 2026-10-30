@@ -14,6 +14,8 @@
 #include "client/Perlin.hpp"
 #include "util/Relaunch.hpp"
 #include "client/resources/ServerPacks.hpp"
+#include "util/Resources.hpp"
+#include <fstream>
 #include "client/ui/ServerLayer.hpp"
 #include "client/i18n/Lang.hpp"
 #include "client/multiplayer/SkinLoader.hpp"
@@ -462,11 +464,14 @@ namespace perlin {
         if (friendLease) {
             host = friendLease->worldName.empty() ? "friend" : friendLease->worldName;
             port = 0;
+        } else if (pendingSingleplayer) {
+            host = "singleplayer";
+            port = 1;
         } else if (!ParseServer(serverText, host, port)) {
             std::cout << "[perlin] invalid server address '" << options.server << "'" << std::endl;
             return;
         }
-        if (!friendLease && secureSignaling && serverText.rfind(':') == std::string::npos)
+        if (!friendLease && !pendingSingleplayer && secureSignaling && serverText.rfind(':') == std::string::npos)
             port = 443;
 
         particleLevel = nullptr;
@@ -475,6 +480,8 @@ namespace perlin {
             retiredSessions.push_back(std::move(session));
         FinishReplayRecording("the connection was reset");
         session = std::make_unique<BedrockSession>();
+        if (pendingSingleplayer)
+            session->SetInjectedTransport(std::move(pendingSingleplayer));
         session->SetRecordTap(replayCtl.NewSessionTap());
         if (connectsInFlight.load() == 0)
             std::erase_if(retiredSessions, [](const std::unique_ptr<BedrockSession>& s) { return !s->Transferring(); });
@@ -1091,6 +1098,7 @@ namespace perlin {
             formOpenedAt = now;
             formLeftDown = true;
             input.SetTextMode(true);
+            CenterCursorForGui();
         }
         bool cancel = false;
         for (const auto& t : inputManager.TakeTyped()) {
@@ -1713,6 +1721,7 @@ namespace perlin {
             invSignature.clear();
             inputManager.TakeTyped();
             input.SetTextMode(true);
+            CenterCursorForGui();
         }
         if (!invShown && canOpen && (inputManager.Pressed(Action::Inventory) || (preview && !invPreviewOpened))) {
             invPreviewOpened = true;
@@ -1722,6 +1731,7 @@ namespace perlin {
             invSignature.clear();
             inputManager.TakeTyped();
             input.SetTextMode(true);
+            CenterCursorForGui();
             if (live) {
                 if (live->RidingUid() != 0 && live->OpenMountInventory())
                     invMountAsk = now;
@@ -2082,6 +2092,7 @@ namespace perlin {
                 pauseLeftDown = true;
                 inputManager.TakeTyped();
                 input.SetTextMode(true);
+                CenterCursorForGui();
             }
             pauseView = modOpenView;
             optionsPage = modOpenPage;
@@ -2119,6 +2130,7 @@ namespace perlin {
             pauseSignature.clear();
             inputManager.TakeTyped();
             input.SetTextMode(true);
+            CenterCursorForGui();
         } else if (!pauseShown && !live && !preview && inputManager.Pressed(Action::Pause)) {
             platform->SetCursorCaptured(false);
         }
@@ -2232,7 +2244,7 @@ namespace perlin {
                                {Action::Hotbar9, "Hotbar Slot 9"}, {Action::Inventory, "Open/Close Inventory"}}},
                 {"Multiplayer", {{Action::PlayerList, "List Players"}, {Action::Chat, "Open Chat"}, {Action::Command, "Open Command"}}},
                 {"Miscellaneous", {{Action::DebugScreen, "Debug Screen"}, {Action::ToggleHud, "Hide GUI"}, {Action::Screenshot, "Take Screenshot"},
-                                   {Action::CyclePerspective, "Toggle Perspective"}, {Action::Zoom, "Zoom"}}}};
+                                   {Action::CyclePerspective, "Toggle Perspective"}, {Action::Zoom, "Zoom"}, {Action::Fullscreen, "Toggle Fullscreen"}}}};
             const auto keyText = [](const Binding& b) {
                 std::string v = b.Serialize();
                 for (const char* prefix : {"key.keyboard.", "key.mouse.", "pad."}) {
@@ -3464,6 +3476,7 @@ namespace perlin {
                            options.maxFps = steps >= 25 ? 0 : 10 + steps * 10;
                        });
                 toggle(tr("options.vsync", "VSync"), options.vsync);
+                toggle(tr("options.fullscreen", "Fullscreen"), options.fullscreen);
                 model.push_back({std::string("GUI Scale"), options.guiScale == 0 ? tr("options.guiScale.auto", "Auto") : std::to_string(options.guiScale), -1.0f,
                                  [this](float, bool click) {
                                      if (!click)
@@ -3715,6 +3728,7 @@ namespace perlin {
                     slider(tr("options.sensitivity", "Sensitivity"), percent(options.mouseSensitivity / 0.15f), options.mouseSensitivity / 0.30f,
                            [this](float f) { options.mouseSensitivity = std::round(std::clamp(f, 0.0f, 1.0f) * 200.0f) / 100.0f * 0.15f; });
                     toggle(tr("options.invertMouse", "Invert Mouse"), options.invertMouse);
+                    toggle(tr("perlin.options.centerCursor", "Center Cursor"), options.centerCursor);
                     choice(tr("key.sprint", "Sprint"), options.sprintMode, {{"hold", tr("options.key.hold", "Hold")}, {"toggle", tr("options.key.toggle", "Toggle")}});
                     choice(tr("key.sneak", "Sneak"), options.sneakMode, {{"hold", tr("options.key.hold", "Hold")}, {"toggle", tr("options.key.toggle", "Toggle")}});
                     bindsRow(tr("controls.keybinds", "Key Binds..."), 0);
@@ -4792,6 +4806,49 @@ namespace perlin {
                 pingResults[address] = std::move(r);
             });
         }
+    }
+
+    void Perlin::JoinSingleplayer() {
+#ifdef PERLIN_SINGLEPLAYER
+        ReleaseFriendLease();
+        if (!singleplayerServer)
+            singleplayerServer = std::make_unique<EmbeddedServer>();
+        if (!singleplayerServer->Running()) {
+            const std::string dir = paths::DataDir() + "/singleplayer";
+            paths::EnsureDir(dir);
+            // the server reads its block tables from files: write the copies the client carries
+            for (const char* name : {"block_states.json", "block_destroy.tsv"}) {
+                std::string bytes;
+                const std::string path = dir + "/" + name;
+                std::error_code ec;
+                if (resources::Read(name, bytes) && (!std::filesystem::exists(path, ec) || std::filesystem::file_size(path, ec) != bytes.size()))
+                    std::ofstream(path, std::ios::binary) << bytes;
+            }
+#if defined(_WIN32)
+            const char* library = "perlin_server.dll";
+#elif defined(__APPLE__)
+            const char* library = "libperlin_server.dylib";
+#else
+            const char* library = "libperlin_server.so";
+#endif
+            const std::string config = "{\"view_distance\":" + std::to_string(std::clamp(options.renderDistance, 2, 32)) + ",\"block_data_dir\":\"" + dir + "\"}";
+            std::string error;
+            if (!singleplayerServer->Start(paths::ExeDir() + "/" + library, dir, config, error)) {
+                std::cout << "[singleplayer] " << error << std::endl;
+                SetStatusHint("Singleplayer could not start: " + error);
+                return;
+            }
+        }
+        pendingSingleplayer = singleplayerServer->Connect();
+        if (!pendingSingleplayer) {
+            SetStatusHint("Singleplayer could not open a connection.");
+            return;
+        }
+        titleActive = false;
+        Connect();
+#else
+        SetStatusHint("This build has no singleplayer: it was built without PERLIN_BUILD_SERVER.");
+#endif
     }
 
     void Perlin::JoinServer(const std::string& address) {
@@ -6057,6 +6114,8 @@ namespace perlin {
             } else if (const int acc = rowOf(ui::kAccountRowPrefix); acc >= 0) {
                 if (acc < static_cast<int>(title.accounts.size()) && accounts.SetActive(title.accounts[static_cast<size_t>(acc)].id))
                     ApplyActiveAccount();
+            } else if (hover == ui::kTitleSingle) {
+                JoinSingleplayer();
             } else if (hover == ui::kTitleMulti) {
                 title.page = ui::TitlePage::Servers;
                 title.tab = ui::ServerTab::Lan;
@@ -9587,6 +9646,27 @@ namespace perlin {
             }
 
 #ifndef __EMSCRIPTEN__
+            {
+                // fullscreen: the option is the intent; the window can also change on its own (os shortcut), so adopt that once settled
+                static int appliedFullscreen = -1;
+                static Clock::time_point fullscreenSettle{};
+                if (inputManager.Pressed(Action::Fullscreen)) {
+                    options.fullscreen = !options.fullscreen;
+                    options.Save();
+                }
+                const bool windowFullscreen = platform->IsFullscreen();
+                const auto fsNow = Clock::now();
+                if (appliedFullscreen < 0 || static_cast<bool>(appliedFullscreen) != options.fullscreen) {
+                    if (windowFullscreen != options.fullscreen)
+                        platform->SetFullscreen(options.fullscreen);
+                    appliedFullscreen = options.fullscreen;
+                    fullscreenSettle = fsNow + std::chrono::milliseconds(1500);
+                } else if (fsNow >= fullscreenSettle && windowFullscreen != options.fullscreen) {
+                    options.fullscreen = windowFullscreen;
+                    appliedFullscreen = windowFullscreen;
+                    options.Save();
+                }
+            }
             const bool wantVsync = options.vsync && !exportJob.active;
             if (appliedVsync != wantVsync) {
                 appliedVsync = wantVsync;

@@ -1336,3 +1336,19 @@ foreach(PERLIN_LOCAL_TARGET IN LISTS PERLIN_LOCAL_TARGETS)
         target_include_directories(${PERLIN_LOCAL_TARGET} PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/generated")
     endif()
 endforeach()
+
+# perlin server: dedicated exe, shared library for singleplayer, plugins; see server/README.md
+option(PERLIN_BUILD_SERVER "Build the Perlin server (dedicated executable and perlin_server library)" OFF)
+if(PERLIN_BUILD_SERVER AND NOT EMSCRIPTEN AND NOT ANDROID)
+    add_subdirectory(server)
+    # singleplayer: the client loads perlin_server beside the executable and joins it in process
+    if(TARGET Perlin AND TARGET perlin_server)
+        target_sources(Perlin PRIVATE server/client_bridge/EmbeddedServer.cpp)
+        target_include_directories(Perlin PRIVATE server/client_bridge server/include)
+        target_compile_definitions(Perlin PRIVATE PERLIN_SINGLEPLAYER=1 PERLIN_SERVER_STATIC)
+        add_dependencies(Perlin perlin_server)
+        add_custom_command(TARGET perlin_server POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:perlin_server> $<TARGET_FILE_DIR:Perlin>
+            VERBATIM)
+    endif()
+endif()

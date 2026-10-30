@@ -66,6 +66,8 @@ namespace perlin {
         const std::string& PlayerName() const { return playerName; }
         void SetPlayerName(const std::string& name) { playerName = name.empty() ? std::string("Perlin") : name; }
         void SetTransport(const std::string& mode) { transportMode = mode; }
+        // a ready transport (the embedded server's) used by the next Connect instead of dialling out
+        void SetInjectedTransport(std::unique_ptr<Transport> transport) { injectedTransport = std::move(transport); }
         void SetFriendLease(std::shared_ptr<friendworld::Lease> lease) { friendLease = std::move(lease); }
         void SetSkin(LoadedSkin loaded) { skin = std::move(loaded); }
         const LoadedSkin& Skin() const { return skin; }
@@ -853,6 +855,7 @@ void RequestRespawn();
         void SetDisconnectInfo(int reason, const std::string& message, bool lost);
         void SetOutdated(int who);
         bool usedRak = false;
+        std::unique_ptr<Transport> injectedTransport;
 
         std::unique_ptr<Transport> net;
         std::unique_ptr<PacketCipher> cipher;

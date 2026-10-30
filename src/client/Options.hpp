@@ -62,6 +62,9 @@ namespace perlin {
         // (sidebars, forms, container screens a server pack restyles) always uses the server's json ui
         int maxFps = 120;
         bool vsync = true;
+        bool fullscreen = false;
+        // moves the pointer to the middle of the window when an in-game gui (inventory, menus, forms) opens
+        bool centerCursor = true;
         bool eulaAccepted = false;
         int renderDistance = 8;
         float fov = 70.0f;

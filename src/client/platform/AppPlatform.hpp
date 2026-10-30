@@ -35,6 +35,9 @@ public:
     }
 
     virtual void SetCursorCaptured(bool captured) { (void)captured; }
+    // borderless fullscreen on the window's current display; no-op where the window is always fullscreen
+    virtual void SetFullscreen(bool fullscreen) { (void)fullscreen; }
+    virtual bool IsFullscreen() const { return false; }
 
     virtual void PumpFrame() {}
 
