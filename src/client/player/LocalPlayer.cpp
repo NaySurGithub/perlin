@@ -168,22 +168,27 @@ namespace perlin {
         ReplayFrom(session, first);
     }
 
-    // actor data stamped X is the strength the server moves X + 1 with (packet kept on frame X, replay from X + 1:
-    // 0x142CD9D60); a value none of our frames near it carry means the prediction drifted, so restart from it
+    // actor data stamped X is the strength after the step that follows move X: the one frame X + 1 moves with
+    // (vanilla keeps the packet on frame X and replays from X + 1, 0x142CD9D60); another value there means the
+    // prediction drifted, so it restarts from the server's
     void LocalPlayer::SyncFreeze(BedrockSession& session) {
         for (const auto& update : session.TakeFreezeUpdates()) {
-            bool known = false, matched = false;
+            if (update.tick == 0 || history.empty() || update.tick < history.front().tick ||
+                update.tick > history.back().tick)
+                continue;
+            bool matched = update.tick == history.back().tick && freezeStrength == update.strength;
             for (const Record& r : history)
-                if (update.tick == 0 || (r.tick >= update.tick && r.tick <= update.tick + 2)) {
-                    known = true;
-                    matched |= r.freeze == update.strength;
-                }
-            if (!known || matched)
+                if (r.tick == update.tick + 1)
+                    matched = r.freeze == update.strength;
+            if (matched)
                 continue;
             float strength = update.strength;
             for (const Record& r : history)
-                if (update.tick != 0 && r.tick > update.tick + 1)
+                if (r.tick > update.tick)
                     strength = physics::bds::FreezeStep(strength, r.freezeRising);
+            if (PERLIN_ENV("PERLIN_CORRECTION_LOG"))
+                std::cout << "[freeze] resync stamp=" << update.tick << " server=" << update.strength
+                          << " ours=" << freezeStrength << " now=" << strength << std::endl;
             freezeStrength = strength;
         }
     }
@@ -565,11 +570,12 @@ namespace perlin {
             if (!physics::PoseFits(state, world, physics::kStandHeight)) {
                 if (physics::PoseFits(state, world, physics::kSneakHeight))
                     forcedSneak = true;
-                // SneakTriggerIntent 0x14B313690: a 0.6 gap starts crawling, unless in water last tick (stops it);
-                // no gap at all keeps the current pose
-                else if (physics::PoseFits(state, world, physics::kCrawlHeight))
+                // SneakTriggerIntent 0x14B313690: a 0.6 gap starts crawling; in water last tick it starts swimming
+                // instead (0x200000) and stops a crawl; no gap at all keeps the current pose
+                else if (physics::PoseFits(state, world, physics::kCrawlHeight)) {
                     wantCrawl = !state.inWater;
-                else
+                    swimming = state.inWater;
+                } else
                     wantCrawl = crawling || state.crawling;
             }
         }
@@ -612,18 +618,22 @@ namespace perlin {
             if (length < kSprintAxis || tooHungryToSprint || rideLock || !currentWater)
                 swimming = false;
         }
-        // SneakTriggerIntent 0x14B313690 under a low ceiling: a sneak gap with no move input, or a crawl gap
-        // out of water (last tick), turns the swim into a crawl
+        // SneakTriggerIntent 0x14B313690 under a low ceiling: a sneak gap with no move input stops the swim into a
+        // sneak (0x400000 + start sneak, no crawl); a crawl gap out of water (last tick) turns it into a crawl
         if (swimming && !physics::PoseFits(state, world, physics::kStandHeight)) {
             const float moveSq = forwardKeys * forwardKeys + strafeKeys * strafeKeys;
-            const bool toCrawl = physics::PoseFits(state, world, physics::kSneakHeight)
+            const bool sneakGap = physics::PoseFits(state, world, physics::kSneakHeight);
+            const bool leaveSwim = sneakGap
                 ? moveSq < 0.49999997f
                 : physics::PoseFits(state, world, physics::kCrawlHeight) && !state.inWater;
-            if (toCrawl) {
+            if (leaveSwim) {
                 swimming = false;
-                crawling = true;
                 sprinting = false;
                 sneaking = true;
+                if (sneakGap)
+                    forcedSneak = true;
+                else
+                    crawling = true;
             }
         }
         // StartGlidingIntentSystem 0x14b34d5e0: no lava, levitation or pose test; lava only picks the lava
@@ -725,8 +735,9 @@ namespace perlin {
         in.overDescendableBlock = scaffold.descendable;
         in.gravity.descendThroughBlock = in.sneak && in.overDescendableBlock;
 
-        // FreezingSystem 0x145E14260 runs after the server's move: this tick moves with the strength left by the box
-        // after last tick; any leather armor piece (0x140BC68B0) or spectator mode only thaws
+        // FreezingSystem 0x145E14260 runs after the server's move (0x146FF8110, after the movement group): this tick
+        // moves with the strength the last step left, the step reads the box after this move; any leather armor
+        // piece (0x140BC68B0) or spectator mode only thaws
         bool leatherArmor = false;
         const auto inventory = session.GetInventory();
         for (const auto& piece : inventory.armor) {
@@ -738,11 +749,6 @@ namespace perlin {
         }
         const bool spectatorMode = session.GameType() == 6 ||
             (session.GameType() == 5 && session.World().worldGameMode == 6);
-        const bool freezeRising = !leatherArmor && !spectatorMode && physics::bds::TouchesPowderSnow(
-            static_cast<float>(contactBox.x0), static_cast<float>(contactBox.y0), static_cast<float>(contactBox.z0),
-            static_cast<float>(contactBox.x1), static_cast<float>(contactBox.y1), static_cast<float>(contactBox.z1),
-            [&](int x, int y, int z) { return world.Query(x, y, z).powderSnow; });
-        freezeStrength = physics::bds::FreezeStep(freezeStrength, freezeRising);
 
         physics::Attributes attributes;
         attributes.speed = session.PredictedMovementSpeed(sprinting, freezeStrength);
@@ -783,7 +789,6 @@ namespace perlin {
         rec.before = state;
         rec.simulated = simulate;
         rec.freeze = freezeStrength;
-        rec.freezeRising = freezeRising;
         rec.teleport = tickTeleport;
         // a stamp past the newest frame still lands on the live state at once (0x142CD98E0): next tick, whatever the stamp
         for (const auto& pending : futureMotion) {
@@ -809,6 +814,12 @@ namespace perlin {
             state.onGround = true;
             flying = false;
         }
+        const auto frozenBox = physics::BoundingBox(state, state.collisionHeight == static_cast<float>(physics::kSneakHeight));
+        rec.freezeRising = !leatherArmor && !spectatorMode && physics::bds::TouchesPowderSnow(
+            static_cast<float>(frozenBox.x0), static_cast<float>(frozenBox.y0), static_cast<float>(frozenBox.z0),
+            static_cast<float>(frozenBox.x1), static_cast<float>(frozenBox.y1), static_cast<float>(frozenBox.z1),
+            [&](int x, int y, int z) { return world.Query(x, y, z).powderSnow; });
+        freezeStrength = physics::bds::FreezeStep(freezeStrength, rec.freezeRising);
         walkBob.Tick(std::hypot(state.x - before.x, state.z - before.z), state.onGround && !flying,
                      state.inWater && sprinting);
         ++tickCounter;

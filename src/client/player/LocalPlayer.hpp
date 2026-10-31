@@ -105,7 +105,7 @@ namespace perlin {
             physics::State after;
             std::optional<std::array<double, 3>> motion;
             std::optional<BedrockSession::ServerMotion> teleport;
-            // freeze strength this tick moves with, and whether the box before it rose it
+            // freeze strength this tick moves with, and whether the box after its move rose it
             float freeze = 0;
             bool freezeRising = false;
         };
