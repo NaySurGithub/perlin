@@ -168,9 +168,10 @@ namespace perlin {
         ReplayFrom(session, first);
     }
 
-    // actor data stamped X is the strength after the step that follows move X: the one frame X + 1 moves with
-    // (vanilla keeps the packet on frame X and replays from X + 1, 0x142CD9D60); another value there means the
-    // prediction drifted, so it restarts from the server's
+    // actor data and attributes are stamped with the ReplayStateComponent tick (+24) of the last input the server
+    // took (0x140BA9110, 0x14403EA50): the value after that tick's freeze step, the one frame X + 1 moves with.
+    // Vanilla files it on frame X + 1 (0x142CD98E0) and a later packet with the same stamp overwrites it there; a
+    // stamp the server skipped (two inputs in one server tick) leaves the frame on the previous value
     void LocalPlayer::SyncFreeze(BedrockSession& session) {
         for (const auto& update : session.TakeFreezeUpdates()) {
             if (update.tick == 0 || history.empty() || update.tick < history.front().tick ||
