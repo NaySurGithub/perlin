@@ -39,6 +39,8 @@ namespace perlin::server {
         void SendRaw(const std::string& message);
         void Kick(const std::string& reason);
         void Teleport(double x, double y, double z);
+        // also turns the player: yaw and pitch in degrees
+        void Teleport(double x, double y, double z, float yawDegrees, float pitchDegrees);
         void Close();
 
         uint64_t Id() const { return runtimeId; }
@@ -66,6 +68,7 @@ namespace perlin::server {
         void MoveItem(const ItemEntity& item);
         void TakeItem(uint64_t itemId, uint64_t takerRuntimeId);
         float Yaw() const { return yaw; }
+        float Pitch() const { return pitch; }
         void SendMove(const Session& other, uint8_t mode);
         // sends a chunk to the player if inside their radius and not already sent
         bool WantsChunk(ChunkPos pos) const;
@@ -73,6 +76,21 @@ namespace perlin::server {
         PlayerInventory& Inventory() { return inventory; }
         bool Creative() const { return creative; }
         int GameMode() const { return gameMode; }
+        bool Spectator() const { return gameMode == 6; }
+        // spectator flight speed as a multiple of the normal one: 1, 2, 5, 10 or 20
+        int FlySpeedLevel() const { return flySpeedLevel; }
+        // false when the level is not one of the five or the player is not a spectator; resends the abilities
+        bool SetFlySpeedLevel(int level);
+        // one line over the hotbar
+        void SendActionBar(const std::string& text);
+        // world state pushed by commands
+        void SendTime(int32_t ticks);
+        void SendWeather(bool rain, bool thunder);
+        void SendGameRule(const std::string& lowerName, bool boolean, int value);
+        void SendSpawnPosition(int x, int y, int z, bool world);
+        void SendDifficulty(int difficulty);
+        // type: 0 clear, 1 reset, 2 title, 3 subtitle, 4 action bar, 5 times (fade in, stay, fade out in ticks)
+        void SendTitle(int type, const std::string& text, int fadeIn = 10, int stay = 70, int fadeOut = 20);
         // 0 survival, 1 creative, 2 adventure; tells the client so its abilities (flying, instant break) follow
         void SetGameMode(int mode);
         // permission changes take effect without rejoining: the client gets its abilities and command list again
@@ -139,6 +157,7 @@ namespace perlin::server {
         bool isOperator = false;
         // permissions.json "visitor": no building, breaking, fighting or opening things
         bool isVisitor = false;
+        int flySpeedLevel = 1;
         bool creative = false;
         int gameMode = 0;
         PlayerInventory inventory;

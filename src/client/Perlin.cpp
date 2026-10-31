@@ -135,9 +135,16 @@ namespace perlin {
             };
             static std::unordered_map<uint64_t, Band> bands;
             static const Level* owner = nullptr;
-            if (owner != &level || bands.size() > 256) {
+            if (owner != &level || bands.size() > 2048) {
                 bands.clear();
                 owner = &level;
+            }
+            // changeCounter is level-wide: busy servers bump it every tick, refreshing every band at once
+            static std::chrono::steady_clock::time_point budgetFrame{};
+            static int budget = 0;
+            if (now != budgetFrame) {
+                budgetFrame = now;
+                budget = 2;
             }
             const int cx = bx >> 4, cz = bz >> 4, band = by >> 4;
             const uint64_t key = (static_cast<uint64_t>(cx & 0xFFFFF) << 28) | (static_cast<uint64_t>(cz & 0xFFFFF) << 8) |
@@ -145,11 +152,19 @@ namespace perlin {
             Band& b = bands[key];
             const uint64_t counter = level.changeCounter.load(std::memory_order_relaxed);
             const auto age = now - b.at;
-            if (b.at == std::chrono::steady_clock::time_point{} ||
-                (counter != b.counter && age > std::chrono::milliseconds(400)) || age > std::chrono::seconds(20)) {
-                b.at = now;
-                b.counter = counter;
-                ChunkLighting::Compute(level, {cx, cz}, band * 16 - 8, band * 16 + 23, b.lit);
+            const bool fresh = b.at == std::chrono::steady_clock::time_point{};
+            // out of budget: open sky until this band's turn comes
+            if (fresh && budget <= 0)
+                return 0xF0;
+            if (fresh || (budget > 0 && ((counter != b.counter && age > std::chrono::milliseconds(400)) || age > std::chrono::seconds(20)))) {
+                budget--;
+                // the level lock is held by chunk application and meshing: never wait for it on the render thread
+                if (ChunkLighting::Compute(level, {cx, cz}, band * 16 - 8, band * 16 + 23, b.lit, true)) {
+                    b.at = now;
+                    b.counter = counter;
+                } else if (fresh) {
+                    return 0xF0;
+                }
             }
             return b.lit.At(bx & 15, by, bz & 15);
         }
@@ -7088,7 +7103,7 @@ namespace perlin {
             }
             if (PERLIN_ENV("PERLIN_PREVIEW_DEAD"))
                 previewEntities.Die(rid);
-            if (PERLIN_ENV("PERLIN_PREVIEW_ENTITY_WALK"))
+            if (PERLIN_ENV("PERLIN_PREVIEW_ENTITY_WALK") || PERLIN_ENV("PERLIN_PREVIEW_ENTITY_HEAD"))
                 previewWalk.push_back(rid);
         }
     }
@@ -7549,11 +7564,25 @@ namespace perlin {
                     if (inputManager.Pressed(static_cast<Action>(static_cast<int>(Action::Hotbar1) + i)))
                         newSlot = i;
                 static float scrollAccum = 0.0f;
+                // in spectator the wheel sets the flying speed (1x, 2x, 5x, 10x, 20x) instead of picking a hotbar slot; the server resets to 1x on entering the mode
+                static int spectatorSpeed = 0;
+                static const int kSpectatorSpeeds[5] = {1, 2, 5, 10, 20};
+                const bool wheelFliesFaster = live && hudState.mode == ui::GameMode::Spectator;
+                if (!wheelFliesFaster)
+                    spectatorSpeed = 0;
                 if (!inputManager.IsDown(Action::Zoom)) {
                     scrollAccum += inputManager.Scroll();
                     while (scrollAccum >= 1.0f || scrollAccum <= -1.0f) {
                         const int step = scrollAccum > 0.0f ? 1 : -1;
                         scrollAccum -= static_cast<float>(step);
+                        if (wheelFliesFaster) {
+                            const int next = std::clamp(spectatorSpeed + step, 0, 4);
+                            if (next != spectatorSpeed) {
+                                spectatorSpeed = next;
+                                live->SendCommand("flyspeed " + std::to_string(kSpectatorSpeeds[next]));
+                            }
+                            continue;
+                        }
                         const int from = newSlot >= 0 ? newSlot : hudState.selectedSlot;
                         newSlot = ((from - step) % 9 + 9) % 9;
                     }
@@ -7991,12 +8020,20 @@ namespace perlin {
                     const bool sameCell = destination == lastBuildCell && useTime - lastBuildAt < 200;
                     if (use == blockuse::Use::Place && holdsBlock && sameCell && useHeld && !usePressed)
                         use = blockuse::Use::Nothing;
-                    // never place a block into the player's own body
+                    // never place a block into the player's own body, and send nothing: servers that trust the
+                    // click, or see the player a tick behind mid-jump, place it and push the player out
+                    bool intoBody = false;
                     if (use == blockuse::Use::Place && holdsBlock) {
-                        const auto& placed = LevelCollision::ShapeOf(BlockPalette::Instance().InternRuntime(static_cast<int32_t>(held.blockRuntimeId)));
-                        const std::vector<physics::Box> shape(placed.boxes.begin(), placed.boxes.end());
-                        if (heldbuild::OverlapsBody(destination, shape, physics::BoundingBox(player.State(), player.Sneaking())))
+                        const uint16_t placedId = BlockPalette::Instance().InternRuntime(static_cast<int32_t>(held.blockRuntimeId));
+                        const auto& placed = LevelCollision::ShapeOf(placedId);
+                        std::vector<physics::Box> shape(placed.boxes.begin(), placed.boxes.end());
+                        // an id the palette can't resolve reads as air, with no shape: assume a full cube
+                        if (placedId == 0)
+                            shape = {physics::Box{0, 0, 0, 1, 1, 1}};
+                        if (heldbuild::OverlapsBody(destination, shape, physics::BoundingBox(player.State(), player.Sneaking()))) {
                             use = blockuse::Use::Nothing;
+                            intoBody = true;
+                        }
                     }
                     // fresh clicks start item use immediately, food included
                     if (usePressed || (useHeld && repeatReady)) {
@@ -8019,7 +8056,7 @@ namespace perlin {
                         }
                         const bool allowed = usePressed || (use == blockuse::Use::Place);
                         const bool consumableInAir = holdsItem && !holdsBlock && use == blockuse::Use::Nothing && HandRenderer::IsFood(held.name);
-                        if (useAim.kind == AimHit::Kind::Block && allowed && !consumableInAir &&
+                        if (useAim.kind == AimHit::Kind::Block && allowed && !consumableInAir && !intoBody &&
                             !DispatchModInteract(abi::InteractKind::UseOnBlock, useAim.bx, useAim.by, useAim.bz, useAim.face, 0)) {
                             bool sent = !live;
                             if (live) {
@@ -8064,7 +8101,7 @@ namespace perlin {
                                 sounds.PlayBlockEvent(held.name, "place", glm::dvec3(dest[0] + 0.5, dest[1] + 0.5, dest[2] + 0.5));
                             }
                         }
-                        if (usePressed && !earlyItemUse && !blockedFoodUse && live && holdsItem && use == blockuse::Use::Nothing && !interactedEntity &&
+                        if (usePressed && !earlyItemUse && !blockedFoodUse && live && holdsItem && use == blockuse::Use::Nothing && !interactedEntity && !intoBody &&
                             !DispatchModInteract(abi::InteractKind::UseItem, 0, 0, 0, 0, 0)) {
                             CustomItemDef custom;
                             const bool heldUse = ServerBlocks::Instance().Item(held.name, custom)
@@ -8888,13 +8925,19 @@ namespace perlin {
                             ApplyBedPose(live->NetLevel(), e);
                 if (!live && !previewWalk.empty()) {
                     static std::unordered_map<uint64_t, glm::dvec3> base;
-                    static const auto t0 = std::chrono::steady_clock::now();
-                    const double t = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
+                    // timed from when the world settles: the screenshot fires at PERLIN_PREVIEW_WAIT on the same clock
+                    const double t = std::chrono::duration<double>(frameStart - previewReadyAt).count();
+                    static const bool walking = PERLIN_ENV("PERLIN_PREVIEW_ENTITY_WALK") != nullptr;
+                    static const double walkTurn = PERLIN_ENV("PERLIN_PREVIEW_ENTITY_WALK_DIR") ? std::atof(PERLIN_ENV("PERLIN_PREVIEW_ENTITY_WALK_DIR")) : 0.0;
+                    // head turns by this much between 0.5 s and 1.5 s
+                    static const float headTurn = PERLIN_ENV("PERLIN_PREVIEW_ENTITY_HEAD") ? static_cast<float>(std::atof(PERLIN_ENV("PERLIN_PREVIEW_ENTITY_HEAD"))) : 0.0f;
                     for (entity::Entity& pe : entities)
                         if (std::find(previewWalk.begin(), previewWalk.end(), pe.runtimeId) != previewWalk.end()) {
                             const glm::dvec3 b = base.emplace(pe.runtimeId, pe.pos).first->second;
-                            const double yawRad = glm::radians(static_cast<double>(pe.yaw));
-                            pe.pos = b + glm::dvec3(-std::sin(yawRad), 0.0, std::cos(yawRad)) * std::sin(t * 1.5) * 1.5;
+                            const double yawRad = glm::radians(static_cast<double>(pe.yaw) + walkTurn);
+                            // always from the base: Move takes eye height for players, feeding pos back would sink it
+                            pe.pos = b + glm::dvec3(-std::sin(yawRad), 0.0, std::cos(yawRad)) * (walking ? std::sin(t * 1.5) * 1.5 : 0.0);
+                            pe.headYaw = pe.yaw + headTurn * static_cast<float>(std::clamp(t - 0.5, 0.0, 1.0));
                             previewEntities.Move(pe.runtimeId, pe.pos, pe.pitch, pe.yaw, pe.headYaw, true);
                         }
                 }

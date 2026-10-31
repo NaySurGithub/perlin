@@ -371,7 +371,7 @@ void AppPlatform_SDL::ShowSignInCode(const std::string& url, const std::string& 
             SDL_SetClipboardText(job->code.c_str());
             SDL_OpenURL(job->url.c_str());
         },
-        new Job{url, code}, false);
+        new Job{url + (url.find('?') == std::string::npos ? "?otc=" : "&otc=") + code, code}, false);
 }
 
 void AppPlatform_SDL::SetClipboard(const std::string& text) {

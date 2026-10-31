@@ -746,6 +746,22 @@ namespace perlin::ui {
                         }
                     }
                 }
+                // the game's chat feed: draw ours there, whichever pack redefined the panel holding it
+                for (const auto& child : node->children) {
+                    const Json* factory = child->props.Find("factory");
+                    const Json* name = factory && factory->IsObject() ? factory->Find("name") : nullptr;
+                    if (!name || !name->IsString() || name->string != "chat_item_factory")
+                        continue;
+                    node->type = "custom";
+                    node->props.Set("type", Json(std::string("custom")));
+                    node->props.Set("renderer", Json(std::string("chat_renderer")));
+                    Json zero = Json::MakeArray();
+                    zero.array = {Json(0), Json(0)};
+                    node->props.Set("size", zero);
+                    node->props.Set("max_size", zero);
+                    node->children.clear();
+                    break;
+                }
                 return node;
             }
 

@@ -39,7 +39,9 @@ namespace perlin::server {
         c.maxPlayers = static_cast<uint32_t>(std::clamp<int64_t>(root["max_players"].Int(c.maxPlayers), 1, 1000));
         c.viewDistance = static_cast<uint32_t>(std::clamp<int64_t>(root["view_distance"].Int(c.viewDistance), 2, 64));
         c.tickRate = static_cast<uint32_t>(std::clamp<int64_t>(root["tick_rate"].Int(c.tickRate), 1, 200));
-        c.gameMode = static_cast<int>(std::clamp<int64_t>(root["gamemode"].Int(c.gameMode), 0, 2));
+        c.gameMode = static_cast<int>(root["gamemode"].Int(c.gameMode));
+        if (c.gameMode != 0 && c.gameMode != 1 && c.gameMode != 2 && c.gameMode != 6)
+            c.gameMode = 0;
         c.seed = static_cast<uint64_t>(root["seed"].Int(static_cast<int64_t>(c.seed)));
         c.whitelist = root["whitelist"].Bool(c.whitelist);
         c.lanDiscovery = root["lan_discovery"].Bool(c.lanDiscovery);
@@ -237,7 +239,7 @@ namespace perlin::server {
             return out;
         }
 
-        const char* GameModeName(int mode) { return mode == 1 ? "creative" : mode == 2 ? "adventure" : "survival"; }
+        const char* GameModeName(int mode) { return mode == 1 ? "creative" : mode == 2 ? "adventure" : mode == 6 ? "spectator" : "survival"; }
         const char* DifficultyName(int d) { return d == 0 ? "peaceful" : d == 2 ? "normal" : d == 3 ? "hard" : "easy"; }
 
         // the keys of bds's own server.properties, in its order, with its defaults; the ones this server acts on are read from the config when written
@@ -377,7 +379,8 @@ namespace perlin::server {
             if (lower == "survival" || lower == "0") gameMode = 0;
             else if (lower == "creative" || lower == "1") gameMode = 1;
             else if (lower == "adventure" || lower == "2") gameMode = 2;
-            else bad("survival, creative or adventure");
+            else if (lower == "spectator" || lower == "6") gameMode = 6;
+            else bad("survival, creative, adventure or spectator");
             return true;
         }
         if (key == "force-gamemode") return boolean(forceGamemode);
@@ -532,7 +535,10 @@ namespace perlin::server {
             return LoadProperties(props.string(), error);
         if (std::filesystem::exists(legacy, ec))
             return Load(legacy.string(), error);
-        return ServerConfig{};
+        // no config yet: a new world, so a new seed
+        ServerConfig fresh;
+        fresh.randomSeed = true;
+        return fresh;
     }
 
     bool ServerConfig::SaveProperties(const std::string& path) const {

@@ -66,8 +66,10 @@ PS_API ps_server* ps_create(const ps_options* options) {
                 if (over["view_distance"].Int(0) > 0) config.viewDistance = static_cast<uint32_t>(over["view_distance"].Int());
                 if (over["max_players"].Int(0) > 0) config.maxPlayers = static_cast<uint32_t>(over["max_players"].Int());
                 if (over["terrain_backend"].IsString()) config.terrainBackend = over["terrain_backend"].text;
-                if (over["gamemode"].Int(-1) >= 0) config.gameMode = static_cast<int>(over["gamemode"].Int());
+                if (const int64_t gm = over["gamemode"].Int(-1); gm == 0 || gm == 1 || gm == 2 || gm == 6) config.gameMode = static_cast<int>(gm);
                 if (over["plugin_dir"].IsString()) config.pluginDir = over["plugin_dir"].text;
+                if (over["generator"].IsString()) config.generator = over["generator"].text;
+                if (over["seed"].kind == json::Value::Kind::Number) { config.seed = static_cast<uint64_t>(over["seed"].Int()); config.randomSeed = false; }
             } else {
                 g_error = "config_json: " + error;
                 return nullptr;

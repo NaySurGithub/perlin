@@ -15,8 +15,10 @@
 #include "rhi/ShaderLibrary.hpp"
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <cstring>
+#include <mutex>
 #include <random>
 
 namespace perlin::server {
@@ -63,8 +65,15 @@ namespace perlin::server {
 
             const char* Name() const override { return failed ? "vanilla/cpu (gpu failed)" : name.c_str(); }
             size_t PreferredBatch() const override { return failed ? 1 : kBatch; }
-            // the cpu fallback may be called from several threads, the device queue may not
-            bool ThreadSafe() const override { return false; }
+            // the device section of a batch (upload, dispatch, wait, readback) is one critical section; everything after it (block storage, the cpu stages, the cpu
+            // fallback) runs outside it, so several workers keep the cpu busy while the next batch is on the gpu
+            bool ThreadSafe() const override { return true; }
+            bool FindSpawn(int& x, int& y, int& z) override { return cpu->FindSpawn(x, y, z); }
+            // searching samples single points on the cpu's workers; the gpu is built for batches of whole chunks
+            bool LocateBiome(int biome, int fromX, int fromZ, int radius, const std::atomic<bool>& cancel, int& x, int& y, int& z) override {
+                return cpu->LocateBiome(biome, fromX, fromZ, radius, cancel, x, y, z);
+            }
+            bool HasBiomes() const override { return true; }
 
             bool Init(const ServerConfig& config, std::string& note) {
                 std::string error;
@@ -327,8 +336,8 @@ namespace perlin::server {
                     const size_t n = std::min<size_t>(kBatch, positions.size() - first);
                     if (!Batch(positions.subspan(first, n), out.subspan(first, n))) {
                         // the device stopped answering: the cpu takes over from here, nothing else changes
-                        LogWarn("gpu terrain stopped responding; generating on the cpu from now on");
-                        failed = true;
+                        if (!failed.exchange(true))
+                            LogWarn("gpu terrain stopped responding; generating on the cpu from now on");
                         cpu->Generate(positions.subspan(first), out.subspan(first));
                         return;
                     }
@@ -353,7 +362,8 @@ namespace perlin::server {
             bool Batch(std::span<const ChunkPos> positions, std::span<ChunkColumn> out) {
                 const int last = gpuSurface ? 3 : (gpuBiome ? 2 : 1);
                 BatchOut b;
-                if (!Dispatch(positions, last, gpuBiome && !gpuSurface, b))
+                // the columns come back whenever the biome stage ran on the gpu: the features need each column's biome
+                if (!Dispatch(positions, last, gpuBiome, b))
                     return false;
                 std::vector<uint16_t> blocks;
                 std::array<uint8_t, 256> biomes;
@@ -364,6 +374,10 @@ namespace perlin::server {
                         const uint32_t* ids = reinterpret_cast<const uint32_t*>(density);
                         for (size_t k = 0; k < kBlocksPerChunk; k++)
                             blocks[k] = static_cast<uint16_t>(ids[k]);
+                        // the surface stage runs only after the biome stage, so the columns are here
+                        for (size_t col = 0; col < 256; col++)
+                            biomes[col] = static_cast<uint8_t>(b.columns[(i * 256 + col) * 2 + 1]);
+                        cpu->Features().Apply(positions[i].x, positions[i].z, biomes.data(), blocks.data());
                         vanilla::VanillaSurface::Store(blocks.data(), out[i]);
                         continue;
                     }
@@ -373,13 +387,16 @@ namespace perlin::server {
                     } else {
                         cpu->BiomesOf(density, positions[i].x, positions[i].z, biomes.data());
                     }
-                    cpu->Surface().Fill(density, biomes.data(), out[i]);
+                    cpu->Surface().Fill(density, biomes.data(), out[i], &cpu->Features(), positions[i].x, positions[i].z);
                 }
                 return true;
             }
 
             // runs phases 0..lastPhase for up to kBatch chunks and reads back the density buffer (and the column results when asked); false when the device hangs
             bool Dispatch(std::span<const ChunkPos> positions, int lastPhase, bool wantColumns, BatchOut& out) {
+                std::lock_guard<std::mutex> lock(deviceMutex);
+                if (failed)
+                    return false;
                 const uint32_t count = static_cast<uint32_t>(positions.size());
                 uint8_t* chunkMem = device->Map(chunkBuffer);
                 for (uint32_t i = 0; i < count; i++) {
@@ -435,8 +452,10 @@ namespace perlin::server {
                 sd.signals = std::span<const rhi::FenceOp>(&signal, 1);
                 device->Submit(rhi::QueueType::Graphics, sd);
                 // a wedged or lost device must not hang the server: a generous bound, then the caller hands over to the cpu
-                if (!device->WaitFence(fence, fenceValue, 30ull * 1000 * 1000 * 1000))
+                if (!device->WaitFence(fence, fenceValue, 30ull * 1000 * 1000 * 1000)) {
+                    failed = true;
                     return false;
+                }
                 device->Invalidate(readback, 0, bytes);
                 out.density.resize(static_cast<size_t>(count) * kBlocksPerChunk);
                 std::memcpy(out.density.data(), device->Map(readback), bytes);
@@ -450,7 +469,8 @@ namespace perlin::server {
 
             std::string name = "vanilla/gpu";
             std::string deviceName;
-            bool failed = false;
+            std::atomic<bool> failed{false};
+            std::mutex deviceMutex;
             bool gpuBiome = false, gpuSurface = false;
             // the reference, the fallback for every stage, and the owner of the biome and block rules
             std::unique_ptr<vanilla::VanillaCpuBackend> cpu;
