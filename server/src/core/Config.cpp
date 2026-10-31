@@ -2,6 +2,7 @@
 
 #include "core/Json.hpp"
 #include "core/Log.hpp"
+#include "util/Strings.hpp"
 
 #include <algorithm>
 #include <cstdlib>
@@ -39,7 +40,9 @@ namespace perlin::server {
         c.maxPlayers = static_cast<uint32_t>(std::clamp<int64_t>(root["max_players"].Int(c.maxPlayers), 1, 1000));
         c.viewDistance = static_cast<uint32_t>(std::clamp<int64_t>(root["view_distance"].Int(c.viewDistance), 2, 64));
         c.tickRate = static_cast<uint32_t>(std::clamp<int64_t>(root["tick_rate"].Int(c.tickRate), 1, 200));
-        c.gameMode = static_cast<int>(std::clamp<int64_t>(root["gamemode"].Int(c.gameMode), 0, 2));
+        c.gameMode = static_cast<int>(root["gamemode"].Int(c.gameMode));
+        if (c.gameMode != 0 && c.gameMode != 1 && c.gameMode != 2 && c.gameMode != 6)
+            c.gameMode = 0;
         c.seed = static_cast<uint64_t>(root["seed"].Int(static_cast<int64_t>(c.seed)));
         c.whitelist = root["whitelist"].Bool(c.whitelist);
         c.lanDiscovery = root["lan_discovery"].Bool(c.lanDiscovery);
@@ -106,14 +109,6 @@ namespace perlin::server {
     }
 
     namespace {
-        std::string Trim(const std::string& s) {
-            size_t a = 0, b = s.size();
-            while (a < b && std::isspace(static_cast<unsigned char>(s[a])))
-                a++;
-            while (b > a && std::isspace(static_cast<unsigned char>(s[b - 1])))
-                b--;
-            return s.substr(a, b - a);
-        }
 
         std::string LowerText(std::string s) {
             for (char& c : s)
@@ -150,7 +145,7 @@ namespace perlin::server {
             size_t start = 0;
             for (;;) {
                 const size_t at = s.find(sep, start);
-                std::string part = Trim(s.substr(start, at == std::string::npos ? std::string::npos : at - start));
+                std::string part = str::Trim(s.substr(start, at == std::string::npos ? std::string::npos : at - start));
                 if (!part.empty())
                     out.push_back(std::move(part));
                 if (at == std::string::npos)
@@ -165,10 +160,10 @@ namespace perlin::server {
             const size_t dash = text.find('-');
             int64_t a = 0, b = 0;
             if (dash == std::string::npos) {
-                if (!ParseInt(Trim(text), a))
+                if (!ParseInt(str::Trim(text), a))
                     return false;
                 b = a;
-            } else if (!ParseInt(Trim(text.substr(0, dash)), a) || !ParseInt(Trim(text.substr(dash + 1)), b)) {
+            } else if (!ParseInt(str::Trim(text.substr(0, dash)), a) || !ParseInt(str::Trim(text.substr(dash + 1)), b)) {
                 return false;
             }
             if (a < 1 || b > 65535 || a > b)
@@ -180,7 +175,7 @@ namespace perlin::server {
 
         // [ip:][public:]local, where public and local are a port or a first-last range (bds "UDP port configuration for NetherNet")
         bool ParseUdpPorts(const std::string& text, ServerConfig& c) {
-            std::string t = Trim(text);
+            std::string t = str::Trim(text);
             c.udpPortsSet = true;
             c.udpPublicAddress.clear();
             c.udpPublicBegin = c.udpPublicEnd = 0;
@@ -233,11 +228,11 @@ namespace perlin::server {
             if (c.udpPublicBegin != 0)
                 out = range(c.udpPublicBegin, c.udpPublicEnd) + ":" + out;
             if (!c.udpPublicAddress.empty())
-                out = (c.udpPublicAddress.find(':') != std::string::npos ? "[" + c.udpPublicAddress + "]" : c.udpPublicAddress) + ":" + out;
+                out = (c.udpPublicAddress.contains(':') ? "[" + c.udpPublicAddress + "]" : c.udpPublicAddress) + ":" + out;
             return out;
         }
 
-        const char* GameModeName(int mode) { return mode == 1 ? "creative" : mode == 2 ? "adventure" : "survival"; }
+        const char* GameModeName(int mode) { return mode == 1 ? "creative" : mode == 2 ? "adventure" : mode == 6 ? "spectator" : "survival"; }
         const char* DifficultyName(int d) { return d == 0 ? "peaceful" : d == 2 ? "normal" : d == 3 ? "hard" : "easy"; }
 
         // the keys of bds's own server.properties, in its order, with its defaults; the ones this server acts on are read from the config when written
@@ -316,7 +311,7 @@ namespace perlin::server {
     }
 
     uint64_t ServerConfig::SeedFromText(const std::string& text) {
-        const std::string t = Trim(text);
+        const std::string t = str::Trim(text);
         int64_t n = 0;
         if (ParseInt(t, n))
             return static_cast<uint64_t>(n);
@@ -345,7 +340,7 @@ namespace perlin::server {
     }
 
     bool ServerConfig::SetProperty(const std::string& key, const std::string& rawValue, std::string* warning) {
-        const std::string v = Trim(rawValue);
+        const std::string v = str::Trim(rawValue);
         const std::string lower = LowerText(v);
         bool b = false;
         int64_t n = 0;
@@ -377,7 +372,8 @@ namespace perlin::server {
             if (lower == "survival" || lower == "0") gameMode = 0;
             else if (lower == "creative" || lower == "1") gameMode = 1;
             else if (lower == "adventure" || lower == "2") gameMode = 2;
-            else bad("survival, creative or adventure");
+            else if (lower == "spectator" || lower == "6") gameMode = 6;
+            else bad("survival, creative, adventure or spectator");
             return true;
         }
         if (key == "force-gamemode") return boolean(forceGamemode);
@@ -470,9 +466,9 @@ namespace perlin::server {
             for (const std::string& item : Split(v, ',')) {
                 FlatLayer layer;
                 const size_t star = item.find('*');
-                layer.block = Trim(item.substr(0, star));
+                layer.block = str::Trim(item.substr(0, star));
                 int64_t count = 1;
-                if (star != std::string::npos && !ParseInt(Trim(item.substr(star + 1)), count))
+                if (star != std::string::npos && !ParseInt(str::Trim(item.substr(star + 1)), count))
                     count = 1;
                 layer.count = static_cast<int>(std::clamp<int64_t>(count, 1, 384));
                 if (!layer.block.empty())
@@ -508,7 +504,7 @@ namespace perlin::server {
             if (first && line.compare(0, 3, "\xEF\xBB\xBF") == 0)
                 line.erase(0, 3);
             first = false;
-            line = Trim(line);
+            line = str::Trim(line);
             if (line.empty() || line[0] == '#')
                 continue;
             const size_t eq = line.find('=');
@@ -517,7 +513,7 @@ namespace perlin::server {
                 continue;
             }
             std::string warning;
-            c.SetProperty(Trim(line.substr(0, eq)), line.substr(eq + 1), &warning);
+            c.SetProperty(str::Trim(line.substr(0, eq)), line.substr(eq + 1), &warning);
             if (!warning.empty())
                 LogWarn(path + ": " + warning);
         }
@@ -532,7 +528,10 @@ namespace perlin::server {
             return LoadProperties(props.string(), error);
         if (std::filesystem::exists(legacy, ec))
             return Load(legacy.string(), error);
-        return ServerConfig{};
+        // no config yet: a new world, so a new seed
+        ServerConfig fresh;
+        fresh.randomSeed = true;
+        return fresh;
     }
 
     bool ServerConfig::SaveProperties(const std::string& path) const {

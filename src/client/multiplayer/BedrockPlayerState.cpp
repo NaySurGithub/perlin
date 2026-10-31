@@ -13,6 +13,7 @@
 #include <cstring>
 #include <iostream>
 #include <string_view>
+#include "util/Log.hpp"
 
 namespace perlin {
     using namespace proto;
@@ -388,8 +389,7 @@ namespace perlin {
             if (it == itemNames.end()) {
                 static std::set<int> reported;
                 if (reported.insert(raw.networkId).second)
-                    std::cout << "[items] unknown network id " << raw.networkId << " (registry has " << itemNames.size()
-                              << " items)" << std::endl;
+                    Log("items", "unknown network id {} (registry has {} items)", raw.networkId, itemNames.size());
             }
             info.networkId = raw.networkId;
             info.count = raw.count;
@@ -400,7 +400,7 @@ namespace perlin {
                 const uint16_t local = pal.InternRuntime(static_cast<int32_t>(raw.blockRuntimeId));
                 const int32_t hash = pal.NetworkId(local);
                 if (local != 0 && pal.Name(local).empty() && pal.LearnName(hash, it->second)) {
-                    std::cout << "[blocks] learned " << it->second << " for block id " << hash << " from an item stack" << std::endl;
+                    Log("blocks", "learned {} for block id {} from an item stack", it->second, hash);
                     blockNamesLearned = true;
                 }
             }
@@ -443,8 +443,7 @@ namespace perlin {
                                          type == ContainerSlotType::Inventory || type == ContainerSlotType::HotbarAndInventory;
             static const bool debug = PERLIN_ENV("PERLIN_INV_DEBUG") != nullptr;
             if (debug)
-                std::cout << "[inv] window " << static_cast<uint32_t>(window) << " container " << static_cast<int>(type) << " first "
-                          << firstSlot << " n " << items.size() << (whole ? " (content)" : " (slot)") << std::endl;
+                Log("inv", "window {} container {} first {} n {}{}", static_cast<uint32_t>(window), static_cast<int>(type), firstSlot, items.size(), (whole ? " (content)" : " (slot)"));
             const bool mainOnly = type == ContainerSlotType::Inventory && whole && items.size() == 27;
             const bool uiWindow = window == WindowIDVarint::Ui || type == ContainerSlotType::Cursor || type == ContainerSlotType::CraftingInput ||
                                   type == ContainerSlotType::CraftingOutput || type == ContainerSlotType::CreativeOutput;
@@ -563,10 +562,9 @@ namespace perlin {
                     pendingDrops.erase(pending);
                 }
                 if (r.status != ItemStackResponsesEntryStatus::Ok)
-                    std::cout << "[inventory] request " << r.requestId << " rejected, status " << static_cast<int>(r.status) << ":"
-                              << (invSummaries.count(r.requestId) ? invSummaries[r.requestId] : std::string()) << std::endl;
+                    Log("inventory", "request {} rejected, status {}:{}", r.requestId, static_cast<int>(r.status), (invSummaries.count(r.requestId) ? invSummaries[r.requestId] : std::string()));
                 else if (debug)
-                    std::cout << "[inventory] request " << r.requestId << " ok" << std::endl;
+                    Log("inventory", "request {} ok", r.requestId);
                 std::optional<InvSnapshot> before;
                 if (const auto snap = invSnapshots.find(r.requestId); snap != invSnapshots.end()) {
                     if (r.status == ItemStackResponsesEntryStatus::Ok)
@@ -750,11 +748,11 @@ namespace perlin {
                 recipes.clear();
             for (auto& r : list)
                 recipes.push_back(std::move(r));
-            std::cout << "[inventory] " << recipes.size() << " crafting-table recipes" << std::endl;
+            Log("inventory", "{} crafting-table recipes", recipes.size());
         });
 
         On<ContainerOpenPacket>([this](const ContainerOpenPacket& p) {
-            std::cout << "[bedrock] container open window " << static_cast<int>(p.windowId) << " type " << static_cast<int>(p.windowType) << std::endl;
+            Log("bedrock", "container open window {} type {}", static_cast<int>(p.windowId), static_cast<int>(p.windowType));
             std::lock_guard lock(statusMutex);
             inventoryWindow = static_cast<int>(p.windowId);
             inventoryOpen = true;
@@ -780,12 +778,11 @@ namespace perlin {
                 wt == WindowType::ChestBoat || wt == WindowType::Hopper || wt == WindowType::Dropper ||
                 wt == WindowType::Dispenser;
             if (wt != WindowType::Container && wt != WindowType::Horse && wt != WindowType::Workbench)
-                std::cout << "[bedrock] container open window " << static_cast<int>(p.windowId) << " type "
-                          << static_cast<int>(wt) << " (unhandled)" << std::endl;
+                Log("bedrock", "container open window {} type {} (unhandled)", static_cast<int>(p.windowId), static_cast<int>(wt));
             if (plainContainer) {
                 bool loaded = false;
                 const std::string name = BlockPalette::Instance().Name(netLevel.GetBlock(p.coordinates.x, p.coordinates.y, p.coordinates.z, loaded));
-                const auto has = [&](const char* s) { return name.find(s) != std::string::npos; };
+                const auto has = [&](const char* s) { return name.contains(s); };
                 chestSlotType = has("shulker_box") ? ContainerSlotType::Shulker : has("barrel") ? ContainerSlotType::Barrel : ContainerSlotType::Container;
                 inventory.chestTitle = has("ender_chest") ? "container.enderchest" : has("shulker_box") ? "container.shulkerBox"
                                      : has("barrel")      ? "container.barrel"
@@ -807,7 +804,7 @@ namespace perlin {
             }
         });
         On<ContainerClosePacket>([this](const ContainerClosePacket& p) {
-            std::cout << "[bedrock] container close window " << static_cast<int>(p.windowId) << (p.server ? " (server)" : "") << std::endl;
+            Log("bedrock", "container close window {}{}", static_cast<int>(p.windowId), (p.server ? " (server)" : ""));
             std::lock_guard lock(statusMutex);
             inventoryOpen = false;
             workbenchOpen = false;
@@ -859,7 +856,7 @@ namespace perlin {
                 return;
             std::lock_guard lock(statusMutex);
             for (const PlayerAttributesEntry& a : p.attributes) {
-                const std::string name = a.name.rfind("minecraft:", 0) == 0 ? a.name.substr(10) : a.name;
+                const std::string name = a.name.starts_with("minecraft:") ? a.name.substr(10) : a.name;
                 if (name == "health") {
                     vitals.health = a.current;
                     vitals.maxHealth = a.max > 0 ? a.max : 20.0f;
@@ -893,10 +890,7 @@ namespace perlin {
             if (runtimeId != 0 && p.runtimeEntityId != runtimeId)
                 return;
             if (PERLIN_ENV("PERLIN_BLOCK_DEBUG"))
-                std::cout << "[effect] id=" << p.effectId
-                          << " event=" << static_cast<int>(p.eventId)
-                          << " duration=" << p.duration << " serverTick=" << p.tick
-                          << " afterAuthTick=" << LastAuthTick() << std::endl;
+                Log("effect", "id={} event={} duration={} serverTick={} afterAuthTick={}", p.effectId, static_cast<int>(p.eventId), p.duration, p.tick, LastAuthTick());
             const bool on = p.eventId != MobEffectPacketEventId::Remove;
             std::lock_guard lock(statusMutex);
             pendingEffectUpdates.push_back({p.tick, p.effectId, p.amplifier, on, p.duration});

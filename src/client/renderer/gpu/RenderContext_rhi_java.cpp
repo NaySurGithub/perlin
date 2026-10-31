@@ -13,6 +13,7 @@
 #include <cmath>
 #include <iostream>
 #include <random>
+#include "util/Log.hpp"
 
 namespace perlin {
     namespace {
@@ -106,7 +107,7 @@ namespace perlin {
             error = "converted java programs missing from the shader pack";
             return false;
         }
-        std::cout << "[javapack] java terrain active (" << path << ")" << std::endl;
+        Log("javapack", "java terrain active ({})", path);
         return true;
     }
 

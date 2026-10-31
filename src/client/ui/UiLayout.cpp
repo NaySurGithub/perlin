@@ -161,9 +161,9 @@ namespace perlin::ui {
             t = std::clamp(t, 0.0, 1.0);
             if (name.empty() || name == "linear")
                 return t;
-            const bool in = name.rfind("in_out_", 0) != 0 && name.rfind("in_", 0) == 0;
-            const bool out = name.rfind("out_", 0) == 0;
-            const bool inOut = name.rfind("in_out_", 0) == 0;
+            const bool in = !name.starts_with("in_out_") && name.starts_with("in_");
+            const bool out = name.starts_with("out_");
+            const bool inOut = name.starts_with("in_out_");
             std::string kind = name;
             if (inOut) kind = name.substr(7);
             else if (in) kind = name.substr(3);
@@ -212,7 +212,7 @@ namespace perlin::ui {
                 char* end = nullptr;
                 v = std::strtod(j.string.c_str(), &end);
                 if (end == j.string.c_str()) return false;
-                pct = j.string.find('%') != std::string::npos;
+                pct = j.string.contains('%');
                 return true;
             }
             return false;
@@ -306,11 +306,11 @@ namespace perlin::ui {
                     if (a->IsNumber())
                         alpha = static_cast<float>(a->number);
                     else if (a->IsString() && !a->string.empty() && a->string[0] == '@') {
-                        const bool known = a->string.find("background") != std::string::npos ||
-                                           a->string.find("item_name") != std::string::npos ||
-                                           a->string.find("actionbar") != std::string::npos ||
-                                           a->string.find("title") != std::string::npos ||
-                                           a->string.find("chat") != std::string::npos;
+                        const bool known = a->string.contains("background") ||
+                                           a->string.contains("item_name") ||
+                                           a->string.contains("actionbar") ||
+                                           a->string.contains("title") ||
+                                           a->string.contains("chat");
                         if (!known && services.anim && services.animDef) {
                             std::unordered_map<std::string, Json> out;
                             RunAnimation(a->string, n->src->ns, AnimKey(*n) + "|alpha" + a->string, n.get(), out);
@@ -812,8 +812,8 @@ namespace perlin::ui {
                     if (Lookup(n, "#text", vars, b))
                         text = b.IsString() ? b.string : (b.IsNull() ? std::string() : b.Dump());
                 }
-                if (n.Bool("localize", true) && services.localize && !text.empty() && text.find(' ') == std::string::npos &&
-                    text.find('.') != std::string::npos)
+                if (n.Bool("localize", true) && services.localize && !text.empty() && !text.contains(' ') &&
+                    text.contains('.'))
                     text = services.localize(text);
                 return text;
             }
@@ -999,15 +999,15 @@ namespace perlin::ui {
             float AnimatedAlpha(const std::string& reference) const {
                 Json v;
                 float backdrop = 1.0f;
-                if (reference.find("background") != std::string::npos && data.Global("#hud_text_background_alpha", v) && v.IsNumber())
+                if (reference.contains("background") && data.Global("#hud_text_background_alpha", v) && v.IsNumber())
                     backdrop = static_cast<float>(v.number);
-                if (reference.find("item_name") != std::string::npos && data.Global("#item_name_alpha", v) && v.IsNumber())
+                if (reference.contains("item_name") && data.Global("#item_name_alpha", v) && v.IsNumber())
                     return static_cast<float>(v.number) * backdrop;
-                if (reference.find("actionbar") != std::string::npos && data.Global("#actionbar_alpha", v) && v.IsNumber())
+                if (reference.contains("actionbar") && data.Global("#actionbar_alpha", v) && v.IsNumber())
                     return static_cast<float>(v.number) * backdrop;
-                if (reference.find("title") != std::string::npos && data.Global("#title_alpha", v) && v.IsNumber())
+                if (reference.contains("title") && data.Global("#title_alpha", v) && v.IsNumber())
                     return static_cast<float>(v.number) * backdrop;
-                if (reference.find("chat") != std::string::npos && data.Global("#chat_alpha", v) && v.IsNumber())
+                if (reference.contains("chat") && data.Global("#chat_alpha", v) && v.IsNumber())
                     return static_cast<float>(v.number);
                 return 1.0f;
             }

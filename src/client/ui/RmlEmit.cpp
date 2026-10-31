@@ -355,7 +355,7 @@ namespace perlin::ui {
                     return "s:" + std::to_string(std::max(0, n.index)) + ":-";
                 if (id == "button.perlin_form_plus")
                     return "s:" + std::to_string(std::max(0, n.index)) + ":+";
-                if (id == "button.menu_exit" || id == "button.menu_cancel" || id == "button.exit_dialog" || id.find("close") != std::string::npos)
+                if (id == "button.menu_exit" || id == "button.menu_cancel" || id == "button.exit_dialog" || id.contains("close"))
                     return "close";
             }
             // slot ids for our inventory logic: s<n> player inventory (hotbar first), k<n> open container

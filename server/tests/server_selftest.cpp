@@ -58,6 +58,7 @@ static void TestBlockHash() {
 
 static ServerConfig FlatConfig() {
     ServerConfig c;
+    c.generator = "flat";
     c.terrainBackend = "cpu";
     return c;
 }
@@ -224,7 +225,7 @@ static void TestProperties() {
         // every bds key is written, in bds's spelling
         for (const char* key : {"server-name=", "allow-list=", "server-udp-ports=21200-21300:19400-19500", "enable-lan-visibility=true", "transport=nethernet",
                                 "compression-threshold=1", "block-network-ids-are-hashes=true", "server-build-radius-ratio=Disabled"})
-            CHECK(text.find(key) != std::string::npos);
+            CHECK(text.contains(key));
     }
 
     // server-udp-ports in every form the how-to lists
@@ -308,12 +309,12 @@ static void TestAccessFiles() {
     {
         std::ifstream in(dir / "permissions.json");
         const std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
-        CHECK(text.find("\"permission\": \"operator\"") != std::string::npos && text.find("ignoresPlayerLimit") == std::string::npos);
+        CHECK(text.contains("\"permission\": \"operator\"") && !text.contains("ignoresPlayerLimit"));
     }
     {
         std::ifstream in(dir / "allowlist.json");
         const std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
-        CHECK(text.find("\"ignoresPlayerLimit\": true") != std::string::npos && text.find("\"permission\"") == std::string::npos);
+        CHECK(text.contains("\"ignoresPlayerLimit\": true") && !text.contains("\"permission\""));
     }
     fs::remove_all(dir);
 }

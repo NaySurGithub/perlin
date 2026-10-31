@@ -36,7 +36,7 @@ namespace perlin::server::vanilla {
             return a >= b ? a : b;
         }
 
-        std::string Strip(const std::string& s) { return s.rfind("minecraft:", 0) == 0 ? s.substr(10) : s; }
+        std::string Strip(const std::string& s) { return s.starts_with("minecraft:") ? s.substr(10) : s; }
     }
 
     DfCacheScope::DfCacheScope() { t_corners = new std::unordered_map<CornerKey, float, CornerHash>(); t_corners->reserve(1 << 16); }
@@ -170,7 +170,7 @@ namespace perlin::server::vanilla {
     }
 
     const NormalNoise* DensityGraph::NoiseFor(const std::string& id) {
-        const std::string full = id.find(':') == std::string::npos ? "minecraft:" + id : id;
+        const std::string full = !id.contains(':') ? "minecraft:" + id : id;
         if (const auto it = noises.find(full); it != noises.end())
             return it->second.get();
         json::Value v;

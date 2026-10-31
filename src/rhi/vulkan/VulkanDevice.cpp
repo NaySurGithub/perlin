@@ -520,7 +520,6 @@ namespace rhi::vk {
         retire.Push(snapshot, std::move(release));
     }
 
-    // ---- resources
 
     BufferHandle Device::CreateBuffer(const BufferDesc& desc) {
         if (desc.size == 0) {
@@ -1262,7 +1261,6 @@ namespace rhi::vk {
         return queries.Alloc(std::move(rec));
     }
 
-    // ---- destruction
 
     void Device::Destroy(BufferHandle h) {
         BufferRec rec;
@@ -1382,7 +1380,6 @@ namespace rhi::vk {
         return r ? r->address : 0;
     }
 
-    // ---- fences
 
     FenceHandle Device::CreateFence(uint64_t initial) {
         VkSemaphoreTypeCreateInfo type{VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO};
@@ -1424,7 +1421,6 @@ namespace rhi::vk {
         fn.vkSignalSemaphore(device, &si);
     }
 
-    // ---- command lists and submission
 
     ThreadPools& Device::PoolsForThisThread() {
         std::lock_guard lock(poolsMutex);
@@ -1545,7 +1541,6 @@ namespace rhi::vk {
 
     std::unique_ptr<rhi::Swapchain> Device::CreateSwapchain(const SwapchainDesc& desc) { return MakeSwapchain(*this, desc); }
 
-    // ---- frames
 
     void Device::ResetSlot(uint32_t s) {
         {

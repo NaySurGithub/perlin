@@ -376,7 +376,6 @@ namespace rhi::d3d12 {
         std::string DebugReport() override;
         float TimestampPeriodNs() const override { return caps.limits.timestampPeriodNs; }
 
-        // ---- internals shared with CmdList and Swapchain
         TextureHandle WrapSwapchainImage(ID3D12Resource* resource, const TextureDesc& desc);
         void DestroyWrapped(TextureHandle h);
         D3D12_CPU_DESCRIPTOR_HANDLE RenderView(TextureRec& tex, uint32_t mip, uint32_t layer, bool depth, bool readOnly = false);

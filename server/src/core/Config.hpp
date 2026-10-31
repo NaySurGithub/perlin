@@ -47,9 +47,8 @@ namespace perlin::server {
         // address webrtc binds its udp sockets to; empty = all interfaces. set it on hosts without ipv6 or with several nics
         std::string iceBindAddress;
 
-        // "flat" only for now; later vanilla once the terrain is replicated
         // "flat", or "vanilla" for the terrain port (its data is compiled in)
-        std::string generator = "flat";
+        std::string generator = "vanilla";
         // bottom to top from the dimension floor
         std::vector<FlatLayer> flatLayers = {{"minecraft:bedrock", 1}, {"minecraft:dirt", 2}, {"minecraft:grass_block", 1}};
         // auto = gpu when a device starts and passes its self check, else cpu

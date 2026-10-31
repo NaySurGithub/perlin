@@ -55,7 +55,7 @@ namespace perlin::server {
     }
 
     uint16_t BlockCatalog::DefaultBlock(const std::string& name) const {
-        const std::string full = name.find(':') == std::string::npos ? "minecraft:" + name : name;
+        const std::string full = !name.contains(':') ? "minecraft:" + name : name;
         if (const auto it = defaultByName.find(full); it != defaultByName.end())
             return RegistryId(it->second);
         return BlockRegistry::Instance().Intern(full);
