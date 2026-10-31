@@ -1,6 +1,7 @@
 #include "session/Session.hpp"
 
 #include "core/Auth.hpp"
+#include "core/Commands.hpp"
 #include "core/Json.hpp"
 #include "core/Log.hpp"
 #include "core/Server.hpp"
@@ -148,6 +149,8 @@ namespace perlin::server {
 
     Session::Session(Server& server, std::shared_ptr<Connection> connection, uint64_t runtimeId)
         : server(server), connection(std::move(connection)), runtimeId(runtimeId), skin(std::make_unique<proto::Skin>()) {
+        posX = server.SpawnX() + 0.5;
+        posZ = server.SpawnZ() + 0.5;
         posY = server.SpawnY() + kEyeHeight;
     }
 
@@ -354,6 +357,11 @@ namespace perlin::server {
             Kick("disconnectionScreen.notAllowed");
             return;
         }
+        if (server.IsBanned(name, xuid) && !server.Config().loopbackOnly) {
+            LogInfo(name + " refused: banned");
+            Kick("You are banned from this server.");
+            return;
+        }
         if (server.Full() && !server.IgnoresPlayerLimit(name, xuid)) {
             proto::PlayStatusPacket p;
             p.status = proto::PlayStatusPacketStatus::FailedServerFull;
@@ -429,10 +437,10 @@ namespace perlin::server {
         g.generator = cfg.generator == "vanilla" ? 1 : 2;
         g.worldGamemode = static_cast<proto::GameMode>(cfg.gameMode);
         g.difficulty = cfg.difficulty;
-        g.spawnPosition = {0, static_cast<int32_t>(std::floor(server.SpawnY())), 0};
+        g.spawnPosition = {static_cast<int32_t>(std::floor(server.SpawnX())), static_cast<int32_t>(std::floor(server.SpawnY())), static_cast<int32_t>(std::floor(server.SpawnZ()))};
         g.achievementsDisabled = true;
-        g.rainLevel = 0;
-        g.lightningLevel = 0;
+        g.rainLevel = server.Raining() ? 1.0f : 0.0f;
+        g.lightningLevel = server.Thundering() ? 1.0f : 0.0f;
         g.isMultiplayer = true;
         g.broadcastToLan = false;
         g.enableCommands = true;
@@ -461,7 +469,7 @@ namespace perlin::server {
         Send(proto::AvailableEntityIdentifiersPacket{});
 
         proto::SetTimePacket t;
-        t.time = 6000;
+        t.time = static_cast<int32_t>(server.DayTime() % 2147483647);
         Send(t);
 
         {
@@ -487,24 +495,7 @@ namespace perlin::server {
 
     void Session::SendCommands() {
         proto::AvailableCommandsPacket commands;
-        for (const auto& [cmdName, def] : server.Commands()) {
-            if (def.operatorOnly && !isOperator)
-                continue;
-            proto::AvailableCommandsPacketCommandDataEntry e;
-            e.name = cmdName;
-            e.description = def.description;
-            e.permissionLevel = "any";
-            e.alias = -1;
-            proto::AvailableCommandsPacketCommandDataEntryOverloadsEntry overload;
-            proto::AvailableCommandsPacketCommandDataEntryOverloadsEntryParametersEntry arg;
-            arg.parameterName = def.usage.empty() ? "args" : def.usage;
-            arg.valueType = proto::AvailableCommandsPacketCommandDataEntryOverloadsEntryParametersEntryValueType::RawText;
-            arg.enumType = proto::AvailableCommandsPacketCommandDataEntryOverloadsEntryParametersEntryEnumType::Valid;
-            arg.optional = true;
-            overload.parameters.push_back(arg);
-            e.overloads.push_back(std::move(overload));
-            commands.commandData.push_back(std::move(e));
-        }
+        FillAvailableCommands(commands, server.Commands(), isOperator);
         Send(commands);
     }
 
@@ -536,13 +527,16 @@ namespace perlin::server {
     void Session::SendAbilities() {
         namespace F = proto::FlagsAbilitySet;
         uint32_t enabled = 0;
-        if (!isVisitor) {
+        if (!isVisitor && gameMode != 6) {
             if (gameMode != 2)
                 enabled |= F::Build | F::Mine;
             enabled |= F::DoorsAndSwitches | F::OpenContainers | F::AttackPlayers | F::AttackMobs;
         }
         if (gameMode == 1)
             enabled |= F::InstantBuild | F::MayFly | F::Invulnerable;
+        // spectators fly through everything, touch nothing, and can't be hurt
+        if (gameMode == 6)
+            enabled |= F::MayFly | F::Flying | F::Invulnerable | F::NoClip;
         if (isOperator)
             enabled |= F::OperatorCommands;
         proto::UpdateAbilitiesPacket p;
@@ -554,16 +548,95 @@ namespace perlin::server {
         // every ability the game knows may be granted by this layer; `enabled` says which are on
         layer.allowed = F::Count - 1;
         layer.enabled = enabled;
-        layer.flySpeed = 0.05f;
-        layer.verticalFlySpeed = 1.0f;
+        // the speed level multiplies both flight speeds (spectator only; everyone else flies at the normal rate)
+        const float speed = gameMode == 6 ? static_cast<float>(flySpeedLevel) : 1.0f;
+        layer.flySpeed = 0.05f * speed;
+        layer.verticalFlySpeed = 1.0f * speed;
         layer.walkSpeed = 0.1f;
         p.abilities.push_back(layer);
         Send(p);
     }
 
+    bool Session::SetFlySpeedLevel(int level) {
+        if (gameMode != 6 || (level != 1 && level != 2 && level != 5 && level != 10 && level != 20))
+            return false;
+        flySpeedLevel = level;
+        if (state == State::InGame)
+            SendAbilities();
+        return true;
+    }
+
+    void Session::SendTime(int32_t ticks) {
+        proto::SetTimePacket t;
+        t.time = ticks;
+        Send(t);
+    }
+
+    void Session::SendWeather(bool rain, bool thunder) {
+        const auto event = [&](proto::LevelEventPacketEvent e, int data) {
+            proto::LevelEventPacket p;
+            p.event = e;
+            p.position = {0, 0, 0};
+            p.data = data;
+            Send(p);
+        };
+        event(rain ? proto::LevelEventPacketEvent::StartRain : proto::LevelEventPacketEvent::StopRain, rain ? 65535 : 0);
+        event(thunder ? proto::LevelEventPacketEvent::StartThunder : proto::LevelEventPacketEvent::StopThunder, thunder ? 65535 : 0);
+    }
+
+    void Session::SendGameRule(const std::string& lowerName, bool boolean, int value) {
+        proto::GameRulesChangedPacket p;
+        proto::GameRuleI32 r;
+        r.name = lowerName;
+        r.editable = true;
+        if (boolean) {
+            r.type = proto::GameRuleI32Type::Bool;
+            r.value = value != 0;
+        } else {
+            r.type = proto::GameRuleI32Type::Int;
+            r.value = static_cast<int32_t>(value);
+        }
+        p.rules.push_back(std::move(r));
+        Send(p);
+    }
+
+    void Session::SendSpawnPosition(int x, int y, int z, bool world) {
+        proto::SetSpawnPositionPacket p;
+        p.spawnType = world ? proto::SetSpawnPositionPacketSpawnType::World : proto::SetSpawnPositionPacketSpawnType::Player;
+        p.playerPosition = {x, y, z};
+        p.dimension = 0;
+        p.worldPosition = {x, y, z};
+        Send(p);
+    }
+
+    void Session::SendDifficulty(int difficulty) {
+        proto::SetDifficultyPacket p;
+        p.difficulty = static_cast<uint32_t>(difficulty);
+        Send(p);
+    }
+
+    void Session::SendTitle(int type, const std::string& text, int fadeIn, int stay, int fadeOut) {
+        proto::SetTitlePacket p;
+        static const proto::SetTitlePacketType kinds[] = {proto::SetTitlePacketType::Clear, proto::SetTitlePacketType::Reset, proto::SetTitlePacketType::SetTitle,
+                                                          proto::SetTitlePacketType::SetSubtitle, proto::SetTitlePacketType::ActionBarMessage,
+                                                          proto::SetTitlePacketType::SetDurations};
+        p.type = kinds[std::clamp(type, 0, 5)];
+        p.text = text;
+        p.fadeInTime = fadeIn;
+        p.stayTime = stay;
+        p.fadeOutTime = fadeOut;
+        p.xuid = xuid;
+        Send(p);
+    }
+
+    void Session::SendActionBar(const std::string& text) { SendText(static_cast<uint8_t>(proto::TextPacketType::JukeboxPopup), {}, text); }
+
     void Session::SetGameMode(int mode) {
-        if (mode < 0 || mode > 2)
+        // 0 survival, 1 creative, 2 adventure, 6 spectator
+        if (mode != 0 && mode != 1 && mode != 2 && mode != 6)
             return;
+        if (mode == 6 && gameMode != 6)
+            flySpeedLevel = 1;
         gameMode = mode;
         creative = mode == 1;
         if (state != State::InGame)
@@ -732,14 +805,14 @@ namespace perlin::server {
         switch (a.action) {
         // creative breaks on the first message; survival waits for the stop, since the dig time is the client's to count here
         case proto::Action::StartBreak:
-            if (isVisitor)
+            if (isVisitor || gameMode == 6)
                 break;
             if (creative)
                 server.PlayerBreak(*this, pos.x, pos.y, pos.z);
             break;
         case proto::Action::StopBreak:
         case proto::Action::CreativePlayerDestroyBlock:
-            if (isVisitor)
+            if (isVisitor || gameMode == 6)
                 break;
             lastActive = std::chrono::steady_clock::now();
             server.PlayerBreak(*this, pos.x, pos.y, pos.z);
@@ -761,7 +834,7 @@ namespace perlin::server {
         if (use->hotbarSlot >= 0 && use->hotbarSlot < PlayerInventory::kHotbar)
             inventory.selected = use->hotbarSlot;
         const auto& at = use->blockPosition;
-        if (isVisitor)
+        if (isVisitor || gameMode == 6)
             return;
         lastActive = std::chrono::steady_clock::now();
         switch (use->actionType) {
@@ -1003,6 +1076,12 @@ namespace perlin::server {
         SetPosition(m.position.x, m.position.y, m.position.z, m.pitch, m.yaw);
     }
 
+    void Session::Teleport(double x, double y, double z, float yawDegrees, float pitchDegrees) {
+        yaw = yawDegrees;
+        pitch = pitchDegrees;
+        Teleport(x, y, z);
+    }
+
     void Session::Teleport(double x, double y, double z) {
         posX = x;
         posY = y;
@@ -1148,7 +1227,7 @@ namespace perlin::server {
         if (state == State::InGame && now - lastHeartbeat > kHeartbeat) {
             lastHeartbeat = now;
             proto::SetTimePacket t;
-            t.time = 6000;
+            t.time = static_cast<int32_t>(server.DayTime() % 2147483647);
             Send(t);
         }
         Flush();

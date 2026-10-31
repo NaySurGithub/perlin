@@ -549,7 +549,7 @@ namespace perlin::physics {
     }
 
     Box BoundingBox(const State& s, bool sneaking) {
-        const float half = static_cast<float>(kWidth) * 0.5f;
+        const float half = (s.mobSize ? (*s.mobSize)[0] : static_cast<float>(kWidth)) * 0.5f;
         const float x = static_cast<float>(s.x), y = static_cast<float>(s.y), z = static_cast<float>(s.z);
         const float h = static_cast<float>(s.Height(sneaking));
         if (s.hasBox && BoxCentre(s.box.x0, s.box.x1) == F(s.x) && BoxCentre(s.box.z0, s.box.z1) == F(s.z) &&
@@ -644,7 +644,8 @@ namespace perlin::physics {
                 ns /= length;
             }
         }
-        const auto intent = bds::AttenuateTravelIntent({ns, 0.0f, nf}, 0.0f);
+        const auto intent = in.mobIntent ? bds::TravelIntentResult{*in.mobIntent, 0.0f, *in.mobIntent}
+                                         : bds::AttenuateTravelIntent({ns, 0.0f, nf}, 0.0f);
         const double forward = intent.movement.z;
         const double strafe = intent.movement.x;
 
@@ -731,6 +732,8 @@ namespace perlin::physics {
             if (under.surface == 4 && !attr.soulSpeed)
                 accFriction *= 1.225f;
             relSpeed = bds::GroundAcceleration(attr.speed, accFriction);
+        } else if (attr.airSpeed) {
+            relSpeed = *attr.airSpeed;
         } else {
             // player air speed 0x14336f010: sprint value is 0x3cd4fdf3, one ulp under 0.026f
             relSpeed = in.sprint ? std::bit_cast<float>(0x3cd4fdf3u) : 0.02f;
@@ -926,7 +929,7 @@ namespace perlin::physics {
                 const auto velocity = bds::HoneyContacts(
                     {static_cast<float>(s.x), static_cast<float>(s.y), static_cast<float>(s.z)},
                     {static_cast<float>(s.vx), static_cast<float>(s.vy), static_cast<float>(s.vz)},
-                    static_cast<float>(kWidth), honey, s.fallDistance);
+                    s.mobSize ? (*s.mobSize)[0] : static_cast<float>(kWidth), honey, s.fallDistance);
                 s.vx = velocity.x;
                 s.vy = velocity.y;
                 s.vz = velocity.z;

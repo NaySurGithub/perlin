@@ -82,7 +82,8 @@ namespace perlin {
         void ReplayFrom(BedrockSession& session, size_t first);
         void ApplyVehicleCorrections(BedrockSession& session);
         // client-predicted boat this tick, seat of the local rider; false when not driving one
-        bool TickVehicle(BedrockSession& session, float forward, float strafe, const physics::World& world);
+        bool TickVehicle(BedrockSession& session, float forward, float strafe, bool jump, float riderPitch,
+                         const physics::World& world);
         void Tick(BedrockSession& session, const InputManager& input, const Camera& camera,
                   const physics::World& world);
 
@@ -154,6 +155,16 @@ namespace perlin {
         bool boatActive = false;
         int64_t boatUid = 0;
         uint64_t boatRuntime = 0;
+        struct HorseRecord {
+            uint64_t tick = 0;
+            physics::vehicle::HorseInput input;
+            physics::vehicle::Horse after;
+        };
+        std::deque<HorseRecord> horseHistory;
+        physics::vehicle::Horse horse;
+        bool horseActive = false;
+        int64_t horseUid = 0;
+        uint64_t horseRuntime = 0;
         float eyeOffset = static_cast<float>(physics::kStandEye);
         float eyeDrop = 0.0f, eyeDropPrevious = 0.0f;
         uint64_t itemUseStart = 0;

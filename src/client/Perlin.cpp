@@ -7591,11 +7591,25 @@ namespace perlin {
                     if (inputManager.Pressed(static_cast<Action>(static_cast<int>(Action::Hotbar1) + i)))
                         newSlot = i;
                 static float scrollAccum = 0.0f;
+                // in spectator the wheel sets the flying speed (1x, 2x, 5x, 10x, 20x) instead of picking a hotbar slot; the server resets to 1x on entering the mode
+                static int spectatorSpeed = 0;
+                static const int kSpectatorSpeeds[5] = {1, 2, 5, 10, 20};
+                const bool wheelFliesFaster = live && hudState.mode == ui::GameMode::Spectator;
+                if (!wheelFliesFaster)
+                    spectatorSpeed = 0;
                 if (!inputManager.IsDown(Action::Zoom)) {
                     scrollAccum += inputManager.Scroll();
                     while (scrollAccum >= 1.0f || scrollAccum <= -1.0f) {
                         const int step = scrollAccum > 0.0f ? 1 : -1;
                         scrollAccum -= static_cast<float>(step);
+                        if (wheelFliesFaster) {
+                            const int next = std::clamp(spectatorSpeed + step, 0, 4);
+                            if (next != spectatorSpeed) {
+                                spectatorSpeed = next;
+                                live->SendCommand("flyspeed " + std::to_string(kSpectatorSpeeds[next]));
+                            }
+                            continue;
+                        }
                         const int from = newSlot >= 0 ? newSlot : hudState.selectedSlot;
                         newSlot = ((from - step) % 9 + 9) % 9;
                     }

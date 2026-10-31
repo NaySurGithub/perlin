@@ -58,6 +58,7 @@ static void TestBlockHash() {
 
 static ServerConfig FlatConfig() {
     ServerConfig c;
+    c.generator = "flat";
     c.terrainBackend = "cpu";
     return c;
 }

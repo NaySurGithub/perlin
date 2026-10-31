@@ -250,6 +250,22 @@ namespace perlin {
                 const float posErrF = (sq(motion.pos[1], r.after.y) + sq(motion.pos[0], r.after.x)) + sq(motion.pos[2], r.after.z);
                 const float velErrF = (sq(motion.velocity[1], r.after.vy) + sq(motion.velocity[0], r.after.vx)) +
                                       sq(motion.velocity[2], r.after.vz);
+                // strict-threshold servers correct below our replay cutoff: log every correction for parity work
+                if (PERLIN_ENV("PERLIN_CORRECTION_LOG")) {
+                    std::ostringstream line;
+                    line << std::setprecision(std::numeric_limits<float>::max_digits10)
+                         << "[correction] tick=" << motion.tick << " dpos=(" << dx << "," << dy << "," << dz << ") dvel=("
+                         << ex << "," << ey << "," << ez << ") ours=(" << r.after.x << "," << r.after.y << "," << r.after.z
+                         << ") server=(" << motion.pos[0] << "," << motion.pos[1] << "," << motion.pos[2]
+                         << ") vel ours=(" << r.after.vx << "," << r.after.vy << "," << r.after.vz << ") server=("
+                         << motion.velocity[0] << "," << motion.velocity[1] << "," << motion.velocity[2]
+                         << ") ground ours=" << r.after.onGround << " server=" << motion.onGround
+                         << " before=(" << r.before.x << "," << r.before.y << "," << r.before.z << ") beforeVel=("
+                         << r.before.vx << "," << r.before.vy << "," << r.before.vz << ") fwd=" << r.input.forward
+                         << " strafe=" << r.input.strafe << " jump=" << r.input.jump << " sprint=" << r.input.sprint
+                         << " sneak=" << r.input.sneak << " yaw=" << r.yaw << " speed=" << r.attributes.speed;
+                    std::cout << line.str() << std::endl;
+                }
                 if (posErrF > 1.0e-5f || velErrF > 1.0e-5f || r.after.onGround != motion.onGround) {
                     const physics::State shown = state;
                     if (PERLIN_ENV("PERLIN_BLOCK_DEBUG") || correctionReplays < 40 || correctionReplays % 100 == 0) {
@@ -700,7 +716,7 @@ namespace perlin {
         }
 
         // the vehicle moves in the movement tick; the rider is placed on it after (passenger positioning)
-        const bool drivingBoat = TickVehicle(session, forward, strafe, world);
+        const bool drivingVehicle = TickVehicle(session, forward, strafe, jump, in.pitch, world);
         if (rideLock) {
             state.x = rideX;
             state.y = rideY;
@@ -830,7 +846,7 @@ namespace perlin {
         packet.hasDelta = true;
 
         session.SetPose(packet.position[0], packet.position[1], packet.position[2], packet.yaw, packet.pitch);
-        if (drivingBoat) {
+        if (drivingVehicle && boatActive) {
             // SendPlayerInputPacketSystem 0x146dab080: position and posDelta of the vehicle, not the rider
             packet.eyeHeight = 0.0f;
             packet.position[0] = boat.x;
@@ -841,10 +857,23 @@ namespace perlin {
             packet.delta[2] = boat.vz;
             packet.vehicleRotation = std::array<float, 2>{boat.pitch, boat.yaw};
             packet.predictedVehicle = boatUid;
+        } else if (drivingVehicle && horseActive) {
+            const auto& h = horse.state;
+            packet.eyeHeight = 0.0f;
+            packet.position[0] = static_cast<float>(h.x);
+            packet.position[1] = static_cast<float>(h.y);
+            packet.position[2] = static_cast<float>(h.z);
+            packet.delta[0] = static_cast<float>(h.vx);
+            packet.delta[1] = static_cast<float>(h.vy);
+            packet.delta[2] = static_cast<float>(h.vz);
+            packet.vehicleRotation = std::array<float, 2>{horse.pitch, horse.yaw};
+            packet.predictedVehicle = horseUid;
         }
         if (session.SendMoveInput(packet)) {
-            if (drivingBoat && !boatHistory.empty())
+            if (drivingVehicle && boatActive && !boatHistory.empty())
                 boatHistory.back().tick = session.LastAuthTick();
+            if (drivingVehicle && horseActive && !horseHistory.empty())
+                horseHistory.back().tick = session.LastAuthTick();
             rec.tick = session.LastAuthTick();
             rec.after = state;
             if (tickObserver) tickObserver(rec.tick, state, rec.input);
@@ -855,20 +884,46 @@ namespace perlin {
         }
     }
 
-    bool LocalPlayer::TickVehicle(BedrockSession& session, float forward, float strafe, const physics::World& world) {
+    namespace {
+        // HorseFlagComponent actors (SetIsClientPredictedHorseSystem 0x14b31b900 query)
+        bool HorseFamily(const std::string& type) {
+            return type == "minecraft:horse" || type == "minecraft:donkey" || type == "minecraft:mule" ||
+                   type == "minecraft:skeleton_horse" || type == "minecraft:zombie_horse";
+        }
+
+        std::optional<float> EntityAttribute(const entity::Entity& e, const char* name) {
+            const auto it = e.attributes.find(name);
+            if (it == e.attributes.end())
+                return std::nullopt;
+            return it->second.value;
+        }
+    }
+
+    bool LocalPlayer::TickVehicle(BedrockSession& session, float forward, float strafe, bool jump, float riderPitch,
+                                  const physics::World& world) {
         rideSeatKnown = false;
         const int64_t uid = session.RidingUid();
         entity::Entity vehicle;
         const bool riding = rideLock && uid != 0 && session.Entities().FindUnique(uid, vehicle);
-        // SetIsClientPredictedBoatSystem 0x14b31ac80: every boat whose controlling seat holds the local player;
-        // horses (0x14b31b900, tamed and saddled) stay server-moved here
-        const bool driving = riding && session.RidingAsDriver() && vehicle.type.find("boat") != std::string::npos;
-        if (!driving && boatActive) {
+        const bool driver = riding && session.RidingAsDriver();
+        // SetIsClientPredictedBoatSystem 0x14b31ac80: every boat whose controlling seat holds the local player
+        const bool drivingBoat = driver && vehicle.type.find("boat") != std::string::npos;
+        // SetIsClientPredictedHorseSystem 0x14b31b900: horse family, only TAMED (flag 28) and SADDLED (flag 8)
+        const bool drivingHorse = driver && HorseFamily(vehicle.type) &&
+                                  (vehicle.flags & proto::FlagsMetadataFlags1::Tamed) != 0 &&
+                                  (vehicle.flags & proto::FlagsMetadataFlags1::Saddled) != 0;
+        if (!drivingBoat && boatActive) {
             boatActive = false;
             boatHistory.clear();
             session.SetPredictedVehicle(0);
         }
-        if (driving) {
+        if (!drivingHorse && horseActive) {
+            horseActive = false;
+            horseHistory.clear();
+            session.SetPredictedVehicle(0);
+        }
+        const physics::MoveVector move = physics::ProcessMoveInput(forward, strafe, false, false);
+        if (drivingBoat) {
             if (!boatActive || boatUid != uid) {
                 boat = {};
                 boat.x = static_cast<float>(vehicle.pos.x);
@@ -889,9 +944,9 @@ namespace perlin {
             }
             physics::vehicle::BoatInput in;
             in.controlled = true;
-            const physics::MoveVector move = physics::ProcessMoveInput(forward, strafe, false, false);
             in.moveX = -move.strafe;
             in.moveZ = move.forward;
+            boat.leashed = (vehicle.flags & proto::FlagsMetadataFlags1::Leashed) != 0;
             physics::vehicle::TickBoat(boat, in, physics::vehicle::Buoyancy{}, world);
             boatHistory.push_back({0, in, boat});
             while (boatHistory.size() > 200)
@@ -899,6 +954,50 @@ namespace perlin {
             session.Entities().Move(boatRuntime, {boat.x, boat.y, boat.z}, boat.pitch, boat.yaw, boat.yaw, boat.onGround);
             vehicle.pos = {boat.x, boat.y, boat.z};
             vehicle.yaw = boat.yaw;
+        }
+        if (drivingHorse) {
+            if (!horseActive || horseUid != uid) {
+                horse = {};
+                // collision box: the server's BOUNDINGBOX metadata, else horse.json's 1.4 x 1.6
+                const float width = vehicle.boxWidth > 0.0f && vehicle.boxHeight > 0.0f ? vehicle.boxWidth : 1.4f;
+                const float height = vehicle.boxWidth > 0.0f && vehicle.boxHeight > 0.0f ? vehicle.boxHeight : 1.6f;
+                horse.state.mobSize = std::array<float, 2>{width, height};
+                horse.state.collisionHeight = height;
+                horse.state.x = static_cast<float>(vehicle.pos.x);
+                horse.state.y = static_cast<float>(vehicle.pos.y);
+                horse.state.z = static_cast<float>(vehicle.pos.z);
+                horse.state.onGround = vehicle.onGround;
+                horse.pitch = horse.previousPitch = vehicle.pitch;
+                horse.yaw = horse.previousYaw = vehicle.yaw;
+                horse.state.yaw = vehicle.yaw;
+                horseActive = true;
+                horseUid = uid;
+                horseRuntime = vehicle.runtimeId;
+                horseHistory.clear();
+                session.SetPredictedVehicle(horseRuntime);
+            }
+            physics::vehicle::HorseInput in;
+            in.forward = move.forward;
+            in.strafe = move.strafe;
+            in.riderYaw = state.yaw;
+            in.riderPitch = riderPitch;
+            in.jumpHeld = jump;
+            in.movement = EntityAttribute(vehicle, "minecraft:movement").value_or(0.1f);
+            in.jumpStrength = EntityAttribute(vehicle, "minecraft:horse.jump_strength");
+            in.underwaterMovement = EntityAttribute(vehicle, "minecraft:underwater_movement").value_or(0.02f);
+            in.lavaMovement = EntityAttribute(vehicle, "minecraft:lava_movement").value_or(0.02f);
+            in.canPowerJump = (vehicle.flags & proto::FlagsMetadataFlags1::CanPowerJump) != 0;
+            in.hasGravity = (vehicle.flags & proto::FlagsMetadataFlags1::AffectedByGravity) != 0;
+            in.canClimb = (vehicle.flags & proto::FlagsMetadataFlags1::CanClimb) != 0;
+            in.wallClimbing = (vehicle.flags & proto::FlagsMetadataFlags1::Wallclimbing) != 0;
+            physics::vehicle::TickHorse(horse, in, world);
+            horseHistory.push_back({0, in, horse});
+            while (horseHistory.size() > 200)
+                horseHistory.pop_front();
+            const auto& h = horse.state;
+            session.Entities().Move(horseRuntime, {h.x, h.y, h.z}, horse.pitch, horse.yaw, horse.yaw, h.onGround);
+            vehicle.pos = {h.x, h.y, h.z};
+            vehicle.yaw = horse.yaw;
         }
         if (!riding)
             return false;
@@ -913,44 +1012,88 @@ namespace perlin {
             rideZ = (sz * cosine - sx * sine) + static_cast<float>(vehicle.pos.z);
             rideSeatKnown = true;
         }
-        return driving;
+        return drivingBoat || drivingHorse;
     }
 
     void LocalPlayer::ApplyVehicleCorrections(BedrockSession& session) {
         BedrockSession::VehicleCorrection c;
+        const auto sq = [](float a, float b) { const float d = a - b; return d * d; };
+        // correction event check 0x1410E8FF0: rewind on a ground change, position, delta or rotation past
+        // 1e-5 (0x3727C5AC) squared, or an angular velocity off by more than 1e-4 (0x38D1B717); without a
+        // recorded state for that tick nothing is compared and the prediction stays
+        const auto mismatch = [&](float x, float y, float z, float vx, float vy, float vz, float pitch, float yaw,
+                                  bool onGround, std::optional<float> angularVelocity) {
+            const float posErr = sq(c.pos[2], z) + (sq(c.pos[1], y) + sq(c.pos[0], x));
+            const float velErr = sq(c.delta[2], vz) + (sq(c.delta[1], vy) + sq(c.delta[0], vx));
+            const float rotErr = sq(c.rotation[1], yaw) + sq(c.rotation[0], pitch);
+            const bool spin = c.angularVelocity && angularVelocity &&
+                              !(1.0e-4f >= std::fabs(*angularVelocity - *c.angularVelocity));
+            return c.onGround != onGround || posErr > 1.0e-5f || velErr > 1.0e-5f || rotErr > 1.0e-5f || spin;
+        };
         while (session.TakeVehicleCorrection(c)) {
-            if (!boatActive)
-                continue;
-            const auto snap = [&](physics::vehicle::Boat& b) {
-                b.x = c.pos[0];
-                b.y = c.pos[1];
-                b.z = c.pos[2];
-                b.vx = c.delta[0];
-                b.vy = c.delta[1];
-                b.vz = c.delta[2];
-                b.pitch = c.rotation[0];
-                b.yaw = c.rotation[1];
-                if (c.angularVelocity)
-                    b.angularVelocity = *c.angularVelocity;
-                b.onGround = c.onGround;
-            };
             // the player's replay state is lent to the vehicle (LendReplayStateSystem 0x14ad2afc0): rewind it
-            while (!boatHistory.empty() && boatHistory.front().tick != 0 && boatHistory.front().tick < c.tick)
-                boatHistory.pop_front();
-            if (boatHistory.empty() || boatHistory.front().tick != c.tick) {
-                snap(boat);
-                boatHistory.clear();
-                continue;
+            if (boatActive) {
+                while (!boatHistory.empty() && boatHistory.front().tick != 0 && boatHistory.front().tick < c.tick)
+                    boatHistory.pop_front();
+                if (boatHistory.empty() || boatHistory.front().tick != c.tick)
+                    continue;
+                auto& ours = boatHistory.front().after;
+                if (!mismatch(ours.x, ours.y, ours.z, ours.vx, ours.vy, ours.vz, ours.pitch, ours.yaw, ours.onGround,
+                              ours.angularVelocity))
+                    continue;
+                ours.x = c.pos[0];
+                ours.y = c.pos[1];
+                ours.z = c.pos[2];
+                ours.vx = c.delta[0];
+                ours.vy = c.delta[1];
+                ours.vz = c.delta[2];
+                ours.pitch = c.rotation[0];
+                ours.yaw = c.rotation[1];
+                if (c.angularVelocity)
+                    ours.angularVelocity = *c.angularVelocity;
+                ours.onGround = c.onGround;
+                physics::vehicle::Boat replay = ours;
+                LevelCollision world(session.NetLevel(), blocksPtr);
+                for (size_t i = 1; i < boatHistory.size(); ++i) {
+                    physics::vehicle::TickBoat(replay, boatHistory[i].input, physics::vehicle::Buoyancy{}, world);
+                    boatHistory[i].after = replay;
+                }
+                boat = replay;
+                session.Entities().Move(boatRuntime, {boat.x, boat.y, boat.z}, boat.pitch, boat.yaw, boat.yaw,
+                                        boat.onGround);
+            } else if (horseActive) {
+                while (!horseHistory.empty() && horseHistory.front().tick != 0 && horseHistory.front().tick < c.tick)
+                    horseHistory.pop_front();
+                if (horseHistory.empty() || horseHistory.front().tick != c.tick)
+                    continue;
+                auto& ours = horseHistory.front().after;
+                auto& h = ours.state;
+                // a horse has no angular velocity component: that lane is skipped
+                if (!mismatch(static_cast<float>(h.x), static_cast<float>(h.y), static_cast<float>(h.z),
+                              static_cast<float>(h.vx), static_cast<float>(h.vy), static_cast<float>(h.vz), ours.pitch,
+                              ours.yaw, h.onGround, std::nullopt))
+                    continue;
+                h.x = c.pos[0];
+                h.y = c.pos[1];
+                h.z = c.pos[2];
+                h.vx = c.delta[0];
+                h.vy = c.delta[1];
+                h.vz = c.delta[2];
+                ours.pitch = c.rotation[0];
+                ours.yaw = c.rotation[1];
+                h.yaw = ours.yaw;
+                h.onGround = c.onGround;
+                h.hasBox = false;
+                physics::vehicle::Horse replay = ours;
+                LevelCollision world(session.NetLevel(), blocksPtr);
+                for (size_t i = 1; i < horseHistory.size(); ++i) {
+                    physics::vehicle::TickHorse(replay, horseHistory[i].input, world);
+                    horseHistory[i].after = replay;
+                }
+                horse = replay;
+                const auto& r = horse.state;
+                session.Entities().Move(horseRuntime, {r.x, r.y, r.z}, horse.pitch, horse.yaw, horse.yaw, r.onGround);
             }
-            snap(boatHistory.front().after);
-            physics::vehicle::Boat replay = boatHistory.front().after;
-            LevelCollision world(session.NetLevel(), blocksPtr);
-            for (size_t i = 1; i < boatHistory.size(); ++i) {
-                physics::vehicle::TickBoat(replay, boatHistory[i].input, physics::vehicle::Buoyancy{}, world);
-                boatHistory[i].after = replay;
-            }
-            boat = replay;
-            session.Entities().Move(boatRuntime, {boat.x, boat.y, boat.z}, boat.pitch, boat.yaw, boat.yaw, boat.onGround);
         }
     }
 

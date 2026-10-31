@@ -28,19 +28,22 @@ namespace perlin::physics::vehicle {
             return static_cast<float>(y + 1) - (static_cast<float>(n) / 9.0f + F32(0xbde38e39));
         }
 
-        // 0x1437a1760: water at the position below its surface, no water above
-        bool AtSurface(const World& world, float x, float y, float z) {
+        // liquid_blocks lists: water only (boat) or water and lava (horse family)
+        bool Listed(const BlockShape& s, bool lava) { return s.fluid == 1 || (lava && s.fluid == 2); }
+
+        // 0x1437a1760: a listed liquid at the position below its surface, none above
+        bool AtSurface(const World& world, float x, float y, float z, bool lava = false) {
             const Cell c = FloorCell(x, y, z);
             const BlockShape here = world.Query(c.x, c.y, c.z);
-            if (!Water(here) || LiquidTop(here, c.y) <= y)
+            if (!Listed(here, lava) || LiquidTop(here, c.y) <= y)
                 return false;
-            return !Water(world.Query(c.x, c.y + 1, c.z));
+            return !Listed(world.Query(c.x, c.y + 1, c.z), lava);
         }
 
-        // 0x1437a18f0: water here and above
-        bool Submerged(const World& world, float x, float y, float z) {
+        // 0x1437a18f0: a listed liquid here and above
+        bool Submerged(const World& world, float x, float y, float z, bool lava = false) {
             const Cell c = FloorCell(x, y, z);
-            return Water(world.Query(c.x, c.y, c.z)) && Water(world.Query(c.x, c.y + 1, c.z));
+            return Listed(world.Query(c.x, c.y, c.z), lava) && Listed(world.Query(c.x, c.y + 1, c.z), lava);
         }
 
         // 0x1437d7990: the block's own friction when it has a collision box, the one below otherwise
@@ -51,11 +54,52 @@ namespace perlin::physics::vehicle {
             return world.Query(c.x, c.y - 1, c.z).friction;
         }
 
+        // minecraft:buoyant systems, client registrar group 0x14694a720; returns the new posDelta.y
+        float Buoyant(float x, float y, float z, float vx, float vy, float vz, double& timer, bool& atSurface,
+                      bool& submerged, bool leashed, const Buoyancy& buoyancy, const World& world) {
+            // IncreaseBuoyancyTimer 0x146959eb0; the big-wave roll uses the server's random stream, not modelled
+            if (buoyancy.movementType == 2) {
+                timer = timer + 1.0;
+            } else {
+                const double speed = static_cast<double>(std::sqrt(vz * vz + vx * vx)) * 30.0 + 1.0;
+                timer = static_cast<double>(static_cast<float>(speed * static_cast<double>(0.05f))) + timer;
+            }
+            // CheckAndAddBuoyancyFloatRequest 0x146949c50
+            atSurface = AtSurface(world, x, y, z, buoyancy.lava);
+            submerged = Submerged(world, x, y, z, buoyancy.lava);
+            // BuoyancyGravity 0x14695c240
+            if (buoyancy.applyGravity)
+                vy = (vy + F32(0xbd23d70a)) * F32(0x3f7ae148);
+            // BuoyancyFloat 0x146959470
+            float lift = 0.0f, wave = 0.0f;
+            if (atSurface) {
+                const float fraction = y - static_cast<float>(static_cast<int>(std::floor(y)));
+                const float raw = (buoyancy.base - fraction) * F32(0x3f666666) + F32(0x3dcccccd);
+                lift = 1.0f < raw ? 1.0f : MaxSs(raw, 0.0f);
+                if (buoyancy.movementType == 1)
+                    wave = (static_cast<float>(std::sin(timer)) + 1.0f) * F32(0x3d0f5c29);
+                else if (buoyancy.movementType == 2)
+                    wave = (static_cast<float>(std::sin(timer * static_cast<double>(F32(0x3ea0d97c)))) + 1.2f) * 0.5f;
+            } else if (submerged) {
+                lift = 1.0f;
+            }
+            if ((atSurface || submerged) && lift != 0.0f) {
+                const float target = ((lift - wave) + F32(0xbdcccccd)) * F32(0x3e19999a);
+                const float damped = vy * F32(0x3f333333);
+                // current base game versions: a rising leashed body keeps at least 5% of its lift
+                if (leashed && damped > 0.0f)
+                    vy = MaxSs(target, damped * F32(0x3d4ccccd));
+                else
+                    vy = MinSs(target, damped + F32(0x3d4ccccd));
+            }
+            return vy;
+        }
+
         // BoatMoveFrictionSystem 0x14ace0140
         void Friction(Boat& b, const World& world) {
             const Cell c = FloorCell(b.x, b.y, b.z);
-            // TODO: leashed boats use BoatMovementComponent+16 instead of 1.0
-            b.friction = 1.0f;
+            // leashed: BoatMovementComponent+16, 0.91f on current base game versions (written at 0x1438bf055)
+            b.friction = b.leashed ? F32(0x3f68f5c3) : 1.0f;
             b.uncontrolled = true;
             const float water = F32(0x3f666666);
             if (AtSurface(world, b.x, b.y, b.z)) {
@@ -219,37 +263,120 @@ namespace perlin::physics::vehicle {
         b.horizontalCollision = moved.horizontalCollision;
         b.verticalCollision = moved.verticalCollision;
 
-        // IncreaseBuoyancyTimer 0x146959eb0; the big-wave roll uses the server's random stream, not modelled
-        if (buoyancy.movementType == 2) {
-            b.waveTimer = b.waveTimer + 1.0;
-        } else {
-            const double speed = static_cast<double>(std::sqrt(b.vz * b.vz + b.vx * b.vx)) * 30.0 + 1.0;
-            b.waveTimer = static_cast<double>(static_cast<float>(speed * static_cast<double>(0.05f))) + b.waveTimer;
+        b.vy = Buoyant(b.x, b.y, b.z, b.vx, b.vy, b.vz, b.waveTimer, b.atSurface, b.submerged, b.leashed, buoyancy,
+                       world);
+    }
+
+    namespace {
+        // VehicleDesiredMoveDirectionSystem wrap: fmodf(a + 180, 360), +360 when negative, then -180
+        float WrapDegrees(float angle) {
+            const float m = std::fmod(angle + 180.0f, 360.0f);
+            return (m < 0.0f ? m + 360.0f : m) + -180.0f;
         }
-        // CheckAndAddBuoyancyFloatRequest 0x146949c50
-        b.atSurface = AtSurface(world, b.x, b.y, b.z);
-        b.submerged = Submerged(world, b.x, b.y, b.z);
-        // BuoyancyGravity 0x14695c240
-        if (buoyancy.applyGravity)
-            b.vy = (b.vy + F32(0xbd23d70a)) * F32(0x3f7ae148);
-        // BuoyancyFloat 0x146959470
-        float lift = 0.0f, wave = 0.0f;
-        if (b.atSurface) {
-            const float fraction = b.y - static_cast<float>(static_cast<int>(std::floor(b.y)));
-            const float raw = (buoyancy.base - fraction) * F32(0x3f666666) + F32(0x3dcccccd);
-            lift = 1.0f < raw ? 1.0f : MaxSs(raw, 0.0f);
-            if (buoyancy.movementType == 1)
-                wave = (static_cast<float>(std::sin(b.waveTimer)) + 1.0f) * F32(0x3d0f5c29);
-            else if (buoyancy.movementType == 2)
-                wave = (static_cast<float>(std::sin(b.waveTimer * static_cast<double>(F32(0x3ea0d97c)))) + 1.2f) * 0.5f;
-        } else if (b.submerged) {
-            lift = 1.0f;
+    }
+
+    void TickHorse(Horse& h, const HorseInput& in, const World& world) {
+        State& s = h.state;
+        // ResetJumpRidingScaleSystem 0x147b6ea80: ten ticks after a release the charge is gone
+        if (h.jumpCounter < 0) {
+            ++h.jumpCounter;
+            if (h.jumpCounter == 0)
+                h.jumpRidingScale = 0.0f;
         }
-        if ((b.atSurface || b.submerged) && lift != 0.0f) {
-            const float target = ((lift - wave) + F32(0xbdcccccd)) * F32(0x3e19999a);
-            const float damped = b.vy * F32(0x3f333333);
-            // TODO: leashed boats on newer base game versions take max(target, vy * 0.05) while rising
-            b.vy = MinSs(target, damped + F32(0x3d4ccccd));
+        // PassengerJumpTriggerSystem 0x147b8e130; VanillaClientGameplay+21 is last tick's jump key
+        std::optional<int32_t> percent;
+        if (h.jumpHeldBefore) {
+            if (in.jumpHeld) {
+                const int32_t n = h.jumpCounter++;
+                h.jumpRidingScale = n > 8 ? (2.0f / static_cast<float>(n - 8)) * 0.1f + 0.8f
+                                          : static_cast<float>(n + 1) * 0.1f;
+            } else {
+                h.jumpCounter = -10;
+                const float scaled = h.jumpRidingScale * 100.0f;
+                const int32_t truncated = static_cast<int32_t>(scaled);
+                percent = static_cast<float>(truncated) > scaled ? truncated - 1 : truncated;
+            }
         }
+        h.jumpHeldBefore = in.jumpHeld;
+        // VehicleJumpTriggerSystem 0x147b908e0 -> 0x14ad6a840: percentage to JumpPendingScale, horse rears
+        if (percent && *percent >= 0) {
+            const uint32_t p = static_cast<uint32_t>(*percent);
+            h.jumpPendingScale = p <= 89u ? (static_cast<float>(p) * 0.4f) / 90.0f + 0.4f : 1.0f;
+            h.standing = true;
+        }
+
+        // PassengerDesiredMoveDirectionSystem 0x1484c1f10 copies the rider look and LocalMoveVelocity, the travel
+        // intent after MobTravelIntent's 0.98 (0x143606ab0)
+        float nf = in.forward, ns = in.strafe;
+        const float lengthSq = nf * nf + ns * ns;
+        if (lengthSq > 1.0f) {
+            const float length = std::sqrt(lengthSq);
+            nf /= length;
+            ns /= length;
+        }
+        const bds::Float3 rider = bds::AttenuateTravelIntent({ns, 0.0f, nf}, 0.0f).movement;
+        // VehicleDesiredMoveDirectionSystem 0x1484edbc0
+        float yaw = in.riderYaw;
+        if (in.localController) {
+            const float limit = MinSs(45.0f, std::fabs(WrapDegrees(in.riderYaw - h.yaw)));
+            const float ease = MaxSs(F32(0x3e3851ec), (45.0f - limit) / 90.0f) * F32(0x3f333333);
+            yaw = WrapDegrees(in.riderYaw - h.yaw) * ease + h.yaw;
+        }
+        const float pitch = in.riderPitch * 0.5f;
+        const float wrappedYaw = WrapDegrees(yaw);
+        h.previousYaw = WrapDegrees((wrappedYaw - yaw) + h.previousYaw);
+        h.yaw = wrappedYaw;
+        const float wrappedPitch = WrapDegrees(pitch);
+        h.previousPitch = WrapDegrees((wrappedPitch - pitch) + h.previousPitch);
+        h.pitch = wrappedPitch;
+        // travel intent: half sideways, a quarter backwards (x here is right-positive, the game's is left-positive)
+        const bds::Float3 intent{0.5f * rider.x, rider.y, !(rider.z <= 0.0f) ? rider.z : 0.25f * rider.z};
+        s.yaw = h.yaw;
+
+        // TriggerJumpSystem 0x147cd1140 -> ApplyJumpModifierSystem 0x147b3dec0: power jump from the ground
+        if (h.jumpPendingScale > 0.0f && in.canPowerJump && in.jumpStrength && s.onGround) {
+            bds::JumpParameters probe;
+            probe.bodyMinimumY = static_cast<float>(BoundingBox(s, false).y0);
+            probe.position = {static_cast<float>(s.x), static_cast<float>(s.y), static_cast<float>(s.z)};
+            const auto trigger = bds::GroundJump(probe, [&](bds::BlockPosition position) {
+                return world.Query(position[0], position[1], position[2]).jumpProperties;
+            }).trigger;
+            const float multiplier = trigger.reducedSurface ? 0.6f : 1.0f;
+            const float scale = h.jumpPendingScale;
+            // jump boost on the horse itself: not tracked, adds (amplifier + 1) * 0.1f
+            const float effect = 0.0f;
+            s.vy = (*in.jumpStrength * scale) * multiplier + effect * multiplier;
+            if (intent.z > 0.0f) {
+                const float coordinate = (h.yaw * 0.017453292f) * 10430.378f;
+                s.vx = static_cast<float>(s.vx) -
+                       (bds::CurrentSineEntry(bds::SineIndex(coordinate)) * 0.4f) * scale;
+                s.vz = (0.4f * bds::CurrentSineEntry(bds::SineIndex(coordinate + 16384.0f))) * scale +
+                       static_cast<float>(s.vz);
+            }
+            h.jumpPendingScale = 0.0f;
+        }
+
+        // MobTravelUpdateSpeedsSystem 0x143606ee0, local controller: ground speed = movement, air = movement * 0.1f
+        Attributes attributes;
+        attributes.speed = in.movement;
+        attributes.airSpeed = in.movement * 0.1f;
+        attributes.underwaterSpeed = in.underwaterMovement;
+        attributes.lavaSpeed = in.lavaMovement;
+        attributes.maxAutoStep = in.maxAutoStep;
+        Input step;
+        step.mobIntent = intent;
+        step.pitch = h.pitch;
+        step.canClimb = in.canClimb;
+        step.wallClimbing = in.wallClimbing;
+        step.gravity.hasGravity = in.hasGravity;
+        Step(s, step, attributes, world);
+
+        const float vy = Buoyant(static_cast<float>(s.x), static_cast<float>(s.y), static_cast<float>(s.z),
+                                 static_cast<float>(s.vx), static_cast<float>(s.vy), static_cast<float>(s.vz),
+                                 h.waveTimer, h.atSurface, h.submerged, false, HorseBuoyancy(), world);
+        // can_auto_step_from_liquid: at the surface, not under, adds CanAlwaysAutoStepFlagComponent
+        if (h.atSurface && !h.submerged)
+            s.canAlwaysAutoStep = true;
+        s.vy = vy;
     }
 }

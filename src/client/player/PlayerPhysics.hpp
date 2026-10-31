@@ -96,6 +96,8 @@ namespace perlin::physics {
         // lava_movement attribute; the player registers it at 0.02 (0x142C374F0)
         float lavaSpeed = 0.02f;
         bool dolphin = false;
+        // AirSpeedComponent of a non-player mob; unset keeps the player air speed system
+        std::optional<float> airSpeed;
     };
 
     struct Input {
@@ -132,6 +134,9 @@ namespace perlin::physics {
         uint8_t actorMovementFlags = 0;
         bds::GravityFlags gravity;
         std::vector<bds::MovementEffect> movementEffects;
+        // MobTravel intent written by VehicleDesiredMoveDirectionSystem (x right-positive like strafe);
+        // replaces the player travel intent and its 0.98 attenuation
+        std::optional<bds::Float3> mobIntent;
     };
 
     struct State {
@@ -177,7 +182,13 @@ namespace perlin::physics {
 
         // horizontal poses (gliding, riptide, swimming, crawling) take a square box: height = width
         bool HorizontalPose() const { return crawling || swimming || gliding || spinAttack; }
-        double Height(bool sneaking) const { return HorizontalPose() ? kCrawlHeight : sneaking ? kSneakHeight : kStandHeight; }
+        double Height(bool sneaking) const {
+            if (mobSize)
+                return (*mobSize)[1];
+            return HorizontalPose() ? kCrawlHeight : sneaking ? kSneakHeight : kStandHeight;
+        }
+        // non-player mob (ridden horse): its own collision box (width, height), no poses
+        std::optional<std::array<float, 2>> mobSize;
     };
 
     Box BoundingBox(const State& state, bool sneaking);
