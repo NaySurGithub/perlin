@@ -662,12 +662,6 @@ namespace perlin {
                      state.inWater && sprinting);
         ++tickCounter;
 
-        if (flying && state.onGround && state.verticalCollision && !in.flyUp && !in.noClip) {
-            flying = false;
-            sendStopFlying = true;
-            flyPending = true;
-            flyPendingAt = std::chrono::steady_clock::now();
-        }
 
         int slownessAmplifier = -1;
         for (const auto& effect : session.GetEffects())
