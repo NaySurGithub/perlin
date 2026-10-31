@@ -174,6 +174,9 @@ namespace perlin {
     // stamp the server skipped (two inputs in one server tick) leaves the frame on the previous value
     void LocalPlayer::SyncFreeze(BedrockSession& session) {
         for (const auto& update : session.TakeFreezeUpdates()) {
+            if (PERLIN_ENV("PERLIN_CORRECTION_LOG"))
+                std::cout << "[freeze] value stamp=" << update.tick << " server=" << update.strength
+                          << " newest=" << (history.empty() ? 0 : history.back().tick) << std::endl;
             if (update.tick == 0 || history.empty() || update.tick < history.front().tick ||
                 update.tick > history.back().tick)
                 continue;
