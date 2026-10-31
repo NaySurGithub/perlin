@@ -465,10 +465,6 @@ namespace perlin {
                                                   static_cast<int>(std::floor(state.z)) >> 4);
         const bool simulate = column && !asleep && !dimensionChanging;
 
-        bool levitating = false;
-        for (const auto& effect : session.GetEffects())
-            if (effect.id == 24)
-                levitating = true;
         const auto swimBox = physics::BoundingBox(state, wasSneaking);
         // SwimTrigger 0x147CAE950: centre as (max - min) * 0.5f + min in float
         const auto boxCentre = [](double lo, double hi) {
@@ -503,13 +499,27 @@ namespace perlin {
                 sneaking = true;
             }
         }
-        // StopGlidingIntentSystem 0x14b3533b0: a fresh jump press after 10 glide ticks folds the wings
-        if (gliding && (!hasElytra || state.onGround || state.inWater || flying || rideLock ||
-                        (jump && !jumpHeld && fallFlyTicks > 10)))
-            gliding = false;
-        else if (!gliding && hasElytra && jump && !jumpHeld && !state.onGround && !state.inWater && !state.inLava &&
-                 !state.onClimbable && !flying && !rideLock && !levitating && !crawling)
+        // StartGlidingIntentSystem 0x14b34d5e0: no lava, levitation or pose test; lava only picks the lava
+        // travel system (TravelTypeSensingSystem 0x147cce890) while the glide state stays
+        if (!gliding && hasElytra && jump && !jumpHeld && !state.onGround && !flying && !rideLock)
             gliding = true;
+        // StopGlidingIntentSystem 0x14b3533b0, same tick as the start: water, climbing, or a fresh jump press
+        // after 10 glide ticks (instabuild keeps gliding and lifts instead)
+        if (gliding) {
+            const auto glideFlags = session.OwnActorFlags();
+            const auto glideFeet = world.Query(static_cast<int>(std::floor(state.x)),
+                                               static_cast<int>(std::floor(static_cast<float>(state.y))),
+                                               static_cast<int>(std::floor(state.z)));
+            const auto glideBoots = session.GetInventory().armor[3];
+            const bool leatherBoots = !glideBoots.Empty() &&
+                (glideBoots.name == "minecraft:leather_boots" || glideBoots.name == "leather_boots");
+            const bool climbing = (glideFlags[0] & proto::FlagsMetadataFlags1::Wallclimbing) != 0 ||
+                ((glideFlags[0] & proto::FlagsMetadataFlags1::CanClimb) != 0 &&
+                 (glideFeet.climbable || (glideFeet.powderSnow && leatherBoots)));
+            if (!hasElytra || state.onGround || state.inWater || flying || rideLock || climbing ||
+                (jump && !jumpHeld && !session.Instabuild() && fallFlyTicks > 10))
+                gliding = false;
+        }
         {
             const auto glideNow = std::chrono::steady_clock::now();
             const bool serverGlide = session.ServerGliding();
@@ -531,10 +541,13 @@ namespace perlin {
                 }
             }
         }
-        // GlideInputSystem 0x146d09030 (FallFlyTicksComponent), counted after the stop check above
+        // GlideInputSystem 0x146d09030 (FallFlyTicksComponent), after the stop check above; the lift reads
+        // the count before it advances and needs jump held, not a fresh press
+        const bool glideLift = gliding && jump && session.Instabuild() && fallFlyTicks >= 11;
         fallFlyTicks = gliding ? fallFlyTicks + 1 : 0;
         physics::Input in;
         in.gliding = gliding;
+        in.glideLift = glideLift;
         in.crawl = crawling;
         in.forceCrouch = forcedSneak;
         if (pendingRiptide > 0 && simulate)

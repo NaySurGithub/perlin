@@ -115,6 +115,8 @@ namespace perlin::physics {
         bool headInWater = false;
         float lookY = 0;
         bool gliding = false;
+        // GlideInputSystem: +0.1 vertical before the move systems
+        bool glideLift = false;
         float pitch = 0;
         bool crawl = false;
         bool forceCrouch = false;

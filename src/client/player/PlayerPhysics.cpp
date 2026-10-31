@@ -567,6 +567,12 @@ namespace perlin::physics {
 
         s.x = F(s.x); s.y = F(s.y); s.z = F(s.z);
         s.vx = F(s.vx); s.vy = F(s.vy); s.vz = F(s.vz);
+        // GlideInputSystem 0x146d09030 adds (0, 0.1f, 0.0f) in the input phase
+        if (in.glideLift) {
+            s.vx = F(static_cast<float>(s.vx) + 0.0f);
+            s.vy = F(static_cast<float>(s.vy) + 0.1f);
+            s.vz = F(static_cast<float>(s.vz) + 0.0f);
+        }
 
         if (!in.flying)
             ApplyCurrent(s, world, fluidSensingBox);
