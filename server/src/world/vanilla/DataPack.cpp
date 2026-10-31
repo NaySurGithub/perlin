@@ -29,7 +29,7 @@ namespace perlin::server::vanilla {
             if (!mz_zip_reader_file_stat(&pack->impl->zip, i, &st) || st.m_is_directory)
                 continue;
             const std::string name = st.m_filename;
-            if (name.rfind(prefix, 0) == 0)
+            if (name.starts_with(prefix))
                 pack->impl->entries[name.substr(prefix.size())] = i;
         }
         return pack;
@@ -53,7 +53,7 @@ namespace perlin::server::vanilla {
     std::vector<std::string> DataPack::List(const std::string& prefix) const {
         std::vector<std::string> out;
         for (const auto& [name, index] : impl->entries)
-            if (name.rfind(prefix, 0) == 0)
+            if (name.starts_with(prefix))
                 out.push_back(name);
         return out;
     }

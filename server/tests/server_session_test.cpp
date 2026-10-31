@@ -240,7 +240,7 @@ int main(int argc, char** argv) {
     bool welcomed = false, joined = false;
     for (const auto& t : texts) {
         welcomed = welcomed || t.message == "Welcome, Alice!";
-        joined = joined || t.message.find("Alice joined") != std::string::npos;
+        joined = joined || t.message.contains("Alice joined");
     }
     CHECK(joined);
     CHECK(welcomed == (argc > 1));
@@ -286,7 +286,7 @@ int main(int argc, char** argv) {
         alice.Settle();
         CHECK(alice.Take<proto::TextPacket>().empty());
         const auto reply = bob.Take<proto::TextPacket>();
-        CHECK(reply.size() == 1 && reply[0].message.find("do not say that word") != std::string::npos);
+        CHECK(reply.size() == 1 && reply[0].message.contains("do not say that word"));
     }
 
     // commands: /list for anyone, /say refused for a non operator, allowed for Alice
@@ -295,20 +295,20 @@ int main(int argc, char** argv) {
     bob.Send(cmd);
     bob.Settle();
     auto listReply = bob.Take<proto::TextPacket>();
-    CHECK(listReply.size() == 1 && listReply[0].message.find("There are 2 of a max of 20 players online") != std::string::npos);
+    CHECK(listReply.size() == 1 && listReply[0].message.contains("There are 2 of a max of 20 players online"));
     cmd.command = "/say nope";
     bob.Send(cmd);
     bob.Settle();
     listReply = bob.Take<proto::TextPacket>();
     // java answers a command you may not use exactly like one that does not exist
-    CHECK(listReply.size() == 2 && listReply[0].message.find("Unknown or incomplete command") != std::string::npos && listReply[1].message.find("/say<--[HERE]") != std::string::npos);
+    CHECK(listReply.size() == 2 && listReply[0].message.contains("Unknown or incomplete command") && listReply[1].message.contains("/say<--[HERE]"));
     cmd.command = "/say server notice";
     alice.Send(cmd);
     alice.Settle();
     bob.Settle();
     bool notice = false;
     for (const auto& t : bob.Take<proto::TextPacket>())
-        notice = notice || t.message.find("server notice") != std::string::npos;
+        notice = notice || t.message.contains("server notice");
     CHECK(notice);
     if (argc > 1) {
         cmd.command = "/hello";
@@ -336,7 +336,7 @@ int main(int argc, char** argv) {
     std::string block;
     CHECK(server.GetBlock(1, -60, 1, block) == 0 && block == "minecraft:stone");
 
-    // ---- building: creative menu, placing, breaking, picking
+    // building: creative menu, placing, breaking, picking
     {
         using T = proto::ItemStackRequestActionsEntryTypeId;
         using C = proto::ContainerSlotType;
@@ -465,7 +465,7 @@ int main(int argc, char** argv) {
     CHECK(server.InGamePlayers().size() == 1);
 
 
-    // ---- commands: gamemode, give, op/deop, tick, whitelist
+    // commands: gamemode, give, op/deop, tick, whitelist
     {
         const auto run = [&](const std::string& line) {
             alice.inbox.clear();
@@ -552,28 +552,28 @@ int main(int argc, char** argv) {
             // selectors that match nobody, and errors in java's words with the "<--[HERE]" context
             run("/tp @a[gamemode=adventure] 0 0 0");
             std::string out = texts();
-            CHECK(out.find("No player was found") != std::string::npos);
+            CHECK(out.contains("No player was found"));
             run("/gamemode foo");
             out = texts();
-            CHECK(out.find("Incorrect argument for command") != std::string::npos && out.find("/gamemode foo<--[HERE]") != std::string::npos);
+            CHECK(out.contains("Incorrect argument for command") && out.contains("/gamemode foo<--[HERE]"));
             run("/give");
             out = texts();
-            CHECK(out.find("Unknown or incomplete command, see below for error") != std::string::npos && out.find("/give<--[HERE]") != std::string::npos);
+            CHECK(out.contains("Unknown or incomplete command, see below for error") && out.contains("/give<--[HERE]"));
             run("/give @s minecraft:not_an_item");
-            CHECK(texts().find("Unknown item 'minecraft:not_an_item'") != std::string::npos);
+            CHECK(texts().contains("Unknown item 'minecraft:not_an_item'"));
             run("/give @s stone abc");
-            CHECK(texts().find("Expected integer") != std::string::npos);
+            CHECK(texts().contains("Expected integer"));
             // two words are two player names to java too: valid syntax, and nobody by those names
             run("/tp 1 2");
-            CHECK(texts().find("No player was found") != std::string::npos);
+            CHECK(texts().contains("No player was found"));
             run("/tp");
-            CHECK(texts().find("Unknown or incomplete command") != std::string::npos);
+            CHECK(texts().contains("Unknown or incomplete command"));
             run("/tp @s ~ ~ ^");
-            CHECK(texts().find("Cannot mix world & local coordinates") != std::string::npos);
+            CHECK(texts().contains("Cannot mix world & local coordinates"));
             run("/nonsense");
-            CHECK(texts().find("/nonsense<--[HERE]") != std::string::npos);
+            CHECK(texts().contains("/nonsense<--[HERE]"));
             run("/help give");
-            CHECK(texts().find("/give <targets> <item> [<count>]") != std::string::npos);
+            CHECK(texts().contains("/give <targets> <item> [<count>]"));
             // time, weather, game rules, difficulty
             run("/time set day");
             CHECK(!alice.Take<proto::SetTimePacket>().empty());
@@ -600,44 +600,44 @@ int main(int argc, char** argv) {
             run("/gamerule doDaylightCycle false");
             CHECK(server.RuleValue("dodaylightcycle") == 0 && !alice.Take<proto::GameRulesChangedPacket>().empty());
             run("/gamerule dodaylightcycle");
-            CHECK(texts().find("Game rule doDaylightCycle is currently set to: false") != std::string::npos);
+            CHECK(texts().contains("Game rule doDaylightCycle is currently set to: false"));
             run("/gamerule doDaylightCycle true");
             run("/gamerule doDaylightCycle maybe");
-            CHECK(texts().find("Invalid boolean") != std::string::npos);
+            CHECK(texts().contains("Invalid boolean"));
             run("/difficulty hard");
             CHECK(!alice.Take<proto::SetDifficultyPacket>().empty() && server.Config().difficulty == 3);
             run("/difficulty");
-            CHECK(texts().find("The difficulty is Hard") != std::string::npos);
+            CHECK(texts().contains("The difficulty is Hard"));
             run("/difficulty easy");
             run("/defaultgamemode spectator");
             CHECK(server.Config().gameMode == 6);
             run("/defaultgamemode creative");
             // blocks
             run("/setblock 5 60 5 stone");
-            CHECK(texts().find("Changed the block at 5, 60, 5") != std::string::npos);
-            CHECK(server.GetBlock(5, 60, 5, out) == 0 && out.find("stone") != std::string::npos);
+            CHECK(texts().contains("Changed the block at 5, 60, 5"));
+            CHECK(server.GetBlock(5, 60, 5, out) == 0 && out.contains("stone"));
             run("/fill 0 70 0 3 72 3 stone");
-            CHECK(texts().find("48 blocks filled") != std::string::npos);
+            CHECK(texts().contains("48 blocks filled"));
             run("/fill 0 70 0 3 72 3 air hollow");
-            CHECK(texts().find("blocks filled") != std::string::npos);
+            CHECK(texts().contains("blocks filled"));
             run("/fill 0 70 0 100 100 100 stone");
             CHECK(texts().find("Too many blocks in the specified area (maximum 32768") != std::string::npos);
             run("/setblock 100000 60 5 stone");
-            CHECK(texts().find("That position is not loaded") != std::string::npos);
+            CHECK(texts().contains("That position is not loaded"));
             // misc
             run("/title @s actionbar \"hello there\"");
             const auto titles = alice.Take<proto::SetTitlePacket>();
             CHECK(titles.size() == 1 && titles[0].text == "hello there");
             run("/tellraw @s {\"text\":\"raw \",\"extra\":[{\"text\":\"words\"}]}");
-            CHECK(texts().find("raw words") != std::string::npos);
+            CHECK(texts().contains("raw words"));
             run("/locate biome plains");
-            CHECK(texts().find("flat world") != std::string::npos);
+            CHECK(texts().contains("flat world"));
             run("/locate biome nowhere_land");
-            CHECK(texts().find("Unknown biome 'nowhere_land'") != std::string::npos);
+            CHECK(texts().contains("Unknown biome 'nowhere_land'"));
             run("/seed");
-            CHECK(texts().find("Seed: [") != std::string::npos);
+            CHECK(texts().contains("Seed: ["));
             run("/clear");
-            CHECK(texts().find("items") != std::string::npos || true);
+            CHECK(texts().contains("items") || true);
             run("/gamemode survival");
         }
         // what clients are told: typed overloads, not one raw-text blob
@@ -675,7 +675,7 @@ int main(int argc, char** argv) {
         lines = alice.Take<proto::TextPacket>();
         bool noNewlines = lines.size() > 5;
         for (const auto& l : lines)
-            noNewlines = noNewlines && l.message.find('\n') == std::string::npos;
+            noNewlines = noNewlines && !l.message.contains('\n');
         CHECK(noNewlines);
         run("/tick freeze");
         const uint64_t frozenAt = server.TickCount();
@@ -691,7 +691,7 @@ int main(int argc, char** argv) {
         run("/tick unfreeze");
         run("/tick query");
         lines = alice.Take<proto::TextPacket>();
-        CHECK(!lines.empty() && lines[0].message.find("running normally") != std::string::npos);
+        CHECK(!lines.empty() && lines[0].message.contains("running normally"));
         // permissions and the allowlist live in the files bds uses
         server.RunConsoleCommand("op Bob");
         CHECK(server.IsOperator("Bob", ""));
@@ -710,7 +710,7 @@ int main(int argc, char** argv) {
 
     server.Stop();
 
-    // ---- survival: placing spends the item, breaking pays it into the inventory, no creative menu
+    // survival: placing spends the item, breaking pays it into the inventory, no creative menu
     {
         ServerConfig survivalConfig = config;
         survivalConfig.gameMode = 0;

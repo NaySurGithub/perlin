@@ -16,6 +16,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include "util/Log.hpp"
 
 namespace perlin::ui {
     namespace {
@@ -239,7 +240,7 @@ div { display: block; position: absolute; }
         emitter.SetTemplates(ScreenTemplate("chest_screen.rml", kChestTemplate), std::string());
         rml = emitter.Emit(*root, static_cast<float>(guiW), static_cast<float>(guiH), std::string(), false);
         current = nullptr;
-        if (rml.find("id=\"k0\"") == std::string::npos || rml.find("id=\"s0\"") == std::string::npos) {
+        if (!rml.contains("id=\"k0\"") || !rml.contains("id=\"s0\"")) {
             problem = "the ui files produced no container slots";
             return false;
         }
@@ -266,7 +267,7 @@ div { display: block; position: absolute; }
             std::ofstream f(out, std::ios::binary | std::ios::trunc);
             f << rml;
             for (const std::string& u : emitter.UnknownRenderers())
-                std::cout << "[chest] custom renderer not implemented: " << u << std::endl;
+                Log("chest", "custom renderer not implemented: {}", u);
         }
         return true;
     }

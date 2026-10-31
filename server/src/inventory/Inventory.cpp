@@ -19,7 +19,7 @@ namespace perlin::server {
             const std::string s = suffix;
             return n.size() >= s.size() && n.compare(n.size() - s.size(), s.size(), s) == 0;
         };
-        const auto has = [&](const char* s) { return n.find(s) != std::string::npos; };
+        const auto has = [&](const char* s) { return n.contains(s); };
         if (ends("_shulker_box") || n == "minecraft:shulker_box" || ends("_bed"))
             return 1;
         if (!item->block) {

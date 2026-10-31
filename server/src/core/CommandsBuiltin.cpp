@@ -9,6 +9,7 @@
 #include "world/vanilla/BiomeData.hpp"
 
 #include "protocol/Packets.hpp"
+#include "util/Strings.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -19,20 +20,7 @@
 
 namespace perlin::server {
     namespace {
-        std::string Lower(std::string s) {
-            for (char& c : s)
-                c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-            return s;
-        }
 
-        std::string Trim(const std::string& s) {
-            size_t a = 0, b = s.size();
-            while (a < b && std::isspace(static_cast<unsigned char>(s[a])))
-                a++;
-            while (b > a && std::isspace(static_cast<unsigned char>(s[b - 1])))
-                b--;
-            return s.substr(a, b - a);
-        }
 
         std::string Fixed(double v) {
             char buf[48];
@@ -85,7 +73,7 @@ namespace perlin::server {
         }
 
         std::string PlainText(const std::string& raw) {
-            const std::string t = Trim(raw);
+            const std::string t = str::Trim(raw);
             if (t.empty() || (t[0] != '{' && t[0] != '[' && t[0] != '"'))
                 return t;
             json::Value v;
@@ -131,12 +119,11 @@ namespace perlin::server {
             }
         };
 
-        // ---- information ----------------------------------------------------------------------------------------
         add({"help", "?"}, "List the commands you can use, or how to use one", false, {"", "<command:string>"}, [this, say, fail](CommandCtx& c) {
             Session* from = c.source;
             const auto usable = [&](const CommandDef& d) { return !d.operatorOnly || !from || from->Operator(); };
             if (c.Has("command")) {
-                const std::string name = Lower(c["command"].text.empty() || c["command"].text[0] != '/' ? c["command"].text : c["command"].text.substr(1));
+                const std::string name = str::Lower(c["command"].text.empty() || c["command"].text[0] != '/' ? c["command"].text : c["command"].text.substr(1));
                 const auto it = commands.find(name);
                 if (it == commands.end() || !usable(it->second)) {
                     fail(from, "Unknown command: " + name);
@@ -169,7 +156,6 @@ namespace perlin::server {
         });
         add({"seed"}, "Show the world seed", true, {""}, [this, say](CommandCtx& c) { say(c.source, "Seed: [" + std::to_string(static_cast<int64_t>(config.seed)) + "]"); });
 
-        // ---- chat -----------------------------------------------------------------------------------------------
         add({"say"}, "Broadcast a message to everyone", true, {"<message:text>"}, [this](CommandCtx& c) {
             Broadcast("[" + (c.source ? c.source->Name() : std::string("Server")) + "] " + c["message"].text);
         });
@@ -213,7 +199,6 @@ namespace perlin::server {
                                                     std::to_string(n) + " player(s)");
             });
 
-        // ---- teleporting ----------------------------------------------------------------------------------------
         add({"teleport", "tp"}, "Teleport entities", true,
             {"<destination:target>", "<location:pos>", "<targets:targets> <destination:target>", "<targets:targets> <location:pos> [yaw:float] [pitch:float]"},
             [say, fail](CommandCtx& c) {
@@ -246,7 +231,6 @@ namespace perlin::server {
                 }
             });
 
-        // ---- players --------------------------------------------------------------------------------------------
         add({"kick"}, "Kick a player off the server", true, {"<targets:targets> [reason:text]"}, [say](CommandCtx& c) {
             const std::string reason = c.Has("reason") ? c["reason"].text : "Kicked by an operator";
             for (Session* s : c["targets"].players) {
@@ -367,10 +351,9 @@ namespace perlin::server {
                 }
             });
 
-        // ---- access lists ---------------------------------------------------------------------------------------
         const auto allowlistCommand = [this, say](CommandCtx& c) {
             // the first word of the line is the keyword of the overload that matched
-            const std::string action = Lower(c.raw.substr(0, c.raw.find(' ')));
+            const std::string action = str::Lower(c.raw.substr(0, c.raw.find(' ')));
             const auto persist = [this] {
                 if (config.loopbackOnly)
                     return;
@@ -449,7 +432,6 @@ namespace perlin::server {
             say(c.source, out);
         });
 
-        // ---- the world ------------------------------------------------------------------------------------------
         add({"difficulty"}, "Show or set the difficulty", true, {"", "<difficulty:enum(peaceful|easy|normal|hard)>"}, [this, say](CommandCtx& c) {
             if (!c.Has("difficulty")) {
                 say(c.source, std::string("The difficulty is ") + DifficultyName(config.difficulty));
@@ -512,7 +494,7 @@ namespace perlin::server {
             say(c.source, kind == "clear" ? "Changed the weather to clear" : kind == "rain" ? "Changed the weather to rain" : "Changed the weather to rain and thunder");
         });
         add({"gamerule"}, "Show or change a game rule", true, {"<rule:string>", "<rule:string> <value:string>"}, [this, say, fail](CommandCtx& c) {
-            const auto it = gameRules.find(Lower(c["rule"].text));
+            const auto it = gameRules.find(str::Lower(c["rule"].text));
             if (it == gameRules.end()) {
                 fail(c.source, "Incorrect argument for command");
                 fail(c.source, "/gamerule " + c["rule"].text + "<--[HERE]");
@@ -524,7 +506,7 @@ namespace perlin::server {
                 say(c.source, "Game rule " + rule.display + " is currently set to: " + shown(rule.value));
                 return;
             }
-            const std::string v = Lower(c["value"].text);
+            const std::string v = str::Lower(c["value"].text);
             int value = 0;
             if (rule.boolean) {
                 if (v != "true" && v != "false") {
@@ -576,7 +558,6 @@ namespace perlin::server {
             }
         });
 
-        // ---- blocks ---------------------------------------------------------------------------------------------
         const auto loaded = [this](int x, int z) { return chunks->Peek({x >> 4, z >> 4}) != nullptr; };
         const auto registryOf = [](int networkId) {
             const CatalogItem* item = BlockCatalog::Instance().ItemById(static_cast<int16_t>(networkId));
@@ -655,7 +636,6 @@ namespace perlin::server {
                     say(c.source, std::to_string(changed) + " blocks filled");
             });
 
-        // ---- finding things -------------------------------------------------------------------------------------
         add({"locate"}, "Find the nearest biome or structure", true, {"biome <biome:biome>", "structure <structure:string>"}, [this, say, fail](CommandCtx& c) {
             if (c.overload == 1) {
                 fail(c.source, "Could not find a structure of type \"" + c["structure"].text + "\": this server does not generate structures yet");
@@ -695,7 +675,6 @@ namespace perlin::server {
             });
         });
 
-        // ---- the server -----------------------------------------------------------------------------------------
         add({"tick"}, "Query or control the game's tick rate", true,
             {"query", "rate <rate:float>", "freeze", "unfreeze", "step", "step <time:string>", "sprint stop", "sprint <time:string>"},
             [this](CommandCtx& c) { RunTickCommand(c.source, c.raw); });

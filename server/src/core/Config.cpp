@@ -2,6 +2,7 @@
 
 #include "core/Json.hpp"
 #include "core/Log.hpp"
+#include "util/Strings.hpp"
 
 #include <algorithm>
 #include <cstdlib>
@@ -108,14 +109,6 @@ namespace perlin::server {
     }
 
     namespace {
-        std::string Trim(const std::string& s) {
-            size_t a = 0, b = s.size();
-            while (a < b && std::isspace(static_cast<unsigned char>(s[a])))
-                a++;
-            while (b > a && std::isspace(static_cast<unsigned char>(s[b - 1])))
-                b--;
-            return s.substr(a, b - a);
-        }
 
         std::string LowerText(std::string s) {
             for (char& c : s)
@@ -152,7 +145,7 @@ namespace perlin::server {
             size_t start = 0;
             for (;;) {
                 const size_t at = s.find(sep, start);
-                std::string part = Trim(s.substr(start, at == std::string::npos ? std::string::npos : at - start));
+                std::string part = str::Trim(s.substr(start, at == std::string::npos ? std::string::npos : at - start));
                 if (!part.empty())
                     out.push_back(std::move(part));
                 if (at == std::string::npos)
@@ -167,10 +160,10 @@ namespace perlin::server {
             const size_t dash = text.find('-');
             int64_t a = 0, b = 0;
             if (dash == std::string::npos) {
-                if (!ParseInt(Trim(text), a))
+                if (!ParseInt(str::Trim(text), a))
                     return false;
                 b = a;
-            } else if (!ParseInt(Trim(text.substr(0, dash)), a) || !ParseInt(Trim(text.substr(dash + 1)), b)) {
+            } else if (!ParseInt(str::Trim(text.substr(0, dash)), a) || !ParseInt(str::Trim(text.substr(dash + 1)), b)) {
                 return false;
             }
             if (a < 1 || b > 65535 || a > b)
@@ -182,7 +175,7 @@ namespace perlin::server {
 
         // [ip:][public:]local, where public and local are a port or a first-last range (bds "UDP port configuration for NetherNet")
         bool ParseUdpPorts(const std::string& text, ServerConfig& c) {
-            std::string t = Trim(text);
+            std::string t = str::Trim(text);
             c.udpPortsSet = true;
             c.udpPublicAddress.clear();
             c.udpPublicBegin = c.udpPublicEnd = 0;
@@ -235,7 +228,7 @@ namespace perlin::server {
             if (c.udpPublicBegin != 0)
                 out = range(c.udpPublicBegin, c.udpPublicEnd) + ":" + out;
             if (!c.udpPublicAddress.empty())
-                out = (c.udpPublicAddress.find(':') != std::string::npos ? "[" + c.udpPublicAddress + "]" : c.udpPublicAddress) + ":" + out;
+                out = (c.udpPublicAddress.contains(':') ? "[" + c.udpPublicAddress + "]" : c.udpPublicAddress) + ":" + out;
             return out;
         }
 
@@ -318,7 +311,7 @@ namespace perlin::server {
     }
 
     uint64_t ServerConfig::SeedFromText(const std::string& text) {
-        const std::string t = Trim(text);
+        const std::string t = str::Trim(text);
         int64_t n = 0;
         if (ParseInt(t, n))
             return static_cast<uint64_t>(n);
@@ -347,7 +340,7 @@ namespace perlin::server {
     }
 
     bool ServerConfig::SetProperty(const std::string& key, const std::string& rawValue, std::string* warning) {
-        const std::string v = Trim(rawValue);
+        const std::string v = str::Trim(rawValue);
         const std::string lower = LowerText(v);
         bool b = false;
         int64_t n = 0;
@@ -473,9 +466,9 @@ namespace perlin::server {
             for (const std::string& item : Split(v, ',')) {
                 FlatLayer layer;
                 const size_t star = item.find('*');
-                layer.block = Trim(item.substr(0, star));
+                layer.block = str::Trim(item.substr(0, star));
                 int64_t count = 1;
-                if (star != std::string::npos && !ParseInt(Trim(item.substr(star + 1)), count))
+                if (star != std::string::npos && !ParseInt(str::Trim(item.substr(star + 1)), count))
                     count = 1;
                 layer.count = static_cast<int>(std::clamp<int64_t>(count, 1, 384));
                 if (!layer.block.empty())
@@ -511,7 +504,7 @@ namespace perlin::server {
             if (first && line.compare(0, 3, "\xEF\xBB\xBF") == 0)
                 line.erase(0, 3);
             first = false;
-            line = Trim(line);
+            line = str::Trim(line);
             if (line.empty() || line[0] == '#')
                 continue;
             const size_t eq = line.find('=');
@@ -520,7 +513,7 @@ namespace perlin::server {
                 continue;
             }
             std::string warning;
-            c.SetProperty(Trim(line.substr(0, eq)), line.substr(eq + 1), &warning);
+            c.SetProperty(str::Trim(line.substr(0, eq)), line.substr(eq + 1), &warning);
             if (!warning.empty())
                 LogWarn(path + ": " + warning);
         }

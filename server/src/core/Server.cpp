@@ -6,6 +6,7 @@
 #include "world/Blocks.hpp"
 
 #include "protocol/Packets.hpp"
+#include "util/Strings.hpp"
 
 #include <algorithm>
 #include <chrono>
@@ -19,21 +20,10 @@
 
 namespace perlin::server {
     namespace {
-        std::string Trim(std::string s) {
-            const auto notSpace = [](unsigned char c) { return !std::isspace(c); };
-            s.erase(s.begin(), std::find_if(s.begin(), s.end(), notSpace));
-            s.erase(std::find_if(s.rbegin(), s.rend(), notSpace).base(), s.end());
-            return s;
-        }
 
-        std::string Lower(std::string s) {
-            for (char& c : s)
-                c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-            return s;
-        }
 
         // a block name with or without the namespace
-        std::string FullBlockName(const std::string& n) { return n.find(':') == std::string::npos ? "minecraft:" + n : n; }
+        std::string FullBlockName(const std::string& n) { return !n.contains(':') ? "minecraft:" + n : n; }
     }
 
     Server::Server(ServerConfig cfg) : config(std::move(cfg)) {
@@ -282,7 +272,7 @@ namespace perlin::server {
         std::istringstream in(args);
         std::string sub, arg;
         in >> sub >> arg;
-        sub = Lower(sub);
+        sub = str::Lower(sub);
         // a time is ticks, or a number with t (ticks), s (seconds) or d (days) after it
         const auto parseTime = [](std::string text, int64_t& ticks) {
             if (text.empty())
@@ -522,9 +512,9 @@ namespace perlin::server {
     }
 
     Session* Server::FindByName(const std::string& name) {
-        const std::string wanted = Lower(name);
+        const std::string wanted = str::Lower(name);
         for (auto& [id, s] : sessions)
-            if (!s->Name().empty() && Lower(s->Name()) == wanted)
+            if (!s->Name().empty() && str::Lower(s->Name()) == wanted)
                 return s.get();
         return nullptr;
     }
@@ -644,7 +634,7 @@ namespace perlin::server {
     void Server::RunConsoleCommand(const std::string& line) { RunCommand(nullptr, line); }
 
     void Server::RunCommand(Session* from, const std::string& line) {
-        std::string text = Trim(line);
+        std::string text = str::Trim(line);
         if (!text.empty() && text[0] == '/')
             text.erase(0, 1);
         if (text.empty())
@@ -656,8 +646,8 @@ namespace perlin::server {
                 LogInfo(m);
         };
         const size_t space = text.find(' ');
-        const std::string name = Lower(text.substr(0, space));
-        const std::string args = space == std::string::npos ? "" : Trim(text.substr(space + 1));
+        const std::string name = str::Lower(text.substr(0, space));
+        const std::string args = space == std::string::npos ? "" : str::Trim(text.substr(space + 1));
         const auto it = commands.find(name);
         if (it == commands.end() || (it->second.operatorOnly && from && !from->Operator())) {
             UnknownCommand(name, say);
@@ -708,7 +698,7 @@ namespace perlin::server {
 
     void Server::RegisterCommand(const std::string& plugin, const std::string& name, const std::string& description) {
         CommandDef d;
-        d.name = Lower(name);
+        d.name = str::Lower(name);
         d.description = description;
         d.plugin = plugin;
         commands[d.name] = std::move(d);
@@ -952,7 +942,7 @@ namespace perlin::server {
             size_t group = defs.size();
             const std::string shortName = item.name.substr(item.name.find(':') + 1);
             if (!item.block) {
-                const auto has = [&](const char* w) { return shortName.find(w) != std::string::npos; };
+                const auto has = [&](const char* w) { return shortName.contains(w); };
                 const bool gear = has("_sword") || has("_pickaxe") || has("_axe") || has("_shovel") || has("_hoe") || has("_helmet") || has("_chestplate") || has("_leggings") ||
                                   has("_boots") || shortName == "bow" || shortName == "crossbow" || shortName == "shield" || shortName == "trident" || shortName == "mace" ||
                                   has("_horse_armor") || shortName == "elytra" || shortName == "turtle_helmet" || has("wolf_armor");
@@ -961,7 +951,7 @@ namespace perlin::server {
             }
             for (size_t g = 0; g < defs.size() && group == defs.size(); g++)
                 for (const char* w : defs[g].words)
-                    if (shortName.find(w) != std::string::npos) {
+                    if (shortName.contains(w)) {
                         group = g;
                         break;
                     }
@@ -1028,7 +1018,7 @@ namespace perlin::server {
             {"spawnRadius", false, 10}, {"tntExplodes", true, 1}, {"tntExplosionDropDecay", true, 0},
         };
         for (const Def& d : defs)
-            gameRules[Lower(d.display)] = {d.display, d.boolean, d.value};
+            gameRules[str::Lower(d.display)] = {d.display, d.boolean, d.value};
     }
 
     int Server::RuleValue(const std::string& lowerName) const {

@@ -2,6 +2,7 @@
 #include <optional>
 #include "client/ui/JsonUi.hpp"
 #include "client/ui/UiExpr.hpp"
+#include "util/FileIo.hpp"
 
 #include <algorithm>
 #include <cctype>
@@ -14,15 +15,6 @@ namespace fs = std::filesystem;
 
 namespace perlin::ui {
     namespace {
-        bool ReadFile(const std::string& path, std::string& out) {
-            std::ifstream in(path, std::ios::binary);
-            if (!in)
-                return false;
-            std::ostringstream ss;
-            ss << in.rdbuf();
-            out = ss.str();
-            return true;
-        }
 
         std::string SplitName(const std::string& key, std::string* ref = nullptr) {
             const size_t at = key.find('@');
@@ -244,7 +236,7 @@ namespace perlin::ui {
             for (size_t r = roots.size(); r-- > 0;) {
                 const std::string path = (fs::path(roots[r]) / "_global_variables.json").string();
                 std::string text;
-                if (!ReadFile(path, text))
+                if (!file::Read(path, text))
                     continue;
                 Json root;
                 std::string error;
@@ -270,7 +262,7 @@ namespace perlin::ui {
         for (const size_t index : ns.files) {
             const File& file = files[index];
             std::string text;
-            if (!ReadFile(file.path, text))
+            if (!file::Read(file.path, text))
                 continue;
             Json root;
             std::string error;
@@ -286,7 +278,7 @@ namespace perlin::ui {
                     continue;
                 const std::string name = SplitName(member.first);
                 // "parent/child": patch for a nested control, not a control of its own
-                if (name.find('/') != std::string::npos) {
+                if (name.contains('/')) {
                     const size_t slash = name.find('/');
                     auto& list = ns.nested[name.substr(0, slash)];
                     const std::string rest = name.substr(slash + 1);
@@ -315,7 +307,7 @@ namespace perlin::ui {
                     def.json = &documents.back();
                     def.key = existing->second.key;
                 } else if (existing != ns.defs.end() &&
-                           (member.first.find('@') == std::string::npos || member.first == existing->second.key)) {
+                           (!member.first.contains('@') || member.first == existing->second.key)) {
                     // later file (server pack over vanilla) refines the named control: properties replace, "controls" only if listed;
                     // same key + same template merges too; different template ("name@other.control") replaces outright
                     Json merged = *existing->second.json;
@@ -397,7 +389,7 @@ namespace perlin::ui {
             switch (value.type) {
             case Json::Type::String: {
                 const std::string& s = value.string;
-                if (s.find('$') == std::string::npos)
+                if (!s.contains('$'))
                     return value;
                 if (s.size() > 1 && s[0] == '$' &&
                     std::all_of(s.begin() + 1, s.end(), [](char c) { return IsNameChar(c); })) {
@@ -481,7 +473,7 @@ namespace perlin::ui {
                     return nullptr;
                 std::string ref;
                 std::string name = SplitName(key, &ref);
-                if (!ref.empty() && ref.find('$') != std::string::npos) {
+                if (!ref.empty() && ref.contains('$')) {
                     const Json resolved = Sub(Json(ref), parentVars, &report.unresolvedVariables);
                     ref = resolved.StringOr("");
                 }
@@ -619,7 +611,7 @@ namespace perlin::ui {
                 // "$dropdown_name@..." names the control after a variable: view bindings find it by that value
                 if (name.size() > 1 && name[0] == '$') {
                     const Json resolved = Sub(Json(name), ownVars ? *ownVars : parentVars, nullptr);
-                    if (resolved.IsString() && !resolved.string.empty() && resolved.string.find('$') == std::string::npos)
+                    if (resolved.IsString() && !resolved.string.empty() && !resolved.string.contains('$'))
                         name = resolved.string;
                 }
                 auto node = std::make_unique<Node>();
@@ -800,7 +792,7 @@ namespace perlin::ui {
                         chainDefaults->erase(name);
                     vars.erase(DefaultMark(name));
                 }
-                if (value.IsString() && value.string.find('$') != std::string::npos) {
+                if (value.IsString() && value.string.contains('$')) {
                     vars[name] = Sub(value, vars, nullptr);
                     return;
                 }
@@ -842,7 +834,7 @@ namespace perlin::ui {
                 if (!parent.empty()) {
                     if (parent[0] == '@')
                         parent.erase(0, 1);
-                    if (parent.find('$') == std::string::npos)
+                    if (!parent.contains('$'))
                         ResolveChain(parent, def->ns, out, depth + 1);
                 }
                 out.push_back({def->json, def->ns});

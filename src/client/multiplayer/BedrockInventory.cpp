@@ -7,6 +7,7 @@
 #include <iterator>
 #include <array>
 #include <iostream>
+#include "util/Log.hpp"
 
 namespace perlin {
     using namespace proto;
@@ -16,10 +17,10 @@ namespace perlin {
             const size_t n = std::char_traits<char>::length(suffix);
             return s.size() >= n && s.compare(s.size() - n, n, suffix) == 0;
         }
-        bool Has(const std::string& s, const char* part) { return s.find(part) != std::string::npos; }
+        bool Has(const std::string& s, const char* part) { return s.contains(part); }
 
         int MaxStack(const std::string& full) {
-            const std::string n = full.rfind("minecraft:", 0) == 0 ? full.substr(10) : full;
+            const std::string n = full.starts_with("minecraft:") ? full.substr(10) : full;
             static const char* const kOne[] = {"_sword", "_pickaxe", "_axe", "_shovel", "_hoe", "_helmet", "_chestplate", "_leggings",
                                               "_boots", "_boat", "_raft", "_minecart", "_bed", "_shulker_box", "_horse_armor", "_harness",
                                               "_bucket", "potion", "_book", "_disc", "_banner_pattern"};
@@ -43,7 +44,7 @@ namespace perlin {
         }
 
         int ArmorSlotOf(const std::string& full) {
-            const std::string n = full.rfind("minecraft:", 0) == 0 ? full.substr(10) : full;
+            const std::string n = full.starts_with("minecraft:") ? full.substr(10) : full;
             if (EndsWith(n, "_helmet") || n == "carved_pumpkin" || EndsWith(n, "_head") || EndsWith(n, "_skull"))
                 return 0;
             if (EndsWith(n, "_chestplate") || n == "elytra")
@@ -60,7 +61,7 @@ namespace perlin {
         }
 
         bool OffhandAllowed(const std::string& full) {
-            const std::string n = full.rfind("minecraft:", 0) == 0 ? full.substr(10) : full;
+            const std::string n = full.starts_with("minecraft:") ? full.substr(10) : full;
             static const char* const kAllowed[] = {"shield", "totem_of_undying", "arrow", "spectral_arrow", "tipped_arrow",
                                                    "firework_rocket", "filled_map", "empty_map", "map"};
             for (const char* a : kAllowed)
@@ -90,8 +91,8 @@ namespace perlin {
         }
 
         bool TagMatches(const std::string& tag, const std::string& full) {
-            const std::string t = tag.rfind("minecraft:", 0) == 0 ? tag.substr(10) : tag;
-            const std::string n = full.rfind("minecraft:", 0) == 0 ? full.substr(10) : full;
+            const std::string t = tag.starts_with("minecraft:") ? tag.substr(10) : tag;
+            const std::string n = full.starts_with("minecraft:") ? full.substr(10) : full;
             if (t == "planks") return EndsWith(n, "_planks");
             if (t == "logs" || t == "logs_that_burn" || Has(t, "_logs"))
                 return Has(n, "_log") || EndsWith(n, "_stem") || EndsWith(n, "_wood") || EndsWith(n, "_hyphae");
@@ -289,7 +290,7 @@ namespace perlin {
                     gChestSlotType = chestSlotType;
                     if (legacyInventory) {
                         if (op(r) && !r.actions.empty()) {
-                            std::cout << "[inventory] legacy send " << r.actions.size() << " actions" << std::endl;
+                            Log("inventory", "legacy send {} actions", r.actions.size());
                             SendLegacyInventoryLocked(snapshot);
                         }
                         continue;
@@ -310,7 +311,7 @@ namespace perlin {
                             if (invSummaries.size() > 32)
                                 invSummaries.erase(std::prev(invSummaries.end()));
                             if (PERLIN_ENV("PERLIN_INV_DEBUG"))
-                                std::cout << "[inventory] send request " << r.requestId << ":" << text << std::endl;
+                                Log("inventory", "send request {}:{}", r.requestId, text);
                         }
                         invPendingRequest = r.requestId;
                         invPendingAt = now;
@@ -454,7 +455,7 @@ namespace perlin {
         if (addr < 0 || addr >= kInvTotal || addr == kInvCursor)
             return;
         if (addr >= kInvChest0)
-            std::cout << "[inventory] chest click addr " << addr << (InvInfoLocked(addr).Empty() ? " empty" : " has-item") << std::endl;
+            Log("inventory", "chest click addr {}{}", addr, (InvInfoLocked(addr).Empty() ? " empty" : " has-item"));
         InvEnqueue([this, addr, right](ItemStackRequest& r) {
             Mover m{*this, r, [this](int a) -> ItemStackInfo& { return InvInfoLocked(a); }, [this](int a) -> ItemV4& { return InvRawLocked(a); }};
             auto& S = InvInfoLocked(addr);
@@ -483,9 +484,9 @@ namespace perlin {
                     return false;
                 if (addr == kInvOffhand && !OffhandAllowed(C.name))
                     return false;
-                if (addr == kInvHorse0 && C.name.find("saddle") == std::string::npos)
+                if (addr == kInvHorse0 && !C.name.contains("saddle"))
                     return false;
-                if (addr == kInvHorse0 + 1 && C.name.find("horse_armor") == std::string::npos && C.name.find("carpet") == std::string::npos)
+                if (addr == kInvHorse0 + 1 && !C.name.contains("horse_armor") && !C.name.contains("carpet"))
                     return false;
             }
             const int max = cEmpty ? 64 : MaxStack(C.name);
@@ -525,7 +526,7 @@ namespace perlin {
         if (addr < 0 || addr >= kInvTotal || addr == kInvCursor)
             return;
         if (addr >= kInvChest0)
-            std::cout << "[inventory] chest shift-click addr " << addr << (InvInfoLocked(addr).Empty() ? " empty" : " has-item") << std::endl;
+            Log("inventory", "chest shift-click addr {}{}", addr, (InvInfoLocked(addr).Empty() ? " empty" : " has-item"));
         InvEnqueue([this, addr](ItemStackRequest& r) {
             Mover m{*this, r, [this](int a) -> ItemStackInfo& { return InvInfoLocked(a); }, [this](int a) -> ItemV4& { return InvRawLocked(a); }};
             auto& S = InvInfoLocked(addr);
@@ -556,9 +557,9 @@ namespace perlin {
             } else if (addr >= kInvHorse0) {
                 ok = QuickMove(m, addr, mainThenHotbar);
             } else if (addr < 36 && inventory.horseOpen &&
-                       ((S.name.find("saddle") != std::string::npos && inventory.horse[0].Empty()) ||
-                        ((S.name.find("horse_armor") != std::string::npos || S.name.find("carpet") != std::string::npos) && inventory.horse[1].Empty()))) {
-                const int target = S.name.find("saddle") != std::string::npos ? kInvHorse0 : kInvHorse0 + 1;
+                       ((S.name.contains("saddle") && inventory.horse[0].Empty()) ||
+                        ((S.name.contains("horse_armor") || S.name.contains("carpet")) && inventory.horse[1].Empty()))) {
+                const int target = S.name.contains("saddle") ? kInvHorse0 : kInvHorse0 + 1;
                 ok = QuickMove(m, addr, {{target, target}});
             } else if (addr < 36 && inventory.horseOpen && inventory.horseChestSlots > 0) {
                 ok = QuickMove(m, addr, {{kInvHorse0 + 2, kInvHorse0 + 1 + inventory.horseChestSlots}});

@@ -58,7 +58,7 @@ static bool Gpu(int64_t seed, bool& ran) {
     if (!gpu) {
         std::printf("no gpu path: %s\n", note.c_str());
         // the gate refusing the device is a result, not a skip
-        if (note.find("differs") != std::string::npos) {
+        if (note.contains("differs")) {
             std::fprintf(stderr, "FAIL gate: %s\n", note.c_str());
             g_failed++;
         }

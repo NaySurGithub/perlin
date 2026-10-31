@@ -5,6 +5,7 @@
 #include "world/vanilla/BiomeData.hpp"
 
 #include "protocol/Packets.hpp"
+#include "util/Strings.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -17,13 +18,8 @@ namespace perlin::server {
     namespace {
         namespace proto = perlin::proto2225;
 
-        std::string Lower(std::string s) {
-            for (char& c : s)
-                c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-            return s;
-        }
 
-        std::string StripNamespace(const std::string& s) { return s.rfind("minecraft:", 0) == 0 ? s.substr(10) : s; }
+        std::string StripNamespace(const std::string& s) { return s.starts_with("minecraft:") ? s.substr(10) : s; }
 
         struct Token {
             std::string text;
@@ -164,7 +160,7 @@ namespace perlin::server {
                     error = "Expected value for option '" + inner.substr(i) + "'";
                     return false;
                 }
-                std::string key = Lower(inner.substr(i, eq - i));
+                std::string key = str::Lower(inner.substr(i, eq - i));
                 while (!key.empty() && key.back() == ' ')
                     key.pop_back();
                 size_t j = eq + 1;
@@ -224,7 +220,7 @@ namespace perlin::server {
                 }
                 limit = static_cast<int>(std::min<int64_t>(v, 1 << 30));
             } else if (key == "sort") {
-                const std::string v = Lower(value);
+                const std::string v = str::Lower(value);
                 if (v != "nearest" && v != "furthest" && v != "random" && v != "arbitrary") {
                     error = "Invalid or unknown sort type '" + value + "'";
                     return false;
@@ -232,7 +228,7 @@ namespace perlin::server {
                 sort = v;
             } else if (key == "gamemode" || key == "m") {
                 bool neg = !value.empty() && value[0] == '!';
-                const std::string v = Lower(neg ? value.substr(1) : value);
+                const std::string v = str::Lower(neg ? value.substr(1) : value);
                 int mode = -1;
                 if (v == "survival" || v == "s" || v == "0") mode = 0;
                 else if (v == "creative" || v == "c" || v == "1") mode = 1;
@@ -244,7 +240,7 @@ namespace perlin::server {
                 }
                 modes.emplace_back(neg, mode);
             } else if (key == "type") {
-                const std::string v = StripNamespace(Lower(value));
+                const std::string v = StripNamespace(str::Lower(value));
                 const bool neg = !v.empty() && v[0] == '!';
                 const std::string t = neg ? v.substr(1) : v;
                 // players are the only entities that can be selected
@@ -293,7 +289,6 @@ namespace perlin::server {
         return true;
     }
 
-    // ---- notation -------------------------------------------------------------------------------------------------
 
     bool ParseOverload(const std::string& notation, OverloadSpec& out, std::string* error) {
         out.clear();
@@ -307,7 +302,7 @@ namespace perlin::server {
             if (!required && !optional) {
                 p.name = word;
                 p.kind = ArgKind::Literal;
-                p.values = {Lower(word)};
+                p.values = {str::Lower(word)};
                 if (optionalSeen) {
                     if (error) *error = "a keyword after an optional argument: " + word;
                     return false;
@@ -354,7 +349,7 @@ namespace perlin::server {
                     if (bar == std::string::npos)
                         bar = list.size();
                     if (bar > from)
-                        p.values.push_back(Lower(list.substr(from, bar - from)));
+                        p.values.push_back(str::Lower(list.substr(from, bar - from)));
                     from = bar + 1;
                 }
                 if (p.values.empty()) {
@@ -390,7 +385,6 @@ namespace perlin::server {
         return line;
     }
 
-    // ---- parsing --------------------------------------------------------------------------------------------------
 
     namespace {
         struct Step {
@@ -460,7 +454,7 @@ namespace perlin::server {
                     double v = c[k].value;
                     // a whole number written without a decimal point means the middle of that block, for x and z (as java does)
                     const std::string& text = tokens[at + static_cast<size_t>(k)].text;
-                    if (!block && k != 1 && text.find('.') == std::string::npos)
+                    if (!block && k != 1 && !text.contains('.'))
                         v += 0.5;
                     out[static_cast<size_t>(k)] = v;
                 }
@@ -497,7 +491,7 @@ namespace perlin::server {
             switch (p.kind) {
             case ArgKind::Literal:
             case ArgKind::Enum: {
-                const std::string word = Lower(t.text);
+                const std::string word = str::Lower(t.text);
                 if (std::find(p.values.begin(), p.values.end(), word) == p.values.end()) {
                     st.status = 1;
                     st.error = "Incorrect argument for command";
@@ -597,7 +591,7 @@ namespace perlin::server {
                 const size_t cut = name.find_first_of("[{");
                 if (cut != std::string::npos)
                     name.resize(cut);
-                const std::string full = "minecraft:" + StripNamespace(Lower(name));
+                const std::string full = "minecraft:" + StripNamespace(str::Lower(name));
                 if (p.kind == ArgKind::Block && (full == "minecraft:air" || full == "minecraft:cave_air" || full == "minecraft:void_air")) {
                     v.text = "minecraft:air";
                     v.index = 0;
@@ -614,7 +608,7 @@ namespace perlin::server {
                 break;
             }
             case ArgKind::Biome: {
-                const std::string name = StripNamespace(Lower(t.text));
+                const std::string name = StripNamespace(str::Lower(t.text));
                 int found = -1;
                 for (int i = 0; i < vanilla::kBiomeCount && found < 0; i++)
                     if (name == vanilla::kBiomes[i].bedrock || name == vanilla::kBiomes[i].java)
@@ -700,7 +694,7 @@ namespace perlin::server {
                     const auto found = values.find(p.name);
                     if ((p.kind == ArgKind::Targets || p.kind == ArgKind::Target) && found != values.end() && found->second.present && found->second.players.empty()) {
                         result.ok = false;
-                        result.error = found->second.text.rfind("@e", 0) == 0 ? "No entity was found" : "No player was found";
+                        result.error = found->second.text.starts_with("@e") ? "No entity was found" : "No player was found";
                         return result;
                     }
                 }
@@ -722,7 +716,6 @@ namespace perlin::server {
         return result;
     }
 
-    // ---- what clients are told ------------------------------------------------------------------------------------
 
     void FillAvailableCommands(proto::AvailableCommandsPacket& out, const std::map<std::string, CommandDef>& commands, bool isOperator) {
         using VT = proto::AvailableCommandsPacketCommandDataEntryOverloadsEntryParametersEntryValueType;

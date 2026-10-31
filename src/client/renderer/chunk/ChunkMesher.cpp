@@ -29,7 +29,7 @@ namespace perlin {
     static constexpr float kAoSolid = 0.2f;
 
     static bool TexHas(const std::string& tex, const char* sub) {
-        return tex.find(sub) != std::string::npos;
+        return tex.contains(sub);
     }
     static bool IsWaterTex(const std::string& t) {
         return TexHas(t, "still_water") || TexHas(t, "water_flow") || TexHas(t, "flowing_water") ||
@@ -95,8 +95,8 @@ namespace perlin {
                                               "wooden_", "fence", "stripped_", "bamboo_mosaic", "moss_", "hanging_roots",
                                               "glow_lichen", "cherry", "mangrove", "crafting_table", "chiseled_bookshelf"};
                 for (const char* k : kBurn)
-                    if (nm.find(k) != std::string::npos && nm.find("nether") == std::string::npos &&
-                        nm.find("crimson") == std::string::npos && nm.find("warped") == std::string::npos) {
+                    if (nm.contains(k) && !nm.contains("nether") &&
+                        !nm.contains("crimson") && !nm.contains("warped")) {
                         g.flammable = true;
                         break;
                     }
@@ -166,7 +166,7 @@ namespace perlin {
                                             "lilac", "sunflower", "dead_bush", "deadbush", "double_plant"};
         bool offset = false;
         for (const char* name : names)
-            if (tex.find(name) != std::string::npos)
+            if (tex.contains(name))
                 offset = true;
         if (!offset)
             return;
@@ -176,7 +176,7 @@ namespace perlin {
         seed >>= 16;
         dx = std::clamp((static_cast<float>(seed & 15) / 15.0f - 0.5f) * 0.5f, -0.25f, 0.25f);
         dz = std::clamp((static_cast<float>((seed >> 8) & 15) / 15.0f - 0.5f) * 0.5f, -0.25f, 0.25f);
-        if (!doublePlant && (tex.find("tallgrass") != std::string::npos || tex.find("fern") != std::string::npos))
+        if (!doublePlant && (tex.contains("tallgrass") || tex.contains("fern")))
             dy = (static_cast<float>((seed >> 4) & 15) / 15.0f - 1.0f) * 0.2f;
     }
 
@@ -397,13 +397,13 @@ namespace perlin {
             const std::string name = BlockPalette::Instance().Name(id);
             if (name.empty())
                 return 0;
-            const std::string shortName = name.rfind("minecraft:", 0) == 0 ? name.substr(10) : name;
+            const std::string shortName = name.starts_with("minecraft:") ? name.substr(10) : name;
             const bool sign = shortName.size() > 5 && shortName.compare(shortName.size() - 5, 5, "_sign") == 0;
             const auto ends = [&](const char* suffix) {
                 const size_t n = std::strlen(suffix);
                 return shortName.size() > n && shortName.compare(shortName.size() - n, n, suffix) == 0;
             };
-            const bool skull = ends("_skull") || (ends("_head") && shortName != "piston_head" && shortName.find("bed") == std::string::npos) || shortName.find("copper_golem_statue") != std::string::npos || shortName == "conduit" ||
+            const bool skull = ends("_skull") || (ends("_head") && shortName != "piston_head" && !shortName.contains("bed")) || shortName.contains("copper_golem_statue") || shortName == "conduit" ||
                               shortName == "standing_banner" || shortName == "wall_banner";
             const bool chest = shortName == "chest" || shortName == "trapped_chest" || shortName == "ender_chest" || ends("copper_chest");
             m = shortName == "bed" ? 1 : sign ? 2 : skull ? 3 : shortName == "bubble_column" ? 4 : chest ? 5 : 0;
@@ -471,13 +471,13 @@ namespace perlin {
 
     static bool LightsByShape(uint16_t id) {
         std::string n = BlockPalette::Instance().Name(id);
-        if (n.rfind("minecraft:", 0) == 0)
+        if (n.starts_with("minecraft:"))
             n.erase(0, 10);
         auto ends = [&](const char* s) {
             const size_t l = std::strlen(s);
             return n.size() >= l && n.compare(n.size() - l, l, s) == 0;
         };
-        if (n.find("double") != std::string::npos)
+        if (n.contains("double"))
             return false;
         return ends("_stairs") || ends("_slab") || n == "farmland" || n == "grass_path" || n == "dirt_path" ||
                n == "snow_layer";
@@ -741,7 +741,7 @@ namespace perlin {
             const std::string name = BlockPalette::Instance().Name(id);
             const BlockAppearance* a = library ? LookupApp(library, id) : nullptr;
             const bool cube = a && a->shape == BlockAppearance::Shape::Cube && (a->top | a->side | a->bottom) != 0;
-            m.ao[id] = cube && (name.find("leaves") != std::string::npos || name == "minecraft:ice" ||
+            m.ao[id] = cube && (name.contains("leaves") || name == "minecraft:ice" ||
                                 name == "minecraft:frosted_ice") &&
                                !IsLiquidId(library, id)
                            ? 1
@@ -1379,7 +1379,7 @@ namespace perlin {
                                 ? library->TilePathOf(tile) : bm.Textures()[q.tex];
                             {
                                 const std::string& tn0 = tintTexture;
-                                if (tn0.find("bamboo_leaf") != std::string::npos || tn0.find("bamboo_small_leaf") != std::string::npos)
+                                if (tn0.contains("bamboo_leaf") || tn0.contains("bamboo_small_leaf"))
                                     base[0] = base[1] = base[2] = 0.63f;
                             }
                             if (q.tint >= 0 && !q.tile) {
@@ -1496,8 +1496,8 @@ namespace perlin {
                         float h = 0.0625f;
                         if (gi.snowH >= 0)
                             h = (gi.snowH + 1) * 2.0f / 16.0f;
-                        else if (app->texTop.find("snow") != std::string::npos ||
-                                 app->texSide.find("snow") != std::string::npos)
+                        else if (app->texTop.contains("snow") ||
+                                 app->texSide.contains("snow"))
                             h = 0.125f;
                         float inset = 0;
                         if (gi.growth >= 0) {
