@@ -24,14 +24,17 @@
 
 #if defined(_WIN32)
 #include <windows.h>
-#elif defined(__ANDROID__)
-#include <SDL3/SDL_system.h>
-#include <jni.h>
 #elif !defined(__EMSCRIPTEN__)
-#include <spawn.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#if defined(__ANDROID__)
+#include <SDL3/SDL_system.h>
+#include <jni.h>
+#elif !defined(PERLIN_IOS)
+// desktop only: phones never start a second copy of the game
+#include <spawn.h>
 extern char** environ;
+#endif
 #endif
 
 #ifndef PERLIN_BUILD_COMMIT
@@ -310,7 +313,9 @@ namespace perlin::update {
 
         void Relaunch() {
             const fs::path root = InstallRoot();
-#if defined(_WIN32)
+#if defined(__ANDROID__) || defined(PERLIN_IOS)
+            (void)root;
+#elif defined(_WIN32)
             wchar_t path[MAX_PATH * 4] = {};
             if (!GetModuleFileNameW(nullptr, path, MAX_PATH * 4))
                 return;

@@ -569,9 +569,10 @@ jobs:
           if-no-files-found: error
 
   # the web build on GitHub Pages, redeployed by every nightly: the site is always the newest build and the page
-  # offers a reload when it notices it (Settings > Pages > Source: GitHub Actions must be selected once)
+  # offers a reload when it notices it. Off until Pages is set up: Settings > Pages > Source: GitHub Actions, then
+  # Settings > Secrets and variables > Actions > Variables: DEPLOY_PAGES = true
   pages:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.DEPLOY_PAGES == 'true'
     needs: web
     runs-on: ubuntu-24.04
     permissions:
