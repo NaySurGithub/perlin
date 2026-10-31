@@ -4,6 +4,7 @@
 #include "client/input/InputManager.hpp"
 #include "client/multiplayer/BedrockSession.hpp"
 #include "client/player/PlayerPhysics.hpp"
+#include "client/player/VehiclePhysics.hpp"
 #include "client/player/PlayerFov.hpp"
 #include "client/renderer/block/BlockLibrary.hpp"
 
@@ -79,6 +80,9 @@ namespace perlin {
         void ApplyEffectUpdates(BedrockSession& session);
         void ApplyMotionUpdate(BedrockSession& session, const BedrockSession::MotionUpdate& update);
         void ReplayFrom(BedrockSession& session, size_t first);
+        void ApplyVehicleCorrections(BedrockSession& session);
+        // client-predicted boat this tick, seat of the local rider; false when not driving one
+        bool TickVehicle(BedrockSession& session, float forward, float strafe, const physics::World& world);
         void Tick(BedrockSession& session, const InputManager& input, const Camera& camera,
                   const physics::World& world);
 
@@ -138,6 +142,18 @@ namespace perlin {
         bool itemSlow = false;
         uint64_t itemSlowUntil = 0;
         double rideX = 0, rideY = 0, rideZ = 0;
+        // seat from RiderSeatPosition: the rider stands at the seat, eye at the standing height
+        bool rideSeatKnown = false;
+        struct BoatRecord {
+            uint64_t tick = 0;
+            physics::vehicle::BoatInput input;
+            physics::vehicle::Boat after;
+        };
+        std::deque<BoatRecord> boatHistory;
+        physics::vehicle::Boat boat;
+        bool boatActive = false;
+        int64_t boatUid = 0;
+        uint64_t boatRuntime = 0;
         float eyeOffset = static_cast<float>(physics::kStandEye);
         float eyeDrop = 0.0f, eyeDropPrevious = 0.0f;
         uint64_t itemUseStart = 0;
@@ -145,7 +161,10 @@ namespace perlin {
         std::vector<physics::Box> mobBoxes;
         // ticks left to double-tap jump for flight (VanillaClientGameplayComponent +8)
         int flyTapTicks = 0;
+        // ticks left to double-tap forward for sprint (VanillaClientGameplayComponent +0)
+        int sprintTapTicks = 0;
+        // StorePreviousClientInputSystem: last tick's sneak input and forward >= 0.70710677 (VanillaClientGameplay +22/+23)
+        bool prevSneakInput = false, prevForwardHigh = false;
         int fallFlyTicks = 0;
-        std::chrono::steady_clock::time_point lastForwardPress{};
     };
 }

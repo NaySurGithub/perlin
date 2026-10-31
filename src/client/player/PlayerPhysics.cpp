@@ -510,6 +510,38 @@ namespace perlin::physics {
         return std::fmin(scaled + 0.3f, 1.0f);
     }
 
+    float ClampAttribute(float value, float min, float max, const std::vector<AttributeModifierValue>& modifiers) {
+        float cap = max;
+        for (const auto& m : modifiers)
+            if (m.operation == 3)
+                cap = std::fmin(m.amount, cap);
+        return cap < value ? cap : std::fmax(value, min);
+    }
+
+    float RecalculateAttribute(const std::array<float, 3>& base, const std::vector<AttributeModifierValue>& modifiers,
+                               float current, std::array<float, 2>& limits) {
+        // additions, then multiply-base on the added base, then multiply-total in list order
+        std::array<float, 3> added = base;
+        for (const auto& m : modifiers)
+            if (m.operation == 0 && m.operand >= 0 && m.operand < 3)
+                added[m.operand] = m.amount + added[m.operand];
+        std::array<float, 3> total = added;
+        for (const auto& m : modifiers)
+            if (m.operation == 1 && m.operand >= 0 && m.operand < 3) {
+                const float scaled = added[m.operand] * m.amount;
+                total[m.operand] = scaled + total[m.operand];
+            }
+        for (const auto& m : modifiers)
+            if (m.operation == 2 && m.operand >= 0 && m.operand < 3) {
+                const float factor = m.amount + 1.0f;
+                total[m.operand] = factor * total[m.operand];
+            }
+        limits = {total[0], total[1]};
+        // modifiers that leave the base unchanged keep the old value; none at all resets it (movement: Attribute byte 0 set)
+        const float value = !modifiers.empty() && !(total[2] != base[2]) ? current : total[2];
+        return ClampAttribute(value, limits[0], limits[1], modifiers);
+    }
+
     namespace {
         double BoxCentre(double lo, double hi) {
             return F((static_cast<float>(lo) + static_cast<float>(hi)) * 0.5f);
@@ -1001,5 +1033,35 @@ namespace perlin::physics {
                                                   : std::fmax(s.swimAmount - 0.1f, 0.0f);
         s.previousRotation = {in.pitch, s.yaw};
         s.hasTeleported = false;
+    }
+
+    BoxMove MoveBox(const World& world, const Box& start, float dx, float dy, float dz, bool wasOnGround,
+                    bds::RecoveryState& recovery) {
+        std::vector<Box> scratch;
+        bool oneShotStep = false;
+        const Vec3 request{dx, dy, dz};
+        const Motion m = ResolveMotion(world, start, request, request, wasOnGround, scratch,
+                                       bds::RecoveryLimits(recovery), 0.0f, false, oneShotStep);
+        bds::UpdateRecovery(recovery, m.penetration >= 1.0e-6f, false);
+        bds::MovementFlags flags;
+        flags.onGround = wasOnGround;
+        const auto result = bds::FinalizeMove(
+            CollisionBox(m.box), 0.0f, m.requested,
+            {static_cast<float>(m.resolved.x), static_cast<float>(m.resolved.y), static_cast<float>(m.resolved.z)},
+            {dx, dy, dz}, flags, false, m.preserveHorizontalMotion);
+        BoxMove out;
+        out.x = result.position.x;
+        out.y = result.position.y;
+        out.z = result.position.z;
+        out.vx = result.velocity.x;
+        out.vy = result.velocity.y;
+        out.vz = result.velocity.z;
+        // ResetVerticalVelocitySystem 0x147b8d050: every vertical collision tag
+        if (result.flags.verticalCollision)
+            out.vy = 0.0f;
+        out.onGround = result.flags.onGround;
+        out.horizontalCollision = result.flags.horizontalCollision;
+        out.verticalCollision = result.flags.verticalCollision;
+        return out;
     }
 }

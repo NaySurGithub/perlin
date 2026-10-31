@@ -83,6 +83,88 @@ namespace perlin {
             }
         }
 
+        // PointedDripstoneBlock 0x148f97240 boxes by dripstone_thickness; tip follows "hanging"
+        void AddDripstone(physics::BlockShape& s, uint16_t id) {
+            const std::string thickness = StateText(id, "dripstone_thickness", "tip");
+            if (thickness == "frustum") Add(s, 0.25, 0, 0.25, 0.75, 1, 0.75);
+            else if (thickness == "middle") Add(s, 0.1875, 0, 0.1875, 0.8125, 1, 0.8125);
+            else if (thickness == "base") Add(s, 0.125, 0, 0.125, 0.875, 1, 0.875);
+            else if (thickness == "merge") Add(s, 0.3125, 0, 0.3125, 0.6875, 1, 0.6875);
+            else if (State(id, "hanging", 0)) Add(s, 0.3125, 0.3125, 0.3125, 0.6875, 1, 0.6875);
+            else Add(s, 0.3125, 0, 0.3125, 0.6875, 0.6875, 0.6875);
+        }
+
+        // block_physics.bin is wrong for these: 6-decimal rounding (chests, trapdoors, lectern, turtle egg),
+        // offsets baked for the origin (bamboo, dripstone), or states newer than the dump
+        bool AddComputedShape(const std::string& n, uint16_t id, physics::BlockShape& s) {
+            // TrapDoorBlock 0x1449bbef0: 0.1825 thick, not 3/16
+            if (Ends(n, "_trapdoor") || n == "trapdoor") {
+                if (State(id, "open_bit", 0)) {
+                    switch (State(id, "direction", 0) & 3) {
+                    case 0: Add(s, 0, 0, 0, 0.1825f, 1, 1); break;
+                    case 1: Add(s, 0.8175f, 0, 0, 1, 1, 1); break;
+                    case 2: Add(s, 0, 0, 0, 1, 1, 0.1825f); break;
+                    default: Add(s, 0, 0, 0.8175f, 1, 1, 1); break;
+                    }
+                } else if (State(id, "upside_down_bit", 0)) {
+                    Add(s, 0, 0.8175f, 0, 1, 1, 1);
+                } else {
+                    Add(s, 0, 0, 0, 1, 0.1825f, 1);
+                }
+                return true;
+            }
+            // ChestBlock 0x14d190ef0: top is 0x3F733334, one ulp above 0.95f
+            if (Ends(n, "chest")) {
+                Add(s, 0.025f, 0, 0.025f, 0.975f, 0.950000048f, 0.975f);
+                return true;
+            }
+            // LecternBlock 0x143c88b95
+            if (n == "lectern") {
+                Add(s, 0, 0, 0, 1, 0.9f, 1);
+                return true;
+            }
+            // TurtleEggBlock 0x1449c3860: 0x3E4CCCCC and 0x3EE66667, not 0.2f / 0.45f
+            if (n == "turtle_egg") {
+                Add(s, 0.199999988f, 0, 0.199999988f, 0.8f, 0.450000018f, 0.8f);
+                return true;
+            }
+            // BambooBlock 0x143148970; random offset 0x1529d1160: x, z in [-0.25, 0.25], 16 steps
+            if (n == "bamboo") {
+                const double side = StateText(id, "bamboo_stalk_thickness", "thin") == "thick" ? 0.6875 : 0.625;
+                Add(s, 0.5, 0, 0.5, side, 1, side);
+                s.randomOffset = physics::bds::BlockRandomOffset{{{{-0.25f, 0.25f, 16}, {0, 0, 0}, {-0.25f, 0.25f, 16}}}};
+                return true;
+            }
+            // dripstone registration 0x14cf3264f: x, z in [-0.125, 0.125], 16 steps; icicle has no offset
+            if (n == "pointed_dripstone" || n == "sulfur_spike" || n == "icicle") {
+                AddDripstone(s, id);
+                if (n != "icicle")
+                    s.randomOffset = physics::bds::BlockRandomOffset{{{{-0.125f, 0.125f, 16}, {0, 0, 0}, {-0.125f, 0.125f, 16}}}};
+                return true;
+            }
+            // ChorusPlantBlock 0x14a302920: the 0.125 inset core reaches each face with a connection state
+            if (n == "chorus_plant") {
+                const auto side = [&](const char* key) { return State(id, key, 0) != 0; };
+                Add(s, side("connection_west") ? 0 : 0.125, side("connection_down") ? 0 : 0.125,
+                    side("connection_north") ? 0 : 0.125, side("connection_east") ? 1 : 0.875,
+                    side("connection_up") ? 1 : 0.875, side("connection_south") ? 1 : 0.875);
+                return true;
+            }
+            // AmethystClusterBlock 0x149c4eed0 with the cluster size (height 7, inset 3 pixels, ctor 0x14d029886)
+            if (n == "ice_crystal") {
+                constexpr double h = 7 / 16.0, i = 3 / 16.0;
+                const std::string face = StateText(id, "block_face", "up");
+                if (face == "down") Add(s, i, 1 - h, i, 1 - i, 1, 1 - i);
+                else if (face == "north") Add(s, i, i, 1 - h, 1 - i, 1 - i, 1);
+                else if (face == "south") Add(s, i, i, 0, 1 - i, 1 - i, h);
+                else if (face == "west") Add(s, 1 - h, i, i, 1, 1 - i, 1 - i);
+                else if (face == "east") Add(s, 0, i, i, h, 1 - i, 1 - i);
+                else Add(s, i, 0, i, 1 - i, h, 1 - i);
+                return true;
+            }
+            return false;
+        }
+
         struct PhysRecord {
             uint8_t flags = 0, surface = 0;
             float friction = 0.6f;
@@ -414,9 +496,21 @@ namespace perlin {
             return info;
         }
         // the vanilla registry (0x14ce9ad30) sets the climbable and sneak-hold properties (+0x134 |= 6) on these only
-        if (n == "vine" || n == "ladder" || n == "twisting_vines" || n == "weeping_vines" ||
+        if (n == "vine" || n == "twisting_vines" || n == "weeping_vines" ||
             n == "cave_vines" || n == "cave_vines_body_with_berries" || n == "cave_vines_head_with_berries") {
             s.climbable = true;
+            return info;
+        }
+        // LadderBlock 0x143c836d0: a 3/16 slab against the wall it faces from, none for facing 0/1
+        if (n == "ladder") {
+            s.climbable = true;
+            switch (State(id, "facing_direction", 0)) {
+            case 2: Add(s, 0, 0, 0.8125, 1, 1, 1); break;
+            case 3: Add(s, 0, 0, 0, 1, 1, 0.1875); break;
+            case 4: Add(s, 0.8125, 0, 0, 1, 1, 1); break;
+            case 5: Add(s, 0, 0, 0, 0.1875, 1, 1); break;
+            default: break;
+            }
             return info;
         }
         // collision needs the other half's states (QueryMain); this own-state box only serves ShapeOf
@@ -425,6 +519,8 @@ namespace perlin {
             AddDoor(s, DoorDirection(id), State(id, "open_bit", 0) != 0, State(id, "door_hinge_bit", 0) != 0);
             return info;
         }
+        if (AddComputedShape(n, id, s))
+            return info;
         {
             const auto& reg = Registry();
             const auto it = reg.find(BlockPalette::Instance().NetworkId(id));
@@ -461,33 +557,32 @@ namespace perlin {
             top ? Add(s, 0, 0.5, 0, 1, 1, 1) : Add(s, 0, 0, 0, 1, 0.5, 1);
             return info;
         }
+        // StairBlock 0x148f9e8c0: half slab 0x148f9dbb0, step 0x148f9dd80, inner-corner extra 0x148f9e370
         if (Ends(n, "_stairs")) {
-            const int dir = State(id, "weirdo_direction", 0);
+            const int dir = State(id, "weirdo_direction", 0) & 3;
             const bool flip = State(id, "upside_down_bit", 0) != 0;
+            const std::string corner = StateText(id, "corner", "none");
             const double base0 = flip ? 0.5 : 0.0, base1 = flip ? 1.0 : 0.5;
             const double step0 = flip ? 0.0 : 0.5, step1 = flip ? 0.5 : 1.0;
             Add(s, 0, base0, 0, 1, base1, 1);
-            switch (dir & 3) {
-            case 0: Add(s, 0.5, step0, 0, 1, step1, 1); break;
-            case 1: Add(s, 0, step0, 0, 0.5, step1, 1); break;
-            case 2: Add(s, 0, step0, 0.5, 1, step1, 1); break;
-            default: Add(s, 0, step0, 0, 1, step1, 0.5); break;
-            }
-            return info;
-        }
-        // TrapDoorBlock 0x1449bbef0: 0.1825 thick, not 3/16
-        if (Ends(n, "_trapdoor")) {
-            if (State(id, "open_bit", 0)) {
-                switch (State(id, "direction", 0) & 3) {
-                case 0: Add(s, 0, 0, 0, 0.1825f, 1, 1); break;
-                case 1: Add(s, 0.8175f, 0, 0, 1, 1, 1); break;
-                case 2: Add(s, 0, 0, 0, 1, 1, 0.1825f); break;
-                default: Add(s, 0, 0, 0.8175f, 1, 1, 1); break;
-                }
-            } else if (State(id, "upside_down_bit", 0)) {
-                Add(s, 0, 0.8175f, 0, 1, 1, 1);
-            } else {
-                Add(s, 0, 0, 0, 1, 0.1825f, 1);
+            // step x0, z0, x1, z1 per direction: straight, outer_left, outer_right
+            static constexpr double step[4][3][4] = {
+                {{0.5, 0, 1, 1}, {0.5, 0, 1, 0.5}, {0.5, 0.5, 1, 1}},
+                {{0, 0, 0.5, 1}, {0, 0.5, 0.5, 1}, {0, 0, 0.5, 0.5}},
+                {{0, 0.5, 1, 1}, {0.5, 0.5, 1, 1}, {0, 0.5, 0.5, 1}},
+                {{0, 0, 1, 0.5}, {0, 0, 0.5, 0.5}, {0.5, 0, 1, 0.5}}};
+            const int shape = corner == "outer_left" ? 1 : corner == "outer_right" ? 2 : 0;
+            const double* st = step[dir][shape];
+            Add(s, st[0], step0, st[1], st[2], step1, st[3]);
+            // inner corners fill one more quarter: x0, z0, x1, z1 for inner_left, inner_right
+            static constexpr double inner[4][2][4] = {
+                {{0, 0, 0.5, 0.5}, {0, 0.5, 0.5, 1}},
+                {{0.5, 0.5, 1, 1}, {0.5, 0, 1, 0.5}},
+                {{0.5, 0, 1, 0.5}, {0, 0, 0.5, 0.5}},
+                {{0, 0.5, 0.5, 1}, {0.5, 0.5, 1, 1}}};
+            if (corner == "inner_left" || corner == "inner_right") {
+                const double* in = inner[dir][corner == "inner_right" ? 1 : 0];
+                Add(s, in[0], step0, in[1], in[2], step1, in[3]);
             }
             return info;
         }
@@ -542,11 +637,6 @@ namespace perlin {
             Add(s, 0.0625, 0, 0.0625, 0.9375, 1, 0.9375);
             s.friction = 0.8f;
             s.surface = 3;
-            return info;
-        }
-        // ChestBlock 0x14d190ef0: top is 0x3F733334, one ulp above 0.95f
-        if (n == "chest" || n == "trapped_chest" || n == "ender_chest") {
-            Add(s, 0.025f, 0, 0.025f, 0.975f, 0.950000048f, 0.975f);
             return info;
         }
         if (n == "enchanting_table") { Add(s, 0, 0, 0, 1, 0.75, 1); return info; }

@@ -182,8 +182,31 @@ namespace perlin {
             bool hasDelta = false;
             bool hasBlockAction = false;
             BlockActionData blockAction;
+            // client-predicted vehicle: ActorRotation (x, y) and ActorUniqueID; sets InputData 45
+            std::optional<std::array<float, 2>> vehicleRotation;
+            std::optional<int64_t> predictedVehicle;
         };
         bool SendMoveInput(const MoveInput& input);
+
+        // CorrectPlayerMovePredictionPacket with the vehicle prediction type
+        struct VehicleCorrection {
+            uint64_t tick = 0;
+            float pos[3] = {0, 0, 0};
+            float delta[3] = {0, 0, 0};
+            float rotation[2] = {0, 0};
+            std::optional<float> angularVelocity;
+            bool onGround = false;
+        };
+        bool TakeVehicleCorrection(VehicleCorrection& out);
+        // RiderSeatPosition (actor data 56) of the local player, when the server sent one
+        std::optional<std::array<float, 3>> OwnSeatOffset() const {
+            std::lock_guard lock(attrMutex);
+            return ownSeatOffset;
+        }
+        // SetActorLink type 1: the local player sits in the controlling seat
+        bool RidingAsDriver() const { return ridingDriver.load(); }
+        // server moves of this actor are ignored while the client predicts it
+        void SetPredictedVehicle(uint64_t runtime) { predictedVehicleRuntime = runtime; }
 
         struct ServerMotion {
             bool poseChanged = false;
@@ -216,17 +239,8 @@ namespace perlin {
             const auto it = ownAttributes.find("minecraft:movement");
             return it == ownAttributes.end() ? 0.1f : it->second;
         }
-        float PredictedMovementSpeed(bool sprinting) const {
-            std::lock_guard lock(attrMutex);
-            const auto it = ownAttributes.find("minecraft:movement");
-            float speed = it == ownAttributes.end() ? 0.1f : it->second;
-            if (movementAttribute)
-                for (const auto& modifier : movementAttribute->modifiers)
-                    if (modifier.id == "d208fc00-42aa-4aad-9276-d5446530de43" &&
-                        modifier.operation == 2 && modifier.operand == 2 && modifier.amount > -1.0f)
-                        speed /= 1.0f + modifier.amount;
-            return speed * (sprinting ? 1.3f : 1.0f);
-        }
+        // adds or removes the sprint modifier like the game's sprint action, then returns the instance value
+        float PredictedMovementSpeed(bool sprinting);
         std::optional<proto::PlayerAttributesEntry> MovementAttribute() const {
             std::lock_guard lock(attrMutex);
             return movementAttribute;
@@ -1029,6 +1043,12 @@ void RequestRespawn();
         std::array<uint64_t, 2> ownFlagWords{};
         std::array<bool, 2> ownFlagWordsKnown{};
         std::optional<proto::PlayerAttributesEntry> movementAttribute;
+        // own copy of the movement AttributeInstance: modifiers, base (min, max, value), limits, value
+        std::vector<proto::PlayerAttributesEntryModifiersEntry> movementModifiers;
+        std::array<float, 3> movementBase{};
+        std::array<float, 2> movementLimits{};
+        float movementValue = 0.1f;
+        void ApplyMovementAttribute(const proto::PlayerAttributesEntry& entry);
         int64_t ownPlayerFlags = 0;
         float ownScale = 1.0f, ownWidth = 0.6f, ownHeight = 1.8f;
         int predictionSyncCountdown = -1;
@@ -1113,6 +1133,11 @@ void RequestRespawn();
         InventoryView inventory;
         proto::ItemV4 inventoryRaw[36];
         std::atomic<int64_t> ridingUid{0};
+        std::atomic<bool> ridingDriver{false};
+        std::atomic<uint64_t> predictedVehicleRuntime{0};
+        std::optional<std::array<float, 3>> ownSeatOffset;
+        std::mutex vehicleCorrectionMutex;
+        std::deque<VehicleCorrection> vehicleCorrections;
         proto::ItemV4 extraRaw[20];
         proto::ItemV4 horseRaw[17];
         int horseWindow = -1;

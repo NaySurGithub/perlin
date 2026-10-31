@@ -194,5 +194,25 @@ namespace perlin::physics {
     // sneaking: the actor SNEAKING flag when SneakingSystem runs (last tick's)
     float SneakSpeed(int swiftSneakLevel, bool sneaking);
 
+    struct AttributeModifierValue {
+        float amount = 0;
+        int32_t operation = 0, operand = 0;
+    };
+    // AttributeInstance clamp 0x142bf2520: cap modifiers (operation 3) lower the max
+    float ClampAttribute(float value, float min, float max, const std::vector<AttributeModifierValue>& modifiers);
+    // AttributeInstance recalculation 0x142bf1680 for the movement attribute; base and limits: min, max, value / min, max
+    float RecalculateAttribute(const std::array<float, 3>& base, const std::vector<AttributeModifierValue>& modifiers,
+                               float current, std::array<float, 2>& limits);
+
     void Step(State& state, const Input& input, const Attributes& attributes, const World& world);
+
+    struct BoxMove {
+        float x = 0, y = 0, z = 0;
+        float vx = 0, vy = 0, vz = 0;
+        bool onGround = false, horizontalCollision = false, verticalCollision = false;
+    };
+    // non-player mover without auto-step: MoveCollision -> ActorMove -> FinalizeMove -> velocity resets;
+    // position is the box's bottom centre
+    BoxMove MoveBox(const World& world, const Box& start, float dx, float dy, float dz, bool wasOnGround,
+                    bds::RecoveryState& recovery);
 }

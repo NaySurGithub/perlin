@@ -4,12 +4,15 @@
 #include "util/Env.hpp"
 #include <cstdlib>
 #include "client/multiplayer/BedrockSession.hpp"
+#include "client/player/PlayerPhysics.hpp"
 #include "world/level/block/BlockPalette.hpp"
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <cstring>
 #include <iostream>
+#include <string_view>
 
 namespace perlin {
     using namespace proto;
@@ -200,6 +203,68 @@ namespace perlin {
             if (id == 37)
                 level = std::max(level, enchantLevel);
         return level;
+    }
+
+    namespace {
+        std::vector<physics::AttributeModifierValue> ModifierValues(
+            const std::vector<PlayerAttributesEntryModifiersEntry>& modifiers) {
+            std::vector<physics::AttributeModifierValue> values;
+            values.reserve(modifiers.size());
+            for (const auto& m : modifiers)
+                values.push_back({m.amount, m.operation, m.operand});
+            return values;
+        }
+
+        // hasModifier 0x142bf14a0: uuid, name, operation and operand; the uuid is parsed, so case does not matter
+        bool IsSprintModifier(const PlayerAttributesEntryModifiersEntry& m) {
+            static constexpr std::string_view kSprintUuid = "d208fc00-42aa-4aad-9276-d5446530de43";
+            if (m.id.size() != kSprintUuid.size() || m.name != "Sprinting speed boost" || m.operation != 2 ||
+                m.operand != 2)
+                return false;
+            for (size_t i = 0; i < kSprintUuid.size(); ++i)
+                if (std::tolower(static_cast<unsigned char>(m.id[i])) != kSprintUuid[i])
+                    return false;
+            return true;
+        }
+    }
+
+    // client AttributeData apply 0x142bf4780: modifiers replaced, value set to the sent one, then base and limits
+    void BedrockSession::ApplyMovementAttribute(const PlayerAttributesEntry& entry) {
+        movementModifiers = entry.modifiers;
+        const float baseMin = std::fmin(entry.defaultMax, entry.defaultMin);
+        movementBase = {baseMin, entry.defaultMax,
+                        entry.defaultMax < entry.default_ ? entry.defaultMax : std::fmax(entry.default_, baseMin)};
+        movementLimits = {std::fmin(entry.max, entry.min), entry.max};
+        movementValue = physics::ClampAttribute(entry.current, movementLimits[0], movementLimits[1],
+                                                ModifierValues(movementModifiers));
+    }
+
+    // ActionSprintTriggerSystem 0x14b346c80 → 0x14b319130: the sprint modifier (0.3, multiply-total) is appended on
+    // start, removed on stop; each change recalculates from the base, otherwise the value stays as sent
+    float BedrockSession::PredictedMovementSpeed(bool sprinting) {
+        std::lock_guard lock(attrMutex);
+        if (!movementAttribute) {
+            const float factor = 0.3f + 1.0f;
+            return sprinting ? factor * 0.1f : 0.1f;
+        }
+        const bool present = std::any_of(movementModifiers.begin(), movementModifiers.end(), IsSprintModifier);
+        if (sprinting == present)
+            return movementValue;
+        if (sprinting) {
+            PlayerAttributesEntryModifiersEntry boost;
+            boost.id = "d208fc00-42aa-4aad-9276-d5446530de43";
+            boost.name = "Sprinting speed boost";
+            boost.amount = 0.3f;
+            boost.operation = 2;
+            boost.operand = 2;
+            boost.serializable = false;
+            movementModifiers.push_back(boost);
+        } else {
+            std::erase_if(movementModifiers, IsSprintModifier);
+        }
+        movementValue = physics::RecalculateAttribute(movementBase, ModifierValues(movementModifiers), movementValue,
+                                                      movementLimits);
+        return movementValue;
     }
 
     BedrockSession::TitleText BedrockSession::GetTitleText() const {

@@ -1025,6 +1025,27 @@ namespace perlin {
         });
 
         On<CorrectPlayerMovePredictionPacket>([this](const CorrectPlayerMovePredictionPacket& p) {
+            if (p.predictionType == CorrectPlayerMovePredictionPacketPredictionType::Vehicle) {
+                if (!SaneWorldPos(p.position.x, p.position.y, p.position.z))
+                    return;
+                VehicleCorrection c;
+                c.tick = p.tick;
+                c.pos[0] = p.position.x;
+                c.pos[1] = p.position.y;
+                c.pos[2] = p.position.z;
+                c.delta[0] = p.delta.x;
+                c.delta[1] = p.delta.y;
+                c.delta[2] = p.delta.z;
+                c.rotation[0] = p.rotation.x;
+                c.rotation[1] = p.rotation.z;
+                c.angularVelocity = p.angularVelocity;
+                c.onGround = p.onGround;
+                std::lock_guard lk(vehicleCorrectionMutex);
+                vehicleCorrections.push_back(c);
+                while (vehicleCorrections.size() > 64)
+                    vehicleCorrections.pop_front();
+                return;
+            }
             if (p.predictionType != CorrectPlayerMovePredictionPacketPredictionType::Player)
                 return;
             if (!SaneWorldPos(p.position.x, p.position.y, p.position.z))
@@ -1180,6 +1201,9 @@ namespace perlin {
         On<MoveEntityPacket>([this](const MoveEntityPacket& p) {
             if (runtimeId != 0 && p.runtimeEntityId == runtimeId)
                 return;
+            // the client-predicted vehicle is moved by our own simulation
+            if (p.runtimeEntityId == predictedVehicleRuntime.load())
+                return;
             constexpr float kByte = 360.0f / 256.0f;
             entities.Move(p.runtimeEntityId, {p.position.x, p.position.y, p.position.z}, p.rotation.pitch * kByte,
                           p.rotation.yaw * kByte, p.rotation.headYaw * kByte, (p.flags & 1) != 0);
@@ -1187,6 +1211,8 @@ namespace perlin {
 
         On<MoveEntityDeltaPacket>([this](const MoveEntityDeltaPacket& p) {
             if (runtimeId != 0 && p.runtimeEntityId == runtimeId)
+                return;
+            if (p.runtimeEntityId == predictedVehicleRuntime.load())
                 return;
             constexpr float kByte = 360.0f / 256.0f;
             double x = 0, y = 0, z = 0;
@@ -1218,6 +1244,12 @@ namespace perlin {
                             ownFlagWords[word] = static_cast<uint64_t>(integer);
                             ownFlagWordsKnown[word] = true;
                         }
+                        continue;
+                    }
+                    if (m.key == MetadataDictionaryEntryKey::RiderSeatPosition) {
+                        if (const auto* inner = std::get_if<4>(&m.value))
+                            if (const auto* seat = std::get_if<9>(inner))
+                                ownSeatOffset = std::array<float, 3>{seat->x, seat->y, seat->z};
                         continue;
                     }
                     double n = 0;
@@ -1335,7 +1367,10 @@ namespace perlin {
                 std::lock_guard lk(attrMutex);
                 for (const PlayerAttributesEntry& a : p.attributes) {
                     ownAttributes[a.name] = a.current;
-                    if (a.name == "minecraft:movement") movementAttribute = a;
+                    if (a.name == "minecraft:movement") {
+                        movementAttribute = a;
+                        ApplyMovementAttribute(a);
+                    }
                 }
             }
             for (const PlayerAttributesEntry& a : p.attributes) {
@@ -1461,8 +1496,10 @@ namespace perlin {
         On<SetEntityLinkPacket>([this](const SetEntityLinkPacket& p) {
             const int64_t rider = p.link.riderEntityId == 0 ? static_cast<int64_t>(uniqueId) : p.link.riderEntityId;
             entities.SetVehicle(rider, p.link.type == 0 ? 0 : p.link.riddenEntityId);
-            if (rider == static_cast<int64_t>(uniqueId))
+            if (rider == static_cast<int64_t>(uniqueId)) {
                 ridingUid = p.link.type == 0 ? 0 : p.link.riddenEntityId;
+                ridingDriver = p.link.type == 1;
+            }
             std::cout << "[bedrock] link rider=" << rider << " vehicle=" << p.link.riddenEntityId << " type=" << int(p.link.type) << std::endl;
         });
 
