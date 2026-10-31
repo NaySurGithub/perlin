@@ -248,6 +248,11 @@ namespace perlin {
             const auto it = ownAttributes.find("minecraft:underwater_movement");
             return it == ownAttributes.end() ? 0.02f : it->second;
         }
+        float LavaMovementSpeedAttribute() const {
+            std::lock_guard lock(attrMutex);
+            const auto it = ownAttributes.find("minecraft:lava_movement");
+            return it == ownAttributes.end() ? 0.02f : it->second;
+        }
         std::optional<float> AirDragAttribute() const {
             std::lock_guard lock(attrMutex);
             const auto it = ownAttributes.find("minecraft:air_drag_modifier");
@@ -508,6 +513,7 @@ void RequestRespawn();
         bool RequestReconnect();
         int ServerProtocol() const { return serverProtocol; }
         bool MayFly() const { return mayFly; }
+        bool Instabuild() const { return instabuild; }
         bool IsFlying() const { return isFlying; }
         // entity flag 32 (gliding), last from server for local player
         // actor flag 75 (sleeping): extended flag word
@@ -651,6 +657,8 @@ void RequestRespawn();
         }
         InventoryView GetInventory() const;
         int WaterWalkSpeedEnchant() const;
+        int SoulSpeedEnchant() const;
+        int SwiftSneakEnchant() const;
         TitleText GetTitleText() const;
         bool SelectHotbarSlot(int slot);
         bool SendSwingArm(const char* source = "build");
@@ -1051,6 +1059,8 @@ void RequestRespawn();
 
         bool mayFly = false;
         bool noClip = false;
+        // ability 11, MovementAbilitiesComponent bit 2: changes jump while gliding
+        bool instabuild = false;
         int gameType = 0;
         bool isFlying = false;
         float flySpeed = 0.05f;

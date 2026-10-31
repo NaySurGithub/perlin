@@ -1476,9 +1476,10 @@ namespace perlin {
             }
             if (runtimeId != 0 && p.entityUniqueId != 0 && uniqueId != 0 && p.entityUniqueId != uniqueId)
                 return;
-            bool fly = false, flying = false, clip = false;
+            bool fly = false, flying = false, clip = false, build = false;
             for (const AbilityLayers& layer : p.abilities) {
                 if (layer.allowed & (1u << 10)) fly = (layer.enabled & (1u << 10)) != 0;
+                if (layer.allowed & (1u << 11)) build = (layer.enabled & (1u << 11)) != 0;
                 if (layer.allowed & (1u << 9)) flying = (layer.enabled & (1u << 9)) != 0;
                 if (layer.allowed & (1u << 17)) clip = (layer.enabled & (1u << 17)) != 0;
                 if (layer.allowed & (1u << 13)) flySpeed = layer.flySpeed;
@@ -1486,6 +1487,7 @@ namespace perlin {
                 if (layer.allowed & (1u << 14)) walkSpeed = layer.walkSpeed;
             }
             mayFly = fly;
+            instabuild = build;
             isFlying = flying;
             noClip = clip;
             std::cout << "[bedrock] abilities mayFly=" << mayFly << " flying=" << isFlying

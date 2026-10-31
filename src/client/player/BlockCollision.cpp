@@ -56,6 +56,33 @@ namespace perlin {
             return palette.HasState(id, key) || palette.HasState(id, std::string("minecraft:") + key);
         }
 
+        // cardinal_direction value index: south 0, west 1, north 2, east 3
+        int DoorDirection(uint16_t id) {
+            const std::string card = StateText(id, "cardinal_direction", "");
+            if (card.empty())
+                return State(id, "direction", 0);
+            return card == "south" ? 0 : card == "west" ? 1 : card == "north" ? 2 : 3;
+        }
+
+        // DoorBlock 0x149c5b200: 0.1825 thick (0x3E3AE148), not 3/16
+        void AddDoor(physics::BlockShape& s, int dir, bool open, bool hinge) {
+            // 0 north side, 1 east side, 2 south side, 3 west side
+            int side = 3;
+            switch (dir) {
+            case 0: side = open ? (hinge ? 2 : 0) : 3; break;
+            case 1: side = open ? (hinge ? 3 : 1) : 0; break;
+            case 2: side = open ? (hinge ? 0 : 2) : 1; break;
+            case 3: side = open ? (hinge ? 1 : 3) : 2; break;
+            default: break;
+            }
+            switch (side) {
+            case 0: Add(s, 0, 0, 0, 1, 1, 0.1825f); break;
+            case 1: Add(s, 0.8175f, 0, 0, 1, 1, 1); break;
+            case 2: Add(s, 0, 0, 0.8175f, 1, 1, 1); break;
+            default: Add(s, 0, 0, 0, 0.1825f, 1, 1); break;
+            }
+        }
+
         struct PhysRecord {
             uint8_t flags = 0, surface = 0;
             float friction = 0.6f;
@@ -220,7 +247,7 @@ namespace perlin {
             out = info.selection;
             return !out.empty();
         }
-        if (info.kind == Kind::Plain) {
+        if (info.kind == Kind::Plain || info.kind == Kind::Door) {
             const SelectionTable& t = Selections();
             const auto it = t.byHash.find(BlockPalette::Instance().NetworkId(id));
             if (it != t.byHash.end()) {
@@ -391,13 +418,21 @@ namespace perlin {
             s.climbable = true;
             return info;
         }
+        // collision needs the other half's states (QueryMain); this own-state box only serves ShapeOf
+        if (Ends(n, "_door") && !Ends(n, "_trapdoor")) {
+            info.kind = Kind::Door;
+            AddDoor(s, DoorDirection(id), State(id, "open_bit", 0) != 0, State(id, "door_hinge_bit", 0) != 0);
+            return info;
+        }
         {
             const auto& reg = Registry();
             const auto it = reg.find(BlockPalette::Instance().NetworkId(id));
             if (it != reg.end()) {
                 const PhysRecord& r = it->second;
-                for (const Box& b : r.boxes)
-                    Add(s, b.x0, b.y0, b.z0, b.x1, b.y1, b.z1);
+                // EndPortalFrameBlock 0x14a42b620 adds the eye box without the block position: no eye in the world
+                const size_t boxCount = n == "end_portal_frame" ? std::min<size_t>(r.boxes.size(), 1) : r.boxes.size();
+                for (size_t b = 0; b < boxCount; b++)
+                    Add(s, r.boxes[b].x0, r.boxes[b].y0, r.boxes[b].z0, r.boxes[b].x1, r.boxes[b].y1, r.boxes[b].z1);
                 s.friction = r.friction;
                 s.surface = r.surface;
                 s.climbable = (r.flags & 1) != 0;
@@ -409,7 +444,7 @@ namespace perlin {
                     s.friction = 0.98f;
                 else if (n == "blue_ice")
                     s.friction = 0.989f;
-                else if (n == "slime" || n == "slime_block")
+                else if (n == "slime" || n == "slime_block" || n == "honey_block")
                     s.friction = 0.8f;
                 s.web = (r.flags & 8) != 0;
                 info.full = r.boxes.size() == 1 && r.boxes[0].x0 <= 0 && r.boxes[0].y0 <= 0 && r.boxes[0].z0 <= 0 &&
@@ -439,40 +474,29 @@ namespace perlin {
             }
             return info;
         }
+        // TrapDoorBlock 0x1449bbef0: 0.1825 thick, not 3/16
         if (Ends(n, "_trapdoor")) {
             if (State(id, "open_bit", 0)) {
                 switch (State(id, "direction", 0) & 3) {
-                case 0: Add(s, 0, 0, 0, 0.1875, 1, 1); break;
-                case 1: Add(s, 0.8125, 0, 0, 1, 1, 1); break;
-                case 2: Add(s, 0, 0, 0, 1, 1, 0.1875); break;
-                default: Add(s, 0, 0, 0.8125, 1, 1, 1); break;
+                case 0: Add(s, 0, 0, 0, 0.1825f, 1, 1); break;
+                case 1: Add(s, 0.8175f, 0, 0, 1, 1, 1); break;
+                case 2: Add(s, 0, 0, 0, 1, 1, 0.1825f); break;
+                default: Add(s, 0, 0, 0.8175f, 1, 1, 1); break;
                 }
             } else if (State(id, "upside_down_bit", 0)) {
-                Add(s, 0, 0.8125, 0, 1, 1, 1);
+                Add(s, 0, 0.8175f, 0, 1, 1, 1);
             } else {
-                Add(s, 0, 0, 0, 1, 0.1875, 1);
-            }
-            return info;
-        }
-        if (Ends(n, "_door")) {
-            if (State(id, "open_bit", 0))
-                return info;
-            const std::string card = StateText(id, "cardinal_direction", "");
-            int dir = State(id, "direction", 0);
-            if (card == "east") dir = 0; else if (card == "south") dir = 1; else if (card == "west") dir = 2; else if (card == "north") dir = 3;
-            switch (dir & 3) {
-            case 0: Add(s, 0, 0, 0, 0.1875, 1, 1); break;
-            case 1: Add(s, 0, 0, 0, 1, 1, 0.1875); break;
-            case 2: Add(s, 0.8125, 0, 0, 1, 1, 1); break;
-            default: Add(s, 0, 0, 0.8125, 1, 1, 1); break;
+                Add(s, 0, 0, 0, 1, 0.1825f, 1);
             }
             return info;
         }
         if (Ends(n, "_fence_gate") || n == "fence_gate") {
             if (State(id, "open_bit", 0))
                 return info;
-            const int dir = State(id, "direction", 0);
-            (dir & 1) ? Add(s, 0.375, 0, 0, 0.625, 1.5, 1) : Add(s, 0, 0, 0.375, 1, 1.5, 0.625);
+            // FenceGateBlock 0x14a4371b0: cardinal_direction south/north (0, 2) spans x
+            const std::string card = StateText(id, "cardinal_direction", "");
+            const bool alongX = card.empty() ? (State(id, "direction", 0) & 1) == 0 : card == "south" || card == "north";
+            alongX ? Add(s, 0, 0, 0.375, 1, 1.5, 0.625) : Add(s, 0.375, 0, 0, 0.625, 1.5, 1);
             return info;
         }
         if (Ends(n, "_fence") || n == "fence" || n == "nether_brick_fence") {
@@ -492,11 +516,10 @@ namespace perlin {
             Add(s, 0, 0, 0, 1, 0.0625, 1);
             return info;
         }
+        // TopSnowBlock 0x14b27c5d0 (current worlds): height * 0.125, a single layer has none, a full stack 0.875
         if (n == "snow_layer") {
             const int h = State(id, "height", 0);
-            if (h >= 7)
-                Add(s, 0, 0, 0, 1, 1, 1);
-            else if (h > 0)
+            if (h > 0)
                 Add(s, 0, 0, 0, 1, h * 0.125, 1);
             return info;
         }
@@ -504,9 +527,10 @@ namespace perlin {
             Add(s, 0, 0, 0, 1, 0.9375, 1);
             return info;
         }
+        // no speed factor: the game slows soul sand through ground acceleration (friction x1.225) only
         if (n == "soul_sand") {
             Add(s, 0, 0, 0, 1, 0.875, 1);
-            s.speedFactor = 0.4f;
+            s.surface = 4;
             return info;
         }
         if (n == "mud" || n == "packed_mud_none") {
@@ -514,22 +538,31 @@ namespace perlin {
             return info;
         }
         if (n == "honey_block") {
-            Add(s, 0.0625, 0, 0.0625, 0.9375, 0.9375, 0.9375);
+            Add(s, 0.0625, 0, 0.0625, 0.9375, 1, 0.9375);
+            s.friction = 0.8f;
+            s.surface = 3;
             return info;
         }
+        // ChestBlock 0x14d190ef0: top is 0x3F733334, one ulp above 0.95f
         if (n == "chest" || n == "trapped_chest" || n == "ender_chest") {
-            Add(s, 0.0625, 0, 0.0625, 0.9375, 0.875, 0.9375);
+            Add(s, 0.025f, 0, 0.025f, 0.975f, 0.950000048f, 0.975f);
             return info;
         }
         if (n == "enchanting_table") { Add(s, 0, 0, 0, 1, 0.75, 1); return info; }
         if (n == "daylight_detector" || n == "daylight_detector_inverted") { Add(s, 0, 0, 0, 1, 0.375, 1); return info; }
-        if (Ends(n, "_bed") || n == "bed") { Add(s, 0, 0, 0, 1, 0.5625, 1); return info; }
-        if (n == "cake") { Add(s, 0.0625, 0, 0.0625, 0.9375, 0.5, 0.9375); return info; }
+        if (Ends(n, "_bed") || n == "bed") { Add(s, 0, 0, 0, 1, 0.5625, 1); s.surface = 2; return info; }
+        // CakeBlock 0x1435bde20: each bite moves the west side in by 1/8
+        if (n == "cake") {
+            const double bitten = (2 * State(id, "bite_counter", 0) + 1) * 0.0625;
+            Add(s, std::min(0.9375, bitten), 0, 0.0625, std::max(0.9375, bitten), 0.5, 0.9375);
+            return info;
+        }
         if (n == "lily_pad" || n == "waterlily") { Add(s, 0.0625, 0, 0.0625, 0.9375, 0.09375, 0.9375); return info; }
         if (n == "end_portal_frame") { Add(s, 0, 0, 0, 1, 0.8125, 1); return info; }
-        if (n == "cactus") { Add(s, 0.0625, 0, 0.0625, 0.9375, 0.9375, 0.9375); return info; }
+        if (n == "cactus") { Add(s, 0.0625, 0, 0.0625, 0.9375, 1, 0.9375); return info; }
         if (n == "campfire" || n == "soul_campfire") { Add(s, 0, 0, 0, 1, 0.4375, 1); return info; }
-        if (n == "stonecutter_block" || n == "stonecutter") { Add(s, 0, 0, 0, 1, 0.5625, 1); return info; }
+        // the legacy "stonecutter" is a full cube
+        if (n == "stonecutter_block") { Add(s, 0, 0, 0, 1, 0.5625, 1); return info; }
         if (n == "repeater" || n == "unpowered_repeater" || n == "powered_repeater" || n == "comparator" ||
             n == "unpowered_comparator" || n == "powered_comparator") {
             Add(s, 0, 0, 0, 1, 0.125, 1);
@@ -548,8 +581,10 @@ namespace perlin {
             s.friction = 0.98f;
         else if (n == "blue_ice")
             s.friction = 0.989f;
-        else if (n == "slime" || n == "slime_block")
+        else if (n == "slime" || n == "slime_block") {
             s.friction = 0.8f;
+            s.surface = 1;
+        }
         return info;
     }
 
@@ -617,6 +652,26 @@ namespace perlin {
         if (info.kind == Kind::Plain)
             return info.shape;
 
+        BlockShape s;
+        s.friction = info.shape.friction;
+        s.randomOffset = info.shape.randomOffset;
+
+        if (info.kind == Kind::Door) {
+            // DoorBlock 0x149c5b200 / 0x149c5af70: direction and open from the lower half, hinge from the upper;
+            // both halves must be this door, else direction 0, closed, hinge 0
+            const BlockPalette& palette = BlockPalette::Instance();
+            const bool upperHalf = State(id, "upper_block_bit", 0) != 0;
+            bool otherLoaded = false;
+            const uint16_t other = level.GetBlock(x, upperHalf ? y - 1 : y + 1, z, otherLoaded);
+            if (otherLoaded && other != 0 && palette.Name(other) == palette.Name(id)) {
+                const uint16_t lower = upperHalf ? other : id, upper = upperHalf ? id : other;
+                AddDoor(s, DoorDirection(lower), State(lower, "open_bit", 0) != 0, State(upper, "door_hinge_bit", 0) != 0);
+            } else {
+                AddDoor(s, 0, false, false);
+            }
+            return s;
+        }
+
         auto joins = [&](int dx, int dz) {
             bool nl = false;
             const uint16_t other = level.GetBlock(x + dx, y, z + dz, nl);
@@ -632,24 +687,53 @@ namespace perlin {
             return false;
         };
 
-        BlockShape s;
-        s.friction = info.shape.friction;
-        s.randomOffset = info.shape.randomOffset;
-        double lo, hi, height;
-        double armLo, armHi;
-        switch (info.kind) {
-        case Kind::Fence: lo = 0.375; hi = 0.625; height = 1.5; armLo = 0.375; armHi = 0.625; break;
-        case Kind::Wall: lo = 0.25; hi = 0.75; height = 1.5; armLo = 0.3125; armHi = 0.6875; break;
-        default: lo = 0.4375; hi = 0.5625; height = 1.0; armLo = 0.4375; armHi = 0.5625; break;
+        // the game builds these from the block's own connection states; neighbours only for palettes without them
+        bool north, south, west, east, post = true;
+        if (info.kind == Kind::Wall && HasAnyState(id, "wall_connection_type_north")) {
+            north = StateText(id, "wall_connection_type_north", "none") != "none";
+            east = StateText(id, "wall_connection_type_east", "none") != "none";
+            south = StateText(id, "wall_connection_type_south", "none") != "none";
+            west = StateText(id, "wall_connection_type_west", "none") != "none";
+            post = State(id, "wall_post_bit", 0) != 0;
+        } else if (info.kind != Kind::Wall && HasAnyState(id, "connection_north")) {
+            north = State(id, "connection_north", 0) != 0;
+            east = State(id, "connection_east", 0) != 0;
+            south = State(id, "connection_south", 0) != 0;
+            west = State(id, "connection_west", 0) != 0;
+        } else {
+            north = joins(0, -1);
+            south = joins(0, 1);
+            west = joins(-1, 0);
+            east = joins(1, 0);
         }
-        const bool north = joins(0, -1), south = joins(0, 1), west = joins(-1, 0), east = joins(1, 0);
-        const bool any = north || south || west || east;
-        (void)any;
-        Add(s, lo, 0, lo, hi, height, hi);
-        if (north) Add(s, armLo, 0, 0, armHi, height, hi);
-        if (south) Add(s, armLo, 0, lo, armHi, height, 1);
-        if (west) Add(s, 0, 0, armLo, hi, height, armHi);
-        if (east) Add(s, lo, 0, armLo, 1, height, armHi);
+        switch (info.kind) {
+        case Kind::Fence:
+            // FenceBlock 0x14a433650: north/south bar, then east/west bar, a lone post only without connections
+            if (north || south) Add(s, 0.375, 0, north ? 0 : 0.375, 0.625, 1.5, south ? 1 : 0.625);
+            if (east || west) Add(s, west ? 0 : 0.375, 0, 0.375, east ? 1 : 0.625, 1.5, 0.625);
+            if (!north && !south && !east && !west) Add(s, 0.375, 0, 0.375, 0.625, 1.5, 0.625);
+            break;
+        case Kind::Wall: {
+            // WallBlock 0x144a33db0 / 0x144a33530: one box over every connected side, 1.5 high; no post narrows a
+            // straight wall to 0.3125..0.6875
+            double x0 = west ? 0 : 0.25, x1 = east ? 1 : 0.75, z0 = north ? 0 : 0.25, z1 = south ? 1 : 0.75;
+            if (!post && north && south && !east && !west) {
+                x0 = 0.3125;
+                x1 = 0.6875;
+            } else if (!post && east && west && !north && !south) {
+                z0 = 0.3125;
+                z1 = 0.6875;
+            }
+            Add(s, x0, 0, z0, x1, 1.5, z1);
+            break;
+        }
+        default:
+            // ThinFenceBlock 0x14b273e00: half arms from the centre, no post once connected
+            if (!north && !south && !east && !west) Add(s, 0.4375, 0, 0.4375, 0.5625, 1, 0.5625);
+            if (east || west) Add(s, west ? 0 : 0.5, 0, 0.4375, east ? 1 : 0.5, 1, 0.5625);
+            if (north || south) Add(s, 0.4375, 0, north ? 0 : 0.5, 0.5625, 1, south ? 1 : 0.5);
+            break;
+        }
         return s;
     }
 }

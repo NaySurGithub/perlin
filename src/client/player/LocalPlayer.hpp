@@ -46,6 +46,13 @@ namespace perlin {
             itemSlow = slow;
         }
         void SetRidePosition(bool riding, double x, double y, double z) { rideLock = riding; rideX = x; rideY = y; rideZ = z; }
+        void BeginItemUse() { itemUseStart = tickCounter; }
+        // TridentItem::releaseUsing 0x1447283B0: riptide needs at least 10 ticks of use
+        void ReleaseTrident(int riptideLevel) {
+            if (riptideLevel > 0 && tickCounter - itemUseStart >= 10)
+                pendingRiptide = riptideLevel;
+        }
+        bool SpinAttack() const { return state.spinAttack; }
 
         void ModMotion(bool add, double x, double y, double z, bool ax, bool ay, bool az);
         void ModTeleport(double x, double y, double z, bool keepVelocity);
@@ -116,6 +123,7 @@ namespace perlin {
         bool sentGliding = false;
         bool hasElytra = false;
         bool sneaking = false;
+        float sneakSpeed = 0.3f;
         bool jumpHeld = false;
         bool sprintHeld = false;
         bool sneakHeld = false;
@@ -130,7 +138,12 @@ namespace perlin {
         uint64_t itemSlowUntil = 0;
         double rideX = 0, rideY = 0, rideZ = 0;
         float eyeOffset = static_cast<float>(physics::kStandEye);
-        std::chrono::steady_clock::time_point lastJumpPress{};
+        float eyeDrop = 0.0f, eyeDropPrevious = 0.0f;
+        uint64_t itemUseStart = 0;
+        int pendingRiptide = 0;
+        // ticks left to double-tap jump for flight (VanillaClientGameplayComponent +8)
+        int flyTapTicks = 0;
+        int fallFlyTicks = 0;
         std::chrono::steady_clock::time_point lastForwardPress{};
     };
 }

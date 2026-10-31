@@ -18,9 +18,12 @@ namespace perlin::physics {
     constexpr double kStandHeight = 1.8;
     constexpr double kSneakHeight = 1.49;
     constexpr double kCrawlHeight = 0.6;
+    // eye heights from the camera offset: VanillaOffsetSystem 0x142CED370
     constexpr double kCrawlEye = 0.4;
-    constexpr double kStandEye = 1.62;
-    constexpr double kSneakEye = 1.27;
+    constexpr double kStandEye = 1.62001f;
+    // the sneak drop is 0.35f; older base game versions use 0.125f (Player ctor 0x1402B5670)
+    constexpr double kSneakEye = 1.62001f - 0.35f;
+    constexpr double kSleepEye = 0.2;
     constexpr double kStepHeight = 0.5625;
     constexpr double kGravity = 0.08;
     constexpr double kAirDrag = 0.98;
@@ -69,6 +72,9 @@ namespace perlin::physics {
         virtual bool CollisionColumnPresent(int x, int z) const { return CollisionChunkReady(x >> 4, z >> 4); }
         virtual bds::TerrainHeightLimits CollisionHeightLimits() const { return {}; }
         virtual bool InsideRegionReady(const bds::CollisionBox& bounds) const;
+        // block shapes only: the move query adds entity boxes itself, whole and after the blocks
+        virtual BlockShape CollisionQuery(int x, int y, int z) const { return Query(x, y, z); }
+        virtual const std::vector<Box>* CollisionEntityBoxes() const { return nullptr; }
     };
 
     struct Attributes {
@@ -84,8 +90,11 @@ namespace perlin::physics {
         bool weaving = false;
         float maxAutoStep = static_cast<float>(kStepHeight);
         int waterWalkSpeedEnchant = 0;
+        bool soulSpeed = false;
         std::optional<float> waterDrag;
         std::optional<float> underwaterSpeed = 0.02f;
+        // lava_movement attribute; the player registers it at 0.02 (0x142C374F0)
+        float lavaSpeed = 0.02f;
         bool dolphin = false;
     };
 
@@ -109,6 +118,8 @@ namespace perlin::physics {
         float pitch = 0;
         bool crawl = false;
         bool forceCrouch = false;
+        // riptide level of a trident released this tick, 0 when none
+        int riptideLevel = 0;
         bool overDescendableBlock = false;
         bool inAscendableBlock = false;
         bool canStandOnPowderSnow = false;
@@ -125,6 +136,9 @@ namespace perlin::physics {
         float yaw = 0;
         bool onGround = false;
         bool horizontalCollision = false;
+        // HorizontalCollisionFlagComponent lanes: no-clip leaves them, and the velocity reset still reads them
+        bool horizontalCollisionX = false;
+        bool horizontalCollisionZ = false;
         bool verticalCollision = false;
         bool collision = false;
         bool collidableMobNear = false;
@@ -134,6 +148,10 @@ namespace perlin::physics {
         bool onClimbable = false;
         bool crawling = false;
         bool swimming = false;
+        bool gliding = false;
+        // riptide spin (DAMAGENEARBYMOBS) and its tick counter
+        bool spinAttack = false;
+        int spinTicks = 0;
         float collisionHeight = static_cast<float>(kStandHeight);
         float swimAmount = 0;
         int jumpDelay = 0;
@@ -151,7 +169,9 @@ namespace perlin::physics {
         bool hasBox = false;
         bool hasTeleported = false;
 
-        double Height(bool sneaking) const { return (crawling || swimming) ? kCrawlHeight : sneaking ? kSneakHeight : kStandHeight; }
+        // horizontal poses (gliding, riptide, swimming, crawling) take a square box: height = width
+        bool HorizontalPose() const { return crawling || swimming || gliding || spinAttack; }
+        double Height(bool sneaking) const { return HorizontalPose() ? kCrawlHeight : sneaking ? kSneakHeight : kStandHeight; }
     };
 
     Box BoundingBox(const State& state, bool sneaking);
@@ -162,8 +182,11 @@ namespace perlin::physics {
         float forward = 0, strafe = 0;
     };
 
+    // sneakScale: last tick's SneakingComponent, 0.3 unless swift sneak
     MoveVector ProcessMoveInput(float forward, float strafe, bool sneaking, bool inWater,
-                                float itemUseModifier = 1.0f);
+                                float itemUseModifier = 1.0f, float sneakScale = 0.3f);
+    // sneaking: the actor SNEAKING flag when SneakingSystem runs (last tick's)
+    float SneakSpeed(int swiftSneakLevel, bool sneaking);
 
     void Step(State& state, const Input& input, const Attributes& attributes, const World& world);
 }

@@ -182,6 +182,26 @@ namespace perlin {
         return level;
     }
 
+    int BedrockSession::SoulSpeedEnchant() const {
+        std::lock_guard lock(statusMutex);
+        int level = 0;
+        // boots only: the game reads armor slot 3 for SoulSpeedEnchantFlagComponent (0x1437e2f60)
+        for (const auto& [id, enchantLevel] : inventory.armor[3].enchants)
+            if (id == 36)
+                level = std::max(level, enchantLevel);
+        return level;
+    }
+
+    int BedrockSession::SwiftSneakEnchant() const {
+        std::lock_guard lock(statusMutex);
+        int level = 0;
+        // leggings only: armor slot 2, enchant 37 for SwiftSneakEnchantComponent (0x1437e2f60)
+        for (const auto& [id, enchantLevel] : inventory.armor[2].enchants)
+            if (id == 37)
+                level = std::max(level, enchantLevel);
+        return level;
+    }
+
     BedrockSession::TitleText BedrockSession::GetTitleText() const {
         std::lock_guard lock(statusMutex);
         return titleText;

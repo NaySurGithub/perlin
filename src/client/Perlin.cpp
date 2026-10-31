@@ -7415,12 +7415,26 @@ namespace perlin {
                     }
                     if (!seated)
                         player.SetRidePosition(false, 0, 0, 0);
+                    const double feetY = player.State().y;
                     for (const entity::Entity& e : frameEntities) {
-                        if (e.type != "minecraft:cushion" || (seated && e.uniqueId == rideUid))
+                        if (e.runtimeId == live->GetRuntimeId() || (seated && e.uniqueId == rideUid))
+                            continue;
+                        // stackable actors are solid to movers (0x143A10780); falling blocks only once below the feet (0x143A10AC0)
+                        const bool fallingBlock = e.type == "minecraft:falling_block";
+                        if (!e.Has(entity::flag::Stackable) && !fallingBlock && e.type != "minecraft:cushion")
                             continue;
                         float w = 0.999f, h = 0.249f;
                         entityRenderer.CollisionBoxOf(e.type, w, h);
-                        solid.push_back({e.pos.x - w / 2, e.pos.y, e.pos.z - w / 2, e.pos.x + w / 2, e.pos.y + h, e.pos.z + w / 2});
+                        if (e.boxWidth > 0.0f && e.boxHeight > 0.0f) {
+                            w = e.boxWidth;
+                            h = e.boxHeight;
+                        }
+                        // aabb rebuilt in float like the game: centre -/+ w*0.5, top = bottom + h
+                        const float x = static_cast<float>(e.pos.x), y = static_cast<float>(e.pos.y), z = static_cast<float>(e.pos.z);
+                        const float top = y + h;
+                        if (fallingBlock && !e.Has(entity::flag::Stackable) && top > static_cast<float>(feetY))
+                            continue;
+                        solid.push_back({x - w * 0.5f, y, z - w * 0.5f, x + w * 0.5f, top, z + w * 0.5f});
                     }
                     SetEntityCollisionBoxes(std::move(solid));
                 }
@@ -8095,6 +8109,8 @@ namespace perlin {
                                                      : blockuse::VanillaUseTicks(held.name, HandRenderer::IsFood(held.name)) > 0;
                             live->SendUseItemInAir(eyeF, heldUse);
                             usingItem = heldUse;
+                            if (heldUse)
+                                player.BeginItemUse();
                         }
                     }
                     if (!useHeld && live)
@@ -8103,6 +8119,11 @@ namespace perlin {
                         usingItem = false;
                         if (live)
                             live->SendReleaseItem(eyeF);
+                        // riptide is enchantment 30
+                        if (held.name == "minecraft:trident")
+                            for (const auto& [id, level] : held.enchants)
+                                if (id == 30)
+                                    player.ReleaseTrident(level);
                     }
 
                     if (live && inputManager.Pressed(Action::PickBlock)) {

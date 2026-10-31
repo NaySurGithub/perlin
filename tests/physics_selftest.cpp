@@ -799,7 +799,8 @@ int main() {
         input.noClip = false;
         flying.horizontalCollision = flying.verticalCollision = flying.collision = false;
         Step(flying, input, attr, wall);
-        CHECK(flying.onGround);
+        // grounded zero lift becomes a denormal climb: the move is no longer flat, ground is left
+        CHECK(!flying.onGround && flying.vy > 0);
     }
 
     {
@@ -812,8 +813,8 @@ int main() {
         gliding.movementEffects.push_back({42, 1, 0});
         Step(state, gliding, attr, empty);
         CHECK(std::bit_cast<uint32_t>(static_cast<float>(state.vx)) == 0x339e264e);
-        CHECK(std::bit_cast<uint32_t>(static_cast<float>(state.vy)) == 0xbc1081c7);
-        CHECK(std::bit_cast<uint32_t>(static_cast<float>(state.vz)) == 0x3f57a6ee);
+        CHECK(std::bit_cast<uint32_t>(static_cast<float>(state.vy)) == 0xbc1081c3);
+        CHECK(std::bit_cast<uint32_t>(static_cast<float>(state.vz)) == 0x3f57a6f1);
         CHECK(std::bit_cast<uint32_t>(state.fallDistance) == 0x3f812104);
         CHECK(state.movementEffects[0].type == -1);
         gliding.movementEffects.clear();
@@ -916,13 +917,19 @@ int main() {
             return block;
         };
         State state;
-        state.vy = -0.01f;
+        state.vy = -0.5f;
         Input input;
         input.gravity.hasGravity = false;
         Step(state, input, attr, slime);
-        CHECK(state.vy == static_cast<double>(0.01f));
+        CHECK(state.vy == static_cast<double>(0.5f));
         CHECK(state.onGround && state.verticalCollision);
         CHECK(!state.restitution);
+        // below the 0.08000012 restitution threshold: lands like on any block
+        state = {};
+        state.vy = -0.01f;
+        Step(state, input, attr, slime);
+        CHECK(state.vy == 0);
+        CHECK(state.onGround && state.verticalCollision);
         state = {};
         state.vy = -100;
         Step(state, input, attr, slime);
@@ -933,7 +940,7 @@ int main() {
         Step(state, input, attr, slime);
         CHECK(state.vy == 0);
         state = {};
-        state.vy = -0.01f;
+        state.vy = -0.5f;
         input.sneak = false;
         input.flying = true;
         Step(state, input, attr, slime);
@@ -955,10 +962,10 @@ int main() {
         state = {};
         state.x = 1.1;
         state.z = 0.5;
-        state.vy = -0.01f;
+        state.vy = -0.5f;
         Step(state, input, attr, slime);
         CHECK(state.onGround && state.verticalCollision);
-        CHECK(state.vy == static_cast<double>(0.01f));
+        CHECK(state.vy == static_cast<double>(0.5f));
     }
 
     {
@@ -1237,22 +1244,22 @@ int main() {
         entry.lookY = 0;
         for (int tick = 1; tick <= 14; ++tick) {
             Step(enteringSwim, entry, attr, water);
-            // the jump lift keeps carrying a body that is leaving the surface: it climbs every tick instead of stalling
+            // swim amount strictly between 0 and 1 (ticks 2..10): the jump zeroes vertical speed in water
             if (tick == 1) {
                 CHECK(Near(enteringSwim.y, 193.035, 0.0001));
                 CHECK(Near(enteringSwim.vy, 0.028, 0.0000001));
             }
             if (tick == 2) {
-                CHECK(Near(enteringSwim.y, 193.103, 0.0001));
-                CHECK(Near(enteringSwim.vy, 0.0544, 0.0000001));
+                CHECK(Near(enteringSwim.y, 193.035, 0.0001));
+                CHECK(enteringSwim.vy == 0);
             }
             if (tick == 8) {
-                CHECK(Near(enteringSwim.y, 193.9134, 0.0001));
-                CHECK(Near(enteringSwim.vy, 0.1323176, 0.0000001));
+                CHECK(Near(enteringSwim.y, 193.035, 0.0001));
+                CHECK(enteringSwim.vy == 0);
             }
         }
-        CHECK(Near(enteringSwim.y, 195.0113, 0.001));
-        CHECK(Near(enteringSwim.vy, 0.15274325, 0.0000001));
+        CHECK(Near(enteringSwim.y, 193.36267, 0.001));
+        CHECK(Near(enteringSwim.vy, 0.094464, 0.0000001));
 
         TestWorld surface;
         surface.fn = [](int, int y, int) {
@@ -1269,9 +1276,9 @@ int main() {
         Input surfaceJump = entry;
         surfaceJump.headInWater = false;
         Step(headAboveWater, surfaceJump, attr, surface);
-        // jumping at the surface still lifts: the body rises instead of holding still
-        CHECK(headAboveWater.inWater && Near(headAboveWater.vy, 0.136, 0.0000001));
-        CHECK(Near(headAboveWater.y, 0.82, 0.00001));
+        // swimmer with head above water: the jump zeroes vertical speed (MobJump 0x14AD34580)
+        CHECK(headAboveWater.inWater && headAboveWater.vy == 0);
+        CHECK(Near(headAboveWater.y, 0.65, 0.00001));
 
         TestWorld tunnel;
         tunnel.fn = [](int, int y, int z) {

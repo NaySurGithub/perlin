@@ -19,7 +19,6 @@
 namespace perlin {
     namespace {
         constexpr int kMaxTicksPerFrame = 5;
-        constexpr auto kDoubleTapWindow = std::chrono::milliseconds(350);
         constexpr auto kSprintTapWindow = std::chrono::milliseconds(300);
 
         float BedrockYaw(float cameraYaw) {
@@ -87,6 +86,8 @@ namespace perlin {
             constexpr uint32_t VerticalCollision = 50;
             constexpr uint32_t DownLeft = 51;
             constexpr uint32_t DownRight = 52;
+            constexpr uint32_t StartSpinAttack = 56;
+            constexpr uint32_t StopSpinAttack = 57;
             constexpr uint32_t JumpReleasedRaw = 59;
             constexpr uint32_t JumpPressedRaw = 60;
             constexpr uint32_t JumpCurrentRaw = 61;
@@ -242,7 +243,15 @@ namespace perlin {
                 const double ez = r.after.vz - motion.velocity[2];
                 const double posErr = dx * dx + dy * dy + dz * dz;
                 const double velErr = ex * ex + ey * ey + ez * ez;
-                if (posErr > 0.0 || velErr > 0.0 || r.after.onGround != motion.onGround) {
+                // correction event check 0x1410E8FF0: float squared distances, rewind only past 1e-5 (0x3727C5AC)
+                const auto sq = [](double server, double ours) {
+                    const float d = static_cast<float>(server) - static_cast<float>(ours);
+                    return d * d;
+                };
+                const float posErrF = (sq(motion.pos[1], r.after.y) + sq(motion.pos[0], r.after.x)) + sq(motion.pos[2], r.after.z);
+                const float velErrF = (sq(motion.velocity[1], r.after.vy) + sq(motion.velocity[0], r.after.vx)) +
+                                      sq(motion.velocity[2], r.after.vz);
+                if (posErrF > 1.0e-5f || velErrF > 1.0e-5f || r.after.onGround != motion.onGround) {
                     const physics::State shown = state;
                     if (PERLIN_ENV("PERLIN_BLOCK_DEBUG") || correctionReplays < 40 || correctionReplays % 100 == 0) {
                         const Level& lv = session.NetLevel();
@@ -330,8 +339,9 @@ namespace perlin {
             if (motion.correction)
                 state.onGround = motion.onGround;
         }
+        // unstamped motion: posDelta written straight to the live state (actor vfunc 0x140BB5800), frames kept and not
+        // recorded, so a later rewind replays without it
         if (motion.hasVelocity) {
-            history.clear();
             state.vx = motion.velocity[0];
             state.vy = motion.velocity[1];
             state.vz = motion.velocity[2];
@@ -385,29 +395,61 @@ namespace perlin {
         const BedrockSession::Vitals vitals = session.GetVitals();
         tooHungryToSprint = vitals.known && vitals.hunger <= 6.0f;
         const bool stopSprintIntent = forward <= 0.0f || sneakKey || itemSlow || state.horizontalCollision || tooHungryToSprint;
-        if ((stopSprintIntent && !(swimming && currentWater)) || (swimming && !currentWater))
+        bool blind = false;
+        for (const auto& effect : session.GetEffects())
+            if (effect.id == 15)
+                blind = true;
+        // IntentSprintTriggerSystem 0x14b341890: in water without the swim pose, last tick's jump flag ends it
+        const bool waterJumpStop = !swimming && currentWater && jumpHeld;
+        if ((stopSprintIntent && !(swimming && currentWater)) || (swimming && !currentWater) || waterJumpStop)
             sprinting = false;
-        else if (!stopSprintIntent && sprintKey && (sprinting || state.onGround || currentWater || flying))
+        // the sprint key starts it mid-air too; blindness only blocks the start
+        else if (!stopSprintIntent && sprintKey && (sprinting || !blind))
             sprinting = true;
 
+        // countdown 0x14b33f0a0 then FlyTriggerIntentSystem 0x145e0ddb0: tick-sampled jump edges, the second
+        // within 6 ticks of the first toggles flight
+        if (flyTapTicks > 0)
+            --flyTapTicks;
+        if (session.MayFly() && !session.NoClip() && !session.Spectator() && !rideLock && jump && !jumpHeld) {
+            if (flyTapTicks > 0) {
+                flying = !flying;
+                (flying ? sendStartFlying : sendStopFlying) = true;
+                flyPending = true;
+                flyPendingAt = std::chrono::steady_clock::now();
+                flyTapTicks = 0;
+            } else {
+                flyTapTicks = 7;
+            }
+        }
+
         const bool wasSneaking = sneaking;
+        const bool wasSwimming = swimming;
         const auto headInWaterAt = [&](float eyeHeight) {
             const int x = static_cast<int>(std::floor(state.x)), z = static_cast<int>(std::floor(state.z));
             const float eyeY = static_cast<float>(state.y) + eyeHeight;
             const int y = static_cast<int>(std::floor(eyeY));
             const auto cell = world.Query(x, y, z);
             if (cell.fluid != 1) return false;
-            const float top = world.Query(x, y + 1, z).fluid == 1 ? 1.0f : cell.fluidLevel;
-            return eyeY < static_cast<float>(y) + top;
+            // liquid height 0x143534D00: (y + 1) - (d/9 - 1/9) from this cell's depth alone, water above doesn't fill it
+            const int depth = cell.fluidDepth < 8 ? cell.fluidDepth + 1 : 1;
+            const float drop = static_cast<float>(depth) / 9.0f + std::bit_cast<float>(0xbde38e39u);
+            const float height = static_cast<float>(y + 1) - drop;
+            return height > eyeY;
         };
         const bool headInWaterBeforePose = headInWaterAt(static_cast<float>(
             (swimming || crawling || gliding) ? physics::kCrawlEye : sneaking ? physics::kSneakEye : physics::kStandEye));
         bool forcedSneak = false;
         bool wantCrawl = false;
-        if (!flying && !rideLock && !gliding && !swimming) {
+        // a riptide spin counts as standing room: no forced pose
+        if (!flying && !rideLock && !gliding && !swimming && !state.spinAttack) {
             if (!physics::PoseFits(state, world, physics::kStandHeight)) {
                 if (physics::PoseFits(state, world, physics::kSneakHeight))
                     forcedSneak = true;
+                // SneakTriggerIntent 0x14B313690: a 0.6 gap starts crawling, unless in water last tick (stops it);
+                // no gap at all keeps the current pose
+                else if (physics::PoseFits(state, world, physics::kCrawlHeight))
+                    wantCrawl = !state.inWater;
                 else
                     wantCrawl = crawling || state.crawling;
             }
@@ -428,10 +470,14 @@ namespace perlin {
             if (effect.id == 24)
                 levitating = true;
         const auto swimBox = physics::BoundingBox(state, wasSneaking);
-        const auto aboveSwimBox = world.Query(
-            static_cast<int>(std::floor(static_cast<float>((swimBox.x0 + swimBox.x1) * 0.5))),
-            static_cast<int>(std::floor(static_cast<float>((swimBox.y0 + swimBox.y1) * 0.5))) + 1,
-            static_cast<int>(std::floor(static_cast<float>((swimBox.z0 + swimBox.z1) * 0.5))));
+        // SwimTrigger 0x147CAE950: centre as (max - min) * 0.5f + min in float
+        const auto boxCentre = [](double lo, double hi) {
+            const float half = (static_cast<float>(hi) - static_cast<float>(lo)) * 0.5f;
+            return static_cast<int>(std::floor(half + static_cast<float>(lo)));
+        };
+        const auto aboveSwimBox = world.Query(boxCentre(swimBox.x0, swimBox.x1),
+                                              boxCentre(swimBox.y0, swimBox.y1) + 1,
+                                              boxCentre(swimBox.z0, swimBox.z1));
         const float lookPitch = physics::bds::InterpolateAngle(state.previousRotation.pitch,
                                                                BedrockPitch(camera.pitch), 1.0f);
         const float lookCoordinate = physics::bds::detail::Round(
@@ -443,7 +489,23 @@ namespace perlin {
                                 && (swimming ? currentWater : headInWaterBeforePose && canStartSwimUp);
         const bool canStopSwimming = !swimming || physics::PoseFits(state, world, physics::kStandHeight);
         swimming = !flying && (wantsSwimming || (swimming && !canStopSwimming));
-        if (gliding && (!hasElytra || state.onGround || state.inWater || flying || rideLock))
+        // SneakTriggerIntent 0x14B313690 under a low ceiling: a sneak gap with no move input, or a crawl gap
+        // out of water (last tick), turns the swim into a crawl
+        if (swimming && !physics::PoseFits(state, world, physics::kStandHeight)) {
+            const float moveSq = forwardKeys * forwardKeys + strafeKeys * strafeKeys;
+            const bool toCrawl = physics::PoseFits(state, world, physics::kSneakHeight)
+                ? moveSq < 0.49999997f
+                : physics::PoseFits(state, world, physics::kCrawlHeight) && !state.inWater;
+            if (toCrawl) {
+                swimming = false;
+                crawling = true;
+                sprinting = false;
+                sneaking = true;
+            }
+        }
+        // StopGlidingIntentSystem 0x14b3533b0: a fresh jump press after 10 glide ticks folds the wings
+        if (gliding && (!hasElytra || state.onGround || state.inWater || flying || rideLock ||
+                        (jump && !jumpHeld && fallFlyTicks > 10)))
             gliding = false;
         else if (!gliding && hasElytra && jump && !jumpHeld && !state.onGround && !state.inWater && !state.inLava &&
                  !state.onClimbable && !flying && !rideLock && !levitating && !crawling)
@@ -469,17 +531,27 @@ namespace perlin {
                 }
             }
         }
+        // GlideInputSystem 0x146d09030 (FallFlyTicksComponent), counted after the stop check above
+        fallFlyTicks = gliding ? fallFlyTicks + 1 : 0;
         physics::Input in;
         in.gliding = gliding;
         in.crawl = crawling;
         in.forceCrouch = forcedSneak;
+        // isInWaterOrRain 0x140BA14A0 and not a passenger; TODO: rain at the position (rain level > 0.2, sky open, biome warm)
+        if (pendingRiptide > 0 && simulate && state.inWater && !rideLock)
+            in.riptideLevel = pendingRiptide;
+        pendingRiptide = 0;
         in.pitch = BedrockPitch(camera.pitch);
         in.swimming = swimming && !gliding;
         in.headInWater = headInWaterAt(static_cast<float>((swimming || crawling || gliding) ? physics::kCrawlEye
                                                          : sneaking ? physics::kSneakEye : physics::kStandEye));
         in.lookY = lookY;
-        const physics::MoveVector move = physics::ProcessMoveInput(forward, strafe, sneaking, currentWater,
-                                                                  itemSlow ? 0.35f : 1.0f);
+        // actor flags are still last tick's here: a released sneak scales one more tick, the swim flag cancels it
+        const bool sneakScaled = (sneaking || (wasSneaking && !flying)) && !wasSwimming;
+        const physics::MoveVector move = physics::ProcessMoveInput(forward, strafe, sneakScaled, currentWater,
+                                                                  itemSlow ? 0.35f : 1.0f, sneakSpeed);
+        // SneakingSystem runs after the input stage: its value is next tick's multiplier
+        sneakSpeed = physics::SneakSpeed(session.SwiftSneakEnchant(), wasSneaking);
         in.forward = move.forward;
         in.strafe = move.strafe;
         in.jump = jump;
@@ -523,7 +595,9 @@ namespace perlin {
         attributes.verticalFlySpeed = session.VFlySpeed();
         attributes.airDrag = session.AirDragAttribute();
         attributes.waterWalkSpeedEnchant = session.WaterWalkSpeedEnchant();
+        attributes.soulSpeed = session.SoulSpeedEnchant() > 0;
         attributes.underwaterSpeed = session.UnderwaterMovementSpeedAttribute();
+        attributes.lavaSpeed = session.LavaMovementSpeedAttribute();
         for (const auto& effect : session.GetEffects()) {
             if (effect.id == 8)
                 attributes.jumpBoost = effect.amplifier + 1;
@@ -548,16 +622,13 @@ namespace perlin {
         rec.before = state;
         rec.simulated = simulate;
         rec.teleport = tickTeleport;
-        for (auto it = futureMotion.begin(); it != futureMotion.end();) {
-            if (it->tick < nextTick) {
-                rec.motion = it->velocity;
-                if (PERLIN_ENV("PERLIN_BLOCK_DEBUG"))
-                    std::cout << "[move] motion_apply stamp=" << it->tick << " target=" << nextTick << std::endl;
-                it = futureMotion.erase(it);
-            } else {
-                ++it;
-            }
+        // a stamp past the newest frame still lands on the live state at once (0x142CD98E0): next tick, whatever the stamp
+        for (const auto& pending : futureMotion) {
+            rec.motion = pending.velocity;
+            if (PERLIN_ENV("PERLIN_BLOCK_DEBUG"))
+                std::cout << "[move] motion_apply stamp=" << pending.tick << " target=" << nextTick << std::endl;
         }
+        futureMotion.clear();
         ApplyMotion(state, rec.motion);
         if (simulate) {
             physics::Step(state, in, attributes, world);
@@ -658,6 +729,10 @@ namespace perlin {
             f.push_back(Flag::StartGliding);
         if (!gliding && sentGliding)
             f.push_back(Flag::StopGliding);
+        if (in.riptideLevel > 0)
+            f.push_back(Flag::StartSpinAttack);
+        if ((before.spinAttack || in.riptideLevel > 0) && !state.spinAttack)
+            f.push_back(Flag::StopSpinAttack);
         sentGliding = gliding;
 
         if (flying && jump)
@@ -809,17 +884,6 @@ namespace perlin {
                 flying = false;
             }
         }
-        if (session.MayFly() && !spectator && input.Pressed(Action::Jump)) {
-            if (now - lastJumpPress <= kDoubleTapWindow) {
-                flying = !flying;
-                (flying ? sendStartFlying : sendStopFlying) = true;
-                flyPending = true;
-                flyPendingAt = now;
-                lastJumpPress = {};
-            } else {
-                lastJumpPress = now;
-            }
-        }
         if (input.Pressed(Action::Forward)) {
             if (now - lastForwardPress <= kSprintTapWindow && !sneaking && !tooHungryToSprint)
                 sprinting = true;
@@ -831,7 +895,8 @@ namespace perlin {
             accumulator = 0.0;
             previous = state;
         } else {
-            accumulator += dt;
+            // Timer::advanceTime 0x145A3B180 (20 tps, 0x41A00000): at most 0.1 s of real time per frame, the rest dropped
+            accumulator += std::min(dt, 0.1f);
         }
         int ticks = 0;
         while (accumulator >= physics::kTickSeconds) {
@@ -842,14 +907,22 @@ namespace perlin {
             }
             input.SetControlTick(tickCounter);
             Tick(session, input, camera, world);
+            // VanillaOffsetSystem::ClientSide 0x142CED480: the drop below eye level moves halfway each tick
+            const float standEye = static_cast<float>(physics::kStandEye);
+            const float targetEye = rideLock ? 1.2f
+                : (crawling || gliding || swimming || state.spinAttack) ? static_cast<float>(physics::kCrawlEye)
+                : sneaking ? static_cast<float>(physics::kSneakEye)
+                : session.Sleeping() ? static_cast<float>(physics::kSleepEye) : standEye;
+            eyeDropPrevious = eyeDrop;
+            eyeDrop = (standEye - targetEye - eyeDrop) * 0.5f + eyeDrop;
         }
 
         const double t = std::clamp(accumulator / physics::kTickSeconds, 0.0, 1.0);
         const double x = previous.x + (state.x - previous.x) * t;
         const double y = previous.y + (state.y - previous.y) * t;
         const double z = previous.z + (state.z - previous.z) * t;
-        const float targetEye = session.Sleeping() ? 0.35f : rideLock ? 1.2f : (crawling || gliding || swimming) ? static_cast<float>(physics::kCrawlEye) : sneaking ? static_cast<float>(physics::kSneakEye) : static_cast<float>(physics::kStandEye);
-        eyeOffset += (targetEye - eyeOffset) * (1.0f - std::exp(-dt * 20.0f));
+        eyeOffset = static_cast<float>(physics::kStandEye) -
+                    (eyeDropPrevious + (eyeDrop - eyeDropPrevious) * static_cast<float>(t));
         const double offsetSize = std::sqrt(smoothOffset[0] * smoothOffset[0] + smoothOffset[1] * smoothOffset[1] +
                                             smoothOffset[2] * smoothOffset[2]);
         const double decay = std::exp(-dt * (offsetSize < 0.4 ? 7.0 : 14.0));

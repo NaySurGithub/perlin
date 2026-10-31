@@ -42,8 +42,13 @@ namespace perlin::physics::bds {
         return detail::Round(velocity * 0.8f) + detail::Round(static_cast<float>(level) * 0.01f);
     }
 
-    inline float GroundVerticalDrag(float velocity, bool hasGravity) {
-        return hasGravity ? velocity * 0.98f : velocity;
+    // MobMovementDrag::Ground 0x14334fb00: the air drag modifier scales the lost fraction, then clamps it to [0, 1]
+    inline float GroundVerticalDrag(float velocity, bool hasGravity, std::optional<float> airDrag = std::nullopt) {
+        if (!hasGravity)
+            return velocity;
+        const float lost = detail::Round(detail::Round(1.0f - 0.98f) * airDrag.value_or(1.0f));
+        const float retention = 1.0f < lost ? 0.0f : detail::Round(1.0f - (0.0f > lost ? 0.0f : lost));
+        return retention * velocity;
     }
 
     inline float FlyingControl(float velocity, float speed, bool hover, bool creative,
@@ -83,14 +88,14 @@ namespace perlin::physics::bds {
 
     inline float PostGroundVertical(float velocity, float& fallDistance, const GravityFlags& flags,
                                     int levitationLevel, bool slowFalling, bool autoClimb,
-                                    bool discardFriction = false) {
+                                    bool discardFriction = false, std::optional<float> airDrag = std::nullopt) {
         if (levitationLevel > 0)
             velocity = LevitateVelocity(velocity, levitationLevel);
         else if (!autoClimb)
             if (auto gravity = GroundGravity(velocity, flags, slowFalling))
                 velocity = ApplyGravity(velocity, fallDistance, *gravity);
         if (!autoClimb && !discardFriction)
-            velocity = GroundVerticalDrag(velocity, flags.hasGravity);
+            velocity = GroundVerticalDrag(velocity, flags.hasGravity, airDrag);
         return velocity;
     }
 
