@@ -135,9 +135,16 @@ namespace perlin {
             };
             static std::unordered_map<uint64_t, Band> bands;
             static const Level* owner = nullptr;
-            if (owner != &level || bands.size() > 256) {
+            if (owner != &level || bands.size() > 2048) {
                 bands.clear();
                 owner = &level;
+            }
+            // changeCounter is level-wide: busy servers bump it every tick, refreshing every band at once
+            static std::chrono::steady_clock::time_point budgetFrame{};
+            static int budget = 0;
+            if (now != budgetFrame) {
+                budgetFrame = now;
+                budget = 2;
             }
             const int cx = bx >> 4, cz = bz >> 4, band = by >> 4;
             const uint64_t key = (static_cast<uint64_t>(cx & 0xFFFFF) << 28) | (static_cast<uint64_t>(cz & 0xFFFFF) << 8) |
@@ -145,11 +152,19 @@ namespace perlin {
             Band& b = bands[key];
             const uint64_t counter = level.changeCounter.load(std::memory_order_relaxed);
             const auto age = now - b.at;
-            if (b.at == std::chrono::steady_clock::time_point{} ||
-                (counter != b.counter && age > std::chrono::milliseconds(400)) || age > std::chrono::seconds(20)) {
-                b.at = now;
-                b.counter = counter;
-                ChunkLighting::Compute(level, {cx, cz}, band * 16 - 8, band * 16 + 23, b.lit);
+            const bool fresh = b.at == std::chrono::steady_clock::time_point{};
+            // out of budget: open sky until this band's turn comes
+            if (fresh && budget <= 0)
+                return 0xF0;
+            if (fresh || (budget > 0 && ((counter != b.counter && age > std::chrono::milliseconds(400)) || age > std::chrono::seconds(20)))) {
+                budget--;
+                // the level lock is held by chunk application and meshing: never wait for it on the render thread
+                if (ChunkLighting::Compute(level, {cx, cz}, band * 16 - 8, band * 16 + 23, b.lit, true)) {
+                    b.at = now;
+                    b.counter = counter;
+                } else if (fresh) {
+                    return 0xF0;
+                }
             }
             return b.lit.At(bx & 15, by, bz & 15);
         }
