@@ -1,4 +1,5 @@
 #include "client/PerlinPause.hpp"
+#include "util/Utf8.hpp"
 #include "util/Log.hpp"
 
 namespace perlin {

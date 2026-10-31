@@ -70,7 +70,6 @@
 #include "util/Resources.hpp"
 #include "util/Strings.hpp"
 #include "util/SystemInfo.hpp"
-#include "util/Utf8.hpp"
 #include "world/level/block/BlockPalette.hpp"
 #include "world/level/lighting/ChunkLighting.hpp"
 
@@ -97,6 +96,13 @@
 
 #ifdef __EMSCRIPTEN__
 #include <emscripten.h>
+#endif
+
+// windows.h, when a header above pulled it in, renames these to their A/W variants; mod abi names collide
+#ifdef _WIN32
+#undef CopyFile
+#undef MoveFile
+#undef PlaySound
 #endif
 
 #ifndef PERLIN_VERSION
